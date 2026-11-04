@@ -27,11 +27,13 @@ import { Effect, FileSystem, Layer, Option, Path, type Scope } from "effect"
 import { type PlatformError, systemError } from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import * as ChildProcessEnvironment from "./ChildProcessEnvironment.ts"
 import * as CommandLine from "./CommandLine.ts"
 import { GrantStore } from "./GrantStore.ts"
-import * as Containment from "./internal/Containment.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import * as Containment from "./internal/Containment.vibe"
+import { makeCapability } from "./internal/makeCapability.vibe"
 import * as ProcessConfinement from "./ProcessConfinement.ts"
 import * as Rooted from "./Rooted.ts"
 import { Workspace } from "./Workspace.ts"
@@ -52,13 +54,16 @@ const optionalData = (value: object, name: PropertyKey): unknown => {
 }
 
 const snapshotRecord = (
-  value: Readonly<Record<string, string | undefined>> | undefined
-): Record<string, string | undefined> | undefined => {
+  value: Readonly<Record<string, Word | undefined>> | undefined
+): Record<string, Word | undefined> | undefined => {
   if (value === undefined) return undefined
-  const snapshot: Record<string, string | undefined> = Object.create(null)
+  const snapshot: Record<string, Word | undefined> = Object.create(null)
   for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
     if (!descriptor.enumerable) continue
-    if (!("value" in descriptor) || (descriptor.value !== undefined && typeof descriptor.value !== "string")) {
+    if (
+      !("value" in descriptor) ||
+      (descriptor.value !== undefined && typeof descriptor.value !== "string" && !Redacted.isRedacted(descriptor.value))
+    ) {
       throw new TypeError("command environment must contain string data properties")
     }
     snapshot[name] = descriptor.value
@@ -176,7 +181,7 @@ const replaceEnvironment = (command: ChildProcess.Command): ChildProcess.Command
   }
   const environment = ChildProcessEnvironment.make(
     command.options.extendEnv === false ? {} : ambientEnvironment(),
-    command.options.env
+    CommandLine.env(command)
   )
   // libuv restores an absent Windows PATH from the parent. An explicit empty
   // value preserves the caller's request to withhold executable search paths.

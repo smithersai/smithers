@@ -31,7 +31,7 @@ import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Option, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import * as McpFlows from "../src/McpFlows.ts"
+import * as McpFlows from "../src/McpFlows.vibe"
 import * as FixtureServer from "./fixtures/FixtureServer.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)

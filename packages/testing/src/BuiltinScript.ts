@@ -25,7 +25,7 @@
 import * as Evaluator from "@smthrs/model/Evaluator"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Effect } from "effect"
-import * as ScriptedModel from "./ScriptedModel.ts"
+import * as ScriptedModel from "./ScriptedModel.vibe"
 
 /**
  * How a TODO's prompt steers its scripted run.

@@ -20,7 +20,7 @@ import { Effect, Redacted, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { CommandReceipt, type ShareClaims } from "../src/BranchProtocol.ts"
 import * as BranchShare from "../src/BranchShare.ts"
-import * as SyncAuth from "../src/SyncAuth.ts"
+import * as SyncAuth from "../src/SyncAuth.vibe"
 import * as SyncProtocol from "../src/SyncProtocol.ts"
 import * as WorkspaceShare from "../src/WorkspaceShare.ts"
 

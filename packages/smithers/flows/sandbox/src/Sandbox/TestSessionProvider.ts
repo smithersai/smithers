@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import type { Provider } from "./Provider.ts"
+import type { Provider } from "./Provider.vibe"
 import type { TestSessionState } from "./TestSessionState.ts"
 
 /**

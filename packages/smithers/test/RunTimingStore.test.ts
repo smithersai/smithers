@@ -4,6 +4,7 @@
  * is all a benchmark trial keeps.
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
 import { spawn } from "node:child_process"
@@ -53,7 +54,7 @@ const recorded = async () => {
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
     Effect.provide(NodeServices.layer),
-    Effect.provide(NodeCrypto.layer)
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   ))
   await Effect.runPromise(Effect.void.pipe(Effect.provide(NodeControl.engineDurable(root).runtime)))
   const db = new DatabaseSync(join(root, ".flows", "control.db"))

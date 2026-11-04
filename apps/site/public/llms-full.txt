@@ -3338,6 +3338,7 @@ This program runs one flow on the in-memory engine, with the action implementati
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -3363,7 +3364,7 @@ const layer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 // A repeated executionId joins the run that already owns it.
@@ -4734,7 +4735,7 @@ directly. Both packages are on npm under the `next` tag.
   "devDependencies": {
     "@smthrs/build-cli": "1.0.0-rc.16",
     "@smthrs/targets": "1.0.0-rc.16",
-    "effect": "4.0.5"
+    "effect": "4.1.0"
   }
 }
 ```
@@ -4751,7 +4752,7 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
-ESM/CommonJS distribution, and `effect` is a peer at exactly `4.0.5`.
+ESM/CommonJS distribution, and `effect` is a peer at exactly `4.1.0`.
 
 ## Artifact test lifecycle
 
@@ -5353,7 +5354,7 @@ https://smithers.sh/docs/reference/api/agent/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs)
 
-> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
+> **Related APIs:** [`@smthrs/capability`](/docs/reference/api/capability/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/harness`](/docs/reference/api/harness/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/memory`](/docs/reference/api/memory/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/observability`](/docs/reference/api/observability/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/plugin`](/docs/reference/api/plugin/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/run-store`](/docs/reference/api/run-store/) · [`@smthrs/std`](/docs/reference/api/std/)
 
 `@smthrs/agent` exports thirty-one modules from its root entry point, and each is
 also importable from `@smthrs/agent/<Module>`:
@@ -10334,7 +10335,7 @@ const Canonical: Schema.decodeTo<
 ```
 
 The same serialization as an [`effect/Schema`](https://effect.website) codec,
-built against Effect 4: the package declares `effect@4.0.5` as a peer
+built against Effect 4: the package declares `effect@4.1.0` as a peer
 dependency.
 
 **Decoding** takes any value, canonicalizes it, and returns the document
@@ -10632,7 +10633,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](/docs/reference/api/kernel/). This package's one runtime dependency is
 [`@smthrs/canonical`](/docs/reference/api/canonical/), which itself depends only on the shared
-`effect@4.0.5` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
+`effect@4.1.0` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 
@@ -14495,12 +14496,14 @@ https://smithers.sh/docs/reference/api/crypto/
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/crypto/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs)
 
 Every hashing, schema, error, and service name below is exported from the root
-entry point and from `@smthrs/crypto/Sha256`. Two other public modules are
-namespaces of the root: `WebCrypto`, Effect's `Crypto` over the global
+entry point and from `@smthrs/crypto/Sha256`. Three other public modules are
+namespaces of the root: `Crypto`, the randomness and digest service Effect 4.0
+shipped as `effect/Crypto`, `WebCrypto`, that service over the global
 WebCrypto, and `Identity`, function identity.
 
 ```ts
 import {
+  Crypto,
   Digest,
   digest,
   digestSync,
@@ -14516,10 +14519,10 @@ import {
 ## Example
 
 ```ts
-import { digest, digestSync } from "@smthrs/crypto"
+import { Crypto, digest, digestSync } from "@smthrs/crypto"
 
 const address = await Effect.runPromise(
-  digest("hello").pipe(Effect.provide(NodeCrypto.layer))
+  digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 const sameAddress = digestSync("hello")
 ```
@@ -14688,6 +14691,54 @@ accept, are ordinary `SchemaError` validation failures rather than
 `Sha256Error`.
 
 ## Services
+
+### Crypto.Crypto
+
+```ts
+const Crypto: Context.Service<Crypto, Crypto>
+```
+
+The randomness and digest service Effect 4.0 shipped as `effect/Crypto`, with
+the same key, `"effect/Crypto"`, and the same members: `randomBytes`, `digest`,
+`random`, `randomBoolean`, `randomInt`, `randomBetween`, `randomIntBetween`,
+`randomShuffle`, `randomUUIDv4`, `randomUUIDv7`, `randomULID`,
+`nextIntUnsafe` and `nextDoubleUnsafe`. Effect 4.1 removed that module in
+favor of `effect/crypto`'s `Digest` and `SecureRandom`; every Smithers program
+that digests or draws randomness still requires this one service.
+
+### Crypto.DigestAlgorithm
+
+```ts
+type DigestAlgorithm = "SHA-1" | "SHA-256" | "SHA-384" | "SHA-512"
+```
+
+The algorithms `digest` accepts.
+
+### Crypto.make
+
+```ts
+const make: (impl: {
+  readonly randomBytes: (size: number) => Uint8Array
+  readonly digest: (algorithm: DigestAlgorithm, data: Uint8Array) => Effect.Effect<Uint8Array, PlatformError>
+}) => Crypto
+```
+
+Builds the service from a source of random bytes and a digest, as Effect 4.0's
+`Crypto.make` did. Every random member reads `randomBytes`; UUIDv7 and ULID
+stamp the `Clock`'s time. `randomBytes(size)` fails with `BadArgument` when
+`size` is not a non-negative safe integer.
+
+### Crypto.layerFromDigest
+
+```ts
+const layerFromDigest: <E, R>(digest: Layer.Layer<Digest.Digest, E, R>) => Layer.Layer<Crypto, E, R>
+```
+
+The service over a host's Effect 4.1 `Digest` layer, with randomness from the
+global WebCrypto object. What Effect 4.0's `Crypto.layerFromDigest(NodeCrypto.layerDigest)` provided is
+`Crypto.layerFromDigest(NodeCrypto.layerDigest)`, whose digests run
+synchronously on `node:crypto`, so `Effect.runSync` can run them. An algorithm
+outside `DigestAlgorithm` fails with `BadArgument`.
 
 ### syncCrypto
 
@@ -19332,7 +19383,7 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
-The gateway requires `effect` at exactly `4.0.5` as its only peer. Node and Bun adapters are bundled privately, built from 4.0.5; hosts need no separate adapter install.
+The gateway requires `effect` at exactly `4.1.0` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.0; hosts need no separate adapter install.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -22147,7 +22198,7 @@ https://smithers.sh/docs/reference/api/integrations/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/integrations/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/integrations/docs)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/errors`](/docs/reference/api/errors/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/notifications`](/docs/reference/api/notifications/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 The package exports `Core` and `GitHub` from `@smthrs/integrations`,
 `@smthrs/integrations/core`, and `@smthrs/integrations/github`.
@@ -25799,12 +25850,13 @@ Derives the current key format from structured input.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 
 const key = await Effect.runPromise(
   deriveKey({ domain: "example/compile", version: 1, source: "main.ts" }).pipe(
-    Effect.provide(NodeCrypto.layer)
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 )
 // key1_74a286a394e4b0619c05801dd4e7315deeb83b8203cd3c3ee7cd6033ec55c683
@@ -26465,7 +26517,7 @@ https://smithers.sh/docs/reference/api/memory/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/memory/docs)
 
-> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/patterns`](/docs/reference/api/patterns/)
+> **Related APIs:** [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/patterns`](/docs/reference/api/patterns/)
 
 This page covers the parts a flow author touches: the two callable flows, the memory policy that decides which namespace a flow tree reads and writes, and the store behaviors that are easy to get wrong. The [module reference](#module-reference) at the end lists every export; the sections before it explain how those exports behave.
 
@@ -27458,7 +27510,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.0.5`                                | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.1.0`                                | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -27645,9 +27697,9 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
   with its file and field, and each one that is not what a migrated project
   declares raises `effect-pin-conflict` naming it. A field that installs
-  `effect` ends on exactly `4.0.5`, the version this release is tested on: a
+  `effect` ends on exactly `4.1.0`, the version this release is tested on: a
   range resolves to whatever is newest on install day, and two manifests that
-  disagree install two Effects. A `peerDependencies` entry ends on `4.0.5`,
+  disagree install two Effects. A `peerDependencies` entry ends on `4.1.0`,
   the exact version the published libraries require. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
   or yarn lockfile resolved `effect` to, and a resolution other than the pin
   raises the same warning against the lockfile.
@@ -28464,7 +28516,7 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.0.5"`                                                                                                     | The `effect` version this release was built against.                                                                  |
+| `effectVersion`                                         | `"4.1.0"`                                                                                                     | The `effect` version this release was built against.                                                                  |
 | `smithersVersion`                                       | the package's own version                                                                                     | The `@smthrs/*` version it adds: the release that ran the migration.                                                  |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 
@@ -30213,7 +30265,7 @@ OpenTelemetry SDK. `@smthrs/observability/package.json` is exported.
 | `@smthrs/observability/NodeOtel`    | [src/NodeOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/NodeOtel.ts)       | Node     |
 | `@smthrs/observability/BrowserOtel` | [src/BrowserOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/BrowserOtel.ts) | browser  |
 
-The package is tested with `effect@4.0.5` and accepts `4.0.5`. Layers, services, and schemas
+The package is tested with `effect@4.1.0` and accepts `4.1.0`. Layers, services, and schemas
 are Effect constructs: a `Layer` provides services, a scoped layer releases on
 scope close, and a schema decodes to an `Effect`.
 
@@ -31267,7 +31319,7 @@ https://smithers.sh/docs/reference/api/patterns/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/patterns/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/patterns/docs)
 
-> **Related APIs:** [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 This page is the API reference for the higher-order flow patterns: decorators
 that wrap one flow, and containers that compose several. The package composes
@@ -31843,6 +31895,7 @@ The shortest composition that reaches every layer:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Plan, PlanDiff } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 
@@ -31879,7 +31932,7 @@ const program = Effect.gen(function*() {
   })
 
   return PlanDiff.diff(plan, plan)
-}).pipe(Effect.provide(NodeCrypto.layer))
+}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 ```
 
 Compiling needs Effect's `Crypto` service and nothing else. The package depends on [`@smthrs/crypto`](/docs/reference/api/crypto/), [`@smthrs/canonical`](/docs/reference/api/canonical/), [`@smthrs/keys`](/docs/reference/api/keys/), and `effect`, performs no I/O, and is browser-safe. Persisting a compiled plan is [`@smthrs/plan-store`](/docs/reference/api/plan-store/), which is where the database dependency lives.
@@ -32782,9 +32835,9 @@ type RepresentationIdentityVersion = 2 | 1
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
 
-`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.0.5` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
+`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.0` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
 
-The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.0.5`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
+The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.0`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
 
 `representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
 
@@ -33322,7 +33375,7 @@ https://smithers.sh/docs/reference/api/plan-store/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs)
 
-> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/plan-store` exports two modules from its root entry point, and each is
 also importable from `@smthrs/plan-store/<Module>`:
@@ -33345,6 +33398,7 @@ The shortest composition that records a compiled plan:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/plan-store/Migrations"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
@@ -33354,7 +33408,7 @@ import * as Layer from "effect/Layer"
 
 const layer = PlanStore.layer.pipe(
   Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 const program = Effect.gen(function*() {
@@ -33985,7 +34039,7 @@ https://smithers.sh/docs/reference/api/platform-bun/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-bun/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-bun/docs)
 
-> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
+> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/platform-node`](/docs/reference/api/platform-node/) · [`@smthrs/sandbox`](/docs/reference/api/sandbox/)
 
 ```ts
 import { BunHost } from "@smthrs/platform-bun"
@@ -34001,7 +34055,7 @@ const program = Effect.gen(function*() {
 
 This barrel and `BunHost` import `@effect/platform-bun` at module load. It
 and the Effect Node platform packages are bundled privately, built from
-`effect@4.0.5`. `effect` is a required peer at exactly `4.0.5`.
+`effect@4.1.0`. `effect` is a required peer at exactly `4.1.0`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -37030,7 +37084,7 @@ https://smithers.sh/docs/reference/api/registry/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/registry/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/registry/docs)
 
-> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/artifacts`](/docs/reference/api/artifacts/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/registry` exports nine modules from its root entry point, and each is
 also importable from `@smthrs/registry/<Module>`:
@@ -42768,7 +42822,7 @@ https://smithers.sh/docs/reference/api/testing/
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/testing/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/testing/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/testing/docs)
 
-> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
+> **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
 
 `@smthrs/testing` exports twenty-four modules from its root entry point, and each is
 also importable from `@smthrs/testing/<Module>`:

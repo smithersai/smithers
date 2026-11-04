@@ -8,65 +8,66 @@ import * as Incur from "../src/Incur.vibe"
 import * as Route from "../src/Route.vibe"
 import { hiddenRuntimeRoot as root } from "./fixtureRoots.ts"
 import { failureOf } from "./helpers.vibe"
+import { Request } from "./hostGlobals.ts"
 
 const platformLayer = Layer.merge(NodeFileSystem.layer, NodePath.layer)
 
-function scan() {
+effect function scan() {
   provide platformLayer {
-    return FileRouter.scan({ root })
+    return try FileRouter.scan({ root })
   }
 }
 
 const invoked: Array<string> = []
 const invoker = FlowInvoker.make({
-  invoke: (invocation) => {
+  invoke: effect (invocation) => {
     invoked.push(invocation.name)
     return invocation.input
   }
 })
 
 /** Runs a program with the recording invoker. */
-function invoking<A, E>(program: Effect<A, E, FlowInvoker.FlowInvoker>): Effect<A, E, infer R> {
+effect function invoking<A, E>(program: Effect<A, E, FlowInvoker.FlowInvoker>): Effect<A, E, infer R> {
   provide FlowInvoker.FlowInvoker = invoker {
-    return program()
+    return try program
   }
 }
 
 describe("runtime model visibility", () => {
-  it.effect("refuses a flow hidden after its route metadata was captured") {
-    const [scanned] = scan().routes
+  it.effect("refuses a flow hidden after its route metadata was captured", effect () => {
+    const [scanned] = (try scan()).routes
     expect(scanned?.modelInvocable).toBe(false)
     // Route metadata is caller-owned and can be stale: the author hid the flow
     // after a scan recorded it as visible.
     const stale = { ...scanned!, modelInvocable: true }
 
-    const surface = Command.make([stale])
-    expect(failureOf(invoking(surface.execute("hidden --number 1"))).code).toBe("load_failed")
-    expect(failureOf(invoking(surface.call("hidden", { number: 1 }))).code).toBe("load_failed")
-    expect(failureOf(invoking(surface.parse("hidden --number 1"))).code).toBe("load_failed")
+    const surface = try Command.make([stale])
+    expect((try failureOf(invoking(surface.execute("hidden --number 1")))).code).toBe("load_failed")
+    expect((try failureOf(invoking(surface.call("hidden", { number: 1 })))).code).toBe("load_failed")
+    expect((try failureOf(invoking(surface.parse("hidden --number 1")))).code).toBe("load_failed")
     expect(invoked).toEqual([])
-  }
+  })
 
-  it.effect("refuses the stale route over Incur HTTP dispatch") {
-    const [scanned] = scan().routes
+  it.effect("refuses the stale route over Incur HTTP dispatch", effect () => {
+    const [scanned] = (try scan()).routes
     const stale = { ...scanned!, modelInvocable: true }
-    const cli = invoking(Incur.createCli("app", [stale]))
+    const cli = try invoking(Incur.createCli("app", [stale]))
     try {
-      const response = sync(async (cli) => cli.fetch(new Request("http://localhost/hidden?number=1")), cli)
+      const response = try sync(async (cli) => cli.fetch(new Request("http://localhost/hidden?number=1")), cli)
       expect(response.status).toBe(400)
-      expect(sync(async (response) => response.json(), response)).toMatchObject({
+      expect(try sync(async (response) => response.json(), response)).toMatchObject({
         ok: false,
         error: { code: "load_failed" }
       })
       expect(invoked).toEqual([])
     } finally {
-      sync(async (cli) => cli.close(), cli)
+      try sync(async (cli) => cli.close(), cli)
     }
-  }
+  })
 
-  it.effect("still loads the hidden flow for a route that is not model-invocable") {
-    const [scanned] = scan().routes
-    const loaded = Route.load(scanned!)
+  it.effect("still loads the hidden flow for a route that is not model-invocable", effect () => {
+    const [scanned] = (try scan()).routes
+    const loaded = try Route.load(scanned!)
     expect(loaded.name).toBe("hidden")
-  }
+  })
 })

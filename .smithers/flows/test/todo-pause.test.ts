@@ -5,6 +5,7 @@ import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
@@ -27,7 +28,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/index.ts"
-import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.ts"
+import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.vibe"
 import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
 import { ModuleOwner } from "../../../packages/smithers/src/internal/ModuleOwner.ts"
 import { TodoBoundary, todoPauseLayer, TodoPauseRequested, todoResumeLayer } from "../coding/todo-pause.ts"
@@ -40,7 +41,7 @@ const database = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(
   Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 const bridge = Layer.effect(ControlExecutor.ControlExecutor)(Effect.gen(function*() {
   const services = yield* Effect.context<DurableEngineState.DurableEngineState | FlowRuntime.FlowRuntime>()
@@ -179,7 +180,7 @@ test(
         DurableEngineState.layer
       ).pipe(
         Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-        Layer.provideMerge(Layer.merge(sqlite, NodeCrypto.layer))
+        Layer.provideMerge(Layer.merge(sqlite, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
       )
       const engine = Layer.mergeAll(
         Interpreter.layer(Todo),
@@ -345,7 +346,7 @@ test(
         DurableEngineState.layer
       ).pipe(
         Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-        Layer.provideMerge(Layer.merge(sqlite, NodeCrypto.layer))
+        Layer.provideMerge(Layer.merge(sqlite, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
       )
       const engine = Layer.mergeAll(
         Interpreter.layer(Todo),

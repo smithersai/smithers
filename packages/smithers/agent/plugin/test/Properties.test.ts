@@ -1,8 +1,8 @@
 import { Context, Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Config from "../src/Config.ts"
-import type { FlowsPlugin } from "../src/index.ts"
-import * as Resolve from "../src/Resolve.ts"
+import * as Config from "../src/Config.vibe"
+import type { FlowsPlugin } from "../src/index.vibe"
+import * as Resolve from "../src/Resolve.vibe"
 
 type JsonValue = null | boolean | number | string | ReadonlyArray<JsonValue> | JsonRecord
 interface JsonRecord {

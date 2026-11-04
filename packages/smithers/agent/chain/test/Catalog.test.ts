@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from "node:fs"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import * as Catalog from "../src/Catalog.ts"
+import * as Catalog from "../src/Catalog.vibe"
 import { runOn } from "./harness.ts"
 
 const entry: Catalog.Entry = {

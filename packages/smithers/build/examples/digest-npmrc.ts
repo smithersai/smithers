@@ -6,6 +6,7 @@
  */
 import { NodeServices } from "@effect/platform-node"
 import * as PackageManager from "@smthrs/build/PackageManager"
+import { WebCrypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -22,7 +23,7 @@ export const digestNpmrc = async (npmrc: string) => {
     return await Effect.runPromise(
       PackageManager.npmrcDigest(projectRoot).pipe(
         Effect.catchTag("smithers-build/PackageManagerError", (error) => Effect.succeed(error.code)),
-        Effect.provide(NodeServices.layer)
+        Effect.provide([NodeServices.layer, WebCrypto.layer])
       )
     )
   } finally {

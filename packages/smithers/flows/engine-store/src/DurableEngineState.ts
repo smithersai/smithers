@@ -969,7 +969,9 @@ const restoreJsonExit = (value: unknown): unknown => {
   if (record["_tag"] !== "Failure") return value
   const cause = record["cause"]
   if (typeof cause !== "object" || cause === null) return value
-  const failures = (cause as Record<string, unknown>)["failures"]
+  // Effect 4.1 serializes a cause's reasons as `reasons`; Effect 4.0 wrote
+  // `failures`, which state persisted before the upgrade still holds.
+  const failures = (cause as Record<string, unknown>)["reasons"] ?? (cause as Record<string, unknown>)["failures"]
   if (!Array.isArray(failures)) return value
   const reasons: Array<Cause.Reason<unknown>> = []
   for (const failure of failures) {

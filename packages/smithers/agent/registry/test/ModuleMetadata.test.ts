@@ -1,7 +1,7 @@
 import { Option, Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as ModuleMetadata from "../src/internal/ModuleMetadata.ts"
+import * as ModuleMetadata from "../src/internal/ModuleMetadata.vibe"
 import discoveredFlow from "./fixtures/project/flows/review/read-pr/flow.ts"
 
 describe("ModuleMetadata", () => {

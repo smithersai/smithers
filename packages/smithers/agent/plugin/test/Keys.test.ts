@@ -1,6 +1,6 @@
 import { Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Keys from "../src/Keys.ts"
+import * as Keys from "../src/Keys.vibe"
 
 const parse = (text: string) => Result.getOrThrow(Keys.parse(text))
 const press = (key: string, flags: Partial<Omit<Keys.Pressed, "key">> = {}): Keys.Pressed => ({

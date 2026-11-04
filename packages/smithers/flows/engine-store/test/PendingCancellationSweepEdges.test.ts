@@ -1,11 +1,11 @@
 /** Faults and ownership races at pending cancellation discovery, over matrix-selected production stores. */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import { Effect, Fiber, Latch, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import * as Layer from "effect/Layer"
 import type * as Scope from "effect/Scope"
 import { SqlClient } from "effect/sql/SqlClient"

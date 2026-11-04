@@ -13,6 +13,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow as EngineFlow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -27,7 +28,6 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -36,8 +36,8 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as Memory from "../src/Memory.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
 import * as Safety from "./Safety.ts"
 
 // ---------------------------------------------------------------------------
@@ -168,7 +168,7 @@ const drive = <A, E>(
     yield* engine.resume(driveFlow, "exec-1")
     return [first, yield* Deferred.await(settled)]
   }).pipe(
-    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
     Effect.scoped,
     Effect.runPromise
   )

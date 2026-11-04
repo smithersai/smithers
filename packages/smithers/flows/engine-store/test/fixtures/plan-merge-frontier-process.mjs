@@ -1,7 +1,6 @@
 // Real process/SQLite/filesystem frontier; Jj and the losing conflict are
 // controlled protocol seams, not a native-Jj merge correctness test.
 import * as NodePath from "@effect/platform-node/NodePath"
-import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import { Jj } from "@smthrs/kernel"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
@@ -19,6 +18,8 @@ import * as StepBoundary from "../../src/StepBoundary.ts"
 import * as StepSandbox from "../../src/StepSandbox.ts"
 import * as TestStores from "../../src/test/TestStores.ts"
 import * as WorkspaceSandbox from "../../src/WorkspaceSandbox.ts"
+import { Crypto } from "@smthrs/crypto"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 
 const [root, mode, frontier] = process.argv.slice(2)
 if (!root || !["crash", "resume"].includes(mode) || !["intent", "completion"].includes(frontier)) {
@@ -107,6 +108,6 @@ const report = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
   return result
 })).pipe(
   Effect.provide(Layer.merge(host, executor)), Effect.provide(TestStores.layerAt(join(root, ".flows/state.sqlite"))),
-  Effect.provide(NodeCrypto.layer), Effect.provideService(Clock.Clock, clock)
+  Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.provideService(Clock.Clock, clock)
 ))
 process.stdout.write(JSON.stringify({ calls, appended: report.appended, settlements: report.settlements, results: report.results }) + "\n")

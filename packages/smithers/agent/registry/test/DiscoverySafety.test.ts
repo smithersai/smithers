@@ -5,7 +5,7 @@ import * as ByteSize from "effect/ByteSize"
 import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
-import type { Source } from "../src/Descriptor.ts"
+import type { Source } from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 
 const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)

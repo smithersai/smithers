@@ -42,6 +42,7 @@ import * as ControlLive from "@smthrs/control/ControlLive"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { DurableFlow } from "@smthrs/control/SqlControlRuntime"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
@@ -436,7 +437,8 @@ export const planGraph = (input: unknown): {
 export const planOf = (
   input: FixtureInput,
   planId: string
-): Effect.Effect<Plan.Plan, unknown, never> => plan(input, planId).pipe(Effect.provide(NodeCrypto.layer))
+): Effect.Effect<Plan.Plan, unknown, never> =>
+  plan(input, planId).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 
 /**
  * The host policy that lets a relayed decision through.
@@ -461,7 +463,7 @@ const durableFlow: DurableFlow = {
   plan: (input, planId) =>
     plan(input, planId).pipe(
       Effect.map((compiled) => ({ plan: compiled, graph: planGraph(input) })),
-      Effect.provide(NodeCrypto.layer),
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
       Effect.orDie
     )
 }
@@ -520,7 +522,7 @@ const engineStorage = (filename: string) =>
       Layer.provideMerge(Layer.effectDiscard(EngineMigrations.run)),
       Layer.provideMerge(
         Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename })).pipe(
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
     )
@@ -972,7 +974,7 @@ const discoveredFlow = (executable: Executable.Executable, root: string): Durabl
           }
         }))
       )
-    }).pipe(Effect.provide(NodeCrypto.layer), Effect.orDie)
+    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie)
 })
 
 /**
@@ -1033,7 +1035,14 @@ export const stackWith = (options: StackOptions = {}) =>
                 NotificationQueue.layer,
                 Registry.layerNoop(),
                 dispatcher
-              ).pipe(Layer.provideMerge(Layer.merge(controlStorage(join(directory, "control.db")), NodeCrypto.layer)))
+              ).pipe(
+                Layer.provideMerge(
+                  Layer.merge(
+                    controlStorage(join(directory, "control.db")),
+                    Crypto.layerFromDigest(NodeCrypto.layerDigest)
+                  )
+                )
+              )
             )
           )
         ),

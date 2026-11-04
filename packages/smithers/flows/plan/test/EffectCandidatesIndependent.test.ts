@@ -1,7 +1,7 @@
 /** Independent comparison with the compiler's former exhaustive owner walk. */
 import { Effect } from "effect"
 import { expect, it, vi } from "vitest"
-import * as FileSet from "../src/FileSet.ts"
+import * as FileSet from "../src/FileSet.vibe"
 import * as Candidates from "../src/internal/EffectCandidates.ts"
 import * as Plan from "../src/Plan.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"

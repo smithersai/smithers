@@ -7,7 +7,7 @@ const cwd = "packages/smithers/flows/secrets"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("src/**/*.ts"),
+  sources: Input.glob("src/**/*.{ts,vibe}"),
   cwd
 })
 
@@ -26,7 +26,7 @@ const securityReview = Smithers.SecurityReview({
         "The HTTP client's own span left on, or an HttpClientError (which holds the substituted request) kept in a failure or cause.",
         "The response body's stream error passed through instead of replaced by Broken."
       ],
-      paths: ["src/Egress.ts", "src/Binding.ts"]
+      paths: ["src/Egress.vibe", "src/Binding.vibe"]
     },
     {
       id: "audience-binding",
@@ -37,7 +37,7 @@ const securityReview = Smithers.SecurityReview({
         "A host compared other than exactly (suffix, case, port, userinfo, a Host header instead of the URL).",
         "A placeholder in the URL or the body substituted, or substitution over plain HTTP."
       ],
-      paths: ["src/Egress.ts"]
+      paths: ["src/Egress.vibe"]
     },
     {
       id: "redirects",
@@ -46,7 +46,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A request sent without `redirect: \"manual\"` on a Fetch client, or with HttpClient.followRedirects."
       ],
-      paths: ["src/Egress.ts"]
+      paths: ["src/Egress.vibe"]
     },
     {
       id: "scrub-coverage",
@@ -57,7 +57,7 @@ const securityReview = Smithers.SecurityReview({
         "Range or If-Range forwarded when a value is bound, letting the guest fetch an echo in slices too short to match.",
         "A compressed answer passed through, whose bytes the scrubber can't see."
       ],
-      paths: ["src/Scrub.ts", "src/Egress.ts"]
+      paths: ["src/Scrub.vibe", "src/Egress.vibe"]
     },
     {
       id: "header-injection",
@@ -67,7 +67,7 @@ const securityReview = Smithers.SecurityReview({
         "A value put in a header without valueProblem, or a control character it misses.",
         "Headers over maximumHeaderBytes or placeholders over maximumPlaceholders accepted."
       ],
-      paths: ["src/Binding.ts", "src/Egress.ts"]
+      paths: ["src/Binding.vibe", "src/Egress.vibe"]
     }
   ]
 })

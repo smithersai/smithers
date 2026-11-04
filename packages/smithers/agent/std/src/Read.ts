@@ -23,12 +23,12 @@ import * as FileSystem from "effect/FileSystem"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { capability, envelope } from "./internal/Declaration.ts"
-import * as FileMutation from "./internal/FileMutation.ts"
-import * as FsFailure from "./internal/FsFailure.ts"
+import * as FileMutation from "./internal/FileMutation.vibe"
+import * as FsFailure from "./internal/FsFailure.vibe"
 import { DEFAULT_READ_LIMIT, MAX_LINE_CHARS, MAX_OUTPUT_BYTES, notice, slice, truncateBytes } from "./internal/Text.ts"
-import * as StdError from "./StdError.ts"
+import * as StdError from "./StdError.vibe"
 
-export { Preconditions, ReadSession, type VersionedFileSystem } from "./internal/FileMutation.ts"
+export { Preconditions, ReadSession, type VersionedFileSystem } from "./internal/FileMutation.vibe"
 
 /**
  * Registry name for the read flow.

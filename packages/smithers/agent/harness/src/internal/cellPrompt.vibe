@@ -1,0 +1,443 @@
+/**
+ * The one contract the cell-first harness teaches a model.
+ *
+ * This contract is plain JavaScript over `ctx.call`, shaped to look like the
+ * Claude Code workflow API, and that is a ruling rather than an accident: will
+ * ruled on 2026-08-20 that the model authoring surface stays this shape,
+ * because agents perform better on the shape they are trained on. Effect.ts is
+ * the language of the code we maintain, not the language the model writes. Do
+ * not port this contract onto `Flow`/`Action`/`Node`; that was built out under
+ * a 2026-08-12 ruling and reversed. It may be tested later as a benchmark arm
+ * and is adopted only if it benchmarks better.
+ *
+ * There is one contract, and it is the REPL's. The surface it replaced — a cell
+ * as the body of its own async function, filing JSON into `state` and choosing
+ * its successor's `context` by hand — is recorded as a design error rather than
+ * as an arm that lost: it made the model do the realm's job, which is why it
+ * never worked like a REPL. will ruled it out on 2026-08-24. The evidence and
+ * the ruling are in `../../docs/concepts.md#repl-realm`.
+ *
+ * The contract comes in two profiles (decision 0003 of `apps/mvp`,
+ * 2026-10-19). `workspace` is the contract below, unchanged. `conversation`
+ * is the same REPL and rules 1 to 6, byte for byte, without the bug-fix
+ * example, rules 7 to 9 and the history fact, for a run whose catalog holds
+ * no workspace flows. See {@link Profile}.
+ *
+ * The teaching here is measured, not preferred, and the measurement has now run
+ * both ways. The merged optimal-trace program
+ * predicted that more teaching
+ * would buy verdicts, and grew the contract it replaced from 8,197 to 11,312
+ * characters across changes 2, 9 and 10. The re-run that settles those
+ * predictions says it did not:
+ * resolved fell 35/45 to 30/45, cost rose 59 %, and five instances spent a whole
+ * 1,200 s budget without editing one byte, held there by an unconditional
+ * pre-edit reproduction rule. The same wave shows every *tool* change paying.
+ * That is why the rules below carry their traces and why a teaching change is
+ * made one at a time.
+ *
+ * The exception rule 8 used to state — "when the command will not bootstrap,
+ * edit on the diagnosis you have and establish the proof afterwards" — is gone,
+ * and it is gone because the thing it was managing no longer exists. It existed
+ * to relieve an *ordering*: a baseline had to be taken before the edit, so a
+ * baseline that could not be taken yet blocked the edit. Checkpoints remove the
+ * ordering outright (will, 2026-08-24). The baseline is now taken after the
+ * edit, against `ctx.base`, so there is nothing left to make conditional and a
+ * sentence offering relief from a constraint the contract no longer imposes is
+ * teaching a shape that is not the shape.
+ *
+ * The same ruling is why the worked examples put the edit first and the
+ * baseline second. That ordering is the whole of the failure it kills: on
+ * `sympy__sympy-13878` the r95repl lane applied one byte-identical
+ * 4,789-character patch five times, four of those applications preceded by
+ * `git checkout -- sympy/stats/crv_types.py`, because a clean fails-before
+ * proof required reverting the very work it was meant to prove. Models imitate
+ * the example, and the example now shows a run that never gives its work back.
+ *
+ * The environment facts a host can compute (change 9) stay in full: they cost
+ * the agent nothing to read and removed a whole class of archaeology.
+ *
+ * Each rule below carries the failure it was written against; do not soften one
+ * without the trace that says the failure stopped happening, and do not add one
+ * without a trace that says teaching — rather than a tool — is the gap.
+ *
+ * Governing design: `../../docs/concepts.md#model-authoring-surface` (the
+ * ruling) and `../../docs/concepts.md#agent-cell-context` (the surface).
+ *
+ * @since 0.1.0
+ */
+
+import * as Digest from "@smthrs/core/Digest"
+import * as CanonicalJson from "@smthrs/model/CanonicalJson"
+import type * as Descriptor from "@smthrs/registry/Descriptor"
+import type * as AgentEvent from "../AgentEvent.ts"
+import type * as Cell from "../Cell.ts"
+import * as Monitor from "../Monitor.vibe"
+import { untrustedData } from "./untrustedData.ts"
+
+/**
+ * One rendered prompt section, with the digest that identifies its
+ * content.
+ *
+ * @since 0.1.0
+ * @private
+ * @slop
+ */
+export interface Section {
+  readonly id: "cell-contract" | "cell-stance" | "cell-environment" | "cell-jev" | "cell-catalog"
+  readonly text: string
+  readonly digest: string
+}
+
+/**
+ * Facts about the container a run executes in, computed by the harness.
+ *
+ * Every field is something the host can read off the environment without
+ * knowing anything about the task, which is the whole admission rule: the
+ * program that motivated this section rejects instance-specific teaching
+ * outright, so the shape is a closed set of typed fields rather than free
+ * prose a caller could smuggle an answer into. Facts that are absent are not
+ * rendered; the run discovers them the ordinary way.
+ *
+ * @category models
+ * @since 0.1.0
+ * @slop
+ */
+export interface Environment {
+  /** The container's locale and encoding, as `LANG`/`LC_ALL` report it. */
+  readonly locale?: string
+  /** Tools a run will reach for that this image does not install. */
+  readonly absentTools?: ReadonlyArray<string>
+}
+
+/**
+ * Which contract a run is taught.
+ *
+ * `workspace`, the default, teaches a run that changes a checkout: the REPL,
+ * nine rules, a worked bug fix and the checkout's history facts.
+ * `conversation` teaches a run that answers a person through the flows its
+ * catalog lists: the same REPL and rules 1 to 6, with no example, no rules 7
+ * to 9 and no history fact. Neither changes the stance, `jev` or catalog
+ * sections.
+ *
+ * @category models
+ * @since 1.0.0-rc.16
+ */
+export type Profile = "workspace" | "conversation"
+
+/**
+ * The realm the run writes into, taught by both profiles byte for byte.
+ */
+const realmText = `JavaScript REPL, one cell per turn, alive for the whole run.
+
+Every reply MUST contain a fenced \`cell\` block, JavaScript only. Several blocks in one reply run as ONE program. Yield after inspection when later decisions depend on tool output.
+
+Top-level bindings persist across cells, as in any REPL. \`console.log\` output opens your next turn and stays in context; unprinted values stay in their variables.`
+
+/**
+ * The worked bug-fix example, taught by the workspace profile only: its
+ * `grep`, `read`, `edit` and `bash` calls name a workspace catalog.
+ */
+const bugFixExample = `Example bug fix, two cells. Names illustrative; call what \`ctx.flows\` lists.
+
+\`\`\`cell
+const found = await ctx.call("grep", { pattern: "return value", root: "src/units", limit: 5 })
+const hit = found.ok === false ? undefined : found.matches[0]
+const region = hit === undefined ? undefined : await ctx.call("read", { path: hit.file, offset: Math.max(1, hit.line - 20), limit: 40 })
+console.log(found.ok === false ? found.error.message : hit === undefined ? "No matches" : region.ok === false ? region.error.message : region.content)
+\`\`\`
+
+\`\`\`cell
+const verification = { flow: "bash", input: { command: "run-tests tests/test_widen.py::test_keeps_unit" } }
+if (hit !== undefined && region.ok !== false) {
+  const anchor = hit.text
+  const applied = await ctx.call("edit", { path: hit.file, oldString: anchor, newString: anchor.replace("return value", "return widen(value)") })
+  if (applied.ok === false) console.log(applied.error.message)
+  else {
+    const before = await ctx.call(verification.flow, verification.input, { at: ctx.base })
+    const after = await ctx.call(verification.flow, verification.input)
+    if (before.ok === false) console.log(before.error.message)
+    else if (after.ok === false) console.log(after.error.message)
+    else {
+      console.log(applied.hunk, before.exitCode, after.exitCode, after.stdout)
+      if (Number.isInteger(before.exitCode) && before.exitCode !== 0 && after.exitCode === 0) ctx.done("Widened " + hit.file + "; " + verification.input.command + " failed before, passes after.")
+    }
+  }
+}
+\`\`\``
+
+/**
+ * The batching line and rules 1 to 6, the REPL's own rules, taught by both
+ * profiles byte for byte.
+ */
+const replRules = `Many calls per cell; one call per frame wastes turns.
+
+Rules:
+
+1. Bindings: \`ctx\`, \`console\`, earlier cells' names. \`ctx.call(name, input)\` runs a flow; \`ctx.flows\` lists them. No imports, require, fetch, filesystem, process, Date, Math.random; anything else throws. Strings passed to flows are data (a Python heredoc is fine).
+2. Every effect is a flow: files, commands, memory, questions, subagents.
+3. A failed call does not throw: resolves \`{ ok: false, error: { code, message, hint } }\`; test \`.ok === false\` where you are unsure. Success resolves the result unwrapped. A throwing cell keeps names already assigned. Long calls spend the flow's budget, not the cell's. Output is capped: a result flagged truncated is a fragment. Restore files with git checkout or git restore; never route file content through captured stdout (a write of bytes a call returned truncated is refused).
+4. Before your first edit, reading is uncapped: print whole files, search results, listings. Each turn opens with your last print, bound names, and one line per settled call (tree writes and repeats flagged). After your first edit, prints are re-paid every turn: print only what you must read; keep the rest in variables; ≤40 lines a cell; never whole listings, search results, files or intermediates; counts and paths first, then only the chosen region. Structures print as JSON; record lists as tables.
+5. Finish by calling. \`ctx.done(output)\` ends the run; \`output\` is the answer. \`ctx.park(reason, message)\` waits durably for a human; reason "waiting-input" | "waiting-event" | "waiting-quota"; refused when nobody listens. Both take effect at that line; later calls in the cell resolve \`{ ok: false, error: { code: "run_completed" } }\`. Conversational or read-only request: \`ctx.done(answer)\` directly; no edit, command, baseline or tree review. \`console.log\` alone does not finish. Workspace change: finish behind the deciding check, \`if (after.exitCode === 0) ctx.done(...)\`. Let the guard read the tree too: \`git status --porcelain\` and \`git diff\` in the completing cell; finish silently only when the check passes AND the diff holds exactly the files you meant to change, else \`console.log\` that diff. A bare \`ctx.done\` is allowed but is a claim nobody checked: say what is unverified. Workspace \`output\`, ≤3 lines: what changed and which check passed. A cell calling neither ends the turn.
+6. Resume re-executes cells from the top; settled calls replay recorded results.`
+
+/**
+ * Rules 7 to 9, the bug-fix evidence and proof rules, taught by the
+ * workspace profile only.
+ */
+const workspaceRules =
+  `7. Bug-fix evidence: a command counts only after you SEE it fail on the unmodified tree FOR THE RIGHT REASON (the bug). A probe naming a test, file, module or program that does not exist reproduces nothing; \`invalidProbe\` flags some. Fix such a probe before you rely on it. Keep the check as \`verification = { flow, input }\`; reuse it unchanged after edits.
+8. Workspace change: read broadly in ONE cell, then edit. Too many frames without a write stop the run; near the limit, edit or \`ctx.justify("<missing evidence, the call that gets it, what changes next>")\`. An edit answers with the hunk it applied: print it in the same cell (a bad edit costs one glance there). Then run whatever language-aware checker \`ctx.flows\` and this image actually offer (compiler, ruff, eslint/tsc) through the shell flow. Fix undefined names before broad suites. No checker: say so; never regex-guess.
+9. Bug-fix proof, fewest frames: ONE cell edits, runs the baseline at \`{ at: ctx.base }\` (opening tree), reruns the identical check. NEVER undo your own edit to re-prove a baseline. \`ctx.checkpoint()\` pins the current tree for your own baseline; a checkpoint is read-only, so a flow that writes is refused at one. Let code decide: \`if (before.exitCode !== 0 && after.exitCode === 0) ctx.done(...)\`. An already-green suite or a probe that misses its target proves nothing.`
+
+/**
+ * What happens to a cell that throws or does not parse, taught by both profiles.
+ */
+const parseFailureText =
+  `Cell throws: you are told, next turn. If a cell does not PARSE nothing ran at all; you are asked again inside the SAME frame with the error and line.`
+
+/**
+ * The contract a `workspace` run is taught.
+ *
+ * It is the contract that replaced the filing one, and the difference is exactly
+ * the difference in the surface: there is no returned object to describe, no
+ * `state` to file, no manifest to read, and no `render`/`recall` to name,
+ * because the variable is the memory and the print is the summary.
+ *
+ * Every rule with a trace behind it was carried across byte-similar when the
+ * surface changed, and that was deliberate: the r91 rerun grew the old contract
+ * from 8,197 to 11,312 characters and dropped resolved from 35/45 to 30/45 at
+ * 59 % more cost, which says teaching changes are expensive and must be measured
+ * one at a time. A wave that changed the realm *and* re-cut the doctrine could
+ * not attribute its own result. Cutting further is its own arm, with its own
+ * wave.
+ *
+ * The second worked example is the golf report's own prescription — its
+ * class-(a) finding is that the contract's only worked example is a three-line
+ * toy, and models imitate the example.
+ *
+ * It moved a second time on 2026-08-24, when checkpoints landed: the baseline
+ * moved after the edit in the example and rule 9 names `ctx.base`. Both pinned
+ * numbers moved with it.
+ *
+ * The completion teaching first moved after the first REPL wave, and the change
+ * is stated rather than smuggled. What died is the see-then-attest rule
+ * ("complete only once you have SEEN that identical command pass"): it asked for
+ * a memory of a result and got one, and `sympy__sympy-13878` ended by claiming
+ * in `output` that a suite "exited 0 and printed its passing test summary" one
+ * frame after its own guarded `ctx.done` had declined to fire because that suite
+ * exited 1. What replaces it is the shape the model had already written and
+ * abandoned: complete behind a check of the result, `if (after.exitCode === 0)
+ * ctx.done(...)`, so the verdict is read from the call rather than remembered
+ * across a turn. An unguarded completion stays legal — sometimes nothing in the
+ * image can be made to flip — and is named for what it is, a claim nobody
+ * checked. That is will's ruling of 2026-08-23, and it is why the pinned length
+ * in `test/CellPrompt.test.ts` moved.
+ *
+ * Task scoping moved on 2026-09-19 after a chat request to answer only A spent
+ * twelve frames printing and then looking for an unrelated failing test.
+ * The host already taught same-cell completion, but these rules required an
+ * edit and a proving command unconditionally. The scoped contract completed
+ * the retained natural-language opening in six of six probes, against four
+ * of six for the old contract. A seeded six-print loop still did not recover
+ * the exact answer; the unchanged read-only cap remains necessary. The edit,
+ * baseline and tree-review requirements remain for requested workspace work.
+ *
+ * Rule 10 and rule 4's `jev` clause moved to the `cell-jev` section on
+ * 2026-09-25 (#1929), so a run with no `jev` bound is not taught it.
+ *
+ * On 2026-09-30 will ruled for token economy: every rule stays, prose becomes
+ * fragments, 9,715 → 5,553 characters. No wave has measured this wording yet.
+ *
+ * Will 2026-10-14: reading before the first edit is not capped; evidence
+ * why-codex-won.md. Rule 4's print economy now starts at the first edit.
+ *
+ * Will 2026-10-14, the same day (#3995): the answer is short. Rule 5 asked a
+ * completing run to name each claimed check's exact command and output, and
+ * the worked example pasted the applied hunk into `ctx.done`; done text ran
+ * 498 tokens per task against stock Codex's 74 (why-more-output.md). Rule 5
+ * now asks for what changed and which check passed, in a few lines, and still
+ * for what is unverified; the example answers in one sentence.
+ *
+ * Governing design: `../../docs/concepts.md#repl-realm`.
+ */
+const replContract = `${realmText}\n\n${bugFixExample}\n\n${replRules}\n${workspaceRules}\n\n${parseFailureText}`
+
+/**
+ * The contract a `conversation` run is taught: the workspace contract without
+ * the bug-fix example and rules 7 to 9.
+ *
+ * Decision 0003 of `apps/mvp` (2026-10-19): a chat agent's catalog is the
+ * app's own flows, so the example's `grep`, `read`, `edit` and `bash` calls
+ * name flows it cannot reach, and rules 7 to 9 teach bug-fix evidence for a
+ * tree it does not have. The REPL and rules 1 to 6 are kept byte for byte,
+ * so Will's 2026-08-20 ruling on the `ctx.call` shape stands. The pinned
+ * length and digest in `test/CellPrompt.test.ts` hold it; the agent evals
+ * of decision 0004 measure it.
+ */
+const conversationContract = `${realmText}\n\n${replRules}\n\n${parseFailureText}`
+
+/**
+ * How a cell uses the `jev` flow, taught only when the catalog binds it.
+ *
+ * It was rule 10 of the contract and a clause of rule 4 until 2026-09-25, when
+ * will asked for Jev to be used strongly in the cells a model writes (#1929).
+ * A rule that names a flow the catalog may not hold teaches a call that
+ * resolves `unknown_flow`, so the teaching moved into a section of its own
+ * that exists exactly when the flow does. It is constant for a run, so it sits
+ * between the environment and the catalog without breaking the cached prefix.
+ *
+ * The floors are the owner's: act on a boolean at probability 0.8, and on a
+ * choice or score at the provider's confidence 0.7. A choice's own
+ * `.confidence` is the largest probability in its distribution and reads 1
+ * when none was sent, so the teaching names the provider's number instead.
+ *
+ * The one worked example is run verbatim by `test/CellFlows.test.ts` against
+ * the real `grep` and `jev` bindings, because a model copies the example.
+ *
+ * Will 2026-10-14: a command answers what it can check; `jev` judges the rest.
+ * navidrome-69e0a266 asked `jev` whether its tests proved the 15x15 case, read
+ * p = 0.93 and never ran the case, which was the bug (why-codex-won.md).
+ *
+ * Will 2026-10-14, the same day: `jev` takes the mechanical decisions over
+ * items, each item carrying its evidence, and not reviews of the model's own
+ * work (#3992). Of the run's 852 `jev` calls, 55 to 61% reviewed the model's
+ * own diff, plan or tests, and Jev said yes at 0.8 or more to 61% of those
+ * questions. In a hand-read sample, a test or a grep would have settled 14 of
+ * 22 such calls and reading the diff the other 8. The example's evidence is
+ * each file's hit lines under the id its question is keyed by. Replayed, 13
+ * file picks that sent bare paths scored a gold-patch file above another in
+ * 65% of pairs with each id named, and in 76% once each path carried the hit
+ * lines the run had already printed.
+ */
+const jevText =
+  `1. Use \`jev\` for mechanical decisions over items you would otherwise print and read: pick, filter, classify, match, rank (relevant files by their hit lines, failures by their output, which subtask needs a worker). ONE call: each item's evidence in \`state:\` under its id, one question per id. Hundreds take ~300 ms.
+2. Never make one call per item; never ask \`jev\` for text, code or quotes, or to review your own diff, plan or tests: read them yourself. When a command can answer the question, run the command; \`jev\` is for judgments no command can check.
+3. Failure resolves \`{ ok: false }\`: print \`error.message\`; do not decide in its place.
+4. Act on booleans when \`answers[id].probability >= 0.8\`; on choice or score when \`judged.confidence?.[id] >= 0.7\` (provider confidence; absent = uncertain). Never use a choice's own \`.confidence\` (reads 1 without a distribution). Print uncertain items; don't decide them.
+
+\`\`\`cell
+const found = await ctx.call("grep", { pattern: "timeout", root: "src", limit: 200 })
+const hits = {}
+for (const m of found.ok === false ? [] : found.matches) (hits[m.file] ??= []).push(m.text)
+const files = Object.keys(hits)
+const judged = await ctx.call("jev", { state: { task: ctx.task, hits }, questions: Object.fromEntries(files.map((f) => [f, { type: "boolean", instructions: "Must this file change?" }])) })
+const p = (f) => judged.answers[f].probability
+const kept = judged.ok === false ? [] : files.filter((f) => p(f) >= 0.8)
+const uncertain = judged.ok === false ? [] : files.filter((f) => p(f) > 0.2 && p(f) < 0.8)
+console.log(found.ok === false ? found.error.message : judged.ok === false ? judged.error.message : { count: files.length, kept, uncertain })
+\`\`\``
+
+/**
+ * The one line a judged run is taught about its stance: the Monitor mood text,
+ * verbatim, so the static stance and the delivered mood never disagree.
+ */
+const stanceText = (stance: typeof AgentEvent.Stance.Type): string =>
+  stance === "paranoid" ? Monitor.paranoidText : Monitor.carefulText
+
+const historyFact =
+  `the checkout ends at the commit you were given; no branch, tag, stash or reflog here holds a later fix, so \`git log --all\` or \`-S\` hunting costs a frame and returns nothing. The harness keeps its own attempt and durability snapshots in a repository of its own. A dangling commit is this harness pinning your own tree for a checkpoint: \`git fsck\` reports your edit and never a fix. Backwards history pays: \`git blame\` or \`git log -S\` on a line says what an assertion was written for; given a last-known-good release, \`git log <tag>..HEAD -- <paths>\`.`
+
+/**
+ * The environment section, or nothing when the profile states no fact and the
+ * host measured none: a `conversation` run has no checkout to describe.
+ */
+const environmentText = (environment: Environment, profile: Profile): string | undefined => {
+  const lines = profile === "workspace" ? [`- History: ${historyFact}`] : []
+  if (environment.locale !== undefined) {
+    lines.push(
+      `- Locale: ${environment.locale}; output and files decode as that.`
+    )
+  }
+  const absent = environment.absentTools === undefined ? [] : [...environment.absentTools].sort()
+  if (absent.length > 0) {
+    lines.push(
+      `- Not installed: ${absent.join(", ")}. Calls to them fail; use \`ctx.flows\`.`
+    )
+  }
+  return lines.length === 0
+    ? undefined
+    : `Harness-computed facts about the checkout and container, not the task.\n${lines.join("\n")}`
+}
+
+const digest = (id: Section["id"], text: string): string => Digest.digest(CanonicalJson.stringify({ id, text }))
+
+type CatalogProjection = Cell.FlowProjection & Partial<Pick<Descriptor.FlowDescriptor, "provenance" | "path">>
+
+const catalogText = (flows: Readonly<Record<string, CatalogProjection>>): string => {
+  const names = Object.keys(flows).sort()
+  if (names.length === 0) {
+    return "No flows are callable in this run. Complete or park; ctx.call has nothing to reach."
+  }
+  const lines = names.map((name) => {
+    const projection = flows[name]!
+    const capabilities = projection.capabilities.length === 0
+      ? ""
+      : ` capabilities=${[...projection.capabilities].sort().join(",")}`
+    const origin = JSON.stringify({
+      source: projection.provenance?.source ?? "unknown",
+      root: projection.provenance?.root,
+      path: projection.path
+    })
+    const heading = `- ${name} (${projection.tier})${capabilities}: ${projection.description}\n  provenance: ${origin}`
+    // The input schema is the difference between choosing a call and guessing
+    // one. A rejected input costs a whole frame, so a catalog that names a
+    // flow without saying what it takes spends the run's frame budget on
+    // trial and error.
+    return Option.isNone(projection.input)
+      ? heading
+      : `${heading}\n  input: ${JSON.stringify(projection.input.value)}`
+  })
+  return `Flows callable with ctx.call in this frame:\n${
+    untrustedData(lines.join("\n"), "flow catalog (descriptor provenance follows)")
+  }`
+}
+
+/**
+ * Builds the cell-contract teaching sections for one frame.
+ *
+ * The order is by how often each section changes, because every one of them is
+ * a prefix segment and a prefix is only cached up to its first edit: the
+ * contract is constant for the life of the binary, the environment and the
+ * `jev` teaching for the life of a run, and the catalog can differ frame to
+ * frame. The `jev` teaching is rendered only when `flows` binds `jev`.
+ *
+ * `stance` renders a one-line `cell-stance` section between the contract and
+ * the environment. It is constant for the run, so the cached prefix holds;
+ * with no stance nothing is rendered and the prompt is unchanged.
+ *
+ * `environment` carries what the host measured about the container. It is
+ * optional because the epoch fact — a checkout has no future in it — holds
+ * everywhere and is stated with or without a host that measures anything else.
+ *
+ * `profile` picks the contract; see {@link Profile}. A `conversation` run is
+ * taught no epoch fact, so its environment section is rendered only for facts
+ * the host measured.
+ *
+ * @category constructors
+ * @since 0.1.0
+ * @slop
+ */
+export const make = (
+  flows: Readonly<Record<string, CatalogProjection>>,
+  environment: Environment = {},
+  stance?: typeof AgentEvent.Stance.Type,
+  profile: Profile = "workspace"
+): ReadonlyArray<Section> => {
+  const facts = environmentText(environment, profile)
+  const catalog = catalogText(flows)
+  const taught = profile === "workspace" ? replContract : conversationContract
+  const stanced = stance === undefined ? undefined : stanceText(stance)
+  return [
+    { id: "cell-contract", text: taught, digest: digest("cell-contract", taught) },
+    ...(stanced === undefined
+      ? []
+      : [{ id: "cell-stance" as const, text: stanced, digest: digest("cell-stance", stanced) }]),
+    ...(facts === undefined
+      ? []
+      : [{ id: "cell-environment" as const, text: facts, digest: digest("cell-environment", facts) }]),
+    ...(flows.jev === undefined
+      ? []
+      : [{ id: "cell-jev" as const, text: jevText, digest: digest("cell-jev", jevText) }]),
+    { id: "cell-catalog", text: catalog, digest: digest("cell-catalog", catalog) }
+  ]
+}

@@ -2,7 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
-import type * as Crypto from "effect/Crypto"
+import { Crypto } from "@smthrs/crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -19,7 +19,9 @@ import * as FileLease from "../src/FileLease.ts"
 import { bytes, sha256 } from "./Crypto.ts"
 
 const onNode = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | Crypto.Crypto | Scope.Scope>) =>
-  Effect.scoped(effect).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)))
+  Effect.scoped(effect).pipe(
+    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  )
 const failure = (cause: unknown) => cause
 const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "fault" })
 const fixture = Effect.gen(function*() {

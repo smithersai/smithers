@@ -4,9 +4,9 @@
  * `JSON.stringify` would see.
  */
 import { describe, expect, it } from "vitest"
-import { GraphBuildError } from "../src/GraphBuildError.ts"
+import { GraphBuildError } from "../src/GraphBuildError.vibe"
 import { jsonMirror } from "../src/internal/JsonMirror.ts"
-import * as Planned from "../src/Planned.ts"
+import * as Planned from "../src/Planned.vibe"
 
 const refuseEveryPlannedValue = () => {
   throw new Error("no planned value expected")

@@ -13,12 +13,12 @@
  * encoding and takes the run over: it must find the record under encoding 1
  * and replay it, never running the step's body again.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import * as Node from "@smthrs/plan/Node"
 import { Ownership } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

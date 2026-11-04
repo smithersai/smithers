@@ -1,5 +1,7 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],
     "module": "NodeNext",
@@ -37,5 +39,6 @@
       }
     ]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "vibelang": { "declarationImportStyle": ".ts" }
 }

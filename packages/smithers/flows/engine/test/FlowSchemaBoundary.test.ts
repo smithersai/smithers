@@ -3,10 +3,10 @@
  * directly with the engine rather than through the body interpreter.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"

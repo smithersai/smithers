@@ -19,7 +19,7 @@
  * @since 1.0.0-rc.0
  */
 
-import type * as Effects from "../Effects.ts"
+import type * as Effects from "../Effects.vibe"
 
 const SLASH = 47
 const DOT = 46

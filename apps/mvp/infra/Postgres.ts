@@ -2,7 +2,7 @@
 // Electric's container (infra/ElectricGateway.ts) replicates from it. Under `alchemy dev` it doesn't exist: the
 // compose Postgres (`pnpm db:up`) stands in.
 import * as Alchemy from "alchemy"
-import * as Neon from "alchemy/Neon"
+import * as Neon from "@alchemy.run/neon"
 import * as Output from "alchemy/Output"
 import { Config, Effect, Option, Redacted, Schema } from "effect"
 import { neonConnectionUri } from "../ops/database/Connection.ts"

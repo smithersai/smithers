@@ -1,16 +1,16 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import * as Model from "@smthrs/model/Model"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
-import * as Crypto from "effect/Crypto"
 import { createHash } from "node:crypto"
 import { expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 import materialApproval from "./fixtures/cell-call-material-approval-required.json" with { type: "json" }
 import materialV1 from "./fixtures/cell-call-material-effect-rc115.json" with { type: "json" }
 import materialEncoding3 from "./fixtures/cell-call-material-key-encoding-3.json" with { type: "json" }
@@ -51,7 +51,7 @@ const observe = async (encoding: FlowEngine.KeyEncoding) => {
       material.push(new TextDecoder().decode(bytes))
       return live.digest(algorithm, bytes)
     }
-  }))).pipe(Layer.provide(NodeCrypto.layer))
+  }))).pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   const observed = await Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
     const scope = yield* Effect.scope

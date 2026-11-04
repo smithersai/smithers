@@ -9,11 +9,29 @@ import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"
 import * as Native from "node:child_process"
-import { NativeProcessError } from "./ProcessFault.ts"
+import { NativeProcessError } from "./ProcessFault.vibe"
+
+// Effect 4.1 lets an argument or an environment value be Redacted; the
+// process receives its value, as Effect's own spawners pass it.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+const environment = (
+  values: Readonly<Record<string, Word | undefined>> | undefined
+): Record<string, string | undefined> | undefined => {
+  if (values === undefined || !Object.values(values).some(Redacted.isRedacted)) {
+    return values as Record<string, string | undefined> | undefined
+  }
+  // A null prototype keeps an own `__proto__` name an ordinary variable.
+  const text: Record<string, string | undefined> = Object.create(null)
+  for (const [name, value] of Object.entries(values)) text[name] = value === undefined ? undefined : word(value)
+  return text
+}
 
 const ownerDescriptors = new WeakMap<ChildProcessHandle, ReadonlyArray<number | "ignore">>()
 
@@ -139,9 +157,10 @@ export const spawn = (
             recordExit = resolve
           })
           const options = command.options
-          const child = Native.spawn(command.command, [...command.args], {
+          const env = environment(options.env)
+          const child = Native.spawn(command.command, command.args.map(word), {
             cwd: options.cwd,
-            env: options.extendEnv ? { ...process.env, ...options.env } : options.env,
+            env: options.extendEnv ? { ...process.env, ...env } : env,
             shell: options.shell,
             detached: options.detached ?? process.platform !== "win32",
             windowsHide: options.windowsHide ?? true,

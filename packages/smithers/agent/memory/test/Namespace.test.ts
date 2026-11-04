@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Bank from "../src/Bank.ts"
-import * as Namespace from "../src/Namespace.ts"
+import * as Bank from "../src/Bank.vibe"
+import * as Namespace from "../src/Namespace.vibe"
 
 const leaf = (): Namespace.TagGroup => ({ tags: ["scope:project"] })
 

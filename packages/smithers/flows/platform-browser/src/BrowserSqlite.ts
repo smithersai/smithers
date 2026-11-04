@@ -44,8 +44,8 @@ import type { Connection } from "effect/sql/SqlConnection"
 import type { SqlError } from "effect/sql/SqlError"
 import * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
-import * as Statements from "./internal/Statements.ts"
-import * as StorageDiagnostics from "./internal/StorageDiagnostics.ts"
+import * as Statements from "./internal/Statements.vibe"
+import * as StorageDiagnostics from "./internal/StorageDiagnostics.vibe"
 
 /**
  * An open wa-sqlite database: the API built from the module, and the
@@ -189,6 +189,7 @@ export const make = (database: Database): Effect.Effect<Client.SqlClient, never,
       onCommitFailure,
       releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
       beginTransaction: "BEGIN IMMEDIATE",
+      driver: "sqlite-wasm",
       spanAttributes: [["db.system.name", "sqlite"]]
     })
   })

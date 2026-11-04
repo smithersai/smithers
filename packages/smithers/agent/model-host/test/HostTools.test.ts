@@ -20,7 +20,7 @@ import { createHash } from "node:crypto"
 import { describe, expect, test } from "vitest"
 import { runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import type { DurableChatGrant } from "../src/DurableChatProducer.ts"
-import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
+import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.vibe"
 import { apiCaller, runHostTurn } from "../src/HostTools.ts"
 import { createHostDiagnostics } from "./diagnostics.ts"
 

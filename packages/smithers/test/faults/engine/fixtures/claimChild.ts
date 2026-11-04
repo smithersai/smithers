@@ -34,6 +34,7 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlExecutor, ControlLive, ControlRuntime, SqlControlRuntime } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Migrations as JournalMigrations, SqlJournal } from "@smthrs/journal"
@@ -73,7 +74,7 @@ const stack = ControlLive.layer.pipe(
       Registry.layerNoop()
     )
   ),
-  Layer.provideMerge(Layer.merge(stores, NodeCrypto.layer))
+  Layer.provideMerge(Layer.merge(stores, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 
 const sleep = (ms: number) => new Promise<void>((done) => setTimeout(done, ms))

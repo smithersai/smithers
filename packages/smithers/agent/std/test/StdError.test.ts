@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { Code, StdError } from "../src/StdError.ts"
+import { Code, StdError } from "../src/StdError.vibe"
 
 describe("stale_read diagnostics", () => {
   it("round trips the existing typed error with its path and both digests", () => {

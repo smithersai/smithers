@@ -6,7 +6,7 @@
 import { Effect, Option } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
-import * as Contents from "../src/github/Contents.ts"
+import * as Contents from "../src/github/Contents.vibe"
 import type { GitHubClient } from "../src/github/GitHubClient.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
 import { gitHubLayer } from "./Http.ts"

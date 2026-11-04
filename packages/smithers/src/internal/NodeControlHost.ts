@@ -8,6 +8,7 @@ import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as NodeStdio from "@effect/platform-node/NodeStdio"
 import type * as Undici from "@effect/platform-node/Undici"
+import { Crypto } from "@smthrs/crypto"
 import * as NodeGateway from "@smthrs/gateway/node/NodeGateway"
 import * as NodeJj from "@smthrs/jj/node/NodeJj"
 import * as RequestExecutor from "@smthrs/model/RequestExecutor"
@@ -111,10 +112,15 @@ export const platform: NativeControl.Platform = {
     ControlFileSystem.layer(),
     Layer.provideMerge(
       NodeChildProcessSpawner.layer,
-      Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer, NodeStdio.layer)
+      Layer.mergeAll(
+        NodeFileSystem.layer,
+        Crypto.layerFromDigest(NodeCrypto.layerDigest),
+        NodePath.layer,
+        NodeStdio.layer
+      )
     )
   ),
-  crypto: NodeCrypto.layer,
+  crypto: Crypto.layerFromDigest(NodeCrypto.layerDigest),
   database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
   observe: (file) => ControlDatabase.observe(file).pipe(Layer.orDie),
   runtime: NodeFlowsRuntime.layer,

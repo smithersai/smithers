@@ -36,9 +36,9 @@ import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { RECONCILE_PAGES } from "./Actions.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { IssueUser, WRITE_ID_PATTERN, writeIdOf } from "./Issues.ts"
+import { IssueUser, WRITE_ID_PATTERN, writeIdOf } from "./Issues.vibe"
 import { requireBranch } from "./Refs.ts"
-import { IssueNumber, requireRepositoryPath } from "./Repository.ts"
+import { IssueNumber, requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * One end of a pull request: its branch and the commit it points at.

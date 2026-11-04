@@ -14,7 +14,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  testSources: Input.glob("{test,examples}/**/*.ts"),
+  testSources: Input.glob("{test,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/gateway"
 })
 
@@ -22,7 +22,7 @@ const importRules = ImportRules({
   cwd: "packages/smithers/gateway",
   rules: [{
     kind: "forbidCalls",
-    files: ["src/internal/NativeGateway.ts"],
+    files: ["src/internal/NativeGateway.vibe"],
     callees: ["*.runPromise", "*.runSync", "*.runFork"],
     because: "effect.boundary-only: native gateway composition supplies services and returns layers."
   }, {
@@ -75,11 +75,11 @@ const securityReview = Smithers.SecurityReview({
     path: {
       caller: ["src/GatewayServer.ts", "src/RuntimeBridge.ts"],
       authorization: [
-        "src/internal/NativeGateway.ts",
-        "//packages/smithers/control/src/ControlRpcs.ts",
+        "src/internal/NativeGateway.vibe",
+        "//packages/smithers/control/src/ControlRpcs.vibe",
         "//packages/smithers/control/src/ApprovalAuthority.ts"
       ],
-      service: ["//packages/smithers/control/src/ControlServer.ts", "//packages/smithers/control/src/ControlLive.ts"],
+      service: ["//packages/smithers/control/src/ControlServer.vibe", "//packages/smithers/control/src/ControlLive.ts"],
       storageOrEgress: [
         "//packages/smithers/control/src/ControlExecutor.ts",
         "//packages/smithers/control/src/ControlRuntime.ts",
@@ -99,7 +99,7 @@ const securityReview = Smithers.SecurityReview({
         "A Bun or Node adapter that binds options it did not first pass through the shared listenOptions policy.",
         "A runtimeBridge enabled with credential undefined or empty, or the non-null credential assertion in makeLayer reachable without it."
       ],
-      paths: ["src/internal/NativeGateway.ts", "src/bun/**", "src/node/**"]
+      paths: ["src/internal/NativeGateway.vibe", "src/bun/**", "src/node/**"]
     },
     {
       id: "ingress-host-origin",
@@ -113,7 +113,7 @@ const securityReview = Smithers.SecurityReview({
         "A request path, such as GET /health or a 404, that runs before the Host/Origin check and returns non-identity data.",
         "ingressOptions adding a wildcard bind (0.0.0.0 or ::) or an attacker-controlled name to allowedHosts."
       ],
-      paths: ["src/GatewayServer.ts", "src/internal/NativeGateway.ts"]
+      paths: ["src/GatewayServer.ts", "src/internal/NativeGateway.vibe"]
     },
     {
       id: "edge-auth-path-aliases",
@@ -179,7 +179,7 @@ const securityReview = Smithers.SecurityReview({
         "src/GatewayError.ts",
         "src/Projections.ts",
         "src/RuntimeBridge.ts",
-        "src/internal/NativeGateway.ts",
+        "src/internal/NativeGateway.vibe",
         "src/bun/**"
       ]
     },
@@ -215,7 +215,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/nativeResolution.ts",
-        "src/internal/NativeGateway.ts",
+        "src/internal/NativeGateway.vibe",
         "src/GatewayProjection.ts",
         "src/Projections.ts",
         "src/RuntimeBridge.ts"
@@ -233,11 +233,11 @@ const securityReview = Smithers.SecurityReview({
         "A fold over journal records with no cap on records, spans, notes, or refusalCounts, so a run that emits many records exhausts the viewer."
       ],
       paths: [
-        "src/RunTrace.ts",
+        "src/RunTrace.vibe",
         "src/Diagnosis.ts",
-        "src/EngineTrace.ts",
-        "src/internal/callEvents.ts",
-        "src/internal/nodeEvents.ts"
+        "src/EngineTrace.vibe",
+        "src/internal/callEvents.vibe",
+        "src/internal/nodeEvents.vibe"
       ]
     },
     {

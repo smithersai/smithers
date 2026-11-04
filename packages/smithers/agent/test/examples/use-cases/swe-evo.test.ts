@@ -4,7 +4,7 @@ import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 import {
   CaptureDiff,
   type Instance,
@@ -13,7 +13,7 @@ import {
   ScoreCandidate,
   scoreTimeoutS,
   SweEvo
-} from "../../../examples/use-cases/swe-evo.ts"
+} from "../../../examples/use-cases/swe-evo.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "swe-evo-"))
 

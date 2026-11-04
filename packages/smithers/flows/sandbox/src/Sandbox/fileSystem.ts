@@ -14,7 +14,7 @@ import * as Stream from "effect/Stream"
 import { platformReason, refusalReason } from "../internal/platformReason.ts"
 import { rootedAt } from "../internal/rootedPath.ts"
 import type { ProviderError, ProviderErrorCode } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "./Session.ts"
+import type { Session } from "./Session.vibe"
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()

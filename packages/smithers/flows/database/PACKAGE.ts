@@ -13,9 +13,10 @@ import { Smithers } from "@smthrs/targets"
 import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint } = BuildAndCheckTypeScriptPackage({
+  entry: Input.file("src/index.vibe"),
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/database",
   tests: Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
   buildProgram: Smithers.file("//packages/repo-targets/scripts/build.mjs"),
@@ -44,9 +45,9 @@ const test = Smithers.Shell.Test({
   data: [
     lib,
     Smithers.file("scripts/test-matrix.mjs"),
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
-    Smithers.glob("examples/**/*.ts"),
+    Smithers.glob("examples/**/*.{ts,vibe}"),
     Smithers.file("package.json"),
     Smithers.file("vitest.config.ts"),
     Smithers.file("//packages/repo-targets/test-utils/effect-property.mjs"),
@@ -130,7 +131,7 @@ const securityReview = Smithers.SecurityReview({
         "Dialect.query rewriting every '?' into $n, so a template containing a '?' in a string literal or a jsonb ?-operator binds values into the wrong position.",
         "A search_path setting, CREATE SCHEMA, or DROP SCHEMA that puts the schema into SQL text by hand instead of through sql(identifier), quote_ident or a bound parameter, or omits doubling embedded quotes."
       ],
-      paths: ["src/Dialect.ts", "src/postgres/**", "src/test/TestDatabase.ts", "src/Migrations.ts"]
+      paths: ["src/Dialect.vibe", "src/postgres/**", "src/test/TestDatabase.ts", "src/Migrations.ts"]
     },
     {
       id: "postgres-schema-isolation",
@@ -142,7 +143,7 @@ const securityReview = Smithers.SecurityReview({
         "A ?schema= query parameter or SMITHERS_POSTGRES_SCHEMA value accepted without restricting it to a safe identifier or rejecting system schemas such as public or pg_catalog.",
         "DATABASE_URL or SMITHERS_POSTGRES_URL silently redirecting a :memory:, file: URI, or explicit SQLite path to a shared PostgreSQL server."
       ],
-      paths: ["src/internal/PostgresSelection.ts", "src/postgres/**"]
+      paths: ["src/internal/PostgresSelection.vibe", "src/postgres/**"]
     },
     {
       id: "connection-secret-leak",
@@ -154,7 +155,7 @@ const securityReview = Smithers.SecurityReview({
         "A connection URL passed to PgClient without Redacted.make, or a Redacted value unwrapped into a string.",
         "A test-matrix child process or console line that prints SMITHERS_TEST_PG_URL with credentials."
       ],
-      paths: ["src/internal/PostgresSelection.ts", "src/postgres/**", "scripts/test-matrix.mjs"]
+      paths: ["src/internal/PostgresSelection.vibe", "src/postgres/**", "scripts/test-matrix.mjs"]
     },
     {
       id: "sqlite-file-permissions",
@@ -190,7 +191,7 @@ const securityReview = Smithers.SecurityReview({
         "previousNames accepting a name from another namespace, so a renamed migration adopts a foreign ledger row.",
         "A retry in run that re-applies a migration after a partial commit because the ledger insert and the migration are not in one transaction."
       ],
-      paths: ["src/Migrations.ts", "src/internal/WriteRetry.ts"]
+      paths: ["src/Migrations.ts", "src/internal/WriteRetry.vibe"]
     },
     {
       id: "test-helper-production-reach",

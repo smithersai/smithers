@@ -13,7 +13,7 @@
  * @since 1.0.0-rc.1
  */
 
-import type { HostDiagnosticFields } from "./HostDiagnostics.ts"
+import type { HostDiagnosticFields } from "./HostDiagnostics.vibe"
 
 /**
  * One callback attempt as its observer saw it.

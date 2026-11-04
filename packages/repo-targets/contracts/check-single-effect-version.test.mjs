@@ -44,7 +44,7 @@ test("published libraries and executables require the tested release", () => {
   // Executables' private adapters are built on the tested release. Their
   // peer must select it even when npm publishes a newer Effect.
   assert.equal(expectedEffectDeclaration({ ...library, bin: { cli: "bin.js" } }, "peerDependencies"), pin)
-  assert.throws(() => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")), /effect@.* must be 4\.0\.5/)
+  assert.throws(() => assertEffectPins(effectDeclarations({ ...library, bin: { cli: "bin.js" } }, "fixture")), /effect@.* must be 4\.1\.0/)
   // A private package is never installed by an application.
   assert.equal(expectedEffectDeclaration({ ...library, private: true }, "peerDependencies"), pin)
 })

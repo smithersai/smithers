@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -66,7 +67,7 @@ if (
     const published = yield* store.put(bytes)
     process.stdout.write(`done:${published}\n`)
     process.stdin.destroy()
-  }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, NodeCrypto.layer)))
+  }).pipe(Effect.provide(Layer.merge(NodeFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))))
 
   Effect.runPromise(program).catch((cause) => {
     process.stderr.write(`${String(cause)}\n`)

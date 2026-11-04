@@ -17,7 +17,7 @@ import { Smithers } from "@smthrs/targets"
 import { Package as infraPackage } from "./infra/PACKAGE.ts"
 
 const standard = BuildAndCheckTypeScriptPackage({
-  sources: Smithers.glob("{src,examples}/**/*.ts"),
+  sources: Smithers.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/build"
 })
 
@@ -62,7 +62,7 @@ const docsFiles = standard.docsFiles
  */
 const lint = Smithers.EsLint({
   sources: [
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.glob("examples/**/*.ts"),
     Smithers.glob("terraform/modules/cache/service/**/*.js")
@@ -100,7 +100,7 @@ const lint = Smithers.EsLint({
 const test = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.test.ts")],
   sources: [
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("examples/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("../flows/platform-node/src/ProcessSandbox.ts"),

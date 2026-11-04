@@ -9,9 +9,9 @@ import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import * as ClaimDecision from "../ClaimDecision.ts"
 import * as Overlap from "../Overlap.ts"
-import * as Schedule from "../Schedule.ts"
+import * as Schedule from "../Schedule.vibe"
 import * as Trigger from "../Trigger.ts"
-import { fromSchemaError, TriggerError } from "../TriggerError.ts"
+import { fromSchemaError, TriggerError } from "../TriggerError.vibe"
 import {
   type Claim,
   type ClaimFire,

@@ -14,7 +14,7 @@ import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { EffectRecord } from "../EffectBoundary.ts"
-import { error, type TimeTravelError } from "../TimeTravelError.ts"
+import { error, type TimeTravelError } from "../TimeTravelError.vibe"
 import type { Receipt } from "../TimeTravelStore.ts"
 import { Assessment as HandlerAssessment, EffectHandlerRegistry, RollbackReceipt } from "./EffectHandlerRegistry.ts"
 

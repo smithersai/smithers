@@ -8,7 +8,7 @@ const cwd = "packages/smithers/flows/kernel"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   // Examples are type-checked, linted and run by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
@@ -50,7 +50,7 @@ const securityReview = Smithers.SecurityReview({
         "An operation in confined() (glob root, temp directory, rename/copy destination, open flags) that is not refused or not routed through the atomic host.",
         "Rooted.fileSystem mistaken for confinement: absolute paths and symlink targets pass through it unchanged."
       ],
-      paths: ["src/FileSystem.ts", "src/FileSystemBatch.ts", "src/Rooted.ts", "src/Path.ts", "src/Workspace.ts"]
+      paths: ["src/FileSystem.ts", "src/FileSystemBatch.vibe", "src/Rooted.ts", "src/Path.ts", "src/Workspace.ts"]
     },
     {
       id: "http-grant-per-hop",
@@ -75,7 +75,7 @@ const securityReview = Smithers.SecurityReview({
         "An envelope grant whose planDigest or scope is not bound to the run that replays it.",
         "Request ids that are guessable across runs, or a double reply that activates two rules."
       ],
-      paths: ["src/GrantStore.ts", "src/CapabilitySet.ts", "src/GrantEvent.ts", "src/internal/makeCapability.ts"]
+      paths: ["src/GrantStore.ts", "src/CapabilitySet.ts", "src/GrantEvent.vibe", "src/internal/makeCapability.vibe"]
     },
     {
       id: "grant-journal-replay",
@@ -87,7 +87,7 @@ const securityReview = Smithers.SecurityReview({
         "Payload schema allowing excess properties, oversized patterns, or rule counts past maximumRules on replay.",
         "A replayed run grant activated without its captured ceiling."
       ],
-      paths: ["src/JournalGrantStore.ts", "src/GrantEvent.ts"]
+      paths: ["src/JournalGrantStore.ts", "src/GrantEvent.vibe"]
     },
     {
       id: "process-ledger-reaping",
@@ -98,7 +98,7 @@ const securityReview = Smithers.SecurityReview({
         "Records keyed by pid alone so pid reuse retires or signals the wrong process.",
         "commandDigest storing arguments (credentials) instead of CommandLine.executable."
       ],
-      paths: ["src/ProcessLedger.ts", "src/ContainedSpawner.ts", "src/internal/Containment.ts", "src/CommandLine.ts"]
+      paths: ["src/ProcessLedger.ts", "src/ContainedSpawner.ts", "src/internal/Containment.vibe", "src/CommandLine.ts"]
     },
     {
       id: "jj-capability-resource",

@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
@@ -11,15 +12,14 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Layer, Option, Schema, Stream } from "effect"
-import * as Crypto from "effect/Crypto"
 import * as Agent from "../../src/Agent.ts"
 import * as AgentAction from "../../src/AgentAction.ts"
 import * as Budget from "../../src/Budget.ts"
 import * as EventSink from "../../src/EventSink.ts"
-import * as QuotaPolicy from "../../src/QuotaPolicy.ts"
-import * as ScriptedJudge from "../../src/ScriptedJudge.ts"
-import * as Seat from "../../src/Seat.ts"
-import * as SeatResolver from "../../src/SeatResolver.ts"
+import * as QuotaPolicy from "../../src/QuotaPolicy.vibe"
+import * as ScriptedJudge from "../../src/ScriptedJudge.vibe"
+import * as Seat from "../../src/Seat.vibe"
+import * as SeatResolver from "../../src/SeatResolver.vibe"
 
 export const Step = AgentAction.make("agent/test/trace/Step", {
   payload: { input: Schema.String },
@@ -81,7 +81,7 @@ export const stores = (filename: string) =>
   Layer.mergeAll(
     TestStores.layerAt(filename),
     StepBoundary.layerTest(),
-    NodeCrypto.layer,
+    Crypto.layerFromDigest(NodeCrypto.layerDigest),
     Layer.succeed(
       Jj.Jj,
       Jj.make({

@@ -10,11 +10,11 @@
  * @since 1.0.0-rc.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import type { Action } from "@smthrs/flow"
 import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
@@ -25,7 +25,7 @@ import { make, MigrateError, MigrateErrorCode } from "../MigrateError.ts"
 import * as Report from "../Report.ts"
 import * as RunState from "../RunState.ts"
 import type * as Scan from "../Scan.ts"
-import type * as Units from "../Units.ts"
+import type * as Units from "../Units.vibe"
 import type * as Contract from "./Contract.ts"
 import * as Gate from "./Gate.ts"
 import * as VcsInternal from "./internal/Vcs.ts"

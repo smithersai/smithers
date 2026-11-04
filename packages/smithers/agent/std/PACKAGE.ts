@@ -85,7 +85,7 @@ const securityReview = Smithers.SecurityReview({
         "A static envelope declared sealed or hermetic for a flow that mutates or spawns (Fetch, WebFetch, TestRun, ShellCommand).",
         "A path normalized differently in the envelope than in the handler, so the approved name and the written name diverge."
       ],
-      paths: ["src/*.ts", "src/Manifest.ts", "src/internal/Declaration.ts"]
+      paths: ["src/*.{ts,vibe}", "src/Manifest.ts", "src/internal/Declaration.ts"]
     },
     {
       id: "symlink-write-escape",
@@ -102,7 +102,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Write.ts",
         "src/Edit.ts",
         "src/ApplyPatch.ts",
-        "src/internal/ApplyPatch.ts"
+        "src/internal/ApplyPatch.vibe"
       ]
     },
     {
@@ -117,10 +117,10 @@ const securityReview = Smithers.SecurityReview({
         "Exec.exec called without args so the command string is parsed by the platform shell for a value the caller did not intend as shell."
       ],
       paths: [
-        "src/Container.ts",
+        "src/Container.vibe",
         "src/Bash.ts",
         "src/TestRun.ts",
-        "src/internal/Exec.ts",
+        "src/internal/Exec.vibe",
         "src/internal/GitWorktree.ts",
         "src/Checkpoints.ts",
         "src/NativeSearch.ts",
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "Checkpoint ids or config keys written with git config that could alter keys outside the checkpoint section.",
         "A scratch checkout path built from caller text that could land outside the repository root."
       ],
-      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.ts", "src/Relocate.ts"]
+      paths: ["src/Checkpoints.ts", "src/internal/GitWorktree.ts", "src/Relocate.vibe"]
     },
     {
       id: "child-env-secret-leak",
@@ -150,8 +150,8 @@ const securityReview = Smithers.SecurityReview({
         "Error or diagnostic text (quoted invocation, StdError message) that includes env values or transport credentials."
       ],
       paths: [
-        "src/internal/Exec.ts",
-        "src/Container.ts",
+        "src/internal/Exec.vibe",
+        "src/Container.vibe",
         "src/NativeSearch.ts",
         "src/TestRun.ts",
         "src/Bash.ts"
@@ -167,7 +167,7 @@ const securityReview = Smithers.SecurityReview({
         "parseHttpUrl admitting a loopback, link-local, or metadata address, or a URL whose host differs after WHATWG normalization.",
         "Caller-supplied Authorization or Cookie headers forwarded to a cross-origin redirect target."
       ],
-      paths: ["src/Fetch.ts", "src/HttpPost.ts", "src/WebFetch.ts", "src/internal/Http.ts", "src/internal/Url.ts"]
+      paths: ["src/Fetch.vibe", "src/HttpPost.vibe", "src/WebFetch.ts", "src/internal/Http.ts", "src/internal/Url.ts"]
     },
     {
       id: "exa-credential-handling",
@@ -178,7 +178,7 @@ const securityReview = Smithers.SecurityReview({
         "Error messages or logs that include the request, headers, or credential reference.",
         "An unbounded response.json read that a hostile or compromised endpoint can use to exhaust memory."
       ],
-      paths: ["src/ExaWebSearch.ts", "src/WebSearch.ts"]
+      paths: ["src/ExaWebSearch.ts", "src/WebSearch.vibe"]
     },
     {
       id: "untrusted-output-bounds",
@@ -190,7 +190,7 @@ const securityReview = Smithers.SecurityReview({
         "A regex over untrusted text (grep pattern, HTML conversion, test report parsing) with catastrophic backtracking outside LinearRegex."
       ],
       paths: [
-        "src/internal/Exec.ts",
+        "src/internal/Exec.vibe",
         "src/internal/Html.ts",
         "src/internal/TestReport.ts",
         "src/internal/LinearRegex.ts",
@@ -220,7 +220,7 @@ const securityReview = Smithers.SecurityReview({
         "Bash.sealed or TestRun admitting a call whose container is undefined, empty, or a different name.",
         "Relocate rewriting a containerised cwd to a host path, or a host path to a container path outside the materialized checkout."
       ],
-      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.ts", "src/Container.ts"]
+      paths: ["src/Bash.ts", "src/TestRun.ts", "src/Relocate.vibe", "src/Container.vibe"]
     }
   ]
 })

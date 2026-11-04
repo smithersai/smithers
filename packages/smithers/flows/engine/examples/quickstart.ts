@@ -14,6 +14,7 @@
  */
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -60,7 +61,7 @@ export const runQuickstart = (): Promise<{
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
   const program = Effect.gen(function*() {

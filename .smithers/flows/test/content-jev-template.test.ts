@@ -18,7 +18,7 @@ import {
   templates,
   templateState
 } from "../release-content/jev-template.ts"
-import * as Content from "../release-content/workflow.ts"
+import * as Content from "../release-content/workflow.vibe"
 import { contentInput } from "../release-support/input.ts"
 import { actionLayers } from "../release-support/operations.ts"
 import { agentLayers } from "../release-support/runtime.ts"

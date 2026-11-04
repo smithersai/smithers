@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest"
 import * as Grouping from "../src/internal/Grouping.ts"
-import type * as Search from "../src/Search.ts"
+import type * as Search from "../src/Search.vibe"
 
 describe("Grouping", () => {
   it("assigns shared context to the nearest match, preferring the earlier match on a tie", () => {

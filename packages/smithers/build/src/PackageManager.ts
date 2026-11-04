@@ -25,9 +25,8 @@
  * @since 0.1.0
  */
 
-import { Sha256 } from "@smthrs/crypto"
+import { type Crypto, Sha256 } from "@smthrs/crypto"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -37,7 +36,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
-import * as Diagnostics from "./internal/diagnostic.ts"
+import * as Diagnostics from "./internal/diagnostic.vibe"
 import { normalizePlatform } from "./internal/platform.ts"
 import * as Validate from "./internal/validate.ts"
 import * as Runtime from "./Runtime.ts"

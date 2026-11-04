@@ -50,11 +50,11 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import { canonicalJson } from "./internal/Canonical.ts"
 import { digest } from "./internal/Digest.ts"
-import { resolveBanks } from "./internal/ResolveNamespace.ts"
-import type { MemoryError } from "./MemoryError.ts"
+import { resolveBanks } from "./internal/ResolveNamespace.vibe"
+import type { MemoryError } from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Recall from "./Recall.ts"
-import * as SnapshotRecorder from "./SnapshotRecorder.ts"
+import * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**
  * Source input and retry identity.

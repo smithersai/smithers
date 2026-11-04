@@ -15,12 +15,12 @@
  * when the parent ends.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Deferred, Effect, Exit, Fiber, Layer, Schema, type Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

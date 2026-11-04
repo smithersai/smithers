@@ -56,6 +56,7 @@ first writes:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
 import * as Effect from "effect/Effect"
@@ -85,7 +86,7 @@ const drafts: ReadonlyArray<Plan.NodeDraft> = [
 
 const plan = await Effect.runPromise(
   Plan.compile({ planId: "review-4821", flow: "example/Review", nodes: drafts }).pipe(
-    Effect.provide(NodeCrypto.layer),
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Effect.orDie
   )
 )

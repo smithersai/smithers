@@ -4,7 +4,7 @@ import { Effect, Layer, Redacted } from "effect"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { expect, it } from "vitest"
 import * as ExaWebSearch from "../src/ExaWebSearch.ts"
-import * as WebSearch from "../src/WebSearch.ts"
+import * as WebSearch from "../src/WebSearch.vibe"
 
 it("maps an actual response-body stream read failure without leaking provider or credential details", async () => {
   const reference = { id: "test-exa", name: "Test Exa" }

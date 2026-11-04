@@ -1,6 +1,6 @@
 import * as Digest from "@smthrs/core/Digest"
 import { describe, expect, it } from "vitest"
-import * as Script from "../src/Script.ts"
+import * as Script from "../src/Script.vibe"
 import { flow } from "./harness.ts"
 
 describe("Script", () => {

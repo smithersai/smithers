@@ -14,7 +14,7 @@ import {
   type SourceId as SourceIdType,
   SourceSeq,
   type SourceSeq as SourceSeqType
-} from "../src/JournalEvent.ts"
+} from "../src/JournalEvent.vibe"
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),

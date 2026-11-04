@@ -18,7 +18,7 @@ const pack = Smithers.NodeTest({
 })
 
 const cwd = ".smithers/flows"
-const sources = Smithers.glob("//.smithers/flows/**/*.ts")
+const sources = Smithers.glob("//.smithers/flows/**/*.{ts,vibe}")
 // The repository automation modules flows import and run (release, evidence,
 // issue claims, landing).
 const automationModules = Smithers.Filegroup({ cwd: ".smithers/flows", srcs: [Smithers.glob("**/*.mjs")] })
@@ -61,7 +61,7 @@ const suite = Smithers.NodeTest({
 
 // Lints flow sources; suites and fixtures are formatted, not linted.
 const lint = Smithers.EsLint({
-  sources: [Smithers.glob("**/*.ts")],
+  sources: [Smithers.glob("**/*.{ts,vibe}")],
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
   deps: [],
   maxWarnings: 0,
@@ -69,7 +69,7 @@ const lint = Smithers.EsLint({
   cwd
 })
 const fmt = Smithers.Dprint({
-  sources: [Smithers.glob("**/*.{ts,tsx,js,jsx,mjs,json,md}")],
+  sources: [Smithers.glob("**/*.{ts,tsx,js,jsx,mjs,json,md,vibe}")],
   config: Smithers.file("dprint.json"),
   deps: [],
   fix: false,
@@ -206,7 +206,7 @@ const codingBackend = codingPackages.map((cwd) =>
   })
 )
 const codingScripts = automationModules
-const codingWiki = Smithers.Filegroup({ cwd: ".smithers/flows/wiki", srcs: [Smithers.glob("**/*.ts")] })
+const codingWiki = Smithers.Filegroup({ cwd: ".smithers/flows/wiki", srcs: [Smithers.glob("**/*.{ts,vibe}")] })
 const codingFiles = [
   sources,
   Smithers.glob("//.smithers/flows/**/*.mjs"),
@@ -655,7 +655,7 @@ const benchSources = [
 ]
 const gatewaySources = Smithers.Filegroup({
   cwd: "packages/smithers/gateway",
-  srcs: [Smithers.glob("src/**/*.ts"), Smithers.glob("test/**/*.ts")]
+  srcs: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("test/**/*.ts")]
 })
 
 /** Required fast behavioral mutation tier, including both exact-byte guards. */
@@ -1077,8 +1077,16 @@ const securityReview = Smithers.SecurityReview({
   include: [
     // The lane gates are bash; they were reviewed under scripts/ before.
     Smithers.glob("land/**/*.sh"),
-    Smithers.glob("**/*.{ts,mjs,js,mdx}", {
-      exclude: ["wiki/**", "test/**", "node_modules/**", "migrate-smithers-v1/test/**", "**/*.test.ts", "**/*.test.mjs"]
+    Smithers.glob("**/*.{ts,mjs,js,mdx,vibe}", {
+      exclude: [
+        "wiki/**",
+        "test/**",
+        "node_modules/**",
+        "migrate-smithers-v1/test/**",
+        "**/*.test.ts",
+        "**/*.test.vibe",
+        "**/*.test.mjs"
+      ]
     }),
     Smithers.glob("checks/*.sh"),
     // The C-REL-05 credential soak recorder; it was reviewed under scripts/ before.
@@ -1476,7 +1484,7 @@ const issueClaim = Smithers.NodeTest({
   ],
   deps: [
     Smithers.Filegroup({ cwd: ".specs/engineering", srcs: [Smithers.glob("checks/*.md")] }),
-    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.ts")] })
+    Smithers.Filegroup({ cwd: "packages/smithers/agent/integrations", srcs: [Smithers.glob("src/**/*.{ts,vibe}")] })
   ],
   cwd
 })

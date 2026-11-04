@@ -1,4 +1,5 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -18,6 +19,9 @@ import { CaptureRepository, captureRepository } from "../repository/inspection.t
 import { FinishJob, Investigate, RunSteps } from "../repository/jobs.ts"
 import { type Draft, EvalCase, type JobResult, type RepositoryEvidence, SetupInput } from "../repository/schema.ts"
 import { suggestedSetupDraft } from "../repository/setup.ts"
+
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const exporter = process.env.SMITHERS_WORKSPACE_JJ_EXPORT_BINARY
 const gate = {
@@ -84,7 +88,7 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
       parentCommitIds: value.parents
     }
   }
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(nodeServices)))
   const options = {
     repositoryPath: root,
     fs,
@@ -118,7 +122,7 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
         })
     })
   )
-    .pipe(Layer.provideMerge(NodeServices.layer))
+    .pipe(Layer.provideMerge(nodeServices))
   return {
     root,
     pinned,
@@ -335,7 +339,7 @@ async function harness(t: TestContext, mode: "snapshot" | "immutable") {
       Layer.provide(f.owned),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(nodeServices)
     )
   )
   t.after(() => runtime.dispose())

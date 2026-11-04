@@ -5,7 +5,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as Maintenance from "../src/Maintenance.ts"
-import { MemoryError } from "../src/MemoryError.ts"
+import { MemoryError } from "../src/MemoryError.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 

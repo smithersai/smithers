@@ -5,8 +5,8 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FinancialInboxGuard, layer } from "../../../examples/use-cases/financial-inbox-guard.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { FinancialInboxGuard, layer } from "../../../examples/use-cases/financial-inbox-guard.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "financial-inbox-guard-"))
 

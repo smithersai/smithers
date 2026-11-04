@@ -2,11 +2,11 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
+import type { Notification } from "../src/Notification.vibe"
 import * as NotificationEvent from "../src/NotificationEvent.ts"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
 import * as NotificationState from "../src/NotificationState.ts"
-import * as Projection from "../src/Projection.ts"
+import * as Projection from "../src/Projection.vibe"
 
 const runId = "notification-projection" as JournalEvent.RunId
 const sourceId = "notification-test" as JournalEvent.SourceId

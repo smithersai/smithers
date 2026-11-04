@@ -9,7 +9,7 @@
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import type { CacheEnvironment } from "./CacheEnvironment.ts"
+import type { CacheEnvironment } from "./CacheEnvironment.vibe"
 
 /**
  * Context reference carrying the complete environment folded into reusable

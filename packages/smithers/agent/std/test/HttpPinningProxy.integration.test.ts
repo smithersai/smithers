@@ -16,7 +16,7 @@ import { join } from "node:path"
 import * as tls from "node:tls"
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest"
 import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpClient.ts"
-import * as Fetch from "../src/Fetch.ts"
+import * as Fetch from "../src/Fetch.vibe"
 
 const servers: Array<Server> = []
 const sockets = new Set<Socket>()

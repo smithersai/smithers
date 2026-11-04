@@ -14,7 +14,7 @@ dependency:
 
 ```ts
 import { digest, syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 Effect.runSync(Effect.provideService(digest("abc"), Crypto.Crypto, syncCrypto))
@@ -37,7 +37,7 @@ reaches all of them by constructing a `Crypto` service that misbehaves on
 purpose:
 
 ```ts
-import * as Crypto from "effect/Crypto"
+import { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 

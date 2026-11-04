@@ -5,6 +5,7 @@
  */
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as Namespace from "@smthrs/memory/Namespace"
 import * as Recall from "@smthrs/memory/Recall"
@@ -83,7 +84,9 @@ export const withMemory = <A, E>(
     database: (file) => ControlDatabase.layer(file).pipe(Layer.orDie),
     stores: ControlDatabase.layer(NodeControl.databasePath(localRoot(options))).pipe(Layer.orDie)
   })
-  const layer = MemoryStore.layer.pipe(Layer.provide(Layer.mergeAll(stores, NodeCrypto.layer)))
+  const layer = MemoryStore.layer.pipe(
+    Layer.provide(Layer.mergeAll(stores, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  )
   return Effect.runPromise(effect.pipe(Effect.provide(layer)))
 }
 

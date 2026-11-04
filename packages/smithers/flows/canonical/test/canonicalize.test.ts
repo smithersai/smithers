@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { CanonicalError, canonicalize } from "../src/index.ts"
+import { CanonicalError, canonicalize } from "../src/index.vibe"
 
 const rejects = (value: unknown, code: string, path: string, detail?: string): void => {
   try {

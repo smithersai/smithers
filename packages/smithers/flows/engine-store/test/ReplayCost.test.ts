@@ -10,6 +10,7 @@
  * long the run's history is. Runs on the test database the matrix selects:
  * SQLite, or PostgreSQL under `SMITHERS_TEST_PG_URL`.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, Sleep } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import * as SqlConsensus from "@smthrs/journal/SqlConsensus"
@@ -20,7 +21,6 @@ import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"

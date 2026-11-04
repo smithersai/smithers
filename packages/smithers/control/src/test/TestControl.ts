@@ -4,10 +4,11 @@
  * @since 0.1.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import * as ControlExecutor from "../ControlExecutor.ts"
 import * as ControlLive from "../ControlLive.ts"
 import * as ControlRuntime from "../ControlRuntime.ts"

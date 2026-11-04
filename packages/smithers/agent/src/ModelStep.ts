@@ -42,10 +42,10 @@
  * @since 1.0.0-rc.16
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import { type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CellTurn } from "@smthrs/harness"
 import { type Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
 import type { RouteResolver } from "./FlowEngineLike.ts"

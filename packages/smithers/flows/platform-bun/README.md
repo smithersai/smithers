@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -27,10 +27,10 @@ bun add @smthrs/platform-bun@1.0.0-rc.16 effect
 ```
 
 `@smthrs/platform-node` and `effect` are required peers, as `package.json`
-declares them, with `effect` at exactly `4.0.5`. Package managers that
+declares them, with `effect` at exactly `4.1.0`. Package managers that
 resolve required peers install both automatically. `@effect/platform-bun`,
 `@effect/platform-node` and `@effect/platform-node-shared` are bundled
-privately, built from `effect@4.0.5`.
+privately, built from `effect@4.1.1`.
 
 The filesystem slot spawns the `smithers-jj-export` native helper, which
 `@smthrs/platform-node` ships for macOS, Linux, and Windows. To use another

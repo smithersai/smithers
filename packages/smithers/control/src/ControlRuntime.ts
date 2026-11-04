@@ -11,9 +11,10 @@
  * @since 0.1.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import * as Fault from "@smthrs/flow/Fault"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
-import { Context, Crypto, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Context, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as ApprovalAuthority from "./ApprovalAuthority.ts"
 import type { ApprovalTarget, PlanInput } from "./Control.ts"
 import {

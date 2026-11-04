@@ -1,5 +1,7 @@
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as ControlMigrations from "@smthrs/control/Migrations"
+import * as Crypto from "@smthrs/crypto/Crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -38,6 +40,10 @@ const result = await Effect.runPromise(
       control: yield* sql`SELECT value FROM control_sequences WHERE name = 'shared-database-regression'`,
       ledger: yield* sql`SELECT migration_id, name FROM flows_migrations ORDER BY migration_id`
     }
-  }).pipe(Effect.provide(database), Effect.provide(NodeServices.layer))
+  }).pipe(
+    Effect.provide(database),
+    Effect.provide(NodeServices.layer),
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  )
 )
 process.stdout.write(JSON.stringify(result))

@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test"
 import { Option, Schema } from "effect"
 import { applyFindingVerdicts } from "../src/workflow/applyFindingVerdicts.ts"
-import type { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.ts"
+import type { ReviewCommentSeverity } from "../src/workflow/reviewCommentSeveritySchema.vibe"
 import { buildVerifyFindingsPrompt, type VerifiableFinding } from "../src/workflow/verifyFindings.ts"
 import { VerifyVerdicts } from "../src/workflow/verifyVerdictsSchema.ts"
 

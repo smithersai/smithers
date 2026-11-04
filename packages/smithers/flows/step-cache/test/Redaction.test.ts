@@ -10,8 +10,8 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer, Option } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
-import * as CacheStore from "../src/CacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 describe("cached step result redaction", () => {
   // Executable state must round-trip verbatim: a field whose name merely ends

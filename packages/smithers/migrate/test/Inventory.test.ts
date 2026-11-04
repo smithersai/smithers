@@ -1,7 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Detect from "../src/Detect.ts"
-import * as Inventory from "../src/Inventory.ts"
+import * as Inventory from "../src/Inventory.vibe"
 import { copyFixture, nodeLayer } from "./fixtures/helpers.ts"
 
 const inventory = (name: string) =>

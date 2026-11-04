@@ -15,7 +15,7 @@ const reportsDirectory = process.versions.bun ? undefined : (() => {
 })()
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
   test: {
     globalSetup: [fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url))],
     include: [...configDefaults.include, "**/*.{test,spec}.vibe"],

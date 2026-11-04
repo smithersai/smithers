@@ -30,43 +30,183 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./ApplyPatch": "./src/ApplyPatch.ts",
-    "./Bash": "./src/Bash.ts",
-    "./Checkpoints": "./src/Checkpoints.ts",
-    "./Container": "./src/Container.ts",
-    "./Edit": "./src/Edit.ts",
-    "./ExaWebSearch": "./src/ExaWebSearch.ts",
-    "./Explore": "./src/Explore.ts",
-    "./Fetch": "./src/Fetch.ts",
-    "./Glob": "./src/Glob.ts",
-    "./Grep": "./src/Grep.ts",
-    "./HttpPost": "./src/HttpPost.ts",
-    "./LanguageServer": "./src/LanguageServer.ts",
-    "./Ls": "./src/Ls.ts",
-    "./Lsp": "./src/Lsp.ts",
-    "./Manifest": "./src/Manifest.ts",
-    "./NativeSearch": "./src/NativeSearch.ts",
-    "./PortableSearch": "./src/PortableSearch.ts",
-    "./Probe": "./src/Probe.ts",
-    "./Read": "./src/Read.ts",
-    "./Relocate": "./src/Relocate.ts",
-    "./RemoteSearch": "./src/RemoteSearch.ts",
-    "./Search": "./src/Search.ts",
-    "./SearchConformance": "./src/SearchConformance.ts",
-    "./SearchContract": "./src/SearchContract.ts",
-    "./ShellCommand": "./src/ShellCommand.ts",
-    "./StdError": "./src/StdError.ts",
-    "./TestRun": "./src/TestRun.ts",
-    "./TestRunner": "./src/TestRunner.ts",
-    "./TreeFingerprint": "./src/TreeFingerprint.ts",
-    "./UpdatePlan": "./src/UpdatePlan.ts",
-    "./WebFetch": "./src/WebFetch.ts",
-    "./WebSearch": "./src/WebSearch.ts",
-    "./Write": "./src/Write.ts",
-    "./index": "./src/index.ts",
+    "./ApplyPatch": {
+      "types": "./src/ApplyPatch.ts",
+      "vibelang-source": "./src/ApplyPatch.ts",
+      "default": "./.vibelang/js/src/ApplyPatch.js"
+    },
+    "./Bash": {
+      "types": "./src/Bash.ts",
+      "vibelang-source": "./src/Bash.ts",
+      "default": "./.vibelang/js/src/Bash.js"
+    },
+    "./Checkpoints": {
+      "types": "./src/Checkpoints.ts",
+      "vibelang-source": "./src/Checkpoints.ts",
+      "default": "./.vibelang/js/src/Checkpoints.js"
+    },
+    "./Container": {
+      "types": "./.vibe/declarations/src/Container.d.vibe.ts",
+      "vibelang-source": "./src/Container.vibe",
+      "default": "./.vibelang/js/src/Container.js"
+    },
+    "./Edit": {
+      "types": "./src/Edit.ts",
+      "vibelang-source": "./src/Edit.ts",
+      "default": "./.vibelang/js/src/Edit.js"
+    },
+    "./ExaWebSearch": {
+      "types": "./src/ExaWebSearch.ts",
+      "vibelang-source": "./src/ExaWebSearch.ts",
+      "default": "./.vibelang/js/src/ExaWebSearch.js"
+    },
+    "./Explore": {
+      "types": "./.vibe/declarations/src/Explore.d.vibe.ts",
+      "vibelang-source": "./src/Explore.vibe",
+      "default": "./.vibelang/js/src/Explore.js"
+    },
+    "./Fetch": {
+      "types": "./.vibe/declarations/src/Fetch.d.vibe.ts",
+      "vibelang-source": "./src/Fetch.vibe",
+      "default": "./.vibelang/js/src/Fetch.js"
+    },
+    "./Glob": {
+      "types": "./src/Glob.ts",
+      "vibelang-source": "./src/Glob.ts",
+      "default": "./.vibelang/js/src/Glob.js"
+    },
+    "./Grep": {
+      "types": "./src/Grep.ts",
+      "vibelang-source": "./src/Grep.ts",
+      "default": "./.vibelang/js/src/Grep.js"
+    },
+    "./HttpPost": {
+      "types": "./.vibe/declarations/src/HttpPost.d.vibe.ts",
+      "vibelang-source": "./src/HttpPost.vibe",
+      "default": "./.vibelang/js/src/HttpPost.js"
+    },
+    "./LanguageServer": {
+      "types": "./.vibe/declarations/src/LanguageServer.d.vibe.ts",
+      "vibelang-source": "./src/LanguageServer.vibe",
+      "default": "./.vibelang/js/src/LanguageServer.js"
+    },
+    "./Ls": {
+      "types": "./src/Ls.ts",
+      "vibelang-source": "./src/Ls.ts",
+      "default": "./.vibelang/js/src/Ls.js"
+    },
+    "./Lsp": {
+      "types": "./src/Lsp.ts",
+      "vibelang-source": "./src/Lsp.ts",
+      "default": "./.vibelang/js/src/Lsp.js"
+    },
+    "./Manifest": {
+      "types": "./src/Manifest.ts",
+      "vibelang-source": "./src/Manifest.ts",
+      "default": "./.vibelang/js/src/Manifest.js"
+    },
+    "./NativeSearch": {
+      "types": "./src/NativeSearch.ts",
+      "vibelang-source": "./src/NativeSearch.ts",
+      "default": "./.vibelang/js/src/NativeSearch.js"
+    },
+    "./PortableSearch": {
+      "types": "./src/PortableSearch.ts",
+      "vibelang-source": "./src/PortableSearch.ts",
+      "default": "./.vibelang/js/src/PortableSearch.js"
+    },
+    "./Probe": {
+      "types": "./src/Probe.ts",
+      "vibelang-source": "./src/Probe.ts",
+      "default": "./.vibelang/js/src/Probe.js"
+    },
+    "./Read": {
+      "types": "./src/Read.ts",
+      "vibelang-source": "./src/Read.ts",
+      "default": "./.vibelang/js/src/Read.js"
+    },
+    "./Relocate": {
+      "types": "./.vibe/declarations/src/Relocate.d.vibe.ts",
+      "vibelang-source": "./src/Relocate.vibe",
+      "default": "./.vibelang/js/src/Relocate.js"
+    },
+    "./RemoteSearch": {
+      "types": "./src/RemoteSearch.ts",
+      "vibelang-source": "./src/RemoteSearch.ts",
+      "default": "./.vibelang/js/src/RemoteSearch.js"
+    },
+    "./Search": {
+      "types": "./.vibe/declarations/src/Search.d.vibe.ts",
+      "vibelang-source": "./src/Search.vibe",
+      "default": "./.vibelang/js/src/Search.js"
+    },
+    "./SearchConformance": {
+      "types": "./.vibe/declarations/src/SearchConformance.d.vibe.ts",
+      "vibelang-source": "./src/SearchConformance.vibe",
+      "default": "./.vibelang/js/src/SearchConformance.js"
+    },
+    "./SearchContract": {
+      "types": "./.vibe/declarations/src/SearchContract.d.vibe.ts",
+      "vibelang-source": "./src/SearchContract.vibe",
+      "default": "./.vibelang/js/src/SearchContract.js"
+    },
+    "./ShellCommand": {
+      "types": "./src/ShellCommand.ts",
+      "vibelang-source": "./src/ShellCommand.ts",
+      "default": "./.vibelang/js/src/ShellCommand.js"
+    },
+    "./StdError": {
+      "types": "./.vibe/declarations/src/StdError.d.vibe.ts",
+      "vibelang-source": "./src/StdError.vibe",
+      "default": "./.vibelang/js/src/StdError.js"
+    },
+    "./TestRun": {
+      "types": "./src/TestRun.ts",
+      "vibelang-source": "./src/TestRun.ts",
+      "default": "./.vibelang/js/src/TestRun.js"
+    },
+    "./TestRunner": {
+      "types": "./.vibe/declarations/src/TestRunner.d.vibe.ts",
+      "vibelang-source": "./src/TestRunner.vibe",
+      "default": "./.vibelang/js/src/TestRunner.js"
+    },
+    "./TreeFingerprint": {
+      "types": "./src/TreeFingerprint.ts",
+      "vibelang-source": "./src/TreeFingerprint.ts",
+      "default": "./.vibelang/js/src/TreeFingerprint.js"
+    },
+    "./UpdatePlan": {
+      "types": "./.vibe/declarations/src/UpdatePlan.d.vibe.ts",
+      "vibelang-source": "./src/UpdatePlan.vibe",
+      "default": "./.vibelang/js/src/UpdatePlan.js"
+    },
+    "./WebFetch": {
+      "types": "./src/WebFetch.ts",
+      "vibelang-source": "./src/WebFetch.ts",
+      "default": "./.vibelang/js/src/WebFetch.js"
+    },
+    "./WebSearch": {
+      "types": "./.vibe/declarations/src/WebSearch.d.vibe.ts",
+      "vibelang-source": "./src/WebSearch.vibe",
+      "default": "./.vibelang/js/src/WebSearch.js"
+    },
+    "./Write": {
+      "types": "./src/Write.ts",
+      "vibelang-source": "./src/Write.ts",
+      "default": "./.vibelang/js/src/Write.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./NodeLanguageServer": null
   },
   "files": [
@@ -79,7 +219,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -456,12 +597,13 @@
     "@smthrs/control": "1.0.0-rc.16",
     "@smthrs/core": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/model": "1.0.0-rc.16"
+    "@smthrs/model": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/platform-node": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/patterns": "1.0.0-rc.16",
@@ -469,7 +611,7 @@
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -479,11 +621,11 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

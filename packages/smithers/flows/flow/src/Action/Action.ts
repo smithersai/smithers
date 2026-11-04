@@ -6,20 +6,20 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Effects from "@smthrs/plan/Effects"
 import type * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import type * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type { Scope } from "effect/Scope"
-import type { AnyStructSchema } from "../Flow/Flow.ts"
+import type { AnyStructSchema } from "../Flow/Flow.vibe"
 import type { FlowInstance, FlowRuntime } from "../FlowRuntime/index.ts"
-import type * as RetryPolicy from "../RetryPolicy.ts"
-import type { FileBoundary } from "./FileBoundary.ts"
-import type { Implementation } from "./Implementations.ts"
+import type * as RetryPolicy from "../RetryPolicy.vibe"
+import type { FileBoundary } from "./FileBoundary.vibe"
+import type { Implementation } from "./Implementations.vibe"
 import type { TypeId } from "./TypeId.ts"
 
 /**

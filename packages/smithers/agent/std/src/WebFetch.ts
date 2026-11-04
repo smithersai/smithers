@@ -19,7 +19,7 @@ import { toMarkdown, toText } from "./internal/Html.ts"
 import { capOutput, header, MAX_RESPONSE_BYTES, readBounded, Timeout, withDeadline } from "./internal/Http.ts"
 import { guarded, refusal } from "./internal/HttpNetwork.ts"
 import { parseHttpUrl } from "./internal/Url.ts"
-import * as StdError from "./StdError.ts"
+import * as StdError from "./StdError.vibe"
 
 const maxRedirects = 10
 /**

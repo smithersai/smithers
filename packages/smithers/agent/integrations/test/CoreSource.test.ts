@@ -1,13 +1,14 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { it as effectIt } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Deferred, Effect, Fiber, Layer, Schema } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import { Failure, fromIntegrationError } from "../src/core/ActionFailure.ts"
-import { CursorStore, layerMemory } from "../src/core/CursorStore.ts"
-import type { ExternalEvent } from "../src/core/ExternalEvent.ts"
+import { Failure, fromIntegrationError } from "../src/core/ActionFailure.vibe"
+import { CursorStore, layerMemory } from "../src/core/CursorStore.vibe"
+import type { ExternalEvent } from "../src/core/ExternalEvent.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import { type Batch, type RunContext, runWithCursor } from "../src/core/Source.ts"
 
@@ -40,7 +41,9 @@ const runEffect = <A, E>(effect: Effect.Effect<A, E, RunContext>) => {
     Interpreter.layer(flow)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer, layerMemory))
+    Layer.provideMerge(
+      Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest), layerMemory)
+    )
   )
   return flow.execute({}, { executionId: "source-test" }).pipe(
     Effect.provide(layer),

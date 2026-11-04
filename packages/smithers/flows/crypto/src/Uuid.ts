@@ -12,9 +12,9 @@
  * @since 1.0.0-rc.17
  */
 
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as PlatformError from "effect/PlatformError"
+import * as Crypto from "./Crypto.ts"
 
 const pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 const encoder = new TextEncoder()

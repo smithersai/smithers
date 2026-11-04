@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The installation documentation check expects the Effect `4.1.0` version that the upgrade ships and the README already recommends.
+
 ### Added
 
 - `Trials`: repeated-run statistics for live evaluations. `passAtK` is the

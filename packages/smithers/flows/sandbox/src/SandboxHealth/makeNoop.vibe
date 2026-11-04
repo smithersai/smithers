@@ -1,0 +1,18 @@
+/**
+ * Constructs a healthy no-op sandbox health service.
+ *
+ * @since 0.1.0
+ */
+
+import { Healthy } from "./Healthy.vibe"
+import { SandboxHealth } from "./SandboxHealth.vibe"
+import type { Service } from "./Service.vibe"
+
+/**
+ * A no-op service that always reports `Healthy` for hosts without a remote
+ * sandbox.
+ *
+ * @category constructors
+ * @since 0.1.0
+ */
+export const makeNoop = (): Service => SandboxHealth.of({ check: Effect.succeed(new Healthy()) })

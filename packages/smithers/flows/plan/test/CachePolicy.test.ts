@@ -9,8 +9,8 @@
 import * as Context from "effect/Context"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as CachePolicy from "../src/CachePolicy.ts"
-import * as Repetition from "../src/Repetition.ts"
+import * as CachePolicy from "../src/CachePolicy.vibe"
+import * as Repetition from "../src/Repetition.vibe"
 
 const decode = Schema.decodeUnknownResult(CachePolicy.CachePolicy)
 

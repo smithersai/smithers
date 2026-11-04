@@ -29,6 +29,7 @@ export interface Invocation {
  * @since 0.1.0
  */
 export service FlowInvoker {
+  static readonly key = "/fs/FlowInvoker"
   invoke(invocation: Invocation): Effect<unknown, FsError>
 }
 
@@ -38,7 +39,7 @@ export service FlowInvoker {
  * @category constructors
  * @since 0.1.0
  */
-export const make = (implementation: FlowInvoker): FlowInvoker => {
+export const make = (implementation: FlowInvoker.Shape): FlowInvoker.Shape => {
   return Object.freeze({ invoke: implementation.invoke })
 }
 
@@ -48,16 +49,19 @@ export const make = (implementation: FlowInvoker): FlowInvoker => {
  * @category constructors
  * @since 0.1.0
  */
-export const makeNoop = (overrides: Partial<FlowInvoker> = {}): FlowInvoker => {
+export const makeNoop = (overrides: Partial<FlowInvoker.Shape> = {}): FlowInvoker.Shape => {
   return make({
-    invoke: overrides.invoke ?? ((_invocation) =>
-      withSpan("FlowInvoker.invoke") {
-        throw new FsError({
-          code: "invocation_unavailable",
-          method: "FlowInvoker.invoke",
-          description: "No flow invoker is installed"
-        })
-      })
+    invoke: overrides.invoke ?? (effect (_invocation) =>
+      try withSpan(
+        effect {
+          throw new FsError({
+            code: "invocation_unavailable",
+            method: "FlowInvoker.invoke",
+            description: "No flow invoker is installed"
+          })
+        },
+        "FlowInvoker.invoke"
+      ))
   })
 }
 
@@ -67,5 +71,5 @@ export const makeNoop = (overrides: Partial<FlowInvoker> = {}): FlowInvoker => {
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<FlowInvoker> = {}): Layer.Layer<FlowInvoker> =>
+export const layerNoop = (overrides: Partial<FlowInvoker.Shape> = {}): Layer<FlowInvoker> =>
   Layer.succeed(FlowInvoker, makeNoop(overrides))

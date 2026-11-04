@@ -8,13 +8,13 @@
  * @category constructors
  * @since 1.0.0
  */
-export * as AccessToken from "./core/AccessToken.ts"
+export * as AccessToken from "./core/AccessToken.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as ActionFailure from "./core/ActionFailure.ts"
+export * as ActionFailure from "./core/ActionFailure.vibe"
 
 /**
  * @category constructors
@@ -26,7 +26,7 @@ export * as AuthorizationUrl from "./core/AuthorizationUrl.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Channel from "./core/Channel.ts"
+export * as Channel from "./core/Channel.vibe"
 
 /**
  * @category schemas
@@ -38,13 +38,13 @@ export * as Connection from "./core/Connection.ts"
  * @category services
  * @since 1.0.0
  */
-export * as CursorStore from "./core/CursorStore.ts"
+export * as CursorStore from "./core/CursorStore.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as ExternalEvent from "./core/ExternalEvent.ts"
+export * as ExternalEvent from "./core/ExternalEvent.vibe"
 
 /**
  * @category errors
@@ -68,7 +68,7 @@ export * as Migrations from "./core/Migrations.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as OAuthToken from "./core/OAuthToken.ts"
+export * as OAuthToken from "./core/OAuthToken.vibe"
 
 /**
  * @category constructors
@@ -98,16 +98,16 @@ export * as Source from "./core/Source.ts"
  * @category schemas
  * @since 1.0.0
  */
-export * as SourceRecord from "./core/SourceRecord.ts"
+export * as SourceRecord from "./core/SourceRecord.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as SourceStore from "./core/SourceStore.ts"
+export * as SourceStore from "./core/SourceStore.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Sync from "./core/Sync.ts"
+export * as Sync from "./core/Sync.vibe"

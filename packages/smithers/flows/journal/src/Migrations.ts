@@ -17,12 +17,12 @@
 
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
-import { initial } from "./migrations/0001_initial.ts"
-import { checkpoints } from "./migrations/0002_checkpoints.ts"
-import { startupIndex } from "./migrations/0003_startup_index.ts"
-import { dedup } from "./migrations/0004_dedup.ts"
-import { runEventType } from "./migrations/0005_run_event_type.ts"
-import { consensus } from "./migrations/0006_consensus.ts"
+import { initial } from "./migrations/0001_initial.vibe"
+import { checkpoints } from "./migrations/0002_checkpoints.vibe"
+import { startupIndex } from "./migrations/0003_startup_index.vibe"
+import { dedup } from "./migrations/0004_dedup.vibe"
+import { runEventType } from "./migrations/0005_run_event_type.vibe"
+import { consensus } from "./migrations/0006_consensus.vibe"
 
 /**
  * The journal's namespaced migration set, for composition with the other

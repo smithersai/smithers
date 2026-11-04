@@ -24,7 +24,7 @@ a host for its callers:
 
 ```ts
 import { Digest, digest, type Sha256Error } from "@smthrs/crypto"
-import type * as Crypto from "effect/Crypto"
+import type { Crypto } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 
 /** The store: bytes under the digest of those bytes, and nothing else. */
@@ -77,6 +77,7 @@ rejection happens before the map is touched.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 
 const program = Effect.gen(function*() {
   const input = new TextEncoder().encode("the quickstart bytes")
@@ -87,7 +88,7 @@ const program = Effect.gen(function*() {
   console.log(yield* get("0".repeat(64)))
 })
 
-await Effect.runPromise(program.pipe(Effect.provide(NodeCrypto.layer), Effect.orDie))
+await Effect.runPromise(program.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie))
 ```
 
 Run the file with your TypeScript runner:

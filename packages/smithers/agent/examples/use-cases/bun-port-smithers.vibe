@@ -1,0 +1,1759 @@
+/**
+ * Run Bun's Zig-to-Rust port pipeline: classify ownership, port files, compile by crate tier, ungate, probe, swarm tests, sweep.
+ *
+ * Port of the 0.x `bun-port-smithers/workflow.tsx` and its seven subflows. An
+ * operator first approves the run and may switch phases off. The enabled
+ * phases then run in order, each as its own child run: lifetime
+ * classification with three adversarial votes per sampled field, Phase A
+ * implement-verify-fix per file, crate check loops tier by tier (25 rounds),
+ * ungate loops with two reviewers and a decider (5 rounds), panic-probe rounds
+ * (5), per-area test loops (30) merged one area at a time, and audit sweep
+ * loops (3). An approval gate stops the run when the lifetime UNKNOWN rate or
+ * the compile gate count crosses its threshold and the operator denies it.
+ *
+ * 0.x's `<Subflow>` is `.child()`; a fan-out over a list known only at run time (lifetime votes, probe fixes) is a nested child.
+ * 0.x's `<HumanTask>` and `<ApprovalGate onDeny="fail">` are `HumanTask` questions in this flow; a gate asks a yes/no confirm, and a "no" fails the run.
+ * 0.x's `<Loop until>` with `ctx.latest` is a planned recursion that hands each round the previous round's result.
+ * 0.x's `<MergeQueue maxConcurrency={1}>` is a chain where each merge waits for the one before; the per-area merges declare that chain directly.
+ * 0.x's `<Signal>` for external CI is a `WaitFor` named `test-swarm:external-ci`; its 24-hour `onTimeout="fail"` is the host's to enforce.
+ * 0.x's `<Worktree>` per test area is host placement (see `40-sandbox-placement.ts`); the prompt still names the area branch.
+ * 0.x's step cache, memory recall/remember and scorers are not ported; 0.x's dry-run agents are the test script.
+ * 0.x split Claude Code writers and Pi reviewers; every step here takes the examples' seat, and in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
+ * 0.x prompts ended with the output schema; `AgentAction` renders and enforces it instead.
+ */
+import * as AgentAction from "@smthrs/agent/AgentAction"
+import { type Action, Flow, HumanTask, Interpreter, WaitFor } from "@smthrs/flow"
+import * as Bounded from "@smthrs/patterns/Bounded"
+import { Node } from "@smthrs/plan"
+import type * as Planned from "@smthrs/plan/Planned"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
+
+const seat = "anthropic:claude-sonnet-5-5"
+
+const Count = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+const Positive = Schema.Int.check(Schema.isGreaterThan(0))
+const Fraction = Schema.Number.check(Schema.isBetween({ minimum: 0, maximum: 1 }))
+
+// ---------------------------------------------------------------------------
+// Inputs
+// ---------------------------------------------------------------------------
+
+/** The seven phases, in the order they run. */
+export const phases = ["lifetimes", "phaseA", "compile", "ungate", "probes", "tests", "sweeps"] as const
+
+/** One phase name. */
+export const Phase = Schema.Literals(phases)
+type Phase = typeof Phase.Type
+
+/** One Zig file to port. */
+export const ZigFile = Schema.Struct({
+  zig: Schema.String,
+  loc: Schema.optional(Count),
+  crate: Schema.optional(Schema.String)
+})
+
+/** One crate and the tier it compiles in. */
+export const Crate = Schema.Struct({ name: Schema.String, tier: Schema.optional(Count) })
+
+/** One ungate/proper-port target. */
+export const Target = Schema.Struct({
+  id: Schema.String,
+  crate: Schema.String,
+  file: Schema.String,
+  reason: Schema.optional(Schema.String)
+})
+
+/** One behavior probe. */
+export const Probe = Schema.Struct({ id: Schema.String, cmd: Schema.String, expect: Schema.optional(Schema.String) })
+
+/** One focused test area. */
+export const TestArea = Schema.Struct({ id: Schema.String, glob: Schema.String, crate: Schema.String })
+
+/** One audit sweep. */
+export const Sweep = Schema.Struct({
+  id: Schema.String,
+  kind: Schema.String,
+  pattern: Schema.String,
+  scope: Schema.String
+})
+
+type ZigFile = typeof ZigFile.Type
+type Target = typeof Target.Type
+type Probe = typeof Probe.Type
+type TestArea = typeof TestArea.Type
+type Sweep = typeof Sweep.Type
+
+/** The test areas 0.x swarmed when none were given. */
+export const defaultTestAreas: ReadonlyArray<TestArea> = [
+  { id: "bun-http", glob: "test/js/bun/http/", crate: "runtime/server" },
+  { id: "bun-crypto", glob: "test/js/bun/crypto/", crate: "runtime/crypto" },
+  { id: "bun-ffi", glob: "test/js/bun/ffi/", crate: "runtime/ffi" },
+  { id: "bun-shell", glob: "test/js/bun/shell/", crate: "runtime/shell" },
+  { id: "node-fs", glob: "test/js/node/fs/", crate: "runtime/node/fs" },
+  { id: "node-http", glob: "test/js/node/http/", crate: "runtime/node" },
+  { id: "node-stream", glob: "test/js/node/stream/", crate: "runtime/webcore/streams" },
+  { id: "web-fetch", glob: "test/js/web/fetch/", crate: "http_jsc" },
+  { id: "bundler", glob: "test/bundler/", crate: "bundler" },
+  { id: "resolver", glob: "test/js/bun/resolve/", crate: "resolver" }
+]
+
+/** The probes 0.x ran when none were given. */
+export const defaultProbes: ReadonlyArray<Probe> = [
+  { id: "help", cmd: "--help", expect: "Usage" },
+  { id: "version", cmd: "--version", expect: "." },
+  { id: "eval-log", cmd: "-e 'console.log(1)'", expect: "1" },
+  { id: "print-expr", cmd: "-p '1+1'", expect: "2" }
+]
+
+/** The sweeps 0.x ran when none were given. */
+export const defaultSweeps: ReadonlyArray<Sweep> = [
+  { id: "unsafe-wrap", kind: "unsafe", pattern: "unsafe { &mut *", scope: "src/" },
+  { id: "scopeguard", kind: "raii", pattern: "scopeguard::guard((),", scope: "src/" },
+  { id: "idioms", kind: "idiom", pattern: "TODO(port)", scope: "src/" }
+]
+
+// ---------------------------------------------------------------------------
+// Agent outputs
+// ---------------------------------------------------------------------------
+
+/** One pointer-bearing struct field and its ownership class. */
+export const LifetimeField = Schema.Struct({
+  struct: Schema.String,
+  field: Schema.String,
+  zigType: Schema.String,
+  class: Schema.Literals([
+    "OWNED",
+    "SHARED",
+    "BORROW_PARAM",
+    "BORROW_FIELD",
+    "STATIC",
+    "JSC_BORROW",
+    "BACKREF",
+    "INTRUSIVE",
+    "FFI",
+    "ARENA",
+    "UNKNOWN"
+  ]),
+  rustType: Schema.String,
+  evidence: Schema.String,
+  confidence: Schema.Literals(["high", "low"])
+})
+
+/** Every classified field of one Zig file. */
+export const LifetimeClassification = Schema.Struct({
+  file: Schema.String,
+  crate: Schema.String,
+  fields: Schema.Array(LifetimeField)
+})
+
+/** A field picked for adversarial verification. */
+export const SelectedField = Schema.Struct({
+  key: Schema.String,
+  file: Schema.String,
+  struct: Schema.String,
+  field: Schema.String,
+  class: Schema.String,
+  rustType: Schema.String
+})
+
+/** One verifier's vote on one field. */
+export const LifetimeVote = Schema.Struct({
+  key: Schema.String,
+  voter: Schema.String,
+  refuted: Schema.Boolean,
+  correctClass: Schema.String,
+  reason: Schema.String
+})
+
+/** A file's planned Rust output. */
+export const PortFile = Schema.Struct({ zig: Schema.String, rs: Schema.String, loc: Count, crate: Schema.String })
+
+/** One Phase A draft. */
+export const PhaseAImplement = Schema.Struct({
+  zig: Schema.String,
+  rs: Schema.String,
+  status: Schema.Literals(["drafted", "skipped", "failed"]),
+  confidence: Schema.Literals(["high", "medium", "low"]),
+  todos: Count,
+  rsLoc: Count,
+  note: Schema.String
+})
+
+/** One review finding. */
+export const Issue = Schema.Struct({
+  severity: Schema.Literals(["must-fix", "should-fix", "nit"]),
+  rule: Schema.String,
+  detail: Schema.String,
+  fix: Schema.optional(Schema.String)
+})
+
+/** One Phase A review. */
+export const Review = Schema.Struct({
+  subject: Schema.String,
+  reviewer: Schema.String,
+  approved: Schema.Boolean,
+  ok: Schema.Boolean,
+  issues: Schema.Array(Issue),
+  feedback: Schema.String
+})
+
+/** One Phase A fix pass. */
+export const PhaseAFix = Schema.Struct({
+  zig: Schema.String,
+  rs: Schema.String,
+  applied: Count,
+  remaining: Count,
+  note: Schema.String
+})
+
+/** One `cargo check` round for one crate. */
+export const CrateCheck = Schema.Struct({
+  crate: Schema.String,
+  tier: Count,
+  compiles: Schema.Boolean,
+  errorCount: Count,
+  rounds: Count,
+  gatedModules: Schema.Array(Schema.String),
+  blockedOn: Schema.Array(Schema.String),
+  notes: Schema.String
+})
+
+/** One proper-port patch. */
+export const PatchResult = Schema.Struct({
+  targetId: Schema.String,
+  status: Schema.Literals(["patched", "skipped", "failed"]),
+  filesChanged: Schema.Array(Schema.String),
+  summary: Schema.String
+})
+
+/** One spec reviewer's vote. */
+export const SpecReview = Schema.Struct({
+  targetId: Schema.String,
+  reviewer: Schema.String,
+  approved: Schema.Boolean,
+  issues: Schema.Array(Issue),
+  feedback: Schema.String
+})
+
+/** The decider's verdict on one target. */
+export const SpecDecision = Schema.Struct({
+  targetId: Schema.String,
+  approved: Schema.Boolean,
+  approvals: Count,
+  rejections: Count,
+  issues: Schema.Array(Issue),
+  feedback: Schema.String
+})
+
+/** One build of `bun_bin`. */
+export const BuildResult = Schema.Struct({ ok: Schema.Boolean, command: Schema.String, summary: Schema.String })
+
+/** One probe run. */
+export const ProbeResult = Schema.Struct({
+  probeId: Schema.String,
+  command: Schema.String,
+  passed: Schema.Boolean,
+  panicLocation: Schema.NullOr(Schema.String),
+  assertion: Schema.NullOr(Schema.String),
+  signal: Schema.NullOr(Schema.String),
+  durationMs: Count,
+  output: Schema.String
+})
+
+/** One unique probe failure. */
+export const Failure = Schema.Struct({
+  failureKey: Schema.String,
+  probeId: Schema.String,
+  command: Schema.String,
+  panicLocation: Schema.NullOr(Schema.String),
+  assertion: Schema.NullOr(Schema.String)
+})
+
+/** One failure fix. */
+export const FailureFix = Schema.Struct({
+  failureKey: Schema.String,
+  status: Schema.Literals(["fixed", "skipped", "failed"]),
+  filesChanged: Schema.Array(Schema.String),
+  summary: Schema.String
+})
+
+/** One round of a test area. */
+export const TestAreaResult = Schema.Struct({
+  areaId: Schema.String,
+  pass: Count,
+  fail: Count,
+  total: Count,
+  allPass: Schema.Boolean,
+  bughuntBugs: Count,
+  commits: Schema.Array(Schema.String),
+  branch: Schema.String,
+  notes: Schema.String
+})
+
+/** One area's merge onto the integration branch. */
+export const MergeResult = Schema.Struct({
+  id: Schema.String,
+  picked: Count,
+  conflicts: Count,
+  notes: Schema.String
+})
+
+/** What external CI reports when it signals the test swarm. */
+export const CiSignal = Schema.Struct({
+  status: Schema.Literals(["passed", "failed", "cancelled"]),
+  url: Schema.String,
+  summary: Schema.String
+})
+
+/** One round of one audit sweep. */
+export const SweepResult = Schema.Struct({
+  sweepId: Schema.String,
+  kind: Schema.String,
+  candidates: Count,
+  fixed: Count,
+  skipped: Count,
+  summary: Schema.String
+})
+
+/** The operator's answer to the run plan. An unset `run*` flag leaves its phase on. */
+export const OperatorPlan = Schema.Struct({
+  approved: Schema.Boolean,
+  comments: Schema.optional(Schema.String),
+  runLifetimes: Schema.optional(Schema.Boolean),
+  runPhaseA: Schema.optional(Schema.Boolean),
+  runCompile: Schema.optional(Schema.Boolean),
+  runUngate: Schema.optional(Schema.Boolean),
+  runProbes: Schema.optional(Schema.Boolean),
+  runTests: Schema.optional(Schema.Boolean),
+  runSweeps: Schema.optional(Schema.Boolean)
+})
+
+type OperatorPlan = typeof OperatorPlan.Type
+
+/** {@link OperatorPlan} as the JSON Schema the operator's answer is checked against. */
+const operatorPlanSchema = {
+  type: "object",
+  properties: {
+    approved: { type: "boolean" },
+    comments: { type: "string" },
+    runLifetimes: { type: "boolean" },
+    runPhaseA: { type: "boolean" },
+    runCompile: { type: "boolean" },
+    runUngate: { type: "boolean" },
+    runProbes: { type: "boolean" },
+    runTests: { type: "boolean" },
+    runSweeps: { type: "boolean" }
+  },
+  required: ["approved"]
+}
+
+// ---------------------------------------------------------------------------
+// Phase and run outputs
+// ---------------------------------------------------------------------------
+
+const PhaseStatus = Schema.Literals(["completed", "partial", "failed"])
+
+/** What a phase's child run settles with. */
+export const PhaseDone = Schema.Struct({ phase: Phase, status: PhaseStatus, summary: Schema.String })
+
+/** The lifetime phase's result: the fields its approval gate reads, and the complete TSV 0.x kept on its summary row. */
+export const LifetimesDone = Schema.Struct({
+  ...PhaseDone.fields,
+  unknownRate: Schema.Number,
+  totalFields: Count,
+  refutedKeys: Schema.Array(Schema.String),
+  tsv: Schema.String
+})
+
+/** The compile phase's result, with the fields its approval gate reads. */
+export const CompileDone = Schema.Struct({
+  ...PhaseDone.fields,
+  gatedModules: Count,
+  failingCrates: Schema.Array(Schema.String),
+  greenCrates: Schema.Array(Schema.String)
+})
+
+/** What the run settles with. */
+export const Final = Schema.Struct({
+  status: Schema.Literals(["completed", "cancelled", "partial"]),
+  phasesRun: Schema.Array(Schema.String),
+  summary: Schema.String,
+  nextActions: Schema.Array(Schema.String)
+})
+
+/** An operator said no at an approval gate. */
+export const ApprovalDenied = Schema.TaggedStruct("examples/BunPortSmithers/ApprovalDenied", { gate: Schema.String })
+
+type PhaseDone = typeof PhaseDone.Type
+type LifetimesDone = typeof LifetimesDone.Type
+type CompileDone = typeof CompileDone.Type
+type Final = typeof Final.Type
+
+// ---------------------------------------------------------------------------
+// Porting rules: 0.x's deterministic path, sampling and dedupe helpers
+// ---------------------------------------------------------------------------
+
+/** The exact Rust path a Zig file ports to. */
+export const rsPathFor = (zig: string): string => {
+  const parts = zig.split("/").filter(Boolean)
+  const file = parts.pop()
+  if (file === undefined || !file.endsWith(".zig")) throw new Error(`expected .zig path, got ${zig}`)
+  const base = file.replace(/\.zig$/, "")
+  const parent = parts[parts.length - 1]
+  const area = parts[1]
+  if (parts.length === 2 && base === area) return [...parts, "lib.rs"].join("/")
+  if (base === parent) return [...parts, "mod.rs"].join("/")
+  return [...parts, `${base}.rs`].join("/")
+}
+
+const crateForZig = (zig: string): string => zig.split("/").filter(Boolean)[1] ?? "unknown"
+
+const normalizePortFiles = (files: ReadonlyArray<ZigFile>): ReadonlyArray<typeof PortFile.Type> =>
+  files.map((file) => ({
+    zig: file.zig,
+    rs: rsPathFor(file.zig),
+    loc: Number.isFinite(file.loc) ? Number(file.loc) : 0,
+    crate: file.crate ?? crateForZig(file.zig)
+  }))
+
+type TieredCrate = { readonly name: string; readonly tier: number }
+
+/** Crates grouped by tier, lowest tier first, with the `bun_` prefix dropped. */
+const groupCratesByTier = (crates: ReadonlyArray<typeof Crate.Type>): ReadonlyArray<ReadonlyArray<TieredCrate>> => {
+  const groups = new Map<number, Array<TieredCrate>>()
+  crates.forEach((crate, index) => {
+    const tier = Number.isFinite(crate.tier) ? Number(crate.tier) : index
+    groups.set(tier, [...(groups.get(tier) ?? []), { name: crate.name.replace(/^bun_/, ""), tier }])
+  })
+  return [...groups.entries()].sort(([a], [b]) => a - b).map(([, values]) => values)
+}
+
+const hashString = (value: string): number => {
+  let hash = 2166136261
+  for (let i = 0; i < value.length; i += 1) {
+    hash ^= value.charCodeAt(i)
+    hash = Math.imul(hash, 16777619)
+  }
+  return hash >>> 0
+}
+
+/** A node id 0.x derived from a model- or operator-authored string. */
+export const stableNodeId = (value: string): string => {
+  const slug = value.toLowerCase().replace(/[^a-z0-9_.:-]+/g, "-").replace(/^-+|-+$/g, "").slice(0, 140)
+  return `${slug || "node"}-${hashString(value).toString(36)}`
+}
+
+type FlatField = typeof LifetimeField.Type & { readonly file: string; readonly crate: string }
+
+/** The key a field is voted on under. */
+export const fieldKey = (field: { readonly file: string; readonly struct: string; readonly field: string }): string =>
+  `${field.file}|${field.struct}|${field.field}`
+
+const stableSample = (value: string, rate: number): boolean => {
+  if (rate <= 0) return false
+  if (rate >= 1) return true
+  return hashString(value) / 0xffffffff < rate
+}
+
+/** Every UNKNOWN or low-confidence field, and a stable `sampleRate` share of the rest. */
+const selectForVerification = (fields: ReadonlyArray<FlatField>, sampleRate: number) =>
+  fields.filter((field) =>
+    field.class === "UNKNOWN" || field.confidence === "low" || stableSample(fieldKey(field), sampleRate)
+  )
+
+const lifetimeTsv = (fields: ReadonlyArray<FlatField>): string =>
+  [
+    "file\tstruct\tfield\tzigType\tclass\trustType\tevidence\tconfidence",
+    ...fields.map((f) =>
+      [f.file, f.struct, f.field, f.zigType, f.class, f.rustType, f.evidence, f.confidence].join("\t")
+    )
+  ].join("\n")
+
+const failureKey = (result: typeof ProbeResult.Type): string =>
+  [
+    result.panicLocation?.trim() || "no-panic",
+    result.assertion?.trim() || "no-assertion",
+    result.signal?.trim() || "no-signal",
+    result.command.trim() || "no-command"
+  ].join("|")
+
+/** One failure per distinct panic location, assertion, signal and command. */
+const dedupeFailures = (results: ReadonlyArray<typeof ProbeResult.Type>): ReadonlyArray<typeof Failure.Type> => {
+  const seen = new Set<string>()
+  const failures: Array<typeof Failure.Type> = []
+  for (const result of results) {
+    if (result.passed) continue
+    const key = failureKey(result)
+    if (seen.has(key)) continue
+    seen.add(key)
+    failures.push({
+      failureKey: key,
+      probeId: result.probeId,
+      command: result.command,
+      panicLocation: result.panicLocation,
+      assertion: result.assertion
+    })
+  }
+  return failures
+}
+
+// ---------------------------------------------------------------------------
+// Agent steps, one per 0.x prompt
+// ---------------------------------------------------------------------------
+
+const json = (value: unknown) => JSON.stringify(value ?? null)
+
+/** Classifies every raw pointer field in one Zig file. */
+export const LifetimeClassify = AgentAction.make("examples/BunPortSmithers/LifetimeClassify", {
+  payload: { repo: Schema.String, file: ZigFile },
+  output: LifetimeClassification,
+  seat,
+  timeout: "20 minutes",
+  prompt: ({ file, repo }) =>
+    `# Lifetime Classify
+
+OUTPUT_KIND: lifetime-classify
+ZIG: ${file.zig}
+CRATE: ${file.crate ?? ""}
+REPO: ${repo}
+
+Classify every raw pointer field in this Zig file using Bun's ownership taxonomy from \`docs/PORTING.md\` and \`docs/LIFETIMES.tsv\`.
+
+Rules:
+1. Work only inside \`REPO\`.
+2. Read \`docs/PORTING.md\`, existing \`docs/LIFETIMES.tsv\`, and the full Zig source.
+3. Return one row per pointer-bearing struct field.
+4. Use \`UNKNOWN\` when evidence is insufficient.
+5. Do not edit files.`
+})
+
+/** One adversarial vote on one classified field. */
+export const LifetimeVerify = AgentAction.make("examples/BunPortSmithers/LifetimeVerify", {
+  payload: { repo: Schema.String, field: SelectedField, voter: Schema.String },
+  output: LifetimeVote,
+  seat,
+  timeout: "10 minutes",
+  prompt: ({ field, repo, voter }) =>
+    `# Lifetime Verify
+
+OUTPUT_KIND: lifetime-verify
+FIELD_KEY: ${field.key}
+VOTER: ${voter}
+ZIG: ${field.file}
+REPO: ${repo}
+
+Adversarially verify this proposed lifetime classification against the Zig source, \`docs/PORTING.md\`, and \`docs/LIFETIMES.tsv\`.
+
+Field: ${json(field)}
+
+Return \`refuted: true\` only for a concrete evidence-backed disagreement. Do not edit files.`
+})
+
+/** Translates exactly one Zig file to Rust. */
+export const PhaseAImplementStep = AgentAction.make("examples/BunPortSmithers/PhaseAImplement", {
+  payload: { repo: Schema.String, file: PortFile, feedback: Schema.NullOr(Schema.String) },
+  output: PhaseAImplement,
+  seat,
+  timeout: "30 minutes",
+  prompt: ({ feedback, file, repo }) =>
+    `# Phase A Implement
+
+OUTPUT_KIND: phase-a-implement
+ZIG: ${file.zig}
+RS: ${file.rs}
+CRATE: ${file.crate}
+REPO: ${repo}
+
+Translate exactly one Bun Zig file to Rust.
+
+Rules:
+1. Work only inside \`REPO\`.
+2. Read all of \`docs/PORTING.md\`.
+3. Grep \`docs/LIFETIMES.tsv\` for rows matching \`ZIG\`.
+4. Read the full Zig source at \`ZIG\`.
+5. Write the Rust draft to exactly \`RS\`.
+6. Preserve structure, names, field order, and control flow for side-by-side review.
+7. Avoid new crate layouts, Tokio, Rayon, Hyper, Futures, and \`async fn\`.
+8. Annotate unsafe blocks with \`// SAFETY:\`.
+9. Use \`TODO(port)\` instead of guessing.
+10. Do not run broad builds and do not do git operations.
+
+Prior reviewer feedback:
+${feedback ?? "none"}`
+})
+
+/** Adversarially verifies one Phase A draft. */
+export const PhaseAVerify = AgentAction.make("examples/BunPortSmithers/PhaseAVerify", {
+  payload: { repo: Schema.String, file: PortFile },
+  output: Review,
+  seat,
+  timeout: "15 minutes",
+  prompt: ({ file, repo }) =>
+    `# Phase A Verify
+
+OUTPUT_KIND: phase-a-verify
+SUBJECT: ${file.rs}
+ZIG: ${file.zig}
+RS: ${file.rs}
+REPO: ${repo}
+
+Adversarially verify the Phase A Rust draft against the Zig source and \`docs/PORTING.md\`.
+
+Check for concrete rule violations only:
+1. Logic dropped or reordered.
+2. Lifetime mapping ignored.
+3. \`String\` or \`&str\` used where bytes are required.
+4. \`deinit\` kept instead of Rust \`Drop\`.
+5. bare narrowing casts.
+6. missing \`// SAFETY:\` comments.
+7. forbidden dependencies, \`std::fs\`, \`std::net\`, Tokio, async Rust, or broad architecture changes.`
+})
+
+/** Applies only the verifier's findings to one draft. */
+export const PhaseAFixStep = AgentAction.make("examples/BunPortSmithers/PhaseAFix", {
+  payload: { repo: Schema.String, file: PortFile, issues: Schema.Array(Issue) },
+  output: PhaseAFix,
+  seat,
+  timeout: "15 minutes",
+  prompt: ({ file, issues, repo }) =>
+    `# Phase A Fix
+
+OUTPUT_KIND: phase-a-fix
+ZIG: ${file.zig}
+RS: ${file.rs}
+REPO: ${repo}
+
+Apply only the verifier findings below. Do not rewrite the file wholesale.
+
+Findings: ${json(issues)}`
+})
+
+/** One `cargo check` round for one crate. */
+export const CrateCheckStep = AgentAction.make("examples/BunPortSmithers/CrateCheck", {
+  payload: {
+    repo: Schema.String,
+    crate: Schema.Struct({ name: Schema.String, tier: Count }),
+    previous: Schema.NullOr(CrateCheck)
+  },
+  output: CrateCheck,
+  seat,
+  timeout: "20 minutes",
+  prompt: ({ crate, previous, repo }) =>
+    `# Crate Check
+
+OUTPUT_KIND: crate-check
+CRATE: ${crate.name}
+TIER: ${crate.tier}
+REPO: ${repo}
+
+Run \`cargo check -p bun_${crate.name}\` inside \`REPO\`.
+
+Fix compile errors by preserving Phase A draft bodies where possible. Gate or stub only when necessary to establish crate boundaries. Return every gated module and blocked upstream symbol.
+
+Round context: ${json(previous)}`
+})
+
+schema SurveyedTarget {
+  id: string
+  crate: string
+  file: string
+  reason: string
+}
+
+/** Ports real behavior into one gated or stubbed target. */
+export const ProperPort = AgentAction.make("examples/BunPortSmithers/ProperPort", {
+  payload: { repo: Schema.String, target: SurveyedTarget, previousDecision: Schema.NullOr(SpecDecision) },
+  output: PatchResult,
+  seat,
+  timeout: "30 minutes",
+  prompt: ({ previousDecision, repo, target }) =>
+    `# Proper Port
+
+OUTPUT_KIND: proper-port
+TARGET: ${target.id}
+CRATE: ${target.crate}
+FILE: ${target.file}
+REPO: ${repo}
+
+Remove gates, \`todo!()\`, \`unimplemented!()\`, panic placeholders, or compile-only slop by porting real behavior from the Zig spec.
+
+Target: ${json(target)}
+
+Previous review decision: ${json(previousDecision)}`
+})
+
+/** One spec reviewer's vote on a patched target. */
+export const SpecReviewStep = AgentAction.make("examples/BunPortSmithers/SpecReview", {
+  payload: { repo: Schema.String, target: SurveyedTarget, voter: Schema.String, patch: Schema.NullOr(PatchResult) },
+  output: SpecReview,
+  seat,
+  timeout: "15 minutes",
+  prompt: ({ patch, repo, target, voter }) =>
+    `# Spec Review
+
+OUTPUT_KIND: spec-review
+TARGET: ${target.id}
+VOTER: ${voter}
+FILE: ${target.file}
+REPO: ${repo}
+
+Compare the patched Rust module against the Zig spec and \`docs/PORTING.md\`.
+
+Reject layering workarounds, missing branches, wrong allocator behavior, incorrect lifetime ownership, or semantic divergences. Do not edit files.
+
+Patch result: ${json(patch)}`
+})
+
+/** Decides one target from its two reviews. */
+export const SpecDecisionStep = AgentAction.make("examples/BunPortSmithers/SpecDecision", {
+  payload: { repo: Schema.String, target: SurveyedTarget, reviews: Schema.Array(SpecReview) },
+  output: SpecDecision,
+  seat,
+  timeout: "10 minutes",
+  prompt: ({ repo, reviews, target }) =>
+    `# Spec Decision
+
+OUTPUT_KIND: spec-decision
+TARGET: ${target.id}
+REPO: ${repo}
+
+Decide whether this ungate/proper-port target is accepted.
+
+Require at least two approvals and no blocking rejection. If reviewers disagree, set \`approved: false\` and explain the next patch needed.
+
+Reviews: ${json(reviews)}`
+})
+
+/** Builds Bun's Rust binary. */
+export const Build = AgentAction.make("examples/BunPortSmithers/Build", {
+  payload: { repo: Schema.String },
+  output: BuildResult,
+  seat,
+  timeout: "30 minutes",
+  prompt: ({ repo }) =>
+    `# Build
+
+OUTPUT_KIND: build
+REPO: ${repo}
+
+Build Bun's Rust binary inside \`REPO\`.
+
+Use the repository's established command first. Prefer \`cargo build -p bun_bin\` when available. Capture the exact command and a compact summary.`
+})
+
+/** Runs one probe against the built binary. */
+export const ProbeStep = AgentAction.make("examples/BunPortSmithers/Probe", {
+  payload: { repo: Schema.String, probe: Probe },
+  output: ProbeResult,
+  seat,
+  timeout: "10 minutes",
+  prompt: ({ probe, repo }) =>
+    `# Probe
+
+OUTPUT_KIND: probe
+PROBE: ${probe.id}
+COMMAND: ${probe.cmd}
+EXPECT: ${probe.expect ?? ""}
+REPO: ${repo}
+
+Run \`./target/debug/bun-rs ${probe.cmd}\` inside \`REPO\`.
+
+Capture pass/fail, panic location, assertion text, signal, duration, and relevant output. Do not fix anything in this task.`
+})
+
+/** Fixes the root cause of one unique probe failure. */
+export const FailureFixStep = AgentAction.make("examples/BunPortSmithers/FailureFix", {
+  payload: { repo: Schema.String, failure: Failure },
+  output: FailureFix,
+  seat,
+  timeout: "20 minutes",
+  prompt: ({ failure, repo }) =>
+    `# Failure Fix
+
+OUTPUT_KIND: failure-fix
+FAILURE: ${failure.failureKey}
+COMMAND: ${failure.command}
+REPO: ${repo}
+
+Fix the root cause for this unique probe failure by reading the Rust panic site and corresponding Zig spec.
+
+Failure: ${json(failure)}`
+})
+
+/** One round of one focused test area. */
+export const TestAreaStep = AgentAction.make("examples/BunPortSmithers/TestArea", {
+  payload: { repo: Schema.String, area: TestArea, branch: Schema.String, previous: Schema.NullOr(TestAreaResult) },
+  output: TestAreaResult,
+  seat,
+  timeout: "30 minutes",
+  prompt: ({ area, branch, previous, repo }) =>
+    `# Test Area
+
+OUTPUT_KIND: test-area
+AREA: ${area.id}
+BRANCH: ${branch}
+CRATE: ${area.crate}
+REPO: ${repo}
+
+Run the focused Bun test area in the current worktree.
+
+Steps:
+1. Build \`bun_bin\`.
+2. Run the focused test glob against \`./target/debug/bun-rs\`.
+3. Group failures by panic location or assertion.
+4. Fix forward in the relevant Rust crate.
+5. Compare changed Rust files against their Zig specs for semantic divergence.
+6. Commit each coherent fix locally on \`BRANCH\`.
+
+Test glob:
+${area.glob}
+
+Previous area result: ${json(previous)}`
+})
+
+/** Cherry-picks one area's approved commits onto the integration branch. */
+export const Merge = AgentAction.make("examples/BunPortSmithers/Merge", {
+  payload: { repo: Schema.String, area: TestArea, branch: Schema.String, result: Schema.NullOr(TestAreaResult) },
+  output: MergeResult,
+  seat,
+  timeout: "15 minutes",
+  prompt: ({ area, branch, repo, result }) =>
+    `# Merge
+
+OUTPUT_KIND: merge
+SUBJECT: ${area.id}
+BRANCH: ${branch}
+REPO: ${repo}
+
+Cherry-pick approved commits for this test area onto the integration branch.
+
+Rules:
+1. Run inside \`REPO\`.
+2. Keep the version that preserves the targeted build and test command.
+3. Resolve conflicts explicitly.
+4. Return picked commit count and conflict count.
+
+Area result: ${json(result)}`
+})
+
+/** One round of one audit sweep. */
+export const SweepStep = AgentAction.make("examples/BunPortSmithers/Sweep", {
+  payload: { repo: Schema.String, sweep: Sweep, previous: Schema.NullOr(SweepResult) },
+  output: SweepResult,
+  seat,
+  timeout: "20 minutes",
+  prompt: ({ previous, repo, sweep }) =>
+    `# Audit Sweep
+
+OUTPUT_KIND: sweep
+SWEEP: ${sweep.id}
+KIND: ${sweep.kind}
+PATTERN: ${sweep.pattern}
+SCOPE: ${sweep.scope}
+REPO: ${repo}
+
+Run this specialized audit sweep inside \`REPO\`.
+
+Survey deterministic candidates, classify risk, patch confirmed issues, verify the patch, and summarize fixed/skipped counts.
+
+Previous sweep result: ${json(previous)}`
+})
+
+// ---------------------------------------------------------------------------
+// Composition helpers
+// ---------------------------------------------------------------------------
+
+type Failed = AgentAction.AgentFailure
+
+/** 0.x's `<Sequence>`: `next` starts only after `step` settles, and reads its result. */
+const after = <A, E, R, B, E2, R2>(
+  step: Node.Node<A, E, R>,
+  next: (value: Planned.Planned<A>) => Node.Node<B, E2, R2>
+): Node.Node<B, E | E2, R | R2> =>
+  Node.bindPlanned(
+    step,
+    Node.capture({}, (value: Planned.Planned<A>) => Node.andThen(Node.succeed(value), next(value)))
+  )
+
+/** 0.x's `<Parallel maxConcurrency>`: the members `concurrency` at a time, results in member order. */
+const parallel = <A, E, R>(
+  members: ReadonlyArray<readonly [string, Node.Node<A, E, R>]>,
+  concurrency: number
+): Node.Node<ReadonlyArray<A>, E, R> => {
+  if (members.length === 0) return Node.succeed([])
+  const keys = members.map(([key]) => key)
+  const joined = Bounded.all(Object.fromEntries(members), { concurrency: Math.max(1, concurrency) })
+  return Node.map(joined, Node.capture({}, (settled) => keys.map((key) => settled[key]!)))
+}
+
+/** 0.x's `retries={1}`: a failed call runs once more. */
+const retriedOnce = <A, R>(call: () => Node.Node<A, Failed, R>) =>
+  Node.catch(call(), { onFailure: Node.capture({}, () => call()) })
+
+// ---------------------------------------------------------------------------
+// Phase 1: lifetime classification
+// ---------------------------------------------------------------------------
+
+/** Three adversarial votes per selected field. A child, because the selection is known only at run time. */
+export const LifetimeVotes = Flow.make("examples/BunPortSmithers/LifetimeVotes", {
+  payload: { repo: Schema.String, selected: Schema.Array(SelectedField) },
+  success: Schema.Array(LifetimeVote),
+  error: AgentAction.AgentFailure,
+  body: Node.capture({}, ({ repo, selected }) =>
+    parallel(
+      selected.flatMap((field) =>
+        [0, 1, 2].map((vote) =>
+          [
+            `lifetime:verify:${stableNodeId(field.key)}:${vote}`,
+            LifetimeVerify.call({ repo, field, voter: `verifier-${vote + 1}` })
+          ] as const
+        )
+      ),
+      Math.min(24, selected.length * 3)
+    ))
+})
+
+const flatten = (classifications: ReadonlyArray<typeof LifetimeClassification.Type>): ReadonlyArray<FlatField> =>
+  classifications.flatMap((row) => row.fields.map((field) => ({ ...field, file: row.file, crate: row.crate })))
+
+/** The fields picked for votes. Pure, so it is a `Node.map`. */
+const select = (classifications: ReadonlyArray<typeof LifetimeClassification.Type>, sampleRate: number) =>
+  selectForVerification(flatten(classifications), sampleRate).map((field) => ({
+    key: fieldKey(field),
+    file: field.file,
+    struct: field.struct,
+    field: field.field,
+    class: field.class,
+    rustType: field.rustType
+  }))
+
+/** 0.x's `lifetime:synthesize` and `lifetime:output`, folded. */
+const synthesize = (
+  { classifications, votes }: {
+    readonly classifications: ReadonlyArray<typeof LifetimeClassification.Type>
+    readonly votes: ReadonlyArray<typeof LifetimeVote.Type>
+  }
+): LifetimesDone => {
+  const fields = flatten(classifications)
+  const unknown = fields.filter((f) => f.class === "UNKNOWN").length
+  const unknownRate = fields.length === 0 ? 0 : unknown / fields.length
+  const refutedKeys = [...new Set(votes.filter((v) => v.refuted).map((v) => v.key))]
+  return {
+    phase: "lifetimes",
+    status: refutedKeys.length > 0 ? "partial" : "completed",
+    summary: `Lifetime classification produced ${fields.length} field row(s), UNKNOWN rate ${unknownRate}.`,
+    unknownRate,
+    totalFields: fields.length,
+    refutedKeys,
+    tsv: lifetimeTsv(fields)
+  }
+}
+
+/** Phase 1: classify every file, vote on a sample, synthesize. */
+export const Lifetimes = Flow.make("examples/BunPortSmithers/Lifetimes", {
+  payload: {
+    repo: Schema.String,
+    files: Schema.Array(ZigFile),
+    sampleRate: Schema.optional(Fraction),
+    unknownApprovalThreshold: Schema.optional(Fraction)
+  },
+  success: LifetimesDone,
+  error: AgentAction.AgentFailure,
+  body: Node.capture({}, ({ files, repo, sampleRate = 0.12 }) =>
+    after(
+      parallel(
+        files.map((file) =>
+          [`lifetime:classify:${stableNodeId(file.zig)}`, LifetimeClassify.call({ repo, file })] as const
+        ),
+        files.length
+      ),
+      Node.capture({}, (classifications) =>
+        after(
+          Node.map(Node.succeed(classifications), Node.capture({}, (real) => select(real, sampleRate))),
+          Node.capture({}, (selected) =>
+            after(
+              LifetimeVotes.child({ repo, selected }),
+              Node.capture({}, (votes) => Node.map(Node.succeed({ classifications, votes }), synthesize))
+            ))
+        ))
+    ))
+})
+
+// ---------------------------------------------------------------------------
+// Phase 2: Phase A port
+// ---------------------------------------------------------------------------
+
+const PhaseARow = Schema.Struct({
+  implementation: PhaseAImplement,
+  review: Review,
+  fix: Schema.NullOr(PhaseAFix)
+})
+type PhaseARow = typeof PhaseARow.Type
+
+/** Implement, verify, then fix when the verifier found anything above a nit. */
+const portFile = (repo: string, file: typeof PortFile.Type) =>
+  after(
+    retriedOnce(() => PhaseAImplementStep.call({ repo, file, feedback: null })),
+    Node.capture({}, (implementation) =>
+      after(
+        PhaseAVerify.call({ repo, file }),
+        Node.capture({}, (review) =>
+          Node.bindPlanned(
+            Node.branch(Node.succeed(review), {
+              if: Node.capture({}, (real) => real.issues.some((issue) => issue.severity !== "nit")),
+              then: Node.capture({}, (real) => PhaseAFixStep.call({ repo, file, issues: real.issues })),
+              else: Node.capture({}, () => Node.succeed(null))
+            }),
+            Node.capture({}, (fix: Planned.Planned<typeof PhaseAFix.Type | null>) =>
+              Node.succeed({ implementation, review, fix }))
+          ))
+      ))
+  )
+
+/** 0.x's `phase-a:report` and `phase-a:output`, folded. */
+const phaseAReport = (rows: ReadonlyArray<PhaseARow>): PhaseDone => {
+  const clean = rows.filter((row) => row.review.approved || row.review.ok).length
+  const fixes = rows.flatMap((row) => (row.fix === null ? [] : [row.fix]))
+  const failed = rows.filter((row) => row.implementation.status === "failed").length
+  return {
+    phase: "phaseA",
+    status: failed > 0 ? "partial" : "completed",
+    summary: `Phase A: ${clean}/${rows.length} clean, ${fixes.length} fix task(s).`
+  }
+}
+
+/**
+ * Phase 2: port every file. 0.x wrote its report only once every file was
+ * clean or fixed; a file with only nits and no approval left the phase with no
+ * report, which settles here as `null`.
+ */
+export const PhaseA = Flow.make("examples/BunPortSmithers/PhaseA", {
+  payload: { repo: Schema.String, files: Schema.Array(ZigFile), maxConcurrency: Schema.optional(Positive) },
+  success: Schema.NullOr(PhaseDone),
+  error: AgentAction.AgentFailure,
+  body: Node.capture({}, ({ files, maxConcurrency = 8, repo }) => {
+    const planned = normalizePortFiles(files)
+    return Node.branch(
+      parallel(
+        planned.map((file) => [`phase-a:${stableNodeId(file.zig)}`, portFile(repo, file)] as const),
+        maxConcurrency
+      ),
+      {
+        if: Node.capture({}, (rows) => rows.every((row) => row.review.approved || row.review.ok || row.fix !== null)),
+        then: Node.capture({}, (rows) => Node.map(Node.succeed(rows), phaseAReport)),
+        else: Node.capture({}, () => Node.succeed(null))
+      }
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 3: crate compile bring-up
+// ---------------------------------------------------------------------------
+
+type CrateCheck = typeof CrateCheck.Type
+
+/** One crate's check loop: stop when it compiles or after `maxRounds`, keeping the latest check. */
+const checkCrate = (
+  repo: string,
+  crate: TieredCrate,
+  maxRounds: number,
+  round: number,
+  previous: Planned.Planned<CrateCheck> | null
+): Node.Node<CrateCheck, Failed, Action.Requirement<"examples/BunPortSmithers/CrateCheck">> => {
+  const check = CrateCheckStep.call({ repo, crate, previous })
+  if (round >= maxRounds) return check
+  return Node.branch(check, {
+    if: Node.capture({}, (real) => real.compiles),
+    then: Node.capture({}, (real) => Node.succeed(real)),
+    else: Node.capture({ round }, (real) => checkCrate(repo, crate, maxRounds, round + 1, real))
+  })
+}
+
+/** Each tier's crates in parallel; the next tier starts after. */
+const tiers = (
+  repo: string,
+  groups: ReadonlyArray<ReadonlyArray<TieredCrate>>,
+  maxRounds: number,
+  checks: ReadonlyArray<Planned.Planned<ReadonlyArray<CrateCheck>>>
+): Node.Node<ReadonlyArray<CrateCheck>, Failed, Action.Requirement<"examples/BunPortSmithers/CrateCheck">> => {
+  const [tier, ...rest] = groups
+  if (tier === undefined) return Node.map(Node.succeed(checks), Node.capture({}, (real) => real.flat()))
+  return after(
+    parallel(
+      tier.map((crate) =>
+        [`compile:${stableNodeId(crate.name)}:loop`, checkCrate(repo, crate, maxRounds, 1, null)] as const
+      ),
+      tier.length
+    ),
+    Node.capture({}, (checked) => tiers(repo, rest, maxRounds, [...checks, checked]))
+  )
+}
+
+/** 0.x's `compile:report` and `compile:output`, folded. */
+const compileReport = (checks: ReadonlyArray<CrateCheck>): CompileDone => {
+  const greenCrates = checks.filter((c) => c.compiles).map((c) => c.crate)
+  const failingCrates = checks.filter((c) => !c.compiles).map((c) => c.crate)
+  const gatedModules = checks.reduce((sum, c) => sum + c.gatedModules.length, 0)
+  return {
+    phase: "compile",
+    status: failingCrates.length > 0 ? "partial" : "completed",
+    summary:
+      `Compile bring-up: ${greenCrates.length}/${checks.length} crate(s) green; ${gatedModules} gated module(s).`,
+    gatedModules,
+    failingCrates,
+    greenCrates
+  }
+}
+
+/** Phase 3: check every crate, tier by tier. */
+export const Compile = Flow.make("examples/BunPortSmithers/Compile", {
+  payload: { repo: Schema.String, crates: Schema.Array(Crate), maxRounds: Schema.optional(Positive) },
+  success: CompileDone,
+  error: AgentAction.AgentFailure,
+  body: Node.capture(
+    {},
+    ({ crates, maxRounds = 25, repo }) => Node.map(tiers(repo, groupCratesByTier(crates), maxRounds, []), compileReport)
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Phase 4: ungate / proper port
+// ---------------------------------------------------------------------------
+
+type UngateRow = { readonly patch: typeof PatchResult.Type; readonly decision: typeof SpecDecision.Type }
+
+type UngateTag = `examples/BunPortSmithers/${"ProperPort" | "SpecReview" | "SpecDecision"}`
+
+/** One target's loop: patch, two reviews, decide; stop on approval or after `maxRounds`. */
+const ungate = (
+  repo: string,
+  target: SurveyedTarget,
+  maxRounds: number,
+  round: number,
+  previousDecision: Planned.Planned<typeof SpecDecision.Type> | null
+): Node.Node<UngateRow, Failed, Action.Requirement<UngateTag>> =>
+  after(
+    ProperPort.call({ repo, target, previousDecision }),
+    Node.capture({ round }, (patch) =>
+      after(
+        parallel(
+          [0, 1].map((index) =>
+            [
+              `ungate:${stableNodeId(target.id)}:review:${index}`,
+              SpecReviewStep.call({ repo, target, voter: `spec-reviewer-${index + 1}`, patch })
+            ] as const
+          ),
+          2
+        ),
+        Node.capture({ round }, (reviews) =>
+          Node.branch(SpecDecisionStep.call({ repo, target, reviews }), {
+            if: Node.capture({}, (decision) => decision.approved),
+            then: Node.capture({}, (decision) => Node.succeed({ patch, decision })),
+            else: Node.capture({ round }, (decision) =>
+              round >= maxRounds
+                ? Node.succeed({ patch, decision })
+                : ungate(repo, target, maxRounds, round + 1, decision))
+          }))
+      ))
+  )
+
+/** 0.x's `ungate:report` and `ungate:output`, folded. */
+const ungateReport = (rows: ReadonlyArray<UngateRow>): PhaseDone => {
+  const approved = rows.filter((row) => row.decision.approved).length
+  return {
+    phase: "ungate",
+    status: rows.length - approved > 0 ? "partial" : "completed",
+    summary: `Ungate/proper-port: ${approved}/${rows.length} target(s) approved.`
+  }
+}
+
+/** Phase 4: port real behavior into every target until two reviewers and the decider accept it. */
+export const Ungate = Flow.make("examples/BunPortSmithers/Ungate", {
+  payload: { repo: Schema.String, targets: Schema.Array(Target), maxRounds: Schema.optional(Positive) },
+  success: PhaseDone,
+  error: AgentAction.AgentFailure,
+  body: Node.capture({}, ({ maxRounds = 5, repo, targets }) => {
+    const surveyed = targets.map((target) => ({ ...target, reason: target.reason ?? "ungate/proper-port" }))
+    return Node.map(
+      parallel(
+        surveyed.map((target) =>
+          [`ungate:${stableNodeId(target.id)}:loop`, ungate(repo, target, maxRounds, 1, null)] as const
+        ),
+        surveyed.length
+      ),
+      ungateReport
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 5: panic probe swarm
+// ---------------------------------------------------------------------------
+
+type ProbeReport = { readonly passed: number; readonly summary: string }
+
+/** One fix per unique failure. A child, because the failures are known only at run time. */
+export const ProbeFixes = Flow.make("examples/BunPortSmithers/ProbeFixes", {
+  payload: { repo: Schema.String, failures: Schema.Array(Failure) },
+  success: Schema.Array(FailureFix),
+  error: AgentAction.AgentFailure,
+  body: Node.capture({}, ({ failures, repo }) =>
+    parallel(
+      failures.map((failure) =>
+        [`probe:fix:${stableNodeId(failure.failureKey)}`, FailureFixStep.call({ repo, failure })] as const
+      ),
+      failures.length
+    ))
+})
+
+type ProbeTag = `examples/BunPortSmithers/${"Build" | "Probe"}`
+
+/** One round: build, and when it built, probe, dedupe, fix and report. A failed build reports nothing. */
+const probeRound = (
+  repo: string,
+  probes: ReadonlyArray<Probe>
+): Node.Node<ProbeReport | null, Failed, Action.Requirement<ProbeTag>> =>
+  Node.branch(Build.call({ repo }), {
+    if: Node.capture({}, (build) => build.ok),
+    then: Node.capture({}, () =>
+      after(
+        parallel(
+          probes.map((probe) => [`probe:run:${stableNodeId(probe.id)}`, ProbeStep.call({ repo, probe })] as const),
+          probes.length
+        ),
+        Node.capture({}, (results) =>
+          after(
+            Node.map(Node.succeed(results), dedupeFailures),
+            Node.capture({}, (failures) =>
+              after(
+                ProbeFixes.child({ repo, failures }),
+                Node.capture({}, () =>
+                  Node.map(
+                    Node.succeed(results),
+                    Node.capture({}, (real): ProbeReport => {
+                      const passed = real.filter((r) => r.passed).length
+                      return { passed, summary: `Probe swarm: ${passed}/${probes.length} probe(s) passed.` }
+                    })
+                  ))
+              ))
+          ))
+      )),
+    else: Node.capture({}, () => Node.succeed(null))
+  })
+
+/** Rounds until every probe passed or `maxRounds`; the latest report decides the phase. */
+const probeRounds = (
+  repo: string,
+  probes: ReadonlyArray<Probe>,
+  maxRounds: number,
+  round: number,
+  latest: Planned.Planned<ProbeReport | null> | null
+): Node.Node<PhaseDone | null, Failed, Action.Requirement<ProbeTag>> =>
+  Node.bindPlanned(
+    probeRound(repo, probes),
+    Node.capture({ round }, (report: Planned.Planned<ProbeReport | null>) =>
+      after(
+        Node.map(Node.succeed({ report, latest }), Node.capture({}, (real) => real.report ?? real.latest ?? null)),
+        Node.capture({ round }, (current) => {
+          const done = Node.map(
+            Node.succeed(current),
+            Node.capture({}, (real): PhaseDone | null =>
+              real === null ? null : {
+                phase: "probes",
+                status: real.passed === probes.length ? "completed" : "partial",
+                summary: real.summary
+              })
+          )
+          if (round >= maxRounds) return done
+          return Node.branch(Node.succeed(report), {
+            if: Node.capture({}, (real) => real !== null && real.passed === probes.length),
+            then: Node.capture({}, () => done),
+            else: Node.capture({ round }, () => probeRounds(repo, probes, maxRounds, round + 1, current))
+          })
+        })
+      ))
+  )
+
+/**
+ * Phase 5: build, probe and fix in rounds. A run whose every build failed
+ * wrote no report in 0.x, and settles here as `null`.
+ */
+export const Probes = Flow.make("examples/BunPortSmithers/Probes", {
+  payload: { repo: Schema.String, probes: Schema.Array(Probe), maxRounds: Schema.optional(Positive) },
+  success: Schema.NullOr(PhaseDone),
+  error: AgentAction.AgentFailure,
+  body: Node.capture(
+    {},
+    ({ maxRounds = 5, probes, repo }) =>
+      probeRounds(repo, probes.length > 0 ? probes : defaultProbes, maxRounds, 1, null)
+  )
+})
+
+// ---------------------------------------------------------------------------
+// Phase 6: test swarm
+// ---------------------------------------------------------------------------
+
+type TestAreaResult = typeof TestAreaResult.Type
+type TestsTag = `examples/BunPortSmithers/${"TestArea" | "Merge"}`
+
+/** The branch an area's fixes are committed on. */
+export const areaBranch = (area: TestArea) => `bun-port/${area.id}`
+
+/** One area's loop: stop when all its tests pass or after `maxIterations`. */
+const testArea = (
+  repo: string,
+  area: TestArea,
+  maxIterations: number,
+  iteration: number,
+  previous: Planned.Planned<TestAreaResult> | null
+): Node.Node<TestAreaResult, Failed, Action.Requirement<TestsTag>> => {
+  const result = TestAreaStep.call({ repo, area, branch: areaBranch(area), previous })
+  if (iteration >= maxIterations) return result
+  return Node.branch(result, {
+    if: Node.capture({}, (real) => real.allPass),
+    then: Node.capture({}, (real) => Node.succeed(real)),
+    else: Node.capture({}, (real) => testArea(repo, area, maxIterations, iteration + 1, real))
+  })
+}
+
+/** The merge queue: each mergeable area in order, each merge waiting for the one before. */
+const mergeAreas = (
+  repo: string,
+  areas: ReadonlyArray<TestArea>,
+  results: Planned.Planned<ReadonlyArray<TestAreaResult>>,
+  requireGreen: boolean,
+  index: number,
+  merges: ReadonlyArray<Planned.Planned<typeof MergeResult.Type | null>>
+): Node.Node<ReadonlyArray<typeof MergeResult.Type | null>, Failed, Action.Requirement<TestsTag>> => {
+  const area = areas[index]
+  if (area === undefined) return Node.succeed(merges)
+  const result = results[index]!
+  return after(
+    Node.branch(Node.succeed(result), {
+      if: Node.capture({}, (real) => !requireGreen || real.allPass),
+      then: Node.capture({}, (real) => Merge.call({ repo, area, branch: areaBranch(area), result: real })),
+      else: Node.capture({}, () => Node.succeed(null))
+    }),
+    Node.capture({}, (merged) => mergeAreas(repo, areas, results, requireGreen, index + 1, [...merges, merged]))
+  )
+}
+
+/** 0.x's `test-swarm:report` and `test-swarm:output`, folded. */
+const testsReport = (
+  { merges, results }: {
+    readonly results: ReadonlyArray<TestAreaResult>
+    readonly merges: ReadonlyArray<typeof MergeResult.Type | null>
+  }
+): PhaseDone => {
+  const allPass = results.filter((r) => r.allPass).length
+  const merged = merges.filter((m) => m !== null)
+  return {
+    phase: "tests",
+    status: results.length - allPass > 0 ? "partial" : "completed",
+    summary:
+      `Test swarm: ${allPass}/${results.length} area(s) all-pass; ${merged.length} area branch(es) eligible for merge.`
+  }
+}
+
+/** The external CI wait point the test swarm parks on. */
+export const ciSignalName = "test-swarm:external-ci"
+
+/**
+ * Phase 6: loop every area until green, wait for external CI when asked, then
+ * merge areas one at a time. A CI signal other than `passed` merges nothing
+ * and, as in 0.x, leaves no report: the phase settles as `null`.
+ */
+export const Tests = Flow.make("examples/BunPortSmithers/Tests", {
+  payload: {
+    repo: Schema.String,
+    areas: Schema.Array(TestArea),
+    maxConcurrency: Schema.optional(Positive),
+    maxIterations: Schema.optional(Positive),
+    requireGreenBeforeMerge: Schema.optional(Schema.Boolean),
+    awaitExternalCiSignal: Schema.optional(Schema.Boolean)
+  },
+  success: Schema.NullOr(PhaseDone),
+  error: Schema.Union([AgentAction.AgentFailure, WaitFor.WaitForRequestInvalid]),
+  body: Node.capture({}, (
+    {
+      areas: given,
+      awaitExternalCiSignal = false,
+      maxConcurrency = 8,
+      maxIterations = 30,
+      repo,
+      requireGreenBeforeMerge = true
+    }
+  ) => {
+    const areas = given.length > 0 ? given : defaultTestAreas
+    return after(
+      parallel(
+        areas.map((area) =>
+          [`test-swarm:${stableNodeId(area.id)}:loop`, testArea(repo, area, maxIterations, 1, null)] as const
+        ),
+        maxConcurrency
+      ),
+      Node.capture({}, (results) => {
+        const merge = after(
+          mergeAreas(repo, areas, results, requireGreenBeforeMerge, 0, []),
+          Node.capture({}, (merges) => Node.map(Node.succeed({ results, merges }), testsReport))
+        )
+        if (!awaitExternalCiSignal) return merge
+        return Node.branch(Node.map(WaitFor.action.call({ name: ciSignalName }), Schema.decodeUnknownSync(CiSignal)), {
+          if: Node.capture({}, (signal) => signal.status === "passed"),
+          then: Node.capture({}, () => merge),
+          else: Node.capture({}, () => Node.succeed(null))
+        })
+      })
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// Phase 7: audit sweeps
+// ---------------------------------------------------------------------------
+
+type SweepResult = typeof SweepResult.Type
+
+/** One sweep's loop: stop when nothing was skipped, or after three rounds. */
+const sweepLoop = (
+  repo: string,
+  sweep: Sweep,
+  round: number,
+  previous: Planned.Planned<SweepResult> | null
+): Node.Node<SweepResult, Failed, Action.Requirement<"examples/BunPortSmithers/Sweep">> => {
+  const result = SweepStep.call({ repo, sweep, previous })
+  if (round >= 3) return result
+  return Node.branch(result, {
+    if: Node.capture({}, (real) => real.skipped === 0),
+    then: Node.capture({}, (real) => Node.succeed(real)),
+    else: Node.capture({ round }, (real) => sweepLoop(repo, sweep, round + 1, real))
+  })
+}
+
+/** Phase 7: run every sweep. */
+export const Sweeps = Flow.make("examples/BunPortSmithers/Sweeps", {
+  payload: { repo: Schema.String, sweeps: Schema.Array(Sweep) },
+  success: PhaseDone,
+  error: AgentAction.AgentFailure,
+  body: Node.capture({}, ({ repo, sweeps: given }) => {
+    const sweeps = given.length > 0 ? given : defaultSweeps
+    return Node.map(
+      parallel(
+        sweeps.map((sweep) => [`sweep:${stableNodeId(sweep.id)}`, sweepLoop(repo, sweep, 1, null)] as const),
+        sweeps.length
+      ),
+      Node.capture({}, (results): PhaseDone => {
+        const fixed = results.reduce((sum, r) => sum + r.fixed, 0)
+        const skipped = results.reduce((sum, r) => sum + r.skipped, 0)
+        return {
+          phase: "sweeps",
+          status: skipped > 0 ? "partial" : "completed",
+          summary: `Audit sweeps: ${fixed} issue(s) fixed.`
+        }
+      })
+    )
+  })
+})
+
+// ---------------------------------------------------------------------------
+// The top-level run
+// ---------------------------------------------------------------------------
+
+/** The operator-plan flag that switches each phase off. */
+const flags: Readonly<Record<Phase, keyof OperatorPlan>> = {
+  lifetimes: "runLifetimes",
+  phaseA: "runPhaseA",
+  compile: "runCompile",
+  ungate: "runUngate",
+  probes: "runProbes",
+  tests: "runTests",
+  sweeps: "runSweeps"
+}
+
+/** The names the run's three questions are asked and answered under. */
+export const questions = {
+  plan: "operator:plan",
+  lifetimes: "main:lifetimes:approval",
+  compile: "main:compile:approval"
+} as const
+
+/** The run's input, with 0.x's defaults applied. */
+interface Input {
+  readonly repo: string
+  readonly phases: ReadonlyArray<Phase>
+  readonly baseBranch: string
+  readonly files: ReadonlyArray<ZigFile>
+  readonly crates: ReadonlyArray<typeof Crate.Type>
+  readonly targets: ReadonlyArray<Target>
+  readonly probes: ReadonlyArray<Probe>
+  readonly areas: ReadonlyArray<TestArea>
+  readonly sweeps: ReadonlyArray<Sweep>
+  readonly maxConcurrency: number
+  readonly useWorktrees: boolean
+  readonly awaitExternalCiSignal: boolean
+  readonly unknownApprovalThreshold: number
+  readonly broadGateApprovalThreshold: number
+}
+
+/** The phases the input asks for and the operator left on. */
+const requested = (input: Input, plan: OperatorPlan | null): ReadonlyArray<Phase> =>
+  phases.filter((phase) => input.phases.includes(phase) && plan?.[flags[phase]] !== false)
+
+type GateTag = "system/human-task"
+
+/**
+ * 0.x's `<ApprovalGate onDeny="fail">`: when `needed` holds for the phase
+ * result, ask a yes/no question; a "no" fails the run.
+ */
+const gate = <A>(
+  name: string,
+  result: Planned.Planned<A>,
+  needed: (result: A) => boolean,
+  question: (result: A) => string
+): Node.Node<null, HumanTask.HumanTaskFailed | typeof ApprovalDenied.Type> =>
+  Node.branch(Node.succeed(result) as Node.Node<A>, {
+    if: needed,
+    then: Node.capture(
+      { name },
+      (real) =>
+        Node.bindPlanned(
+          Node.map(Node.succeed(real) as Node.Node<A>, question),
+          Node.capture({ name }, (prompt: Planned.Planned<string>) =>
+            Node.branch(HumanTask.action.call({ name, kind: "confirm", prompt }), {
+              if: Node.capture({}, (answer) =>
+                answer === true),
+              then: Node.capture({}, () => Node.succeed(null)),
+              else: Node.capture(
+                { name },
+                () => Node.fail({ _tag: "examples/BunPortSmithers/ApprovalDenied" as const, gate: name })
+              )
+            }))
+        )
+    ),
+    else: Node.capture({}, () => Node.succeed(null))
+  })
+
+/** Runs `phase` when the operator left it on, or settles `null`. */
+const when = <B, E, R>(
+  plan: Planned.Planned<OperatorPlan | null> | null,
+  input: Input,
+  phase: Phase,
+  run: () => Node.Node<B, E, R>
+): Node.Node<B | null, E, R> => {
+  if (!input.phases.includes(phase)) return Node.succeed(null)
+  if (plan === null) return run()
+  return Node.branch(Node.succeed(plan), {
+    if: Node.capture({ phase }, (real) => real?.[flags[phase]] !== false),
+    then: Node.capture({}, () => run()),
+    else: Node.capture({}, () => Node.succeed(null))
+  })
+}
+
+/** The enabled phases in order, with the two gates, then the final row. */
+const runPhases = (input: Input, plan: Planned.Planned<OperatorPlan | null> | null) => {
+  const { repo } = input
+  const lifetimes = when(
+    plan,
+    input,
+    "lifetimes",
+    Node.capture({ input }, () =>
+      after(
+        Lifetimes.child({ repo, files: input.files, unknownApprovalThreshold: input.unknownApprovalThreshold }),
+        Node.capture({ input }, (result) =>
+          gate(
+            questions.lifetimes,
+            result,
+            Node.capture({ input }, (real: LifetimesDone) => real.unknownRate > input.unknownApprovalThreshold),
+            Node.capture({}, (real) =>
+              `Approve lifetime classification quality?\n\n${real.summary}\n\nMetadata: ${
+                json({ unknownRate: real.unknownRate, totalFields: real.totalFields, refutedKeys: real.refutedKeys })
+              }`)
+          ))
+      ))
+  )
+  const phaseA = when(
+    plan,
+    input,
+    "phaseA",
+    Node.capture({ input }, () => PhaseA.child({ repo, files: input.files, maxConcurrency: input.maxConcurrency }))
+  )
+  const compile = when(
+    plan,
+    input,
+    "compile",
+    Node.capture({ input }, () =>
+      after(
+        Compile.child({ repo, crates: input.crates }),
+        Node.capture({ input }, (result) =>
+          gate(
+            questions.compile,
+            result,
+            Node.capture({ input }, (real: CompileDone) => real.gatedModules > input.broadGateApprovalThreshold),
+            Node.capture({}, (real) =>
+              `Approve compile gate/stub debt?\n\n${real.summary}\n\nMetadata: ${
+                json({ gatedModules: real.gatedModules, failingCrates: real.failingCrates })
+              }`)
+          ))
+      ))
+  )
+  const ungate = when(
+    plan,
+    input,
+    "ungate",
+    Node.capture({ input }, () => Ungate.child({ repo, targets: input.targets }))
+  )
+  const probes = when(
+    plan,
+    input,
+    "probes",
+    Node.capture({ input }, () => Probes.child({ repo, probes: input.probes }))
+  )
+  const tests = when(
+    plan,
+    input,
+    "tests",
+    Node.capture({ input }, () =>
+      Tests.child({
+        repo,
+        areas: input.areas,
+        maxConcurrency: input.maxConcurrency,
+        awaitExternalCiSignal: input.awaitExternalCiSignal
+      }))
+  )
+  const sweeps = when(
+    plan,
+    input,
+    "sweeps",
+    Node.capture({ input }, () => Sweeps.child({ repo, sweeps: input.sweeps }))
+  )
+  const final = Node.map(
+    Node.succeed({ plan }),
+    Node.capture({ input }, (real): Final => {
+      const ran = requested(input, real.plan ?? null)
+      return {
+        status: "completed",
+        phasesRun: ran,
+        summary: `Bun port Smithers workflow completed ${ran.length} phase(s).`,
+        nextActions: [
+          "Inspect child run reports and Smithers scores.",
+          "Use timeline/fork/replay for any failed or low-confidence node."
+        ]
+      }
+    })
+  )
+  return Node.andThen(
+    lifetimes,
+    Node.andThen(
+      phaseA,
+      Node.andThen(
+        compile,
+        Node.andThen(ungate, Node.andThen(probes, Node.andThen(tests, Node.andThen(sweeps, final))))
+      )
+    )
+  )
+}
+
+/** The operator's review of the run, before any agent starts. */
+const askOperator = (input: Input) =>
+  HumanTask.action.call({
+    name: questions.plan,
+    kind: "json",
+    prompt:
+      `# Operator Plan Review\n\nReview this Bun port run before agent work starts.\n\nRepository: ${input.repo}\n\nPlanned input: ${
+        json(input)
+      }`,
+    schema: operatorPlanSchema,
+    maxAttempts: 5,
+    timeoutMs: 7 * 24 * 60 * 60_000
+  }).pipe(HumanTask.decode(OperatorPlan))
+
+/** The pack's entrypoint. */
+export const BunPortSmithers = Flow.make("examples/BunPortSmithers", {
+  payload: {
+    repo: Schema.optional(Schema.String),
+    phases: Schema.optional(Schema.Array(Phase)),
+    requireOperatorPlan: Schema.optional(Schema.Boolean),
+    baseBranch: Schema.optional(Schema.String),
+    files: Schema.optional(Schema.Array(ZigFile)),
+    crates: Schema.optional(Schema.Array(Crate)),
+    targets: Schema.optional(Schema.Array(Target)),
+    probes: Schema.optional(Schema.Array(Probe)),
+    areas: Schema.optional(Schema.Array(TestArea)),
+    sweeps: Schema.optional(Schema.Array(Sweep)),
+    maxConcurrency: Schema.optional(Positive),
+    useWorktrees: Schema.optional(Schema.Boolean),
+    awaitExternalCiSignal: Schema.optional(Schema.Boolean),
+    unknownApprovalThreshold: Schema.optional(Fraction),
+    broadGateApprovalThreshold: Schema.optional(Count)
+  },
+  success: Final,
+  error: Schema.Union([
+    AgentAction.AgentFailure,
+    HumanTask.HumanTaskFailed,
+    WaitFor.WaitForRequestInvalid,
+    ApprovalDenied
+  ]),
+  body: Node.capture({}, (payload) => {
+    const input: Input = {
+      repo: payload.repo ?? ".",
+      phases: payload.phases ?? phases,
+      baseBranch: payload.baseBranch ?? "main",
+      files: payload.files ?? [],
+      crates: payload.crates ?? [],
+      targets: payload.targets ?? [],
+      probes: payload.probes ?? [],
+      areas: payload.areas ?? [],
+      sweeps: payload.sweeps ?? [],
+      maxConcurrency: payload.maxConcurrency ?? 8,
+      useWorktrees: payload.useWorktrees ?? true,
+      awaitExternalCiSignal: payload.awaitExternalCiSignal ?? false,
+      unknownApprovalThreshold: payload.unknownApprovalThreshold ?? 0.05,
+      broadGateApprovalThreshold: payload.broadGateApprovalThreshold ?? 20
+    }
+    if (payload.requireOperatorPlan === false) return runPhases(input, null)
+    return Node.branch(askOperator(input), {
+      if: Node.capture({}, (plan) => plan.approved),
+      then: Node.capture({ input }, (plan) => runPhases(input, plan)),
+      else: Node.capture({}, (plan) =>
+        Node.map(
+          Node.succeed(plan),
+          Node.capture({}, (real): Final => ({
+            status: "cancelled",
+            phasesRun: [],
+            summary: `Operator did not approve the Bun port run. ${real.comments ?? ""}`.trim(),
+            nextActions: ["Revise input scope and start a new run."]
+          }))
+        ))
+    })
+  })
+})
+
+/** Every agent step, the seven phase children and their nested children, the questions and the CI wait. */
+export const layer = Layer.mergeAll(
+  Layer.mergeAll(
+    LifetimeClassify.layer,
+    LifetimeVerify.layer,
+    PhaseAImplementStep.layer,
+    PhaseAVerify.layer,
+    PhaseAFixStep.layer,
+    CrateCheckStep.layer,
+    ProperPort.layer,
+    SpecReviewStep.layer,
+    SpecDecisionStep.layer,
+    Build.layer
+  ),
+  Layer.mergeAll(ProbeStep.layer, FailureFixStep.layer, TestAreaStep.layer, Merge.layer, SweepStep.layer),
+  Layer.mergeAll(
+    Interpreter.layer(Lifetimes),
+    Interpreter.layer(LifetimeVotes),
+    Interpreter.layer(PhaseA),
+    Interpreter.layer(Compile),
+    Interpreter.layer(Ungate),
+    Interpreter.layer(Probes),
+    Interpreter.layer(ProbeFixes),
+    Interpreter.layer(Tests),
+    Interpreter.layer(Sweeps)
+  )
+)

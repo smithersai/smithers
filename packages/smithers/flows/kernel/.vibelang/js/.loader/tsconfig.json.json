@@ -1,0 +1,4372 @@
+{
+ "format": 2,
+ "base": "../../../../../../..",
+ "entry": {
+  "format": 9,
+  "version": "0.0.11",
+  "project": {
+   "relative": "packages/smithers/flows/kernel/tsconfig.json"
+  },
+  "root": {
+   "relative": "packages/smithers/flows/kernel"
+  },
+  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "configs": [
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/tsconfig.json"
+    },
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/tsconfig.json"
+    },
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/tsconfig.json"
+    },
+    "size": 1116,
+    "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/tsconfig.json"
+    },
+    "size": 1415,
+    "hash": "CQGGkEBWRZqHYtj0LlTgLdLgsLcO6SkyNgBS9k0d9Hs"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/tsconfig.json"
+    },
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
+   }
+  ],
+  "directories": [
+   [
+    {
+     "relative": "packages/smithers/flows/kernel/src"
+    },
+    null,
+    "YxlBbyXa4yG1UKcHYgfMV2eZVdOHI1oJyZ0FTSwq9go",
+    [],
+    {
+     "recursive": true,
+     "excluded": [
+      {
+       "relative": "packages/smithers/flows/kernel/dist/esm"
+      }
+     ],
+     "sidecarDir": {
+      "relative": "packages/smithers/flows/kernel/.vibe/declarations"
+     },
+     "home": {
+      "relative": "packages/smithers/flows/kernel"
+     },
+     "hidden": false
+    }
+   ]
+  ],
+  "installs": [
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/pnpm-lock.yaml"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/package-lock.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/npm-shrinkwrap.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/yarn.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/bun.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/bun.lockb"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/pnpm-lock.yaml"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/package-lock.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/npm-shrinkwrap.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/yarn.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/bun.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/bun.lockb"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/pnpm-lock.yaml"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/package-lock.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/npm-shrinkwrap.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/yarn.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/bun.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/bun.lockb"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/pnpm-lock.yaml"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/package-lock.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/npm-shrinkwrap.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/yarn.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/bun.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "packages/bun.lockb"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "pnpm-lock.yaml"
+    },
+    "size": 1032876,
+    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+   },
+   {
+    "path": {
+     "relative": "package-lock.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "npm-shrinkwrap.json"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "yarn.lock"
+    },
+    "hash": null
+   },
+   {
+    "path": {
+     "relative": "bun.lock"
+    },
+    "size": 1488383,
+    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+   },
+   {
+    "path": {
+     "relative": "bun.lockb"
+    },
+    "hash": null
+   }
+  ],
+  "packages": [
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/package.json"
+    },
+    "size": 4687,
+    "hash": "20imS0cRUHTXLT9UZAzWgkgMGpkkKl68_TUrhg7ognw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/package.json"
+    },
+    "size": 3248,
+    "hash": "7PmG49ZKDChXFhZNpgHjo7Ob8RiJorctU9qPdszh9WA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/package.json"
+    },
+    "size": 4935,
+    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/package.json"
+    },
+    "size": 14526,
+    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/package.json"
+    },
+    "size": 5792,
+    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/package.json"
+    },
+    "size": 4131,
+    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/package.json"
+    },
+    "size": 8983,
+    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/package.json"
+    },
+    "size": 11258,
+    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/jj/package.json"
+    },
+    "size": 5939,
+    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/package.json"
+    },
+    "size": 5445,
+    "hash": "pPJpxomzRsM0Rv6qit6mvBwb01oh4Syf-sdBmGh7D7w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/tinybench@6.1.4/node_modules/tinybench/package.json"
+    },
+    "size": 849,
+    "hash": "5Dou0Jm-PBZ_V494uRIN8Ux9chPLB1i9KbqiTtR_2-o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0/node_modules/vite/package.json"
+    },
+    "size": 5081,
+    "hash": "JgoKepajXhtldIABTA87WStwBh5CCZ7e_I_peXLwX9Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@vitest+mocker@5.0.0_vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0_/node_modules/@vitest/mocker/package.json"
+    },
+    "size": 2712,
+    "hash": "-kDn5hvGoc_LZyr3QvfOAGy5jM6NjE1fN7uk2a_QcpY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type/package.json"
+    },
+    "size": 1122,
+    "hash": "DnqO6LI65X7lo6mNq6POR2eGylZ19_YLaorDILg1AaA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+deep-eql@4.0.2/node_modules/@types/deep-eql/package.json"
+    },
+    "size": 792,
+    "hash": "ouRfOGsvuu2Kj-MzUC-X5ZBh7XON3QQ3Q3_eBaz6VIQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/assertion-error@2.0.1/node_modules/assertion-error/package.json"
+    },
+    "size": 863,
+    "hash": "enf-e-MgOOQKq5o_xhgKb74_27aLAGt4pHQB9wJuluc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+chai@5.2.3/node_modules/@types/chai/package.json"
+    },
+    "size": 2284,
+    "hash": "JzoxWaWSgmzAaLIjVumj6Wjf_oig-ZiSAyqInyjFZ6c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@effect+vitest@4.1.1_effect@4.1.1_vitest@5.0.0/node_modules/@effect/vitest/package.json"
+    },
+    "size": 1245,
+    "hash": "7I28_8pn3k8i6lnZIGQoO66psYhmPY25bpweaRNU-nM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/package.json"
+    },
+    "size": 4508,
+    "hash": "tk5oy5tRZme9fMj6N6jLKW5NvN7Z4XdmNrMbYWv-i08"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/package.json"
+    },
+    "size": 1192,
+    "hash": "_l3m1Qs-Qmr1u-CLnYO2s8UQbWOewo5bkMeb-x183as"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/package.json"
+    },
+    "size": 2597,
+    "hash": "Wve2Lb9VdaMBzRPoYW8dfZz_PJD5-re8PWofT7_ulOs"
+   }
+  ],
+  "files": [
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
+    },
+    "size": 91,
+    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Types.d.ts"
+    },
+    "size": 32385,
+    "hash": "QVm-r5RF17mULkSllZF9BYAhFi9vcx6ROl_sSKDH5-c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HKT.d.ts"
+    },
+    "size": 6595,
+    "hash": "Amf2M18QE8U5IejPf2Z374E2k7VIx_Qqi2wOIXYlFj8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Function.d.ts"
+    },
+    "size": 32336,
+    "hash": "86yuhRDaJcTpQb2FUG6q-UWsWLeOgD_8W19LVrd1fH4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Ordering.d.ts"
+    },
+    "size": 6202,
+    "hash": "nc3ZgAuLBa1XKbNNkiXsNTRg7ldj-ZW1xDm0vcydgcI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Order.d.ts"
+    },
+    "size": 30713,
+    "hash": "u0sJlDsWn-Lk7u7UMFY4Ld2F9jhfQuAkN-798AUhvPw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Combiner.d.ts"
+    },
+    "size": 7796,
+    "hash": "zhuMD4egQEUS-WfUseidhELHZcRAfXkE7R6nRn2JA0o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Reducer.d.ts"
+    },
+    "size": 4747,
+    "hash": "HizrFIwM3t5-1QRj-uA_UbGZqz57dpw0OnTFaHWcNRA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Equivalence.d.ts"
+    },
+    "size": 30217,
+    "hash": "sd3sYBxliMvpBXD-tDcGLnRaFoPe5JsyfotO-KlYUIg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Predicate.d.ts"
+    },
+    "size": 70822,
+    "hash": "vHEkM-ieWNNr3ERyJ-dQCFT9p383hBCHXAy46YA7EMI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Inspectable.d.ts"
+    },
+    "size": 7763,
+    "hash": "aIJVGNfkL8ip-l-THLBQ8VqIvfpbUUD41YPJDXS7dg8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Pipeable.d.ts"
+    },
+    "size": 11504,
+    "hash": "vBSKcrSAxe5jTXIKIR9ts8TQz1f-j_-FqywOpuFK5Ig"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Unify.d.ts"
+    },
+    "size": 17542,
+    "hash": "zfMe7pElA6R0b4P1QtRvS3Tmwne9hC73Juup23vKmr4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Utils.d.ts"
+    },
+    "size": 5114,
+    "hash": "SWcQXKZr7TEzBf7BAQqkqOvdnXY0NSYwPQK-3owLxsI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Result.d.ts"
+    },
+    "size": 98194,
+    "hash": "BGfLpmgd5cP_4uUyOOGqsAtWoOPt-1BesPC0JZQzuR4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Filter.d.ts"
+    },
+    "size": 36194,
+    "hash": "oXqxrQ054QghNzRYz8YX5FDv715iT9zc9P8W-TvrBBA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Option.d.ts"
+    },
+    "size": 135005,
+    "hash": "gxa7Ui-EWkfKbeGOwEIzlRmcZEjhJD6BDRlrdEmDnL0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Record.d.ts"
+    },
+    "size": 66726,
+    "hash": "Z_tC918VenWz-ztorpyfqUqoUSFgS10xTys7OfOawlg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Array.d.ts"
+    },
+    "size": 294760,
+    "hash": "0gDNsJvuABgjum2scY4gRvX3EvASTCiyRYQU-vd3ino"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Hash.d.ts"
+    },
+    "size": 12037,
+    "hash": "r7D20TqSKXKfB7j42LdKBb0pT-6ZD3QNNthV6K_Dmis"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Equal.d.ts"
+    },
+    "size": 10462,
+    "hash": "6qSjhiaI5iPKoHBy_XpPWdg6UlersX6fLZhKaTwI1Po"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Context.d.ts"
+    },
+    "size": 54728,
+    "hash": "14KhUgdyAMTBq7CscsLGS_O3hJzbfIPPx2FD_KrYUN0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Exit.d.ts"
+    },
+    "size": 36405,
+    "hash": "iTSakEpEODgRXhgOqafxaUb5ofPQ98VTYq1_Y-E0JA0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/LogLevel.d.ts"
+    },
+    "size": 19875,
+    "hash": "1se05Z-1TpbWyfNezPIjtmcsvsHmUOd68v1ahYK-rGo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Duration.d.ts"
+    },
+    "size": 55764,
+    "hash": "7bFeWmGRrqTXY5MiaZc0Zw9iXg7W0DhCbsD-TPjAFTI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/NonEmptyIterable.d.ts"
+    },
+    "size": 2721,
+    "hash": "APrcWDvcf5Wze9PatuYK-ULdVGJHS1G-Y9DWyaZ_CaE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Chunk.d.ts"
+    },
+    "size": 153449,
+    "hash": "WS391WPKW-ybUYS89GvEeisD2tRe6en7eeFoAfQJQ0k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Deferred.d.ts"
+    },
+    "size": 55929,
+    "hash": "af6XmOzWPJwUlaGYLlk97TANRyO2VXqukDrU2jFQupw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Latch.d.ts"
+    },
+    "size": 12562,
+    "hash": "2XgjtOb8-qrxaXbAkJ1hl2Wam7cjvLP5s9K3RamAaFU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableList.d.ts"
+    },
+    "size": 15227,
+    "hash": "Ou6t9HRJKi00hk5MRNKIp-j11q7YmD-qw45Z2upvtN8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableRef.d.ts"
+    },
+    "size": 44439,
+    "hash": "y_820WZuuKCyr2_ctqMUqjY7Uj79kvnxcpbP4B5TjFw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Scope.d.ts"
+    },
+    "size": 20990,
+    "hash": "_4T7JHRLsSQtryITzVDZhCXKsb12nreDacJN_O7WmYA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PubSub.d.ts"
+    },
+    "size": 66325,
+    "hash": "CBoW_lm-tvPH-gAeeyRjpkD1TuCY7J0DEdYBNMVihf0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Pull.d.ts"
+    },
+    "size": 15239,
+    "hash": "4RmpQh-QMw5Px1Kkw0KUlHipX_HymIKDgC83oYEfpsI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Scheduler.d.ts"
+    },
+    "size": 6497,
+    "hash": "ATsz9H6-BTWMN3Fgw7XUotZE1GAY-P0soWtVwE_SAsk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Queue.d.ts"
+    },
+    "size": 66883,
+    "hash": "t9C0a4x2a7t3ufWd4hDJRPLQAgESMRxW1mfiD7P7KbE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/DateTime.d.ts"
+    },
+    "size": 132096,
+    "hash": "HmLlltCLStznjnSRlPtrkDKqEyjZwxncVaju9PzNsJs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Cron.d.ts"
+    },
+    "size": 23375,
+    "hash": "Ka8UASChZBypabggOiQAfOKNMTQs-97Ei9UhJzNvdJs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Schedule.d.ts"
+    },
+    "size": 50505,
+    "hash": "RPzgIu6hgoVfX-DdUOdsq4lVCx1hhEC9vcqxrrY9ElM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Take.d.ts"
+    },
+    "size": 1517,
+    "hash": "Wu6DfTHKNeRnhSjeLOPRy7wzwevCBL2n1dIA1naC5N0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Tracer.d.ts"
+    },
+    "size": 21198,
+    "hash": "HoFzV8n36xU4cZds-Dykxx0kUeAdc6Aie_llzwkiu2Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Channel.d.ts"
+    },
+    "size": 310488,
+    "hash": "rDEQGb_g2VW5uDJ6cThfMx5pu7vi5KVMdFR9tKYO8hA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/BigDecimal.d.ts"
+    },
+    "size": 79061,
+    "hash": "LRR9mZ9LXWXWaH3oWDFeH2GHf9hHsBPxVAUzJrIQI1g"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/CryptoError.d.ts"
+    },
+    "size": 7110,
+    "hash": "aEMZ_brGseF4_5GfcLcauiNtD3uO3QbOT0A_1oZha7o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/SecureRandom.d.ts"
+    },
+    "size": 12342,
+    "hash": "YCpb6SiDrBLXZdT_WuwinbhSln7cvwfcL3h1Wd3wHvA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/WebCrypto.d.ts"
+    },
+    "size": 2529,
+    "hash": "wev01FVIkl3g9KiR173dQYDqy84Voi30eiKZ0lf9HHQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Aead.d.ts"
+    },
+    "size": 11172,
+    "hash": "GQSTipYT0YIqM2HqjjSkJVz4z-8ARI8x2R7G6nMrjRU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Cipher.d.ts"
+    },
+    "size": 8027,
+    "hash": "sACXxe6AnNb9FrdAjV5otpiynXwpMr4NulcFw6lUtoE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/KeyAgreement.d.ts"
+    },
+    "size": 10918,
+    "hash": "tgbdXrIcABcpNqMQ-rdRFzuAl4is8lKL-t9MyTB4S_0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Digest.d.ts"
+    },
+    "size": 3928,
+    "hash": "a9VjRfGwr5m9QwyoRhVCa5p7I96HmDXBgUdRfyhOT0E"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/KeyWrap.d.ts"
+    },
+    "size": 12812,
+    "hash": "YgURUlpk4UbTM_NNUAPnFazXTixOKuWYVIOt2smPqSE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Mac.d.ts"
+    },
+    "size": 8756,
+    "hash": "8u0WAx85nKeVIAyLDXgRMTMjW7ooyXC7kFitIpWaQns"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/Signature.d.ts"
+    },
+    "size": 14283,
+    "hash": "Tc7OYIVQkpv4GO0b9cv7pVLy6KM52y6L4KKfLJjlLug"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/crypto/KeyFormat.d.ts"
+    },
+    "size": 11342,
+    "hash": "VZnqXGC45Q7OYKk-ilL7yynjEFhjmHfVDG7aVBw_MVo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Differ.d.ts"
+    },
+    "size": 1058,
+    "hash": "J16qyCUzhH33Bjp9lHJY9PZhQBoRCpcGCvN8AhxWniI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Formatter.d.ts"
+    },
+    "size": 5449,
+    "hash": "K8ObMAHjy0YzgpTuaBtORE2mYbmd1akh5Q-UdxMGfJ8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Graph.d.ts"
+    },
+    "size": 241963,
+    "hash": "sU5GLW_wSiO6MQrp1oJksV522UiyOVhRPaPFXy6gyPU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HashMap.d.ts"
+    },
+    "size": 71043,
+    "hash": "NocdHXXOPzwRzSrjVdKEB4dcR2Z-6z4KwPNhGhMqEGA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HashSet.d.ts"
+    },
+    "size": 30325,
+    "hash": "EhmlcIotV9xf0no2pyGh3ulmGczpqyui_2mDPko3tmk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Data.d.ts"
+    },
+    "size": 27342,
+    "hash": "HykEXp_lXw1dnOdqg28tf-5eCQcoucxP3bGfB2D3yrQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Cookies.d.ts"
+    },
+    "size": 24274,
+    "hash": "tA-Qid29ljvaSZh6uwOpfXLCtj3KFiUJNUsU0UyDKd4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Redactable.d.ts"
+    },
+    "size": 4779,
+    "hash": "lhWATKjbF8NJfOOldgn_kuMFPFMGdLPJZazwy12cm8M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Redacted.d.ts"
+    },
+    "size": 8091,
+    "hash": "gdirXijV45YJzSzkWoi7wOe1zbdVipnydYcZpiI50Gs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Headers.d.ts"
+    },
+    "size": 19187,
+    "hash": "UktiEfpfn8pRopZkWCXIv7TAEEcfPRgUgNnU9hPWtOw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/UrlParams.d.ts"
+    },
+    "size": 17394,
+    "hash": "J8amv7Kd3MxsXzx2Kjp6pWrlmHJz3bvQDdgd2QxYCFY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/internal/schemaError.d.ts"
+    },
+    "size": 230,
+    "hash": "MlPehA_I5y_gSYiTZZiTs-oTT8iwP4Lt5ekLsPD7Yss"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/JsonPatch.d.ts"
+    },
+    "size": 6878,
+    "hash": "n9nMBU_OZrL1gU2Aih4hLQgOA2wlKJXWcvdJMqT1xsg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/JsonSchema.d.ts"
+    },
+    "size": 18014,
+    "hash": "6wJU_KkRzjoxmMXAx2P8_EeeyWs4TEVHE3viGFggnUM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/NetAddress.d.ts"
+    },
+    "size": 47085,
+    "hash": "yPpehyyk9ENHNWM0z3sjJRfEzvYsoDDc8jzGGfSbrbM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/Host.d.ts"
+    },
+    "size": 11296,
+    "hash": "PfqmDliGB4BOL0zyJvQOch8Ouc2aqB5yEtLULPpn0AY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/Dns.d.ts"
+    },
+    "size": 20049,
+    "hash": "UaSegTER-fGTIFbtZBpb2qC2Haygg7ic7dzfYvM_CiM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/IpInterface.d.ts"
+    },
+    "size": 7379,
+    "hash": "3PgefZZ7ZPCEkIyLwCsHCgkWz_sstwfSY_kDmwQxlx0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/net/IpNetwork.d.ts"
+    },
+    "size": 10494,
+    "hash": "X5GGBE5IsMmmyLaT_ipMfAb3Yfmd6YxFwPjprWErlTI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/StandardSchema.d.ts"
+    },
+    "size": 6268,
+    "hash": "vZP5VlEJEzAUzJ1-f467cCCG2TThFIjkHfRVsMG3RfU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaIssue.d.ts"
+    },
+    "size": 25977,
+    "hash": "_6DEuTXPi5oEZ2sSL2I-CvbD-bmheGUXjQSB8WmGIa4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaGetter.d.ts"
+    },
+    "size": 61384,
+    "hash": "IKyp62ff6dUL6PKtjSYq7wGU1-H3AszML3SS17B1d7w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaTransformation.d.ts"
+    },
+    "size": 54970,
+    "hash": "Ox710Eg7cpJhgWQ-mzj_xZSrJZFu9hKMiBc8aYxcY_M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaAST.d.ts"
+    },
+    "size": 56328,
+    "hash": "G3t2xtwE2QfEbmNPsQlbWXTN0YeDt-gM20bEKjQViGA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Optic.d.ts"
+    },
+    "size": 46781,
+    "hash": "9oJAb80N5OjlWVffEE9q6G3gTK9vsh_Bs8Fq9OuskeQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaParser.d.ts"
+    },
+    "size": 28444,
+    "hash": "fOIHkYhY-j1xn4BJDf3BwfarH925XsGWwqejWGvlGC8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SchemaRepresentation.d.ts"
+    },
+    "size": 75735,
+    "hash": "GXoZvPbU_X2dEar5slbxFiB1awC-ZIoJI_Kx-yL5G9E"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SemVer.d.ts"
+    },
+    "size": 37063,
+    "hash": "l_EMR67RdUDmLwNVrm1d3yeB3tO5pKETnaXo1rOCbu4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SemVerRange.d.ts"
+    },
+    "size": 18851,
+    "hash": "OSSiVn__FCw2Z_HtVfv3DF9rqbD2RsKHxXri7TRZHcs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Struct.d.ts"
+    },
+    "size": 47319,
+    "hash": "iWT4Iu84rl5aXZEStYpzpWkU9EWvWZPRkXXlDVeZ43I"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Schema.d.ts"
+    },
+    "size": 451650,
+    "hash": "rIgwxmjBoY1ai-EFZgZzKaXJ4blJMzcyt-iQGz6s884"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Brand.d.ts"
+    },
+    "size": 8379,
+    "hash": "5AYZosPBDIj0bWTTGwz8SquweOcXuODb8MV7LG-jD7A"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ByteSize.d.ts"
+    },
+    "size": 18616,
+    "hash": "pfF5HoIpi1lZtIWcTrQf9EtS2Oyq3KIitKYmShb79Aw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ExecutionPlan.d.ts"
+    },
+    "size": 12685,
+    "hash": "6LBRWaRCTZANg1GT4M7AD1-X6IlSioXG3RYp7GjFNXE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Sink.d.ts"
+    },
+    "size": 63297,
+    "hash": "0zaVhhiBiQ3_xX-CUsym3H39NVL9GT1UPqrQyiPPjmQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Stream.d.ts"
+    },
+    "size": 545237,
+    "hash": "b6kUObbmluIK1y2P3ZiWpDDlvm7dFoQkuAPpH3FXDrg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Layer.d.ts"
+    },
+    "size": 154832,
+    "hash": "9AxWcdioBtE7whQpy4ZRnYdveLSAGgbdZpXjQG-yoSw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Metric.d.ts"
+    },
+    "size": 135658,
+    "hash": "t59pfOpsCEKxywZbrXYNQLIUnHXIb3XObDIYZ7OYWCk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PlatformError.d.ts"
+    },
+    "size": 7604,
+    "hash": "ZE1lf8qUiKLbnkn9QNaPXQS8XjY1aCPTXQnXqwYcYMA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FileSystem.d.ts"
+    },
+    "size": 32680,
+    "hash": "jnScgCZmnCoh0fEZjGgKQ4iVNHG6TwbkY0lwsMl1ckY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Logger.d.ts"
+    },
+    "size": 29287,
+    "hash": "LqbOl4xpHfeujd5SKKykdK5mfQqS7vuFCmAOAMa4Dd8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/References.d.ts"
+    },
+    "size": 20485,
+    "hash": "l5_94-e688N_YkfYdr2dlP8WwNG3CrFcEVMS6CjjDHw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Fiber.d.ts"
+    },
+    "size": 25348,
+    "hash": "1CS9AjQ3cwTMOxKo4L2Th6d7BLhVOFdZJMbOUBgY-Pc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Cause.d.ts"
+    },
+    "size": 58630,
+    "hash": "2nD2WfKylmlTaM7du7ll4cSoqOBYAtltNpZ_gnIvnMY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Clock.d.ts"
+    },
+    "size": 10680,
+    "hash": "Hqgo89XKXD2v4sTUUaYss7oVcOjoDbzt2icoOnNRaeU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Request.d.ts"
+    },
+    "size": 23985,
+    "hash": "dDw58nf-3n4QMW84rh3HQBGynvtjDSkWlWqg_Lvwl18"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableHashMap.d.ts"
+    },
+    "size": 33529,
+    "hash": "Dc7iPibf2NShOx6TzqpAyQqg89J3vW2GNrMgWAGu_QU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Cache.d.ts"
+    },
+    "size": 77021,
+    "hash": "CB0jOQCsB329pMl_d4gKR1qwS5OEVlruO2dQb_ImrnY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PrimaryKey.d.ts"
+    },
+    "size": 3523,
+    "hash": "2wBq5xlErr0xZNKySDVFofU9g0KSOQeLRXaFvoi5P4o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/Reactivity.d.ts"
+    },
+    "size": 9117,
+    "hash": "qrU2AD_3X55k3YbIlpK7lNnFRH3bzqSM1WCUKrDbRr0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Semaphore.d.ts"
+    },
+    "size": 30706,
+    "hash": "6Nmg2ci5lq-PwxfAr72soMz7moh4ZLjfIKOg3EbYMNk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlError.d.ts"
+    },
+    "size": 13968,
+    "hash": "qfdZMBw4enhimwwDvBZG-A1R-m0AsWRWhA_Ju1bGr-0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlConnection.d.ts"
+    },
+    "size": 3335,
+    "hash": "FxIYC4vJdl2FL0HDP1OvexsFAQIb7RDQn9gaCCONpIU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/Statement.d.ts"
+    },
+    "size": 21356,
+    "hash": "LdyDmhKhm2_X6RmgCSo86b5-iklsPWPp_mWwKAXkVsg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlClient.d.ts"
+    },
+    "size": 18408,
+    "hash": "WG634liSTqfW5C1ZqTbJaPxDpcCBymiBjMK16bzQcQ8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Path.d.ts"
+    },
+    "size": 10404,
+    "hash": "mrxPukRhYvS-KbRF1suOP-3DcXZmr4-mH3CfUvfVwVM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/KeyValueStore.d.ts"
+    },
+    "size": 13631,
+    "hash": "0dYV2XdO18JwQikOj9xmnV0YMdJskoOteTBYezVpzls"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/Redis.d.ts"
+    },
+    "size": 8401,
+    "hash": "z-6AYna365tDzeyq249DqfvNoF2TVyiePq1pjUU88AY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/Persistence.d.ts"
+    },
+    "size": 10473,
+    "hash": "k3PsmbesXvDpjlmZ6aLQy7JhdcvaEkfyNOahrUjwDuA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/Persistable.d.ts"
+    },
+    "size": 6604,
+    "hash": "o2CajscUMquA6yE5N9IdqpK53zvfcWcLqdhz-5p_Jvc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RequestResolver.d.ts"
+    },
+    "size": 62616,
+    "hash": "7NuRRi_z5SI5eA3gZ1nIm1zJPKfDS7nYB1cSX0BUuDs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxRef.d.ts"
+    },
+    "size": 11799,
+    "hash": "ub9W3zC0_Viql5YNG2Q_rRbCf-iXLYfzaM1MYB0PmAc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Effect.d.ts"
+    },
+    "size": 851142,
+    "hash": "cv0lQHO-2jsvO49TPKzg939LFKeU9XKp0ggQgzjYaD8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/internal/arbitrary/runner.d.ts"
+    },
+    "size": 165,
+    "hash": "oR7Y5S4QXv4ovadVHFqi6T23-gKwFX8lGuCcxIGgzls"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Arbitrary.d.ts"
+    },
+    "size": 27586,
+    "hash": "g2ZbED-xyXm1FlerLI5H7houe9YJ3eWa7c7cUNohLVs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/BigInt.d.ts"
+    },
+    "size": 43887,
+    "hash": "mxj5qpJK1wvBbKg1XaCvduEktHKcVtlNalZhHhJ9pdA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Boolean.d.ts"
+    },
+    "size": 20618,
+    "hash": "xyF7Ye7YItZPsuS4kREdE_ikphZJSSFZ8W4uhcu0ryI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Bytes.d.ts"
+    },
+    "size": 2227,
+    "hash": "CXoh3nx8qCFTDYvJt-BRKdq24UDFvdTOsFMgOOJ3D-A"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ChannelSchema.d.ts"
+    },
+    "size": 11502,
+    "hash": "1e_lH2Aggoftce5zHxI5JUAozy3dmX9ff69ymt85EKA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ConfigProvider.d.ts"
+    },
+    "size": 41014,
+    "hash": "SvnA4ZUvg4jbymR0tcJ5B87CP14uA1NHmyy0DjQt2x4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Config.d.ts"
+    },
+    "size": 53654,
+    "hash": "qVCqA2lzIAOEWiJkhu-94ZSNGZsCWTDd9aNnJkgpQTE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Console.d.ts"
+    },
+    "size": 24529,
+    "hash": "yk9VkxIgo5d5EiHjchgkeLdSs6egFkKuGdVLVLLZFkw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Effectable.d.ts"
+    },
+    "size": 4027,
+    "hash": "VFoIyxH7_1afvhFQVNW6qACtE5oPpN2o-Y7pyC5tunE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ErrorReporter.d.ts"
+    },
+    "size": 16108,
+    "hash": "F1hkYBl0TO7SUjnXryruVUiPvZE_Dzk9mNyWhQ2vDzE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FiberHandle.d.ts"
+    },
+    "size": 26032,
+    "hash": "GqRolH5h4AIHnVG-u0473IJMf9iTTwP9txoA3OvKdFQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FiberMap.d.ts"
+    },
+    "size": 42474,
+    "hash": "vf5IreNZTfygS4dM2XU15MPceZZzngGUH9GIeHglouo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/FiberSet.d.ts"
+    },
+    "size": 21668,
+    "hash": "U0BbTABEKpNDMtMDKxkOBusic9g6ZRbGQGyCilQLYoA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Glob.d.ts"
+    },
+    "size": 5392,
+    "hash": "u7ZqQ5YV8ErbEet0GjAxhMfMol1KQ0nYMM0hFSuj9O4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/HashRing.d.ts"
+    },
+    "size": 12243,
+    "hash": "3k8IRVhBoOWjWE4QqWU9sPgLc3gqoGZBYBh7gNtOoK4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Iterable.d.ts"
+    },
+    "size": 153982,
+    "hash": "esOtvd7S75OFpKRPyhZ0_qwv487yt6RG1993c6P5B30"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/JsonPointer.d.ts"
+    },
+    "size": 4527,
+    "hash": "rFg2XEPTRrO40g487Xdt8GGi-tmAeUbdtMjUhpf8lYo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RcMap.d.ts"
+    },
+    "size": 34249,
+    "hash": "LWL9_stRHEQqB5sQN8MOaCMWzned9OIf4icT6VSCw4o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/LayerMap.d.ts"
+    },
+    "size": 14810,
+    "hash": "xfOzgDuICcI7iUdHzXwAlQsYXVtm7UI2krvcy9BdBA4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RcRef.d.ts"
+    },
+    "size": 7601,
+    "hash": "BXnDVTGHMvXhrRJVaeOkqzpfRzzRFwW6ZwgNudKn83w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/LayerRef.d.ts"
+    },
+    "size": 9109,
+    "hash": "h_CjzsvNYvGacG6EFHOli-z5qciq10ZiAAMJVMmA_WI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ManagedRuntime.d.ts"
+    },
+    "size": 9511,
+    "hash": "PdqXBL-OoOMuQnKkRVQAm-8aAFmsMUDNw99kSNQlceg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Match.d.ts"
+    },
+    "size": 90964,
+    "hash": "tmCxhhbq6oI2akoifQnIC9eqFUrQWVT9BPYX2ROD-mE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/MutableHashSet.d.ts"
+    },
+    "size": 16266,
+    "hash": "muNycftE2h4LwRIwiF-TUXuaRKgDSD0J3fGMPxfgOB0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Newtype.d.ts"
+    },
+    "size": 9511,
+    "hash": "5kXRujhX-JVHexvgd38_HRt40Id6P-xO0TsXorBOrx0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Number.d.ts"
+    },
+    "size": 37456,
+    "hash": "ep0iiSrLvKEO9uF0ruflRFtRkz2BMVcMTwsp3ocXGgw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/PartitionedSemaphore.d.ts"
+    },
+    "size": 20405,
+    "hash": "1DnNmm3V2DIe_ZCqsosp87r0R9wa_Htr3PR0I_i3N7o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Pool.d.ts"
+    },
+    "size": 19390,
+    "hash": "uvwXKBzGCwgvt3gN_K_x9H14yhI2oH_N8Wqa6JZmW-c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Random.d.ts"
+    },
+    "size": 10414,
+    "hash": "bE1FJLnNo6biAB0cxRJLxbOE9fQoa1u00Do2AlB6N_0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Ref.d.ts"
+    },
+    "size": 22959,
+    "hash": "K-Ur7AVRaO3RUNL9-KZKpG0kpOIFXd5Fs890TTiPrZo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/RegExp.d.ts"
+    },
+    "size": 1569,
+    "hash": "jR2vs6ePTqJ5jG3xOZK_JV0gqcdqflZUCj8WYZUy5yo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SynchronizedRef.d.ts"
+    },
+    "size": 41480,
+    "hash": "kJKIjW3i01jP8YDfeXzTcK0RO0LABSWiQWcBZa8Fvs0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ScopedRef.d.ts"
+    },
+    "size": 6106,
+    "hash": "p_FYf4aQYs80nUejU_wW1nXq8nNdXwsOjV830AfmQmw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Resource.d.ts"
+    },
+    "size": 4169,
+    "hash": "HnVHWqJQQarqNHI65oKh97uH0IUNR3-1KqESB5iLIYc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Runtime.d.ts"
+    },
+    "size": 10431,
+    "hash": "ZMDblKwrnP645cJKqUeLzty7Mb4P3ekyiTcDtTPJ6D8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/ScopedCache.d.ts"
+    },
+    "size": 28156,
+    "hash": "gk_Wevfqv8Pc7JGWfvptQeROHFZS3Ud0xsT5aNtK9hg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Stdio.d.ts"
+    },
+    "size": 4792,
+    "hash": "T-DnaBHPE9WMb769TDv2bHjI4UvZDZJh4ee5Dd5HAQU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/String.d.ts"
+    },
+    "size": 47506,
+    "hash": "PvmEQefV2HJNvGDwX17x7Mq9gpVhXBhMrL4Wf_51Jr4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/SubscriptionRef.d.ts"
+    },
+    "size": 59359,
+    "hash": "pSrdiOo8ZK9NwdOA1IiYULo2DA_niuo7m5VI7UusdDo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Symbol.d.ts"
+    },
+    "size": 820,
+    "hash": "TObyYPSWmyQIxOFy0KVrqFXURhCThi1Z80BQ8VV-wZE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Terminal.d.ts"
+    },
+    "size": 6158,
+    "hash": "HDaJ09wH5P7ofszeIXyEftCz-MhQUaIa953bbwgyyjI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TextDiff.d.ts"
+    },
+    "size": 13516,
+    "hash": "Z5EbLitr_sDh-IbHAplt6bpkdaaqdnlaBbX44EHaAH0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Trie.d.ts"
+    },
+    "size": 48271,
+    "hash": "t7PctoOMOJtT7HVZAqtcRfE61WXAfh09rNrS1J7-qlo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Tuple.d.ts"
+    },
+    "size": 36898,
+    "hash": "hxeesgxG0fN1rqHr42vsuseM6ztDE-5c-GGuuEl_qXE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxChunk.d.ts"
+    },
+    "size": 49851,
+    "hash": "Vd6eMxrFrNdtHDUQM5paDAgzQWLtlvtwJ_nE4_YRsIM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxDeferred.d.ts"
+    },
+    "size": 13817,
+    "hash": "_WSaeNW-k-cKvJM16efcn4hXNYZ6qxm5DmSADIAxBA0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxHashMap.d.ts"
+    },
+    "size": 123661,
+    "hash": "aSi4bXMdN7NluZ3ZR4iDW27d_urve_bppk1pQrwOVV4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxHashSet.d.ts"
+    },
+    "size": 45646,
+    "hash": "XI4JStJ5ohse1ZDk6cadOg5lEAdcIaF_kuVYxs9mXfc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxPriorityQueue.d.ts"
+    },
+    "size": 20191,
+    "hash": "q3wRcJiA2WkQZXAsHKfLpCaD7519IYAietoXxzIpYkQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxQueue.d.ts"
+    },
+    "size": 48997,
+    "hash": "rPexRdYZbsd2GrcT0OBBADPVmyIHr1ooaF8NBCvcUJQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxPubSub.d.ts"
+    },
+    "size": 23127,
+    "hash": "exXVUsX4xWjGbFpT7o97iLvb-J6tDik4zKox-Mcb2j0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxReentrantLock.d.ts"
+    },
+    "size": 17333,
+    "hash": "SYo1LtOyaS7FYVFlRwdZiStSnENVIdmBLMpT2FKYZUM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxSemaphore.d.ts"
+    },
+    "size": 34438,
+    "hash": "yVaOfmxZPzW3dWaSHKNLDV0-oz6KoCi8AsnYyEVvgww"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/TxSubscriptionRef.d.ts"
+    },
+    "size": 24713,
+    "hash": "8fQhoHUp5ReU86tGsya91urzUUNRDNCA88A98BShdy8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/UndefinedOr.d.ts"
+    },
+    "size": 10200,
+    "hash": "oyrnK6b6TwSy9ySsLpv7wV-mSHCdSnkmjwlNB0cJQH8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Version.d.ts"
+    },
+    "size": 642,
+    "hash": "x3__gi43164Bxl1Pib0MvFA6siwolcM7LsXHvRCbeLo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/index.d.ts"
+    },
+    "size": 13254,
+    "hash": "0PpqEQlrfMhrxRLRPiEmFILdAxRuOqxV7wFDHQt16vk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/calls.d.ts"
+    },
+    "size": 1375,
+    "hash": "dsRmJCNPzxmBw80oYCGtYgErjsc0O0IdrlavmcSqJgg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/fastcalls.d.ts"
+    },
+    "size": 4743,
+    "hash": "5KioEbTxBNd_QZvwfzx_Wtto96eJo5t1os1-dStu3Sg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/regions.d.ts"
+    },
+    "size": 6347,
+    "hash": "OimZR3Bn-U-YG7GsPRLkO7ojAkjKNP_YHZLHjIojefk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/fork.d.ts"
+    },
+    "size": 1450,
+    "hash": "48HdCKdKyA1Q-ImyNbFxHEH8MvHTioJ4AhPv04LWEvg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/kernel/internals.d.ts"
+    },
+    "size": 1192,
+    "hash": "7Fiel2LtGrvq-9nBG4DTXdPWPq5ssE5zGD2xtKyop7k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/kernel/kernel.d.ts"
+    },
+    "size": 6233,
+    "hash": "SpddlG9nvj1HKpa57Bira5G8t4QoTcG4oRl4hnC1-xE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/services.d.ts"
+    },
+    "size": 3272,
+    "hash": "Aky7KJ-_at6kU0rh2fYbON-xEor5MYT7r0dKny8eFp4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/handlers.d.ts"
+    },
+    "size": 4437,
+    "hash": "dM4ZRB9CryabX-dYLCHS1WlVbZMqBRsuuvJGPL-Sc94"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/producers.d.ts"
+    },
+    "size": 2648,
+    "hash": "nSdLzVgLSb7ZsOITdmOllPu94EmFjCD7W-O0F8qihHs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/iterators.d.ts"
+    },
+    "size": 299,
+    "hash": "D_KJoFVsbFdHLj8ECD9in36LfyVin-Znz3X0acOoUt4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/boundaries.d.ts"
+    },
+    "size": 2229,
+    "hash": "J2cNQ7D_ohM_EnMxDLD02YYHFErO1YyFaZklO0hQ_Pk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/hatches.d.ts"
+    },
+    "size": 4249,
+    "hash": "6pDgm-yR3j20e3-U12dVZaDmHAAq_WLsHsbatPCEWOY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/fibers.d.ts"
+    },
+    "size": 6547,
+    "hash": "cDcWyGACNXLksMJEw8tcdYjoou7l_s5wOhwJh0ykPG4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/provide.d.ts"
+    },
+    "size": 2281,
+    "hash": "k31QBghV46lk2i0f4JI_OSQJCFzTOLh5I_FnCBfDmuU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/primitives.d.ts"
+    },
+    "size": 3019,
+    "hash": "JDRuJVxm5DSqXy6rm-AZOOoiCHO9zxzG8opl8KaFA7I"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/match.d.ts"
+    },
+    "size": 5172,
+    "hash": "uwgSabm-29wJOa4xu5kyRJRcHwjsVV1Y50w66ZVLqYM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/main.d.ts"
+    },
+    "size": 1361,
+    "hash": "NVDMPJgJKrqMc_i-77_arVwTNhh8LBDWGq6mG7urGRk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/Animations.d.ts"
+    },
+    "size": 4110,
+    "hash": "cEE59Tu20yTZFh6QGcq-31Q091UyexFzfpebGFy6gnU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/Crypto.d.ts"
+    },
+    "size": 6627,
+    "hash": "XwHusiTQVjE4hwkTA3zAFGJPZll6iaWLc-hZp7hAFPk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/Document.d.ts"
+    },
+    "size": 2088,
+    "hash": "ZfpxqfNU-KjD32uGY8QnQEGp3bqdbPrbrF_Wc7xR9bA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/FileReader.d.ts"
+    },
+    "size": 3271,
+    "hash": "Izc4Lg3SrR_vTOYfWz0LwZeU40DjL8144EqjrGxp8AU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/FileSystem.d.ts"
+    },
+    "size": 4237,
+    "hash": "GscyJs1q8_cVZgxDm-u1CJwscBRKw-f5XSRJdUxCAP8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/Locks.d.ts"
+    },
+    "size": 5678,
+    "hash": "vA5GYo8h7qcs5a-fuxQPj_Xrbx1iP5fNyo4v0SJHAKk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/MediaQuery.d.ts"
+    },
+    "size": 2800,
+    "hash": "H2TsmsCxrAVQFpn2-nEjFgeAxGOVseTq6FcGaP1wfeE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/ChildProcessSpawner.d.ts"
+    },
+    "size": 10049,
+    "hash": "thXsQ6k-zkFoKCmsVYtf5M6c35jjGBMUFpTT-aWMdLA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/CommandLine.d.ts"
+    },
+    "size": 11522,
+    "hash": "lxWpSvbLSZaDoTOhUfkj6S-HePD5KBJ-tFZkDiae1Dg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/process/ChildProcess.d.ts"
+    },
+    "size": 40640,
+    "hash": "AE8za_rMlCaeaidHj6lgF2rgn2xY2_8CONWi6Xw1LPU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/Process.d.ts"
+    },
+    "size": 7380,
+    "hash": "_z_I5eJfXZwEimH5VahhPwP6hwn1kMKtridb-SyuyiI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/ResizeObserver.d.ts"
+    },
+    "size": 2495,
+    "hash": "uUMxJ3p5sbc-qhqfyWNUwnitOJtINeXL_9M1xJLWz30"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/experimental/index.d.ts"
+    },
+    "size": 1010,
+    "hash": "K11NEFLQ8PgFIFcDru85qcGI9jymH7mBq_DzSUhxNBw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/prelude.d.ts"
+    },
+    "size": 2329,
+    "hash": "MRRyeKwM8ihjWMtJiwb1xCl33USvnI3slGHouhsXZMo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/resources.d.ts"
+    },
+    "size": 1599,
+    "hash": "U-JuKPY9JEuXM24F00Rd5NNsioH-5xMK4AMyix5GT4w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/legacy-await-types.d.ts"
+    },
+    "size": 1948,
+    "hash": "yLNOHMBuLdk8f5F8zEtXmfK2YpMjr5UX54CdKqCyap4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/index.d.ts"
+    },
+    "size": 1501,
+    "hash": "L6Wc5kc26xu8poMi8QYphUCOBmEd5zpZDXJT1AGA-KA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/Action.vibe"
+    },
+    "size": 780,
+    "hash": "Vckor4eZmkDllw6l8jNdfAkQDaL_pe3WLRzmYSgzjAQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/maxResourceLength.ts"
+    },
+    "size": 594,
+    "hash": "Qf9tdoYUXYVKHOMRb5zF12N-jYvlUD13Kuae1kUjOMg"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/PatternResource.vibe"
+    },
+    "size": 287,
+    "hash": "jWgIIYZbtWABUqQWb7bFHc2A3O2H2QdCm9-FK9HZ24A"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/PatternAction.vibe"
+    },
+    "size": 622,
+    "hash": "cvGzYB3wcKkwiLFAjv1qbXwre-ZzGMQg-Ii9qfjcgqE"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/CapabilityPattern.vibe"
+    },
+    "size": 2052,
+    "hash": "-2-wYxuuzAA0kgT4HggVEMHvEqBKTTOzdBzV-OIY8gg"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/EffectTier.vibe"
+    },
+    "size": 456,
+    "hash": "7o84W3HhZCS8hp6b3lP0pYz6hukbqyL65a9x0J84N8I"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/ExactCapability.vibe"
+    },
+    "size": 738,
+    "hash": "hWcef9aJ2HTpFd7l7Io-S0nf8UhiSgK7XlN_uoO_VNU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/isPatternAction.ts"
+    },
+    "size": 350,
+    "hash": "Iz-x-r4p_Py3wBI9WGN5VeTvonBYzrDO1fei-oYknQU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe"
+    },
+    "size": 502,
+    "hash": "OJRT37qJljDbjgGPFMHJyfAmah6nHdXRO41qhnRiRtw"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/format.ts"
+    },
+    "size": 1275,
+    "hash": "Scd1DmwgP2F-u5HJ2K2zXS93KgclvwmxMQiQD_zTlxg"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/metacharacters.ts"
+    },
+    "size": 231,
+    "hash": "Z04VtzOoc9o_Jj1YWpXgbkEXpJHu_sqtQIZQ0MmjC9Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/isLiteralResource.ts"
+    },
+    "size": 781,
+    "hash": "w6GhQtvHcc2ktUFPWOmaZJFaUAL8wFNR_k202A9EV-U"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/make.ts"
+    },
+    "size": 366,
+    "hash": "lUqMz7J1y2klWDGiGPtXtNjMakJk_P99AcbW4hZtilo"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/hasDotSegment.ts"
+    },
+    "size": 2848,
+    "hash": "-AzNNSv6KhVylAjm4kVis7Y2Lu_ljgfa5K6r5zwq64w"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/matchesAction.ts"
+    },
+    "size": 426,
+    "hash": "u5ukLIv9-VqKl0cSaYgoppFR0wRO7FBQsRvBTYOaL-I"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/maxMatchWork.ts"
+    },
+    "size": 825,
+    "hash": "uNTnvFYgAv6BM7ClB9oL7vrLIY7iM7qtQTZjz4RMI78"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/matchesResource.ts"
+    },
+    "size": 2517,
+    "hash": "rV9DMyqs6B8A8UZlEgr8rGsFOe_ZDx_BOke2y58qr2k"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/matches.ts"
+    },
+    "size": 1339,
+    "hash": "dRqR_DNXytJE_hTrJU_mHP7PFvOTOZuftVOLU0wBpUU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/actionSubsumes.ts"
+    },
+    "size": 417,
+    "hash": "gAxQxv6huaxdS77uAXBrb4Sik2nTuyBXgRzRzlPkJJM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/mayOverlap.ts"
+    },
+    "size": 2233,
+    "hash": "SUE2kXjChnCIGfScVmQ57rADMwePT2MNX1vMQhrp2es"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/isAction.ts"
+    },
+    "size": 299,
+    "hash": "hyldHvAiwYiSosR3TVPWj6qpCx0Kqx3vxCtNwuqtVrc"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/parse.vibe"
+    },
+    "size": 993,
+    "hash": "SVyI_YeL4FVM0LfWWZ6Rim5GoV5k2SnqpH4Agax2AWY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/parsePattern.vibe"
+    },
+    "size": 2259,
+    "hash": "9JxiBsJHYq8rnxQfiJ00POktPhxkSxtsZgUEPzQm850"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/patternFromCapability.vibe"
+    },
+    "size": 1227,
+    "hash": "fs5W_xQiKHQHKIqFe3RP-c8K7yMk7aiRb7wm7FmrxBI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/requiresIdempotencyKey.ts"
+    },
+    "size": 365,
+    "hash": "0u4aVdE_QkYjv-H0blOmCSI0mDpaXmxwXcpUgDUDZVU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/subsumes.ts"
+    },
+    "size": 1393,
+    "hash": "f4WO6f7VdWTARbgU_V9wWzulnxdOLauStsza2EAw_uA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/TierOptions.ts"
+    },
+    "size": 600,
+    "hash": "F7chHWrLNgxY4I9arNgPGlSRIgWe58Wq35VY0Q8TtO8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/tierOf.ts"
+    },
+    "size": 3284,
+    "hash": "pHnl3wJTMnDyYASTK5fPaWiP-RvchYJZgNfzULUnCDo"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/withinMatchBudget.ts"
+    },
+    "size": 900,
+    "hash": "cuTWrbc1mzgkNIKFknxG3vBxg8EiP1wdOKtNgwYKXGQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/Capability.ts"
+    },
+    "size": 1380,
+    "hash": "lN3i_KrJZK2bpHPoLlhrnLC6H35aM4wuUt-Cf27mzG0"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/CapabilitySet.vibe"
+    },
+    "size": 7882,
+    "hash": "AlEdU52KFZrTovc3hzoOpU4ouGC0YBXFqp8pACWIjkM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/CapabilitySet.ts"
+    },
+    "size": 155,
+    "hash": "A-zLi4FaSeVMEXnoHy2e2q7rcVwVRFeFFsQH1DSoFd8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/ChildProcessEnvironment.ts"
+    },
+    "size": 3412,
+    "hash": "-FT9ye2v_pDfdTV0paGesOhBQIbNG1mIu0an4DZVfWw"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/RuleEffect.vibe"
+    },
+    "size": 429,
+    "hash": "1b0rE7r5gRUVpT6xkN5-XKk6w46DXspBaSnLHIl6MhI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/Rule.vibe"
+    },
+    "size": 671,
+    "hash": "wX3E_XvmNgpWaIvLGlEz6Bk7rCcBcK7OPwxDN3GaYeI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/evaluate.ts"
+    },
+    "size": 3544,
+    "hash": "GsGtXCBtMupM3l8bNgAgjpABLetiwUXrdFaLMbngYvc"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/maxDisplayFieldLength.ts"
+    },
+    "size": 409,
+    "hash": "hAanL6aO0eDkEYPa_RQJEVCcQZhUukKCw_vl5gTo7pc"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/displayField.ts"
+    },
+    "size": 1496,
+    "hash": "joICeDL3vo_-PfFXHr0nsu4DaOLHaD6TBpHtWwulqss"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/PermissionErrorPayload.ts"
+    },
+    "size": 1011,
+    "hash": "RZDRElqPA_AiKEFz1ioFrMlfGRPo57n2tDVy8DQdp7Y"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/formatError.ts"
+    },
+    "size": 1646,
+    "hash": "-bMreMaZAtDjUipmDqJJLzAMleMvf-ImoA10JE-gA6w"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/internal/describe.ts"
+    },
+    "size": 388,
+    "hash": "_h8CSmq_kZob_8k2D688-4kTfd_kbuYEC4EWs0m4OhQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
+    },
+    "size": 11884,
+    "hash": "rYomHNIcHNZvY6vov1hrHUPpyL-nXBfKlQONc5DGqGU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    },
+    "size": 3466,
+    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
+    },
+    "size": 380,
+    "hash": "ujxrdyUuUkUuEsos_UL6g4bSjv7JLRwZiLcJfhERZ_8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/Record.ts"
+    },
+    "size": 1382,
+    "hash": "y7iZGGOgtt_BfRe2gW6yRE9zsjI31BD_WmLfQWF3kqE"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/BoundedJson.ts"
+    },
+    "size": 18557,
+    "hash": "xOvlbiuEfZlqjmL7FZFrAYEKFW5zRoSsrXpK-OGIycA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/canonical/src/index.vibe"
+    },
+    "size": 1664,
+    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/GrantStoreErrorCode.vibe"
+    },
+    "size": 505,
+    "hash": "7S9FP_6ThwrqEOidOX4Qr0x5cU_obo37TZOmyf3Gw7Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/GrantStoreError.vibe"
+    },
+    "size": 615,
+    "hash": "PEH41lNuKKlEG5oreBncw_XK4M73-I7vPb9CKzajD1Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/isPlainObject.ts"
+    },
+    "size": 403,
+    "hash": "tcrzheYBgKrRSsyGR22I3B2vCWkqEO591sNfCIeGXP4"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/isPermissionError.vibe"
+    },
+    "size": 6470,
+    "hash": "sbzM6yeOtAnLcl1zYTKZiFOuj5D5UwR_3cALo9ZaX2M"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/fromPlatformError.vibe"
+    },
+    "size": 1047,
+    "hash": "koOdJyZTmdb0yLTZuJd3k1uXTwDR_SxxSxFExr_lyrM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/capabilitySnapshot.ts"
+    },
+    "size": 580,
+    "hash": "mLIFoKJWs97BJN5rv3qaiVHqBasQqQ_sRipNLFA19Uc"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/PermissionDenied.vibe"
+    },
+    "size": 1350,
+    "hash": "nUHIW_ZnIhBJP9OCX1QLTPya8PwNDl1UU317S9mfVF8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/internal/permissionMetaSnapshot.vibe"
+    },
+    "size": 6031,
+    "hash": "hBy0dJVcsP165BmvSd_g7ll-dNUub-G65O4pmM3VYqg"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/PermissionRequired.vibe"
+    },
+    "size": 3509,
+    "hash": "OM7ktRGIeYL9ztx-FWjHA9OdGSgjQUMFIoOO026Effk"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/PermissionError.vibe"
+    },
+    "size": 942,
+    "hash": "24IpgfMGKJPA34r7ul9esYT_PFwL9h50pmfzj_C-avc"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/toPlatformError.vibe"
+    },
+    "size": 2064,
+    "hash": "xVb4GVbfp6C6y0O605QGN6Kk7AKO2K0n7bqAZlAB2K8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/capability/src/Permission.ts"
+    },
+    "size": 1296,
+    "hash": "XsCzM8UYEVG2_yFyFSDUOCJK3Q06GJfwtF2bCcCdJOI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/CommandLine.ts"
+    },
+    "size": 12228,
+    "hash": "p0tvLO5mGic87QGH7AdmntiDETmBw2uC3HkR8k5jUHE"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/Crypto.ts"
+    },
+    "size": 10836,
+    "hash": "kRxPTT9P4MdOLRZCYB5s8SW4K3WIMSk5Z97-WJRDw5E"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/internal/sha256.ts"
+    },
+    "size": 5494,
+    "hash": "ITy8hAQHKkNxaVTqwvXNuBzF7F4HMBrOdSBG5HFjbq0"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/crypto/src/Sha256.ts"
+    },
+    "size": 13982,
+    "hash": "V9jl4dZvBo_h1Qg6VLFlWW-0eo5CNokhDmgwwvcd418"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/GrantEvent.vibe"
+    },
+    "size": 4862,
+    "hash": "2OPd0sayGAca2H32-_EDP_t18-anxb0J8cVnWSYMaP8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/Workspace.ts"
+    },
+    "size": 1521,
+    "hash": "X74bheX3U0JfD2QZ6b5sBtaiv7iPlbHmS7g8LwFWEYk"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/GrantStore.ts"
+    },
+    "size": 49880,
+    "hash": "gwbDBQAwt-x6zapInMxxdJRJDlP0ZHQP3YF-Ggb54-Y"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "size": 1366,
+    "hash": "uI4TpkqgsyBgjuxbRrXBopaP36SCy90qVhLjVZFfI44"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/internal/makeCapability.vibe"
+    },
+    "size": 788,
+    "hash": "NpyRspCXnlQTgqCT77H8wOU52y1BhBeuXH99MPjBmfA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/ProcessConfinement.ts"
+    },
+    "size": 6776,
+    "hash": "gG9E9AjF5yKAWrEnXj0pLg76M6CkmKiNzpjIrSk4_QY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/Rooted.ts"
+    },
+    "size": 5437,
+    "hash": "vsWP0Wnv66wW249522v6ZwcNg90iFnWs85u2g5Wdd90"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/ChildProcessSpawner.ts"
+    },
+    "size": 18810,
+    "hash": "hhd9ngIEiss3hot_DKankghNc-rxSBSYPmr_AhFeryQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Pipeline.ts"
+    },
+    "size": 3084,
+    "hash": "3NzOqTXoXZAQwGSOzJfmHIijcQi58hrXmIrrBXqAnQk"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/CommitScope.ts"
+    },
+    "size": 1949,
+    "hash": "0iLwoqDOYNXo-QTK28lkMUFaOvCvmFtfU9NStgIrfnY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
+    },
+    "size": 625,
+    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/WriteTally.vibe"
+    },
+    "size": 1783,
+    "hash": "O4i_-hUFJ7VjY0Bk6JibRdTXA2-wH5aYkaB_UK0QGXg"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/DatabaseMetrics.vibe"
+    },
+    "size": 6472,
+    "hash": "XUBG00PvoQPA2wu6FMbqiEBN6F0WHw08qrB5FhaCJcY"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/WriteRetry.vibe"
+    },
+    "size": 13226,
+    "hash": "aVQWIXY1o8QRQmXoU6mr4LNb1NsVHJhe5t979PaCD0k"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
+    },
+    "size": 16756,
+    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
+    },
+    "size": 18762,
+    "hash": "tSTwcPUSWJGDV9vI0FPDb0dl5RE_iApVvEHuYoQ3tWs"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
+    },
+    "size": 1442,
+    "hash": "NGhhyGvgloUNpCurDJ9ogwy3Yxiuv0kKBuECdk1Hz_A"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/Projection.vibe"
+    },
+    "size": 773,
+    "hash": "bUVmeT4P9fwF0Cm9sroq44S0qwXqKIGPwfGuZ1bpmz4"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/Journal.ts"
+    },
+    "size": 28195,
+    "hash": "G4gzecrcYjsefufC3IUNICzRGfYCYXeCbm_XCdzR3x0"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/ProcessLedger.ts"
+    },
+    "size": 15782,
+    "hash": "0xKGGmOpWj0xMhCPN6C6C0ITG57mzAlbyugZ41i6XEo"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/ContainedSpawner.ts"
+    },
+    "size": 12106,
+    "hash": "C1QI0Eo3qmXP4H5kVrIo89TLioN6ETTyETT2lbIZhO4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/EncodingError.d.ts"
+    },
+    "size": 2782,
+    "hash": "Y96VGSj4hkYGUmAOZdCpJR62OOrsPw-uPQ-6eFOYaOI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Base64.d.ts"
+    },
+    "size": 2677,
+    "hash": "yEc8CNYNHSis4OSrmGaUexmByy2oBUfRmPnI_UsePU8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Base64Url.d.ts"
+    },
+    "size": 3553,
+    "hash": "LVhOA-AXlruy2l_8uj7OqYNt8HWUnwKYKe2d-khPXC4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Csv.d.ts"
+    },
+    "size": 22389,
+    "hash": "22pSJFH0tyStth9R63Uycc30OpLzYI182QSJl5K18Vo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Hex.d.ts"
+    },
+    "size": 3101,
+    "hash": "a8-p15tzg2N4oOiyE0tOjgL17Q6t-4RKSlFK3_E5r4E"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Ini.d.ts"
+    },
+    "size": 665,
+    "hash": "VEcV_gJv9YP3829kRBt6tCjrstQMEF8R7NjF5SKENTo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/JsonArray.d.ts"
+    },
+    "size": 10914,
+    "hash": "bhQR9FZAiP_7kxUnMZbhOLd_U972g4RxmHvD9KKxNuQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Ndjson.d.ts"
+    },
+    "size": 16373,
+    "hash": "vI4FK4XFTqsTpUyMJLfl2acrmVs42py0MswI7Dd-R60"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/SchemaBinary.d.ts"
+    },
+    "size": 11065,
+    "hash": "_azIUMK4xCOg93NqSVtNDX-F2N8ig0YdyXCc-P0UMRI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Sse.d.ts"
+    },
+    "size": 11379,
+    "hash": "Fmwr_ayd9o5g0s8kNgVtDPEZ15dytzKkVRuOJDQAXEU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Tar.d.ts"
+    },
+    "size": 11860,
+    "hash": "E0MiYTO8ue5t1e1JKwfyHgRXfng6HCkPtYvnFh87oEQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Toml.d.ts"
+    },
+    "size": 1167,
+    "hash": "oZ9za3NAXBeYkNmhWdO_vkqutfMqcYbkXasEWODwfAI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Xml.d.ts"
+    },
+    "size": 16470,
+    "hash": "pbiCzYYwqiAZdiCFMyRVz1UG67xCJdvhrKQr2DVmlT8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Yaml.d.ts"
+    },
+    "size": 1350,
+    "hash": "v6AA9d7wPSPG8is8K3PlW3cpQrL_Nvwf1MNmOfGrhZY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Zip.d.ts"
+    },
+    "size": 16670,
+    "hash": "nOdp98PU19xagRzuttN9laEGVY6lwutoVseazCyqX7c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/index.d.ts"
+    },
+    "size": 1360,
+    "hash": "0p_GADS7DXIS1_3swheMVC7wVT6K135y2xxkhj_sq7U"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+    },
+    "size": 2679,
+    "hash": "rogJilhYhRrtgFEjQMjWNduW_wFGj_pRYKq7F-X--TQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystem.ts"
+    },
+    "size": 70980,
+    "hash": "fYg0EYJFxzSq3UJyVa5cE2xYKjhg4ovorpaOtNvKRGM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/jj/src/Jj.ts"
+    },
+    "size": 18558,
+    "hash": "i1HzzhZOZmyc-pvkvhf9u1rJnW97j2-Xe8Hwd_4cnHQ"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/jj/src/index.ts"
+    },
+    "size": 713,
+    "hash": "Hd4W17hXn7Rhvh21wf83cWLu51OadhpAFf_WhLNkzMk"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/HostError.ts"
+    },
+    "size": 1480,
+    "hash": "IbySyxKkqCDHRUKqVuHhS5nWrGNTl_t0xKeRtYJ0kH0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/CircuitBreaker.d.ts"
+    },
+    "size": 33620,
+    "hash": "6lhkdbKkvmHsFcEYaxi7l-MtqCVefo5yXZBZx54b9qk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/RateLimiter.d.ts"
+    },
+    "size": 18574,
+    "hash": "wbXgpG6F_3Xxxb6Aws5Pv8mTZVD1uRHg-CoiUlpX1lI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpBody.d.ts"
+    },
+    "size": 13574,
+    "hash": "JdqywVlEVn8gzK5eSXO4997dQSF9VSJUqKPD8ffiWSk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpMethod.d.ts"
+    },
+    "size": 3164,
+    "hash": "14AgB5TebkuaKaQdWK9v0tMg_j4QSsYloVhMbfccS1w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Url.d.ts"
+    },
+    "size": 17962,
+    "hash": "tMzYXlGeEkzWNOq90PvfVPy8xDlptfa5EzHgQlB-a_0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClientRequest.d.ts"
+    },
+    "size": 42643,
+    "hash": "me-RNUoOA5M_oSo7cWiq5BPtGVh2gmMqzke1hF5EbQc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/socket/Socket.d.ts"
+    },
+    "size": 25094,
+    "hash": "0Cf-9CNT3VajX44kJhXuvus5ydGLDabwYUYoJFAXteo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpIncomingMessage.d.ts"
+    },
+    "size": 4130,
+    "hash": "9X2DFxlDIieyalRbOHvzFW6_pmAnnRYAGszj3ZQcInY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClientResponse.d.ts"
+    },
+    "size": 9295,
+    "hash": "fqrMT6DMjQxcsUPV9_QlgKl4YQhonk8JnXUpHeT29r4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClientError.d.ts"
+    },
+    "size": 9709,
+    "hash": "IA-ogPDK_pAnRmnM-2xVioBr7ZNwaNBOiXCXtcOKdn0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClient.d.ts"
+    },
+    "size": 77125,
+    "hash": "8XWJj0yFd5XRIPmcVJDeuu7bNbmhYqtG_poV5zdlnM8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/FetchHttpClient.d.ts"
+    },
+    "size": 4524,
+    "hash": "Ff1pvEgbHCmcfW2hOA4eeQiO-1bByT22FdR-DUXTJ5o"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/HttpClient.ts"
+    },
+    "size": 17458,
+    "hash": "YFQJbRQ0xPQebOr7A6oXVF9YeA167j1nzunpaDlU_w4"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/Jj.ts"
+    },
+    "size": 6281,
+    "hash": "-q1qGLYId7thRxRlkntfkEH6nKSHKCTcwflAhT5LQLA"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/Path.ts"
+    },
+    "size": 1214,
+    "hash": "orAflEH9iM45NGk07jCCpedCPeHm_wefuKh88bP339g"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/HostServices.ts"
+    },
+    "size": 5356,
+    "hash": "6XNRrU_iDd9yKEHI3HDHUhZknM2i_4v2pQc_xNyAG-Y"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/JournalGrantStore.ts"
+    },
+    "size": 19335,
+    "hash": "wd2yzvbDmQdjslwW_eSbcSx11JtqmdaLuSIEKAM5Y40"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/Unreachable.vibe"
+    },
+    "size": 1084,
+    "hash": "sSdqYhT_Z0teBFcGOfDnyHzVGY091wr7ulS4EfJcCpo"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/index.ts"
+    },
+    "size": 4150,
+    "hash": "b5qph5Tns5BDkWplXrxBiGCsgk1NBpJzJhv5tXGy3Z4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/optional-runtime-types.d.ts"
+    },
+    "size": 164,
+    "hash": "x2wChGun1AubNIjw6NddAsve4vC8X81V3TvS4UV2Ruo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/tinybench@6.1.4/node_modules/tinybench/dist/index.d.ts"
+    },
+    "size": 36074,
+    "hash": "iDq2GUGuaXvVck8Cq8CkBE3FQn5_sALJWGcgSRjBpow"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/config.d.CU_b-wJj.d.ts"
+    },
+    "size": 136567,
+    "hash": "JJPRFKHwHwLWm0tEJlQF39W78TXg9GeDiAjEE3xxzlQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0/node_modules/vite/types/hmrPayload.d.ts"
+    },
+    "size": 1873,
+    "hash": "JMAQaY9feg8cIWuWOZTQns_vd9fVtBFrJIBoKH3bWWQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0/node_modules/vite/dist/node/chunks/moduleRunnerTransport.d.ts"
+    },
+    "size": 3088,
+    "hash": "yRGzvQg9rej9t3dSYaol_q5pXVYqOxEgllC0e-kAQ_w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0/node_modules/vite/types/customEvent.d.ts"
+    },
+    "size": 2142,
+    "hash": "XvG_ccdzyj3wfwyMEmrwBKjnMQpzc7pPBJ59P7GyGSE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0/node_modules/vite/types/hot.d.ts"
+    },
+    "size": 1063,
+    "hash": "TgA8hosNj4rSALlsvGU-GOUT-iPhwZxP48wl1DlO_Ec"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0/node_modules/vite/dist/node/module-runner.d.ts"
+    },
+    "size": 11395,
+    "hash": "P6_gcBhDpSGh6smAOtaF6BEH803T5XkoRcp1eLpSowc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/rpc.d.DA9Utv4e.d.ts"
+    },
+    "size": 3291,
+    "hash": "_GIPxaBdHYSZ55Bib4O0AWBGNN_ZxLEQQgmaY4g9-Ps"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/environment.d.C6xYahWA.d.ts"
+    },
+    "size": 1134,
+    "hash": "EjtG6HP2rlkCCUR4wsWLcls9kuHTa1Pa-Ft3MtAy36g"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/worker.d.MLmnzOJE.d.ts"
+    },
+    "size": 9038,
+    "hash": "EfVLzOTW5CcRIsawYymzf20pcUGtbpGLUYHhdXIVihA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/browser.d.g5Thl309.d.ts"
+    },
+    "size": 1890,
+    "hash": "3Yy1nCekn9xLhut1Xdqqtd4PMKYndn9Qb7JgfKSy7CI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/task-utils.d.BZm4GSQD.d.ts"
+    },
+    "size": 5011,
+    "hash": "lQDW_RDFna6rShix2a6vE9eQvUqSpfhk1fMj26OV1Mw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@vitest+mocker@5.0.0_vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0_/node_modules/@vitest/mocker/dist/registry.d-xLx_FoyF.d.ts"
+    },
+    "size": 4617,
+    "hash": "jU6iQxUjpCaCqfLvsq5mKqQqOZg8nUChkleyRF9QRQ4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@vitest+mocker@5.0.0_vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0_/node_modules/@vitest/mocker/dist/index.d-D4wtotQw.d.ts"
+    },
+    "size": 862,
+    "hash": "KXOBYtiJZ-UVVydsuoBVLLjSpMgjhzt_FTEkSGDw0Xg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@vitest+mocker@5.0.0_vite@8.3.4_@types+node@26.4.1_esbuild@0.28.2_jiti@2.7.0_terser@5.50.0_tsx@4.23.13_yaml@2.9.0_/node_modules/@vitest/mocker/dist/index.d.ts"
+    },
+    "size": 648,
+    "hash": "_AcSKzAEJja79okwXHWnZNbjwu63XNEDPJamp9yebj8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/chunks/evaluatedModules.d.BxJ5omdx.d.ts"
+    },
+    "size": 205,
+    "hash": "tBP7xmWP4ndPi_mhXPTFPlhvw4otUlazuWR9okLBQ4k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type/dist/utils.d.ts"
+    },
+    "size": 8434,
+    "hash": "3VHlN1KzEL0gybGoe78Ssf4r5_5A9QW0MZlJZIEJYnU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type/dist/overloads.d.ts"
+    },
+    "size": 23165,
+    "hash": "qHvkZiRCs_7v_DMeyv5rNsr9CHJ-LX8kJaUJlXfn_Rg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type/dist/branding.d.ts"
+    },
+    "size": 6478,
+    "hash": "zUzZIgobp5O8k1522OVIHBEKkNmGiueGahgu5xzbars"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type/dist/messages.d.ts"
+    },
+    "size": 5570,
+    "hash": "Cn-4YZsQvAX9kzyprByLKrIiC-ele1dWXDrBWFlUlO8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/expect-type@1.4.0/node_modules/expect-type/dist/index.d.ts"
+    },
+    "size": 37958,
+    "hash": "xKX5H-ucWmsqkQidlZw4ORt5qWHbO5zHO4h31XrX3Nw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+deep-eql@4.0.2/node_modules/@types/deep-eql/index.d.ts"
+    },
+    "size": 1117,
+    "hash": "Qn_iAEZCUEgowUdtCvQnDmrU223njAtdo-TFypUFKpk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/assertion-error@2.0.1/node_modules/assertion-error/index.d.ts"
+    },
+    "size": 704,
+    "hash": "Lu_87lwWYd3KUzU5KVWAN7jPMF_7hqgDUSmC-ZvKtQ0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+chai@5.2.3/node_modules/@types/chai/index.d.ts"
+    },
+    "size": 87485,
+    "hash": "mvtMuGTSl-QJKnnuKHG10xQ-oUFT9i7wuwTt4l9DIDA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vitest@5.0.0_@opentelemetry+api@1.9.1_@types+node@26.4.1_@vitest+coverage-v8@5.0.0_happ_5609fca2fe58f80eed15ae17bb0fa0a7/node_modules/vitest/dist/index.d.ts"
+    },
+    "size": 45467,
+    "hash": "NYnLkKRaz7jCM2s0qeNA8Damrs_bcXQgR9N3SN-lKBY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@effect+vitest@4.1.1_effect@4.1.1_vitest@5.0.0/node_modules/@effect/vitest/dist/index.d.ts"
+    },
+    "size": 13535,
+    "hash": "xLqqQ8Y_ZJRcT4deIm-it9FaU5W0wRnmiTdwJMGQ3oM"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/test/FileSystemBatchContract.ts"
+    },
+    "size": 2534,
+    "hash": "HiSdhiRK2xeC2VBc1pKTGB7Agw1Qk1iN2zbBad_DhQI"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/test/HostContract.ts"
+    },
+    "size": 28143,
+    "hash": "MyoF4HmUwkQ0vyvacOI1VRgCUZdlOpxQHI7mDCTE9Bg"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/kernel/src/test/TestGrantStore.ts"
+    },
+    "size": 2478,
+    "hash": "_04Al98uVPifWAxIWlagdgjll2c9UEg3kkWHSXkmK6Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/globals.typedarray.d.ts"
+    },
+    "size": 4864,
+    "hash": "DM2qGYUtJezYTuw2XDv6FueFnK3s9unKbQ27vuQ5dD8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/buffer.buffer.d.ts"
+    },
+    "size": 22956,
+    "hash": "-baKHD-PRbTBmfpbOsCUlyMMuPLwzc_r5YF7MLg2pko"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/globals.d.ts"
+    },
+    "size": 5084,
+    "hash": "9Tp2Ujks8m675OKf0GcqqHyTvW0CQSicE_q4e5rDXIo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/abortcontroller.d.ts"
+    },
+    "size": 1989,
+    "hash": "5eATdcnhJKg7Uu5LMkTtGk0hSmz7VKxz4WSoI6Snhgo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/blob.d.ts"
+    },
+    "size": 902,
+    "hash": "-Qriu84VBeZ_L2UCOS4xj1cUuugtLZaRhcSmzsyK8vw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/console.d.ts"
+    },
+    "size": 149,
+    "hash": "S1jiB7k6jxyIu_KpXdxoasg5YrE4MP6K0_QE_8cFH7Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/crypto.d.ts"
+    },
+    "size": 1449,
+    "hash": "H--ryysGc2pm0pBAdNViaHU2VIBegpmJpGoBYc2EEsU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/domexception.d.ts"
+    },
+    "size": 3052,
+    "hash": "sApjBVfRYirTEmM72_vbnGtyINlI3Kn4mdswZ58WAHQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/encoding.d.ts"
+    },
+    "size": 414,
+    "hash": "wYqZ8B63iNhJrQMrMcr9Sd4LGeCD_ndTcINMVnXX344"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/events.d.ts"
+    },
+    "size": 3367,
+    "hash": "UkeHTCojuaYtF4roTy22odVObJoufgV-F4zF7qE3V_w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/utility.d.ts"
+    },
+    "size": 245,
+    "hash": "zc-epCatlw-WrJMM0XbVxpxsJO69n8WA4VctbGqI9iw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/header.d.ts"
+    },
+    "size": 3500,
+    "hash": "iICdbBuceNBKEzZGpv65Jt7wWod0wwjHyTvDLuFj0nE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/readable.d.ts"
+    },
+    "size": 1910,
+    "hash": "FWqFniHvMkTROv7rpOSXYKavoDXBSd2lLwxF6okDszg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/fetch.d.ts"
+    },
+    "size": 7029,
+    "hash": "OsQFFsM7h_dR91BzRpMwgaJs24o-EaazqgfSP4A8hds"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/formdata.d.ts"
+    },
+    "size": 5009,
+    "hash": "YVdUkkcXwLHik-CDuDUDwKhycXrVqmDtfxppnrG06lw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/connector.d.ts"
+    },
+    "size": 1105,
+    "hash": "FOms-Ca6ug70tWZXBAhIlue8wG9lqasTr36T0n1rcGk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/client-stats.d.ts"
+    },
+    "size": 456,
+    "hash": "aINNYxyIOMcV8iVQnPw5J5E7nMekhwRgtbYMjb25m68"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/client.d.ts"
+    },
+    "size": 6458,
+    "hash": "gpvFfujyh7SQq1u8WpYvylfkMsHjjsaA7NPsrxKABhM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/errors.d.ts"
+    },
+    "size": 4868,
+    "hash": "7sdr9rk0bz-V-kAmIbiJSJ6Wkw5yKVsDaQIvMy6bSmo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/dispatcher.d.ts"
+    },
+    "size": 14424,
+    "hash": "Oj_xTaU9UBPz5tjErVUiXjZJwIeGxEIc5jnADY1Ym30"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/global-dispatcher.d.ts"
+    },
+    "size": 275,
+    "hash": "6mvI3otZ-Qp6OWAAX9AZiPmP0HhOFLxpIt3i6TMF7H0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/global-origin.d.ts"
+    },
+    "size": 176,
+    "hash": "NhB5lWdLKShKEV4hoGGMTCdRsyqHZt1Ms7p0AwixbVk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/pool-stats.d.ts"
+    },
+    "size": 663,
+    "hash": "kUoK4w2W1xkV_FGcy0778rYsDd-zo_xhKRUQdrwB3GA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/pool.d.ts"
+    },
+    "size": 1384,
+    "hash": "OABOaAE0DLiQr7jLWp_IlyKX5_iKuUAm5LCzxh-zL4o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/handlers.d.ts"
+    },
+    "size": 413,
+    "hash": "0kPbayV4j0Oefi8DwFaI6S9GdkNRZzuw57LzYxIy4YY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/balanced-pool.d.ts"
+    },
+    "size": 1019,
+    "hash": "TTJ_fXKtCRgnXOo-7kmmqNyBFK4dW38_XQd03nX3Q5o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/round-robin-pool.d.ts"
+    },
+    "size": 1474,
+    "hash": "FJ-ann8E5nr6DipJ_A_0IQNcAda3k8_K59Lp9oGUMeI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/h2c-client.d.ts"
+    },
+    "size": 4298,
+    "hash": "6KnfpMde9tJd-LQOqpwx4KaUUqryztSj9CFdvbqodvQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/agent.d.ts"
+    },
+    "size": 1062,
+    "hash": "pwr4RaLrndbicj4xnhTqf7KLEp7BNhwhUJtJMFRIwyM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/dispatcher1-wrapper.d.ts"
+    },
+    "size": 169,
+    "hash": "tT3FctTxh5BCB64RZmUt5HqrjusAwlTQCcsiaGMHa1Y"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-interceptor.d.ts"
+    },
+    "size": 3931,
+    "hash": "CmCikricpyGLhhb3jlu9HJa4fgSISUaczLQ1XpivlZo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-call-history.d.ts"
+    },
+    "size": 5558,
+    "hash": "C24lI0tO7G7ZarE42W63CxNWkNfdAfPdioqykcNaaDo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-agent.d.ts"
+    },
+    "size": 3448,
+    "hash": "lmby-EuYW2JADS5asK2un_RN6bKjSAPCxb08gyWxfcA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-client.d.ts"
+    },
+    "size": 1065,
+    "hash": "QM01yV6c8iz6W9hOlkCLb8vKVSlfT_giOQq7Ea-8Pco"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-pool.d.ts"
+    },
+    "size": 1037,
+    "hash": "sWFriVm_VX_rFjacYSSpeg507W9J0d9zu0ud32is8_M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/snapshot-agent.d.ts"
+    },
+    "size": 3306,
+    "hash": "9QEjTFru6112WUEjNSJ0Zqqs8wuVI3LWCv6yHALJY0g"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/mock-errors.d.ts"
+    },
+    "size": 336,
+    "hash": "QLRjxnZsobaJv8xG0mteKVlU8yrUPjfuaVPApnfkris"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/proxy-agent.d.ts"
+    },
+    "size": 806,
+    "hash": "msl3UD8VvxPKfIKtmjKngvQtQ-R0gk6LO__iKP1fJjk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/socks5-proxy-agent.d.ts"
+    },
+    "size": 870,
+    "hash": "i5H_W7kSvj6iE8vPAHWqzh9dT_JJoNIn7Wc4aMt7-rw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/env-http-proxy-agent.d.ts"
+    },
+    "size": 732,
+    "hash": "gKrmr8Z_qlrAsytbi8jMn3-imc_xXPCcwuEf0oxq4p4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/retry-handler.d.ts"
+    },
+    "size": 3262,
+    "hash": "9HPNIoiZH_MiEWXc9zzV0k2jA5H4foWz3U0EUMeHo5E"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/retry-agent.d.ts"
+    },
+    "size": 233,
+    "hash": "SZ5bBVpauh4ZmPcxGmxEGjaYMccJBcxWXOrJPCgIPVM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/api.d.ts"
+    },
+    "size": 1609,
+    "hash": "iu6LbU-fYs83ds2hMF-xh2Piqt5-E86lu-aZES34UhQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/cache-interceptor.d.ts"
+    },
+    "size": 4362,
+    "hash": "mEmLEBgDuz3en3albmXBS3XbHMi-xfTbcr5UFXD3T8U"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/interceptors.d.ts"
+    },
+    "size": 3624,
+    "hash": "fLT0MaRZGw4jACvtgF3Icah03-1rmjmU3OaKbfc-Zzk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/util.d.ts"
+    },
+    "size": 623,
+    "hash": "XQN1ynMQ77d-PvGNBo1TeE-vYnBeCtBFaVl64OdVxAE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/cookies.d.ts"
+    },
+    "size": 696,
+    "hash": "Wa83yuxB7Pey52BZyWcqSeaCwaKqb519x4h49TqihNY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/patch.d.ts"
+    },
+    "size": 599,
+    "hash": "rd9Be56z-Tj9342B6WOToWXkvg1Ki2QCKS-cY0scsA0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/websocket.d.ts"
+    },
+    "size": 4711,
+    "hash": "Q217RUOzQLDz7vQxDVJCQuQTabllKqnHBCh2fE3KxFU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/eventsource.d.ts"
+    },
+    "size": 1794,
+    "hash": "rfJ5N9umr58IpoxbHT_ODKfUuWDFfm1shE59Go5Tra4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/diagnostics-channel.d.ts"
+    },
+    "size": 1776,
+    "hash": "EpUEEe6rhWOzSct5WVQ9ktjQLCie2JPXhJmhm-y1qMw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/content-type.d.ts"
+    },
+    "size": 561,
+    "hash": "LoXbnm_XPPo9fyjgq2tVQX6hiTFCO9R7QJqW5KFp6OY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/cache.d.ts"
+    },
+    "size": 1251,
+    "hash": "xG4Hn-VMdvlcZ_uJCBs-OZ2ix9EJ59yo5LWNg-My5gU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/undici-types@8.3.0/node_modules/undici-types/index.d.ts"
+    },
+    "size": 4707,
+    "hash": "6Zljrh46SMp6eVjALz6Iu5Y-t5eMKLaK5rjJ8DMJ2Dw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/fetch.d.ts"
+    },
+    "size": 3524,
+    "hash": "w_UomCCZCrZrcMf7W2PLZ0ABAJ_4SxPeQGGWGanIF18"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/importmeta.d.ts"
+    },
+    "size": 259,
+    "hash": "syddVfrBC3mclUaAQSYjm68CDSIBNhY_djtVp05Q51A"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/messaging.d.ts"
+    },
+    "size": 1113,
+    "hash": "-migo7fLMsAOOe480x-PFbgMrJfc5Rtu5_wUoejesws"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/navigator.d.ts"
+    },
+    "size": 891,
+    "hash": "HPBZ6vRo78xkn4z2B108uY6aNaD-nERBnsPS9UKNcSM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/performance.d.ts"
+    },
+    "size": 2551,
+    "hash": "bDbnVbztgt9_ts6BaSZdCnuwRqtOLLbQ2gy3KyIDPok"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/storage.d.ts"
+    },
+    "size": 724,
+    "hash": "53IcT2n5PJE2DCagqE7ohZl9dII373jvZlsVPmIrNsE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/streams.d.ts"
+    },
+    "size": 6707,
+    "hash": "epPeT_imO6_mK6hria8d8My15Au4Wwxn1rvP3Plr89Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/timers.d.ts"
+    },
+    "size": 1557,
+    "hash": "kOhfm8VJ3-K1dJtF_nNBROls1dBLOOriRAKHlOFCp34"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/web-globals/url.d.ts"
+    },
+    "size": 800,
+    "hash": "4KXe62ELKlCmNQvSPfZJADahdzqKcdcPL5VJqwCeZ-4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/assert.d.ts"
+    },
+    "size": 42891,
+    "hash": "WUrpDKzYE_o5L_gNLgqO_05B9KE2MpqUDjITmd2IlbQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/assert/strict.d.ts"
+    },
+    "size": 1652,
+    "hash": "0fMzrej_NaQJtJhOHxGVb-EcYYVbDH6bWfAxPki0DEo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/async_hooks.d.ts"
+    },
+    "size": 29929,
+    "hash": "AiSqSzRkiV1pxBOmQKGawhZneKdOtes7NrAhxy1CsnQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/buffer.d.ts"
+    },
+    "size": 81152,
+    "hash": "Lm_KACTdigdqiG2ewDGpNupZrYeKJblEggSV2S-Dgd0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/child_process.d.ts"
+    },
+    "size": 59905,
+    "hash": "R9kX5zHQas8YK6o4rC-9cgw1VfqRYOakDUeZRRX38Oo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/cluster.d.ts"
+    },
+    "size": 19527,
+    "hash": "L79QTEeR-dMs12bP5rYFvNpjKJuSVAGVOnkA25r4U0g"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/console.d.ts"
+    },
+    "size": 4250,
+    "hash": "7Q-2M8rjWUjZ4UQAQpmkvfGrkSZnx4e3-__NbYx7kqI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/constants.d.ts"
+    },
+    "size": 491,
+    "hash": "FniwRVfcpS_qtzzGdhCRin9eJb_bo-f6CBrNYl2TEG0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/crypto.d.ts"
+    },
+    "size": 168236,
+    "hash": "TIoi7OHvn7RlnsA04RMTEMoYiXXzmUirOPfkSFy0bR8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/dgram.d.ts"
+    },
+    "size": 31107,
+    "hash": "nJD1AoFr0BeVVruHXobJRK8_a5lc3mMZntvk4LEhmro"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/diagnostics_channel.d.ts"
+    },
+    "size": 34577,
+    "hash": "mPxyMdbIRqjtGb3vAm3f_l4hgsyBi-dImSh0Ia03Coc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/dns.d.ts"
+    },
+    "size": 34353,
+    "hash": "5JSyhsjifFL4x_lFqoD_Ij8qPNT3omGfqJkfFFnibwc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/dns/promises.d.ts"
+    },
+    "size": 20815,
+    "hash": "9U9fnhC7zrp1Fd-tD_yJ3_2410nQYEWUxXpyXPbXnCA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/domain.d.ts"
+    },
+    "size": 6597,
+    "hash": "QdF-GtmgAv6xHIzdJ3flu8DNseP1ldI35N3tC2lJmDs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/events.d.ts"
+    },
+    "size": 47375,
+    "hash": "jH5hjCqR6n9rXMonKilYZOksFkE76PxWqUPox9UyABE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/ffi.d.ts"
+    },
+    "size": 20006,
+    "hash": "vqvXXqsA9y55_rhfa76BtUlGGiyHBnSSPCSo0YDWzwc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/fs.d.ts"
+    },
+    "size": 202247,
+    "hash": "nTe4qWeO-83zgji1nOjm99twq6GlFvOkpnGjAdus-z0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/fs/promises.d.ts"
+    },
+    "size": 63652,
+    "hash": "pHp5K4z_cUQ76N-xmfK3fhAqe_nU-QwYBZ8F2a8tdBM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/http.d.ts"
+    },
+    "size": 99275,
+    "hash": "d8M_qFoUhczw182OD1BneSQEXMQIajmvVk9gjiGkY0M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/http2.d.ts"
+    },
+    "size": 119374,
+    "hash": "Iud8xT3hmVn9tMSHbnuv0vKoz46tBZq_eyme_oX3YlE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/https.d.ts"
+    },
+    "size": 16812,
+    "hash": "LCvaodjq2faGKNbZ0lDkbujoGqSJi0dpo2lWrhXgYP4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/inspector.d.ts"
+    },
+    "size": 12276,
+    "hash": "ujif09f7pmcOl7yC6xJGncs3HSLyTmOFnB31oIPII-0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/inspector.generated.d.ts"
+    },
+    "size": 228362,
+    "hash": "X_RDOi3q5PhasTd-kKdVTOa0euUcaahMowpuIvroWDQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/inspector/promises.d.ts"
+    },
+    "size": 1471,
+    "hash": "grkeTkLmxBvH_BtsLcXrpqK6mDdesfIQ5v9rui1UF34"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/module.d.ts"
+    },
+    "size": 32983,
+    "hash": "lyNMUwOGZXb5E9DMrn1Y1jItnoA8e_Eiij_aRquAh7I"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/net.d.ts"
+    },
+    "size": 47292,
+    "hash": "UzZnRUfYMrkB9H1WAsYd1LqReWpHESNapK6tM4bOBaQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/buffer@5.7.1/node_modules/buffer/index.d.ts"
+    },
+    "size": 8755,
+    "hash": "jpwjuniqvC4KJwM_GHN6bfdUBncx5p3F9SgjlX1gpLY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/os.d.ts"
+    },
+    "size": 19278,
+    "hash": "c-63QNrMRa3GB6T1n5D6nb4nF9k9gvEV9F804Y-NZEo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/path.d.ts"
+    },
+    "size": 7639,
+    "hash": "7FARAcKpYTOmxpX5NMj2ZCFJzHKFcbKcu3t3CYTBCI4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/path/posix.d.ts"
+    },
+    "size": 194,
+    "hash": "shTrz3bFGxFUU_aXKe6Kp7f47M2uKpIrVopFwtf_Uvc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/path/win32.d.ts"
+    },
+    "size": 194,
+    "hash": "Qpyc36fRJiVXee_X5tkFfO0tacgYWburMgc7rVLpunY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/perf_hooks.d.ts"
+    },
+    "size": 23015,
+    "hash": "sX8nL5A9FVuewheRtYibY4l3vB3uGB77K8MXzgBtjJs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/process.d.ts"
+    },
+    "size": 115066,
+    "hash": "GLA6g5UZKBETEXAELWr1DEKSsNcIeJ2_W8gFtt2fTBQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/punycode.d.ts"
+    },
+    "size": 3780,
+    "hash": "IwdjJQ8gRJ-ns8knPhlnrbACPciQ1L4VU_rKZY7mWXE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/querystring.d.ts"
+    },
+    "size": 6642,
+    "hash": "w-kHi2DLMp0SIfWHjojOz6PnRGBVDmBaWPz7QaZgKf8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/quic.d.ts"
+    },
+    "size": 92303,
+    "hash": "zS883DlUxVGZ1oj-69wqqmhnDoaWPjC3-rLyfA3JRVM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/readline.d.ts"
+    },
+    "size": 21216,
+    "hash": "RBubsJATZUqj0FDmiwZGTYlZtHPoWGgknZ0Y9pKs01s"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/readline/promises.d.ts"
+    },
+    "size": 6418,
+    "hash": "vBihmRumgfA-Eyhfode5mwO2fuZxt7yTYlRGcXdUOJA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/repl.d.ts"
+    },
+    "size": 19023,
+    "hash": "VSRvFeM_8eLp5nmyX6l5CkjbVdxj1Wf-JfrItqDv6RE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/sea.d.ts"
+    },
+    "size": 2045,
+    "hash": "-pS79TK3r485S5X6MQmA1uIL0tTIccamy59w8DdQpEs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/sqlite.d.ts"
+    },
+    "size": 55651,
+    "hash": "klc08wO38MwRHUKusheB04p55tWsBbKxQAzRhhp10ns"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream.d.ts"
+    },
+    "size": 90588,
+    "hash": "WybE3WctiDNruSl4fJv7VRGegLqJ7G3JI9ocBjiShD4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/consumers.d.ts"
+    },
+    "size": 4272,
+    "hash": "f6IhS7DWRwG8b5zozeL9L_jFceCyMGX6BKilpr65FRE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/iter.d.ts"
+    },
+    "size": 17428,
+    "hash": "uOgFvNjPt5htK89eeF40_f4MsvMaibWF4skgRRPvqM8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/promises.d.ts"
+    },
+    "size": 7347,
+    "hash": "8SYkpKjQQraJFOrBsKFlcfwcUjFz_N8lF8ZdGRvVqGw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/stream/web.d.ts"
+    },
+    "size": 12122,
+    "hash": "tHaXZ_E6FpKmYYbgHDqhhv-AjV_3LtNu2ow3c4-yrJI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/string_decoder.d.ts"
+    },
+    "size": 1318,
+    "hash": "hBmD45vUy7Rjvjhekv2hEFfKs2i_JxAKgBxJLx2Gy6o"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/test.d.ts"
+    },
+    "size": 117229,
+    "hash": "RBopsYzGTDf7GWFy7B5Jn2DVeS7ciWSObLVQGAyBBQ8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/test/reporters.d.ts"
+    },
+    "size": 2779,
+    "hash": "HsPzpfBMxC3zMnT75cCTfZqeBvJJp6JiiNfVTwdj_9Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/timers.d.ts"
+    },
+    "size": 7351,
+    "hash": "5BVt2yWqDjtTA9Ny8mlXs2d48Pa71DJjWSaYcyleMFg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/timers/promises.d.ts"
+    },
+    "size": 3383,
+    "hash": "zBtDOoTK4F3cVnLUgjFwr3hgatIezvYNvEVwGQy_E1c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/tls.d.ts"
+    },
+    "size": 59265,
+    "hash": "dmGXNKY0kmUcNGfeb9Q9k9e92Dav9JuG8Og-LB4XERo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/trace_events.d.ts"
+    },
+    "size": 3842,
+    "hash": "f3jPsrNDg4YSwZLLJRdG46fGKsdnVyakfhMNmyE_ZYA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/tty.d.ts"
+    },
+    "size": 11270,
+    "hash": "rtjz5cflNGJWXu3zSpvLcAOTyywasMdoYCuSnD7TFF0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/url.d.ts"
+    },
+    "size": 25457,
+    "hash": "jiV35yYgUf08W9bKKyBW01j_iFNWVyD5JFWGCCTCUYg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/util.d.ts"
+    },
+    "size": 65409,
+    "hash": "fsjX1IP3OU-dphGxDToOQC92_1yZEmHmzkOhX4HKQlg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/util/types.d.ts"
+    },
+    "size": 23832,
+    "hash": "u527SyrYHj5x7FukMUlzcYVVudBLoqF9-_h17-y44sA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/v8.d.ts"
+    },
+    "size": 42889,
+    "hash": "kCHcW-jzqHr1zt4pIhGIpkl-IJK2iJ4L4hLva2txU-k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/vfs.d.ts"
+    },
+    "size": 6533,
+    "hash": "2zk5xwACc02eNE818z0VHPMC0ybvCDOOm-uOf5k30qI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/vm.d.ts"
+    },
+    "size": 53141,
+    "hash": "MuzMJy8140_xw9M9LI0F5oIabpX2SOEYpfSg81Eolaw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/wasi.d.ts"
+    },
+    "size": 6250,
+    "hash": "mattDWYM5NIe-1Ioijn9Nbs_VWmA7FRjsa6PMEo7vIU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/worker_threads.d.ts"
+    },
+    "size": 29736,
+    "hash": "YyxFzLTNwsOoDHo2pj3XdjAW5ZysXge_s-N-NUiVcCg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/zlib.d.ts"
+    },
+    "size": 22874,
+    "hash": "yaLa9s0euFTNW55CQkfF4wZpIFVzjC7_0194cdlCt24"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/zlib/iter.d.ts"
+    },
+    "size": 5077,
+    "hash": "r6HEn45VnkE9VzQzOduFfSqBWUNc-c99TetBcY__G4g"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/@types+node@26.4.1/node_modules/@types/node/index.d.ts"
+    },
+    "size": 5053,
+    "hash": "xG8RGvZHxBNK6GllMTBhDWLaMh-Q6_GeGGo-pL7Xk1A"
+   }
+  ],
+  "inputs": [
+   {
+    "relative": "packages/smithers/flows/capability/src/Action.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/maxResourceLength.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/PatternResource.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/PatternAction.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/CapabilityPattern.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/EffectTier.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/ExactCapability.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/isPatternAction.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/InvalidCapabilityAction.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/format.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/metacharacters.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/isLiteralResource.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/make.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/hasDotSegment.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/matchesAction.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/maxMatchWork.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/matchesResource.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/matches.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/actionSubsumes.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/mayOverlap.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/isAction.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/parse.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/parsePattern.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/patternFromCapability.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/requiresIdempotencyKey.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/subsumes.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/TierOptions.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/tierOf.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/withinMatchBudget.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/Capability.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/CapabilitySet.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/CapabilitySet.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/ChildProcessEnvironment.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/RuleEffect.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/Rule.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/evaluate.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/maxDisplayFieldLength.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/displayField.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/PermissionErrorPayload.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/formatError.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/internal/describe.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/Record.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/BoundedJson.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/canonical/src/index.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/GrantStoreErrorCode.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/GrantStoreError.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/isPlainObject.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/isPermissionError.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/fromPlatformError.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/capabilitySnapshot.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/PermissionDenied.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/internal/permissionMetaSnapshot.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/PermissionRequired.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/PermissionError.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/toPlatformError.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/capability/src/Permission.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/CommandLine.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/crypto/src/Crypto.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/crypto/src/internal/sha256.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/crypto/src/Sha256.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/GrantEvent.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/Workspace.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/GrantStore.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/internal/makeCapability.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/ProcessConfinement.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/Rooted.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/ChildProcessSpawner.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/internal/Pipeline.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/CommitScope.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/WriteTally.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/DatabaseMetrics.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/WriteRetry.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/journal/src/JournalEvent.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/journal/src/OwnerId.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/journal/src/Projection.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/journal/src/Journal.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/ProcessLedger.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/ContainedSpawner.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/FileSystem.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/jj/src/Jj.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/jj/src/index.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/HostError.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/HttpClient.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/Jj.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/Path.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/HostServices.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/JournalGrantStore.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/Unreachable.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/index.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/test/FileSystemBatchContract.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/test/HostContract.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/kernel/src/test/TestGrantStore.ts"
+   }
+  ],
+  "warnings": [
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+    },
+    "line": 41,
+    "column": 61,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#File` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+    },
+    "line": 57,
+    "column": 60,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+    },
+    "line": 76,
+    "column": 92,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+    },
+    "line": 89,
+    "column": 38,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+    },
+    "line": 90,
+    "column": 21,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/Unreachable.vibe"
+    },
+    "line": 15,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "Unreachable extends Schema.TaggedError; a schema error declaration, schema error Unreachable { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "line": 18,
+    "column": 38,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "line": 26,
+    "column": 31,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "line": 26,
+    "column": 64,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "line": 35,
+    "column": 11,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "line": 36,
+    "column": 12,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+    },
+    "line": 37,
+    "column": 4,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/process/ChildProcessSpawner#ChildProcessSpawner` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   }
+  ],
+  "outputs": [
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/kernel/src/GrantEvent.vibe"
+     }
+    ],
+    "code": "/**\n * Durable grant decision events.\n *\n * Governing design:\n * `docs/specs/Concepts/Permission Kernel.md` and\n * `docs/specs/Concepts/Journal Queue.md`.\n *\n * @since 1.0.0-rc.0\n */\nimport { Capability, CapabilityPattern } from \"@smthrs/capability/Capability\";\nimport * as Schema from \"effect/Schema\";\n/**\n * The tier at which a capability decision was made.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const GrantTier = Schema.Literals([\"sealed\", \"compensable\", \"irreversible\"]);\n/**\n * The scope selected for a permission grant.\n *\n * @category schemas\n * @since 1.0.0-rc.0\n */\nexport const GrantScope = Schema.Literals([\"once\", \"run\", \"remembered\"]);\n/**\n * A one-call grant.\n *\n * It is durable audit evidence but is deliberately never replayed as active\n * authority.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport class OnceGrant extends Schema.TaggedClass()(\"@smthrs/kernel/GrantEvent/OnceGrant\", {\n    eventType: Schema.Literal(\"flows.kernel.grant.once.v1\"),\n    requestId: Schema.String,\n    runId: Schema.String,\n    planDigest: Schema.optional(Schema.String),\n    capability: Capability,\n    pattern: CapabilityPattern,\n    scope: Schema.Literal(\"once\"),\n    tier: GrantTier\n}) {\n}\n/**\n * A grant remembered across runs.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport class RememberedGrant extends Schema.TaggedClass()(\"@smthrs/kernel/GrantEvent/RememberedGrant\", {\n    eventType: Schema.Literal(\"flows.kernel.grant.remembered.v1\"),\n    requestId: Schema.String,\n    runId: Schema.String,\n    planDigest: Schema.optional(Schema.String),\n    capability: Capability,\n    pattern: CapabilityPattern,\n    scope: Schema.Literal(\"remembered\"),\n    tier: GrantTier\n}) {\n}\n/**\n * A grant scoped to the current run.\n *\n * Version 2 captures the requesting fiber's normalized conjunction of any-of\n * capability-pattern groups. Replay intersects it with the constructor ceiling.\n * Version 1 omitted this boundary and cannot safely activate authority.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport class RunGrant extends Schema.TaggedClass()(\"@smthrs/kernel/GrantEvent/RunGrant\", {\n    eventType: Schema.Literal(\"flows.kernel.grant.run.v2\"),\n    requestId: Schema.String,\n    runId: Schema.String,\n    planDigest: Schema.String,\n    capability: Capability,\n    pattern: CapabilityPattern,\n    ceiling: Schema.Array(Schema.Array(CapabilityPattern)),\n    scope: Schema.Literal(\"run\"),\n    tier: GrantTier\n}) {\n}\n/**\n * A denied permission request.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport class DeniedGrant extends Schema.TaggedClass()(\"@smthrs/kernel/GrantEvent/DeniedGrant\", {\n    eventType: Schema.Literal(\"flows.kernel.grant.denied.v1\"),\n    requestId: Schema.String,\n    runId: Schema.String,\n    planDigest: Schema.optional(Schema.String),\n    capability: Capability,\n    pattern: CapabilityPattern,\n    scope: Schema.Literal(\"once\"),\n    tier: GrantTier\n}) {\n}\n/**\n * A capability envelope grant.\n *\n * Envelope grants are not attached to an individual request. `planDigest`\n * binds the decision to exactly the plan shown to the approver. A `run`\n * envelope is replayed only for that run and digest; a `remembered` envelope\n * becomes remembered predicate grants for future plans while retaining its\n * origin digest as audit evidence.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport class EnvelopeGrant extends Schema.TaggedClass()(\"@smthrs/kernel/GrantEvent/EnvelopeGrant\", {\n    eventType: Schema.Literal(\"flows.kernel.grant.envelope.v1\"),\n    runId: Schema.String,\n    planDigest: Schema.String,\n    patterns: Schema.Array(CapabilityPattern),\n    scope: Schema.Literals([\"run\", \"remembered\"])\n}) {\n}\n/**\n * All durable grant events understood by the kernel.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const GrantEventSchema = Schema.Union([\n    OnceGrant,\n    RememberedGrant,\n    DeniedGrant,\n    EnvelopeGrant,\n    RunGrant\n]);\n/**\n * Decodes one JSON-compatible journal payload into a grant event.\n *\n * Excess payload keys are rejected rather than stripped. Grant payloads are\n * replayed as active permission authority, so a payload that mixes fields\n * from two grant variants — for example an envelope carrying request-only\n * fields — is treated as corrupt instead of silently narrowed to whichever\n * variant its declared keys happen to satisfy.\n *\n * @category decoding\n * @since 1.0.0-rc.0\n */\nexport const decode = Schema.decodeUnknownResult(GrantEventSchema, { onExcessProperty: \"error\" });\n/**\n * Encodes a grant event into its JSON-compatible journal payload.\n *\n * @category encoding\n * @since 1.0.0-rc.0\n */\nexport const encode = Schema.encodeUnknownResult(GrantEventSchema);\n",
+    "map": {
+     "version": 3,
+     "file": "GrantEvent.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/kernel/src/GrantEvent.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;GAQG;AAEH,OAAO,EAAE,UAAU,EAAE,iBAAiB,EAAE,MAAM,+BAA+B,CAAA;AAC7E,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,QAAQ,EAAE,aAAa,EAAE,cAAc,CAAC,CAAC,CAAA;AAEnF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,MAAM,CAAC,QAAQ,CAAC,CAAC,MAAM,EAAE,KAAK,EAAE,YAAY,CAAC,CAAC,CAAA;AAExE;;;;;;;;GAQG;AACH,MAAM,OAAO,SAAU,SAAQ,MAAM,CAAC,WAAW,EAAa,CAAC,qCAAqC,EAAE;IACpG,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC,4BAA4B,CAAC;IACvD,SAAS,EAAE,MAAM,CAAC,MAAM;IACxB,KAAK,EAAE,MAAM,CAAC,MAAM;IACpB,UAAU,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;IAC1C,UAAU,EAAE,UAAU;IACtB,OAAO,EAAE,iBAAiB;IAC1B,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC;IAC7B,IAAI,EAAE,SAAS;CAChB,CAAC;CAAG;AAEL;;;;;GAKG;AACH,MAAM,OAAO,eAAgB,SAAQ,MAAM,CAAC,WAAW,EAAmB,CACxE,2CAA2C,EAC3C;IACE,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC,kCAAkC,CAAC;IAC7D,SAAS,EAAE,MAAM,CAAC,MAAM;IACxB,KAAK,EAAE,MAAM,CAAC,MAAM;IACpB,UAAU,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;IAC1C,UAAU,EAAE,UAAU;IACtB,OAAO,EAAE,iBAAiB;IAC1B,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,YAAY,CAAC;IACnC,IAAI,EAAE,SAAS;CAChB,CACF;CAAG;AAEJ;;;;;;;;;GASG;AACH,MAAM,OAAO,QAAS,SAAQ,MAAM,CAAC,WAAW,EAAY,CAAC,oCAAoC,EAAE;IACjG,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC,2BAA2B,CAAC;IACtD,SAAS,EAAE,MAAM,CAAC,MAAM;IACxB,KAAK,EAAE,MAAM,CAAC,MAAM;IACpB,UAAU,EAAE,MAAM,CAAC,MAAM;IACzB,UAAU,EAAE,UAAU;IACtB,OAAO,EAAE,iBAAiB;IAC1B,OAAO,EAAE,MAAM,CAAC,KAAK,CAAC,MAAM,CAAC,KAAK,CAAC,iBAAiB,CAAC,CAAC;IACtD,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC;IAC5B,IAAI,EAAE,SAAS;CAChB,CAAC;CAAG;AAEL;;;;;GAKG;AACH,MAAM,OAAO,WAAY,SAAQ,MAAM,CAAC,WAAW,EAAe,CAAC,uCAAuC,EAAE;IAC1G,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC,8BAA8B,CAAC;IACzD,SAAS,EAAE,MAAM,CAAC,MAAM;IACxB,KAAK,EAAE,MAAM,CAAC,MAAM;IACpB,UAAU,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;IAC1C,UAAU,EAAE,UAAU;IACtB,OAAO,EAAE,iBAAiB;IAC1B,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC;IAC7B,IAAI,EAAE,SAAS;CAChB,CAAC;CAAG;AAEL;;;;;;;;;;;GAWG;AACH,MAAM,OAAO,aAAc,SAAQ,MAAM,CAAC,WAAW,EAAiB,CACpE,yCAAyC,EACzC;IACE,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC,gCAAgC,CAAC;IAC3D,KAAK,EAAE,MAAM,CAAC,MAAM;IACpB,UAAU,EAAE,MAAM,CAAC,MAAM;IACzB,QAAQ,EAAE,MAAM,CAAC,KAAK,CAAC,iBAAiB,CAAC;IACzC,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,CAAC,KAAK,EAAE,YAAY,CAAC,CAAC;CAC9C,CACF;CAAG;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,gBAAgB,GAAG,MAAM,CAAC,KAAK,CAAC;IAC3C,SAAS;IACT,eAAe;IACf,WAAW;IACX,aAAa;IACb,QAAQ;CACT,CAAC,CAAA;AAUF;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,mBAAmB,CAAC,gBAAgB,EAAE,EAAE,gBAAgB,EAAE,OAAO,EAAE,CAAC,CAAA;AAEjG;;;;;GAKG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,mBAAmB,CAAC,gBAAgB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+     }
+    ],
+    "code": "/**\n * Trusted composition metadata shared by contained and permission-aware spawners.\n * @since 1.0.0\n */\n// The registry key also works when a service crosses the ESM/CJS projections.\n// This declares a trusted lifecycle contract; it cannot prove a supplied\n// lifecycle is honest or turn process containment into a security sandbox.\nconst key = Symbol.for(\"@smthrs/kernel/ContainedSpawner/Lifecycle/v1\");\n/**\n * Reads only an own data property, without invoking an accessor.\n * @private\n * @since 1.0.0\n */\nexport const isContained = (spawner) => Object.getOwnPropertyDescriptor(spawner, key)?.value === true;\n/**\n * Marks a newly constructed service without copying through object spreads.\n * @private\n * @since 1.0.0\n */\nexport const mark = (spawner) => Object.defineProperty(spawner, key, { value: true, enumerable: false, writable: false, configurable: false });\n/**\n * Preserves the declaration on a wrapper that delegates its process lifetime.\n * @private\n * @since 1.0.0\n */\nexport const inherit = (source, wrapper) => isContained(source) ? mark(wrapper) : wrapper;\n",
+    "map": {
+     "version": 3,
+     "file": "Containment.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/kernel/src/internal/Containment.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;GAGG;AAIH,8EAA8E;AAC9E,yEAAyE;AACzE,2EAA2E;AAC3E,MAAM,GAAG,GAAG,MAAM,CAAC,GAAG,CAAC,8CAA8C,CAAC,CAAA;AAEtE;;;;GAIG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CAAC,OAAuC,EAAW,EAAE,CAC9E,MAAM,CAAC,wBAAwB,CAAC,OAAO,EAAE,GAAG,CAAC,EAAE,KAAK,KAAK,IAAI,CAAA;AAE/D;;;;GAIG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,OAAuC,EAAkC,EAAE,CAC9F,MAAM,CAAC,cAAc,CAAC,OAAO,EAAE,GAAG,EAAE,EAAE,KAAK,EAAE,IAAI,EAAE,UAAU,EAAE,KAAK,EAAE,QAAQ,EAAE,KAAK,EAAE,YAAY,EAAE,KAAK,EAAE,CAAC,CAAA;AAE/G;;;;GAIG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,CACrB,MAAsC,EACtC,OAAuC,EACP,EAAE,CAAC,WAAW,CAAC,MAAM,CAAC,CAAC,CAAC,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,CAAC,CAAC,OAAO,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/kernel/src/internal/makeCapability.vibe"
+     }
+    ],
+    "code": "/**\n * Typed capability construction for host decorators.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Capability from \"@smthrs/capability/Capability\";\nimport { GrantStoreError } from \"@smthrs/capability/Permission\";\nimport { Effect } from \"effect\";\n/**\n * Constructs decorator requests without leaking schema failures as defects.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const makeCapability = (action, resource) => Effect.try({\n    try: () => Capability.make(action, resource),\n    catch: () => new GrantStoreError({\n        code: \"invalid_resolution\",\n        message: `capability requires a valid action and a resource within maximumCapabilityResourceLength (${Capability.maxResourceLength} UTF-16 code units)`\n    })\n});\n",
+    "map": {
+     "version": 3,
+     "file": "makeCapability.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/kernel/src/internal/makeCapability.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,UAAU,MAAM,+BAA+B,CAAA;AAC3D,OAAO,EAAE,eAAe,EAAE,MAAM,+BAA+B,CAAA;AAC/D,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAE/B;;;;;GAKG;AACH,MAAM,CAAC,MAAM,cAAc,GAAG,CAAC,MAAyB,EAAE,QAAgB,EAAE,EAAE,CAC5E,MAAM,CAAC,GAAG,CAAC;IACT,GAAG,EAAE,GAAG,EAAE,CAAC,UAAU,CAAC,IAAI,CAAC,MAAM,EAAE,QAAQ,CAAC;IAC5C,KAAK,EAAE,GAAG,EAAE,CACV,IAAI,eAAe,CAAC;QAClB,IAAI,EAAE,oBAAoB;QAC1B,OAAO,EACL,6FAA6F,UAAU,CAAC,iBAAiB,qBAAqB;KACjJ,CAAC;CACL,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+     }
+    ],
+    "code": "/**\n * Optional, bounded read batches on the existing filesystem host slot.\n *\n * @since 1.0.0\n */\n/** Maximum operations admitted by one batch.\n * @since 1.0.0\n * @category constants\n */\nexport const maxBatchSize = 128;\n/** Bounded concurrency for hosts without batching.\n * @since 1.0.0\n * @category constants\n */\nexport const fallbackConcurrency = 4;\n/** Host extension identity on the guarded filesystem.\n * @since 1.0.0\n * @category constants\n */\nexport const FileSystemBatchTypeId = Symbol.for(\"@smthrs/kernel/FileSystemBatch\");\n/** Discover the guarded batch extension when the host supports it.\n * @since 1.0.0\n * @category accessors\n */\nexport const batch = (fs) => fs[FileSystemBatchTypeId];\n",
+    "map": {
+     "version": 3,
+     "file": "FileSystemBatch.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/kernel/src/FileSystemBatch.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAIH;;;GAGG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,GAAG,CAAA;AAE/B;;;GAGG;AACH,MAAM,CAAC,MAAM,mBAAmB,GAAG,CAAC,CAAA;AA4DpC;;;GAGG;AACH,MAAM,CAAC,MAAM,qBAAqB,GAAG,MAAM,CAAC,GAAG,CAAC,gCAAgC,CAAC,CAAA;AAEjF;;;GAGG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,EAAyB,EAA+B,EAAE,CAC7E,EAAqF,CAAC,qBAAqB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/kernel/src/Unreachable.vibe"
+     }
+    ],
+    "code": "/**\n * Typed host connectivity failures, including failed command diagnostics.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\n/**\n * A temporarily unreachable resolver, connection, or HTTP service.\n *\n * @category errors\n * @since 1.0.0\n */\nexport class Unreachable extends Schema.TaggedError()(\"@smthrs/kernel/Unreachable\", {\n    message: Schema.String,\n    cause: Schema.optional(Schema.Unknown)\n}) {\n}\nconst outage = /Could not resolve host|Failed to connect to|Connection timed out|Operation timed out|Connection reset|Recv failure|Network is unreachable|Temporary failure in name resolution|SSL_ERROR_SYSCALL|The remote end hung up unexpectedly|\\bEAI_AGAIN\\b|\\bENOTFOUND\\b|\\bHTTP(?:\\/\\d(?:\\.\\d)?)?\\s*(?:(?:error|status|code)\\s*[:=]?\\s*)?[:=]?\\s*(?:429|5\\d{2})\\b/i;\n/**\n * Classifies stderr from a failed host command; other exits keep their domain error.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const classifyExit = (stderr) => outage.test(stderr) ? new Unreachable({ message: stderr }) : undefined;\n",
+    "map": {
+     "version": 3,
+     "file": "Unreachable.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/kernel/src/Unreachable.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC;;;;;GAKG;AACH,MAAM,OAAO,WAAY,SAAQ,MAAM,CAAC,WAAW,EAAe,CAAC,4BAA4B,EAAE;IAC/F,OAAO,EAAE,MAAM,CAAC,MAAM;IACtB,KAAK,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,OAAO,CAAC;CACvC,CAAC;CAAG;AAEL,MAAM,MAAM,GACV,4VAA4V,CAAA;AAE9V;;;;;GAKG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAAC,MAAc,EAA2B,EAAE,CACtE,MAAM,CAAC,IAAI,CAAC,MAAM,CAAC,CAAC,CAAC,CAAC,IAAI,WAAW,CAAC,EAAE,OAAO,EAAE,MAAM,EAAE,CAAC,CAAC,CAAC,CAAC,SAAS,CAAA"
+    }
+   }
+  ]
+ }
+}

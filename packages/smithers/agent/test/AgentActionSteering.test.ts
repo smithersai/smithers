@@ -9,6 +9,7 @@
  * Send while the agent works.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Notifications from "@smthrs/harness/Notifications"
@@ -24,10 +25,10 @@ import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
 import * as Budget from "../src/Budget.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
@@ -143,7 +144,7 @@ const runSteered = (
           Layer.provideMerge(Layer.merge(Budget.layerUnbounded(), QuotaPolicy.layerUnclassified())),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
     )

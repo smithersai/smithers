@@ -2,9 +2,9 @@ import { Effect, Layer, PlatformError } from "effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as LanguageServer from "../src/LanguageServer.ts"
+import * as LanguageServer from "../src/LanguageServer.vibe"
 import * as Lsp from "../src/Lsp.ts"
-import * as StdError from "../src/StdError.ts"
+import * as StdError from "../src/StdError.vibe"
 import { fileInfo } from "./TestLayers.ts"
 
 /** A guarded filesystem that authorizes `/workspace` and denies every other path. */

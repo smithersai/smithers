@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.vibe"
+import { hasSmithersErrorShape, isSmithersError, SmithersError } from "../src/SmithersError.ts"
 import { failureOf } from "./helpers.vibe"
 
 // An adapter's subclass, tagged with its own name (D278).
@@ -33,21 +33,21 @@ function recover(error: SmithersError | AdapterError): Effect<string, SmithersEr
 }
 
 describe("tagged failures", () => {
-  it.effect("routes a base instance and a subclass to their own catchTag handler") {
+  it.effect("routes a base instance and a subclass to their own catchTag handler", effect () => {
     expect(recover(new SmithersError("INVALID_INPUT", "x"))).toBe("base:INVALID_INPUT")
     expect(recover(new AdapterError("INTEGRATION_ERROR", "adapter failed"))).toBe("adapter:adapter failed")
-  }
+  })
 
-  it.effect("matches a subclass by class in a catch") {
+  it.effect("matches a subclass by class in a catch", effect () => {
     const caught = raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")) catch (error) => match (error) {
       when AdapterError: error.summary;
     }
     expect(caught).toBe("adapter failed")
-  }
+  })
 
-  it.effect("fails the surrounding effect with the instance when thrown") {
+  it.effect("fails the surrounding effect with the instance when thrown", effect () => {
     expect(failureOf(raise(new AdapterError("INTEGRATION_ERROR", "adapter failed")))).toBeInstanceOf(AdapterError)
-  }
+  })
 
   it("tags each subclass with its own name, which it reports and its stack starts with", () => {
     const error = new AdapterError("UNSUPPORTED", "x")

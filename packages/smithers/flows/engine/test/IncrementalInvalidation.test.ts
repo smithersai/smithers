@@ -14,10 +14,10 @@
  * here).
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 import { layerDurable, makeLog } from "./DurableLogEngine.ts"
 import { effect } from "./Harness.ts"

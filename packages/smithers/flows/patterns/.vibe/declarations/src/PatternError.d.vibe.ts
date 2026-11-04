@@ -1,0 +1,44 @@
+/**
+ * Stable failures shared by higher-order flow patterns.
+ *
+ * @since 0.1.0
+ */
+import * as Schema from "effect/Schema";
+/**
+ * Stable pattern failure codes.
+ *
+ * `invalid_decorator` names a fault in the declaration: a decorator broke a
+ * schema or authority contract, or an option was out of range. `invalid_input`
+ * names a fault in the data a pattern read while running: a flow input, a
+ * plan a boss returned, a score an evaluator returned, or a settlement
+ * envelope. A caller retries or escalates on the second and never on the
+ * first. `stalled` names a round loop whose stall policy said `escalate`.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export declare const PatternErrorCode: Schema.Literals<readonly ["missing_slot", "recursion_bound", "envelope_conflict", "invalid_decorator", "invalid_input", "exhausted", "stalled", "quarantined", "compensation_failed"]>;
+/**
+ * Stable pattern failure code.
+ *
+ * @category models
+ * @since 0.1.0
+ */
+export type PatternErrorCode = typeof PatternErrorCode.Type;
+declare const PatternError_base: Schema.Class<PatternError, Schema.TaggedStruct<"flows/patterns/PatternError", {
+    readonly code: Schema.Literals<readonly ["missing_slot", "recursion_bound", "envelope_conflict", "invalid_decorator", "invalid_input", "exhausted", "stalled", "quarantined", "compensation_failed"]>;
+    readonly message: Schema.String;
+    readonly cause: Schema.optional<Schema.Unknown>;
+}>, import("effect/Cause").YieldableError>;
+/**
+ * A typed pattern declaration or execution failure.
+ *
+ * `cause` preserves the error or errors this failure reports on. Member errors
+ * can contain caller input; patterns do not redact those values.
+ *
+ * @category errors
+ * @since 0.1.0
+ */
+export declare class PatternError extends PatternError_base {
+}
+export {};

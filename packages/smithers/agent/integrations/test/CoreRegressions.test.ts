@@ -2,13 +2,13 @@ import { Effect, Logger, Redacted } from "effect"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import { buildAuthorizationUrl } from "../src/core/AuthorizationUrl.ts"
-import * as Channel from "../src/core/Channel.ts"
-import { layerMemory } from "../src/core/CursorStore.ts"
-import type { ExternalEvent } from "../src/core/ExternalEvent.ts"
+import * as Channel from "../src/core/Channel.vibe"
+import { layerMemory } from "../src/core/CursorStore.vibe"
+import type { ExternalEvent } from "../src/core/ExternalEvent.vibe"
 import * as Pkce from "../src/core/Pkce.ts"
 import { toNotification } from "../src/core/SignalName.ts"
 import { runWithCursor } from "../src/core/Source.ts"
-import { compareVersion } from "../src/core/SourceRecord.ts"
+import { compareVersion } from "../src/core/SourceRecord.vibe"
 
 const event: ExternalEvent = {
   source: "example",

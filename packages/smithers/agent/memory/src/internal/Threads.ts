@@ -4,14 +4,14 @@
  * @since 0.1.0
  */
 
+import type { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
-import type { DatabaseService } from "../Database.ts"
+import type { DatabaseService } from "../Database.vibe"
 import type { Service } from "../MemoryStore.ts"
 import { canonicalJson } from "./Canonical.ts"
-import { resolveNamespace } from "./ResolveNamespace.ts"
+import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   changed,
   decodeJson,
@@ -25,7 +25,7 @@ import {
   validateLimit,
   validateNonEmpty,
   validateTime
-} from "./Store.ts"
+} from "./Store.vibe"
 
 const THREAD_COLUMNS = "thread_id, namespace_kind, namespace_id, title, metadata_json, created_at_ms, updated_at_ms"
 const MESSAGE_COLUMNS = "thread_id, id, role, text, at_ms"

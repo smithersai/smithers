@@ -30,13 +30,13 @@ import { Context, Effect } from "effect"
 import * as Base64 from "effect/encoding/Base64"
 import * as FileSystem from "effect/FileSystem"
 import * as Result from "effect/Result"
-import * as Exec from "./internal/Exec.ts"
+import * as Exec from "./internal/Exec.vibe"
 import * as Prune from "./internal/Prune.ts"
-import * as RemoteTree from "./internal/RemoteTree.ts"
+import * as RemoteTree from "./internal/RemoteTree.vibe"
 import * as Tar from "./internal/Tar.ts"
 import * as PortableSearch from "./PortableSearch.ts"
-import * as Search from "./Search.ts"
-import * as StdError from "./StdError.ts"
+import * as Search from "./Search.vibe"
+import * as StdError from "./StdError.vibe"
 
 /**
  * The most file content one search brings back from the machine.

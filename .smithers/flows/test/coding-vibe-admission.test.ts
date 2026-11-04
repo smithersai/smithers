@@ -1,4 +1,5 @@
 import { NodeCrypto } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import { Effect, Exit, Layer, ManagedRuntime } from "effect"
@@ -193,7 +194,7 @@ for (
       Layer.mergeAll(Interpreter.layer(VerifyVibe), policyLayers, leaf).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     )
     t.after(() => host.dispose())
@@ -313,7 +314,7 @@ for (
       Layer.mergeAll(Interpreter.layer(AdmitVibe), Interpreter.layer(VerifyVibe), policyLayers, leaves).pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeCrypto.layer)
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
       )
     )
     t.after(() => host.dispose())
@@ -416,7 +417,7 @@ test("final history gets one repair turn that quotes the refusal, then fails", {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
   const host = ManagedRuntime.make(layer)
   t.after(() => host.dispose())

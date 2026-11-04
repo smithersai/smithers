@@ -2,17 +2,18 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Exit, Fiber, FileSystem, Layer, PlatformError, Schema } from "effect"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Snapshot from "../src/ExecutionSnapshot.ts"
 
-const platform = Layer.mergeAll(NodeCrypto.layer, NodeFileSystem.layer, NodePath.layer)
+const platform = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), NodeFileSystem.layer, NodePath.layer)
 const source = `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"

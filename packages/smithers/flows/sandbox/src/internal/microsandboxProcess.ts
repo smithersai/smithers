@@ -17,10 +17,10 @@ import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import { concat } from "./concat.ts"
 import { elapsed } from "./deadline.ts"
-import { finalizeWithin } from "./finalizeWithin.ts"
+import { finalizeWithin } from "./finalizeWithin.vibe"
 import { hostKillScript } from "./killScript.ts"
-import { linuxSignalNumber } from "./linuxSignals.ts"
-import { warnTeardown } from "./teardownWarning.ts"
+import { linuxSignalNumber } from "./linuxSignals.vibe"
+import { warnTeardown } from "./teardownWarning.vibe"
 
 type VendorSandbox = Awaited<ReturnType<ReturnType<Sdk["Sandbox"]["builder"]>["create"]>>
 type ExecHandle = Awaited<ReturnType<VendorSandbox["execStreamWith"]>>

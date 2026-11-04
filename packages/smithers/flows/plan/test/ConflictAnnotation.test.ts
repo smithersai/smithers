@@ -7,7 +7,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import * as Conflicts from "../src/internal/ConflictAnnotation.ts"
-import * as KeyMaterial from "../src/KeyMaterial.ts"
+import * as KeyMaterial from "../src/KeyMaterial.vibe"
 import * as Plan from "../src/Plan.ts"
 import { compile, draft } from "../src/test/PlanFixtures.ts"
 import { withCrypto, withCryptoFailure } from "./Crypto.ts"

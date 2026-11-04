@@ -16,7 +16,7 @@ import * as HttpClientError from "effect/http/HttpClientError"
 import type * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
-import type { GitHubConfig } from "../src/github/Config.ts"
+import type { GitHubConfig } from "../src/github/Config.vibe"
 import * as GitHubClient from "../src/github/GitHubClient.ts"
 
 /** The real transport: the platform `fetch`. */

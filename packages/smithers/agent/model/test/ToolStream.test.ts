@@ -1,7 +1,7 @@
 import { Chunk } from "effect"
 import { describe, expect, it } from "vitest"
-import { ModelError } from "../src/ModelError.ts"
-import * as ToolStream from "../src/ToolStream.ts"
+import { ModelError } from "../src/ModelError.vibe"
+import * as ToolStream from "../src/ToolStream.vibe"
 
 describe("ToolStream", () => {
   // A quadratic accumulator (copying every fragment on each delta) takes

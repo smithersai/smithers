@@ -12,9 +12,9 @@
  * without real process boundaries. See `DurableLogEngine.ts`.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"

@@ -13,6 +13,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control } from "@smthrs/control/Control"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -78,7 +79,7 @@ const database = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(
   Layer.provideMerge(Layer.effectDiscard(EngineMigrations.run)),
-  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 
 const engine = Layer.mergeAll(

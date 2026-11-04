@@ -1,0 +1,17 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "apply_patch",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "npx --no -- vibelang agents hook",
+            "timeout": 300,
+            "statusMessage": "Checking .vibe files"
+          }
+        ]
+      }
+    ]
+  }
+}

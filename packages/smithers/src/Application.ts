@@ -7,6 +7,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import type { ApprovalAuthority, Control, ControlExecutor, ControlSchema, Health } from "@smthrs/control"
 import { ControlClient, ControlRuntime } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import type * as ReplayOnly from "@smthrs/engine-store/ReplayOnly"
 import type { Journal } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
@@ -228,7 +229,7 @@ export interface Engine {
 export const engineMemory: Engine = {
   // The runtime mints identifiers through `Crypto`, which is a host service
   // now rather than an ambient global.
-  runtime: ControlRuntime.layerMemory().pipe(Layer.provide(NodeCrypto.layer)),
+  runtime: ControlRuntime.layerMemory().pipe(Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))),
   journal: TestJournal.layer().pipe(Layer.orDie)
 }
 

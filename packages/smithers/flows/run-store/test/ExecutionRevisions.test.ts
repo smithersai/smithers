@@ -11,9 +11,9 @@ import { execFileSync } from "node:child_process"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Migrations from "../src/Migrations.ts"
-import { initial } from "../src/migrations/0001_initial.ts"
-import { lineage } from "../src/migrations/0002_lineage.ts"
+import * as Migrations from "../src/Migrations.vibe"
+import { initial } from "../src/migrations/0001_initial.vibe"
+import { lineage } from "../src/migrations/0002_lineage.vibe"
 import * as RunStore from "../src/RunStore.ts"
 
 const owner = { hostId: "driver", pid: 42, nonce: "one" }

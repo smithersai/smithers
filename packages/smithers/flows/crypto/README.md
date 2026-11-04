@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -29,11 +29,11 @@ imports no `node:` built-in, so it also runs under Bun and in a browser.
 
 ```typescript
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { digest, digestSync } from "@smthrs/crypto"
+import { Crypto, digest, digestSync } from "@smthrs/crypto"
 import { Effect } from "effect"
 
 const injected = await Effect.runPromise(
-  digest("hello").pipe(Effect.provide(NodeCrypto.layer))
+  digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 const synchronous = digestSync("hello")
 

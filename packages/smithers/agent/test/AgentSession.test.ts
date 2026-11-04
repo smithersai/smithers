@@ -17,6 +17,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlError, ControlExecutor, ControlLive, ControlRuntime, ControlSchema } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import { DurableEngineState, type Service as EngineStateService } from "@smthrs/engine-store/DurableEngineState"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
 import * as WorkspaceSandbox from "@smthrs/engine-store/WorkspaceSandbox"
@@ -68,9 +69,9 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 import * as SeatRouter from "../src/SeatRouter.ts"
 import legacyCompaction from "./fixtures/legacyCompaction.json" with { type: "json" }
 import * as Safety from "./Safety.ts"
@@ -374,7 +375,9 @@ const stack = (options: StackOptions) => {
   engineRoots.add(root)
   const journal = TestJournal.layer()
   const notifications = NotificationQueue.layer.pipe(Layer.provide(journal))
-  const memory = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(Layer.provide(NodeCrypto.layer))
+  const memory = ControlRuntime.layerMemory({ flows: memoryFlows }).pipe(
+    Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+  )
   const wrap = options.wrapRuntime
   const runtime = wrap === undefined ? memory : Layer.effect(ControlRuntime.ControlRuntime)(
     Effect.map(ControlRuntime.ControlRuntime, (service) => ControlRuntime.make(wrap(service)))
@@ -476,7 +479,7 @@ const stack = (options: StackOptions) => {
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     registration
-  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj]))
   return ControlLive.layer.pipe(
     Layer.provideMerge(engine),
     Layer.provideMerge(

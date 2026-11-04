@@ -5,6 +5,7 @@ import { TestSchemas } from "@smthrs/database"
  * the source is left exactly as it was.
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
@@ -39,7 +40,7 @@ const seeded = async (directory: string) => {
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(NodeRuntime.storage(engine, directory)),
     Effect.provide(NodeServices.layer),
-    Effect.provide(NodeCrypto.layer)
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   ))
   await Effect.runPromise(Effect.void.pipe(
     Effect.provide(ControlDatabaseMigrations.layer),

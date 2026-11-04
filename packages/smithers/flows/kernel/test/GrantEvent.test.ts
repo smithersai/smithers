@@ -1,6 +1,6 @@
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import { describe, expect, it } from "vitest"
-import * as GrantEvent from "../src/GrantEvent.ts"
+import * as GrantEvent from "../src/GrantEvent.vibe"
 
 const capability = new Capability({ action: "fs:read", resource: "/workspace/readme.md" })
 const pattern = new CapabilityPattern({ action: "fs:read", resource: "/workspace/**" })

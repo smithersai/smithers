@@ -6,6 +6,7 @@
  * engine's own, not a stand-in.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -46,7 +47,6 @@ import {
   Scope,
   Stream
 } from "effect"
-import * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
 import * as AgentSession from "../src/AgentSession.ts"
@@ -54,7 +54,7 @@ import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import * as InternalModelStep from "../src/internal/ModelStep.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 import * as WorkspaceObservation from "../src/WorkspaceObservation.ts"
 
 /**
@@ -237,7 +237,7 @@ const drive = <A, E>(
     Effect.provide(
       Layer.mergeAll(
         FlowEngine.layerMemory,
-        NodeCrypto.layer,
+        Crypto.layerFromDigest(NodeCrypto.layerDigest),
         Budget.layerUnbounded(),
         QuotaPolicy.layerUnclassified()
       )
@@ -1282,7 +1282,7 @@ const driveBoth = <A, E>(
     Effect.provide(
       Layer.mergeAll(
         FlowEngine.layerMemory,
-        NodeCrypto.layer,
+        Crypto.layerFromDigest(NodeCrypto.layerDigest),
         Budget.layerUnbounded(),
         QuotaPolicy.layerUnclassified()
       )
@@ -1898,7 +1898,7 @@ describe("cell call identity across runs", () => {
     const runner = await Effect.gen(function*() {
       const sandbox = yield* InMemoryWorkspaceSandbox.make()
       return yield* FlowEngineLike.sandboxed(sandbox.service, countingCalls(executed))
-    }).pipe(Effect.provide(NodeCrypto.layer), Effect.runPromise)
+    }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.runPromise)
     const body = Effect.gen(function*() {
       const port = yield* FlowEngineLike.make({ model: countingModel([]), route: staticRoute(), calls: runner })
       return (yield* port.call(sharedCellCall("sealed"))).value

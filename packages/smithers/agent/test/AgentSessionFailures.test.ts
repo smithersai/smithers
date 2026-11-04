@@ -24,6 +24,7 @@ import type * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { RunStatus } from "@smthrs/control/ControlSchema"
 import * as Digest from "@smthrs/core/Digest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { AttemptEvidenceQuarantined } from "@smthrs/engine-store/Errors"
@@ -65,8 +66,8 @@ import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 import * as Safety from "./Safety.ts"
 
 const route: FlowEngineLike.RouteResolver = {
@@ -432,7 +433,7 @@ const withExecutor = <A>(
           ...DurableEngineState.makeMemory(),
           ...options.engineState
         }),
-        NodeCrypto.layer
+        Crypto.layerFromDigest(NodeCrypto.layerDigest)
       )
     ),
     Effect.scoped,

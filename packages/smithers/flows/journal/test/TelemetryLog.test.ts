@@ -5,7 +5,7 @@ import * as Logger from "effect/Logger"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import * as Redaction from "../src/Redaction.ts"
-import * as TelemetryLog from "../src/TelemetryLog.ts"
+import * as TelemetryLog from "../src/TelemetryLog.vibe"
 
 const {
   maximumSnapshotBytes,

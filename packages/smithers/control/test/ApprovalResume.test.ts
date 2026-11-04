@@ -26,6 +26,7 @@
  * denied run that is never resumed never learns it was denied.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
@@ -84,7 +85,7 @@ const hostedPlane = (taken: Array<string>) => {
   return ControlLive.layer.pipe(
     Layer.provide(hostingBridge(taken)),
     Layer.provideMerge(Layer.mergeAll(runtime, NotificationQueue.layer, Registry.layerNoop())),
-    Layer.provideMerge(Layer.merge(journalBundle, NodeCrypto.layer))
+    Layer.provideMerge(Layer.merge(journalBundle, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   )
 }
 

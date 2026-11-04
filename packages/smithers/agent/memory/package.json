@@ -34,29 +34,113 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Bank": "./src/Bank.ts",
-    "./Database": "./src/Database.ts",
-    "./Embedding": "./src/Embedding.ts",
-    "./Flows": "./src/Flows.ts",
-    "./Maintenance": "./src/Maintenance.ts",
-    "./MemoryError": "./src/MemoryError.ts",
-    "./MemoryStore": "./src/MemoryStore.ts",
-    "./MemoryTrellis": "./src/MemoryTrellis.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./Namespace": "./src/Namespace.ts",
-    "./Opening": "./src/Opening.ts",
-    "./Recall": "./src/Recall.ts",
-    "./RecallFts": "./src/RecallFts.ts",
-    "./RecallKeyword": "./src/RecallKeyword.ts",
-    "./RecallSemantic": "./src/RecallSemantic.ts",
-    "./SnapshotRecorder": "./src/SnapshotRecorder.ts",
-    "./Source": "./src/Source.ts",
-    "./WithMemory": "./src/WithMemory.ts",
-    "./index": "./src/index.ts",
-    "./test/TestMemory": "./src/test/TestMemory.ts",
+    "./Bank": {
+      "types": "./.vibe/declarations/src/Bank.d.vibe.ts",
+      "vibelang-source": "./src/Bank.vibe",
+      "default": "./.vibelang/js/src/Bank.js"
+    },
+    "./Database": {
+      "types": "./.vibe/declarations/src/Database.d.vibe.ts",
+      "vibelang-source": "./src/Database.vibe",
+      "default": "./.vibelang/js/src/Database.js"
+    },
+    "./Embedding": {
+      "types": "./src/Embedding.ts",
+      "vibelang-source": "./src/Embedding.ts",
+      "default": "./.vibelang/js/src/Embedding.js"
+    },
+    "./Flows": {
+      "types": "./src/Flows.ts",
+      "vibelang-source": "./src/Flows.ts",
+      "default": "./.vibelang/js/src/Flows.js"
+    },
+    "./Maintenance": {
+      "types": "./src/Maintenance.ts",
+      "vibelang-source": "./src/Maintenance.ts",
+      "default": "./.vibelang/js/src/Maintenance.js"
+    },
+    "./MemoryError": {
+      "types": "./.vibe/declarations/src/MemoryError.d.vibe.ts",
+      "vibelang-source": "./src/MemoryError.vibe",
+      "default": "./.vibelang/js/src/MemoryError.js"
+    },
+    "./MemoryStore": {
+      "types": "./src/MemoryStore.ts",
+      "vibelang-source": "./src/MemoryStore.ts",
+      "default": "./.vibelang/js/src/MemoryStore.js"
+    },
+    "./MemoryTrellis": {
+      "types": "./src/MemoryTrellis.ts",
+      "vibelang-source": "./src/MemoryTrellis.ts",
+      "default": "./.vibelang/js/src/MemoryTrellis.js"
+    },
+    "./Migrations": {
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./Namespace": {
+      "types": "./.vibe/declarations/src/Namespace.d.vibe.ts",
+      "vibelang-source": "./src/Namespace.vibe",
+      "default": "./.vibelang/js/src/Namespace.js"
+    },
+    "./Opening": {
+      "types": "./src/Opening.ts",
+      "vibelang-source": "./src/Opening.ts",
+      "default": "./.vibelang/js/src/Opening.js"
+    },
+    "./Recall": {
+      "types": "./src/Recall.ts",
+      "vibelang-source": "./src/Recall.ts",
+      "default": "./.vibelang/js/src/Recall.js"
+    },
+    "./RecallFts": {
+      "types": "./src/RecallFts.ts",
+      "vibelang-source": "./src/RecallFts.ts",
+      "default": "./.vibelang/js/src/RecallFts.js"
+    },
+    "./RecallKeyword": {
+      "types": "./src/RecallKeyword.ts",
+      "vibelang-source": "./src/RecallKeyword.ts",
+      "default": "./.vibelang/js/src/RecallKeyword.js"
+    },
+    "./RecallSemantic": {
+      "types": "./src/RecallSemantic.ts",
+      "vibelang-source": "./src/RecallSemantic.ts",
+      "default": "./.vibelang/js/src/RecallSemantic.js"
+    },
+    "./SnapshotRecorder": {
+      "types": "./.vibe/declarations/src/SnapshotRecorder.d.vibe.ts",
+      "vibelang-source": "./src/SnapshotRecorder.vibe",
+      "default": "./.vibelang/js/src/SnapshotRecorder.js"
+    },
+    "./Source": {
+      "types": "./src/Source.ts",
+      "vibelang-source": "./src/Source.ts",
+      "default": "./.vibelang/js/src/Source.js"
+    },
+    "./WithMemory": {
+      "types": "./src/WithMemory.ts",
+      "vibelang-source": "./src/WithMemory.ts",
+      "default": "./.vibelang/js/src/WithMemory.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./test/TestMemory": {
+      "types": "./src/test/TestMemory.ts",
+      "vibelang-source": "./src/test/TestMemory.ts",
+      "default": "./.vibelang/js/src/test/TestMemory.js"
+    },
     "./migrations/*": null
   },
   "files": [
@@ -69,7 +153,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -304,19 +389,21 @@
   },
   "dependencies": {
     "@smthrs/core": "1.0.0-rc.16",
+    "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/database": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
-    "@smthrs/patterns": "1.0.0-rc.16"
+    "@smthrs/patterns": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/sql-pg": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/sql-pg": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -326,11 +413,11 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

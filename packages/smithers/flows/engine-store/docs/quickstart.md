@@ -99,6 +99,7 @@ sealed flow does not take a snapshot, so it does not invoke the `jj` binary:
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { NodeHost } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
@@ -115,7 +116,9 @@ const engine = (filename: string, root: string, hostId: string) =>
       Layer.mergeAll(StepBoundary.layer, WorkspaceSandbox.layerFileSystem(), NodeHost.layer)
     ),
     Layer.provideMerge(stores(filename, root)),
-    Layer.provideMerge(Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, NodePath.layer))
+    Layer.provideMerge(
+      Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), AtomicFileSystem.layer, NodePath.layer)
+    )
   )
 ```
 

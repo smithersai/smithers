@@ -71,6 +71,7 @@ The in-memory layer forgets everything when the process exits. Swap it for a SQL
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
@@ -81,7 +82,7 @@ const sql = NodeDatabase.layer({ filename: "memory.db" })
 const stores = Layer.provideMerge(DurableWriter.layer(), sql)
 const memory = Layer.provide(
   Layer.provideMerge(RecallKeyword.layer, MemoryStore.layer),
-  Layer.merge(stores, NodeCrypto.layer)
+  Layer.merge(stores, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 ```
 

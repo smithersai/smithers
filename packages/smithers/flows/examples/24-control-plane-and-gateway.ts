@@ -10,15 +10,17 @@
  * bearer credential. Exact Host and Origin checks protect the loopback listener;
  * binding to loopback alone does not authenticate callers.
  */
-import { NodeHttpServer, NodeSocket } from "@effect/platform-node"
+import { NodeHttpServer } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { Control, ControlClient, ControlLive, ControlRuntime, SqlControlRuntime } from "@smthrs/control"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlRpcs from "@smthrs/control/ControlRpcs"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as ControlServer from "@smthrs/control/ControlServer"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { Action, Flow, FlowRuntime, Interpreter, WaitFor } from "@smthrs/flow"
@@ -27,7 +29,6 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -360,7 +361,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
                       const protocols = configured === undefined
                         ? options as string | Array<string> | undefined
                         : undefined
-                      return new NodeSocket.NodeWS.WebSocket(url, protocols, {
+                      return new NodeWS.WebSocket(url, protocols, {
                         ...configured,
                         headers: { ...configured?.headers, authorization: `Bearer ${credential}` }
                       }) as unknown as globalThis.WebSocket
@@ -441,6 +442,6 @@ export const main = (root: string): Effect.Effect<Summary> =>
             } satisfies Summary
           }).pipe(Effect.provide(client))
         }).pipe(Effect.provide(served))
-      }).pipe(Effect.provide(Layer.merge(stack, NodeCrypto.layer)))
+      }).pipe(Effect.provide(Layer.merge(stack, Crypto.layerFromDigest(NodeCrypto.layerDigest))))
     )
   }).pipe(Effect.orDie)

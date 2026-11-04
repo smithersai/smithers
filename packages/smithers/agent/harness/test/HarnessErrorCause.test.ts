@@ -8,7 +8,7 @@ import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { HarnessError } from "../src/HarnessError.ts"
 import { SandboxError } from "../src/Sandbox.ts"
-import { TranscriptError } from "../src/Transcript.ts"
+import { TranscriptError } from "../src/Transcript.vibe"
 
 const causes = {
   error: () => new Error("provider returned 429"),

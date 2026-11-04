@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -26,7 +26,7 @@ npm install @smthrs/memory@next effect
 Name `@next`: npm's `latest` tag still carries the `0.x` line, the previous
 generation of the package, which has a different API.
 
-It needs Node.js 22.19.0 or later and `effect` `4.0.5` as a peer. The full
+It needs Node.js 22.19.0 or later and `effect` `4.1.0` as a peer. The full
 requirements, and the two packages a file-backed store adds, are on the
 [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/agent/memory/docs/installation.md).
 

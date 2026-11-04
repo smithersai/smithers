@@ -3,7 +3,7 @@
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it, vi } from "vitest"
-import { Canonical, canonicalize } from "../src/index.ts"
+import { Canonical, canonicalize } from "../src/index.vibe"
 
 const serialize = (value: unknown): Canonical => Effect.runSync(Schema.decodeUnknownEffect(Canonical)(value))
 

@@ -8,6 +8,7 @@
  * that lands on the host is the one the cell's flow wrote.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Action } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import * as CellTurn from "@smthrs/harness/CellTurn"
@@ -21,11 +22,10 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Layer, Option, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 
 const decoder = new TextDecoder()
@@ -194,7 +194,7 @@ describe("a cell call through the workspace sandbox", () => {
         ))
         expect(a.value).toBe(1)
         expect(b.value).toBe(authority === "same" ? 1 : 2)
-      }).pipe(Effect.provide(NodeCrypto.layer), Effect.runPromise)
+      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.runPromise)
     }
   )
 
@@ -204,7 +204,7 @@ describe("a cell call through the workspace sandbox", () => {
         const sandbox = yield* InMemoryWorkspaceSandbox.make({ "notes/todo.md": "old" })
         const settled = yield* turn(sandbox.service, writeFlow)
         return { settled, files: yield* sandbox.files }
-      }).pipe(Effect.provide(NodeCrypto.layer))
+      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     )
 
     expect(outcome.settled).toEqual(["fs/write:success"])
@@ -231,7 +231,7 @@ describe("a cell call through the workspace sandbox", () => {
         })
         yield* turn(observing, writeFlow)
         return outcomes
-      }).pipe(Effect.provide(NodeCrypto.layer))
+      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     )
 
     expect(observed).toHaveLength(1)
@@ -247,7 +247,7 @@ describe("a cell call through the workspace sandbox", () => {
         const sandbox = yield* InMemoryWorkspaceSandbox.make({ "notes/todo.md": "old" })
         const settled = yield* turn(sandbox.service, misdeclaredFlow)
         return { settled, files: yield* sandbox.files }
-      }).pipe(Effect.provide(NodeCrypto.layer))
+      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     )
 
     // The refusal is an ordinary call failure that RESOLVES, so the cell runs

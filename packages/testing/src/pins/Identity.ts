@@ -7,9 +7,9 @@
  */
 
 import * as Effect from "effect/Effect"
-import type { ConformanceCase } from "../Conformance.ts"
-import type { FlowSpec, JournalEntryLike, StepSpec } from "../EngineSubject.ts"
-import { assert, invoke } from "../internal/Pin.ts"
+import type { ConformanceCase } from "../Conformance.vibe"
+import type { FlowSpec, JournalEntryLike, StepSpec } from "../EngineSubject.vibe"
+import { assert, invoke } from "../internal/Pin.vibe"
 import { same } from "../internal/Structural.ts"
 
 const distinctExecutionsPin = "identity/distinct-executions"

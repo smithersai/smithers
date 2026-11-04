@@ -8,13 +8,13 @@
  * answers with its own invocation number, and a replayed step's answer is the
  * number the source run recorded.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node, type Planned } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Deferred, Effect, Exit, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"

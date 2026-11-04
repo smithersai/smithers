@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import { withDefault } from "../schema/withDefault.ts"
-import { ReviewCommentCategory } from "./reviewCommentCategorySchema.ts"
-import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts"
+import { ReviewCommentCategory } from "./reviewCommentCategorySchema.vibe"
+import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.vibe"
 
 /**
  * One finding, anchored to a line range in one file.

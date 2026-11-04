@@ -14,13 +14,13 @@
 /**
  * @category constructors @since 0.1.0
  */
-export * as Bank from "./Bank.ts"
+export * as Bank from "./Bank.vibe"
 
 /**
  * @category database
  * @since 0.1.0
  */
-export * as Database from "./Database.ts"
+export * as Database from "./Database.vibe"
 
 /**
  * @category embeddings @since 0.1.0
@@ -40,7 +40,7 @@ export * as Maintenance from "./Maintenance.ts"
 /**
  * @category errors @since 0.1.0
  */
-export * as MemoryError from "./MemoryError.ts"
+export * as MemoryError from "./MemoryError.vibe"
 
 /**
  * @category services @since 0.1.0
@@ -62,7 +62,7 @@ export * as Migrations from "./Migrations.ts"
 /**
  * @category models @since 0.1.0
  */
-export * as Namespace from "./Namespace.ts"
+export * as Namespace from "./Namespace.vibe"
 
 /**
  * @category recall @since 0.1.0
@@ -92,7 +92,7 @@ export * as Source from "./Source.ts"
 /**
  * @category services @since 0.1.0
  */
-export * as SnapshotRecorder from "./SnapshotRecorder.ts"
+export * as SnapshotRecorder from "./SnapshotRecorder.vibe"
 
 /**
  * @category patterns

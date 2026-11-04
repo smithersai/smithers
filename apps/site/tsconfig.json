@@ -1,6 +1,10 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "astro/tsconfigs/strict",
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "rewriteRelativeImportExtensions": true,
+    "allowArbitraryExtensions": true,
     "jsx": "react-jsx",
     "jsxImportSource": "react"
   },

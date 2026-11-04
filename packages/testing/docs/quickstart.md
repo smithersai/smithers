@@ -19,7 +19,7 @@ against it. Nothing is stubbed but the storage.
   npm install --save-dev @smthrs/testing@next vitest@5.0.0 @effect/vitest effect
   ```
 
-Both `effect` packages are peers at exactly `4.0.5`. [Installation](./installation.md)
+Both `effect` packages are peers at exactly `4.1.0`. [Installation](./installation.md)
 says why.
 
 ## Register the suite

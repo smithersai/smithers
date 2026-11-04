@@ -16,7 +16,7 @@
  * @since 0.1.0
  * @slop
  */
-export * as Author from "./Author.ts"
+export * as Author from "./Author.vibe"
 
 /**
  * The author entry's declaration: the name, description, digest, and
@@ -45,7 +45,7 @@ export * as Authorize from "./Authorize.ts"
  * @since 0.1.0
  * @slop
  */
-export * as CallKey from "./CallKey.ts"
+export * as CallKey from "./CallKey.vibe"
 
 /**
  * The catalog of entries a script may call.
@@ -54,7 +54,7 @@ export * as CallKey from "./CallKey.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Catalog from "./Catalog.ts"
+export * as Catalog from "./Catalog.vibe"
 
 /**
  * The chain trampoline: bootstrap, links, gates, and prefix replay.
@@ -72,7 +72,7 @@ export * as Chain from "./Chain.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Event from "./Event.ts"
+export * as Event from "./Event.vibe"
 
 /**
  * The memory door: remember and recall as catalog entries.
@@ -90,7 +90,7 @@ export * as MemoryEntries from "./MemoryEntries.ts"
  * @since 0.1.0
  * @slop
  */
-export * as ModelAuthor from "./ModelAuthor.ts"
+export * as ModelAuthor from "./ModelAuthor.vibe"
 
 /**
  * The append-only journal port and its in-memory layer.
@@ -99,7 +99,7 @@ export * as ModelAuthor from "./ModelAuthor.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Journal from "./Journal.ts"
+export * as Journal from "./Journal.vibe"
 
 /**
  * The gate both runner bindings answer to: the strict JSON boundary, its
@@ -118,7 +118,7 @@ export * as JsonBoundary from "./JsonBoundary.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Observation from "./Observation.ts"
+export * as Observation from "./Observation.vibe"
 
 /**
  * The trampoline outcomes a link can end with.
@@ -127,7 +127,7 @@ export * as Observation from "./Observation.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Outcome from "./Outcome.ts"
+export * as Outcome from "./Outcome.vibe"
 
 /**
  * The stable author-call prefix, assembled as a pure value.
@@ -154,7 +154,7 @@ export * as QuickJsRunner from "./QuickJsRunner.ts"
  * @since 0.1.0
  * @slop
  */
-export * as RegistryCatalog from "./RegistryCatalog.ts"
+export * as RegistryCatalog from "./RegistryCatalog.vibe"
 
 /**
  * The authored artifact of one link and the shape gate over raw output.
@@ -163,7 +163,7 @@ export * as RegistryCatalog from "./RegistryCatalog.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Script from "./Script.ts"
+export * as Script from "./Script.vibe"
 
 /**
  * The script interpreter port and its in-process implementation.
@@ -181,7 +181,7 @@ export * as ScriptRunner from "./ScriptRunner.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Steering from "./Steering.ts"
+export * as Steering from "./Steering.vibe"
 
 /**
  * Sub-agents as an ordinary recursive catalog entry.

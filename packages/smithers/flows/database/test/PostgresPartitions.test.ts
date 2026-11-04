@@ -12,7 +12,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import { DatabaseMetrics, DurableWriter, Migrations, PostgresDatabase } from "../src/index.ts"
+import { DatabaseMetrics, DurableWriter, Migrations, PostgresDatabase } from "../src/index.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 import { listening, pgbouncerUrl } from "./harness/listening.ts"
 

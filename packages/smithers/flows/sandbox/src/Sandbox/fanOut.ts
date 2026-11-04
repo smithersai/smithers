@@ -7,7 +7,7 @@
 import * as Effect from "effect/Effect"
 import type { Scope } from "effect/Scope"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
-import type { Session } from "./Session.ts"
+import type { Session } from "./Session.vibe"
 
 /**
  * The most children one fan-out may start, the same hard cap Smithers Cloud

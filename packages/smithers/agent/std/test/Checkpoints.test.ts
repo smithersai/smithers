@@ -9,12 +9,25 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Layer, Logger, Option, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { readFileSync } from "node:fs"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as Checkpoints from "../src/Checkpoints.ts"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 import { GitWorktree } from "../src/internal/GitWorktree.ts"
-import * as Relocate from "../src/Relocate.ts"
+import * as Relocate from "../src/Relocate.vibe"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
+const envOf = (
+  command: { readonly options: { readonly env?: Readonly<Record<string, Word | undefined>> | undefined } }
+): Record<string, string | undefined> | undefined =>
+  command.options.env === undefined ? undefined : Object.fromEntries(
+    Object.entries(command.options.env).map(([name, value]) => [name, value === undefined ? undefined : word(value)])
+  )
 
 interface Response {
   readonly stdout?: string
@@ -31,9 +44,9 @@ const host = (
     spawn: (command) =>
       Effect.sync(() => {
         const standard = command as ChildProcess.StandardCommand
-        const argv = [standard.command, ...standard.args]
+        const argv = [standard.command, ...argsOf(standard)]
         spawns.push(argv)
-        envs.push(standard.options.env as Readonly<Record<string, string>> | undefined)
+        envs.push(envOf(standard) as Readonly<Record<string, string>> | undefined)
         const line = argv.join(" ")
         const scripted = [...responses, ...repository].find(([fragment]) => line.includes(fragment))?.[1] ?? {}
         const found = typeof scripted === "function" ? scripted() : scripted
@@ -312,7 +325,7 @@ describe("Checkpoints.makeGit capture", () => {
           spawn: (command) =>
             Effect.sync(() => {
               const standard = command as ChildProcess.StandardCommand
-              spawns.push([standard.command, ...standard.args])
+              spawns.push([standard.command, ...argsOf(standard)])
               const empty = Stream.make(new TextEncoder().encode(""))
               return makeHandle({
                 pid: ProcessId(1),

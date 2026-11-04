@@ -5,7 +5,7 @@ import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ register: true, project: "tsconfig.test.json" })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../../repo-targets/test-utils/coverage-teardown.mjs", import.meta.url)),
@@ -42,25 +42,25 @@ export default defineConfig({
         "src/ApplyPatch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Read.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Edit.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/StdError.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/internal/FileMutation.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/internal/ApplyPatch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/StdError.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/internal/FileMutation.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/internal/ApplyPatch.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/ExaWebSearch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Ls.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/NativeSearch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/HttpNetwork.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/IpAddress.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/SearchConformance.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/SearchContract.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/SearchConformance.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/SearchContract.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/CodexText.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Html.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/internal/Walk.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/internal/Walk.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/TestReport.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Symbols.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Text.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/TreeFingerprint.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Preserve.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/Container.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/Container.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         // T-TRM-05 edits Bash.ts: its terminal handler shares this per-file gate.
         "src/Bash.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Glob.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
@@ -70,7 +70,7 @@ export default defineConfig({
         "src/internal/Http.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Ignore.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/Match.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/internal/SearchContract.ts": { branches: 100, functions: 100, lines: 100, statements: 100 }
+        "src/internal/SearchContract.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 }
       }
     }
   }

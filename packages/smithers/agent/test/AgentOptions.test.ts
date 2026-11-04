@@ -15,6 +15,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Capability from "@smthrs/capability/Capability"
 import * as Permission from "@smthrs/capability/Permission"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
@@ -37,15 +38,14 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { RegistryError } from "@smthrs/registry/RegistryError"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as AgentAction from "../src/AgentAction.ts"
 import type * as AgentSession from "../src/AgentSession.ts"
 import * as Checkpointed from "../src/Checkpointed.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -167,7 +167,11 @@ const drive = <A, E>(
       )
     yield* engine.execute(driveFlow, { executionId: "exec-1", payload: {}, discard: true })
     return yield* Deferred.await(settled)
-  }).pipe(Effect.provide(Layer.merge(FlowEngine.layerMemory, NodeCrypto.layer)), Effect.scoped, Effect.runPromise)
+  }).pipe(
+    Effect.provide(Layer.merge(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
+    Effect.scoped,
+    Effect.runPromise
+  )
 
 type RunOptions = Omit<Agent.Options, "session" | "seat" | "prompt" | "registry"> & {
   readonly session?: string | undefined

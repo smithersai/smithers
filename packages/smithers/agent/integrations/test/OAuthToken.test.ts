@@ -14,6 +14,7 @@ import * as Credential from "@smthrs/control/Credential"
 import * as CredentialStore from "@smthrs/control/CredentialStore"
 import * as SqlCredentialStore from "@smthrs/control/SqlCredentialStore"
 import * as WebCryptoCipher from "@smthrs/control/WebCryptoCipher"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
@@ -21,10 +22,10 @@ import { Cause, Effect, Exit, Fiber, Layer, Redacted, Schema } from "effect"
 import type * as HttpClient from "effect/http/HttpClient"
 import { TestClock } from "effect/testing"
 import { afterEach, describe, expect, it } from "vitest"
-import type { AccessTokenSource } from "../src/core/AccessToken.ts"
-import { Failure, fromIntegrationError, RetryableIntegrationFailure, retryPolicy } from "../src/core/ActionFailure.ts"
+import type { AccessTokenSource } from "../src/core/AccessToken.vibe"
+import { Failure, fromIntegrationError, RetryableIntegrationFailure, retryPolicy } from "../src/core/ActionFailure.vibe"
 import { IntegrationError, isIntegrationError } from "../src/core/IntegrationError.ts"
-import * as OAuthToken from "../src/core/OAuthToken.ts"
+import * as OAuthToken from "../src/core/OAuthToken.vibe"
 import { type Fixture, json, type Recorded, startFixture } from "./Fixture.ts"
 import { fetchLayer } from "./Http.ts"
 
@@ -118,7 +119,7 @@ const tokenSteps = (sources: Readonly<Record<string, AccessTokenSource>>): Effec
     Interpreter.layer(tokenFlow)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer))
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   )
   return Effect.forEach(
     Object.keys(sources),

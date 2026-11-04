@@ -6,7 +6,7 @@ description: "The packages a Cloudflare flow host needs, the Worker's compatibil
 ## Install the package
 
 ```bash
-npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@next @effect/sql-pg@4.0.5 effect@4.0.5
+npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@next @effect/sql-pg@4.1.1 effect@4.1.1
 ```
 
 - `@smthrs/flow` declares the flows and actions the object runs.
@@ -16,7 +16,7 @@ npm install @smthrs/platform-cloudflare@next @smthrs/flow@next @smthrs/database@
   session state.
 - `@effect/sql-pg` is the socket driver `PostgresDatabase.layer` takes as its
   `driver` option.
-- `effect` is a peer dependency at exactly `4.0.5`. Two copies of `effect` in
+- `effect` is a peer dependency at exactly `4.1.0`. Two copies of `effect` in
   one program are two sets of service tags.
 
 Import from the package root only:

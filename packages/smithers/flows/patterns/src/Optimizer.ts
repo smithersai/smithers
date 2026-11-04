@@ -22,11 +22,11 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Repetition from "@smthrs/plan/Repetition"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.ts"
+import * as Compose from "./internal/Compose.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.ts"
-import { PatternError } from "./PatternError.ts"
+import { OpaqueInput } from "./internal/Payload.vibe"
+import { PatternError } from "./PatternError.vibe"
 
 /**
  * What an optimizer does when it exhausts its iteration bound below target.

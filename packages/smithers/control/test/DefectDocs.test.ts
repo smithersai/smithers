@@ -1,7 +1,7 @@
 import { Schema } from "effect"
 import { readFileSync } from "node:fs"
 import { expect, test } from "vitest"
-import { ControlDefect, defectMessage } from "../src/ControlRpcs.ts"
+import { ControlDefect, defectMessage } from "../src/ControlRpcs.vibe"
 
 test("API guide describes sanitized request-decoding defects", () => {
   const guide = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")

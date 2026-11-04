@@ -12,7 +12,7 @@ import { randomUUID } from "node:crypto"
 import { constants } from "node:fs"
 import { appendFile, lstat, mkdir, open, readFile, rename, rm, rmdir, writeFile } from "node:fs/promises"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
-import { decode, type Fixture, type RecordedCall } from "./Fixture.ts"
+import { decode, type Fixture, type RecordedCall } from "./Fixture.vibe"
 import { maximumDepth, snapshot } from "./internal/Structural.ts"
 
 /**

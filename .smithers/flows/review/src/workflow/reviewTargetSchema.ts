@@ -1,5 +1,5 @@
 import * as Schema from "effect/Schema"
-import { ReviewMode } from "./reviewModeSchema.ts"
+import { ReviewMode } from "./reviewModeSchema.vibe"
 
 /**
  * The resolved change set: which repository, read which way, at which ref.

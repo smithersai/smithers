@@ -7,7 +7,7 @@
 // settings go to `start()`, never here: the policy refuses deployment-wide ones, `maxInstances` among them ("The
 // `durable_object` policy does not support `max_instances`"). The cap on awake machines is the sandbox admission
 // (worker/branch/Budget.ts, decision 0103), which fails closed.
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Config, Effect, Option } from "effect"
 
 /** SANDBOX_IMAGE when set (a prebuilt image by digest), else infra/sandbox, built by the deploy. */

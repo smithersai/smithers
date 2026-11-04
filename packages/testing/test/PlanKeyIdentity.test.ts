@@ -5,7 +5,7 @@ import * as StepKey from "@smthrs/plan/StepKey"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Plan from "../src/Plan.ts"
+import * as Plan from "../src/Plan.vibe"
 
 // `Plan.keys` derives two different identities, and the reference documents
 // both. Sealed material is keyed the way the persisted plan keys it. Every
@@ -33,7 +33,7 @@ const declarationOf = (graph: Graph.Graph, kind: string) => {
   return { draft: drafts[ordinal]!, ordinal }
 }
 
-const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/Crypto").Crypto>): A =>
+const runKey = <A, E>(effect: Effect.Effect<A, E, import("@smthrs/crypto").Crypto.Crypto>): A =>
   Effect.runSync(Digest.provideSync(effect))
 
 describe("plan key identity", () => {

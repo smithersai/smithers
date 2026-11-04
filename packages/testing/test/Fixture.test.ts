@@ -1,9 +1,9 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as ProductionModelRequest from "@smthrs/model/ModelRequest"
 import { Effect } from "effect"
-import { canonicalRequestDigest, decode, index, recordedRequest } from "../src/Fixture.ts"
-import type { RecordedCall } from "../src/Fixture.ts"
-import type { ModelRequestLike } from "../src/ModelLike.ts"
+import { canonicalRequestDigest, decode, index, recordedRequest } from "../src/Fixture.vibe"
+import type { RecordedCall } from "../src/Fixture.vibe"
+import type { ModelRequestLike } from "../src/ModelLike.vibe"
 import { FixtureEncodingError } from "../src/TestingError.ts"
 
 const request = (overrides: Partial<ModelRequestLike> = {}): ModelRequestLike => ({

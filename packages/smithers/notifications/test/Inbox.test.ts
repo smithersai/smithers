@@ -9,7 +9,7 @@
 import { Schema } from "effect"
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
-import * as Inbox from "../src/Inbox.ts"
+import * as Inbox from "../src/Inbox.vibe"
 import { Inbox as RootInbox } from "../src/index.ts"
 
 const params = {

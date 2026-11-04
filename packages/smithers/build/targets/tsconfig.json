@@ -1,5 +1,8 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "allowArbitraryExtensions": true,
     "target": "ES2024",
     "lib": ["ES2024"],
     "module": "NodeNext",
@@ -36,5 +39,6 @@
       }
     ]
   },
-  "include": ["src/**/*"]
+  "include": ["src/**/*"],
+  "vibelang": { "declarationImportStyle": ".ts" }
 }

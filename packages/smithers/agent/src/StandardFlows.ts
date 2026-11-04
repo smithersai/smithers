@@ -36,6 +36,7 @@
 
 import * as Capability from "@smthrs/capability/Capability"
 import * as Digest from "@smthrs/core/Digest"
+import type { Crypto } from "@smthrs/crypto"
 import { DurableClock } from "@smthrs/flow"
 import type { FlowRuntime } from "@smthrs/flow"
 import * as Fault from "@smthrs/flow/Fault"
@@ -72,7 +73,6 @@ import * as TestRun from "@smthrs/std/TestRun"
 import type * as TestRunner from "@smthrs/std/TestRunner"
 import * as Write from "@smthrs/std/Write"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -82,7 +82,7 @@ import * as ChildFlows from "./ChildFlows.ts"
 import * as FlowEngineLike from "./FlowEngineLike.ts"
 import * as AgentTerminal from "./internal/AgentTerminal.ts"
 import * as AgentTerminalCommand from "./internal/AgentTerminalCommand.ts"
-import * as RunawayGuard from "./RunawayGuard.ts"
+import * as RunawayGuard from "./RunawayGuard.vibe"
 
 /** These refusal classes carry host-authored text separately from diagnostic causes. */
 const publicRefusal = (error: { readonly message: string }): string => error.message

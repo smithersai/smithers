@@ -1,7 +1,7 @@
 import * as Schema from "effect/Schema"
 import * as SchemaIssue from "effect/SchemaIssue"
 import { describe, expect, it } from "vitest"
-import { firstPath } from "../src/IssuePath.ts"
+import { firstPath } from "../src/IssuePath.vibe"
 
 /** The `SchemaError` a decode or encode of `schema` throws for `input`. */
 const errorOf = (run: () => unknown): Schema.SchemaError => {

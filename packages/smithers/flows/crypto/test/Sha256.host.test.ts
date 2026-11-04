@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Cause, Crypto, Effect, Exit, PlatformError, Schema } from "effect"
+import { Cause, Effect, Exit, PlatformError, Schema } from "effect"
 import { describe, expect, it } from "vitest"
+import * as Crypto from "../src/Crypto.ts"
 import { digest, digestSync, Sha256, Sha256Error, syncCrypto } from "../src/index.ts"
 import { vectors } from "./fixtures.ts"
 
@@ -205,7 +206,9 @@ describe("host parity and synchronous service policy", () => {
     const bytes = encoder.encode(input)
     const web = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes))
     expect(bytesFromHex(digestSync(input))).toEqual(web)
-    expect(Effect.runSync(digest(input).pipe(Effect.provide(NodeCrypto.layer)))).toBe(expected)
+    expect(Effect.runSync(digest(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))).toBe(
+      expected
+    )
   })
 
   it("accepts SHA-256 through syncCrypto", () => {

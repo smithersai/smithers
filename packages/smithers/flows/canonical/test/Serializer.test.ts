@@ -1,7 +1,7 @@
 import { build } from "esbuild"
 import { fileURLToPath } from "node:url"
 import { expect, test } from "vitest"
-import { CanonicalError as RootError, canonicalize as rootCanonicalize } from "../src/index.ts"
+import { CanonicalError as RootError, canonicalize as rootCanonicalize } from "../src/index.vibe"
 import { CanonicalError, canonicalize } from "../src/Serializer.ts"
 
 test("the runtime-free entry shares the exact digest implementation and error identity", () => {

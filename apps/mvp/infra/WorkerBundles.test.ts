@@ -2,7 +2,8 @@
 // WorkerBundle, with the props WorkerProvider.diff hands hasChanged. Alchemy's Diff.stripEffects turns a Worker's build
 // plugins (functions, class instances) into undefined, so on 2026-10-24 `alchemy plan` bundled ChatApi and
 // ElectricGateway without vibelang-unplugin and failed on @smthrs/errors' .vibe source, while every hand-made bundle
-// in the tests passed. patches/alchemy@2.0.0-beta.83.patch hands hasChanged the Worker's own build options.
+// in the tests passed. patches/@alchemy.run__cloudflare@2.0.0-beta.84.patch hands hasChanged the Worker's own build
+// options. Since beta.84 the Worker provider and bundler live in @alchemy.run/cloudflare, Diff and Local in alchemy.
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Exit, Stream } from "effect"
 import { readFileSync, realpathSync, writeFileSync } from "node:fs"
@@ -16,7 +17,8 @@ import * as ElectricRuntime from "./ElectricRuntime.ts"
 
 const MVP = fileURLToPath(new URL("..", import.meta.url))
 const ALCHEMY = realpathSync(join(MVP, "node_modules", "alchemy"))
-const PROVIDER = join(ALCHEMY, "lib", "Cloudflare", "Workers", "WorkerProvider.js")
+const CLOUDFLARE = realpathSync(join(MVP, "node_modules", "@alchemy.run", "cloudflare"))
+const PROVIDER = join(CLOUDFLARE, "lib", "Workers", "WorkerProvider.js")
 
 /** A Worker's settings, as far as bundling reads them. */
 interface WorkerProps {
@@ -31,7 +33,7 @@ interface Bundler {
   readonly watch: (options: Record<string, unknown>) => Stream.Stream<{ readonly _tag: string }, unknown>
 }
 const internals = async () => ({
-  WorkerBundle: (await import(pathToFileURL(join(ALCHEMY, "lib", "Cloudflare", "Workers", "Sources", "Rolldown.js")).href))
+  WorkerBundle: (await import(pathToFileURL(join(CLOUDFLARE, "lib", "Workers", "Sources", "Rolldown.js")).href))
     .WorkerBundle as Effect.Effect<Bundler>,
   stripEffects: (await import(pathToFileURL(join(ALCHEMY, "lib", "Diff.js")).href)).stripEffects as <A>(value: A) => A,
 })

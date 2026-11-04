@@ -20,14 +20,14 @@
 
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
-import type { FlowsConfig, ResolvedConfig } from "./Config.ts"
-import * as Config from "./Config.ts"
-import type { ContextOf } from "./Hooks.ts"
-import type { FlowsHooks } from "./index.ts"
-import type { PluginInput } from "./Plugin.ts"
-import type { PluginError } from "./PluginError.ts"
+import type { FlowsConfig, ResolvedConfig } from "./Config.vibe"
+import * as Config from "./Config.vibe"
+import type { ContextOf } from "./Hooks.vibe"
+import type { FlowsHooks } from "./index.vibe"
+import type { PluginInput } from "./Plugin.vibe"
+import type { PluginError } from "./PluginError.vibe"
 import * as Plugins from "./Plugins.ts"
-import * as Resolve from "./Resolve.ts"
+import * as Resolve from "./Resolve.vibe"
 
 /**
  * Everything startup produces from a plugin list and a raw config.

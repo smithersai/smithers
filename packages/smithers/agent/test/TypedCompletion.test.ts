@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Model from "@smthrs/model/Model"
@@ -10,9 +11,9 @@ import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 import * as Safety from "./Safety.ts"
 
 const prepared: Route.PreparedRequest = {
@@ -93,7 +94,7 @@ const stack = <ROut, RIn>(
     Layer.provideMerge(Safety.layer),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
 // The provider is scripted; engine, cell controller, and QuickJS are real.

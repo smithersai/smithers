@@ -26,6 +26,7 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import * as Seat from "@smthrs/agent/Seat"
 import * as SeatResolver from "@smthrs/agent/SeatResolver"
 import * as Capability from "@smthrs/capability/Capability"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as FlowBinding from "@smthrs/harness/FlowBinding"
 import { Journal, type JournalEvent } from "@smthrs/journal"
@@ -358,6 +359,8 @@ export const main = (filename: string, root: string, model?: Model.Model): Effec
       eventTypes: observed.eventTypes
     } satisfies Summary
   }).pipe(
-    Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
+    Effect.provide(
+      Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    ),
     Effect.orDie
   )

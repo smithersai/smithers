@@ -6,6 +6,38 @@ import { createRequire } from "node:module"
 import { dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import ts from "typescript"
 
+
+/**
+ * Effect 4.1 exposes `ws` as platform-node-shared's NodeWS, `export * from
+ * "ws"`, which platform-node's NodeWS re-exports and imports `WebSocket` from.
+ * With `ws` external and the bundle split, esbuild drops a star export of an
+ * external module, so the shared module names ws's ESM exports instead. The
+ * file on disk is unchanged.
+ */
+const wsExports = [
+  "createWebSocketStream",
+  "extension",
+  "PerMessageDeflate",
+  "Receiver",
+  "Sender",
+  "subprotocol",
+  "WebSocket",
+  "WebSocketServer"
+]
+const wsNamedExports = {
+  name: "ws-named-exports",
+  setup(build) {
+    build.onLoad({ filter: /[\\/]@effect[\\/]platform-node-shared[\\/]dist[\\/]NodeWS\.js$/ }, async (args) => {
+      const source = await readFile(args.path, "utf8")
+      if (!/^export \* from "ws";$/m.test(source)) throw new Error(`Unexpected NodeWS source: ${args.path}`)
+      return {
+        contents: source.replace(/^export \* from "ws";$/m, `export { ${wsExports.join(", ")} } from "ws";`),
+        loader: "js"
+      }
+    })
+  }
+}
+
 const names = new Set(["@effect/platform-node", "@effect/platform-node-shared", "@effect/platform-bun"])
 const files = async (directory) => {
   const entries = new Map((await readdir(directory, { withFileTypes: true })).map((entry) => [entry.name, entry]))
@@ -195,6 +227,7 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
     target: "node22.19",
     metafile: true,
     external: ["effect", "effect/*", ...ordinary.keys(), "bun", "bun:*"],
+    plugins: [wsNamedExports],
     logLevel: "silent"
   })
   for (const path of Object.keys(result.metafile.inputs)) {
@@ -217,6 +250,12 @@ export const buildPrivateEffectAdapters = async (packageRoot, { distRoot = join(
         }
         for (const target of targets) {
           const text = rewrite(ts, await readFile(file, "utf8"), (value, node) => {
+            // CJS declarations cannot star-export an export= dependency (Effect
+            // 4.1's NodeWS is `export * from "ws"`). Name the members @types/ws
+            // declares, which the runtime module exports by name.
+            if (branch !== vendor && value === "ws" && ts.isExportDeclaration(node) && !node.exportClause) {
+              return { statement: `export { createWebSocketStream, WebSocket, WebSocketServer } from "ws";` }
+            }
             // CJS declarations cannot namespace-re-export an export= dependency.
             // Preserve the same namespace binding without changing its runtime.
             if (

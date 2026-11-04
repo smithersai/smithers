@@ -3,8 +3,8 @@ import { Flow, Graph } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Schema from "effect/Schema"
 import { expect } from "vitest"
-import { PatternError } from "../src/PatternError.ts"
-import * as Recursion from "../src/Recursion.ts"
+import { PatternError } from "../src/PatternError.vibe"
+import * as Recursion from "../src/Recursion.vibe"
 import { callsTo } from "./Graphs.ts"
 
 const child = Flow.make("child", {

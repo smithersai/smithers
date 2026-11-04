@@ -6,14 +6,13 @@
  * @since 1.0.0
  */
 
-import { WebCrypto } from "@smthrs/crypto"
+import { type Crypto, WebCrypto } from "@smthrs/crypto"
 import type { DurableWriter } from "@smthrs/database"
 import { OwnerIdentity, RunCatalogRead, RunInspection, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { type Flow, type FlowRuntime, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"

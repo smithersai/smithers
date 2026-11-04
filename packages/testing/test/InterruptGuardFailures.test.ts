@@ -7,11 +7,11 @@
  * named, rather than throwing while inspecting it.
  */
 import * as Effect from "effect/Effect"
-import type { EngineSubject as Subject, ExecutionResult } from "../src/EngineSubject.ts"
-import * as EngineSubject from "../src/EngineSubject.ts"
-import * as Interrupt from "../src/pins/Interrupt.ts"
+import type { EngineSubject as Subject, ExecutionResult } from "../src/EngineSubject.vibe"
+import * as EngineSubject from "../src/EngineSubject.vibe"
+import * as Interrupt from "../src/pins/Interrupt.vibe"
 import { EngineUnavailableError } from "../src/TestingError.ts"
-import { describe, expect, it } from "../src/Vitest.ts"
+import { describe, expect, it } from "../src/Vitest.vibe"
 
 type Violation =
   | "runFailure"

@@ -9,13 +9,14 @@
  * answer was lost is repeated, and the repeat finds its own work.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, type Schema } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
 import { afterEach, describe, expect, it } from "vitest"
-import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.ts"
+import { IntegrationFailure, RetryableIntegrationFailure } from "../src/core/ActionFailure.vibe"
 import type { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as Actions from "../src/github/Actions.ts"
 import type * as GitHubClient from "../src/github/GitHubClient.ts"
@@ -59,7 +60,9 @@ const runAction = <
   >
   const layer = Layer.mergeAll(implementation, Interpreter.layer(flow)).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, clientLayer, NodeCrypto.layer))
+    Layer.provideMerge(
+      Layer.mergeAll(FlowEngine.layerMemory, clientLayer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    )
   )
   return Effect.runPromise(
     flow.execute(payload, { executionId: `run-${declaration.name}-${Math.random()}` }).pipe(
@@ -84,7 +87,7 @@ const runFlow = <Name extends string, P extends Flow.AnyStructSchema, S extends 
       Layer.mergeAll(
         FlowEngine.layerMemory,
         gitHubLayer({ token: "t", apiBaseUrl: (github as FakeGitHub).fixture.origin }, {}),
-        NodeCrypto.layer
+        Crypto.layerFromDigest(NodeCrypto.layerDigest)
       )
     )
   )

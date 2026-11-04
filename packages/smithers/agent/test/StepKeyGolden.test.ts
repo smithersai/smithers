@@ -19,6 +19,7 @@
  * not a value recomputed from the same source the assertion is checking.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
@@ -30,11 +31,10 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
 
 /** The one prepared wire request both vectors are sealed against. */
 const prepared: Route.PreparedRequest = {
@@ -141,7 +141,7 @@ const drive = <A>(
     Effect.provide(
       Layer.mergeAll(
         FlowEngine.layerMemory,
-        NodeCrypto.layer,
+        Crypto.layerFromDigest(NodeCrypto.layerDigest),
         Budget.layerUnbounded(),
         QuotaPolicy.layerUnclassified()
       )

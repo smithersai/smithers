@@ -19,6 +19,7 @@
  * the real requests rather than trusted on its own.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -38,7 +39,6 @@ import type * as ModelLike from "@smthrs/testing/ModelLike"
 import * as RecordedModel from "@smthrs/testing/RecordedModel"
 import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Stream } from "effect"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -46,10 +46,10 @@ import * as Agent from "../src/Agent.ts"
 import * as AgentAction from "../src/AgentAction.ts"
 import * as Budget from "../src/Budget.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import * as QuotaPolicy from "../src/QuotaPolicy.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import * as QuotaPolicy from "../src/QuotaPolicy.vibe"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 
 const prepared: Route.PreparedRequest = {
   routeId: "route-a",
@@ -220,10 +220,11 @@ const stores = Layer.mergeAll(
  */
 const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
   Effect.runPromise(
-    Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(
-      Effect.provideService(Metric.MetricRegistry, new Map()),
-      Effect.orDie
-    )
+    Effect.scoped(Effect.provide(body, Layer.merge(Crypto.layerFromDigest(NodeCrypto.layerDigest), TestClock.layer())))
+      .pipe(
+        Effect.provideService(Metric.MetricRegistry, new Map()),
+        Effect.orDie
+      )
   )
 
 /**
@@ -281,7 +282,7 @@ const memory = (model: Model.Model, classifier: Layer.Layer<QuotaPolicy.QuotaCla
     Layer.provideMerge(Budget.layerUnbounded()),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
 /**

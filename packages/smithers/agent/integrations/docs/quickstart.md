@@ -75,6 +75,7 @@ second comment.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
@@ -94,7 +95,7 @@ const layer = Layer.mergeAll(GitHub.Actions.layer, Interpreter.layer(CommentFlow
     Layer.mergeAll(
       FlowEngine.layerMemory,
       GitHub.GitHubClient.layer({}).pipe(Layer.provide(FetchHttpClient.layer)),
-      NodeCrypto.layer
+      Crypto.layerFromDigest(NodeCrypto.layerDigest)
     )
   )
 )

@@ -48,7 +48,7 @@ test("write-only values never become drafts or submitted payloads", () => {
 })
 
 test("headless exports bundle for Bun without importing DOM presentation", async () => {
-  const result = await Bun.build({ entrypoints: [fileURLToPath(new URL("../src/flow-form.ts", import.meta.url))],
+  const result = await Bun.build({ entrypoints: [fileURLToPath(new URL("../src/flow-form.vibe", import.meta.url))],
     target: "bun", packages: "external" })
   expect(result.success).toBe(true)
   const source = await result.outputs[0]!.text()

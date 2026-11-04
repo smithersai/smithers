@@ -17,6 +17,7 @@ import { systemFlows } from "./fixtures/system-flows.ts"
  */
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import * as Discovery from "@smthrs/registry/Discovery"
@@ -112,7 +113,13 @@ const host = (repositoryPath: string, stateRoot: string, registered: Array<strin
       // The host's own composition, not a copy of it: `.smithers/flows/coding/host.ts`
       // serves its catalog through this exact function.
       layer: repositoryRegistration(options, built, Layer.empty, hosted ? repositoryPath : undefined).pipe(
-        Layer.provideMerge(Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            observed(registered),
+            Action.layerImplementations,
+            Crypto.layerFromDigest(NodeCrypto.layerDigest)
+          )
+        ),
         Layer.provideMerge(Layer.succeed(Registry.Registry, registry))
       )
     }
@@ -246,7 +253,13 @@ export default Flow.make("merge", { description: "Packaged merge", payload: {}, 
     return {
       built,
       layer: repositoryRegistration(options, built, Layer.empty).pipe(
-        Layer.provideMerge(Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            observed(registered),
+            Action.layerImplementations,
+            Crypto.layerFromDigest(NodeCrypto.layerDigest)
+          )
+        ),
         Layer.provideMerge(Layer.succeed(Registry.Registry, registry))
       )
     }
@@ -556,7 +569,7 @@ const composedHost = (repositoryPath: string, stateRoot: string, hosted: boolean
       composeRoot(repositoryPath, hosted ? repositoryPath : join(repositoryPath, "..", "hosted")).adapters
     const served = repositoryFlowsServed({ repositoryPath, ...adapters })
     const builtins = yield* provisionBuiltins(stateRoot, policy)
-    const services = Layer.merge(platform, NodeCrypto.layer)
+    const services = Layer.merge(platform, Crypto.layerFromDigest(NodeCrypto.layerDigest))
     const project = Context.get(
       yield* Layer.build(
         HostRegistry.layer(repositoryPath, stateRoot, services, served).pipe(Layer.provide(services))
@@ -574,7 +587,13 @@ const composedHost = (repositoryPath: string, stateRoot: string, hosted: boolean
       registry,
       built,
       layer: repositoryRegistration(options, built, Layer.empty, fixedRoot).pipe(
-        Layer.provideMerge(Layer.mergeAll(observed(registered), Action.layerImplementations, NodeCrypto.layer)),
+        Layer.provideMerge(
+          Layer.mergeAll(
+            observed(registered),
+            Action.layerImplementations,
+            Crypto.layerFromDigest(NodeCrypto.layerDigest)
+          )
+        ),
         Layer.provideMerge(Layer.succeed(Registry.Registry, registry))
       )
     }

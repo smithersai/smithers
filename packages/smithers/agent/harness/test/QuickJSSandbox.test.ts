@@ -15,7 +15,7 @@ import { describe, expect, it, vi } from "vitest"
 import * as Cell from "../src/Cell.ts"
 import { HarnessError } from "../src/HarnessError.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
-import * as QuickJSVariant from "../src/QuickJSVariant.ts"
+import * as QuickJSVariant from "../src/QuickJSVariant.vibe"
 import * as Sandbox from "../src/Sandbox.ts"
 
 const flows: Readonly<Record<string, Cell.FlowProjection>> = {

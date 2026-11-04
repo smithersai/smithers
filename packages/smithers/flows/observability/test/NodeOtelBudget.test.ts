@@ -4,9 +4,9 @@ import type { ClientRequest, IncomingMessage, RequestOptions } from "node:http"
 import { createRequire, syncBuiltinESMExports } from "node:module"
 import { Readable, Writable } from "node:stream"
 import { describe, expect, it, vi } from "vitest"
-import * as NodeOtel from "../src/NodeOtel.ts"
+import * as NodeOtel from "../src/NodeOtel.vibe"
 import * as Otlp from "../src/Otlp.ts"
-import * as Resource from "../src/Resource.ts"
+import * as Resource from "../src/Resource.vibe"
 import { boundaryResources } from "./fixtures/resources.ts"
 
 type Body = Record<string, Array<{ resource: { attributes: Array<{ key: string; value: unknown }> } }>>

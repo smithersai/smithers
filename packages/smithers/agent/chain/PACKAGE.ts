@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/agent/chain"
 })
 
@@ -58,7 +58,7 @@ const securityReview = Smithers.SecurityReview({
         "A handle (deferred, scriptHandle, error) used after dispose, or a host exception from a bridge callback escaping as a defect instead of a typed ScriptFailure.",
         "Date or Math.random still reachable in the realm, or a prelude intrinsic read after the script could replace it."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.ts"]
+      paths: ["src/QuickJsRunner.ts", "src/internal/QuickJsJobs.vibe"]
     },
     {
       id: "in-process-runner-trusted-only",
@@ -96,7 +96,7 @@ const securityReview = Smithers.SecurityReview({
         "An unparseable claim treated as allow, or authorize_unavailable swallowed instead of failing the run.",
         "A sub-chain spawned through the agent entry running without the parent's Authorize service."
       ],
-      paths: ["src/Authorize.ts", "src/Chain.ts", "src/SubChains.ts", "src/AuthorDeclaration.ts", "src/Catalog.ts"]
+      paths: ["src/Authorize.ts", "src/Chain.ts", "src/SubChains.ts", "src/AuthorDeclaration.ts", "src/Catalog.vibe"]
     },
     {
       id: "replay-identity",
@@ -111,11 +111,11 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Chain.ts",
-        "src/CallKey.ts",
-        "src/Event.ts",
-        "src/Outcome.ts",
-        "src/Catalog.ts",
-        "src/RegistryCatalog.ts",
+        "src/CallKey.vibe",
+        "src/Event.vibe",
+        "src/Outcome.vibe",
+        "src/Catalog.vibe",
+        "src/RegistryCatalog.vibe",
         "src/JsonBoundary.ts"
       ]
     },
@@ -130,7 +130,7 @@ const securityReview = Smithers.SecurityReview({
         "Child scope derivation in SubChains that two slots can map to the same string, or a depth check a crafted slot can bypass.",
         "Chain.append absorbing another writer's events on journal_conflict instead of failing."
       ],
-      paths: ["src/Chain.ts", "src/Event.ts", "src/SubChains.ts", "src/Journal.ts", "src/internal/childRun.ts"]
+      paths: ["src/Chain.ts", "src/Event.vibe", "src/SubChains.ts", "src/Journal.vibe", "src/internal/childRun.ts"]
     },
     {
       id: "resource-budgets",
@@ -143,7 +143,7 @@ const securityReview = Smithers.SecurityReview({
         "SubChains maxDepth not counted from derived segments, allowing unbounded nested Chain.run.",
         "An observation, steering, or context string appended to the author prompt without the 8192/32768 truncation."
       ],
-      paths: ["src/QuickJsRunner.ts", "src/Chain.ts", "src/SubChains.ts", "src/Observation.ts"]
+      paths: ["src/QuickJsRunner.ts", "src/Chain.ts", "src/SubChains.ts", "src/Observation.vibe"]
     },
     {
       id: "prompt-catalog-injection",
@@ -158,10 +158,10 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Prompt.ts",
-        "src/RegistryCatalog.ts",
-        "src/Script.ts",
-        "src/Author.ts",
-        "src/Steering.ts",
+        "src/RegistryCatalog.vibe",
+        "src/Script.vibe",
+        "src/Author.vibe",
+        "src/Steering.vibe",
         "src/internal/prompts.ts",
         "prompts/**"
       ]
@@ -191,9 +191,9 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Chain.ts",
         "src/MemoryEntries.ts",
-        "src/ModelAuthor.ts",
+        "src/ModelAuthor.vibe",
         "src/internal/failureCode.ts",
-        "src/Observation.ts"
+        "src/Observation.vibe"
       ]
     }
   ]

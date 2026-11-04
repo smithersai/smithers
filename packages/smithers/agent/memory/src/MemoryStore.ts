@@ -6,23 +6,23 @@
  * @since 0.1.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
-import type { DatabaseService } from "./Database.ts"
+import type { DatabaseService } from "./Database.vibe"
 import * as Facts from "./internal/Facts.ts"
 import { instrument } from "./internal/Instrument.ts"
 import * as Notes from "./internal/Notes.ts"
 import * as Search from "./internal/Search.ts"
-import { error, storeError } from "./internal/Store.ts"
+import { error, storeError } from "./internal/Store.vibe"
 import * as Threads from "./internal/Threads.ts"
-import type { MemoryError } from "./MemoryError.ts"
+import type { MemoryError } from "./MemoryError.vibe"
 import * as Migrations from "./Migrations.ts"
-import type * as Namespace from "./Namespace.ts"
+import type * as Namespace from "./Namespace.vibe"
 
 /**
  * Explicit run coordinates attached to a memory write.

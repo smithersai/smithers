@@ -25,11 +25,12 @@
     "@smthrs/build-cli": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
-    "alchemy": "2.0.0-beta.82",
-    "effect": "4.0.5",
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "alchemy": "2.0.0-beta.84",
+    "effect": "4.1.1",
     "typescript": "5.9.3",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
     "eslint": "9.39.1",
     "typescript-eslint": "8.65.0",
@@ -38,6 +39,7 @@
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/targets": "1.0.0-rc.16"
+    "@smthrs/targets": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   }
 }

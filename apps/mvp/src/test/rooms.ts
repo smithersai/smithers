@@ -1,4 +1,4 @@
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { PresenceRoom } from "@smthrs/sync"
 import { Effect } from "effect"
 import type * as Socket from "effect/socket/Socket"

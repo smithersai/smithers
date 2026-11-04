@@ -18,12 +18,12 @@
  * - During the record (the `succeeded` crossing committed, `finish` not): the
  *   second settles from the crossing and the body never runs again.
  */
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, Ownership } from "@smthrs/run-store"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

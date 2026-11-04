@@ -4,10 +4,10 @@ import * as PlatformError from "effect/PlatformError"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
 import type * as Scope from "effect/Scope"
 import { describe, expect, it } from "vitest"
-import * as Repo from "../src/internal/memory/repo.ts"
-import * as Wiki from "../src/internal/memory/wiki.ts"
+import * as Repo from "../src/internal/memory/repo.vibe"
+import * as Wiki from "../src/internal/memory/wiki.vibe"
 import * as Memory from "../src/Memory.ts"
-import * as MemoryCalibration from "../src/MemoryCalibration.ts"
+import * as MemoryCalibration from "../src/MemoryCalibration.vibe"
 
 const run = <A, E>(body: Effect.Effect<A, E, Scope.Scope | FileSystem.FileSystem | Path.Path | ChildProcessSpawner>) =>
   Effect.runPromise(body.pipe(Effect.scoped, Effect.provide(NodeServices.layer)))

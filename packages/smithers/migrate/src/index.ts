@@ -44,7 +44,7 @@ export * as RunState from "./RunState.ts"
  * @category scanners
  * @since 1.0.0-rc.0
  */
-export * as Inventory from "./Inventory.ts"
+export * as Inventory from "./Inventory.vibe"
 
 /**
  * @category scanners
@@ -62,7 +62,7 @@ export * as PromptHints from "./PromptHints.ts"
  * @category models
  * @since 1.0.0-rc.0
  */
-export * as Units from "./Units.ts"
+export * as Units from "./Units.vibe"
 
 /**
  * @category checks

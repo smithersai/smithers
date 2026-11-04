@@ -6,6 +6,7 @@ import { ambientAuthority, invariants, swallowedCause } from "../../eslint.invar
 import { jsdocConvention } from "../../eslint.jsdoc.js"
 
 export default tseslint.config(
+  { ignores: ["**/*.d.vibe.ts"] },
   {
     ignores: ["**/dist", "**/build", "**/coverage"]
   },

@@ -7,6 +7,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
+import { Crypto } from "@smthrs/crypto"
 import { Action, ExternalJob, Fault, Flow, Interpreter } from "@smthrs/flow"
 import { Logger as StructuredLogger } from "@smthrs/observability"
 import * as Cause from "effect/Cause"
@@ -22,8 +23,8 @@ import * as Schema from "effect/Schema"
 import { TestClock } from "effect/testing"
 import * as Tracer from "effect/Tracer"
 import { describe, expect, it } from "vitest"
-import * as AgentRunner from "../src/AgentRunner.ts"
-import * as ExternalAgent from "../src/ExternalAgent.ts"
+import * as AgentRunner from "../src/AgentRunner.vibe"
+import * as ExternalAgent from "../src/ExternalAgent.vibe"
 
 const PROMPT = "SENTINEL-PROMPT-4d1c"
 const BASE = "0123456789abcdef0123456789abcdef01234567"
@@ -134,7 +135,7 @@ const stack = (service: AgentRunner.AgentJobs["Service"]) =>
     Layer.provideMerge(Layer.succeed(AgentRunner.AgentJobs, service)),
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
 const turns = Effect.gen(function*() {

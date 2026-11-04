@@ -9,6 +9,7 @@
  * the serving engine keeps exactly one run for the id the parent derived.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Interpreter } from "@smthrs/flow"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -141,7 +142,7 @@ const sleepReceipt = (runId: string) =>
 const childId = (parentId: string, name: string, waitMs: number) =>
   Effect.runPromise(
     Interpreter.childExecutionId(parentId, "root.flow.map", RemoteWrite._tag, { name, waitMs }).pipe(
-      Effect.provide(NodeCrypto.layer)
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     )
   )
 

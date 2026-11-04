@@ -6,13 +6,13 @@
 
 import * as Clock from "effect/Clock"
 import * as Effect from "effect/Effect"
-import type { DatabaseService } from "../Database.ts"
-import type { MemoryError } from "../MemoryError.ts"
+import type { DatabaseService } from "../Database.vibe"
+import type { MemoryError } from "../MemoryError.vibe"
 import type { ListNotesInput, Note, Service, StatusFilter } from "../MemoryStore.ts"
-import type * as Namespace from "../Namespace.ts"
+import type * as Namespace from "../Namespace.vibe"
 import { canonicalJson, compareText } from "./Canonical.ts"
 import * as Fts from "./Fts.ts"
-import { resolveNamespace } from "./ResolveNamespace.ts"
+import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   changed,
   collectUntil,
@@ -29,7 +29,7 @@ import {
   validateLimit,
   validateNonEmpty,
   validateTags
-} from "./Store.ts"
+} from "./Store.vibe"
 
 const CREATION_COLUMNS = "namespace_kind, namespace_id, id, text, tags_json, provenance_json, status, created_at_ms"
 

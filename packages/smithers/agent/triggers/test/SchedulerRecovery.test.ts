@@ -11,7 +11,7 @@ import * as Scheduler from "../src/Scheduler.ts"
 import * as SqlTriggerStore from "../src/SqlTriggerStore.ts"
 import * as TestTriggers from "../src/test/TestTriggers.ts"
 import type { Trigger } from "../src/Trigger.ts"
-import { TriggerError } from "../src/TriggerError.ts"
+import { TriggerError } from "../src/TriggerError.vibe"
 import * as TriggerStore from "../src/TriggerStore.ts"
 
 const hour = 60 * 60 * 1_000

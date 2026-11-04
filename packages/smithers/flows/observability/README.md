@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -22,10 +22,10 @@ Send an Effect program's logs, metrics, and traces to an OpenTelemetry collector
 npm install @smthrs/observability@next effect
 ```
 
-Node.js 22.19.0 or later. Effect services are identified by module identity, so install one `effect` release, at exactly `4.0.5`.
+Node.js 22.19.0 or later. Effect services are identified by module identity, so install one `effect` release, at exactly `4.1.0`.
 
 The default install supports the root, `Otlp`, `Otel`, and `Resource`. It
-installs `@effect/opentelemetry@4.0.5` and requires the
+installs `@effect/opentelemetry@4.1.0` and requires the
 `@opentelemetry/api@1.9.1` peer. It includes no HTTP exporters or trace SDK. Select the optional peers
 for the host subpath you import:
 

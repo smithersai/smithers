@@ -46,11 +46,12 @@
  * @since 0.1.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as DurableWrites from "@smthrs/database/DurableWriter"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import { Clock, Crypto, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as ApprovalAuthority from "./ApprovalAuthority.ts"
@@ -102,7 +103,7 @@ import {
   RunSummary,
   SignalPayload
 } from "./ControlSchema.ts"
-import * as ActiveFibers from "./internal/activeFibers.ts"
+import * as ActiveFibers from "./internal/activeFibers.vibe"
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.ts"
 import {
   accepted,
@@ -118,8 +119,8 @@ import {
   signalCommandFingerprint
 } from "./internal/planning.ts"
 import { causeMessages, missingTable } from "./internal/sqlSchemaErrors.ts"
-import * as Lineage from "./Lineage.ts"
-import * as Migrations from "./Migrations.ts"
+import * as Lineage from "./Lineage.vibe"
+import * as Migrations from "./Migrations.vibe"
 import { plannable } from "./SystemFlows.ts"
 
 /**

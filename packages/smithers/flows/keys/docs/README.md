@@ -57,6 +57,7 @@ on Node.js, on Bun, and in a browser.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { deriveKey } from "@smthrs/keys"
 import * as Effect from "effect/Effect"
 
@@ -64,7 +65,7 @@ const program = Effect.gen(function*() {
   const key = yield* deriveKey({ domain: "cache/compile", version: 1, target: "web", flags: ["--minify"] })
   const reordered = yield* deriveKey({ flags: ["--minify"], target: "web", version: 1, domain: "cache/compile" })
   return { key, same: key === reordered }
-}).pipe(Effect.provide(NodeCrypto.layer))
+}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 
 console.log(await Effect.runPromise(program))
 ```

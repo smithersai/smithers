@@ -14,7 +14,7 @@ import type { GraphBuildError } from "@smthrs/plan"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { fileURLToPath } from "node:url"
-import type * as Descriptor from "../src/Descriptor.ts"
+import type * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 

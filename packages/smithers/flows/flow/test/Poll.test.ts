@@ -11,10 +11,10 @@
  * process restart.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Graph, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Duration, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { TestClock } from "effect/testing"
 import { effectOnTestClock as effect } from "./Harness.ts"
 import { layerWired, makeMemoryState } from "./MemoryFlowRuntime.ts"

@@ -5,13 +5,13 @@
  * attempt failure rather than a terminal defect.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Action, Flow, FlowRuntime, RetryPolicy, StepIdentity } from "@smthrs/flow"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

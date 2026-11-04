@@ -1,5 +1,5 @@
 import { withDefault } from "../schema/withDefault.ts"
-import { ChangeSetUnreadable, reasonOf, WalkthroughUnwritable } from "./reviewFailureSchema.ts"
+import { ChangeSetUnreadable, reasonOf, WalkthroughUnwritable } from "./reviewFailureSchema.vibe"
 /**
  * The review flow's non-model steps.
  *

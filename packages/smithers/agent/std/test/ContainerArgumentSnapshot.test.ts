@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { expect, it } from "vitest"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 
 it("builds the plan from the argument snapshot that passed admission", async () => {
   const args: Array<string> = ["initial"]

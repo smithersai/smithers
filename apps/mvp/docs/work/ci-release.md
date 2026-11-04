@@ -92,7 +92,7 @@ Thirteen owned gates pass on Latitude. Full smoke builds and checks all 51
 libraries, packs successfully and reaches its real npm/pnpm consumer matrix.
 The six stale host/guide failures then pass in a focused rerun, including both
 published quickstart replays. The remaining latest-Effect profiles install
-4.1.0, which the workspace's exact 4.0.5 peers refuse. Their gate is retained;
+4.1.0, which the workspace's exact 4.1.0 peers refuse. Their gate is retained;
 completion depends on the separately owned `builder/effect-upgrade` cohort.
 The required Sol review awaits the brief's all-gates-green precondition.
 

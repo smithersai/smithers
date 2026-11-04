@@ -16,11 +16,11 @@ import {
   SchemaRefMarkdownOutput,
   type Source,
   SourceScan
-} from "../src/Descriptor.ts"
+} from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Registry from "../src/Registry.ts"
-import type { DiscoveryError, RegistryError } from "../src/RegistryError.ts"
-import { discoveryError } from "../src/RegistryError.ts"
+import type { DiscoveryError, RegistryError } from "../src/RegistryError.vibe"
+import { discoveryError } from "../src/RegistryError.vibe"
 
 const fixtures = fileURLToPath(new URL("./fixtures", import.meta.url))
 const projectRoot = join(fixtures, "project", "flows")

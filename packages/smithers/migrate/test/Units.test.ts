@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { join } from "node:path"
 import * as Scan from "../src/Scan.ts"
-import * as Units from "../src/Units.ts"
+import * as Units from "../src/Units.vibe"
 import { copyFixture, nodeLayer } from "./fixtures/helpers.ts"
 
 const scan = (root: string, options: Scan.Options = {}) => Scan.scan(root, options).pipe(Effect.provide(nodeLayer))

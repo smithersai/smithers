@@ -24,9 +24,10 @@ if (profile === "node") {
   const NodeGateway = await import("@smthrs/gateway/node/NodeGateway")
   const NodeOtel = await import("@smthrs/observability/NodeOtel")
   const NodeHost = await import("@smthrs/platform-node/NodeHost")
+  const { Crypto } = await import("@smthrs/crypto")
   const filename = resolve("runtime.sqlite")
   const storage = NodeRuntime.storage(filename).pipe(
-    Layer.provide(Layer.merge(NodeHost.layer, NodeHost.NodeCrypto.layer))
+    Layer.provide(Layer.merge(NodeHost.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)))
   )
   await Effect.runPromise(Effect.scoped(Layer.build(storage)))
   assert.equal(existsSync(filename), true, "NodeRuntime must acquire real SQLite storage")

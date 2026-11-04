@@ -7,6 +7,7 @@
  *
  * @since 1.0.0
  */
+import { Crypto } from "@smthrs/crypto"
 import { DurableEngineState } from "@smthrs/engine-store"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { contentDigest } from "@smthrs/journal/JournalEvent"
@@ -19,7 +20,7 @@ import { SqlClient } from "effect/sql/SqlClient"
 
 const storage = (filename: string) =>
   NodeRuntime.storage(filename).pipe(
-    Layer.provideMerge(Layer.mergeAll(NodeHost.layer, NodeHost.NodeCrypto.layer))
+    Layer.provideMerge(Layer.mergeAll(NodeHost.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)))
   )
 
 /** Reads the actual persisted deadlines without arming an engine host. */

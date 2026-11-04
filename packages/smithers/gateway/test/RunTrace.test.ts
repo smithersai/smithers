@@ -13,8 +13,8 @@ import {
   traceFromJournal,
   turnNarratives,
   waterfallGeometry
-} from "../src/RunTrace.js"
-import type { JournalRecord } from "../src/RunTrace.js"
+} from "../src/RunTrace.vibe"
+import type { JournalRecord } from "../src/RunTrace.vibe"
 
 /*
  * The trace model over a journal in the agent's own shapes (AgentSession's

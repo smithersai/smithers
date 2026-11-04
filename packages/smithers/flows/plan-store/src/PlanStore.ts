@@ -14,11 +14,11 @@
  * @since 0.1.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import { affectedRows, DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { StoredKey } from "@smthrs/keys"
 import * as Plan from "@smthrs/plan/Plan"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"

@@ -19,7 +19,7 @@ import * as Model from "@smthrs/model/Model"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
 import { Effect, Ref, Stream } from "effect"
 import { appendFileSync } from "node:fs"
-import * as ScriptedModel from "./ScriptedModel.ts"
+import * as ScriptedModel from "./ScriptedModel.vibe"
 
 /**
  * What a logged turn was.

@@ -13,7 +13,7 @@
 import { Context, Effect, FileSystem, Layer, Path } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
-import * as Containment from "./internal/Containment.ts"
+import * as Containment from "./internal/Containment.vibe"
 
 /**
  * `base` with every relative path resolved against the absolute `root`.

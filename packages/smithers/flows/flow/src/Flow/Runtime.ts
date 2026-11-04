@@ -15,9 +15,9 @@ import * as Fiber from "effect/Fiber"
 import * as Filter from "effect/Filter"
 import { dual, identity } from "effect/Function"
 import * as Scope from "effect/Scope"
-import { FlowInstance } from "../FlowRuntime/FlowInstance.ts"
-import { CaptureDefects, SuspendOnFailure } from "./Annotations.ts"
-import { Complete, isResult, type Result, Suspended } from "./Result.ts"
+import { FlowInstance } from "../FlowRuntime/FlowInstance.vibe"
+import { CaptureDefects, SuspendOnFailure } from "./Annotations.vibe"
+import { Complete, isResult, type Result, Suspended } from "./Result.vibe"
 
 /**
  * Runs an effect as a flow execution and converts its outcome into a

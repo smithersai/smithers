@@ -18,7 +18,7 @@ import { Control } from "../src/Control.ts"
 import { PersistenceError } from "../src/ControlError.ts"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import type { ControlEvent, Receipt, RunSummary } from "../src/ControlSchema.ts"
-import * as Monitor from "../src/Monitor.ts"
+import * as Monitor from "../src/Monitor.vibe"
 import { durable, type DurableStack } from "./DurableStack.ts"
 import { park } from "./Park.ts"
 

@@ -15,7 +15,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/journal"
 })
 
@@ -110,7 +110,7 @@ const securityReview = Smithers.SecurityReview({
         "A public method that reaches the Unfenced fence without being emitDurableUnfenced or a documented internal path.",
         "Owner fields matched loosely (empty hostId or nonce accepted as a wildcard)."
       ],
-      paths: ["src/SqlJournal.ts", "src/OwnerId.ts", "src/Consensus.ts", "src/SqlConsensus.ts"]
+      paths: ["src/SqlJournal.ts", "src/OwnerId.vibe", "src/Consensus.ts", "src/SqlConsensus.ts"]
     },
     {
       id: "sql-parameterization",
@@ -134,7 +134,7 @@ const securityReview = Smithers.SecurityReview({
         "An identifier schema that stops rejecting lone surrogates, NUL, or over-length text, letting two decoded ids land on one stored key.",
         "A sourceEvents or sourceSequences cache key built without the run id, or a JournalGeneration.forget that invalidates runs it was not given."
       ],
-      paths: ["src/SqlJournal.ts", "src/JournalEvent.ts", "src/JournalGeneration.ts", "src/migrations/**"]
+      paths: ["src/SqlJournal.ts", "src/JournalEvent.vibe", "src/JournalGeneration.ts", "src/migrations/**"]
     },
     {
       id: "journal-resource-bounds",

@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 
 describe("FlowBudget", () => {
   it.each([

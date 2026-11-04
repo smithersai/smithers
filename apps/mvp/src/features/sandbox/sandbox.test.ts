@@ -5,9 +5,9 @@
 // are also driven over a test `SandboxClient` and an injected `fetch`, for the answers a valid request never gets
 // (test.faults-by-injection). A person's slash command, pinned to the conversation the tab shows, is in
 // src/features/commands/commands.test.ts.
-import { Uuid, WebCrypto } from "@smthrs/crypto"
+import { type Crypto, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { Context, type Crypto, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "effect"
+import { Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "effect"
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"

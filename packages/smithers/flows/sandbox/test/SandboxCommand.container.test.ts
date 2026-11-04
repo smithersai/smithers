@@ -5,6 +5,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -14,8 +15,8 @@ import type { Readable } from "node:stream"
 import { afterAll, beforeAll } from "vitest"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
-import * as SandboxCommand from "../src/SandboxCommand/index.ts"
-import * as SandboxTools from "../src/SandboxTools/index.ts"
+import * as SandboxCommand from "../src/SandboxCommand/index.vibe"
+import * as SandboxTools from "../src/SandboxTools/index.vibe"
 
 const cli = ["docker", "podman"].find((name) => spawnSync(name, ["info"], { stdio: "ignore" }).status === 0)
 const image = "docker.io/library/debian:trixie-slim"
@@ -199,7 +200,7 @@ describe.skipIf(cli === undefined)("SandboxTools' command scripts in a real cont
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
   it.live.runIf(LONG_SECONDS > 0)(

@@ -10,20 +10,20 @@
  * works. These cases make the refusal explicit, and bound the publication
  * confirmation the adapter ends every run with.
  */
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
 import * as Latch from "effect/Latch"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
-import * as EngineSubject from "../../src/EngineSubject.ts"
+import * as EngineSubject from "../../src/EngineSubject.vibe"
 import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
 import { EngineUnavailableError } from "../../src/TestingError.ts"
-import { describe, expect, it } from "../../src/Vitest.ts"
+import { describe, expect, it } from "../../src/Vitest.vibe"
 
 /** Decorates the in-memory runtime, keeping every other operation real. */
 type Runtime = FlowRuntime.FlowRuntime["Service"]

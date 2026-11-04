@@ -19,16 +19,44 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Canonical": "./src/Canonical.ts",
-    "./index": "./src/index.ts",
-    "./Record": "./src/Record.ts",
-    "./BoundedJson": "./src/BoundedJson.ts",
-    "./IssuePath": "./src/IssuePath.ts",
+    "./Canonical": {
+      "types": "./src/Canonical.ts",
+      "vibelang-source": "./src/Canonical.ts",
+      "default": "./.vibelang/js/src/Canonical.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Record": {
+      "types": "./src/Record.ts",
+      "vibelang-source": "./src/Record.ts",
+      "default": "./.vibelang/js/src/Record.js"
+    },
+    "./BoundedJson": {
+      "types": "./src/BoundedJson.ts",
+      "vibelang-source": "./src/BoundedJson.ts",
+      "default": "./.vibelang/js/src/BoundedJson.js"
+    },
+    "./IssuePath": {
+      "types": "./.vibe/declarations/src/IssuePath.d.vibe.ts",
+      "vibelang-source": "./src/IssuePath.vibe",
+      "default": "./.vibelang/js/src/IssuePath.js"
+    },
     "./ReadonlyMap": "./src/ReadonlyMap.ts",
-    "./Serializer": "./src/Serializer.ts"
+    "./Serializer": {
+      "types": "./src/Serializer.ts",
+      "vibelang-source": "./src/Serializer.ts",
+      "default": "./.vibelang/js/src/Serializer.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -36,7 +64,8 @@
     "LICENSE",
     "README.md",
     "docs/",
-    "examples/"
+    "examples/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -141,11 +170,11 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.5",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -155,12 +184,15 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
     "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
+  },
+  "dependencies": {
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   }
 }

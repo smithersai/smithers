@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type * as Outcome from "../src/Outcome.ts"
-import * as Script from "../src/Script.ts"
+import type * as Outcome from "../src/Outcome.vibe"
+import * as Script from "../src/Script.vibe"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
 import { runOn } from "./harness.ts"
 

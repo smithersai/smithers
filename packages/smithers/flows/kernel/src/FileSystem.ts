@@ -31,12 +31,12 @@ import {
   Stream
 } from "effect"
 import { Base64 } from "effect/encoding"
-import * as Batch from "./FileSystemBatch.ts"
+import * as Batch from "./FileSystemBatch.vibe"
 import { GrantStore } from "./GrantStore.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCapability } from "./internal/makeCapability.vibe"
 import { Workspace } from "./Workspace.ts"
 
-export * from "./FileSystemBatch.ts"
+export * from "./FileSystemBatch.vibe"
 
 /**
  * The directory name that stands in for the host's system temporary directory
@@ -567,16 +567,8 @@ export const confined = (
         copyFile: (from) => refuse("copyFile", from),
         chmod: (value, mode) => run({ operation: "chmod", path: normalize(value), options: { mode } }),
         chown: (value, uid, gid) => run({ operation: "chown", path: normalize(value), options: { uid, gid } }),
-        glob: (pattern, options) => {
-          const base = options?.root === undefined ? logicalRoot : normalize(options.root)
-          return run({
-            operation: "glob",
-            pattern: path.resolve(base, pattern),
-            root: base,
-            options: options === undefined ? undefined : { exclude: options.exclude ?? [] }
-          })
-        },
         link: (from) => refuse("link", from),
+        lstat: (value) => refuse("lstat", value),
         makeDirectory: (value, options) =>
           run({
             operation: "makeDirectory",
@@ -595,6 +587,7 @@ export const confined = (
             options
           }),
         readFile: (value) => run({ operation: "readFile", path: normalize(value) }),
+        readDirectoryEntries: (value) => refuse("readDirectoryEntries", value),
         readLink: (value) => run({ operation: "readLink", path: normalize(value) }),
         realPath: (value) => run({ operation: "realPath", path: normalize(value) }),
         remove: (value, options) =>
@@ -627,6 +620,15 @@ export const confined = (
           })
         }
       }),
+      glob: (pattern, options) => {
+        const base = options?.root === undefined ? logicalRoot : normalize(options.root)
+        return run({
+          operation: "glob",
+          pattern: path.resolve(base, pattern),
+          root: base,
+          options: options === undefined ? undefined : { exclude: options.exclude ?? [] }
+        })
+      },
       exists: (value) => run({ operation: "exists", path: normalize(value) }),
       readFileString: (value, encoding) => run({ operation: "readFileString", path: normalize(value), encoding }),
       writeFileString: (value, data, options) =>
@@ -1230,7 +1232,7 @@ export const layer: Layer.Layer<
       }
     }
     // `EffectFileSystem.make` brands the implementation with Effect's own
-    // (non-exported) type id. The five operations `make` would derive from
+    // (non-exported) type id. The six operations `make` would derive from
     // the primitives are overridden below with guarded delegates to the host
     // implementation, so delegation semantics do not change.
     const guarded: EffectFileSystem.FileSystem = {
@@ -1268,19 +1270,11 @@ export const layer: Layer.Layer<
             options: { uid, gid }
           })
         ),
-        glob: Effect.fn("FileSystem.glob")((pattern, options) => {
-          const captured = snapshotOptions(options)
-          const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
-          const normalizedPattern = normalizeFrom(root, pattern)
-          return atomicOne("fs:read", normalizedPattern, "glob", {
-            operation: "glob",
-            pattern: normalizedPattern,
-            root,
-            options: captured === undefined ? undefined : { exclude: captured.exclude ?? [] }
-          })
-        }),
         link: Effect.fn("FileSystem.link")((from, to) =>
           isolatedTwo(["fs:read", from], ["fs:write", to], "link", (host) => host.link(normalize(from), normalize(to)))
+        ),
+        lstat: Effect.fn("FileSystem.lstat")((value) =>
+          isolatedOne("fs:read", value, "lstat", (host) => host.lstat(normalize(value)))
         ),
         makeDirectory: Effect.fn("FileSystem.makeDirectory")((value, options) => {
           const captured = snapshotOptions(options)
@@ -1365,6 +1359,9 @@ export const layer: Layer.Layer<
               )
             )
         }),
+        readDirectoryEntries: Effect.fn("FileSystem.readDirectoryEntries")((value) =>
+          isolatedOne("fs:read", value, "readDirectoryEntries", (host) => host.readDirectoryEntries(normalize(value)))
+        ),
         readDirectory: Effect.fn("FileSystem.readDirectory")((value, options) => {
           const captured = snapshotOptions(options)
           return atomicOne("fs:read", value, "readDirectory", {
@@ -1465,6 +1462,17 @@ export const layer: Layer.Layer<
             data: Base64.encode(bytes),
             options: captured
           })
+        })
+      }),
+      glob: Effect.fn("FileSystem.glob")((pattern, options) => {
+        const captured = snapshotOptions(options)
+        const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
+        const normalizedPattern = normalizeFrom(root, pattern)
+        return atomicOne("fs:read", normalizedPattern, "glob", {
+          operation: "glob",
+          pattern: normalizedPattern,
+          root,
+          options: captured === undefined ? undefined : { exclude: captured.exclude ?? [] }
         })
       }),
       exists: Effect.fn("FileSystem.exists")((value) =>

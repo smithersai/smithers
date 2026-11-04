@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
 import { NodeHost, NodeRuntime } from "@smthrs/platform-node"
@@ -7,8 +8,8 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import { Failure, fromIntegrationError } from "../src/core/ActionFailure.ts"
-import { CursorStore, makeMemory } from "../src/core/CursorStore.ts"
+import { Failure, fromIntegrationError } from "../src/core/ActionFailure.vibe"
+import { CursorStore, makeMemory } from "../src/core/CursorStore.vibe"
 import { runWithCursor } from "../src/core/Source.ts"
 
 it("reopens SQLite after handling and replays the batch and handler before committing the cursor", async () => {
@@ -67,7 +68,7 @@ it("reopens SQLite after handling and replays the batch and handler before commi
         EngineStore.WorkspaceSandbox.layerFileSystem(),
         registration
       ).pipe(
-        Layer.provide(Layer.merge(NodeHost.layerAt(root), NodeCrypto.layer))
+        Layer.provide(Layer.merge(NodeHost.layerAt(root), Crypto.layerFromDigest(NodeCrypto.layerDigest)))
       )
     )
   const execute = FlowRuntime.FlowRuntime.pipe(

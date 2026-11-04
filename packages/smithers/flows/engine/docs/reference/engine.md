@@ -420,6 +420,7 @@ This program runs one flow on the in-memory engine, with the action implementati
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -445,7 +446,7 @@ const layer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 // A repeated executionId joins the run that already owns it.

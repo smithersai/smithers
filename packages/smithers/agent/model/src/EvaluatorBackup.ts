@@ -6,7 +6,7 @@
 
 import { Effect, Stream } from "effect"
 import * as Evaluator from "./Evaluator.ts"
-import type * as Model from "./Model.ts"
+import type * as Model from "./Model.vibe"
 import { ModelRequest } from "./ModelRequest.ts"
 
 /**

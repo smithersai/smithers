@@ -9,19 +9,19 @@
  * can only catch what is typed.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Action } from "@smthrs/flow"
 import * as Cell from "@smthrs/harness/Cell"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Option } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import type * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 
 const run = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) =>
-  Effect.runPromise(Effect.provide(effect, NodeCrypto.layer))
+  Effect.runPromise(Effect.provide(effect, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 
 const effects: Descriptor.EffectDeclaration = {
   reads: [],

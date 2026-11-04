@@ -22,7 +22,7 @@
 import { ControlSchema } from "@smthrs/control"
 import * as Fault from "@smthrs/flow/Fault"
 import { HashMap, Schema } from "effect"
-import { callEventKey, callScope, nativeCallEvent, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.ts"
+import { callEventKey, callScope, nativeCallEvent, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.vibe"
 import * as DigestIndex from "./internal/digestIndex.ts"
 import { encodedBytes, recordDigestBytes } from "./internal/digestMemory.ts"
 import * as NativeResolution from "./internal/nativeResolution.ts"
@@ -45,7 +45,7 @@ export { uniqueCallEvents }
  * @since 1.0.0
  * @category projections
  */
-export { callEventKey, callScope, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.ts"
+export { callEventKey, callScope, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.vibe"
 
 /**
  * Finds an open call by ID, with name/FIFO fallback only for legacy starts.
@@ -54,7 +54,7 @@ export { callEventKey, callScope, nativeCallEvent, nativeStepEvent } from "./int
  * @since 1.0.0
  * @category projections
  */
-export { openCallIndex } from "./internal/callEvents.ts"
+export { openCallIndex } from "./internal/callEvents.vibe"
 
 /**
  * The run statuses a digest may report.

@@ -3,7 +3,7 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { main } from "../../examples/06-time-travel-rewind.ts"
+import { main } from "../../examples/06-time-travel-rewind.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-examples-"))
 

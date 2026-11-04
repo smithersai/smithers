@@ -14,6 +14,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Annotations, Placement as CorePlacement } from "@smthrs/core"
 import * as Digest from "@smthrs/core/Digest"
 import * as CoreMarkdown from "@smthrs/core/Markdown"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
 import { Node } from "@smthrs/plan"
@@ -34,7 +35,7 @@ import * as TestClock from "effect/testing/TestClock"
 import { execFile } from "node:child_process"
 import { basename, join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
@@ -845,7 +846,11 @@ export default ({
                     Effect.andThen(Effect.sleep("45 seconds")),
                     Effect.as({ default: greetModule })
                   )
-            })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
+            })).pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+              )
+            )
           ),
           Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) })
         )
@@ -928,7 +933,11 @@ export default ({
                     ? Effect.fail(new Error("cannot load retry"))
                     : Effect.succeed({ default: greetModule })
                 }
-              })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
+              })).pipe(
+                Layer.provideMerge(
+                  Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+                )
+              )
             ),
             Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) })
           )
@@ -961,7 +970,11 @@ export default ({
               attempts++
               return Effect.succeed({ default: greetModule })
             }
-          })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
+          })).pipe(
+            Layer.provideMerge(
+              Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            )
+          )
         ),
         Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([]) })
       )
@@ -1942,7 +1955,11 @@ describe("the host's catalog", () => {
                 ++attempts === 1
                   ? Deferred.succeed(entered, undefined).pipe(Effect.andThen(Effect.never))
                   : Effect.fail(new Error("retry first line\n    at stack (file.ts:1:1)"))
-            })).pipe(Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer)))
+            })).pipe(
+              Layer.provideMerge(
+                Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+              )
+            )
           ),
           Effect.provideService(Registry.Registry, { ...registry, list: () => Effect.succeed([descriptor]) }),
           Effect.provide(Logger.layer([capture]))
@@ -2287,7 +2304,9 @@ describe("registration", () => {
       }).pipe(
         Effect.provide(
           Executable.layer(options({ delegates: [Echo, Other] })).pipe(
-            Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer))
+            Layer.provideMerge(
+              Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+            )
           )
         ),
         Effect.provide(Logger.layer([capture]))
@@ -2305,7 +2324,9 @@ describe("registration", () => {
       const built = yield* Effect.provide(
         Executable.Catalog,
         Executable.layer(options()).pipe(
-          Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer))
+          Layer.provideMerge(
+            Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          )
         )
       ).pipe(Effect.provide(Logger.layer([capture])))
 
@@ -2330,7 +2351,9 @@ describe("registration", () => {
         // `Crypto` is part of the registration requirement now: the action the
         // bridged flow dispatches derives its delegate's child execution id.
         Executable.layer(options()).pipe(
-          Layer.provideMerge(Layer.mergeAll(runtime, Action.layerImplementations, NodeCrypto.layer))
+          Layer.provideMerge(
+            Layer.mergeAll(runtime, Action.layerImplementations, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+          )
         )
       )
       // One registration per runnable flow, plus a second for each descriptor

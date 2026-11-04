@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Cause, Effect, Exit } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Cleanup from "../src/internal/ProcessCleanup.ts"
-import { ProcessCleanupPolicyError } from "../src/internal/ProcessCleanupPolicyError.ts"
+import { ProcessCleanupPolicyError } from "../src/internal/ProcessCleanupPolicyError.vibe"
 import { bootstrapArguments, failure } from "../src/internal/ProcessSupervisor.ts"
 
 describe("prepared process policy", () => {

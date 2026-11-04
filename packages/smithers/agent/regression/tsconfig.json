@@ -1,6 +1,9 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "rewriteRelativeImportExtensions": true,
     "module": "Node18",
     "noEmit": true,
     "composite": false,
@@ -11,6 +14,6 @@
     // `character/*.test.ts` are `bun:test` suites, so the checked set needs Bun's globals as well as Node's.
     "types": ["bun-types", "node"]
   },
-  "include": ["*.ts", "character/*.ts"],
+  "include": ["*.ts", "character/*.ts", "*.vibe", "character/*.vibe"],
   "exclude": ["PACKAGE.ts"]
 }

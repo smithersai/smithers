@@ -15,6 +15,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
 import { ArtifactStore, ArtifactSweep } from "@smthrs/artifacts"
+import { Crypto } from "@smthrs/crypto"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Effect from "effect/Effect"
@@ -507,7 +508,7 @@ describe("sweep: liveness under concurrency and crashes", () => {
                 )
                 yield* Effect.sleep("20 millis")
                 return yield* sweep.inventory
-              }).pipe(Effect.provide(NodeCrypto.layer), Effect.orDie)
+              }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.orDie)
             })
           )
           const result = yield* collector.gc({ graceMs: 1 })
@@ -591,7 +592,7 @@ describe("sweep: liveness under concurrency and crashes", () => {
         // blob's mtime instead of rewriting it.
         store.put(bytes(fresh)).pipe(
           Effect.andThen(store.put(bytes("re-referenced-output"))),
-          Effect.provide(NodeCrypto.layer),
+          Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
           Effect.orDie,
           Effect.asVoid
         )

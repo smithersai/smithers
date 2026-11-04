@@ -7,7 +7,7 @@ import { spawn } from "node:child_process"
 import type { Socket } from "node:net"
 import { parse } from "node:path"
 import { packageRoot, resolveConfiguredExecutable, resolveDefaultExecutable } from "./AtomicFileSystemExecutable.ts"
-import { processFault } from "./ProcessFault.ts"
+import { processFault } from "./ProcessFault.vibe"
 
 const deferred = <A>() => {
   let resolve!: (value: A) => void

@@ -1,15 +1,18 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, Effect, PlatformError, Schema, SchemaIssue } from "effect"
+import { Effect, PlatformError, Schema, SchemaIssue } from "effect"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
+import * as Crypto from "../src/Crypto.ts"
 import { Digest, digest, digestSync, Sha256, Sha256Error, syncCrypto } from "../src/index.ts"
 import { millionA, vectors } from "./fixtures.ts"
 
 const runDigest = (input: string | Uint8Array): Digest =>
-  Effect.runSync(digest(input).pipe(Effect.provide(NodeCrypto.layer)))
+  Effect.runSync(digest(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
 
 const decode = (input: string | Uint8Array): Digest =>
-  Effect.runSync(Schema.decodeUnknownEffect(Sha256)(input).pipe(Effect.provide(NodeCrypto.layer)))
+  Effect.runSync(
+    Schema.decodeUnknownEffect(Sha256)(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
+  )
 
 const digestFailure = (input: string | Uint8Array) =>
   Effect.runSync(Effect.flip(Effect.provideService(digest(input), Crypto.Crypto, syncCrypto)))
@@ -56,7 +59,9 @@ describe("SHA-256 entry points", () => {
 
     // Snapshot semantics begin when the Effect executes, so this sees the
     // deliberate pre-execution mutation.
-    expect(Effect.runSync(effect.pipe(Effect.provide(NodeCrypto.layer)))).toBe(digestSync(new Uint8Array(3)))
+    expect(Effect.runSync(effect.pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))).toBe(
+      digestSync(new Uint8Array(3))
+    )
 
     backing.set([0x61, 0x62, 0x63], 2)
     expect(digestSync(view)).toBe(vectors[1][1])

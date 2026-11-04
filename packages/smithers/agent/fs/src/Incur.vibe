@@ -20,24 +20,29 @@ const mapError = (context: IncurHost.Context, error: FsError): never =>
 // Incur's ok and error callbacks throw transport control signals, so each
 // settles the call as a defect, outside the program whose failures are
 // sanitized.
-function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context): Effect<unknown, never, FlowInvoker.FlowInvoker> {
-  const outcome = exit {
-    const input = selected.schema.decode(selected.schema.assemble(context.args, context.options))
-    const output = FlowInvoker.FlowInvoker.invoke(Object.freeze({
+effect function execute(
+  selected: IncurHost.SelectedRoute,
+  context: IncurHost.Context
+): Effect<unknown, never, FlowInvoker.FlowInvoker> {
+  const outcome = try exit(effect {
+    const input = try selected.schema.decode(selected.schema.assemble(context.args, context.options))
+    const output = try FlowInvoker.FlowInvoker.invoke(Object.freeze({
       name: selected.route.name,
       flow: selected.flow,
       input
     }))
-    return SchemaBridge.encodeOutput(selected.flow.output, output)
-  }
+    return try SchemaBridge.encodeOutput(selected.flow.output, output)
+  })
   if (outcome is Exit.Success(let output)) return context.ok(output)
   const cause = outcome.cause
   if (cause.reasons is [{ _tag: "Fail", error: FsError and let error }]) return mapError(context, error)
   // Host diagnostics stay in Effect's logger, never in Incur's response.
   provide Logger.LogToStderr = true {
-    logDebug("Incur invocation failed", cause)
+    try logDebug("Incur invocation failed", cause)
   }
-  if (cause.hasInterrupts()) throw Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason))
+  if (cause.hasInterrupts()) {
+    return try Effect.failCause(Cause.fromReasons<never>(cause.reasons.filter(Cause.isInterruptReason)))
+  }
   return mapError(
     context,
     new FsError({
@@ -48,39 +53,42 @@ function execute(selected: IncurHost.SelectedRoute, context: IncurHost.Context):
   )
 }
 
-function refuse(context: IncurHost.Context, error: FsError): Effect<never> {
+effect function refuse(context: IncurHost.Context, error: FsError): Effect<never> {
   return mapError(context, error)
 }
 
-function project(route: Route.Route): Effect<IncurHost.Projection> {
+effect function project(route: Route.Route): Effect<IncurHost.Projection> {
   try {
-    const selected = Effect.timeoutOrElse({
-      duration: "5 seconds",
-      orElse: () =>
-        throw new FsError({
-          code: "load_failed",
-          method: "Incur.project",
-          description: "The route metadata load timed out",
-          path: route.name
-        })
-    }) {
-      const flow = Route.load(route)
-      const schema = SchemaBridge.toCommandSchema(route.input, flow.input)
-      return { route, flow, schema }
-    }
+    const selected = try Effect.timeoutOrElse(
+      effect {
+        const flow = try Route.load(route)
+        const schema = try SchemaBridge.toCommandSchema(route.input, flow.input)
+        return { route, flow, schema }
+      },
+      {
+        duration: "5 seconds",
+        orElse: effect () =>
+          throw new FsError({
+            code: "load_failed",
+            method: "Incur.project",
+            description: "The route metadata load timed out",
+            path: route.name
+          })
+      }
+    )
     return { _tag: "Ready", selected }
   } catch (error) {
     return { _tag: "Failed", error }
   }
 }
 
-function projectAll(tree: CommandTree.CommandTree): Effect<ReadonlyMap<Route.Route, IncurHost.Projection>> {
+effect function projectAll(tree: CommandTree.CommandTree): Effect<ReadonlyMap<Route.Route, IncurHost.Projection>> {
   const projections = new Map<Route.Route, IncurHost.Projection>()
-  for (const route of CommandTree.traverse(tree)) projections.set(route, project(route))
+  for (const route of CommandTree.traverse(tree)) projections.set(route, try project(route))
   return projections
 }
 
-function groupedRoutes(tree: CommandTree.CommandTree): Effect<ReadonlySet<Route.Route>, FsError, infer R> {
+effect function groupedRoutes(tree: CommandTree.CommandTree): Effect<ReadonlySet<Route.Route>, FsError, infer R> {
   const grouped = new Set<Route.Route>()
   const stack: Array<CommandTree.CommandTree> = [tree]
   while (stack.length > 0) {
@@ -102,23 +110,23 @@ function groupedRoutes(tree: CommandTree.CommandTree): Effect<ReadonlySet<Route.
   return grouped
 }
 
-function hydrate(
+effect function hydrate(
   tree: CommandTree.CommandTree,
   grouped: ReadonlySet<Route.Route>,
   tokens: ReadonlyArray<string>,
   dispatchTokens: ReadonlyArray<string>
-): Effect<Option.Option<IncurHost.Selection>, FsError, infer R> {
+): Effect<Option<IncurHost.Selection>, FsError, infer R> {
   // Only an unmatched name may fall back to metadata: every other typed
   // failure has to reach the caller.
-  const resolved = CommandTree.resolve(tree, tokens) catch (error) =>
+  const resolved = CommandTree.resolve(tree, tokens) catch effect (error) =>
     error.code === "unknown_command" ? undefined : throw error
   if (resolved === undefined) return Option.none()
   // A name that resolves but cannot be loaded or projected keeps its typed
   // failure: it is reported, never softened into help output.
   const consumed = tokens.length - resolved.rest.length
   const viaSelf = resolved.rest[0] === IncurHost.selfSegment && grouped.has(resolved.route)
-  const flow = Route.load(resolved.route)
-  const schema = SchemaBridge.toCommandSchema(resolved.route.input, flow.input)
+  const flow = try Route.load(resolved.route)
+  const schema = try SchemaBridge.toCommandSchema(resolved.route.input, flow.input)
   return Option.some<IncurHost.Selection>({
     route: resolved.route,
     flow,
@@ -127,14 +135,14 @@ function hydrate(
   })
 }
 
-function select(
+effect function select(
   tree: CommandTree.CommandTree,
   grouped: ReadonlySet<Route.Route>,
   tokens: ReadonlyArray<string>,
   dispatchTokens: ReadonlyArray<string>
 ): Effect<IncurHost.Outcome> {
   try {
-    return { _tag: "Selection", selection: hydrate(tree, grouped, tokens, dispatchTokens) }
+    return { _tag: "Selection", selection: try hydrate(tree, grouped, tokens, dispatchTokens) }
   } catch (error) {
     return { _tag: "Error", error }
   }
@@ -153,15 +161,15 @@ function select(
  * @category constructors
  * @since 0.1.0
  */
-export function createCli(
+export effect function createCli(
   name: string,
   routes: ReadonlyArray<Route.Route>
 ): Effect<IncurCli.Cli & { close: () => Promise<void> }, FsError, FlowInvoker.FlowInvoker> {
-  const validated = CommandTree.make(routes)
+  const validated = try CommandTree.make(routes)
   const executable = CommandTree.traverse(validated).filter(Route.isCommandRoute)
-  const tree = CommandTree.make(executable)
-  const grouped = groupedRoutes(tree)
-  const services = Effect.context<FlowInvoker.FlowInvoker>()
+  const tree = try CommandTree.make(executable)
+  const grouped = try groupedRoutes(tree)
+  const services = try Effect.context<FlowInvoker.FlowInvoker>()
   return IncurHost.mount({
     name,
     tree,
@@ -170,7 +178,7 @@ export function createCli(
       execute,
       refuse,
       projectAll,
-      select: (tokens, dispatchTokens) => select(tree, grouped, tokens, dispatchTokens)
+      select: effect (tokens, dispatchTokens) => try select(tree, grouped, tokens, dispatchTokens)
     }
   })
 }

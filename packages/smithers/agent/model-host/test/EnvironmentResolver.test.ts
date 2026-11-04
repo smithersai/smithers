@@ -2,7 +2,7 @@ import { Effect } from "effect"
 import { afterEach, expect, test, vi } from "vitest"
 import type { DurableChatGrant } from "../src/DurableChatProducer.ts"
 import { environmentModelResolver } from "../src/EnvironmentResolver.ts"
-import { runModelTurn } from "../src/ModelTurnHost.ts"
+import { runModelTurn } from "../src/ModelTurnHost.vibe"
 
 const binding = {
   protocol: "openai-chat",

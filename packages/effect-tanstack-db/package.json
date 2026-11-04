@@ -74,7 +74,7 @@
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -84,19 +84,23 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
-    "vitest": "5.0.0"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
+    "vitest": "5.0.0",
+    "fast-check": "4.9.0"
   },
   "peerDependencies": {
     "@tanstack/db": "0.15.1",
     "@tanstack/db-sqlite-persistence-core": "0.4.11",
     "@tanstack/offline-transactions": "1.1.3",
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   },
   "peerDependenciesMeta": {
     "@tanstack/offline-transactions": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   }
 }

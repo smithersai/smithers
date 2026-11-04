@@ -25,7 +25,7 @@ import * as Cell from "./Cell.ts"
 import * as CellValidation from "./CellValidation.ts"
 import type { HarnessError } from "./HarnessError.ts"
 import { refusal, timedOut } from "./internal/refusal.ts"
-import type * as VariablesPanel from "./VariablesPanel.ts"
+import type * as VariablesPanel from "./VariablesPanel.vibe"
 
 /**
  * Stable failures raised by a sandbox binding itself, as opposed to failures

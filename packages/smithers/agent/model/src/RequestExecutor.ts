@@ -29,6 +29,7 @@ import * as HttpClient from "effect/http/HttpClient"
 import type * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as HttpClientResponse from "effect/http/HttpClientResponse"
+import type * as HttpMethod from "effect/http/HttpMethod"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
@@ -40,7 +41,7 @@ import * as Stream from "effect/Stream"
 import * as Tracer from "effect/Tracer"
 import * as Auth from "./Auth.ts"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
-import { ModelError } from "./ModelError.ts"
+import { ModelError } from "./ModelError.vibe"
 
 const BODY_LIMIT = 16_384
 const RAW_BODY_LIMIT = 65_536
@@ -724,7 +725,8 @@ const redactedRequest = (
   request: HttpClientRequest.HttpClientRequest,
   redactedNames: ReadonlyArray<string | RegExp>
 ): HttpClientRequest.HttpClientRequest =>
-  HttpClientRequest.make(request.method)(redactedRequestUrl(request), {
+  // Effect 4.1 types a client request's method as any string; every constructor takes an HttpMethod.
+  HttpClientRequest.make(request.method as HttpMethod.HttpMethod)(redactedRequestUrl(request), {
     headers: redactHeaders(request.headers, redactedNames)
   })
 

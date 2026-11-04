@@ -20,7 +20,7 @@ import { Jj, type OperationId, type Revision } from "@smthrs/jj"
 import { Effect, FileSystem as EffectFileSystem, Layer, Path as EffectPath } from "effect"
 import { canonicalResource } from "./FileSystem.ts"
 import { GrantStore } from "./GrantStore.ts"
-import { makeCapability } from "./internal/makeCapability.ts"
+import { makeCapability } from "./internal/makeCapability.vibe"
 import { Workspace } from "./Workspace.ts"
 
 /**

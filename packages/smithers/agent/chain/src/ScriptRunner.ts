@@ -15,8 +15,8 @@
 
 import { Context, Effect, Layer, Schema } from "effect"
 import * as JsonBoundary from "./JsonBoundary.ts"
-import * as Outcome from "./Outcome.ts"
-import type * as Script from "./Script.ts"
+import * as Outcome from "./Outcome.vibe"
+import type * as Script from "./Script.vibe"
 
 /**
  * A script that did not reach an outcome: it failed to compile, threw at

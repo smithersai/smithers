@@ -14,8 +14,8 @@
 import { SpanFailure } from "@smthrs/flow"
 import { Effect, Option, Schema } from "effect"
 import { classifyHttpStatus } from "./HttpStatusClassifier.ts"
-import { ModelError } from "./ModelError.ts"
-import * as ModelEvent from "./ModelEvent.ts"
+import { ModelError } from "./ModelError.vibe"
+import * as ModelEvent from "./ModelEvent.vibe"
 import {
   JsonObject,
   type Message,
@@ -24,8 +24,8 @@ import {
   type StopReason,
   type ToolDefinition
 } from "./ModelRequest.ts"
-import * as Protocol from "./Protocol.ts"
-import * as ToolStream from "./ToolStream.ts"
+import * as Protocol from "./Protocol.vibe"
+import * as ToolStream from "./ToolStream.vibe"
 
 const FunctionTool = Schema.Struct({
   type: Schema.Literal("function"),

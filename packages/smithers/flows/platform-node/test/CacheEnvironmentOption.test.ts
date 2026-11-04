@@ -18,6 +18,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { afterAll, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { Action, EngineStore as EngineStorePackage, Flow, Interpreter, Kernel } from "@smthrs/flows"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -47,7 +48,7 @@ const stubJj = Layer.succeed(
   })
 )
 
-const host = Layer.mergeAll(NodeCrypto.layer, AtomicFileSystem.layer, stubJj)
+const host = Layer.mergeAll(Crypto.layerFromDigest(NodeCrypto.layerDigest), AtomicFileSystem.layer, stubJj)
 
 /**
  * Cache-eligible by the engine's own rule and by no other: the `sealed` tier

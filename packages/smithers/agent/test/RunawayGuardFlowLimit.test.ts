@@ -10,6 +10,7 @@
  * way `ModuleAuthority` does.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { HarnessError } from "@smthrs/harness/HarnessError"
@@ -17,7 +18,7 @@ import { Node } from "@smthrs/plan"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Schema, Scope } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
-import * as RunawayGuard from "../src/RunawayGuard.ts"
+import * as RunawayGuard from "../src/RunawayGuard.vibe"
 
 const guarded = Flow.make("agent/test/guarded-step", {
   payload: {},
@@ -142,7 +143,12 @@ describe("RunawayGuard.layerFlowLimit", () => {
       expect(yield* flow.execute({}, { executionId: "override" })).toBe("override")
       yield* Scope.close(override, Exit.void)
       expect(yield* flow.execute({}, { executionId: "restored" })).toBe("host")
-    }).pipe(Effect.provide(FlowEngine.layerMemory), Effect.provide(NodeCrypto.layer), Effect.scoped, Effect.runPromise)
+    }).pipe(
+      Effect.provide(FlowEngine.layerMemory),
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+      Effect.scoped,
+      Effect.runPromise
+    )
   })
 
   it("parks a drive that runs past its limit on tool-call facts naming the flow and execution", async () => {

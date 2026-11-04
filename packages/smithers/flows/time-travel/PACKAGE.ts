@@ -6,8 +6,10 @@ import { ReviewTagsMigrationsAndKeys } from "@smthrs/repo-targets"
  * `cwd` anchors every emitted tool run in this package directory.
  */
 import { Smithers } from "@smthrs/targets"
+import * as Input from "@smthrs/targets/Input"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
+  entry: Input.file("src/index.vibe"),
   testProgram: Smithers.file("//packages/smithers/flows/database/scripts/test-matrix.mjs"),
   deps: [],
   cwd: "packages/smithers/flows/time-travel"
@@ -43,7 +45,7 @@ const securityReview = Smithers.SecurityReview({
         "A `Dialect.jsonText` JSON path or a `json_extract` path built from a runtime value instead of a fixed string.",
         "A DELETE or UPDATE on flows_journal_events, flows_attempts, flows_time_travel_* without a `run_id =` or `child_run_id =` bound predicate."
       ],
-      paths: ["src/SqlTimeTravelStore.ts", "src/migrations/**", "src/Migrations.ts"]
+      paths: ["src/SqlTimeTravelStore.ts", "src/migrations/**", "src/Migrations.vibe"]
     },
     {
       id: "truncate-owner-fence",
@@ -86,7 +88,7 @@ const securityReview = Smithers.SecurityReview({
         "A rewind option such as `detachedChildren: \"cancel\"` or `wholeRepo` reachable from an unvalidated string rather than the decoded literal union."
       ],
       paths: [
-        "src/CompensationHandlers.ts",
+        "src/CompensationHandlers.vibe",
         "src/internal/EffectHandlerRegistry.ts",
         "src/internal/Compensation.ts",
         "src/internal/Rewind.ts",
@@ -103,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "`Effect.annotateLogs`, `Effect.annotateCurrentSpan`, or `Effect.log*` passed an effect's `input`, `output`, a receipt, or `detail_json`.",
         "Audit detail or receipt JSON returned from a public read verb (`replay`, `inspect`) to a caller that only needs the frame."
       ],
-      paths: ["src/TimeTravelError.ts", "src/EffectBoundary.ts", "src/internal/**", "src/TimeTravel.ts"]
+      paths: ["src/TimeTravelError.vibe", "src/EffectBoundary.ts", "src/internal/**", "src/TimeTravel.ts"]
     },
     {
       id: "fork-workspace-path",
@@ -115,7 +117,7 @@ const securityReview = Smithers.SecurityReview({
         "The directory passed to `jj.workspaceAdd` built from anything other than `options.workspaceRoot` and the sanitized name.",
         "A jj change id or operation id read from the journal or audit detail passed to `jj.restore`/`jj.opRestore` without shape validation that rules out a leading `-`."
       ],
-      paths: ["src/internal/Fork.ts", "src/internal/Compensation.ts", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
+      paths: ["src/internal/Fork.vibe", "src/internal/Compensation.ts", "src/internal/Recovery.ts", "src/TimeTravel.ts"]
     },
     {
       id: "lineage-edge-provenance",
@@ -145,12 +147,12 @@ const securityReview = Smithers.SecurityReview({
         "A caller-supplied `maxHistoryEntries` or frame `seq` accepted without the positive-integer decode in `Position`/`Frame`."
       ],
       paths: [
-        "src/internal/Replay.ts",
-        "src/internal/JournalPages.ts",
-        "src/internal/HistoryLimit.ts",
-        "src/internal/SnapshotProjector.ts",
+        "src/internal/Replay.vibe",
+        "src/internal/JournalPages.vibe",
+        "src/internal/HistoryLimit.vibe",
+        "src/internal/SnapshotProjector.vibe",
         "src/internal/Rewind.ts",
-        "src/Frame.ts",
+        "src/Frame.vibe",
         "src/TimeTravel.ts"
       ]
     }

@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.0` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -25,7 +25,7 @@ npm install @smthrs/engine@next effect
 
 Built on [Effect](https://effect.website): flows, actions, and the engine are
 Effect values you compose as layers. `effect` is a peer dependency in the
-version `4.0.5`, listed under `peerDependencies` in `package.json`.
+version `4.1.0`, listed under `peerDependencies` in `package.json`.
 
 ## Mental model
 
@@ -53,6 +53,7 @@ Everything below it decides only where state lives. That is what makes
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
@@ -76,7 +77,7 @@ const BuildLayer = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(Action.layerImplementations),
   Layer.provideMerge(FlowEngine.layerMemory),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 const built: Effect.Effect<string> = Build.execute(

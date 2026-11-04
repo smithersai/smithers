@@ -9,7 +9,7 @@ import * as Layer from "effect/Layer"
 import * as Result from "effect/Result"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
-import { TimeTravelError } from "../src/TimeTravelError.ts"
+import { TimeTravelError } from "../src/TimeTravelError.vibe"
 
 describe("SqlTimeTravelStore prerequisites", () => {
   for (const journalMigrated of [false, true]) {

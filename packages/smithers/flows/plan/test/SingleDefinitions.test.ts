@@ -7,9 +7,9 @@
  * a deep-equal check and forks the moment one side gains a member.
  */
 import { describe, expect, it } from "vitest"
-import * as Effects from "../src/Effects.ts"
-import * as FileSet from "../src/FileSet.ts"
-import * as KeyMaterial from "../src/KeyMaterial.ts"
+import * as Effects from "../src/Effects.vibe"
+import * as FileSet from "../src/FileSet.vibe"
+import * as KeyMaterial from "../src/KeyMaterial.vibe"
 import * as Plan from "../src/Plan.ts"
 
 describe("single definitions", () => {

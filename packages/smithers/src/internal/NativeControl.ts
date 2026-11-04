@@ -98,7 +98,7 @@ import {
   Scope,
   Semaphore
 } from "effect"
-import type { Crypto, Path } from "effect"
+import type { Path } from "effect"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/sql/SqlClient"
 import type * as Terminal from "effect/Terminal"
@@ -113,6 +113,7 @@ import { packageVersion } from "../Version.ts"
 import * as AuthoredRebuild from "./AuthoredRebuild.ts"
 import * as ReplacedFlowPolicy from "./ReplacedFlowPolicy.ts"
 
+import type { Crypto } from "@smthrs/crypto"
 import * as ControlAffinity from "./ControlAffinity.ts"
 import * as ControlDatabasePath from "./ControlDatabasePath.ts"
 import * as DatabaseLocation from "./DatabaseLocation.ts"

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { runStubModel } from "../examples/stub-model.ts"
+import { runStubModel } from "../examples/stub-model.vibe"
 
 describe("examples", () => {
   it("stub-model folds the reply and prices its usage at the published rates", async () => {

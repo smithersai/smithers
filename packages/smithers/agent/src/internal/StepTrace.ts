@@ -4,13 +4,13 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
+import { Crypto } from "@smthrs/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import { type Journal, JournalEvent, StepFact } from "@smthrs/journal"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
 import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.ts"

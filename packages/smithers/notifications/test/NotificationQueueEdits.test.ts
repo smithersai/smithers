@@ -2,7 +2,7 @@ import { Journal, JournalEvent } from "@smthrs/journal"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import type { Notification } from "../src/Notification.ts"
+import type { Notification } from "../src/Notification.vibe"
 import * as NotificationQueue from "../src/NotificationQueue.ts"
 
 const item = (id: string, body: string): Notification => ({

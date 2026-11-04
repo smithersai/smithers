@@ -12,11 +12,11 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as Glob from "../src/Glob.ts"
 import * as Grep from "../src/Grep.ts"
-import * as ContractFailures from "../src/internal/SearchContract.ts"
+import * as ContractFailures from "../src/internal/SearchContract.vibe"
 import * as Ls from "../src/Ls.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
-import * as Search from "../src/Search.ts"
-import * as SearchContract from "../src/SearchContract.ts"
+import * as Search from "../src/Search.vibe"
+import * as SearchContract from "../src/SearchContract.vibe"
 import { fileInfo } from "./TestLayers.ts"
 
 const summary = { type: "summary", data: { stats: { searches: 1 } } }
@@ -253,7 +253,7 @@ describe("native search protocol boundaries", () => {
         expect(batches.flat()).toEqual([...names, "a.txt"].sort())
         for (const batch of batches) {
           expect(batch.length).toBeLessThanOrEqual(256)
-          expect(batch.reduce((bytes, target) => bytes + new TextEncoder().encode(target).length + 1, 0))
+          expect(batch.reduce((bytes, target) => bytes + new TextEncoder().encode(String(target)).length + 1, 0))
             .toBeLessThanOrEqual(32_768)
         }
       })

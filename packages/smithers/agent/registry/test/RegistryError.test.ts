@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Errors from "../src/RegistryError.ts"
+import * as Errors from "../src/RegistryError.vibe"
 
 describe("registry errors", () => {
   it("formats discovery and registry operation data", () => {

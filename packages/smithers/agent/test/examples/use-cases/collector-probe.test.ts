@@ -3,8 +3,8 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { CollectorProbe, layer } from "../../../examples/use-cases/collector-probe.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { CollectorProbe, layer } from "../../../examples/use-cases/collector-probe.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "collector-probe-"))
 

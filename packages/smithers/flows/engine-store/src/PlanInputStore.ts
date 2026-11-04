@@ -4,12 +4,11 @@
  * @since 1.0.0
  */
 
-import { Sha256 } from "@smthrs/crypto"
+import { type Crypto, Sha256 } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { FileSet, Plan } from "@smthrs/plan"
 import { OwnerId } from "@smthrs/run-store/Ownership"
 import { Context, Effect, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import * as SqlClient from "effect/sql/SqlClient"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))

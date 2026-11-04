@@ -10,7 +10,7 @@ import * as Input from "@smthrs/targets/Input"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   // Examples are type-checked, linted, and run by test/Examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd: "packages/smithers/flows/platform-browser"
 })
 
@@ -58,7 +58,7 @@ const browserTest = Smithers.Shell.Test({
   shell: "cd packages/smithers/flows/platform-browser && npx vitest run --config vitest.browser.config.ts",
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
     Smithers.file("package.json"),
     Smithers.file("vitest.browser.config.ts")
@@ -145,7 +145,7 @@ const securityReview = Smithers.SecurityReview({
         "A Start payload or Signal value used without decoding it with the flow's own schema.",
         "A Refused reply or a log line carrying an error's message instead of its tag."
       ],
-      paths: ["src/internal/Leader.ts", "src/internal/Protocol.ts", "src/BrowserEngine.ts"]
+      paths: ["src/internal/Leader.ts", "src/internal/Protocol.vibe", "src/BrowserEngine.ts"]
     },
     {
       id: "content-free-telemetry",

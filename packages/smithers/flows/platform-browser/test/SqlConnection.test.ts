@@ -9,7 +9,7 @@ import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import { BrowserRuntime, BrowserSqlite } from "../src/index.ts"
 import * as SqlConnection from "../src/internal/SqlConnection.ts"
-import * as SqlProtocol from "../src/internal/SqlProtocol.ts"
+import * as SqlProtocol from "../src/internal/SqlProtocol.vibe"
 import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
 import * as Telemetry from "./fixtures/Telemetry.ts"
 

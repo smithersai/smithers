@@ -1,6 +1,6 @@
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Events from "../src/ModelEvent.ts"
+import * as Events from "../src/ModelEvent.vibe"
 
 describe("ModelEvent", () => {
   it("round-trips every event", () => {

@@ -1,7 +1,7 @@
 import { ControlFacts } from "@smthrs/control"
 import { JournalEvent } from "@smthrs/journal"
 import { describe, expect, it } from "vitest"
-import { latestPendingApproval } from "../src/internal/PendingApproval.ts"
+import { latestPendingApproval } from "../src/internal/PendingApproval.vibe"
 
 const envelope = { capabilities: [], flows: [], budget: {} }
 

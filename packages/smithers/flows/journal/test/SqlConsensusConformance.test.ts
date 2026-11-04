@@ -12,7 +12,7 @@ import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
 import { Consensus, heartbeatStaleAfter, type LivenessEvidence } from "../src/Consensus.ts"
 import * as Migrations from "../src/Migrations.ts"
-import type { OwnerId } from "../src/OwnerId.ts"
+import type { OwnerId } from "../src/OwnerId.vibe"
 import * as SqlConsensus from "../src/SqlConsensus.ts"
 import { conformance } from "./ConsensusConformance.ts"
 

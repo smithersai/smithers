@@ -10,7 +10,7 @@ import { SpanFailure } from "@smthrs/flow"
 import { ChildProcessEnvironment } from "@smthrs/kernel"
 import { Effect, Redacted as EffectRedacted } from "effect"
 import * as Headers from "effect/http/Headers"
-import { ModelError } from "./ModelError.ts"
+import { ModelError } from "./ModelError.vibe"
 
 /**
  * Credential-bearing field names shared by prepared-request validation and

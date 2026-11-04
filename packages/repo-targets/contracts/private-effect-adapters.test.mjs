@@ -173,16 +173,17 @@ test("real adapters share Effect across owners, CJS and ESM, and preserve typed 
       }).pipe(Effect.provide(two.layer))
     )
     assert.equal(contents, "cross-owner contents")
-    const esmSocket = await import(pathToFileURL(join(paths[0], "dist/vendor/node-shared/NodeSocket.js")))
-    const cjsSocket = fromOne(join(paths[0], "dist/vendor/cjs/node-shared/NodeSocket.js"))
-    assert.equal(cjsSocket.NodeWS, esmSocket.NodeWS)
-    assert.equal(cjsSocket.NodeWS.WebSocket, fromOne("ws").WebSocket)
-    const server = new esmSocket.NodeWS.WebSocketServer({ host: "127.0.0.1", port: 0 })
+    // Effect 4.1 moved the ws namespace from NodeSocket.NodeWS to its own NodeWS module.
+    const esmSocket = await import(pathToFileURL(join(paths[0], "dist/vendor/node-shared/NodeWS.js")))
+    const cjsSocket = fromOne(join(paths[0], "dist/vendor/cjs/node-shared/NodeWS.js"))
+    assert.equal(cjsSocket.WebSocket, esmSocket.WebSocket)
+    assert.equal(cjsSocket.WebSocket, fromOne("ws").WebSocket)
+    const server = new esmSocket.WebSocketServer({ host: "127.0.0.1", port: 0 })
     let client
     try {
       await once(server, "listening")
       server.once("connection", (socket) => socket.send("actual private namespace connection"))
-      client = new cjsSocket.NodeWS.WebSocket(`ws://127.0.0.1:${server.address().port}`)
+      client = new cjsSocket.WebSocket(`ws://127.0.0.1:${server.address().port}`)
       const [message] = await once(client, "message")
       assert.equal(message.toString(), "actual private namespace connection")
     } finally {
@@ -201,7 +202,7 @@ test("real adapters share Effect across owners, CJS and ESM, and preserve typed 
         join(paths[0], "proof." + extension),
         [
           `import {layer,bunLayer,succeed} from './dist/${branch}/index.js';`,
-          `import {NodeWS} from './dist/vendor/${branch === "esm" ? "" : "cjs/"}node-shared/NodeSocket.js';`,
+          `import * as NodeWS from './dist/vendor/${branch === "esm" ? "" : "cjs/"}node-shared/NodeWS.js';`,
           `import type * as Other from './dist/${other}/index.js' with {"resolution-mode":"${mode}"};`,
           `import type {Effect} from 'effect/Effect' with {"resolution-mode":"import"};`,
           "const value: Effect<number> = succeed(1);void value;",
@@ -293,6 +294,11 @@ test("CJS namespace compatibility preserves aliases, other exports, comments, an
       source.replace(
         "export * as SocketNamespace from \"ws\";",
         "import * as SocketNamespace from \"ws\"; export { SocketNamespace };"
+      ).replace(
+        // A CJS declaration cannot star-export ws, an export= module; it names
+        // the members @types/ws declares.
+        "export * from \"ws\";",
+        "export { createWebSocketStream, WebSocket, WebSocketServer } from \"ws\";"
       )
     )
   }))

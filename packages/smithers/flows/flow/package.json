@@ -34,34 +34,126 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./Action": "./src/Action/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./Action": {
+      "types": "./src/Action/index.ts",
+      "vibelang-source": "./src/Action/index.ts",
+      "default": "./.vibelang/js/src/Action/index.js"
+    },
     "./Action/*": null,
-    "./CacheEnvironment": "./src/Action/CacheEnvironment.ts",
-    "./FileBoundary": "./src/Action/FileBoundary.ts",
-    "./FileInput": "./src/Action/FileInput.ts",
-    "./Flow": "./src/Flow/index.ts",
+    "./CacheEnvironment": {
+      "types": "./.vibe/declarations/src/Action/CacheEnvironment.d.vibe.ts",
+      "vibelang-source": "./src/Action/CacheEnvironment.vibe",
+      "default": "./.vibelang/js/src/Action/CacheEnvironment.js"
+    },
+    "./FileBoundary": {
+      "types": "./.vibe/declarations/src/Action/FileBoundary.d.vibe.ts",
+      "vibelang-source": "./src/Action/FileBoundary.vibe",
+      "default": "./.vibelang/js/src/Action/FileBoundary.js"
+    },
+    "./FileInput": {
+      "types": "./.vibe/declarations/src/Action/FileInput.d.vibe.ts",
+      "vibelang-source": "./src/Action/FileInput.vibe",
+      "default": "./.vibelang/js/src/Action/FileInput.js"
+    },
+    "./Flow": {
+      "types": "./src/Flow/index.ts",
+      "vibelang-source": "./src/Flow/index.ts",
+      "default": "./.vibelang/js/src/Flow/index.js"
+    },
     "./Flow/*": null,
-    "./FlowRuntime": "./src/FlowRuntime/index.ts",
+    "./FlowRuntime": {
+      "types": "./src/FlowRuntime/index.ts",
+      "vibelang-source": "./src/FlowRuntime/index.ts",
+      "default": "./.vibelang/js/src/FlowRuntime/index.js"
+    },
     "./FlowRuntime/*": null,
-    "./StepIdentity": "./src/Action/StepIdentity.ts",
+    "./StepIdentity": {
+      "types": "./src/Action/StepIdentity.ts",
+      "vibelang-source": "./src/Action/StepIdentity.ts",
+      "default": "./.vibelang/js/src/Action/StepIdentity.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./Deadline": "./src/Deadline.ts",
-    "./DurableClock": "./src/DurableClock.ts",
-    "./DurableDeferred": "./src/DurableDeferred.ts",
-    "./DurableQueue": "./src/DurableQueue.ts",
-    "./ExternalJob": "./src/ExternalJob.ts",
-    "./Fault": "./src/Fault.ts",
-    "./Graph": "./src/Graph.ts",
-    "./HumanTask": "./src/HumanTask.ts",
-    "./Interpreter": "./src/Interpreter.ts",
-    "./Poll": "./src/Poll.ts",
-    "./RetryPolicy": "./src/RetryPolicy.ts",
-    "./Sleep": "./src/Sleep.ts",
-    "./Stall": "./src/Stall.ts",
-    "./WaitFor": "./src/WaitFor.ts",
-    "./index": "./src/index.ts"
+    "./Deadline": {
+      "types": "./.vibe/declarations/src/Deadline.d.vibe.ts",
+      "vibelang-source": "./src/Deadline.vibe",
+      "default": "./.vibelang/js/src/Deadline.js"
+    },
+    "./DurableClock": {
+      "types": "./.vibe/declarations/src/DurableClock.d.vibe.ts",
+      "vibelang-source": "./src/DurableClock.vibe",
+      "default": "./.vibelang/js/src/DurableClock.js"
+    },
+    "./DurableDeferred": {
+      "types": "./.vibe/declarations/src/DurableDeferred.d.vibe.ts",
+      "vibelang-source": "./src/DurableDeferred.vibe",
+      "default": "./.vibelang/js/src/DurableDeferred.js"
+    },
+    "./DurableQueue": {
+      "types": "./src/DurableQueue.ts",
+      "vibelang-source": "./src/DurableQueue.ts",
+      "default": "./.vibelang/js/src/DurableQueue.js"
+    },
+    "./ExternalJob": {
+      "types": "./src/ExternalJob.ts",
+      "vibelang-source": "./src/ExternalJob.ts",
+      "default": "./.vibelang/js/src/ExternalJob.js"
+    },
+    "./Fault": {
+      "types": "./src/Fault.ts",
+      "vibelang-source": "./src/Fault.ts",
+      "default": "./.vibelang/js/src/Fault.js"
+    },
+    "./Graph": {
+      "types": "./src/Graph.ts",
+      "vibelang-source": "./src/Graph.ts",
+      "default": "./.vibelang/js/src/Graph.js"
+    },
+    "./HumanTask": {
+      "types": "./src/HumanTask.ts",
+      "vibelang-source": "./src/HumanTask.ts",
+      "default": "./.vibelang/js/src/HumanTask.js"
+    },
+    "./Interpreter": {
+      "types": "./src/Interpreter.ts",
+      "vibelang-source": "./src/Interpreter.ts",
+      "default": "./.vibelang/js/src/Interpreter.js"
+    },
+    "./Poll": {
+      "types": "./.vibe/declarations/src/Poll.d.vibe.ts",
+      "vibelang-source": "./src/Poll.vibe",
+      "default": "./.vibelang/js/src/Poll.js"
+    },
+    "./RetryPolicy": {
+      "types": "./.vibe/declarations/src/RetryPolicy.d.vibe.ts",
+      "vibelang-source": "./src/RetryPolicy.vibe",
+      "default": "./.vibelang/js/src/RetryPolicy.js"
+    },
+    "./Sleep": {
+      "types": "./.vibe/declarations/src/Sleep.d.vibe.ts",
+      "vibelang-source": "./src/Sleep.vibe",
+      "default": "./.vibelang/js/src/Sleep.js"
+    },
+    "./Stall": {
+      "types": "./.vibe/declarations/src/Stall.d.vibe.ts",
+      "vibelang-source": "./src/Stall.vibe",
+      "default": "./.vibelang/js/src/Stall.js"
+    },
+    "./WaitFor": {
+      "types": "./.vibe/declarations/src/WaitFor.d.vibe.ts",
+      "vibelang-source": "./src/WaitFor.vibe",
+      "default": "./.vibelang/js/src/WaitFor.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -74,7 +166,8 @@
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -333,18 +426,19 @@
     "@smthrs/keys": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/capability": "1.0.0-rc.16"
+    "@smthrs/capability": "1.0.0-rc.16",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/platform-node": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/engine": "workspace:*",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -355,11 +449,11 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

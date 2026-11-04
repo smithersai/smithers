@@ -151,6 +151,7 @@ const make = (
       onCommitFailure,
       releaseSavepoint: (name) => `RELEASE SAVEPOINT ${name}`,
       beginTransaction: readonly ? "BEGIN" : "BEGIN IMMEDIATE",
+      driver: "sqlite-bun",
       spanAttributes: [
         ...(options.spanAttributes ? Object.entries(options.spanAttributes) : []),
         ["db.system.name", "sqlite"]

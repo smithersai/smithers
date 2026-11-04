@@ -9,7 +9,7 @@
  * @private
  */
 
-import * as FileSet from "../FileSet.ts"
+import * as FileSet from "../FileSet.vibe"
 
 interface Branch {
   readonly children: Map<string, Branch>

@@ -14,8 +14,8 @@
  * browser; any resolution or syntax error fails the gate.
  */
 export const BROWSER_SAFE = [
-  { name: "@smthrs/artifacts", entry: "packages/smithers/flows/artifacts/src/index.ts" },
-  { name: "@smthrs/canonical", entry: "packages/smithers/flows/canonical/src/index.ts" },
+  { name: "@smthrs/artifacts", entry: "packages/smithers/flows/artifacts/src/index.vibe" },
+  { name: "@smthrs/canonical", entry: "packages/smithers/flows/canonical/src/index.vibe" },
   { name: "@smthrs/capability", entry: "packages/smithers/flows/capability/src/index.ts" },
   { name: "@smthrs/chain", entry: "packages/smithers/agent/chain/src/index.ts" },
   { name: "@smthrs/crypto", entry: "packages/smithers/flows/crypto/src/index.ts" },
@@ -32,7 +32,7 @@ export const BROWSER_SAFE = [
   { name: "@smthrs/keys", entry: "packages/smithers/flows/keys/src/index.ts" },
   { name: "@smthrs/plan", entry: "packages/smithers/flows/plan/src/index.ts" },
   { name: "@smthrs/plan-store", entry: "packages/smithers/flows/plan-store/src/index.ts" },
-  { name: "@smthrs/database", entry: "packages/smithers/flows/database/src/index.ts" },
+  { name: "@smthrs/database", entry: "packages/smithers/flows/database/src/index.vibe" },
   { name: "@smthrs/journal", entry: "packages/smithers/flows/journal/src/index.ts" },
   { name: "@smthrs/run-store", entry: "packages/smithers/flows/run-store/src/index.ts" },
   { name: "@smthrs/step-cache", entry: "packages/smithers/flows/step-cache/src/index.ts" },
@@ -42,7 +42,7 @@ export const BROWSER_SAFE = [
   { name: "@smthrs/flows", entry: "packages/smithers/flows/src/index.ts" },
   { name: "@smthrs/observability", entry: "packages/smithers/flows/observability/src/index.ts" },
   { name: "@smthrs/sync", entry: "packages/smithers/flows/sync/src/index.ts" },
-  { name: "@smthrs/time-travel", entry: "packages/smithers/flows/time-travel/src/index.ts" },
+  { name: "@smthrs/time-travel", entry: "packages/smithers/flows/time-travel/src/index.vibe" },
   // The agent the app runs in its engine leader's dedicated worker (apps/mvp decision 0011), and the standard
   // tools its root reaches. A tool that needs a filesystem, a process or DNS gets it from a host layer.
   { name: "@smthrs/agent", entry: "packages/smithers/agent/src/index.ts" },

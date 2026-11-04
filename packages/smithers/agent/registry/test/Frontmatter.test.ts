@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest"
-import * as Frontmatter from "../src/internal/Frontmatter.ts"
+import * as Frontmatter from "../src/internal/Frontmatter.vibe"
 
 describe("Frontmatter", () => {
   it("splits leading frontmatter from its body", () => {

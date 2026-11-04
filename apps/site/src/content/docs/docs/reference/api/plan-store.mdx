@@ -8,7 +8,7 @@ editUrl: "https://github.com/smithersai/smithers/edit/main/packages/smithers/flo
 
 > **Source:** [implementation](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/src) · [reference source](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/plan-store/docs/api.md) · [package docs](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs)
 
-> **Related APIs:** [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
+> **Related APIs:** [`@smthrs/crypto`](/docs/reference/api/crypto/) · [`@smthrs/database`](/docs/reference/api/database/) · [`@smthrs/keys`](/docs/reference/api/keys/) · [`@smthrs/plan`](/docs/reference/api/plan/)
 
 `@smthrs/plan-store` exports two modules from its root entry point, and each is
 also importable from `@smthrs/plan-store/<Module>`:
@@ -31,6 +31,7 @@ The shortest composition that records a compiled plan:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/plan-store/Migrations"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
@@ -40,7 +41,7 @@ import * as Layer from "effect/Layer"
 
 const layer = PlanStore.layer.pipe(
   Layer.provideMerge(Migrations.layer.pipe(Layer.provideMerge(TestDatabase.layer))),
-  Layer.provideMerge(NodeCrypto.layer)
+  Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
 )
 
 const program = Effect.gen(function*() {

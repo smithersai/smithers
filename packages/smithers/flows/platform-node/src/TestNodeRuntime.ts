@@ -16,6 +16,7 @@
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Jj } from "@smthrs/kernel"
 import { Ownership } from "@smthrs/run-store"
@@ -77,7 +78,7 @@ export const requirements = (filename: string) =>
     stubJj
   ).pipe(
     Layer.provideMerge(NodeRuntime.storage(filename)),
-    Layer.provideMerge(NodeCrypto.layer),
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Layer.provideMerge(Layer.merge(AtomicFileSystem.layer, NodePath.layer))
   )
 
@@ -107,6 +108,6 @@ export const durableEngine = (filename: string, hostId: string) =>
     Layer.empty
   ).pipe(
     Layer.provideMerge(stubJj),
-    Layer.provideMerge(NodeCrypto.layer),
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Layer.provideMerge(AtomicFileSystem.layer)
   )

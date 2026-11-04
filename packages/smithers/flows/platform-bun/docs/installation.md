@@ -22,14 +22,14 @@ The manifest declares two required peers, neither optional:
 
 | Peer                    | Version                        | Why                                                       |
 | ----------------------- | ------------------------------ | --------------------------------------------------------- |
-| `effect`                | `4.0.5`                        | The runtime every service tag belongs to.                 |
+| `effect`                | `4.1.0`                        | The runtime every service tag belongs to.                 |
 | `@smthrs/platform-node` | exactly this package's version | The atomic filesystem slot and the containment machinery. |
 
 Bun installs required peers, so the line above also installs
 `@smthrs/platform-node` at the matching version. Install one `effect` in the
 peer range so the host shares one Effect runtime. `@effect/platform-bun`,
 `@effect/platform-node` and `@effect/platform-node-shared` are bundled
-privately, built from `effect@4.0.5`, so your project installs none of them.
+privately, built from `effect@4.1.1`, so your project installs none of them.
 
 ## Supported runtimes
 

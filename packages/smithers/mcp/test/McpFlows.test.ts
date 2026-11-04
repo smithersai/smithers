@@ -5,7 +5,7 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it, vi } from "vitest"
 import * as Rpc from "../src/internal/Rpc.ts"
 import * as McpClient from "../src/McpClient.ts"
-import * as McpFlows from "../src/McpFlows.ts"
+import * as McpFlows from "../src/McpFlows.vibe"
 import { provideSpawner } from "./fixtures/FakeProcess.ts"
 import { respondToEcho, trackedServer, withFakeServer } from "./fixtures/FakeServer.ts"
 

@@ -22,10 +22,10 @@
  * and reports "never settled" rather than hanging the suite.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
 

@@ -1,0 +1,595 @@
+[
+  {
+    "kind": "number",
+    "style": "bare",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "Infinity",
+                  "-Infinity",
+                  "NaN"
+                ]
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "44b65a9dc21674e7"
+  },
+  {
+    "kind": "number",
+    "style": "optional",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "string",
+                "enum": [
+                  "Infinity",
+                  "-Infinity",
+                  "NaN"
+                ]
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "fe219f0877a4be36"
+  },
+  {
+    "kind": "number",
+    "style": "nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity",
+                      "-Infinity",
+                      "NaN"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "cc9589d080ebf1ef"
+  },
+  {
+    "kind": "number",
+    "style": "optional-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "number"
+                  },
+                  {
+                    "type": "string",
+                    "enum": [
+                      "Infinity",
+                      "-Infinity",
+                      "NaN"
+                    ]
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "52056245cc0e7cfe"
+  },
+  {
+    "kind": "number",
+    "style": "nested-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "anyOf": [
+                      {
+                        "type": "number"
+                      },
+                      {
+                        "type": "string",
+                        "enum": [
+                          "Infinity",
+                          "-Infinity",
+                          "NaN"
+                        ]
+                      }
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "ee695d95f203dd0f"
+  },
+  {
+    "kind": "string",
+    "style": "bare",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "a3adab366a476fbc"
+  },
+  {
+    "kind": "string",
+    "style": "optional",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string"
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "8d7e2b07c932954f"
+  },
+  {
+    "kind": "string",
+    "style": "nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "dad9a0e75d422694"
+  },
+  {
+    "kind": "string",
+    "style": "optional-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "ae0793f0c703da87"
+  },
+  {
+    "kind": "string",
+    "style": "nested-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "a754181afce27994"
+  },
+  {
+    "kind": "boolean",
+    "style": "bare",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "853d104b9e59651b"
+  },
+  {
+    "kind": "boolean",
+    "style": "optional",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "boolean"
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "f89a66f296fa8452"
+  },
+  {
+    "kind": "boolean",
+    "style": "nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "4e30bda96c4043ed"
+  },
+  {
+    "kind": "boolean",
+    "style": "optional-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "234312ad2e0ce884"
+  },
+  {
+    "kind": "boolean",
+    "style": "nested-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "boolean"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "1fc75d0656de189b"
+  },
+  {
+    "kind": "literals",
+    "style": "bare",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "fetching",
+              "indexing"
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "4aff4c8fcf5bdedb"
+  },
+  {
+    "kind": "literals",
+    "style": "optional",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "enum": [
+              "requested",
+              "fetching",
+              "indexing"
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "e324633dfbac2012"
+  },
+  {
+    "kind": "literals",
+    "style": "nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "requested",
+                  "fetching",
+                  "indexing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "ccb63728aabaa311"
+  },
+  {
+    "kind": "literals",
+    "style": "optional-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "type": "string",
+                "enum": [
+                  "requested",
+                  "fetching",
+                  "indexing"
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "992423731cafba70"
+  },
+  {
+    "kind": "literals",
+    "style": "nested-nullable",
+    "document": {
+      "dialect": "draft-2020-12",
+      "schema": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "anyOf": [
+              {
+                "anyOf": [
+                  {
+                    "type": "string",
+                    "enum": [
+                      "requested",
+                      "fetching",
+                      "indexing"
+                    ]
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "field"
+        ],
+        "additionalProperties": true
+      },
+      "definitions": {}
+    },
+    "fingerprint": "6b0b693cff33debb"
+  }
+]

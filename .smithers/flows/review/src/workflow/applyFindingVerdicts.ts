@@ -1,4 +1,4 @@
-import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.ts"
+import { ReviewCommentSeverity } from "./reviewCommentSeveritySchema.vibe"
 import type { FindingVerdict } from "./verifyVerdictsSchema.ts"
 
 const severitySteps = ReviewCommentSeverity.literals

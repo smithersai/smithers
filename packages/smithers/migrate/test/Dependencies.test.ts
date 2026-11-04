@@ -109,6 +109,7 @@ describe("the scan surface's dependency boundary", () => {
       "redis",
       "typescript",
       "undici",
+      "vibelang-runtime",
       "ws"
     ])
     expect(privateEffectAdapters(manifest)).toEqual(["@effect/platform-node", "@effect/platform-node-shared"])

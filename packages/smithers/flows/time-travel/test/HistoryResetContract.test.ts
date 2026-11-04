@@ -3,7 +3,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Migrations from "@smthrs/engine-store/Migrations"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import type { LineageEdge } from "../src/Frame.ts"
+import type { LineageEdge } from "../src/Frame.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 

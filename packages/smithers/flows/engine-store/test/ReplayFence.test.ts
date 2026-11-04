@@ -8,13 +8,13 @@
  * `SMITHERS_TEST_PG_URL`.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

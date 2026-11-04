@@ -1,4 +1,5 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -24,13 +25,16 @@ import { actionLayers } from "../wiki/runtime.ts"
 import type { Evidence, PageSpec, Review } from "../wiki/schema.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
 
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+
 const run = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto
+    import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("@smthrs/crypto").Crypto.Crypto
   >
-) => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)))
+) => Effect.runPromise(effect.pipe(Effect.provide(nodeServices)))
 
 const fixture = async (t: TestContext) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-wiki-jev-")))
@@ -295,7 +299,7 @@ const runWiki = async (t: TestContext, script: Evaluator.Script, executionId: st
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(nodeServices)
   )
   const result = await Effect.runPromiseExit(Effect.scoped(
     Wiki.execute(

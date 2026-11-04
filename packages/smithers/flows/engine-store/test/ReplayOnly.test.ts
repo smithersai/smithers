@@ -6,13 +6,13 @@
  * `smthrs runs verify` drives a copy of a project's store under current code.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"

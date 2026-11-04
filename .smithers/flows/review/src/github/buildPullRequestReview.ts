@@ -1,7 +1,7 @@
 import { fenceFor } from "../text/fenceFor.ts"
 import { pluralize } from "../text/pluralize.ts"
 import type { Story } from "../walkthrough/storySchema.ts"
-import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.ts"
+import { ReviewCommentSeverity } from "../workflow/reviewCommentSeveritySchema.vibe"
 import type { ReviewRunOutput } from "../workflow/reviewRunOutputSchema.ts"
 import type { PullRequestFile } from "./listPullRequestFiles.ts"
 

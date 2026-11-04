@@ -16,14 +16,14 @@
  * and a different body under the same key is a conflict rather than a silent
  * second execution.
  */
+import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Effect, Layer, Schema, Stream } from "effect"
-import * as Crypto from "effect/Crypto"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Channels from "../src/Channels.ts"
+import * as Channels from "../src/Channels.vibe"
 import * as Control from "../src/Control.ts"
 import { InvalidInput, Unavailable } from "../src/ControlError.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"

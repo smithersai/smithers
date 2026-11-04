@@ -26,12 +26,12 @@ import * as Headers from "effect/http/Headers"
 import * as HttpClient from "effect/http/HttpClient"
 import type * as HttpClientError from "effect/http/HttpClientError"
 import * as HttpClientRequest from "effect/http/HttpClientRequest"
-import type { McpError } from "../McpError.ts"
-import * as DiagnosticReporter from "./DiagnosticReporter.ts"
+import type { McpError } from "../McpError.vibe"
+import * as DiagnosticReporter from "./DiagnosticReporter.vibe"
 import * as JsonLimits from "./JsonLimits.ts"
-import * as Limits from "./Limits.ts"
+import * as Limits from "./Limits.vibe"
 import * as Rpc from "./Rpc.ts"
-import * as Transport from "./Transport.ts"
+import * as Transport from "./Transport.vibe"
 
 /**
  * Supplies the bearer credential for a Streamable HTTP server.

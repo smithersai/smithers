@@ -3,8 +3,8 @@ import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import * as AnthropicMessages from "../src/AnthropicMessages.ts"
 import * as CanonicalJson from "../src/CanonicalJson.ts"
-import { ModelError } from "../src/ModelError.ts"
-import { ModelEvent } from "../src/ModelEvent.ts"
+import { ModelError } from "../src/ModelError.vibe"
+import { ModelEvent } from "../src/ModelEvent.vibe"
 import {
   GenerationParams,
   Message,

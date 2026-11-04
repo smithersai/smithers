@@ -32,19 +32,19 @@ export * as Collaborators from "./github/Collaborators.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Commits from "./github/Commits.ts"
+export * as Commits from "./github/Commits.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Config from "./github/Config.ts"
+export * as Config from "./github/Config.vibe"
 
 /**
  * @category getters
  * @since 1.0.0
  */
-export * as Contents from "./github/Contents.ts"
+export * as Contents from "./github/Contents.vibe"
 
 /**
  * @category services
@@ -56,19 +56,19 @@ export * as GitHubClient from "./github/GitHubClient.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Issues from "./github/Issues.ts"
+export * as Issues from "./github/Issues.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Once from "./github/Once.ts"
+export * as Once from "./github/Once.vibe"
 
 /**
  * @category schemas
  * @since 1.0.0
  */
-export * as Payload from "./github/Payload.ts"
+export * as Payload from "./github/Payload.vibe"
 
 /**
  * @category services
@@ -98,16 +98,16 @@ export * as Refs from "./github/Refs.ts"
  * @category constructors
  * @since 1.0.0
  */
-export * as Repository from "./github/Repository.ts"
+export * as Repository from "./github/Repository.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Statuses from "./github/Statuses.ts"
+export * as Statuses from "./github/Statuses.vibe"
 
 /**
  * @category constructors
  * @since 1.0.0
  */
-export * as Sync from "./github/Sync.ts"
+export * as Sync from "./github/Sync.vibe"

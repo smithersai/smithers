@@ -99,7 +99,7 @@ The service worker only serves the app offline ([PWA](pwa.md)).
 - 22:40 to 22:42, B1's first files, uncommitted and unreported:
   - `package.json` adds `@effect/wa-sqlite` 0.2.1.
   - New `src/BrowserSqlite.ts`: SQLite on OPFS through wa-sqlite's synchronous build and its access-handle pool VFS, exposed as the Effect `SqlClient` the engine stores are written against. It runs only in a dedicated worker, where `createSyncAccessHandle` exists.
-  - It wraps wa-sqlite itself instead of using `@effect/sql-sqlite-wasm` 4.0.5, because that package returns rows where `@smthrs/database`'s `DurableWriter.affectedRows` reads `{ changes }`, so a store's compare-and-set would read every write as a no-op. Integers wider than 32 bits bind as SQLite integers, so epoch-millisecond columns keep their type.
+  - It wraps wa-sqlite itself instead of using `@effect/sql-sqlite-wasm` 4.1.0, because that package returns rows where `@smthrs/database`'s `DurableWriter.affectedRows` reads `{ changes }`, so a store's compare-and-set would read every write as a no-op. Integers wider than 32 bits bind as SQLite integers, so epoch-millisecond columns keep their type.
   - New `src/internal/AccessHandlePoolVFS.d.ts`.
   - No tracer-bullet test on disk yet.
 - 22:42: the lead's 0011 docs agent revises 0003's build plan so the agent flow runs on this host, and 0009 so this host's runs join the run index through 0002's outbox ([flows and the agent](flows-and-agent.md), [notifications](notifications-and-live-work.md)).

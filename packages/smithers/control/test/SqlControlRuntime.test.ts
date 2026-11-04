@@ -1,3 +1,4 @@
+import { Crypto } from "@smthrs/crypto"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 /**
  * The durable `ControlRuntime`: the shared `ControlLive` contract, plus what
@@ -13,7 +14,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, Ownership, RunStore } from "@smthrs/run-store"
-import { ConfigProvider, Context, type Crypto, Deferred, Effect, Exit, Fiber, Layer, Logger, References, Stream } from "effect"
+import { ConfigProvider, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, References, Stream } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Statement from "effect/sql/Statement"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -74,7 +75,7 @@ const durable = (
       ControlExecutor.layer(options.executor ?? ControlExecutor.makeNoop()),
       Registry.layerNoop()
     )
-  ).pipe(Layer.provideMerge(Layer.merge(journal, NodeCrypto.layer))) as Layer.Layer<
+  ).pipe(Layer.provideMerge(Layer.merge(journal, Crypto.layerFromDigest(NodeCrypto.layerDigest)))) as Layer.Layer<
     Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | Crypto.Crypto
   >
 }
@@ -1258,7 +1259,7 @@ describe("SqlControlRuntime", () => {
         ControlExecutor.layerNoop(),
         Registry.layerNoop()
       ]),
-      Layer.provideMerge(Layer.merge(durableJournal, NodeCrypto.layer))
+      Layer.provideMerge(Layer.merge(durableJournal, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     ) as Layer.Layer<Control>
 
     const observed = await Effect.runPromise(

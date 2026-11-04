@@ -23,7 +23,7 @@
 import { Effect, Option, Schema } from "effect"
 import { IntegrationError } from "../core/IntegrationError.ts"
 import { GitHubClient } from "./GitHubClient.ts"
-import { requireRepositoryPath } from "./Repository.ts"
+import { requireRepositoryPath } from "./Repository.vibe"
 
 /**
  * The longest branch name {@link requireBranch} accepts.

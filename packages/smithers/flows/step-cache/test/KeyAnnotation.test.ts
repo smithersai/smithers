@@ -11,10 +11,10 @@ import * as HttpClient from "effect/http/HttpClient"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Option from "effect/Option"
 import * as Tracer from "effect/Tracer"
-import * as CacheStore from "../src/CacheStore.ts"
-import * as CombinedCacheStore from "../src/CombinedCacheStore.ts"
-import * as Migrations from "../src/Migrations.ts"
-import * as RemoteCacheStore from "../src/RemoteCacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
+import * as CombinedCacheStore from "../src/CombinedCacheStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
+import * as RemoteCacheStore from "../src/RemoteCacheStore.vibe"
 
 const badKey = "bad key\u0000" + "x".repeat(300)
 

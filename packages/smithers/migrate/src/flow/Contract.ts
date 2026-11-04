@@ -21,7 +21,7 @@
 import * as Schema from "effect/Schema"
 import * as CommandLine from "../internal/CommandLine.ts"
 import type * as Report from "../Report.ts"
-import { ArgvCommand, VerificationCommand } from "../Units.ts"
+import { ArgvCommand, VerificationCommand } from "../Units.vibe"
 
 /**
  * The prohibitions, one sentence each, in the order they appear in

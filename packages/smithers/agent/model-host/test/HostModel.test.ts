@@ -4,7 +4,7 @@ import { Cause, ConfigProvider, Effect, Exit, Layer, Redacted, Stream } from "ef
 import { createServer, type IncomingHttpHeaders, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, test } from "vitest"
-import { HostModel, type HostModelRecord, HostModelUnusable } from "../src/HostModel.ts"
+import { HostModel, type HostModelRecord, HostModelUnusable } from "../src/HostModel.vibe"
 
 const custom = (record: object) =>
   JSON.stringify({ protocol: "openai-chat", modelId: "fixture-1", credential: "FIXTURE", ...record })

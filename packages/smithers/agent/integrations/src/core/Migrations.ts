@@ -15,7 +15,7 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
 import { integrationCursors } from "./IntegrationCursorMigration.ts"
-import { integrationRecords, integrationRecordsSwept } from "./IntegrationRecordsMigration.ts"
+import { integrationRecords, integrationRecordsSwept } from "./IntegrationRecordsMigration.vibe"
 
 /**
  * The integration set, in migration id block 8000: the polling cursor table,

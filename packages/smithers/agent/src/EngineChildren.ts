@@ -45,12 +45,12 @@
  */
 
 import { Control, type ControlError } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import type { Flow } from "@smthrs/flow"
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

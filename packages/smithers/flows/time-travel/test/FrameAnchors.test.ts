@@ -12,7 +12,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
-import * as SnapshotProjector from "../src/internal/SnapshotProjector.ts"
+import * as SnapshotProjector from "../src/internal/SnapshotProjector.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as TimeTravelStore from "../src/TimeTravelStore.ts"
 

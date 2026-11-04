@@ -6,7 +6,7 @@
  * evidence.
  */
 import { describe, expect, it } from "vitest"
-import * as MemoryCalibration from "../src/MemoryCalibration.ts"
+import * as MemoryCalibration from "../src/MemoryCalibration.vibe"
 
 const symmetric = { miss: 1, extra: 1 }
 

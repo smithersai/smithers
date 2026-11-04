@@ -1,6 +1,6 @@
 import { Effect, Fiber } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ActiveFibers from "../src/internal/activeFibers.ts"
+import * as ActiveFibers from "../src/internal/activeFibers.vibe"
 
 describe("active fiber ownership", () => {
   it("returns to baseline after success, failure, and cancellation", async () => {

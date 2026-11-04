@@ -27,7 +27,7 @@ import {
   resolvePackageRoot,
   stagePackaged
 } from "../src/internal/AtomicFileSystemExecutable.ts"
-import { AtomicHelperError } from "../src/internal/AtomicHelperError.ts"
+import { AtomicHelperError } from "../src/internal/AtomicHelperError.vibe"
 
 const roots: Array<string> = []
 const helperName = process.platform === "win32" ? "smithers-jj-export.exe" : "smithers-jj-export"

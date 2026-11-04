@@ -12,20 +12,20 @@
  */
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, type FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Executable, Registry } from "@smthrs/registry"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import { batches, Check, Collect, gateBody, specs } from "./16-gate-topology.ts"
+import { batches, Check, Collect, gateBody, specs } from "./16-gate-topology.vibe"
 import gateModule from "./16-project/.smithers/flows/gate/flow.ts"
 
-export { batches, Check, type CheckSpec, Collect, declaredBatches, specs } from "./16-gate-topology.ts"
+export { batches, Check, type CheckSpec, Collect, declaredBatches, specs } from "./16-gate-topology.vibe"
 
 /** The release gate: five checks, two at a time, one report. */
 export const Gate = Flow.make("examples/Gate", {

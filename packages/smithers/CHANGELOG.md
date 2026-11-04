@@ -2,6 +2,12 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- CLI database restart and peer-recovery fixtures provide the Crypto digest layer explicitly after Effect `4.1.0` stopped including it in `NodeServices.layer`.
+
+- The terminal cleanup tests use Effect `4.1.0`'s `NodeWS` module, so they exercise the same WebSocket boundary as the upgraded CLI.
+
 ### Added
 
 - `@smthrs/cli/Catalog` exports `catalogDescriptors`, the typed list of

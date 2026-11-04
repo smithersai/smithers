@@ -7,8 +7,8 @@
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import { describe, expect, it } from "vitest"
-import { assertNoDivergence, firstDivergence } from "../src/Divergence.ts"
-import type { JournalEntryLike } from "../src/EngineSubject.ts"
+import { assertNoDivergence, firstDivergence } from "../src/Divergence.vibe"
+import type { JournalEntryLike } from "../src/EngineSubject.vibe"
 
 const entry = (value: unknown, overrides: Partial<JournalEntryLike> = {}): JournalEntryLike => ({
   index: 0,

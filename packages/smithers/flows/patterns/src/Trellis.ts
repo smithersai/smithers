@@ -23,11 +23,11 @@ import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import * as Semaphore from "effect/Semaphore"
-import * as Compose from "./internal/Compose.ts"
-import * as FailureSchema from "./internal/Failure.ts"
+import * as Compose from "./internal/Compose.vibe"
+import * as FailureSchema from "./internal/Failure.vibe"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import type * as Recursion from "./Recursion.ts"
+import type * as Recursion from "./Recursion.vibe"
 
 /**
  * Stable Trellis failure codes.

@@ -4,11 +4,11 @@ import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import { EngineEvent, Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import { CacheStore } from "@smthrs/step-cache"
 import { Effect, Layer, Schema } from "effect"
-import * as Replay from "../src/internal/Replay.ts"
+import * as Replay from "../src/internal/Replay.vibe"
 import * as MemoryTimeTravelStore from "../src/MemoryTimeTravelStore.ts"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { ReadOnlyTimeTravel, TimeTravel } from "../src/TimeTravel.ts"
-import { TimeTravelError } from "../src/TimeTravelError.ts"
+import { TimeTravelError } from "../src/TimeTravelError.vibe"
 
 const database = Layer.provideMerge(EngineMigrations.layer, TestDatabase.layer)
 const stack = SqlJournal.layer({ capacity: 16, overflow: "reject" }).pipe(

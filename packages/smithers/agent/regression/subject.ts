@@ -28,9 +28,8 @@
  *
  * @since 0.1.0
  */
-import * as ScriptedJudge from "../src/ScriptedJudge.ts"
+import * as ScriptedJudge from "../src/ScriptedJudge.vibe"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -60,6 +59,7 @@ import {
 } from "../model/src/index.ts"
 import { Node } from "../../flows/plan/src/index.ts"
 import { Registry } from "../registry/src/index.ts"
+import { Crypto } from "@smthrs/crypto"
 
 const hostCrypto = Layer.succeed(
   Crypto.Crypto,

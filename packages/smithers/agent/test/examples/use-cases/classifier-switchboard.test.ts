@@ -3,9 +3,9 @@ import * as Effect from "effect/Effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Classified, IntakeItem } from "../../../examples/use-cases/classifier-switchboard.ts"
-import { ClassifierSwitchboard, layer } from "../../../examples/use-cases/classifier-switchboard.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import type { Classified, IntakeItem } from "../../../examples/use-cases/classifier-switchboard.vibe"
+import { ClassifierSwitchboard, layer } from "../../../examples/use-cases/classifier-switchboard.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "classifier-switchboard-"))
 

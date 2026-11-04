@@ -7,7 +7,7 @@
  */
 
 import { isSmithersErrorCode } from "./ErrorCode.ts"
-import type { SmithersError } from "./SmithersError.vibe"
+import type { SmithersError } from "./SmithersError.ts"
 
 /**
  * Whether `value` has the structural fields of a {@link SmithersError}.

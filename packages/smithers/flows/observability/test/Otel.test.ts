@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Otel from "../src/Otel.ts"
+import * as Otel from "../src/Otel.vibe"
 
 describe("Otel", () => {
   it("composes a provider-neutral layer and releases it with scope", async () => {

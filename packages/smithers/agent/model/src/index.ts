@@ -30,7 +30,7 @@ export * as CanonicalJson from "./CanonicalJson.ts"
 /**
  * @since 1.0.0-rc.0
  */
-export * as Classifier from "./Classifier.ts"
+export * as Classifier from "./Classifier.vibe"
 
 /**
  * @since 0.1.0
@@ -58,16 +58,16 @@ export * as EvaluatorBackup from "./EvaluatorBackup.ts"
  * @since 0.1.0
  * @slop
  */
-export * as Framing from "./Framing.ts"
+export * as Framing from "./Framing.vibe"
 
 /** @since 1.0.0-rc.1 */
-export * as FailureCopy from "./FailureCopy.ts"
+export * as FailureCopy from "./FailureCopy.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as Model from "./Model.ts"
+export * as Model from "./Model.vibe"
 
 /**
  * @since 1.0.0-rc.0
@@ -78,13 +78,13 @@ export * as ModelCatalog from "./ModelCatalog.ts"
  * @since 0.1.0
  * @slop
  */
-export * as ModelError from "./ModelError.ts"
+export * as ModelError from "./ModelError.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as ModelEvent from "./ModelEvent.ts"
+export * as ModelEvent from "./ModelEvent.vibe"
 
 /**
  * @since 1.0.0
@@ -107,7 +107,7 @@ export * as OpenAIChatCompletions from "./OpenAIChatCompletions.ts"
  * @since 0.1.0
  * @slop
  */
-export * as OpenAIChatGPT from "./OpenAIChatGPT.ts"
+export * as OpenAIChatGPT from "./OpenAIChatGPT.vibe"
 
 /**
  * @since 0.1.0
@@ -123,13 +123,13 @@ export * as OpenAIResponses from "./OpenAIResponses.ts"
 /**
  * @since 1.0.0-rc.1
  */
-export * as Pricing from "./Pricing.ts"
+export * as Pricing from "./Pricing.vibe"
 
 /**
  * @since 0.1.0
  * @slop
  */
-export * as Protocol from "./Protocol.ts"
+export * as Protocol from "./Protocol.vibe"
 
 /**
  * @since 0.1.0
@@ -147,7 +147,7 @@ export * as Route from "./Route.ts"
  * @since 0.1.0
  * @slop
  */
-export * as ToolStream from "./ToolStream.ts"
+export * as ToolStream from "./ToolStream.vibe"
 
 /** @since 1.0.0 */
-export * as WireTrace from "./WireTrace.ts"
+export * as WireTrace from "./WireTrace.vibe"

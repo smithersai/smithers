@@ -9,7 +9,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   deps: [],
   // examples/ is type-checked, linted and formatted with the sources, and run
   // by test/examples.test.ts.
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
@@ -52,7 +52,7 @@ const securityReview = Smithers.SecurityReview({
         "Runbook.run with onDeny \"skip\" or \"fail\" treating a thrown or undefined approval result as approval, or a risky/critical step called without an approval call.",
         "Intervene with dryRun true still calling apply, or make and run disagreeing on whether apply is reachable."
       ],
-      paths: ["src/Intervene.ts", "src/Runbook.ts", "src/Pattern.ts"]
+      paths: ["src/Intervene.vibe", "src/Runbook.vibe", "src/Pattern.vibe"]
     },
     {
       id: "accepted-decision-strict",
@@ -66,13 +66,13 @@ const securityReview = Smithers.SecurityReview({
         "A stop verdict (Supervisor allDone, ScanFixVerify resolved, DriftDetector drifted) read with the `in` operator, which admits an inherited property, instead of Object.hasOwn plus strict equality to true."
       ],
       paths: [
-        "src/internal/Compose.ts",
-        "src/ReviewLoop.ts",
-        "src/DelegationChain.ts",
-        "src/Escalation.ts",
+        "src/internal/Compose.vibe",
+        "src/ReviewLoop.vibe",
+        "src/DelegationChain.vibe",
+        "src/Escalation.vibe",
         "src/Supervisor.ts",
         "src/ScanFixVerify.ts",
-        "src/DriftDetector.ts"
+        "src/DriftDetector.vibe"
       ]
     },
     {
@@ -86,9 +86,9 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/Decorate.ts",
-        "src/internal/Compose.ts",
-        "src/Intervene.ts",
-        "src/Runbook.ts"
+        "src/internal/Compose.vibe",
+        "src/Intervene.vibe",
+        "src/Runbook.vibe"
       ]
     },
     {
@@ -107,14 +107,14 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Supervisor.ts",
         "src/Trellis.ts",
-        "src/DelegationChain.ts",
-        "src/Recursion.ts",
-        "src/MapReduce.ts",
+        "src/DelegationChain.vibe",
+        "src/Recursion.vibe",
+        "src/MapReduce.vibe",
         "src/Optimizer.ts",
-        "src/ReviewLoop.ts",
+        "src/ReviewLoop.vibe",
         "src/internal/Stalling.ts",
-        "src/Bounded.ts",
-        "src/MergeQueue.ts",
+        "src/Bounded.vibe",
+        "src/MergeQueue.vibe",
         "src/Burndown.ts"
       ]
     },
@@ -128,13 +128,13 @@ const securityReview = Smithers.SecurityReview({
         "Quarantine or Sidecar outcome envelopes where a member's own value can be mistaken for the Quarantined or Succeeded protocol tag."
       ],
       paths: [
-        "src/Kanban.ts",
+        "src/Kanban.vibe",
         "src/Supervisor.ts",
-        "src/Panel.ts",
-        "src/Bounded.ts",
-        "src/Quarantine.ts",
+        "src/Panel.vibe",
+        "src/Bounded.vibe",
+        "src/Quarantine.vibe",
         "src/Sidecar.ts",
-        "src/CheckSuite.ts",
+        "src/CheckSuite.vibe",
         "src/Burndown.ts"
       ]
     },
@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A pattern that captures caller options by reference so a later edit changes key material or bypasses validation (DriftDetector, Kanban, MergeQueue snapshots)."
       ],
-      paths: ["src/DriftDetector.ts", "src/Kanban.ts", "src/MergeQueue.ts"]
+      paths: ["src/DriftDetector.vibe", "src/Kanban.vibe", "src/MergeQueue.vibe"]
     }
   ]
 })

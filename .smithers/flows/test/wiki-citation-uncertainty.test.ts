@@ -1,4 +1,5 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
@@ -15,6 +16,9 @@ import type { Pool } from "../wiki/reuse.ts"
 import { actionLayers } from "../wiki/runtime.ts"
 import type { PageSpec, Review } from "../wiki/schema.ts"
 import { ReviewPage } from "../wiki/workflow.ts"
+
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 type Choice = "supports" | "contradicts" | "unrelated"
 const answer = (choice: Choice, confidence: number) => {
@@ -53,7 +57,7 @@ const fixture = async (t: TestContext, sections = 1) => {
   }
   const output = join(root, "output")
   const evidence = await Effect.runPromise(
-    operations({ root, output }).collect(spec).pipe(Effect.provide(NodeServices.layer))
+    operations({ root, output }).collect(spec).pipe(Effect.provide(nodeServices))
   )
   const review: Review = {
     sections: evidence.sections.map((section) => ({
@@ -100,7 +104,7 @@ const execute = async (
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(nodeServices)
   )
   const result = await Effect.runPromiseExit(Effect.scoped(
     Wiki.execute({ pages: [f.spec], mode: "verified", reviewer: "scripted-test" }, {
@@ -225,7 +229,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   f.spec = { ...f.spec, inputs: [...f.spec.inputs, ...policySources] }
   f.evidence = await Effect.runPromise(
     operations({ root: f.root, output: f.output }).collect(f.spec).pipe(
-      Effect.provide(NodeServices.layer)
+      Effect.provide(nodeServices)
     )
   )
   let reviewerCalls = 0, citationCalls = 0
@@ -288,7 +292,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const { digest } = await import("../wiki/operations.ts")
   const sectionsDigest = await Effect.runPromise(
     digest(canonical(f.evidence.sections)).pipe(
-      Effect.provide(NodeServices.layer)
+      Effect.provide(nodeServices)
     )
   )
   const prior = snapshot.pages[0].verification.provenance

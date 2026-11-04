@@ -1,5 +1,6 @@
 import { NodeCrypto } from "@effect/platform-node"
 import * as ControlSchema from "@smthrs/control/ControlSchema"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as TestStores from "@smthrs/engine-store/test/TestStores"
 import * as GatewayProjection from "@smthrs/gateway/GatewayProjection"
@@ -30,7 +31,7 @@ const setup = Effect.gen(function*() {
     sql: Context.get(native, SqlClient.SqlClient),
     options: { engineJournal, controlJournal, engineState, controlRunId: "control-root", executionId: "native-root" }
   }
-}).pipe(Effect.provide(NodeCrypto.layer))
+}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 
 const emit = (journal: Journal.Service, runId: string, payload: unknown, sourceId = "fixture", sourceSeq = 0) =>
   journal.emitDurableUnfenced(
@@ -67,7 +68,7 @@ describe("private engine journal projection", () => {
               controlRunId: "control-root",
               executionId: "native-root"
             }
-          }).pipe(Effect.provide(NodeCrypto.layer))
+          }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
           const callId = `cell-call-v1:${"a".repeat(64)}`
           yield* Effect.scoped(Effect.gen(function*() {
             const ports = yield* open
@@ -294,7 +295,7 @@ describe("private engine journal projection", () => {
                 { payload: { committed: true } },
                 { payload: { uncommitted: true } }
               ])
-            }).pipe(Effect.provide(NodeCrypto.layer))
+            }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
           ),
         (directory) => Effect.promise(() => rm(directory, { recursive: true, force: true }))
       )),
@@ -307,7 +308,7 @@ describe("private engine journal projection", () => {
       const bounded = yield* Layer.build(
         SqlJournal.layer({ capacity: 1024, overflow: "reject", maxEntryBytes: 1024 }).pipe(
           Layer.provide(TestStores.databaseAt(":memory:")),
-          Layer.provide(NodeCrypto.layer)
+          Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
       )
       const controlJournal = Context.get(bounded, Journal.Journal)
@@ -517,7 +518,7 @@ describe("private engine journal projection", () => {
         ).pipe(Effect.timeout("5 seconds"))
         expect(record(observed[0]!)).toMatchObject({ executionId: "native-root", payload: { externalWriter: true } })
         yield* Fiber.interrupt(follower)
-      }).pipe(Effect.provide(NodeCrypto.layer))
+      }).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
     )))
 
   it("records a read failure and refuses a successful catch-up until the source recovers", () =>

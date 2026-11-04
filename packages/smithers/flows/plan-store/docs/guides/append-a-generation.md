@@ -16,10 +16,10 @@ and `PlanStore.append` writes the rows it added.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 
@@ -45,7 +45,7 @@ export const grow = Effect.gen(function*() {
   yield* store.record(base, Date.now())
   yield* store.append(grown)
   return Plan.generationNodes(grown).map((node) => node.id)
-}).pipe(Effect.provide(planStore), Effect.provide(NodeCrypto.layer))
+}).pipe(Effect.provide(planStore), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 ```
 
 `Plan.append` advances `generation` by one, keys the new drafts against the

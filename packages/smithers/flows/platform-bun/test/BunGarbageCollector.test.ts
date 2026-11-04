@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { MicrosandboxSandbox } from "@smthrs/sandbox"
 import * as Effect from "effect/Effect"
 import { afterEach, vi } from "vitest"
-import * as BunGarbageCollector from "../src/BunGarbageCollector.ts"
+import * as BunGarbageCollector from "../src/BunGarbageCollector.vibe"
 
 const onBun = process.versions.bun !== undefined
 

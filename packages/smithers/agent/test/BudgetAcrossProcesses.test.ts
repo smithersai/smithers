@@ -18,6 +18,7 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Control, ControlLive, ControlRuntime, ControlSchema, SqlControlRuntime } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -44,9 +45,9 @@ import * as Agent from "../src/Agent.ts"
 import * as AgentSession from "../src/AgentSession.ts"
 import * as Budget from "../src/Budget.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
-import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.ts"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import { layer as scriptedCompletionJudge } from "../src/ScriptedJudge.vibe"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 import * as Safety from "./Safety.ts"
 
 const liveClock = Effect.runSync(Clock.Clock)
@@ -229,7 +230,7 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, clock?
     StepBoundary.layer,
     WorkspaceSandbox.layerFileSystem(),
     registration
-  ).pipe(Layer.provide([AtomicFileSystem.layer, NodeCrypto.layer, jj]))
+  ).pipe(Layer.provide([AtomicFileSystem.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest), jj]))
   return ControlLive.layer.pipe(
     Layer.provide(engine),
     Layer.provideMerge(
@@ -239,7 +240,9 @@ const host = (root: string, owner: Ownership.OwnerId, engineHost: string, clock?
         registryLayer
       )
     ),
-    Layer.provideMerge(Layer.merge(controlStores(join(root, "control.db")), NodeCrypto.layer))
+    Layer.provideMerge(
+      Layer.merge(controlStores(join(root, "control.db")), Crypto.layerFromDigest(NodeCrypto.layerDigest))
+    )
   )
 }
 

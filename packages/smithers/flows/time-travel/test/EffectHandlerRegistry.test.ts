@@ -11,7 +11,7 @@ import * as Result from "effect/Result"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import type { EffectRecord } from "../src/EffectBoundary.ts"
 import * as EffectHandlerRegistry from "../src/internal/EffectHandlerRegistry.ts"
-import { error } from "../src/TimeTravelError.ts"
+import { error } from "../src/TimeTravelError.vibe"
 
 const boundaryAuthority = {
   owner: { hostId: "test-host", pid: 1, nonce: "test-owner" },

@@ -1,11 +1,11 @@
 /** Regression for detached admission (issue #2932). */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"

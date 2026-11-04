@@ -21,7 +21,7 @@ import * as TestClock from "effect/testing/TestClock"
 import * as Tracer from "effect/Tracer"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
-import { ModelError } from "../src/ModelError.js"
+import { ModelError } from "../src/ModelError.vibe"
 import * as RequestExecutor from "../src/RequestExecutor.js"
 
 interface ResponseSpec {

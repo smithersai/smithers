@@ -1,0 +1,33 @@
+diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
+index 08d50b16dfe564551f1bffc7cae2d3b53805e172..4ad56544c88f883f94f6c50b5046fd06b0371b1a 100644
+--- a/dist/NodeChildProcessSpawner.js
++++ b/dist/NodeChildProcessSpawner.js
+@@ -101,9 +101,9 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+   });
+   const resolveEnvironment = options => {
+     if (options.env === undefined) return undefined;
+-    const env = options.extendEnv === true ? {
+-      ...globalThis.process.env
+-    } : {};
++    // A null prototype keeps every key, `__proto__` included, an own variable.
++    const env = Object.create(null);
++    if (options.extendEnv === true) Object.assign(env, globalThis.process.env);
+     for (const [key, value] of Object.entries(options.env)) {
+       if (value === undefined) delete env[key];else env[key] = unwrap(value);
+     }
+diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
+index a3ead25b72db5b07e95cabe056c644b242be3393..3f90b4780ddf7c272c0c403fff49895f75f68fc5 100644
+--- a/src/NodeChildProcessSpawner.ts
++++ b/src/NodeChildProcessSpawner.ts
+@@ -180,7 +180,10 @@ const make = Effect.gen(function*() {
+ 
+   const resolveEnvironment = (options: ChildProcess.CommandOptions) => {
+     if (options.env === undefined) return undefined
+-    const env: Record<string, string | undefined> = options.extendEnv === true ? { ...globalThis.process.env } : {}
++    // A null prototype keeps every key, `__proto__` included, an own variable: `env[key] = ...` on `{}` would set the
++    // object's prototype for that key instead of passing it to the child.
++    const env: Record<string, string | undefined> = Object.create(null)
++    if (options.extendEnv === true) Object.assign(env, globalThis.process.env)
+     for (const [key, value] of Object.entries(options.env)) {
+       if (value === undefined) delete env[key]
+       else env[key] = unwrap(value)

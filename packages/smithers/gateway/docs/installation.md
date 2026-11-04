@@ -11,7 +11,7 @@ Published on npm under the `next` tag. Name `@next` explicitly: `latest`
 still points at 0.35.0, an older release.
 
 ```bash
-pnpm add @smthrs/gateway@next effect@4.0.5
+pnpm add @smthrs/gateway@next effect@4.1.1
 ```
 
 ## Requirements
@@ -21,8 +21,8 @@ pnpm add @smthrs/gateway@next effect@4.0.5
 - One copy of `effect` in the resolved tree. A second copy makes a `Layer`
   built against one fail to satisfy a requirement declared against the other.
 
-`effect` is the only peer, at exactly `4.0.5`. Node and Bun adapters
-are bundled privately, built from 4.0.5, including their shared implementation.
+`effect` is the only peer, at exactly `4.1.0`. Node and Bun adapters
+are bundled privately, built from 4.1.0, including their shared implementation.
 Hosts need no separate adapter install.
 
 Use `@smthrs/gateway/node/NodeGateway` on Node or

@@ -1,0 +1,56 @@
+/**
+ * Effect's `FileSystem` over a mounted volume: write, append, refuse an
+ * exclusive create, list a tree, stream a bounded slice, and branch on the
+ * typed refusal for an operation the volume cannot serve.
+ *
+ * In a page, `backend` is a ZenFS mount's `fs.promises` and `root` is a
+ * directory on it such as `/workspace`. Any `node:fs/promises`-shaped object
+ * works, which is how the test runs this against a temp directory.
+ *
+ * @since 1.0.0-rc.7
+ */
+import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
+import * as Effect from "effect/Effect"
+
+const decoder = new TextDecoder()
+
+/**
+ * Runs the walkthrough under `root` and returns what each step observed.
+ *
+ * @param backend - The volume's promises API.
+ * @param root - An absolute directory on the volume to work in; created if absent.
+ * @since 1.0.0-rc.7
+ */
+export const main = (backend: BrowserFileSystem.ZenFsPromisesLike, root: string) =>
+  (effect {
+    const fs = try FileSystem.FileSystem
+
+    try fs.makeDirectory(`${root}/logs`, { recursive: true, mode: 0o700 })
+    try fs.writeFileString(`${root}/notes.txt`, "first\n")
+    // `flag` is forwarded, so this appends rather than truncating.
+    try fs.writeFileString(`${root}/notes.txt`, "second\n", { flag: "a" })
+    const notes = try fs.readFileString(`${root}/notes.txt`)
+
+    // `wx` refuses to overwrite: the backend's EEXIST arrives as AlreadyExists.
+    const exclusive = (fs.writeFileString(`${root}/notes.txt`, "lost\n", { flag: "wx" })
+      |> Effect.as(%, "created")) catch effect (error) =>
+        try (error.reason._tag === "AlreadyExists" ? Effect.succeed("already exists") : Effect.fail(error))
+
+    try fs.writeFileString(`${root}/logs/app.log`, "0123456789")
+    const tree = (try fs.readDirectory(root, { recursive: true })).sort()
+
+    // Four bytes from offset 2, in chunks of at most three.
+    const chunks = try Stream.runCollect(
+      fs.stream(`${root}/logs/app.log`, { offset: 2, bytesToRead: 4, chunkSize: 3 })
+    )
+    const slice = chunks.map((chunk) => decoder.decode(chunk))
+
+    // The volume cannot create links; the refusal is typed, not a false success.
+    const symlink = (fs.symlink(`${root}/notes.txt`, `${root}/link`)
+      |> Effect.as(%, "created")) catch effect (error) =>
+        try (error.reason._tag === "PermissionDenied" ? Effect.succeed(error.reason.description) : Effect.fail(error))
+
+    const missing = try fs.exists(`${root}/absent.txt`)
+
+    return { notes, exclusive, tree, slice, symlink, missing }
+  }) |> Effect.provide(%, BrowserFileSystem.layer(backend))

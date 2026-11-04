@@ -236,6 +236,25 @@ test("Alchemy's Cloudflare Workflows are caught and its other resources are not"
   ])
 })
 
+test("Alchemy's Cloudflare Workflows are caught under the @alchemy.run/cloudflare package too", () => {
+  const text = [
+    'import * as Cloudflare from "@alchemy.run/cloudflare"',
+    'import { Worker, Workflow } from "@alchemy.run/cloudflare"',
+    'import "@alchemy.run/cloudflare/Workflows"',
+    'const step = Cloudflare.task("load", load)',
+    'const worker = Cloudflare.Worker("Chat", {})',
+    'import * as Runtime from "@alchemy.run/cloudflare-runtime"',
+    "const flow = Runtime.Workflow",
+  ].join("\n")
+  assert.deepEqual(bansIn(text, "apps/chat/alchemy.run.ts"), [
+    '2 imports Workflow from "@alchemy.run/cloudflare" (Cloudflare Workflows through Alchemy)',
+    '3 imports "@alchemy.run/cloudflare/Workflows" (Cloudflare Workflows through Alchemy)',
+    '4 uses Cloudflare.task from "@alchemy.run/cloudflare" (Cloudflare Workflows through Alchemy)',
+  ])
+  assert.equal(bannedRuntimeForSpecifier("@alchemy.run/cloudflare/Workflows"), "Cloudflare Workflows through Alchemy")
+  assert.equal(bannedRuntimeForSpecifier("@alchemy.run/cloudflare"), null)
+})
+
 test("whole-module bans name their runtime and everything else names none", () => {
   assert.equal(bannedRuntimeForSpecifier("ai"), "the Vercel AI SDK")
   assert.equal(bannedRuntimeForSpecifier("@temporalio/workflow"), "Temporal")

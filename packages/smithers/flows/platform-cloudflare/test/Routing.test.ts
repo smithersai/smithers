@@ -16,7 +16,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import * as TestClock from "effect/testing/TestClock"
 import { randomUUID } from "node:crypto"
 import { ExecutionObject } from "../src/index.ts"
-import * as Routing from "../src/internal/Routing.ts"
+import * as Routing from "../src/internal/Routing.vibe"
 import {
   Child,
   Cleanup,

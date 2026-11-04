@@ -3,10 +3,10 @@ import { Cause, Deferred, Effect, Exit, Fiber, Option, Random, Result } from "ef
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import { TestClock } from "effect/testing"
-import * as Dialect from "../src/Dialect.ts"
+import * as Dialect from "../src/Dialect.vibe"
 import type { WriteRetryOptions } from "../src/DurableWriter.ts"
 import * as DurableWriter from "../src/DurableWriter.ts"
-import * as WriteRetry from "../src/internal/WriteRetry.ts"
+import * as WriteRetry from "../src/internal/WriteRetry.vibe"
 import * as TestDatabase from "../src/test/TestDatabase.ts"
 
 const sqliteError = (code: string): SqlError.SqlError =>

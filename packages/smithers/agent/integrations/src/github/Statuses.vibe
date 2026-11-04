@@ -1,0 +1,169 @@
+/**
+ * Commit statuses over the {@link GitHubClient} in context: report one
+ * check's state on one commit, write-only.
+ *
+ * A plain operation, not a durable action: the flow step that calls it
+ * chooses the token by providing the client. An App's installation token
+ * needs the `statuses: write` permission.
+ *
+ * **Safe to repeat.** A status is a fact about a commit: GitHub keeps every
+ * one it is sent and shows the latest per context. Sending the same state
+ * again changes nothing anyone reads, so {@link create} asks the client to
+ * retry a write whose answer was lost (`retryUnsafeWrites`) while retaining
+ * `outcomeUnknown` in the failure report.
+ *
+ * **Per commit.** A status names the exact SHA it describes, never a branch:
+ * a newer head starts with no statuses, so a result for an older head can't
+ * stand in for it. Branch protection that requires a context waits until that
+ * context reports `success` on the head.
+ *
+ * @since 1.0.0
+ */
+
+import { IntegrationError } from "../core/IntegrationError.ts"
+import { GitHubClient } from "./GitHubClient.ts"
+import { requireRepositoryPath } from "./Repository.vibe"
+
+/**
+ * The states GitHub takes: running (`pending`), passed (`success`), failed
+ * (`failure`), or could not run (`error`).
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const STATES = ["pending", "success", "failure", "error"] as const
+
+/**
+ * One of {@link STATES}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type State = (typeof STATES)[number]
+
+/**
+ * The longest description GitHub stores; {@link create} cuts a longer one to
+ * fit rather than have GitHub refuse it.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const MAX_DESCRIPTION = 140
+
+/**
+ * What a context may be: 1 to 255 printable characters, such as
+ * `smithers/lint`. It names the check across commits, and branch protection
+ * requires it by this name.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const CONTEXT_PATTERN = /^[\x21-\x7e](?:[\x20-\x7e]{0,253}[\x21-\x7e])?$/
+
+/**
+ * What to report: the state, the context it is for, and optionally one line
+ * and a link a person follows to the run.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export interface Input {
+  readonly state: State
+  readonly context: string
+  readonly description?: string | undefined
+  /** An absolute `https:` URL; GitHub links the status to it. */
+  readonly targetUrl?: string | undefined
+}
+
+/**
+ * A status as `POST /repos/{owner}/{repo}/statuses/{sha}` answers it.
+ *
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Status = Schema.Struct({
+  id: Schema.Number,
+  state: Schema.Literals(STATES),
+  context: Schema.String,
+  description: Schema.NullOr(Schema.String),
+  target_url: Schema.NullOr(Schema.String),
+  created_at: Schema.String
+})
+
+/**
+ * A decoded {@link Status}.
+ *
+ * @category models
+ * @since 1.0.0
+ */
+export type Status = typeof Status.Type
+
+const SHA = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/
+
+const invalid = (field: string, message: string, value: unknown): IntegrationError =>
+  new IntegrationError("invalid-config", message, {
+    field,
+    value: typeof value === "string" ? value.slice(0, 64) : typeof value,
+    retryable: false
+  })
+
+const requireInput = effect (sha: string, input: Input): Record<string, string>!IntegrationError => {
+  if (typeof sha !== "string" || !SHA.test(sha)) {
+    throw invalid("sha", "A commit SHA must be 40 or 64 lowercase hex digits.", sha)
+  }
+  if (!(STATES as ReadonlyArray<string>).includes(input.state)) {
+    throw invalid("state", "A status's state must be pending, success, failure or error.", input.state)
+  }
+  if (typeof input.context !== "string" || !CONTEXT_PATTERN.test(input.context)) {
+    throw invalid("context", "A status's context must be 1 to 255 printable characters.", input.context)
+  }
+  if (input.targetUrl !== undefined && !isHttps(input.targetUrl)) {
+    throw invalid("targetUrl", "A status's target URL must be an absolute https URL.", input.targetUrl)
+  }
+  return {
+    state: input.state,
+    context: input.context,
+    ...(input.description === undefined ? {} : { description: cut(input.description) }),
+    ...(input.targetUrl === undefined ? {} : { target_url: input.targetUrl })
+  }
+}
+
+const isHttps = (url: string): boolean => {
+  try {
+    return new URL(url).protocol === "https:"
+  } catch {
+    return false
+  }
+}
+
+const cut = (description: string): string =>
+  description.length <= MAX_DESCRIPTION ? description : `${description.slice(0, MAX_DESCRIPTION - 1)}…`
+
+/**
+ * Reports `input` on commit `sha`:
+ * `POST /repos/{owner}/{repo}/statuses/{sha}`. GitHub's `422` (a commit it
+ * doesn't have, or a commit with too many statuses) and `403` or `404` (a
+ * token without `statuses: write`, or a repository it can't see) fail with
+ * the client's classification, never retried.
+ *
+ * @category constructors
+ * @since 1.0.0
+ */
+export const create = (
+  owner: string,
+  repo: string,
+  sha: string,
+  input: Input
+): Status!IntegrationError!GitHubClient =>
+  (effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
+    const body = try requireInput(sha, input)
+    return try client.request("POST", `/repos/${repository}/statuses/${sha}`, body, {
+      schema: Status,
+      retryUnsafeWrites: true
+    })
+  })
+  |> Effect.withSpan(%, "GitHub.Statuses.create", {
+    attributes: { "github.owner": owner, "github.repo": repo, "github.status.state": input.state }
+  })

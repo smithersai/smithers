@@ -1,6 +1,6 @@
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import { checkRepositories, rankedChecks, reviewTitle } from "../examples/runtime.ts"
+import { checkRepositories, rankedChecks, reviewTitle } from "../examples/runtime.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(Effect.result(effect))
 

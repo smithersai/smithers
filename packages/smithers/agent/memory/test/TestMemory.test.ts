@@ -1,4 +1,5 @@
-import { Crypto, Effect } from "effect"
+import { Crypto } from "@smthrs/crypto"
+import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"

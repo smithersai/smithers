@@ -14,7 +14,7 @@ const workspaceFiles = async (patterns: ReadonlyArray<string>) =>
     packageScoped: false
   })))).flat().sort().map((path) => Smithers.file(`//${path}`))
 const workspaceSources = await workspaceFiles([
-  "packages/*/src/**/*.ts", "packages/*/*/src/**/*.ts", "packages/*/*/*/src/**/*.ts"
+  "packages/*/src/**/*.{ts,vibe}", "packages/*/*/src/**/*.{ts,vibe}", "packages/*/*/*/src/**/*.{ts,vibe}"
 ])
 const workspaceReviewSources = await workspaceFiles([
   "packages/*/src/**", "packages/*/*/src/**", "packages/*/*/*/src/**"

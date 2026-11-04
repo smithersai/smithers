@@ -47,7 +47,7 @@ import {
   resourcePermit,
   type Service
 } from "./Consensus.ts"
-import type { OwnerId } from "./OwnerId.ts"
+import type { OwnerId } from "./OwnerId.vibe"
 
 const staleAfterMs = Duration.toMillis(heartbeatStaleAfter)
 

@@ -1,6 +1,6 @@
 import { Result } from "effect"
 import { describe, expect, it } from "vitest"
-import * as When from "../src/When.ts"
+import * as When from "../src/When.vibe"
 
 const parse = (text: string) => Result.getOrThrow(When.parse(text))
 

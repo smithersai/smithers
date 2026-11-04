@@ -17,7 +17,7 @@ const program = Effect.gen(function*() {
 
 This barrel and `BunHost` import `@effect/platform-bun` at module load. It
 and the Effect Node platform packages are bundled privately, built from
-`effect@4.0.5`. `effect` is a required peer at exactly `4.0.5`.
+`effect@4.1.1`. `effect` is a required peer at exactly `4.1.0`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the

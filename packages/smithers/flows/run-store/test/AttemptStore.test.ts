@@ -6,9 +6,9 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import { AttemptStore } from "../src/AttemptStore.ts"
-import * as AttemptStoreLive from "../src/AttemptStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import { AttemptStore } from "../src/AttemptStore.vibe"
+import * as AttemptStoreLive from "../src/AttemptStore.vibe"
+import * as Migrations from "../src/Migrations.vibe"
 
 const run = <A, E>(effect: Effect.Effect<A, E, never>) => effect
 

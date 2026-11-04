@@ -1,6 +1,7 @@
 /** Commits an engine result, retaining an unfinished control writer until SIGKILL. */
 import { NodeCrypto } from "@effect/platform-node"
 import { ControlRuntime, SqlControlRuntime } from "@smthrs/control"
+import { Crypto } from "@smthrs/crypto"
 import { Journal, JournalEvent, SqlJournal } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import { Clock, Context, Effect, Layer } from "effect"
@@ -17,7 +18,7 @@ const stores = Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reje
 )
 const runtime = SqlControlRuntime.layer({ owner }).pipe(
   Layer.provideMerge(stores),
-  Layer.provide(NodeCrypto.layer),
+  Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
   Layer.orDie
 )
 // The parent owns this pipe. Keep the committed writer alive until the test

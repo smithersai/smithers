@@ -3,9 +3,9 @@ import { Cause, Effect, Logger } from "effect"
 import type { ExecutePendingJobsResult, QuickJSWASMModule } from "quickjs-emscripten-core"
 import { newQuickJSWASMModuleFromVariant } from "quickjs-emscripten-core"
 import { describe, expect, it } from "vitest"
-import * as QuickJsJobs from "../src/internal/QuickJsJobs.ts"
+import * as QuickJsJobs from "../src/internal/QuickJsJobs.vibe"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
-import * as Script from "../src/Script.ts"
+import * as Script from "../src/Script.vibe"
 import type * as ScriptRunner from "../src/ScriptRunner.ts"
 
 describe("QuickJsRunner load machinery", () => {

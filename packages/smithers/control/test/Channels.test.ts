@@ -1,15 +1,15 @@
+import { Crypto } from "@smthrs/crypto"
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Deferred, Effect, Fiber, Layer, Redacted, Schema, Stream } from "effect"
-import * as Crypto from "effect/Crypto"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it, vi } from "vitest"
-import * as Channels from "../src/Channels.ts"
+import * as Channels from "../src/Channels.vibe"
 import * as Control from "../src/Control.ts"
 import { InvalidInput, PersistenceError, Unauthorized } from "../src/ControlError.ts"
 import * as ControlRuntime from "../src/ControlRuntime.ts"
 import { RunSummary } from "../src/ControlSchema.ts"
 import type { RunStatus } from "../src/ControlSchema.ts"
-import * as WebhookChannel from "../src/WebhookChannel.ts"
+import * as WebhookChannel from "../src/WebhookChannel.vibe"
 
 const accepted = { _tag: "Accepted" as const, receiptId: "receipt" }
 

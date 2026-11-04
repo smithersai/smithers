@@ -11,7 +11,11 @@
   "sideEffects": false,
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null
   },
@@ -22,7 +26,8 @@
     "dist/**/*.d.ts",
     "dist/**/*.d.ts.map",
     "LICENSE",
-    "README.md"
+    "README.md",
+    ".vibelang/js"
   ],
   "scripts": {
     "build": "node scripts/build.mjs",
@@ -36,10 +41,11 @@
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/rpc": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "zod": "4.6.7",
     "@smthrs/cli": "workspace:*",
-    "@smthrs/crypto": "workspace:*"
+    "@smthrs/crypto": "workspace:*",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -55,8 +61,8 @@
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
     "@vitest/coverage-v8": "5.0.0"
   },

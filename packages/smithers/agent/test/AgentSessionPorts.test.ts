@@ -21,6 +21,7 @@ import * as ControlRuntimeModule from "@smthrs/control/ControlRuntime"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import type { Envelope, Principal } from "@smthrs/control/ControlSchema"
 import * as SqlControlRuntime from "@smthrs/control/SqlControlRuntime"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -30,7 +31,7 @@ import { Action, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, Wai
 import * as Jj from "@smthrs/kernel/Jj"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import { Clock, type Crypto, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -96,7 +97,7 @@ const makeStack = (
     // `layerAt` rather than `layer`: it keeps `DurableEngineState` in the
     // output, and the signal bridge reads the waiting row through it.
     Layer.provideMerge(TestStores.layerAt(engineFilename)),
-    Layer.provideMerge(Layer.merge(Layer.succeed(Jj.Jj)(jj), NodeCrypto.layer))
+    Layer.provideMerge(Layer.merge(Layer.succeed(Jj.Jj)(jj), Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   )
 
 const stack = makeStack()
@@ -1301,7 +1302,7 @@ describe("durable signal admission and engine observation", () => {
         flows: [{ flowId: "system/test", description: "test", deployClass: false, envelope }]
       }).pipe(
         Layer.provide(fileBundle(join(directory, "control.db"))),
-        Layer.provide(NodeCrypto.layer),
+        Layer.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
         Layer.orDie
       )
       const live = makeStack(controlLayer, join(directory, "engine.db"))

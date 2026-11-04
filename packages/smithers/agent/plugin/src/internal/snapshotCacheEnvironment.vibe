@@ -1,0 +1,75 @@
+/**
+ * Cache identity admission for a resolved plugin list.
+ *
+ * @private
+ * @since 1.0.0-rc.0
+ */
+
+import { Action } from "@smthrs/flow"
+import * as Effect from "effect/Effect"
+import type { FlowsPlugin } from "../Plugin.vibe"
+import { PluginError } from "../PluginError.vibe"
+import * as Boundary from "./Boundary.ts"
+
+const escapePluginIdentityPart = (value: string): string =>
+  // Percent must be escaped first so literal escape-looking text remains distinct from the `@` escape added next.
+  value.replaceAll("%", "%25").replaceAll("@", "%40")
+
+/**
+ * Admits a caller cache environment and prepends one escaped `name@version`
+ * identity per plugin, in resolved order. An absent input stays absent. A
+ * versionless plugin is refused at the dollar-path it was admitted from.
+ *
+ * @private
+ * @since 1.0.0-rc.0
+ */
+export const snapshotCacheEnvironment = <H>(
+  input: unknown,
+  plugins: ReadonlyArray<{ readonly plugin: FlowsPlugin<H>; readonly path: string }>
+): Action.CacheEnvironment | undefined!PluginError => {
+  if (input === undefined) return Effect.succeed(undefined)
+  const pluginIdentities: Array<string> = []
+  for (const { path, plugin } of plugins) {
+    if (plugin.version === undefined) {
+      return Effect.fail(
+        new PluginError({
+          code: "cache_environment_invalid",
+          message: `cache environment requires a version for plugin "${plugin.name}"`,
+          path: `${path}.version`,
+          plugin: plugin.name
+        })
+      )
+    }
+    pluginIdentities.push(`${escapePluginIdentityPart(plugin.name)}@${escapePluginIdentityPart(plugin.version)}`)
+  }
+  const admitted = Boundary.record(input)
+  if (!admitted.ok) {
+    return Effect.fail(
+      new PluginError({
+        code: "cache_environment_invalid",
+        message: `cache environment ${admitted.complaint}`,
+        path: `$options.cacheEnvironment${admitted.path.slice(1)}`
+      })
+    )
+  }
+  return Schema.decodeUnknownEffect(Action.CacheEnvironment)(admitted.value)
+    |> Effect.mapError(%, () =>
+      new PluginError({
+        code: "cache_environment_invalid",
+        message: "cache environment does not match the complete cache identity schema",
+        path: "$options.cacheEnvironment"
+      }))
+    |> Effect.map(%, (environment) => {
+      const capabilities: Record<string, ReadonlyArray<string>> = {}
+      for (const name of Object.keys(environment.capabilities)) {
+        Object.defineProperty(capabilities, name, {
+          value: Object.freeze([...environment.capabilities[name]!]),
+          enumerable: true
+        })
+      }
+      return Object.freeze({
+        layers: Object.freeze([...pluginIdentities, ...environment.layers]),
+        capabilities: Object.freeze(capabilities)
+      })
+    })
+}

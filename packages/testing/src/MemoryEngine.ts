@@ -20,8 +20,8 @@ import {
   type FlowSpec,
   type JournalEntryLike,
   type StepSpec
-} from "./EngineSubject.ts"
-import { conflict, type ExecutionConflict } from "./internal/Execution.ts"
+} from "./EngineSubject.vibe"
+import { conflict, type ExecutionConflict } from "./internal/Execution.vibe"
 import { EngineUnavailableError, type ExecutionConflictError } from "./TestingError.ts"
 
 type ExecutionStatus = ExecutionResult["status"] | "running"

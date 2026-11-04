@@ -20,8 +20,8 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
-import type { Service } from "../CacheStore.ts"
-import * as CacheStoreMetrics from "../CacheStoreMetrics.ts"
+import type { Service } from "../CacheStore.vibe"
+import * as CacheStoreMetrics from "../CacheStoreMetrics.vibe"
 import {
   encodeCanonical,
   jsonLimits,
@@ -31,9 +31,9 @@ import {
   validateFence,
   validateKey,
   validateRecordedBy
-} from "./CacheAdmission.ts"
-import { type CacheEntry, KeyDigest, NonNegativeSafeInt, type RecordedBy, RecordedRunId } from "./CacheEntry.ts"
-import { CacheStoreError, error } from "./CacheStoreError.ts"
+} from "./CacheAdmission.vibe"
+import { type CacheEntry, KeyDigest, NonNegativeSafeInt, type RecordedBy, RecordedRunId } from "./CacheEntry.vibe"
+import { CacheStoreError, error } from "./CacheStoreError.vibe"
 
 const CacheRow = Schema.Struct({
   key_digest: KeyDigest,

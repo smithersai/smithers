@@ -34,52 +34,144 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
-    "./CommandSandbox": "./src/CommandSandbox/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./CommandSandbox": {
+      "types": "./src/CommandSandbox/index.ts",
+      "vibelang-source": "./src/CommandSandbox/index.ts",
+      "default": "./.vibelang/js/src/CommandSandbox/index.js"
+    },
     "./CommandSandbox/*": null,
-    "./ContainerSandbox": "./src/ContainerSandbox/index.ts",
+    "./ContainerSandbox": {
+      "types": "./src/ContainerSandbox/index.ts",
+      "vibelang-source": "./src/ContainerSandbox/index.ts",
+      "default": "./.vibelang/js/src/ContainerSandbox/index.js"
+    },
     "./ContainerSandbox/*": null,
-    "./DirectorySandbox": "./src/DirectorySandbox/index.ts",
+    "./DirectorySandbox": {
+      "types": "./src/DirectorySandbox/index.ts",
+      "vibelang-source": "./src/DirectorySandbox/index.ts",
+      "default": "./.vibelang/js/src/DirectorySandbox/index.js"
+    },
     "./DirectorySandbox/*": null,
-    "./ProviderConformance": "./src/ProviderConformance/index.ts",
+    "./ProviderConformance": {
+      "types": "./src/ProviderConformance/index.ts",
+      "vibelang-source": "./src/ProviderConformance/index.ts",
+      "default": "./.vibelang/js/src/ProviderConformance/index.js"
+    },
     "./ProviderConformance/*": null,
-    "./RemoteChildProcessSpawner": "./src/RemoteChildProcessSpawner/index.ts",
+    "./RemoteChildProcessSpawner": {
+      "types": "./src/RemoteChildProcessSpawner/index.ts",
+      "vibelang-source": "./src/RemoteChildProcessSpawner/index.ts",
+      "default": "./.vibelang/js/src/RemoteChildProcessSpawner/index.js"
+    },
     "./RemoteChildProcessSpawner/*": null,
-    "./TerminalProtocol": "./src/TerminalProtocol/index.ts",
+    "./TerminalProtocol": {
+      "types": "./src/TerminalProtocol/index.ts",
+      "vibelang-source": "./src/TerminalProtocol/index.ts",
+      "default": "./.vibelang/js/src/TerminalProtocol/index.js"
+    },
     "./TerminalProtocol/*": null,
-    "./Sandbox": "./src/Sandbox/index.ts",
+    "./Sandbox": {
+      "types": "./src/Sandbox/index.ts",
+      "vibelang-source": "./src/Sandbox/index.ts",
+      "default": "./.vibelang/js/src/Sandbox/index.js"
+    },
     "./Sandbox/*": null,
-    "./SandboxConformance": "./src/SandboxConformance/index.ts",
+    "./SandboxConformance": {
+      "types": "./src/SandboxConformance/index.ts",
+      "vibelang-source": "./src/SandboxConformance/index.ts",
+      "default": "./.vibelang/js/src/SandboxConformance/index.js"
+    },
     "./SandboxConformance/*": null,
-    "./SandboxMerge": "./src/SandboxMerge/index.ts",
+    "./SandboxMerge": {
+      "types": "./src/SandboxMerge/index.ts",
+      "vibelang-source": "./src/SandboxMerge/index.ts",
+      "default": "./.vibelang/js/src/SandboxMerge/index.js"
+    },
     "./SandboxMerge/*": null,
-    "./SandboxHealth": "./src/SandboxHealth/index.ts",
+    "./SandboxHealth": {
+      "types": "./src/SandboxHealth/index.ts",
+      "vibelang-source": "./src/SandboxHealth/index.ts",
+      "default": "./.vibelang/js/src/SandboxHealth/index.js"
+    },
     "./SandboxHealth/*": null,
-    "./SandboxSupervision": "./src/SandboxSupervision/index.ts",
+    "./SandboxSupervision": {
+      "types": "./src/SandboxSupervision/index.ts",
+      "vibelang-source": "./src/SandboxSupervision/index.ts",
+      "default": "./.vibelang/js/src/SandboxSupervision/index.js"
+    },
     "./SandboxSupervision/*": null,
-    "./SandboxTools": "./src/SandboxTools/index.ts",
+    "./SandboxTools": {
+      "types": "./.vibe/declarations/src/SandboxTools/index.d.vibe.ts",
+      "vibelang-source": "./src/SandboxTools/index.vibe",
+      "default": "./.vibelang/js/src/SandboxTools/index.js"
+    },
     "./SandboxTools/*": null,
-    "./SandboxCommand": "./src/SandboxCommand/index.ts",
+    "./SandboxCommand": {
+      "types": "./.vibe/declarations/src/SandboxCommand/index.d.vibe.ts",
+      "vibelang-source": "./src/SandboxCommand/index.vibe",
+      "default": "./.vibelang/js/src/SandboxCommand/index.js"
+    },
     "./SandboxCommand/*": null,
-    "./CiJob": "./src/CiJob/index.ts",
+    "./CiJob": {
+      "types": "./.vibe/declarations/src/CiJob/index.d.vibe.ts",
+      "vibelang-source": "./src/CiJob/index.vibe",
+      "default": "./.vibelang/js/src/CiJob/index.js"
+    },
     "./CiJob/*": null,
-    "./AwsSandbox": "./src/AwsSandbox/index.ts",
+    "./AwsSandbox": {
+      "types": "./src/AwsSandbox/index.ts",
+      "vibelang-source": "./src/AwsSandbox/index.ts",
+      "default": "./.vibelang/js/src/AwsSandbox/index.js"
+    },
     "./AwsSandbox/*": null,
-    "./CloudflareSandbox": "./src/CloudflareSandbox/index.ts",
+    "./CloudflareSandbox": {
+      "types": "./src/CloudflareSandbox/index.ts",
+      "vibelang-source": "./src/CloudflareSandbox/index.ts",
+      "default": "./.vibelang/js/src/CloudflareSandbox/index.js"
+    },
     "./CloudflareSandbox/*": null,
-    "./DaytonaSandbox": "./src/DaytonaSandbox/index.ts",
+    "./DaytonaSandbox": {
+      "types": "./src/DaytonaSandbox/index.ts",
+      "vibelang-source": "./src/DaytonaSandbox/index.ts",
+      "default": "./.vibelang/js/src/DaytonaSandbox/index.js"
+    },
     "./DaytonaSandbox/*": null,
-    "./JustBashSandbox": "./src/JustBashSandbox/index.ts",
+    "./JustBashSandbox": {
+      "types": "./src/JustBashSandbox/index.ts",
+      "vibelang-source": "./src/JustBashSandbox/index.ts",
+      "default": "./.vibelang/js/src/JustBashSandbox/index.js"
+    },
     "./JustBashSandbox/*": null,
-    "./KubernetesSandbox": "./src/KubernetesSandbox/index.ts",
+    "./KubernetesSandbox": {
+      "types": "./src/KubernetesSandbox/index.ts",
+      "vibelang-source": "./src/KubernetesSandbox/index.ts",
+      "default": "./.vibelang/js/src/KubernetesSandbox/index.js"
+    },
     "./KubernetesSandbox/*": null,
-    "./MicrosandboxSandbox": "./src/MicrosandboxSandbox/index.ts",
+    "./MicrosandboxSandbox": {
+      "types": "./src/MicrosandboxSandbox/index.ts",
+      "vibelang-source": "./src/MicrosandboxSandbox/index.ts",
+      "default": "./.vibelang/js/src/MicrosandboxSandbox/index.js"
+    },
     "./MicrosandboxSandbox/*": null,
-    "./VercelSandbox": "./src/VercelSandbox/index.ts",
+    "./VercelSandbox": {
+      "types": "./src/VercelSandbox/index.ts",
+      "vibelang-source": "./src/VercelSandbox/index.ts",
+      "default": "./.vibelang/js/src/VercelSandbox/index.js"
+    },
     "./VercelSandbox/*": null,
     "./internal/*": null,
     "./*/index": null,
-    "./index": "./src/index.ts"
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -91,7 +183,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -367,19 +460,20 @@
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/jj": "1.0.0-rc.16",
     "@smthrs/kernel": "1.0.0-rc.16",
-    "@smthrs/plan": "workspace:*"
+    "@smthrs/plan": "workspace:*",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@smthrs/engine": "1.0.0-rc.16",
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/platform-node": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/std": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -390,13 +484,14 @@
     "microsandbox": "0.6.16",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
     "@smthrs/platform-node": "1.0.0-rc.16",
-    "@smthrs/platform-bun": "1.0.0-rc.16"
+    "@smthrs/platform-bun": "1.0.0-rc.16",
+    "@smthrs/crypto": "1.0.0-rc.16"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

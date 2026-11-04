@@ -30,6 +30,7 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  * being tested is about two owners of one row and an in-memory double has one.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Journal, JournalEvent, Migrations, SqlJournal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
@@ -72,7 +73,7 @@ const plane = (executor: Layer.Layer<ControlExecutor.ControlExecutor, never, nev
       executor,
       Registry.layerNoop()
     )
-  ).pipe(Layer.provideMerge(Layer.merge(database, NodeCrypto.layer)))
+  ).pipe(Layer.provideMerge(Layer.merge(database, Crypto.layerFromDigest(NodeCrypto.layerDigest))))
 
 const run = <A, E, R>(
   body: Effect.Effect<A, E, R>,

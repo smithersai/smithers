@@ -8,12 +8,12 @@ import * as Schedule from "effect/Schedule"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 import {
   approvalTask,
   layer,
   RansomwareIsolationCoordinator
-} from "../../../examples/use-cases/ransomware-isolation-coordinator.ts"
+} from "../../../examples/use-cases/ransomware-isolation-coordinator.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "ransomware-isolation-coordinator-"))
 

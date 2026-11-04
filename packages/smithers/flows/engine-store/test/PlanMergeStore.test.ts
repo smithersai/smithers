@@ -1,12 +1,12 @@
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { KeyMaterial, Plan, StepKey } from "@smthrs/plan"
 import { PlanStore } from "@smthrs/plan-store"
 import { RunStore } from "@smthrs/run-store"
-import { Effect, Exit, Option } from "effect"
-import * as Crypto from "effect/Crypto"
+import { Array as Arr, Effect, Exit, Option } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as PlanMerges from "../src/internal/PlanMerges.ts"
 import * as Migrations from "../src/Migrations.ts"
@@ -14,6 +14,12 @@ import * as PlanInputStore from "../src/PlanInputStore.ts"
 import * as PlanMergeStore from "../src/PlanMergeStore.ts"
 import * as TestStores from "../src/test/TestStores.ts"
 import { sha256, withCrypto } from "./Sha256.ts"
+
+// Effect 4.1's sql.insert takes a non-empty array; every batch here has rows.
+const nonEmpty = <A>(rows: ReadonlyArray<A>): Arr.NonEmptyReadonlyArray<A> => {
+  if (!Arr.isReadonlyArrayNonEmpty(rows)) throw new Error("expected at least one row")
+  return rows
+}
 
 const owner = { hostId: "merge-store", pid: 71, nonce: "merge-store" }
 const runId = "merge-store-run"
@@ -360,7 +366,7 @@ describe("PlanMergeStore", () => {
         })
         yield* writer.write(Effect.gen(function*() {
           for (let offset = 0; offset < rows.length; offset += 500) {
-            yield* sql`INSERT INTO flows_plan_merge_intents ${sql.insert(rows.slice(offset, offset + 500))}`
+            yield* sql`INSERT INTO flows_plan_merge_intents ${sql.insert(nonEmpty(rows.slice(offset, offset + 500)))}`
           }
         }))
         expect(yield* merges.intend(identity, intent, owner)).toEqual(intent)

@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { FlowEngine } from "@smthrs/engine"
@@ -78,7 +79,7 @@ const requirements = (filename: string, sharedCache: boolean) => {
     ),
     migratedDatabase
   )
-  // NodeCrypto feeds the merged stack rather than sitting beside it:
+  // WebCrypto feeds the merged stack rather than sitting beside it:
   // OwnerIdentity.layer consumes the Crypto service at construction.
   return Layer.mergeAll(
     sqlServices,
@@ -92,7 +93,7 @@ const requirements = (filename: string, sharedCache: boolean) => {
     Layer.succeed(Jj.Jj, jj),
     // Both cache environments must reuse a sealed result copied into the fork.
     sharedCache ? Action.layerCacheEnvironment({ layers: [], capabilities: {} }) : Layer.empty
-  ).pipe(Layer.provideMerge(NodeCrypto.layer))
+  ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 }
 
 describe("SQL fork execution", () => {

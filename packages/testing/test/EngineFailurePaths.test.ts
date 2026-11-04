@@ -16,12 +16,12 @@ import * as Ref from "effect/Ref"
 import * as Scheduler from "effect/Scheduler"
 import * as Scope from "effect/Scope"
 import * as TestClock from "effect/testing/TestClock"
-import type { EngineSubject as Subject, FlowSpec, StepSpec } from "../src/EngineSubject.ts"
-import * as EngineSubject from "../src/EngineSubject.ts"
+import type { EngineSubject as Subject, FlowSpec, StepSpec } from "../src/EngineSubject.vibe"
+import * as EngineSubject from "../src/EngineSubject.vibe"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as MemoryEngine from "../src/MemoryEngine.ts"
 import { type EngineSubjectError, EngineUnavailableError } from "../src/TestingError.ts"
-import { describe, expect, it } from "../src/Vitest.ts"
+import { describe, expect, it } from "../src/Vitest.vibe"
 
 const flowLayer = FlowEngineLike.layerOver(FlowEngine.layerMemory)
 

@@ -8,11 +8,11 @@
  * SQLite store.
  */
 import { assert, describe, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema, Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"

@@ -5,17 +5,17 @@
  */
 
 /** @category errors @since 0.1.0 */
-export * as TriggerError from "./TriggerError.ts"
+export * as TriggerError from "./TriggerError.vibe"
 /** @category schedules @since 0.1.0 */
-export * as Cron from "./Cron.ts"
+export * as Cron from "./Cron.vibe"
 /** @category declarations @since 0.1.0 */
 export * as Trigger from "./Trigger.ts"
 /** @category declarations @since 0.1.0 */
-export * as Schedule from "./Schedule.ts"
+export * as Schedule from "./Schedule.vibe"
 /** @category policies @since 0.1.0 */
 export * as Overlap from "./Overlap.ts"
 /** @category policies @since 0.1.0 */
-export * as CatchUp from "./CatchUp.ts"
+export * as CatchUp from "./CatchUp.vibe"
 /** @category services @since 0.1.0 */
 export * as TriggerStore from "./TriggerStore.ts"
 /** @category services @since 0.1.0 */
@@ -23,8 +23,8 @@ export * as SqlTriggerStore from "./SqlTriggerStore.ts"
 /** @category scheduling @since 0.1.0 */
 export * as Scheduler from "./Scheduler.ts"
 /** @category services @since 1.0.0-rc.0 */
-export * as DispatchReader from "./DispatchReader.ts"
+export * as DispatchReader from "./DispatchReader.vibe"
 /** @category channels @since 0.1.0 */
-export * as Channel from "./Channel.ts"
+export * as Channel from "./Channel.vibe"
 /** @category webhooks @since 0.1.0 */
-export * as Webhook from "./Webhook.ts"
+export * as Webhook from "./Webhook.vibe"

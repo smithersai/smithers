@@ -2,11 +2,11 @@
 // the run's journal and this device's own messages, which refusals are final, and the steer step where its tab is gone
 // or won't keep the message. The whole path, a tab through ChatApi to the run's queue, runs in remote.test.ts; the agent
 // reading a message, in worker/flows/Todo.test.ts.
-import { WebCrypto } from "@smthrs/crypto"
+import { type Crypto, WebCrypto } from "@smthrs/crypto"
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { FlowRuntime } from "@smthrs/flow"
 import { TabChannel } from "@smthrs/platform-browser"
-import { Cause, type Crypto, Effect, Exit, Layer, Metric, Option } from "effect"
+import { Cause, Effect, Exit, Layer, Metric, Option } from "effect"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, test } from "vitest"

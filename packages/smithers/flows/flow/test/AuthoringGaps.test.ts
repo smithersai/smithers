@@ -7,9 +7,9 @@
  * flow scope helpers, and the waiting annotation a durable driver reads.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Cause, Context, Effect, Exit, Fiber, Latch, Layer, Option, Schedule, Schema, Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
 import { effect } from "./Harness.ts"
 import { layerMemory, layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
 

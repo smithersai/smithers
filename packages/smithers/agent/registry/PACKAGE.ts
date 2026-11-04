@@ -34,7 +34,7 @@ const securityReview = Smithers.SecurityReview({
         "A stat, readFile, or readDirectory in Discovery.visit reached before withinRoot vetted that location.",
         "A path-prefix containment test without a trailing separator, so /pack-evil passes for /pack."
       ],
-      paths: ["src/Discovery.ts", "src/Pack.ts"]
+      paths: ["src/Discovery.ts", "src/Pack.vibe"]
     },
     {
       id: "pack-manifest-paths",
@@ -46,7 +46,7 @@ const securityReview = Smithers.SecurityReview({
         "Pack.sources skipping the realPath check when only one side fails to resolve, letting a symlinked source escape.",
         "A local-vs-installed precedence rule that lets an installed pack shadow a local flow name."
       ],
-      paths: ["src/Pack.ts"]
+      paths: ["src/Pack.vibe"]
     },
     {
       id: "execution-integrity",
@@ -84,7 +84,7 @@ const securityReview = Smithers.SecurityReview({
         "A declared tier lower than the inferred tier that survives projectEffects.",
         "Module metadata the static reader cannot evaluate being projected as narrower than conservativeEffects."
       ],
-      paths: ["src/internal/Authority.ts", "src/MarkdownFlow.ts", "src/internal/ModuleMetadata.ts"]
+      paths: ["src/internal/Authority.ts", "src/MarkdownFlow.vibe", "src/internal/ModuleMetadata.vibe"]
     },
     {
       id: "catalog-prompt-injection",
@@ -96,7 +96,7 @@ const securityReview = Smithers.SecurityReview({
         "MarkdownFlow rendering baseDirectory, frontmatter, or body text into a prompt header without delimiting it.",
         "A frontmatter name that fails Markdown.isSkillName still used as the registry key."
       ],
-      paths: ["src/Disclosure.ts", "src/MarkdownFlow.ts", "src/internal/Names.ts"]
+      paths: ["src/Disclosure.ts", "src/MarkdownFlow.vibe", "src/internal/Names.vibe"]
     },
     {
       id: "registry-precedence",
@@ -109,7 +109,7 @@ const securityReview = Smithers.SecurityReview({
         "ownedValue leaving a nested object or array unfrozen, so a mutation outlives the WeakMap-memoized executionDigest.",
         "executionDigest omitting a field that changes what runs (body path, model, capabilities, effects, closure digests)."
       ],
-      paths: ["src/Registry.ts", "src/Descriptor.ts", "src/Pack.ts"]
+      paths: ["src/Registry.ts", "src/Descriptor.vibe", "src/Pack.vibe"]
     },
     {
       id: "untrusted-parse-bounds",
@@ -124,8 +124,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Discovery.ts",
-        "src/internal/Frontmatter.ts",
-        "src/internal/ModuleMetadata.ts",
+        "src/internal/Frontmatter.vibe",
+        "src/internal/ModuleMetadata.vibe",
         "src/internal/ModuleClosure.ts"
       ]
     }

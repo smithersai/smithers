@@ -11,9 +11,9 @@ import {
   MAX_MESSAGE_LENGTH,
   RetryableIntegrationFailure,
   toIntegrationError
-} from "../src/core/ActionFailure.ts"
+} from "../src/core/ActionFailure.vibe"
 import { buildAuthorizationUrl } from "../src/core/AuthorizationUrl.ts"
-import * as ExternalEvent from "../src/core/ExternalEvent.ts"
+import * as ExternalEvent from "../src/core/ExternalEvent.vibe"
 import {
   IntegrationError,
   isIntegrationError,
@@ -26,7 +26,7 @@ import { createCodeVerifier, createPkcePair, deriveCodeChallenge } from "../src/
 import * as SignalName from "../src/core/SignalName.ts"
 import * as Environment from "../src/Environment.ts"
 import { retryPolicy } from "../src/github/Actions.ts"
-import * as GitHubConfig from "../src/github/Config.ts"
+import * as GitHubConfig from "../src/github/Config.vibe"
 
 describe("readJsonPath", () => {
   const payload = { repository: { full_name: "smithersai/smithers" }, issue: { number: 12 }, list: [1, 2] }

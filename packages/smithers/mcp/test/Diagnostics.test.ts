@@ -1,10 +1,10 @@
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Redacted, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Diagnostics from "../src/Diagnostics.ts"
-import * as Reporter from "../src/internal/DiagnosticReporter.ts"
+import * as Diagnostics from "../src/Diagnostics.vibe"
+import * as Reporter from "../src/internal/DiagnosticReporter.vibe"
 import * as McpClient from "../src/McpClient.ts"
-import { McpError } from "../src/McpError.ts"
+import { McpError } from "../src/McpError.vibe"
 import * as FixtureServer from "./fixtures/FixtureServer.ts"
 
 const secret = "synthetic-private-value-DO-NOT-PUBLISH"

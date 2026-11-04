@@ -4,22 +4,22 @@ import * as Route from "../src/Route.vibe"
 import { failureOf, invalidModule, makeRoute, visibleModule } from "./helpers.vibe"
 
 describe("Route boundary", () => {
-  it.effect("loads a canonical tagged flow and projects its schemas") {
+  it.effect("loads a canonical tagged flow and projects its schemas", effect () => {
     const modulePath = new URL("./fixtures/three-projections/flows/review/flow.ts", import.meta.url).pathname
-    const loaded = Route.load(makeRoute("review", modulePath))
+    const loaded = try Route.load(makeRoute("review", modulePath))
     expect(loaded.name).toBe("review")
     expect(loaded.description).toBeUndefined()
-    const canonical = sync(async () => (await import("./fixtures/three-projections/flows/review/flow.ts")).default)
+    const canonical = try sync(async () => (await import("./fixtures/three-projections/flows/review/flow.ts")).default)
     expect(loaded.input).toBe(canonical.payloadSchema)
     expect(loaded.output).toBe(canonical.successSchema)
-    expect(Schema.decodeUnknownEffect(canonical.payloadSchema)({ number: 7 })).toEqual({ number: 7 })
-    expect(Schema.decodeUnknownEffect(canonical.successSchema)({ accepted: true, number: 7 })).toEqual({
+    expect(try Schema.decodeUnknownEffect(canonical.payloadSchema)({ number: 7 })).toEqual({ number: 7 })
+    expect(try Schema.decodeUnknownEffect(canonical.successSchema)({ accepted: true, number: 7 })).toEqual({
       accepted: true,
       number: 7
     })
-  }
+  })
 
-  it.effect("copies and freezes complete route metadata") {
+  it.effect("copies and freezes complete route metadata", effect () => {
     const source = makeRoute("review", visibleModule, {
       capabilities: ["fs:read:**"],
       effects: {
@@ -36,7 +36,7 @@ describe("Route boundary", () => {
       placement: Option.some("sandbox"),
       ui: Option.some("/absolute/ui.tsx")
     })
-    const snapshot = Route.snapshot(source)
+    const snapshot = try Route.snapshot(source)
     ;(source.capabilities as Array<string>)[0] = "changed"
     ;(source.effects.reads as Array<string>)[0] = "changed"
 
@@ -49,9 +49,9 @@ describe("Route boundary", () => {
     expect(Object.isFrozen(snapshot)).toBe(true)
     expect(Object.isFrozen(snapshot.effects)).toBe(true)
     expect(Object.isFrozen(snapshot.capabilities)).toBe(true)
-  }
+  })
 
-  it.effect("copies every schema locator variant") {
+  it.effect("copies every schema locator variant", effect () => {
     const refs: ReadonlyArray<Descriptor.SchemaRef> = [
       new Descriptor.SchemaRefMarkdownArgs({}),
       new Descriptor.SchemaRefMarkdownOutput({}),
@@ -61,14 +61,14 @@ describe("Route boundary", () => {
     ]
     for (const [index, input] of refs.entries()) {
       const output = refs[(index + 1) % refs.length]!
-      const snapshot = Route.snapshot(makeRoute(`route-${index}`, visibleModule, { input, output }))
+      const snapshot = try Route.snapshot(makeRoute(`route-${index}`, visibleModule, { input, output }))
       expect(snapshot.input).not.toBe(input)
       expect(snapshot.input._tag).toBe(input._tag)
       expect(snapshot.output._tag).toBe(output._tag)
     }
-  }
+  })
 
-  it.effect("rejects malformed top-level fields without invoking accessors") {
+  it.effect("rejects malformed top-level fields without invoking accessors", effect () => {
     const base = makeRoute("review")
     const malformed: ReadonlyArray<Route.Route> = [
       { ...base, name: "different" },
@@ -88,23 +88,26 @@ describe("Route boundary", () => {
       { ...base, placement: Option.some("elsewhere" as never) },
       { ...base, ui: Option.some("") }
     ]
-    for (const route of malformed) expect(failureOf(Route.snapshot(route)).code).toBe("invalid_route")
+    for (const route of malformed) expect((try failureOf(Route.snapshot(route))).code).toBe("invalid_route")
 
     const getter = vi.fn(() => "review")
     const accessor = Object.defineProperty({ ...base }, "name", { enumerable: true, get: getter })
-    expect(failureOf(Route.snapshot(accessor)).code).toBe("invalid_route")
+    expect((try failureOf(Route.snapshot(accessor))).code).toBe("invalid_route")
     expect(getter).not.toHaveBeenCalled()
 
-    const hostileOption = sync((target) => new Proxy(target, {
-      has: () => {
-        throw new Error("trap")
-      }
-    }), {})
-    expect(failureOf(Route.snapshot({ ...base, description: hostileOption as never })).code).toBe("invalid_route")
-    expect(failureOf(Route.snapshot({ ...base, placement: hostileOption as never })).code).toBe("invalid_route")
-  }
+    const hostileOption = try sync((target) =>
+      new Proxy(target, {
+        has: () => {
+          throw new Error("trap")
+        }
+      }), {})
+    expect((try failureOf(Route.snapshot({ ...base, description: hostileOption as never }))).code).toBe(
+      "invalid_route"
+    )
+    expect((try failureOf(Route.snapshot({ ...base, placement: hostileOption as never }))).code).toBe("invalid_route")
+  })
 
-  it.effect("rejects malformed schema locators and effect declarations") {
+  it.effect("rejects malformed schema locators and effect declarations", effect () => {
     const base = makeRoute("review")
     const badRefs = [
       null,
@@ -117,30 +120,31 @@ describe("Route boundary", () => {
       Object.defineProperty({ _tag: "None" }, "extra", { value: true, enumerable: true })
     ]
     for (const input of badRefs) {
-      expect(failureOf(Route.snapshot({ ...base, input: input as never })).code).toBe("invalid_route")
+      expect((try failureOf(Route.snapshot({ ...base, input: input as never }))).code).toBe("invalid_route")
     }
 
     const nullPrototype = Object.assign(Object.create(null), { _tag: "None" })
-    expect(Route.snapshot({ ...base, input: nullPrototype }).input._tag).toBe("None")
+    expect((try Route.snapshot({ ...base, input: nullPrototype })).input._tag).toBe("None")
     const inherited = Object.create({ _tag: "None" })
-    expect(failureOf(Route.snapshot({ ...base, input: inherited })).code).toBe("invalid_route")
+    expect((try failureOf(Route.snapshot({ ...base, input: inherited }))).code).toBe("invalid_route")
     const tagGetter = vi.fn(() => "None")
     const accessorTag = Object.defineProperty({}, "_tag", { enumerable: true, get: tagGetter })
-    expect(failureOf(Route.snapshot({ ...base, input: accessorTag as never })).code).toBe("invalid_route")
+    expect((try failureOf(Route.snapshot({ ...base, input: accessorTag as never }))).code).toBe("invalid_route")
     expect(tagGetter).not.toHaveBeenCalled()
     const pathGetter = vi.fn(() => visibleModule)
     const accessorPath = Object.defineProperty({ _tag: "Module", field: "input" }, "path", {
       enumerable: true,
       get: pathGetter
     })
-    expect(failureOf(Route.snapshot({ ...base, input: accessorPath as never })).code).toBe("invalid_route")
+    expect((try failureOf(Route.snapshot({ ...base, input: accessorPath as never }))).code).toBe("invalid_route")
     expect(pathGetter).not.toHaveBeenCalled()
-    const hostileRef = sync((target) => new Proxy(target, {
-      getPrototypeOf: () => {
-        throw new Error("trap")
-      }
-    }), { _tag: "None" })
-    expect(failureOf(Route.snapshot({ ...base, input: hostileRef as never })).code).toBe("invalid_route")
+    const hostileRef = try sync((target) =>
+      new Proxy(target, {
+        getPrototypeOf: () => {
+          throw new Error("trap")
+        }
+      }), { _tag: "None" })
+    expect((try failureOf(Route.snapshot({ ...base, input: hostileRef as never }))).code).toBe("invalid_route")
 
     for (
       const effects of [
@@ -151,33 +155,33 @@ describe("Route boundary", () => {
         { ...base.effects, tier: "other" }
       ]
     ) {
-      expect(failureOf(Route.snapshot({ ...base, effects: effects as never })).code).toBe("invalid_route")
+      expect((try failureOf(Route.snapshot({ ...base, effects: effects as never }))).code).toBe("invalid_route")
     }
-  }
+  })
 
-  it.effect("canonicalizes route identity to NFC") {
-    const route = Route.snapshot(makeRoute("café/list"))
+  it.effect("canonicalizes route identity to NFC", effect () => {
+    const route = try Route.snapshot(makeRoute("café/list"))
     expect(route.name).toBe("café/list")
     expect(route.segments).toEqual(["café", "list"])
-  }
+  })
 
-  it.effect("classifies executable routes and returns typed loader failures") {
+  it.effect("classifies executable routes and returns typed loader failures", effect () => {
     expect(Route.isCommandRoute(makeRoute("visible"))).toBe(true)
     expect(Route.isCommandRoute(makeRoute("hidden", undefined, { modelInvocable: false }))).toBe(false)
     expect(Route.isCommandRoute(makeRoute("markdown", undefined, { kind: "markdown" }))).toBe(false)
 
-    expect(failureOf(Route.load(makeRoute("markdown", undefined, { kind: "markdown" }))).code).toBe(
+    expect((try failureOf(Route.load(makeRoute("markdown", undefined, { kind: "markdown" })))).code).toBe(
       "unsupported_body"
     )
     // One stable code, two descriptions: a caller can tell a bad path from a
     // module that loads but exports no flow.
-    expect(failureOf(Route.load(makeRoute("invalid", invalidModule)))).toMatchObject({
+    expect(try failureOf(Route.load(makeRoute("invalid", invalidModule)))).toMatchObject({
       code: "load_failed",
       description: "The selected flow module has no default flow export"
     })
-    expect(failureOf(Route.load(makeRoute("missing", "/definitely/missing/flow.ts")))).toMatchObject({
+    expect(try failureOf(Route.load(makeRoute("missing", "/definitely/missing/flow.ts")))).toMatchObject({
       code: "load_failed",
       description: "The selected flow module could not be imported"
     })
-  }
+  })
 })

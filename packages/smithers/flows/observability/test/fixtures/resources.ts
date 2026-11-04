@@ -1,6 +1,6 @@
 import * as OtelResource from "@effect/opentelemetry/Resource"
 import * as OtlpResource from "effect/observability/OtlpResource"
-import * as Resource from "../../src/Resource.ts"
+import * as Resource from "../../src/Resource.vibe"
 
 /** Measure the actual upstream OTLP representation independently of admission. */
 export const resourceBytes = (configuration: Resource.Configuration): number =>

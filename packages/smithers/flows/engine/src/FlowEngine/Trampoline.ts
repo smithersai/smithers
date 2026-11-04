@@ -18,8 +18,8 @@ import type * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
-import type { Encoded } from "./Encoded.ts"
-import * as Round from "./Round.ts"
+import type { Encoded } from "./Encoded.vibe"
+import * as Round from "./Round.vibe"
 
 /**
  * A suspended execution spent the caller's resume retry policy.

@@ -45,37 +45,152 @@
   },
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./flow/internal/*": null,
     "./*/index": null,
-    "./Checks": "./src/Checks.ts",
-    "./Constructs": "./src/Constructs.ts",
-    "./Detect": "./src/Detect.ts",
-    "./Inventory": "./src/Inventory.ts",
-    "./Mapping": "./src/Mapping.ts",
-    "./MigrateError": "./src/MigrateError.ts",
-    "./PromptHints": "./src/PromptHints.ts",
-    "./Report": "./src/Report.ts",
-    "./RunState": "./src/RunState.ts",
-    "./Scan": "./src/Scan.ts",
-    "./Units": "./src/Units.ts",
-    "./ZodSchemaHints": "./src/ZodSchemaHints.ts",
-    "./flow/Archive": "./src/flow/Archive.ts",
-    "./flow/Checkpoint": "./src/flow/Checkpoint.ts",
-    "./flow/Cli": "./src/flow/Cli.ts",
-    "./flow/Command": "./src/flow/Command.ts",
-    "./flow/Contract": "./src/flow/Contract.ts",
-    "./flow/Gate": "./src/flow/Gate.ts",
-    "./flow/Layers": "./src/flow/Layers.ts",
-    "./flow/Lock": "./src/flow/Lock.ts",
-    "./flow/MigrateFlow": "./src/flow/MigrateFlow.ts",
-    "./flow/Options": "./src/flow/Options.ts",
-    "./flow/Repair": "./src/flow/Repair.ts",
-    "./flow/Transform": "./src/flow/Transform.ts",
-    "./flow/Verify": "./src/flow/Verify.ts",
-    "./flow/bin": "./src/flow/bin.ts",
-    "./index": "./src/index.ts"
+    "./Checks": {
+      "types": "./src/Checks.ts",
+      "vibelang-source": "./src/Checks.ts",
+      "default": "./.vibelang/js/src/Checks.js"
+    },
+    "./Constructs": {
+      "types": "./src/Constructs.ts",
+      "vibelang-source": "./src/Constructs.ts",
+      "default": "./.vibelang/js/src/Constructs.js"
+    },
+    "./Detect": {
+      "types": "./src/Detect.ts",
+      "vibelang-source": "./src/Detect.ts",
+      "default": "./.vibelang/js/src/Detect.js"
+    },
+    "./Inventory": {
+      "types": "./.vibe/declarations/src/Inventory.d.vibe.ts",
+      "vibelang-source": "./src/Inventory.vibe",
+      "default": "./.vibelang/js/src/Inventory.js"
+    },
+    "./Mapping": {
+      "types": "./src/Mapping.ts",
+      "vibelang-source": "./src/Mapping.ts",
+      "default": "./.vibelang/js/src/Mapping.js"
+    },
+    "./MigrateError": {
+      "types": "./src/MigrateError.ts",
+      "vibelang-source": "./src/MigrateError.ts",
+      "default": "./.vibelang/js/src/MigrateError.js"
+    },
+    "./PromptHints": {
+      "types": "./src/PromptHints.ts",
+      "vibelang-source": "./src/PromptHints.ts",
+      "default": "./.vibelang/js/src/PromptHints.js"
+    },
+    "./Report": {
+      "types": "./src/Report.ts",
+      "vibelang-source": "./src/Report.ts",
+      "default": "./.vibelang/js/src/Report.js"
+    },
+    "./RunState": {
+      "types": "./src/RunState.ts",
+      "vibelang-source": "./src/RunState.ts",
+      "default": "./.vibelang/js/src/RunState.js"
+    },
+    "./Scan": {
+      "types": "./src/Scan.ts",
+      "vibelang-source": "./src/Scan.ts",
+      "default": "./.vibelang/js/src/Scan.js"
+    },
+    "./Units": {
+      "types": "./.vibe/declarations/src/Units.d.vibe.ts",
+      "default": {
+        "types": "./.vibe/declarations/src/Units.d.vibe.ts",
+        "vibelang-source": "./src/Units.vibe",
+        "default": "./.vibelang/js/src/Units.js"
+      }
+    },
+    "./ZodSchemaHints": {
+      "types": "./src/ZodSchemaHints.ts",
+      "vibelang-source": "./src/ZodSchemaHints.ts",
+      "default": "./.vibelang/js/src/ZodSchemaHints.js"
+    },
+    "./flow/Archive": {
+      "types": "./src/flow/Archive.ts",
+      "vibelang-source": "./src/flow/Archive.ts",
+      "default": "./.vibelang/js/src/flow/Archive.js"
+    },
+    "./flow/Checkpoint": {
+      "types": "./src/flow/Checkpoint.ts",
+      "vibelang-source": "./src/flow/Checkpoint.ts",
+      "default": "./.vibelang/js/src/flow/Checkpoint.js"
+    },
+    "./flow/Cli": {
+      "types": "./src/flow/Cli.ts",
+      "vibelang-source": "./src/flow/Cli.ts",
+      "default": "./.vibelang/js/src/flow/Cli.js"
+    },
+    "./flow/Command": {
+      "types": "./src/flow/Command.ts",
+      "vibelang-source": "./src/flow/Command.ts",
+      "default": "./.vibelang/js/src/flow/Command.js"
+    },
+    "./flow/Contract": {
+      "types": "./src/flow/Contract.ts",
+      "vibelang-source": "./src/flow/Contract.ts",
+      "default": "./.vibelang/js/src/flow/Contract.js"
+    },
+    "./flow/Gate": {
+      "types": "./src/flow/Gate.ts",
+      "vibelang-source": "./src/flow/Gate.ts",
+      "default": "./.vibelang/js/src/flow/Gate.js"
+    },
+    "./flow/Layers": {
+      "types": "./src/flow/Layers.ts",
+      "vibelang-source": "./src/flow/Layers.ts",
+      "default": "./.vibelang/js/src/flow/Layers.js"
+    },
+    "./flow/Lock": {
+      "types": "./src/flow/Lock.ts",
+      "vibelang-source": "./src/flow/Lock.ts",
+      "default": "./.vibelang/js/src/flow/Lock.js"
+    },
+    "./flow/MigrateFlow": {
+      "types": "./src/flow/MigrateFlow.ts",
+      "vibelang-source": "./src/flow/MigrateFlow.ts",
+      "default": "./.vibelang/js/src/flow/MigrateFlow.js"
+    },
+    "./flow/Options": {
+      "types": "./src/flow/Options.ts",
+      "vibelang-source": "./src/flow/Options.ts",
+      "default": "./.vibelang/js/src/flow/Options.js"
+    },
+    "./flow/Repair": {
+      "types": "./.vibe/declarations/src/flow/Repair.d.vibe.ts",
+      "vibelang-source": "./src/flow/Repair.vibe",
+      "default": "./.vibelang/js/src/flow/Repair.js"
+    },
+    "./flow/Transform": {
+      "types": "./src/flow/Transform.ts",
+      "vibelang-source": "./src/flow/Transform.ts",
+      "default": "./.vibelang/js/src/flow/Transform.js"
+    },
+    "./flow/Verify": {
+      "types": "./src/flow/Verify.ts",
+      "vibelang-source": "./src/flow/Verify.ts",
+      "default": "./.vibelang/js/src/flow/Verify.js"
+    },
+    "./flow/bin": {
+      "types": "./src/flow/bin.ts",
+      "vibelang-source": "./src/flow/bin.ts",
+      "default": "./.vibelang/js/src/flow/bin.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -88,7 +203,8 @@
     "README.md",
     "CHANGELOG.md",
     "dist/vendor/**",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -392,10 +508,11 @@
   },
   "dependencies": {
     "typescript": "7.0.2",
-    "undici": "8.11.2",
+    "undici": "8.12.3",
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "vibelang-runtime": "file:../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "optionalDependencies": {
     "@smthrs/agent": "1.0.0-rc.16",
@@ -409,11 +526,12 @@
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/platform-node": "1.0.0-rc.16",
     "@smthrs/registry": "1.0.0-rc.16",
-    "@smthrs/canonical": "1.0.0-rc.16"
+    "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/crypto": "1.0.0-rc.16"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/vitest": "4.0.5",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@typescript/typescript6": "6.0.2",
@@ -427,14 +545,14 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
-    "@effect/platform-node": "4.0.5",
-    "@effect/platform-node-shared": "4.0.5",
-    "effect": "4.0.5"
+    "@effect/platform-node": "4.1.1",
+    "@effect/platform-node-shared": "4.1.1",
+    "effect": "4.1.1"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

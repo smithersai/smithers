@@ -2,7 +2,7 @@
 // migrates Postgres first.
 // Only alchemy.run.ts imports this file: it runs `db/migrations` from the deploying machine.
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import * as Output from "alchemy/Output"
 import { Effect, FileSystem, type Redacted } from "effect"
 import * as Database from "../db/Database.ts"

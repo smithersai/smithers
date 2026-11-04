@@ -82,7 +82,7 @@ is the transformation from `string | Uint8Array` to `Digest`:
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Sha256 } from "@smthrs/crypto"
+import { Crypto, Sha256 } from "@smthrs/crypto"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -96,7 +96,7 @@ Effect.runPromise(
     { name: "server.js", contents: "hello" },
     { reportInput: false }
   ).pipe(
-    Effect.provide(NodeCrypto.layer)
+    Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 )
 // {

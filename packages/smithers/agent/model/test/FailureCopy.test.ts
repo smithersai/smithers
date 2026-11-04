@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as Evaluator from "../src/Evaluator.ts"
-import * as FailureCopy from "../src/FailureCopy.ts"
-import { ModelError } from "../src/ModelError.ts"
+import * as FailureCopy from "../src/FailureCopy.vibe"
+import { ModelError } from "../src/ModelError.vibe"
 
 // Harness and budget failures are classed by their owners, which this package
 // cannot import; `agent/test/Fault.sweep.test.ts` asserts their fault with the

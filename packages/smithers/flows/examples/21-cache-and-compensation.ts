@@ -12,6 +12,7 @@
  * hard file boundary, and a complete cache environment.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as CacheEnvironment from "@smthrs/flow/CacheEnvironment"
@@ -160,7 +161,7 @@ const engine = (filename: string, hostId: string, jj: Layer.Layer<Jj.Jj>) =>
     Layer.provideMerge(
       Layer.mergeAll(jj, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))
     ),
-    Layer.provideMerge(NodeCrypto.layer),
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Layer.provideMerge(AtomicFileSystem.layer)
   )
 

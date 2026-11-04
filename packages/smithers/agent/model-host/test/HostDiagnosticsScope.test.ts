@@ -1,7 +1,7 @@
 import { Clock, Effect, Exit, Scope } from "effect"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, test } from "vitest"
-import { createHostDiagnostics } from "../src/HostDiagnostics.ts"
+import { createHostDiagnostics } from "../src/HostDiagnostics.vibe"
 
 describe("host diagnostics lifetime", () => {
   test("refuses a diagnostic sink without injected host services", () => {

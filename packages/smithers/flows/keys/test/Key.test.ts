@@ -1,14 +1,15 @@
 // Deep reviewed and polished by a human on 2026-08-31.
 
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Cause, Crypto, Deferred, Effect, Exit, Fiber, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import { Crypto } from "@smthrs/crypto"
+import { Cause, Deferred, Effect, Exit, Fiber, Layer, PlatformError, Schema, SchemaIssue } from "effect"
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
 import * as Keys from "../src/index.ts"
 
 const provideCrypto = <A, E>(
   effect: Effect.Effect<A, E, Crypto.Crypto>
-): Effect.Effect<A, E> => Effect.provide(effect, NodeCrypto.layer)
+): Effect.Effect<A, E> => Effect.provide(effect, Crypto.layerFromDigest(NodeCrypto.layerDigest))
 
 const derive = (input: unknown): Keys.KeyV1 => Effect.runSync(provideCrypto(Keys.deriveKey(input)))
 

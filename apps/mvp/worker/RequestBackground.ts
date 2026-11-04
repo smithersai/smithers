@@ -1,7 +1,7 @@
 // Work a ChatApi request leaves to run after its response, through the request's execution context (workerd's
 // `ctx.waitUntil`). It reads `alchemy/Cloudflare`, which only Alchemy's bundle resolves, so it stays out of
 // worker/ExecutionHost.ts's module graph (worker/ExecutionHost.bundle.test.ts).
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 import * as FirstPaint from "./github/FirstPaint.ts"
 

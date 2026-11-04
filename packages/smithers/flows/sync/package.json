@@ -34,33 +34,129 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./BranchCommands": "./src/BranchCommands.ts",
-    "./BranchIds": "./src/BranchIds.ts",
-    "./BranchPresence": "./src/BranchPresence.ts",
-    "./BranchProjection": "./src/BranchProjection.ts",
-    "./BranchProtocol": "./src/BranchProtocol.ts",
-    "./BranchRpcs": "./src/BranchRpcs.ts",
-    "./BranchServer": "./src/BranchServer.ts",
-    "./BranchShare": "./src/BranchShare.ts",
-    "./PresenceProtocol": "./src/PresenceProtocol.ts",
-    "./PresenceRoom": "./src/PresenceRoom.ts",
-    "./PresenceSocket": "./src/PresenceSocket.ts",
-    "./RunCatalog": "./src/RunCatalog.ts",
-    "./SharedText": "./src/SharedText.ts",
-    "./SyncAuth": "./src/SyncAuth.ts",
-    "./SyncClient": "./src/SyncClient.ts",
-    "./SyncError": "./src/SyncError.ts",
-    "./SyncPrincipal": "./src/SyncPrincipal.ts",
-    "./SyncProtocol": "./src/SyncProtocol.ts",
-    "./SyncRpcs": "./src/SyncRpcs.ts",
-    "./SyncServer": "./src/SyncServer.ts",
-    "./WorkspaceShare": "./src/WorkspaceShare.ts",
-    "./index": "./src/index.ts",
+    "./BranchCommands": {
+      "types": "./src/BranchCommands.ts",
+      "vibelang-source": "./src/BranchCommands.ts",
+      "default": "./.vibelang/js/src/BranchCommands.js"
+    },
+    "./BranchIds": {
+      "types": "./src/BranchIds.ts",
+      "vibelang-source": "./src/BranchIds.ts",
+      "default": "./.vibelang/js/src/BranchIds.js"
+    },
+    "./BranchPresence": {
+      "types": "./src/BranchPresence.ts",
+      "vibelang-source": "./src/BranchPresence.ts",
+      "default": "./.vibelang/js/src/BranchPresence.js"
+    },
+    "./BranchProjection": {
+      "types": "./.vibe/declarations/src/BranchProjection.d.vibe.ts",
+      "vibelang-source": "./src/BranchProjection.vibe",
+      "default": "./.vibelang/js/src/BranchProjection.js"
+    },
+    "./BranchProtocol": {
+      "types": "./src/BranchProtocol.ts",
+      "vibelang-source": "./src/BranchProtocol.ts",
+      "default": "./.vibelang/js/src/BranchProtocol.js"
+    },
+    "./BranchRpcs": {
+      "types": "./src/BranchRpcs.ts",
+      "vibelang-source": "./src/BranchRpcs.ts",
+      "default": "./.vibelang/js/src/BranchRpcs.js"
+    },
+    "./BranchServer": {
+      "types": "./src/BranchServer.ts",
+      "vibelang-source": "./src/BranchServer.ts",
+      "default": "./.vibelang/js/src/BranchServer.js"
+    },
+    "./BranchShare": {
+      "types": "./src/BranchShare.ts",
+      "vibelang-source": "./src/BranchShare.ts",
+      "default": "./.vibelang/js/src/BranchShare.js"
+    },
+    "./PresenceProtocol": {
+      "types": "./.vibe/declarations/src/PresenceProtocol.d.vibe.ts",
+      "vibelang-source": "./src/PresenceProtocol.vibe",
+      "default": "./.vibelang/js/src/PresenceProtocol.js"
+    },
+    "./PresenceRoom": {
+      "types": "./src/PresenceRoom.ts",
+      "vibelang-source": "./src/PresenceRoom.ts",
+      "default": "./.vibelang/js/src/PresenceRoom.js"
+    },
+    "./PresenceSocket": {
+      "types": "./src/PresenceSocket.ts",
+      "vibelang-source": "./src/PresenceSocket.ts",
+      "default": "./.vibelang/js/src/PresenceSocket.js"
+    },
+    "./RunCatalog": {
+      "types": "./src/RunCatalog.ts",
+      "vibelang-source": "./src/RunCatalog.ts",
+      "default": "./.vibelang/js/src/RunCatalog.js"
+    },
+    "./SharedText": {
+      "types": "./src/SharedText.ts",
+      "vibelang-source": "./src/SharedText.ts",
+      "default": "./.vibelang/js/src/SharedText.js"
+    },
+    "./SyncAuth": {
+      "types": "./.vibe/declarations/src/SyncAuth.d.vibe.ts",
+      "vibelang-source": "./src/SyncAuth.vibe",
+      "default": "./.vibelang/js/src/SyncAuth.js"
+    },
+    "./SyncClient": {
+      "types": "./src/SyncClient.ts",
+      "vibelang-source": "./src/SyncClient.ts",
+      "default": "./.vibelang/js/src/SyncClient.js"
+    },
+    "./SyncError": {
+      "types": "./src/SyncError.ts",
+      "vibelang-source": "./src/SyncError.ts",
+      "default": "./.vibelang/js/src/SyncError.js"
+    },
+    "./SyncPrincipal": {
+      "types": "./src/SyncPrincipal.ts",
+      "vibelang-source": "./src/SyncPrincipal.ts",
+      "default": "./.vibelang/js/src/SyncPrincipal.js"
+    },
+    "./SyncProtocol": {
+      "types": "./src/SyncProtocol.ts",
+      "vibelang-source": "./src/SyncProtocol.ts",
+      "default": "./.vibelang/js/src/SyncProtocol.js"
+    },
+    "./SyncRpcs": {
+      "types": "./src/SyncRpcs.ts",
+      "vibelang-source": "./src/SyncRpcs.ts",
+      "default": "./.vibelang/js/src/SyncRpcs.js"
+    },
+    "./SyncServer": {
+      "types": "./src/SyncServer.ts",
+      "vibelang-source": "./src/SyncServer.ts",
+      "default": "./.vibelang/js/src/SyncServer.js"
+    },
+    "./WorkspaceShare": {
+      "types": "./src/WorkspaceShare.ts",
+      "vibelang-source": "./src/WorkspaceShare.ts",
+      "default": "./.vibelang/js/src/WorkspaceShare.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./test/TestSocket": "./src/test/TestSocket.ts",
-    "./test/TestSync": "./src/test/TestSync.ts"
+    "./test/TestSync": {
+      "types": "./src/test/TestSync.ts",
+      "vibelang-source": "./src/test/TestSync.ts",
+      "default": "./.vibelang/js/src/test/TestSync.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -72,7 +168,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -346,19 +443,20 @@
   },
   "dependencies": {
     "@smthrs/journal": "1.0.0-rc.16",
-    "yjs": "13.6.32"
+    "yjs": "13.6.32",
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/platform-node": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/platform-node": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@smthrs/database": "1.0.0-rc.16",
     "@smthrs/engine-store": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -368,13 +466,13 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
     "@smthrs/time-travel": "1.0.0-rc.16",
     "fast-check": "4.9.0"
   },
   "peerDependencies": {
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

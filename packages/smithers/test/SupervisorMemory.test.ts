@@ -15,6 +15,7 @@ import * as Budget from "@smthrs/agent/Budget"
 import * as FlowEngineLike from "@smthrs/agent/FlowEngineLike"
 import * as QuotaPolicy from "@smthrs/agent/QuotaPolicy"
 import * as Seat from "@smthrs/agent/Seat"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import type * as Relevance from "@smthrs/harness/Relevance"
@@ -185,7 +186,7 @@ const agentRun = (input: {
     yield* engine.execute(runFlow, { executionId: `exec-${input.session}`, payload: {}, discard: true })
     yield* Deferred.await(done)
   }).pipe(
-    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, NodeCrypto.layer)),
+    Effect.provide(Layer.mergeAll(FlowEngine.layerMemory, Crypto.layerFromDigest(NodeCrypto.layerDigest))),
     Effect.provideService(Metric.MetricRegistry, new Map()),
     Effect.scoped,
     Effect.runPromise

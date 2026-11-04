@@ -14,7 +14,7 @@ npm install @smthrs/registry@next effect
 The `next` tag carries the 1.0 release candidates.
 
 [`effect`](https://effect.website) is a peer dependency in the version
-`4.0.5`. Declare it yourself at that version: your own code imports
+`4.1.0`. Declare it yourself at that version: your own code imports
 `effect/Effect` and `effect/Layer` directly, and two copies of `effect` in one
 program are two sets of service tags. Everything else installs with the
 package: the `yaml` parser frontmatter is read with, and the `@smthrs/*`

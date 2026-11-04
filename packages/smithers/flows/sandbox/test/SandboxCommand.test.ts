@@ -1,5 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, ExternalJob, Fault, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
@@ -23,8 +24,8 @@ import { afterAll } from "vitest"
 import * as DirectorySandbox from "../src/DirectorySandbox/index.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type * as Sandbox from "../src/Sandbox/index.ts"
-import * as SandboxCommand from "../src/SandboxCommand/index.ts"
-import * as SandboxTools from "../src/SandboxTools/index.ts"
+import * as SandboxCommand from "../src/SandboxCommand/index.vibe"
+import * as SandboxTools from "../src/SandboxTools/index.vibe"
 import { platform } from "./helpers/containedPlatform.ts"
 
 // A command started detached in a real scratch directory (DirectorySandbox), as it starts in a container: its runner is
@@ -623,7 +624,7 @@ const jobOf = (
   const layer = Layer.mergeAll(Job.toLayer(SandboxCommand.operations(reach)), Interpreter.layer(Run)).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
   return { Job, Run, layer }
 }
@@ -652,7 +653,7 @@ const onBox = (
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeCrypto.layer)
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
   return { Job, Run, layer }
 }

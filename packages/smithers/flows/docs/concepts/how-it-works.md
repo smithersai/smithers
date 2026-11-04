@@ -179,7 +179,7 @@ The refusal names the exact capability the step asked for. Grant that and nothin
 
 - **The body has to be pure, and Smithers cannot check that for you.** If a step depends on something you did not declare, its behavior can change without its key changing, and you get an old result. Declare what a step reads.
 - **It needs Node.js 22.19 or later.**
-- **It is an Effect 4 library** (effect 4.0.5 or later). A step's schema is an Effect schema and its code is an Effect.
+- **It is an Effect 4 library** (effect 4.1.0 or later). A step's schema is an Effect schema and its code is an Effect.
 - **Reuse across runs is opt-in.** A step without the three declarations above runs again in every new run.
 
 ## Try it

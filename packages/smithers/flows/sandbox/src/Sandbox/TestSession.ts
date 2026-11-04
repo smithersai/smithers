@@ -9,7 +9,7 @@ import * as Stream from "effect/Stream"
 import type { RemoteProcess } from "../RemoteChildProcessSpawner/Provider.ts"
 import { ProviderError } from "../RemoteChildProcessSpawner/ProviderError.ts"
 import type { TestScript } from "../RemoteChildProcessSpawner/TestScript.ts"
-import type { Session } from "./Session.ts"
+import type { Session } from "./Session.vibe"
 import type { TestSessionProvider } from "./TestSessionProvider.ts"
 import type { TestSessionState } from "./TestSessionState.ts"
 

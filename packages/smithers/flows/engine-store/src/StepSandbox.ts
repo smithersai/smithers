@@ -5,9 +5,9 @@
  */
 
 import type * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import type { Crypto } from "@smthrs/crypto"
 import type * as KernelWorkspace from "@smthrs/kernel/Workspace"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"

@@ -23,7 +23,7 @@ import * as CliScripts from "./internal/CliScripts.ts"
 import * as FlowNames from "./internal/FlowNames.ts"
 import * as Sort from "./internal/Sort.ts"
 import * as Ts from "./internal/Ts.ts"
-import type { InventoryEntry } from "./Inventory.ts"
+import type { InventoryEntry } from "./Inventory.vibe"
 import * as PromptHints from "./PromptHints.ts"
 import * as ZodSchemaHints from "./ZodSchemaHints.ts"
 
@@ -529,7 +529,7 @@ const table: ReadonlyArray<MappingRow> = [
   ),
   row(
     "package.json",
-    "@smthrs/* at the migrator's own version and effect at 4.0.5",
+    "@smthrs/* at the migrator's own version and effect at 4.1.0",
     null,
     "Old packages are removed only in the final `project` unit. `zod` stays only if non-workflow code still imports it.",
     "automatic"

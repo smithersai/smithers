@@ -14,19 +14,19 @@ export * as Alerts from "./Alerts.ts"
  * @category services
  * @since 1.0.0
  */
-export * as Channels from "./Channels.ts"
+export * as Channels from "./Channels.vibe"
 
 /**
  * @category routing
  * @since 1.0.0
  */
-export * as Inbox from "./Inbox.ts"
+export * as Inbox from "./Inbox.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as Notification from "./Notification.ts"
+export * as Notification from "./Notification.vibe"
 
 /**
  * @category events
@@ -50,10 +50,10 @@ export * as NotificationQueue from "./NotificationQueue.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Projection from "./Projection.ts"
+export * as Projection from "./Projection.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as SteerPayload from "./SteerPayload.ts"
+export * as SteerPayload from "./SteerPayload.vibe"

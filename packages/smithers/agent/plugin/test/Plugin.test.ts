@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Plugin from "../src/Plugin.ts"
+import * as Plugin from "../src/Plugin.vibe"
 
 describe("Plugin.make", () => {
   it("is an identity constructor that returns the same plugin object", () => {

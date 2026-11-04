@@ -60,7 +60,7 @@
  * @since 0.1.0
  */
 
-import { Sha256 } from "@smthrs/crypto"
+import { type Crypto, Sha256 } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { Journal, type JournalEvent } from "@smthrs/journal"
@@ -73,7 +73,6 @@ import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"

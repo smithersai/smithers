@@ -1,7 +1,7 @@
+import { Crypto } from "@smthrs/crypto"
 import * as Dialect from "@smthrs/database/Dialect"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Exit, Layer } from "effect"
-import * as Crypto from "effect/Crypto"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"

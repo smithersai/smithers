@@ -2,6 +2,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
@@ -18,7 +19,6 @@ import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import type { OwnerId } from "@smthrs/run-store/Ownership"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -29,7 +29,7 @@ import { once } from "node:events"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import { TimeTravel } from "../src/TimeTravel.ts"
 import { joinDrive } from "./JoinDrive.ts"
@@ -122,7 +122,7 @@ export const realEngineLayer = (filename: string, hostId: string) => {
     OwnerIdentity.layer,
     NodeJj.layer,
     Action.layerCacheEnvironment({ layers: [TimeTravel.key], capabilities: {} })
-  ).pipe(Layer.provideMerge(NodeCrypto.layer))
+  ).pipe(Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   return Layer.merge(
     EngineStore.layer({
       owner: { hostId },

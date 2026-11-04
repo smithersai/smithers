@@ -12,15 +12,17 @@
     "destroy": "alchemy destroy --stage prod"
   },
   "dependencies": {
-    "zod": "4.6.7"
+    "zod": "4.6.7",
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@smthrs/control": "workspace:*",
     "@types/node": "26.4.1",
-    "alchemy": "2.0.0-beta.82",
+    "@alchemy.run/cloudflare": "2.0.0-beta.84",
+    "alchemy": "2.0.0-beta.84",
     "bun-types": "^1.4.0",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.8"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
   }
 }

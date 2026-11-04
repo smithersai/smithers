@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Journal } from "@smthrs/journal"
 import * as Model from "@smthrs/model/Model"
 import { RunStore } from "@smthrs/run-store"
@@ -59,5 +60,5 @@ const program = Effect.scoped(Effect.gen(function*() {
   })
   const result = yield* Single.execute({ input: "Read both values" }, { executionId }).pipe(Effect.provide(wiring))
   if (recover) process.stdout.write(JSON.stringify({ status: "recovered", result, providerCalls, performed }) + "\n")
-})).pipe(Effect.provide(stores(filename)), Effect.provide(NodeCrypto.layer))
+})).pipe(Effect.provide(stores(filename)), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 await Effect.runPromise(recover ? program.pipe(Effect.provide(TestClock.layer())) : program)

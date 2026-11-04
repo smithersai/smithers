@@ -1,5 +1,6 @@
 import { NodeCrypto } from "@effect/platform-node"
 import { expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -33,7 +34,7 @@ const setup = Effect.gen(function*() {
     sql: Context.get(native, SqlClient),
     engineState: Context.get(native, DurableEngineState.DurableEngineState)
   }
-}).pipe(Effect.provide(NodeCrypto.layer))
+}).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 type Fixture = Effect.Success<typeof setup>
 const withStores = <A, E>(use: (fixture: Fixture) => Effect.Effect<A, E, Scope.Scope>) =>
   Effect.scoped(Effect.flatMap(setup, use))
@@ -792,7 +793,7 @@ for (
       }).pipe(
         Effect.provideContext(f.native),
         Effect.provide(StepBoundary.layerTest()),
-        Effect.provide(NodeCrypto.layer),
+        Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
         Effect.provideService(
           Jj.Jj,
           Jj.make({

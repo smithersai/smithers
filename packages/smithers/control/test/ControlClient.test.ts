@@ -1,6 +1,7 @@
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { Journal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Cause, Effect, Fiber, Layer, Schema, Stream } from "effect"
@@ -14,8 +15,8 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import * as ControlClient from "../src/ControlClient.ts"
 import { type ControlError, PersistenceError, RunNotFound, TransportError, Unauthorized } from "../src/ControlError.ts"
-import * as ControlRpcs from "../src/ControlRpcs.ts"
-import * as ControlServer from "../src/ControlServer.ts"
+import * as ControlRpcs from "../src/ControlRpcs.vibe"
+import * as ControlServer from "../src/ControlServer.vibe"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import * as TestStack from "./TestStack.ts"
 
@@ -193,14 +194,14 @@ describe("ControlClient", () => {
       const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
       const guideClient: ReturnType<typeof client> = new Function(
         "NodeHttpClient",
-        "NodeSocket",
+        "NodeWS",
         "ControlClient",
         "Layer",
         "RpcSerialization",
         "Socket",
         "process",
         `${compiled}\nreturn client`
-      )(NodeHttpClient, NodeSocket, ControlClient, Layer, RpcSerialization, Socket, {
+      )(NodeHttpClient, NodeWS, ControlClient, Layer, RpcSerialization, Socket, {
         env: { SMITHERS_CONTROL_TOKEN: token }
       })
       return yield* Effect.gen(function*() {

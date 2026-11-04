@@ -5,21 +5,21 @@ import * as Route from "../src/Route.vibe"
 import { failureOf, makeRoute } from "./helpers.vibe"
 
 describe("CommandTree", () => {
-  it.effect.each([0, 4_097, 16_384])("preserves %i-character unconsumed arguments", (length) => {
-    const tree = CommandTree.make([makeRoute("review"), makeRoute("review/nested")])
+  it.effect.each([0, 4_097, 16_384])("preserves %i-character unconsumed arguments", effect (length) => {
+    const tree = try CommandTree.make([makeRoute("review"), makeRoute("review/nested")])
     const value = "a".repeat(length)
     for (const tail of [[value], ["--tags", value]]) {
-      const resolved = CommandTree.resolve(tree, ["review", ...tail])
+      const resolved = try CommandTree.resolve(tree, ["review", ...tail])
       expect(resolved.route.name).toBe("review")
       expect(resolved.rest).toEqual(tail)
       expect(Object.isFrozen(resolved.rest)).toBe(true)
     }
   })
 
-  it.effect("rejects oversized argv tokens and invalid route prefixes") {
-    const tree = CommandTree.make([makeRoute("review/nested")])
+  it.effect("rejects oversized argv tokens and invalid route prefixes", effect () => {
+    const tree = try CommandTree.make([makeRoute("review/nested")])
     expect(
-      failureOf(CommandTree.resolve(tree, [
+      try failureOf(CommandTree.resolve(tree, [
         "review",
         "nested",
         "--tags",
@@ -28,31 +28,31 @@ describe("CommandTree", () => {
     ).toMatchObject({ code: "resource_limit", method: "CommandTree.resolve" })
     for (const segment of ["", "a".repeat(Route.maximumRouteNameLength + 1)]) {
       for (const prefix of [[], ["review"]]) {
-        expect(failureOf(CommandTree.resolve(tree, [...prefix, segment]))).toMatchObject({
+        expect(try failureOf(CommandTree.resolve(tree, [...prefix, segment]))).toMatchObject({
           code: "resource_limit",
           method: "CommandTree.resolve",
           description: "The command name exceeds its resource bounds"
         })
       }
     }
-  }
+  })
 
-  it.effect("supports prefix routes, exact resolution, and stable traversal") {
-    const tree = CommandTree.make([
+  it.effect("supports prefix routes, exact resolution, and stable traversal", effect () => {
+    const tree = try CommandTree.make([
       makeRoute("z"),
       makeRoute("domains/list"),
       makeRoute("domains")
     ])
 
     expect(CommandTree.traverse(tree).map((route) => route.name)).toEqual(["domains", "domains/list", "z"])
-    expect(CommandTree.resolve(tree, ["domains", "list", "arg"]).rest).toEqual(["arg"])
-    expect(CommandTree.resolveExact(tree, ["domains", "list"]).name).toBe("domains/list")
-    expect(failureOf(CommandTree.resolveExact(tree, ["domains", "list", "typo"])).code).toBe("unknown_command")
-  }
+    expect((try CommandTree.resolve(tree, ["domains", "list", "arg"])).rest).toEqual(["arg"])
+    expect((try CommandTree.resolveExact(tree, ["domains", "list"])).name).toBe("domains/list")
+    expect((try failureOf(CommandTree.resolveExact(tree, ["domains", "list", "typo"]))).code).toBe("unknown_command")
+  })
 
-  it.effect("detaches route metadata and exposes immutable maps") {
+  it.effect("detaches route metadata and exposes immutable maps", effect () => {
     const source = makeRoute("mutable") as Route.Route & { mutable name: string; mutable segments: Array<string> }
-    const tree = CommandTree.make([source])
+    const tree = try CommandTree.make([source])
     source.name = "changed"
     source.segments[0] = "changed"
 
@@ -60,63 +60,64 @@ describe("CommandTree", () => {
     expect(Object.isFrozen(CommandTree.traverse(tree)[0])).toBe(true)
     expect(Object.isFrozen(tree)).toBe(true)
     expect((tree.children as unknown as { set?: unknown }).set).toBeUndefined()
-  }
+  })
 
-  it.effect("rejects duplicate, mismatched, sparse, and hostile route inputs") {
-    expect(failureOf(CommandTree.make([makeRoute("same"), makeRoute("same")])).code).toBe("duplicate_route")
+  it.effect("rejects duplicate, mismatched, sparse, and hostile route inputs", effect () => {
+    expect((try failureOf(CommandTree.make([makeRoute("same"), makeRoute("same")]))).code).toBe("duplicate_route")
     expect(
-      failureOf(CommandTree.make([
+      (try failureOf(CommandTree.make([
         makeRoute("name", undefined, { segments: ["different"] })
-      ])).code
+      ]))).code
     ).toBe("invalid_route")
 
     const sparse = new Array<Route.Route>(1)
-    expect(failureOf(CommandTree.make(sparse)).code).toBe("invalid_route")
-    expect(failureOf(CommandTree.make({} as never)).code).toBe("invalid_route")
+    expect((try failureOf(CommandTree.make(sparse))).code).toBe("invalid_route")
+    expect((try failureOf(CommandTree.make({} as never))).code).toBe("invalid_route")
     class Derived extends Array<Route.Route> {}
-    expect(failureOf(CommandTree.make(new Derived())).code).toBe("invalid_route")
+    expect((try failureOf(CommandTree.make(new Derived()))).code).toBe("invalid_route")
     const accessor = Object.defineProperty([], "0", { enumerable: true, get: () => makeRoute("bad") })
     Object.defineProperty(accessor, "length", { value: 1 })
-    expect(failureOf(CommandTree.make(accessor as Array<Route.Route>)).code).toBe("invalid_route")
-    const hostile = sync((target) => new Proxy(target, {
-      ownKeys: () => {
-        throw new Error("trap")
-      }
-    }), [makeRoute("bad")])
-    expect(failureOf(CommandTree.make(hostile)).code).toBe("invalid_route")
-  }
+    expect((try failureOf(CommandTree.make(accessor as Array<Route.Route>))).code).toBe("invalid_route")
+    const hostile = try sync((target) =>
+      new Proxy(target, {
+        ownKeys: () => {
+          throw new Error("trap")
+        }
+      }), [makeRoute("bad")])
+    expect((try failureOf(CommandTree.make(hostile))).code).toBe("invalid_route")
+  })
 
-  it.effect("enforces route, depth, segment, and resolution bounds") {
+  it.effect("enforces route, depth, segment, and resolution bounds", effect () => {
     const routes = Array.from({ length: CommandTree.maximumRoutes }, (_, index) => makeRoute(`r${index}`))
-    expect(CommandTree.traverse(CommandTree.make(routes))).toHaveLength(CommandTree.maximumRoutes)
-    expect(failureOf(CommandTree.make([...routes, makeRoute("overflow")])).code).toBe("resource_limit")
+    expect(CommandTree.traverse(try CommandTree.make(routes))).toHaveLength(CommandTree.maximumRoutes)
+    expect((try failureOf(CommandTree.make([...routes, makeRoute("overflow")]))).code).toBe("resource_limit")
 
     const tooDeep = Array.from({ length: Route.maximumRouteDepth + 1 }, (_, index) => `d${index}`).join("/")
-    expect(failureOf(CommandTree.make([makeRoute(tooDeep)])).code).toBe("invalid_route")
+    expect((try failureOf(CommandTree.make([makeRoute(tooDeep)]))).code).toBe("invalid_route")
 
     const wide = Array.from({ length: 65 }, (_, route) => {
       const segments = Array.from({ length: Route.maximumRouteDepth }, (_, segment) => `r${route}-${segment}`)
       return makeRoute(segments.join("/"))
     })
-    expect(failureOf(CommandTree.make(wide)).code).toBe("resource_limit")
+    expect((try failureOf(CommandTree.make(wide))).code).toBe("resource_limit")
 
-    const tree = CommandTree.make([makeRoute("one")])
+    const tree = try CommandTree.make([makeRoute("one")])
     const tokens = Array.from({ length: CommandTree.maximumResolutionTokens + 1 }, () => "x")
-    expect(failureOf(CommandTree.resolve(tree, tokens)).code).toBe("resource_limit")
-  }
+    expect((try failureOf(CommandTree.resolve(tree, tokens))).code).toBe("resource_limit")
+  })
 
-  it.effect("resolves a decomposed token against a composed route name") {
-    const tree = CommandTree.make([makeRoute("café/list")])
-    const resolved = CommandTree.resolve(tree, ["café", "list", "café"])
+  it.effect("resolves a decomposed token against a composed route name", effect () => {
+    const tree = try CommandTree.make([makeRoute("café/list")])
+    const resolved = try CommandTree.resolve(tree, ["café", "list", "café"])
     expect(resolved.route.name).toBe("café/list")
     // Only the lookup key is normalized; argument text is left untouched.
     expect(resolved.rest).toEqual(["café"])
-  }
+  })
 
-  it.effect("does not echo unknown argv into errors") {
-    const tree = CommandTree.make([makeRoute("known")])
-    const error = failureOf(CommandTree.resolve(tree, ["missing", "--api-key=TOP-SECRET"]))
+  it.effect("does not echo unknown argv into errors", effect () => {
+    const tree = try CommandTree.make([makeRoute("known")])
+    const error = try failureOf(CommandTree.resolve(tree, ["missing", "--api-key=TOP-SECRET"]))
     expect(error.code).toBe("unknown_command")
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
-  }
+  })
 })

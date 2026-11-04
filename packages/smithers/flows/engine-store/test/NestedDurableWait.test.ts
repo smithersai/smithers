@@ -19,10 +19,10 @@ import { executeUntilParked } from "./ExecuteUntilParked.ts"
  * park nobody can answer.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"

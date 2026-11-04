@@ -1,6 +1,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, Option } from "effect"
@@ -9,13 +10,17 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
-import * as Prompt from "../src/Prompt.ts"
+import * as Prompt from "../src/Prompt.vibe"
 import { Fragment, jsx, render } from "../src/Prompt/jsx-runtime.ts"
 import * as Registry from "../src/Registry.ts"
 
 describe("typed MDX prompts", () => {
   it("keeps a refreshed external skill's missing agent refusal visible in the catalog", async () => {
-    const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)
+    const platform = Layer.mergeAll(
+      NodeFileSystem.layer,
+      NodePath.layer,
+      Crypto.layerFromDigest(NodeCrypto.layerDigest)
+    )
     const host = Layer.mergeAll(platform, FlowEngine.layerMemory, Action.layerImplementations)
     await Effect.runPromise(
       Effect.gen(function*() {
@@ -51,7 +56,7 @@ describe("typed MDX prompts", () => {
     const platform = Layer.mergeAll(
       NodeFileSystem.layer,
       NodePath.layer,
-      NodeCrypto.layer,
+      Crypto.layerFromDigest(NodeCrypto.layerDigest),
       Action.layerImplementations,
       FlowEngine.layerMemory
     )
@@ -97,7 +102,7 @@ describe("typed MDX prompts", () => {
     const platform = Layer.mergeAll(
       NodeFileSystem.layer,
       NodePath.layer,
-      NodeCrypto.layer,
+      Crypto.layerFromDigest(NodeCrypto.layerDigest),
       Action.layerImplementations,
       FlowEngine.layerMemory
     )

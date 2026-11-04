@@ -24,7 +24,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import * as TestRun from "../src/TestRun.ts"
-import * as TestRunner from "../src/TestRunner.ts"
+import * as TestRunner from "../src/TestRunner.vibe"
 
 /**
  * The attribution judge, scripted: every run here fails, or passes, about the

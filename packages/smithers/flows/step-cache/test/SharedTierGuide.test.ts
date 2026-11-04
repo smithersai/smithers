@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import { readFileSync } from "node:fs"
 import * as ts from "typescript"
-import * as CacheStore from "../src/CacheStore.ts"
+import * as CacheStore from "../src/CacheStore.vibe"
 
 const guide = readFileSync(new URL("../docs/guides/implement-a-shared-tier.md", import.meta.url), "utf8")
 const snippet = guide.match(/```ts\n(const fenceOf = [\s\S]*?)\n```/)?.[1]

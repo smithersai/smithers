@@ -58,7 +58,7 @@ import {
 import { IntegrationError, isIntegrationError } from "../core/IntegrationError.ts"
 import { redactedError } from "../core/RedactedError.ts"
 import * as Environment from "../Environment.ts"
-import { type GitHubConfig, resolve } from "./Config.ts"
+import { type GitHubConfig, resolve } from "./Config.vibe"
 
 /**
  * The response header in which the GitHub proxy names the instant a refused

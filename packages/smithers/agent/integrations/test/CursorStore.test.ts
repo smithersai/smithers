@@ -7,7 +7,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { CursorStore, layerMemory, layerSql } from "../src/core/CursorStore.ts"
+import { CursorStore, layerMemory, layerSql } from "../src/core/CursorStore.vibe"
 import * as Migrations from "../src/core/Migrations.ts"
 
 const sqlLayer = Layer.provideMerge(layerSql, Layer.provideMerge(Migrations.layer, TestDatabase.layer))

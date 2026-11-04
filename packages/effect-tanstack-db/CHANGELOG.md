@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- Effect `4.1.0` no longer makes unchanged device schemas appear to need migrations: persisted fingerprints retain the union grouping of Effect `4.0.5`, including nullable numbers and nested nullable fields.
+
 - `LiveQuery.rows` coalesces pending notifications for slow consumers instead of
   accumulating repeated current snapshots. `LiveQuery.make` reports construction
   exceptions as `Collection.LoadFailed` with the original cause.

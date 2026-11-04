@@ -1,4 +1,4 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 import type { ProgramOptions } from "./ChatApiProgram.ts"
 import { workerBuild } from "../infra/WorkerBuild.ts"

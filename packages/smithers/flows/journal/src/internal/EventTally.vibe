@@ -1,0 +1,36 @@
+/**
+ * The open `JournalMetrics.tally` scopes of the current fiber.
+ *
+ * @since 1.0.0
+ */
+
+/**
+ * One open tally: the entries committed inside it so far.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export interface Accumulator {
+  events: number
+}
+
+/**
+ * Every tally the current fiber runs inside, innermost last. A fiber forked
+ * inside a tally inherits it, so its entries count too.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const Current = Context.Reference<ReadonlyArray<Accumulator>>("@smthrs/journal/EventTally", {
+  defaultValue: () => []
+})
+
+/**
+ * Adds `events` committed entries to every open tally.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const record = effect (events: number): void!! => {
+  for (const accumulator of try Current) accumulator.events += events
+}

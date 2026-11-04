@@ -6,8 +6,8 @@
 
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Layer from "effect/Layer"
-import * as AttemptStore from "../AttemptStore.ts"
-import * as Migrations from "../Migrations.ts"
+import * as AttemptStore from "../AttemptStore.vibe"
+import * as Migrations from "../Migrations.vibe"
 import * as RunStore from "../RunStore.ts"
 
 /**

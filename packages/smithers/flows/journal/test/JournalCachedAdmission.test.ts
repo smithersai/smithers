@@ -5,7 +5,7 @@ import { Deferred, Effect, Fiber, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { Journal } from "../src/Journal.ts"
-import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
+import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 

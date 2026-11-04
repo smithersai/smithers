@@ -12,11 +12,12 @@
  * Nothing is mocked. The clients talk to a `node:http` server over a socket.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, type FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer, Schema } from "effect"
 import { afterEach, describe, expect, it } from "vitest"
-import { fromIntegrationError, IntegrationFailure, toIntegrationError } from "../src/core/ActionFailure.ts"
+import { fromIntegrationError, IntegrationFailure, toIntegrationError } from "../src/core/ActionFailure.vibe"
 import { IntegrationError } from "../src/core/IntegrationError.ts"
 import * as GitHubActions from "../src/github/Actions.ts"
 import { type Fixture, json, startFixture } from "./Fixture.ts"
@@ -60,7 +61,7 @@ const runAction = <
   })
   const layer = Layer.mergeAll(actionLayer, Interpreter.layer(flow)).pipe(
     Layer.provideMerge(Action.layerImplementations),
-    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, clients, NodeCrypto.layer))
+    Layer.provideMerge(Layer.mergeAll(FlowEngine.layerMemory, clients, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   )
   // No `orDie`: a failing action must reject with its decoded failure, which
   // is exactly what the failure cases below assert on.

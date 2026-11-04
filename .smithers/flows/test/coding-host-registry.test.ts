@@ -1,8 +1,9 @@
-import { NodeServices } from "@effect/platform-node"
+import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
-import { Effect } from "effect"
+import { Effect, Layer } from "effect"
 import assert from "node:assert/strict"
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -10,11 +11,15 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import * as HostRegistry from "../coding/host-registry.ts"
 
+// Effect 4.1 removed effect/Crypto, and NodeServices.layer no longer provides it.
+const nodeServices = Layer.merge(NodeServices.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+
 const parent = fileURLToPath(new URL("../", import.meta.url))
 const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect)
 const source = `import { Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Schema } from "effect"
+
 export default Flow.make("probe", { description: "Original source", payload: {}, success: Schema.String,
  body: () => Node.succeed("original") })`
 
@@ -33,8 +38,8 @@ test("host execution snapshots stay outside source and restore the prior closure
       return Descriptor.executionDigest(descriptor)!
     })
     const digest = await Effect.runPromise(publish.pipe(
-      Effect.provide(HostRegistry.layer(root, state, NodeServices.layer)),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(HostRegistry.layer(root, state, nodeServices)),
+      Effect.provide(nodeServices),
       Effect.scoped
     ))
     assert.equal(await readFile(entry, "utf8"), source)
@@ -46,8 +51,8 @@ test("host execution snapshots stay outside source and restore the prior closure
         const registry = yield* Registry.Registry
         return yield* registry.snapshots!.restore(digest)
       }).pipe(
-        Effect.provide(HostRegistry.layer(root, state, NodeServices.layer)),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(HostRegistry.layer(root, state, nodeServices)),
+        Effect.provide(nodeServices),
         Effect.scoped
       )
     )

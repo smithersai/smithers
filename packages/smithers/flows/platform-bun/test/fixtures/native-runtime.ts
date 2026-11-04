@@ -1,4 +1,5 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { Action, DurableDeferred, EngineStore, Flow, FlowRuntime, Interpreter, RunStore } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj/Jj"
 import { NodeHost } from "@smthrs/platform-node"
@@ -39,7 +40,7 @@ const register = Interpreter.layer(flow).pipe(
 )
 const host = Layer.mergeAll(
   NodeHost.AtomicFileSystem.layer,
-  NodeCrypto.layer,
+  Crypto.layerFromDigest(NodeCrypto.layerDigest),
   Jj.layerNoop({})
 )
 const incarnation = Native.layer(
@@ -94,6 +95,6 @@ const result = await Effect.runPromise(
         ? output.value.exit.value
         : null
     }
-  }).pipe(Effect.provide(incarnation), Effect.provide(NodeCrypto.layer), Effect.scoped)
+  }).pipe(Effect.provide(incarnation), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)), Effect.scoped)
 )
 console.log(JSON.stringify(result))

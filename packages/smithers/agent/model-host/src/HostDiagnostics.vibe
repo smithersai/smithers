@@ -1,0 +1,343 @@
+/**
+ * Bounded guest-side diagnostics for one hosted chat turn.
+ *
+ * A hosted guest that stops answering writes nothing an operator can read: its
+ * only durable channel is the journal, and a turn wedged before its first
+ * commit never reaches it. These records go wherever the host composition
+ * sends them; the Node model host writes them to the guest's own standard
+ * error, which the sandbox keeps, so the boundary between a provider response
+ * and a journal callback can be read while the turn is still stuck. This
+ * package never writes to a console or stream itself.
+ *
+ * @since 1.0.0-rc.0
+ */
+
+/**
+ * The marker every record carries, so an operator can select them out of a
+ * guest's log without parsing the rest of it.
+ *
+ * @category protocol
+ * @since 1.0.0-rc.0
+ */
+export const HOST_DIAGNOSTIC_MARKER = "smithers.chat-host-diagnostic/v1"
+
+/**
+ * A diagnostic field value: approved counts, flags and protocol vocabulary only.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export type HostDiagnosticValue = number | string | boolean
+
+/**
+ * Correlation and progress fields for one record.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface HostDiagnosticFields {
+  readonly [key: string]: HostDiagnosticValue
+}
+
+/**
+ * Records a turn's own progress, and an operation that has not finished while
+ * it still has not finished.
+ *
+ * @category services
+ * @since 1.0.0-rc.0
+ */
+export interface HostDiagnostics {
+  /**
+   * Records one instant of progress. Only named finite measurements, flags
+   * and approved protocol strings pass. Other fields, including reserved
+   * envelope keys, are omitted and counted in `droppedFields`. Unknown event
+   * and phase labels become `diagnostics` and `refused`, respectively.
+   */
+  readonly record: (event: string, phase: string, fields?: HostDiagnosticFields) => void
+  /**
+   * Starts an observation in the caller's Effect runtime and returns its
+   * completion callback. Until completion it reports pending at a fixed interval, so a
+   * request that never returns is visible before it is abandoned. Calls to
+   * the completion after the first are ignored.
+   */
+  readonly begin: (
+    event: string,
+    fields?: HostDiagnosticFields
+  ) => ((outcome?: HostDiagnosticFields) => void)!!
+}
+
+/**
+ * How a recorder bounds and routes its records.
+ *
+ * @category models
+ * @since 1.0.0-rc.0
+ */
+export interface HostDiagnosticOptions {
+  /** The turn these records belong to; omitted when there is none to name. */
+  readonly turnId?: string
+  /**
+   * Where one newline-terminated record line goes, supplied by the host
+   * composition. Without one the recorder is inert: it writes nothing, starts
+   * no timer and reads no clock.
+   */
+  readonly write?: ((line: string) => void) | undefined
+  /** Host Effect clock and lifetime. Required when a sink is supplied. */
+  readonly runtime?: { readonly clock: Clock; readonly scope: Scope }
+  /** Monotonic milliseconds. */
+  readonly clock?: () => number
+  /** How often an unfinished operation repeats. */
+  readonly pendingMillis?: number
+  /** Full start and end records per event name before only exceptional ones pass. */
+  readonly detailLimit?: number
+  /** An operation at least this slow is recorded past the detail limit. */
+  readonly slowMillis?: number
+  /** Records this recorder may write before it reports itself capped. */
+  readonly limit?: number
+}
+
+// Labels and string values are protocol vocabulary, never arbitrary tokens.
+// Character filtering cannot distinguish a credential from an identifier.
+const SAFE_TOKEN = /^[A-Za-z0-9_.:-]{1,64}$/
+const EVENTS = new Set(["model_stream", "chat_callback", "host_runtime", "host_tools", "diagnostics"])
+const PHASES = new Set(["begin", "pending", "end", "first_event", "refused", "start", "offered", "prompt", "capped"])
+const MEASUREMENTS = new Set([
+  "failed",
+  "events",
+  "characters",
+  "settled",
+  "status",
+  "timedOut",
+  "batch",
+  "pendingMillis",
+  "elapsedMillis",
+  "commands",
+  "api",
+  "source",
+  "docs",
+  "account",
+  "replaced",
+  "instructionBytes",
+  "instructionLines",
+  "appended",
+  "appendedBytes",
+  "context",
+  "contextVersion",
+  "capabilities",
+  "limitations",
+  "messages",
+  "reusedSocket",
+  "connectBegan",
+  "connectEnded",
+  "connectFailed",
+  "lookupBegan",
+  "lookupEnded"
+])
+const STRING_VALUES: Readonly<Record<string, ReadonlySet<string>>> = {
+  kind: new Set([
+    "text",
+    "text-delta",
+    "thinking-delta",
+    "text-start",
+    "text-end",
+    "thinking-start",
+    "thinking-end",
+    "tool-call-start",
+    "tool-call-delta",
+    "tool-call-end",
+    "usage",
+    "settle"
+  ]),
+  step: new Set(["provider_started", "commit"]),
+  stage: new Set(["resolve", "stream"]),
+  transport: new Set(["none", "created", "sent", "responded", "received"]),
+  platform: new Set(["aix", "darwin", "freebsd", "linux", "openbsd", "sunos", "win32", "android"]),
+  arch: new Set([
+    "arm",
+    "arm64",
+    "ia32",
+    "loong64",
+    "mips",
+    "mipsel",
+    "ppc",
+    "ppc64",
+    "riscv64",
+    "s390",
+    "s390x",
+    "x64"
+  ]),
+  failure: new Set(["Interrupted", "Defect", "ModelFailure", "ModelError", "ResolveFailed", "StreamTooLarge"]),
+  providerCode: new Set([
+    "invalid_request",
+    "context_overflow",
+    "no_route",
+    "authentication",
+    "rate_limited",
+    "quota_exceeded",
+    "out_of_credit",
+    "content_policy",
+    "provider_internal",
+    "transport",
+    "call_timeout",
+    "invalid_provider_output",
+    "unknown"
+  ]),
+  connectCode: new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ETIMEDOUT",
+    "ENETUNREACH",
+    "EHOSTUNREACH",
+    "UND_ERR_CONNECT_TIMEOUT"
+  ]),
+  lookupCode: new Set(["ENOTFOUND", "EAI_AGAIN", "EAI_FAIL", "EAI_NODATA", "ETIMEDOUT"]),
+  errorName: new Set([
+    "Error",
+    "TypeError",
+    "AbortError",
+    "ConnectTimeoutError",
+    "HeadersTimeoutError",
+    "BodyTimeoutError",
+    "SocketError",
+    "RequestAbortedError"
+  ]),
+  errorCode: new Set([
+    "ECONNREFUSED",
+    "ECONNRESET",
+    "ENOTFOUND",
+    "EAI_AGAIN",
+    "ETIMEDOUT",
+    "UND_ERR_CONNECT_TIMEOUT",
+    "UND_ERR_HEADERS_TIMEOUT",
+    "UND_ERR_BODY_TIMEOUT",
+    "UND_ERR_SOCKET",
+    "ABORT_ERR"
+  ])
+}
+const safeString = (key: string, value: string): boolean =>
+  Object.hasOwn(STRING_VALUES, key) && STRING_VALUES[key]!.has(value) ||
+  key === "node" && /^\d{1,3}\.\d{1,3}\.\d{1,3}$/.test(value) ||
+  key === "instructionSha" && /^[a-f0-9]{12}$/.test(value)
+
+/** Keeps the fields a record may carry and counts the ones it refused. */
+const safeFields = (fields: HostDiagnosticFields): {
+  readonly kept: Record<string, HostDiagnosticValue>
+  readonly dropped: number
+} => {
+  const kept: Record<string, HostDiagnosticValue> = {}
+  let dropped = 0
+  for (const [key, value] of Object.entries(fields)) {
+    const safe = MEASUREMENTS.has(key) && (typeof value === "boolean" ||
+          (typeof value === "number" && Number.isFinite(value))) ||
+      (typeof value === "string" && safeString(key, value))
+    if (safe) kept[key] = value
+    else dropped += 1
+  }
+  return { kept, dropped }
+}
+
+/** The recorder a host that supplied no sink gets: nothing to write, so nothing to time. */
+const inert: HostDiagnostics = { record: () => {}, begin: () => Effect.succeed(() => {}) }
+
+/**
+ * Creates a bounded recorder. Nothing it writes names a host, header,
+ * destination, credential or message, and its total output is bounded, so it
+ * is safe to leave on for every hosted turn. Records reach only the `write`
+ * sink the host passes; without one the recorder is inert.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): HostDiagnostics => {
+  const write = options.write
+  if (write === undefined) return inert
+  const runtime = options.runtime
+  if (runtime === undefined) throw new Error("Host diagnostics require an Effect clock and scope")
+  const clock = options.clock ?? (() => Number(runtime.clock.monotonicTimeNanosUnsafe()) / 1_000_000)
+  const pendingMillis = options.pendingMillis ?? 15_000
+  const detailLimit = options.detailLimit ?? 8
+  const slowMillis = options.slowMillis ?? 2_000
+  const limit = options.limit ?? 2_000
+  const turn = options.turnId !== undefined && SAFE_TOKEN.test(options.turnId) ? { turnId: options.turnId } : {}
+  const started = clock()
+  const counts = new Map<string, number>()
+  let written = 0
+  const emit = (event: string, phase: string, fields: HostDiagnosticFields): void => {
+    if (written >= limit) return
+    written += 1
+    // The last record a recorder writes says that it stopped, so a reader
+    // never mistakes a bound for a turn that went quiet.
+    if (written === limit) {
+      write(
+        `${JSON.stringify({ diagnostic: HOST_DIAGNOSTIC_MARKER, ...turn, event: "diagnostics", phase: "capped" })}\n`
+      )
+      return
+    }
+    const { dropped, kept } = safeFields(fields)
+    write(`${
+      JSON.stringify({
+        diagnostic: HOST_DIAGNOSTIC_MARKER,
+        ...turn,
+        event: EVENTS.has(event) ? event : "diagnostics",
+        phase: PHASES.has(phase) ? phase : "refused",
+        atMillis: Math.round(clock() - started),
+        ...kept,
+        ...(dropped === 0 ? {} : { droppedFields: dropped })
+      })
+    }\n`)
+  }
+  return {
+    record: (event, phase, fields = {}) => emit(event, phase, fields),
+    begin: (event, fields = {}) =>
+      effect {
+        const openedAt = clock()
+        event = EVENTS.has(event) ? event : "diagnostics"
+        const count = (counts.get(event) ?? 0) + 1
+        counts.set(event, count)
+        // A turn commits a batch per model frame. Recording every one of them in
+        // full would bury the records that matter, so past the first few only a
+        // pending, slow or failed operation is reported.
+        const detailed = count <= detailLimit
+        if (detailed) emit(event, "begin", fields)
+        const fiber = try Effect.forkIn(
+          Effect.forever(Effect.andThen(
+            runtime.clock.sleep(Duration.millis(pendingMillis)),
+            effect {
+              return emit(event, "pending", { ...fields, pendingMillis: Math.round(clock() - openedAt) })
+            }
+          )),
+          runtime.scope
+        )
+        let settled = false
+        return (outcome: HostDiagnosticFields = {}) => {
+          // A completion reached twice, say from a finalizer and a handler,
+          // still ends the operation once.
+          if (settled) return
+          settled = true
+          fiber.interruptUnsafe()
+          const elapsed = Math.round(clock() - openedAt)
+          if (
+            detailed || elapsed >= slowMillis || outcome.timedOut === true ||
+            typeof outcome.status === "number" && (outcome.status === 0 || outcome.status >= 300) ||
+            outcome.failed === true
+          ) emit(event, "end", { ...fields, ...outcome, elapsedMillis: elapsed })
+        }
+      }
+  }
+}
+
+/**
+ * Builds a recorder using the caller's injected Effect clock and scope.
+ * Closing that scope cancels unfinished diagnostic observations.
+ *
+ * @category constructors
+ * @since 1.0.0-rc.0
+ */
+export const makeHostDiagnostics = (
+  options: Omit<HostDiagnosticOptions, "runtime"> = {}
+): HostDiagnostics!never!Scope =>
+  effect {
+    if (options.write === undefined) return inert
+    return createHostDiagnostics({ ...options, runtime: { clock: try Clock.Clock, scope: try Scope.Scope } })
+  }

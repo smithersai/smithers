@@ -1,0 +1,3 @@
+preload = ["vibelang/bun"]
+[test]
+preload = ["vibelang/bun"]

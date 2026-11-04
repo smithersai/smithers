@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { isContextOverflow, isQuotaExhausted, type ModelErrorCode } from "./ModelError.ts"
+import { isContextOverflow, isQuotaExhausted, type ModelErrorCode } from "./ModelError.vibe"
 
 /**
  * Where a failure's words came from.

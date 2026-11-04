@@ -119,6 +119,26 @@ describe("representation identity under an effect upgrade", () => {
     expect(printed(name, 1)).toBe(fixture.documents[name])
   })
 
+  it("writes back only effect 4.1.0's own defaults on a check whose defaults it changed", () => {
+    // 4.1.0 changed the `expected` text and arbitrary pattern of isStringFinite,
+    // isGUID and isULID. An author's own value is not one of those defaults.
+    const annotated = (check: Schema.Top) => JSON.stringify(Node.representationIdentity(check))
+    const guid = (annotations: object) => Schema.String.check(Schema.isGUID(annotations as never))
+    const filter = (annotations: string) =>
+      `{"representation":{"_tag":"String","checks":[{"_tag":"Filter","representation":{"id":"effect/schema/isGUID","payload":null},"annotations":${annotations},"aborted":false}]},"references":{}}`
+    expect(annotated(guid({ arbitraryConstraint: undefined }))).toBe(filter(`{"expected":"a GUID"}`))
+    expect(annotated(guid({ arbitraryConstraint: null }))).toBe(
+      filter(`{"expected":"a GUID","arbitraryConstraint":null}`)
+    )
+    expect(annotated(guid({ arbitraryConstraint: "x" }))).toBe(
+      filter(`{"expected":"a GUID","arbitraryConstraint":"x"}`)
+    )
+    expect(annotated(guid({ arbitraryConstraint: { patterns: [] } })))
+      .toBe(filter(`{"expected":"a GUID","arbitraryConstraint":{"patterns":[]}}`))
+    expect(annotated(Schema.String.check(Schema.isULID({ expected: "a ULID" }))))
+      .toBe(fixture.documents["check/isULID"]!.replace(/"expected":"[^"]*"/, `"expected":"a ULID"`))
+  })
+
   it("names its versions newest first, and defaults to the newest", () => {
     expect(Node.representationIdentityVersions).toEqual([2, 1])
     expect(printed("brand/twice")).toBe(printed("brand/twice", 2))

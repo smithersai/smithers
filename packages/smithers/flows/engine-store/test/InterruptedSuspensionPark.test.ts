@@ -20,10 +20,10 @@ import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
  * the round; a process exit lands its interrupt exactly there.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"

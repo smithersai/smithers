@@ -6,7 +6,7 @@
  */
 
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
-import { Sha256 } from "@smthrs/crypto"
+import { type Crypto, Sha256 } from "@smthrs/crypto"
 import { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { FileInput } from "@smthrs/flow/FileInput"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
@@ -14,7 +14,6 @@ import { Workspace as KernelWorkspace } from "@smthrs/kernel/Workspace"
 import { DerivedKey } from "@smthrs/keys"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Base64 from "effect/encoding/Base64"
 import * as FileSystem from "effect/FileSystem"

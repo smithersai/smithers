@@ -15,7 +15,7 @@ const cwd = "packages/smithers/flows"
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
   cwd,
-  testSources: Smithers.glob("{test,examples}/**/*.ts"),
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}"),
   // The example projects examples 16 and 24 discover flows in read their
   // markdown descriptors off disk at run time.
   testData: ["examples/**/*.mdx"]
@@ -116,7 +116,7 @@ const securityReview = Smithers.SecurityReview({
         "A scripted model that splices prompt text into plan code without JSON.stringify.",
         "Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider."
       ],
-      paths: ["examples/33-delegation-trellis.ts"]
+      paths: ["examples/33-delegation-trellis.vibe"]
     },
     {
       id: "runtime-guarded-layering",
@@ -127,7 +127,7 @@ const securityReview = Smithers.SecurityReview({
         "privilegedJj provided beside the engine instead of only to EngineStore.layerWithPrivilegedJj.",
         "Caller-supplied options read after validate returns, so a caller can change them after construction."
       ],
-      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.ts"]
+      paths: ["src/Runtime.ts", "src/internal/RuntimeOptions.vibe"]
     },
     {
       id: "docs-copyable-snippets",

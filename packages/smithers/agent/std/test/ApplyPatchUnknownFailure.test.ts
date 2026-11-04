@@ -16,8 +16,8 @@ const hooks = vi.hoisted(() => ({
   derive: undefined as undefined | (() => never)
 }))
 
-vi.mock("../src/internal/ApplyPatch.ts", async (importOriginal) => {
-  const original = await importOriginal<typeof import("../src/internal/ApplyPatch.ts")>()
+vi.mock("../src/internal/ApplyPatch.vibe", async (importOriginal) => {
+  const original = await importOriginal<typeof import("../src/internal/ApplyPatch.vibe")>()
   return {
     ...original,
     parsePatch: (patch: string) => hooks.parse === undefined ? original.parsePatch(patch) : hooks.parse(),

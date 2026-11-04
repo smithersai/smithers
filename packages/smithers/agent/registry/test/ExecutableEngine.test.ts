@@ -17,6 +17,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { describe, expect, it } from "@effect/vitest"
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
+import { Crypto } from "@smthrs/crypto"
 import { EngineStore } from "@smthrs/engine-store"
 import * as PlanScheduler from "@smthrs/engine-store/PlanScheduler"
 import * as StepBoundary from "@smthrs/engine-store/StepBoundary"
@@ -40,7 +41,7 @@ import { existsSync, mkdtempSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Discovery from "../src/Discovery.ts"
 import * as Executable from "../src/Executable.ts"
 import * as Registry from "../src/Registry.ts"
@@ -191,7 +192,7 @@ const durable = <A, E, R>(filename: string, hostId: string, registration: Layer.
     Layer.provideMerge(
       Layer.mergeAll(stubJj, Action.layerCacheEnvironment({ layers: [], capabilities: {} }))
     ),
-    Layer.provideMerge(NodeCrypto.layer),
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Layer.provideMerge(platform)
   )
 
@@ -727,7 +728,11 @@ describe("the annotation golden", () => {
               return node.id
             })
         })
-      ).pipe(Layer.provideMerge(stores), Layer.provideMerge(NodeCrypto.layer), Layer.provideMerge(platform))
+      ).pipe(
+        Layer.provideMerge(stores),
+        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
+        Layer.provideMerge(platform)
+      )
 
       yield* Effect.gen(function*() {
         const plan = yield* Plan.compile({

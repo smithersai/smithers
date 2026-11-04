@@ -7,6 +7,7 @@
  * exists.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
@@ -39,7 +40,7 @@ export const execute = (
         Layer.mergeAll(Interpreter.layer(flow as never), ...layers).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         ) as Layer.Layer<any, never, never>
       ),
       Effect.scoped
@@ -62,7 +63,7 @@ export const executeExit = (
         Layer.mergeAll(Interpreter.layer(flow as never), ...layers).pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         ) as Layer.Layer<any, never, never>
       ),
       Effect.scoped

@@ -17,7 +17,7 @@ import * as EngineLike from "../src/EngineLike.ts"
 import { HarnessError } from "../src/HarnessError.ts"
 import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as Sandbox from "../src/Sandbox.ts"
-import * as Steering from "../src/Steering.ts"
+import * as Steering from "../src/Steering.vibe"
 import { confidentEvaluator, descriptor, emits, of, pattern } from "./fixtures/cellTurn.ts"
 import * as ScriptedModel from "./fixtures/scriptedModel.ts"
 

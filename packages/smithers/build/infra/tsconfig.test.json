@@ -1,6 +1,9 @@
 {
+  "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "./tsconfig.json",
   "compilerOptions": {
+    "rootDirs": [".",".vibe/declarations"],
+    "rewriteRelativeImportExtensions": true,
     "types": [
       "@cloudflare/workers-types",
       "node",
@@ -9,7 +12,9 @@
   },
   "include": [
     "scripts/**/*.test.ts",
-    "worker/test/**/*.ts"
+    "worker/test/**/*.ts",
+    "scripts/**/*.test.vibe",
+    "worker/test/**/*.vibe"
   ],
   "exclude": [
     "worker/test/cli-contract.test.ts"

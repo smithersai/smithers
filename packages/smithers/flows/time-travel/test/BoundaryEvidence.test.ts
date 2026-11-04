@@ -18,7 +18,7 @@ import * as Logger from "effect/Logger"
 import * as References from "effect/References"
 import * as EffectBoundary from "../src/EffectBoundary.ts"
 import type { EffectRecord } from "../src/EffectBoundary.ts"
-import { error } from "../src/TimeTravelError.ts"
+import { error } from "../src/TimeTravelError.vibe"
 
 const record = (
   overrides: Partial<EffectRecord> & Pick<EffectRecord, "id" | "seq" | "status">

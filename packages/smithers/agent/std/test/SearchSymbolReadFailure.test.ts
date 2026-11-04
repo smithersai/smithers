@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest"
 import * as Grep from "../src/Grep.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
-import * as Search from "../src/Search.ts"
+import * as Search from "../src/Search.vibe"
 
 describe("optional search symbol source read", () => {
   it.each(["portable", "native"] as const)(

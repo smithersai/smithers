@@ -10,61 +10,61 @@
  * @category errors
  * @since 0.1.0
  */
-export * as PatternError from "./PatternError.ts"
+export * as PatternError from "./PatternError.vibe"
 
 /**
  * @category builders
  * @since 0.1.0
  */
-export * as Pattern from "./Pattern.ts"
+export * as Pattern from "./Pattern.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Debate from "./Debate.ts"
+export * as Debate from "./Debate.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Panel from "./Panel.ts"
+export * as Panel from "./Panel.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Escalation from "./Escalation.ts"
+export * as Escalation from "./Escalation.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as ReviewLoop from "./ReviewLoop.ts"
+export * as ReviewLoop from "./ReviewLoop.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as MapReduce from "./MapReduce.ts"
+export * as MapReduce from "./MapReduce.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Recursion from "./Recursion.ts"
+export * as Recursion from "./Recursion.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Bounded from "./Bounded.ts"
+export * as Bounded from "./Bounded.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Quarantine from "./Quarantine.ts"
+export * as Quarantine from "./Quarantine.vibe"
 
 /**
  * @category patterns
@@ -82,37 +82,37 @@ export * as Trellis from "./Trellis.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as DelegationChain from "./DelegationChain.ts"
+export * as DelegationChain from "./DelegationChain.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as CheckSuite from "./CheckSuite.ts"
+export * as CheckSuite from "./CheckSuite.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as DriftDetector from "./DriftDetector.ts"
+export * as DriftDetector from "./DriftDetector.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Intervene from "./Intervene.ts"
+export * as Intervene from "./Intervene.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Kanban from "./Kanban.ts"
+export * as Kanban from "./Kanban.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as MergeQueue from "./MergeQueue.ts"
+export * as MergeQueue from "./MergeQueue.vibe"
 
 /**
  * @category patterns
@@ -130,7 +130,7 @@ export * as Optimizer from "./Optimizer.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Runbook from "./Runbook.ts"
+export * as Runbook from "./Runbook.vibe"
 
 /**
  * @category patterns

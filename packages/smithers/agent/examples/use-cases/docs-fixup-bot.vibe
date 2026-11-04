@@ -1,0 +1,218 @@
+/**
+ * Scan docs for broken examples and drift, repair them, and verify the repair beside a pull request.
+ *
+ * Port of the 0.x `docs-fixup-bot.jsx`. A scanner agent lists every broken
+ * example under the doc globs, and one repair agent rewrites them all. Then two
+ * steps run side by side on the repair: a verifier agent checks it for
+ * regressions, and a pull-request step opens one PR with the changed files.
+ * The PR does not wait for the verdict, as in 0.x; the flow returns both.
+ *
+ * `ScanFixVerify` does not fit: 0.x repairs in one call, opens the PR beside the verify, and never scans again.
+ * 0.x's prompts were placeholders that printed their props; these are minimal prompts over the same props.
+ * 0.x's PR agent ran `git` and `gh`; here that is the deterministic `OpenPullRequest` action a host implements.
+ * 0.x gave the agents `bash`, `read`, `write` and `grep` tools; in 1.0 tools are the host's registered flows (see `25-agent-tools-in-sandbox.ts`).
+ */
+import * as AgentAction from "@smthrs/agent/AgentAction"
+import { Action, Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import type * as Planned from "@smthrs/plan/Planned"
+import type * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
+
+const seat = "anthropic:claude-sonnet-5-5"
+
+const Category = Schema.Literals(["import", "api", "cli", "syntax", "dead-link", "other"])
+
+/** One broken example and where it lives. */
+export const BrokenExample = Schema.Struct({
+  docPath: Schema.String,
+  lineRange: Schema.Struct({ start: Schema.Number, end: Schema.Number }),
+  language: Schema.String,
+  snippet: Schema.String,
+  error: Schema.String,
+  category: Category
+})
+
+/** The scanner's answer. */
+export const Scan = Schema.Struct({
+  brokenExamples: Schema.Array(BrokenExample),
+  totalDocsScanned: Schema.Number,
+  totalBroken: Schema.Number,
+  summary: Schema.String
+})
+
+/** What the repair agent rewrote and what it left alone. */
+export const Repair = Schema.Struct({
+  fixes: Schema.Array(Schema.Struct({
+    docPath: Schema.String,
+    original: Schema.String,
+    fixed: Schema.String,
+    explanation: Schema.String
+  })),
+  filesChanged: Schema.Array(Schema.String),
+  skipped: Schema.Array(Schema.Struct({ docPath: Schema.String, reason: Schema.String })),
+  summary: Schema.String
+})
+
+/** The verifier's verdict on the repair. */
+export const Verification = Schema.Struct({
+  allPassing: Schema.Boolean,
+  results: Schema.Array(Schema.Struct({
+    docPath: Schema.String,
+    passed: Schema.Boolean,
+    issues: Schema.Array(Schema.String)
+  })),
+  regressions: Schema.Array(Schema.String),
+  summary: Schema.String
+})
+
+/** The pull request a host is asked to open, with 0.x's PR props. */
+export const PullRequestRequest = Schema.Struct({
+  filesChanged: Schema.Array(Schema.String),
+  summary: Schema.String,
+  totalFixed: Schema.Number,
+  skipped: Repair.fields.skipped,
+  repo: Schema.NullOr(Schema.String),
+  dryRun: Schema.Boolean
+})
+
+/** The pull request the host opened, or would have opened on a dry run. */
+export const PullRequest = Schema.Struct({
+  prNumber: Schema.optional(Schema.Number),
+  prUrl: Schema.optional(Schema.String),
+  branch: Schema.String,
+  title: Schema.String,
+  filesChanged: Schema.Array(Schema.String),
+  created: Schema.Boolean,
+  summary: Schema.String
+})
+
+/** What the flow settles with: every 0.x output. */
+export const Output = Schema.Struct({
+  scan: Scan,
+  repair: Repair,
+  verification: Verification,
+  pullRequest: PullRequest
+})
+
+/** Finds broken examples under the doc globs. */
+export const ScanDocs = AgentAction.make("examples/DocsFixupBot/Scan", {
+  payload: {
+    docGlobs: Schema.Array(Schema.String),
+    srcGlobs: Schema.Array(Schema.String),
+    categories: Schema.Array(Schema.String)
+  },
+  output: Scan,
+  seat,
+  system: [
+    `You scan documentation files for broken code examples and drift.
+For each doc file, extract fenced code blocks and validate them: check imports resolve,
+API calls match current signatures, CLI flags exist, and links are not dead. Report
+every broken example with its location, language, and the specific error.`
+  ],
+  prompt: ({ categories, docGlobs, srcGlobs }) =>
+    `Scan the docs for broken examples.\n\nDoc globs: ${docGlobs.join(", ")}\nSource globs: ${
+      srcGlobs.join(", ")
+    }\nCategories: ${categories.join(", ")}`
+})
+
+/** Repairs every broken example in one pass. */
+export const RepairExamples = AgentAction.make("examples/DocsFixupBot/Repair", {
+  payload: { brokenExamples: Schema.Array(BrokenExample), totalBroken: Schema.Number },
+  output: Repair,
+  seat,
+  system: [
+    `You repair broken documentation examples. For each broken snippet,
+look up the correct current API, import path, or CLI usage in the source code and
+rewrite the example to be valid. Preserve surrounding prose and formatting. Skip
+any example you cannot confidently fix and explain why.`
+  ],
+  prompt: ({ brokenExamples, totalBroken }) =>
+    `Repair ${totalBroken} broken documentation examples.\n\nBroken examples: ${JSON.stringify(brokenExamples)}`
+})
+
+/** Checks the repair for regressions. */
+export const VerifyRepair = AgentAction.make("examples/DocsFixupBot/Verify", {
+  payload: { fixes: Repair.fields.fixes, filesChanged: Schema.Array(Schema.String) },
+  output: Verification,
+  seat,
+  system: [
+    `You verify that repaired documentation examples are correct. For code
+snippets, attempt to type-check or syntax-check them. For CLI examples, confirm the
+flags and subcommands exist. For links, verify targets resolve. Report any regressions
+introduced by the repair step.`
+  ],
+  prompt: ({ filesChanged, fixes }) =>
+    `Verify the repaired documentation examples.\n\nFiles changed: ${filesChanged.join(", ")}\nFixes: ${
+      JSON.stringify(fixes)
+    }`
+})
+
+/** Opens the pull request. Deterministic: a host implements it with `git` and `gh`. */
+export const OpenPullRequest = Action.make("examples/DocsFixupBot/OpenPullRequest", {
+  payload: PullRequestRequest,
+  success: PullRequest
+})
+
+/** The flow: scan, repair, then verify and open the pull request side by side. */
+export const DocsFixupBot = Flow.make("examples/DocsFixupBot", {
+  payload: {
+    docGlobs: Schema.optional(Schema.Array(Schema.String)),
+    srcGlobs: Schema.optional(Schema.Array(Schema.String)),
+    categories: Schema.optional(Schema.Array(Schema.String)),
+    repo: Schema.optional(Schema.String),
+    dryRun: Schema.optional(Schema.Boolean)
+  },
+  success: Output,
+  error: AgentAction.AgentFailure,
+  body: ({
+    categories = ["import", "api", "cli", "syntax", "dead-link"],
+    docGlobs = ["docs/**/*.mdx", "docs/**/*.md"],
+    dryRun = false,
+    repo,
+    srcGlobs = ["src/**/*.ts", "src/**/*.tsx"]
+  }) =>
+    Node.bindPlanned(
+      ScanDocs.call({ docGlobs, srcGlobs, categories }),
+      (scan: Planned.Planned<typeof Scan.Type>) =>
+        Node.bindPlanned(
+          RepairExamples.call({ brokenExamples: scan.brokenExamples, totalBroken: scan.totalBroken }),
+          (repair: Planned.Planned<typeof Repair.Type>) =>
+            Node.bindPlanned(
+              Node.all({
+                verification: VerifyRepair.call({ fixes: repair.fixes, filesChanged: repair.filesChanged }),
+                pullRequest: Node.bindPlanned(
+                  Node.map(Node.succeed(repair.fixes), (fixes) => fixes.length),
+                  (totalFixed) =>
+                    OpenPullRequest.call({
+                      filesChanged: repair.filesChanged,
+                      summary: repair.summary,
+                      totalFixed,
+                      skipped: repair.skipped,
+                      repo: repo ?? null,
+                      dryRun
+                    })
+                )
+              }),
+              (done) => Node.succeed({ scan, repair, verification: done.verification, pullRequest: done.pullRequest })
+            )
+        )
+    )
+})
+
+/** What a host supplies for the step that leaves the model. */
+export interface Host {
+  readonly openPullRequest: (
+    request: typeof PullRequestRequest.Type
+  ) => typeof PullRequest.Type!!
+}
+
+/** Every step the flow calls, with the host's pull-request step. */
+export const layer = (host: Host) =>
+  Layer.mergeAll(
+    ScanDocs.layer,
+    RepairExamples.layer,
+    VerifyRepair.layer,
+    OpenPullRequest.toLayer(host.openPullRequest)
+  )

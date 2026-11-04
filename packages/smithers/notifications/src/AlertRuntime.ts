@@ -27,9 +27,9 @@ import {
   Policy,
   recordSourceId
 } from "./AlertPolicy.ts"
-import { Sink } from "./AlertSink.ts"
+import { Sink } from "./AlertSink.vibe"
 import * as FoldCache from "./internal/foldCache.ts"
-import type * as NotificationModel from "./Notification.ts"
+import type * as NotificationModel from "./Notification.vibe"
 import { type NotificationError, NotificationQueue } from "./NotificationQueue.ts"
 
 /**

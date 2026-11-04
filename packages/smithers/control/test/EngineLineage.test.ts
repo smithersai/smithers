@@ -10,6 +10,7 @@
  * what it sees.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import * as EngineStore from "@smthrs/engine-store/EngineStore"
@@ -30,7 +31,7 @@ import { Effect, Layer, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.ts"
 import type { ControlEvent, ListResponse, RunSummary } from "../src/ControlSchema.ts"
-import * as Lineage from "../src/Lineage.ts"
+import * as Lineage from "../src/Lineage.vibe"
 import { controlPlane, type DurableStack } from "./DurableStack.ts"
 
 const parentRunId = "engine-lineage-parent"
@@ -121,7 +122,7 @@ const database = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(
   Layer.provideMerge(Layer.effectDiscard(EngineMigrations.run)),
-  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 
 const engine = Layer.mergeAll(

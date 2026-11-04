@@ -8,6 +8,7 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
  * attribution, or steering delivery need that meeting point.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import * as DurableWriterModule from "@smthrs/database/DurableWriter"
 import type { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
@@ -17,7 +18,6 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import type { Crypto } from "effect"
 import { Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
@@ -155,5 +155,5 @@ export const durable = (
   } = {}
 ): Layer.Layer<DurableStack> =>
   controlPlane(options).pipe(
-    Layer.provideMerge(Layer.merge(options.database ?? journalBundle, NodeCrypto.layer))
+    Layer.provideMerge(Layer.merge(options.database ?? journalBundle, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   ) as Layer.Layer<DurableStack>

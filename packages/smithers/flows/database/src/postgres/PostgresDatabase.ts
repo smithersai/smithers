@@ -33,35 +33,21 @@
  */
 
 import type * as Pg from "@effect/sql-pg"
-import {
-  Cause,
-  Clock,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Metric,
-  Random,
-  Redacted,
-  Result,
-  Scope,
-  Stream
-} from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Metric, Random, Redacted, Result, Stream } from "effect"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { Connection } from "effect/sql/SqlConnection"
 import { isSqlError, SqlError, UnknownError } from "effect/sql/SqlError"
 import type { Compiler } from "effect/sql/Statement"
-import * as DatabaseMetrics from "../DatabaseMetrics.ts"
-import * as ReadOnly from "../internal/ReadOnly.ts"
-import * as ReadTransaction from "../internal/ReadTransaction.ts"
-import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.ts"
-import * as WriteLock from "../internal/WriteLock.ts"
-import * as WriteTally from "../internal/WriteTally.ts"
+import * as DatabaseMetrics from "../DatabaseMetrics.vibe"
+import * as ReadOnly from "../internal/ReadOnly.vibe"
+import * as ReadTransaction from "../internal/ReadTransaction.vibe"
+import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.vibe"
+import * as WriteLock from "../internal/WriteLock.vibe"
+import * as WriteTally from "../internal/WriteTally.vibe"
 import { qualify } from "./QualifiedRead.ts"
 
-export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.ts"
+export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.vibe"
 
 /**
  * The `@effect/sql-pg` modules this adapter drives. Pass the package itself:
@@ -529,20 +515,16 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
       const sql = yield* SqlClient.make({
         acquirer: Effect.map(reserve, statements),
         compiler,
+        driver: "pg",
         spanAttributes: [["db.system.name", "postgresql"]]
       })
       const transactions = (start: (conn: Connection) => Effect.Effect<unknown, SqlError>) =>
         SqlClient.makeWithTransaction({
           transactionService: sql.transactionService,
           spanAttributes: [["db.system.name", "postgresql"]],
-          acquireConnection: Effect.gen(function*() {
-            const reservation = yield* Scope.make()
-            const conn = yield* Scope.provide(reserve, reservation).pipe(
-              Effect.onExit((exit) => exit._tag === "Failure" ? Scope.close(reservation, exit) : Effect.void)
-            )
-            return [reservation, tracked(conn)] as const
-          }),
-          begin: start,
+          // The transaction owns the scope its connection is reserved in.
+          acquireConnection: () => Effect.map(reserve, tracked),
+          begin: (conn) => start(conn),
           savepoint,
           commit,
           rollback,

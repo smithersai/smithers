@@ -51,9 +51,9 @@
 import { Effect, Schema } from "effect"
 import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
 import { MAX_ENTRIES } from "./internal/Text.ts"
-import * as Search from "./Search.ts"
-import * as Contract from "./SearchContract.ts"
-import type * as StdError from "./StdError.ts"
+import * as Search from "./Search.vibe"
+import * as Contract from "./SearchContract.vibe"
+import type * as StdError from "./StdError.vibe"
 
 /**
  * The registry name for glob.

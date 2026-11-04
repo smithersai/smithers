@@ -13,12 +13,19 @@ import * as Dialect from "@smthrs/database/Dialect"
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as Arr from "effect/Array"
 import * as Effect from "effect/Effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as SqlError from "effect/sql/SqlError"
 import * as RetentionOps from "../src/internal/RetentionOps.ts"
 import * as Migrations from "../src/Migrations.ts"
 import * as Retention from "../src/Retention.ts"
+
+// Effect 4.1's sql.insert takes a non-empty array; every batch here has rows.
+const nonEmpty = <A>(rows: ReadonlyArray<A>): Arr.NonEmptyReadonlyArray<A> => {
+  if (!Arr.isReadonlyArrayNonEmpty(rows)) throw new Error("expected at least one row")
+  return rows
+}
 
 const migrated = <A, E>(effect: Effect.Effect<A, E, SqlClient.SqlClient>) =>
   effect.pipe(Effect.provide(Migrations.layer), Effect.provide(TestDatabase.layer))
@@ -325,7 +332,7 @@ describe("Retention.collect", () => {
           finished_at_ms: offset + index + 1,
           state_json: "{}"
         }))
-        yield* sql`INSERT INTO flows_runs ${sql.insert(rows)}`
+        yield* sql`INSERT INTO flows_runs ${sql.insert(nonEmpty(rows))}`
       }
 
       const first = yield* Retention.collect({ olderThanMs: 2_000 })

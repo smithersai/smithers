@@ -18,7 +18,7 @@ import {
   traceFoldSync,
   traceFromJournal,
   type TraceModel
-} from "../src/RunTrace.js"
+} from "../src/RunTrace.vibe"
 import { moduleRunJournal } from "./fixtures/module-run-journal.ts"
 
 const run = { runId: "run", flowId: "agent" }

@@ -23,7 +23,7 @@ import { ModelError } from "@smthrs/model/ModelError"
 import * as ModelEvent from "@smthrs/model/ModelEvent"
 import { ModelRequest, type TextPart } from "@smthrs/model/ModelRequest"
 import { Effect, Layer, Schema, Stream } from "effect"
-import * as CachedModel from "./CachedModel.ts"
+import * as CachedModel from "./CachedModel.vibe"
 import type { FixtureStore } from "./FixtureStore.ts"
 
 /**

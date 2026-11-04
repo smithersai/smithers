@@ -43,9 +43,9 @@ import * as Digest from "@smthrs/core/Digest"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Path from "effect/Path"
-import type { ModuleImport } from "../Descriptor.ts"
-import * as Prompt from "../Prompt.ts"
-import { stringLiteral, type Token, tokenize } from "./ModuleMetadata.ts"
+import type { ModuleImport } from "../Descriptor.vibe"
+import * as Prompt from "../Prompt.vibe"
+import { stringLiteral, type Token, tokenize } from "./ModuleMetadata.vibe"
 
 /**
  * How many modules one entry's closure may name.

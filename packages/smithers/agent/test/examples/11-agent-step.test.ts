@@ -1,6 +1,6 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import { defaultResearch, main, run } from "../../examples/11-agent-step.ts"
+import { defaultResearch, main, run } from "../../examples/11-agent-step.vibe"
 
 /** The research fields as the writing step's prompt renders them. */
 const handedTo = (prompt: string, keyPointCount: number) => ({

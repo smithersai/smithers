@@ -67,11 +67,11 @@ see [Installation](./installation.md).
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { digest, digestSync } from "@smthrs/crypto"
+import { Crypto, digest, digestSync } from "@smthrs/crypto"
 import { Effect } from "effect"
 
 const injected = await Effect.runPromise(
-  digest("hello").pipe(Effect.provide(NodeCrypto.layer))
+  digest("hello").pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 const synchronous = digestSync("hello")
 

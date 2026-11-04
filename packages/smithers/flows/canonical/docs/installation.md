@@ -14,7 +14,7 @@ npm install @smthrs/canonical@next effect
 The `next` tag carries the 1.0 release candidates.
 
 [`effect`](https://effect.website) is a peer dependency, declared in the version
-`4.0.5`. Install it yourself at that version: it supplies the `Schema`
+`4.1.0`. Install it yourself at that version: it supplies the `Schema`
 module the `Canonical` codec is built on, the examples in these pages import
 `effect/Schema` and `effect/Effect` directly, and two copies of `effect` in one
 program are two sets of service tags. Effect 3 does not satisfy that peer

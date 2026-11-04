@@ -1,8 +1,8 @@
 import { canonicalize } from "@smthrs/canonical"
-import { digestSync } from "@smthrs/crypto"
+import { Crypto, digestSync } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Context, Crypto, Effect, Exit, Latch, Option, Schema, Scope } from "effect"
+import { Context, Effect, Exit, Latch, Option, Schema, Scope } from "effect"
 
 // This entry is bundled, never imported in the host. The SDK keeps its own
 // deterministic intrinsics; repository code receives only public authoring APIs.

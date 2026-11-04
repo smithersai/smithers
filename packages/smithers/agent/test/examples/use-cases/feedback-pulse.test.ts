@@ -4,8 +4,8 @@ import * as Exit from "effect/Exit"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { FeedbackPulse, layer } from "../../../examples/use-cases/feedback-pulse.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import { FeedbackPulse, layer } from "../../../examples/use-cases/feedback-pulse.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "feedback-pulse-"))
 

@@ -9,8 +9,8 @@
     "lint": "eslint '**/*.ts' --max-warnings=0 && dprint check"
   },
   "dependencies": {
-    "@effect/platform-bun": "4.0.5",
-    "@effect/platform-node": "4.0.5",
+    "@effect/platform-bun": "4.1.1",
+    "@effect/platform-node": "4.1.1",
     "@smthrs/agent": "workspace:*",
     "@smthrs/build-cli": "workspace:*",
     "@smthrs/capability": "workspace:*",
@@ -34,7 +34,7 @@
     "@smthrs/sandbox": "workspace:*",
     "@smthrs/std": "workspace:*",
     "@smthrs/targets": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "microsandbox": "0.6.16",
     "playwright": "1.62.1",
     "@pierre/diffs": "1.5.2",
@@ -42,7 +42,8 @@
     "@smthrs/ui-styleguide": "workspace:*",
     "mermaid": "^11.17.2",
     "@smthrs/platform-bun": "workspace:*",
-    "@smthrs/jj": "workspace:*"
+    "@smthrs/jj": "workspace:*",
+    "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -57,6 +58,7 @@
     "typescript-eslint": "8.69.0",
     "happy-dom": "20.13.2",
     "@types/bun": "1.4.4",
-    "vibelang": "0.0.8"
+    "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "@smthrs/crypto": "workspace:*"
   }
 }

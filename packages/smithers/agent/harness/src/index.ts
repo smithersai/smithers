@@ -33,7 +33,7 @@ export * as Supervisor from "./Supervisor.ts"
  * @category controls
  * @since 1.0.0-rc.0
  */
-export * as Monitor from "./Monitor.ts"
+export * as Monitor from "./Monitor.vibe"
 
 /**
  * @category controls
@@ -45,7 +45,7 @@ export * as Judgement from "./Judgement.ts"
  * @category controls
  * @since 1.0.0-rc.0
  */
-export * as Relevance from "./Relevance.ts"
+export * as Relevance from "./Relevance.vibe"
 
 /**
  * @category models
@@ -63,7 +63,7 @@ export * as EngineLike from "./EngineLike.ts"
  * @category utilities
  * @since 0.1.0
  */
-export * as Tokens from "./Tokens.ts"
+export * as Tokens from "./Tokens.vibe"
 
 /**
  * @category models
@@ -75,7 +75,7 @@ export * as ContextWindow from "./ContextWindow.ts"
  * @category projections
  * @since 0.1.0
  */
-export * as Transcript from "./Transcript.ts"
+export * as Transcript from "./Transcript.vibe"
 
 /**
  * @category projections
@@ -93,7 +93,7 @@ export * as Compaction from "./Compaction.ts"
  * @category steering
  * @since 0.1.0
  */
-export * as Steering from "./Steering.ts"
+export * as Steering from "./Steering.vibe"
 
 /**
  * @category notifications
@@ -120,7 +120,7 @@ export * as Sandbox from "./Sandbox.ts"
  * @category services
  * @since 1.0.0-rc.16
  */
-export * as QuickJSVariant from "./QuickJSVariant.ts"
+export * as QuickJSVariant from "./QuickJSVariant.vibe"
 
 /**
  * @category streams
@@ -132,7 +132,7 @@ export * as CellTurn from "./CellTurn.ts"
  * @category projections
  * @since 1.0.0-rc.16
  */
-export * as DoneText from "./DoneText.ts"
+export * as DoneText from "./DoneText.vibe"
 
 /**
  * @category services
@@ -162,13 +162,13 @@ export * as StructuredOutput from "./StructuredOutput.ts"
  * @category models
  * @since 0.1.0
  */
-export * as TruncatedOutput from "./TruncatedOutput.ts"
+export * as TruncatedOutput from "./TruncatedOutput.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as CallLedger from "./CallLedger.ts"
+export * as CallLedger from "./CallLedger.vibe"
 
 /**
  * @category models
@@ -210,13 +210,13 @@ export * as Sufficiency from "./Sufficiency.ts"
  * @category models
  * @since 0.1.0
  */
-export * as VacuousVerification from "./VacuousVerification.ts"
+export * as VacuousVerification from "./VacuousVerification.vibe"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as VariablesPanel from "./VariablesPanel.ts"
+export * as VariablesPanel from "./VariablesPanel.vibe"
 
 /**
  * @category models

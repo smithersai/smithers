@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Markdown from "../src/Markdown.ts"
+import * as Markdown from "../src/Markdown.vibe"
 
 describe("release coverage", () => {
   it("rejects a non-scalar allowed-tools value with the exact public error", () => {

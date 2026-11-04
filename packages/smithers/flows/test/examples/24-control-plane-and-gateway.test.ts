@@ -1,4 +1,4 @@
-import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import { afterAll, expect, it } from "@effect/vitest"
 import * as Control from "@smthrs/control/Control"
 import type * as ControlSchema from "@smthrs/control/ControlSchema"
@@ -94,7 +94,7 @@ const request = (url: string, tag: "Approve" | "Run", headers: Record<string, st
     new Promise<{ status: number; body: string }>((resolve, reject) => {
       const body = JSON.stringify({ _tag: "Request", id: "0", tag, payload: payload(tag), headers: [] }) + "\n"
       if (websocket) {
-        const socket = new NodeSocket.NodeWS.WebSocket(`${url.replace("http:", "ws:")}/rpc/ws`, { headers })
+        const socket = new NodeWS.WebSocket(`${url.replace("http:", "ws:")}/rpc/ws`, { headers })
         socket.on("error", reject)
         socket.on("unexpected-response", (_request, response) => {
           response.resume()

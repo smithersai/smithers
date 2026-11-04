@@ -21,9 +21,9 @@ import type * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { Consensus, heartbeatStaleAfter, type LivenessEvidence } from "../src/Consensus.ts"
 import { Journal } from "../src/Journal.ts"
-import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.ts"
+import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
 import * as Migrations from "../src/Migrations.ts"
-import type { OwnerId } from "../src/OwnerId.ts"
+import type { OwnerId } from "../src/OwnerId.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const staleAfterMs = Duration.toMillis(heartbeatStaleAfter)

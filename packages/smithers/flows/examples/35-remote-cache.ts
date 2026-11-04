@@ -11,6 +11,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { CacheSync, EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
@@ -223,7 +224,7 @@ const engineLayer = (filename: string, hostId: string, endpoint: string) => {
         Action.layerCacheEnvironment({ layers: [], capabilities: {} })
       )
     ),
-    Layer.provideMerge(NodeCrypto.layer),
+    Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest)),
     Layer.provideMerge(Layer.merge(AtomicFileSystem.layer, NodePath.layer))
   )
 }

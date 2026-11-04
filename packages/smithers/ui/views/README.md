@@ -25,7 +25,7 @@ Install it with its peer dependency; it is published under the `next` tag
 with the rest of Smithers' packages:
 
 ```sh
-npm install @smthrs/views@next effect@4.0.5
+npm install @smthrs/views@next effect@4.1.1
 ```
 
 It imports no Node built-in, so it runs in a browser, a Cloudflare Worker,

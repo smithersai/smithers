@@ -7,6 +7,8 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import type { Word } from "effect/process/CommandLine"
+import * as Redacted from "effect/Redacted"
 import { spawn, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -19,6 +21,11 @@ import { policy } from "../src/internal/ProcessCleanup.ts"
 import { Control, prepare, targetPidOf } from "../src/internal/ProcessSupervisor.ts"
 import * as ProcessReaper from "../src/ProcessReaper.ts"
 import { waitForExit } from "./helpers/waitForExit.ts"
+
+// Effect 4.1 types a command's arguments and environment values as Word, text or
+// Redacted text; the fakes read what the process would receive.
+const word = (value: Word): string => Redacted.isRedacted(value) ? Redacted.value(value) : value
+const argsOf = (command: { readonly args: ReadonlyArray<Word> }): Array<string> => command.args.map(word)
 
 const rawLayer = NodeSpawner.layer.pipe(Layer.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)))
 const layers = Layer.succeed(ChildProcessSpawner)(
@@ -382,7 +389,7 @@ fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`
       expect(helper!.options).toMatchObject({ cwd: "/", extendEnv: false, shell: false })
       expect(helper!.options.env).not.toHaveProperty("NODE_OPTIONS")
       expect(helper!.options.env).not.toHaveProperty("BUN_OPTIONS")
-      expect(existsSync(helper!.args.at(-2)!)).toBe(false)
+      expect(existsSync(argsOf(helper!).at(-2)!)).toBe(false)
       yield* prepared.activate
       yield* prepared.activate
       expect(targetPidOf(prepared.handle)).not.toBe(prepared.handle.pid)

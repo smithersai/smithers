@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import type * as Event from "../src/Event.ts"
-import * as Journal from "../src/Journal.ts"
+import type * as Event from "../src/Event.vibe"
+import * as Journal from "../src/Journal.vibe"
 
 const started: Event.Event = { _tag: "ChainStarted", envelope: null, goal: "g" }
 

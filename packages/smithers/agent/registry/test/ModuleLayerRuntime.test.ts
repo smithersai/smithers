@@ -2,6 +2,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
+import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, FileSystem, Layer, Option, Schema } from "effect"
@@ -101,7 +102,7 @@ export default Flow.make("fixture", {
         Layer.succeed(HostPrefix, "host"),
         NodeFileSystem.layer,
         NodePath.layer,
-        NodeCrypto.layer
+        Crypto.layerFromDigest(NodeCrypto.layerDigest)
       )),
       Effect.scoped
     )
@@ -168,7 +169,9 @@ export default Flow.make("fixture", {
       if (Exit.isFailure(cleanup)) expect(cleanup.cause.reasons).toEqual(interrupt.reasons)
     }).pipe(
       Effect.provide(Discovery.layer),
-      Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)),
+      Effect.provide(
+        Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      ),
       Effect.scoped
     )
   )

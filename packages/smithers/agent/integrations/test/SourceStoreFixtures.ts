@@ -1,8 +1,8 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer } from "effect"
 import * as Migrations from "../src/core/Migrations.ts"
-import type { SourceRecord } from "../src/core/SourceRecord.ts"
-import * as SourceStore from "../src/core/SourceStore.ts"
+import type { SourceRecord } from "../src/core/SourceRecord.vibe"
+import * as SourceStore from "../src/core/SourceStore.vibe"
 
 /** A generic chat record in `team-chat`, channel `c-general`. */
 export const record = (overrides: Partial<SourceRecord> = {}): SourceRecord => ({

@@ -12,7 +12,7 @@ import { getVersion, transform } from "sucrase"
 import { source as bundle } from "./internal/RealmFlowBundle.ts"
 import * as QuickJSLifecycle from "./QuickJSLifecycle.ts"
 import { layerVariantLive } from "./QuickJSSandbox.ts"
-import * as QuickJSVariant from "./QuickJSVariant.ts"
+import * as QuickJSVariant from "./QuickJSVariant.vibe"
 
 /**
  * A host-dispatched action addressed by its canonical interpreter node.

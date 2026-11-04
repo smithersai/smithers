@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Container from "../src/Container.ts"
+import * as Container from "../src/Container.vibe"
 
 describe("container argv admission", () => {
   it.each([0, 1, 2])(

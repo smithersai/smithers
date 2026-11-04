@@ -9,7 +9,7 @@ import { Effect } from "effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Memory from "../src/MemoryTimeTravelStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlTimeTravelStore from "../src/SqlTimeTravelStore.ts"
 import * as TimeTravel from "../src/TimeTravel.ts"
 

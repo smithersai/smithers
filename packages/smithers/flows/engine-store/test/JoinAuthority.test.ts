@@ -8,6 +8,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
 import { Capability, CapabilityPattern } from "@smthrs/capability/Capability"
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
+import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
@@ -109,7 +110,7 @@ describe("durable joins under a capability ceiling", () => {
       Effect.provide(jj),
       Effect.provide(StepBoundary.layerTest()),
       Effect.provide(TestStores.layerAt(":memory:")),
-      Effect.provide(NodeCrypto.layer)
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     ))
 
   it.effect("records a handoff successor's own declaration so its join compares what it ran under", () =>
@@ -156,7 +157,7 @@ describe("durable joins under a capability ceiling", () => {
       Effect.provide(jj),
       Effect.provide(StepBoundary.layerTest()),
       Effect.provide(TestStores.layerAt(":memory:")),
-      Effect.provide(NodeCrypto.layer)
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     ))
 
   it.effect("drives a resumed run only for its own declaration and a covering caller", () =>
@@ -216,6 +217,6 @@ describe("durable joins under a capability ceiling", () => {
       Effect.provide(jj),
       Effect.provide(StepBoundary.layerTest()),
       Effect.provide(TestStores.layerAt(":memory:")),
-      Effect.provide(NodeCrypto.layer)
+      Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))
     ))
 })

@@ -1,4 +1,5 @@
 import { NodeCrypto } from "@effect/platform-node"
+import { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { FlowEngine } from "@smthrs/engine"
 import { DurableEngineState } from "@smthrs/engine-store"
@@ -14,8 +15,8 @@ import { Effect, Layer, ManagedRuntime } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/index.ts"
-import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.ts"
-import type { AppendObservation, AppendPreparation } from "../coding/landing-schema.ts"
+import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.vibe"
+import type { AppendObservation, AppendPreparation } from "../coding/landing-schema.vibe"
 import { type BackendLanding, Landing, type LocalLanding } from "../coding/landing.ts"
 import { NativeCoding, NativeCodingError } from "../coding/native.ts"
 import { checkInputDigest, CodingError, type Implementation, type Plan, type Revision } from "../coding/schema.ts"
@@ -274,7 +275,7 @@ for (const mode of modes) {
           Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
     )
     t.after(() => host.dispose())
@@ -292,7 +293,7 @@ for (const mode of modes) {
           Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
     )
     t.after(() => installHost.dispose())
@@ -427,7 +428,7 @@ for (const installed of [false, true]) {
             Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
       )
       t.after(() => host.dispose())
@@ -445,7 +446,7 @@ for (const installed of [false, true]) {
             Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
       )
       t.after(() => installHost.dispose())
@@ -539,7 +540,7 @@ for (const installed of [false, true]) {
             Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
       )
       t.after(() => host.dispose())
@@ -557,7 +558,7 @@ for (const installed of [false, true]) {
             Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(FlowEngine.layerMemory),
-            Layer.provideMerge(NodeCrypto.layer)
+            Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
           )
       )
       t.after(() => installHost.dispose())
@@ -648,7 +649,7 @@ for (const refusal of ["reserved_candidate_rebased", "reserved_candidate_changed
           Layer.provide(Layer.mergeAll(Layer.succeed(Landing, fake), native)),
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
     )
     t.after(() => host.dispose())
@@ -675,7 +676,7 @@ const durableStores = Layer.mergeAll(
   DurableEngineState.layer
 ).pipe(
   Layer.provideMerge(Layer.effectDiscard(Migrations.run)),
-  Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
+  Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 )
 const jj = Jj.make({
   snapshot: () => Effect.succeed({ commitId: "landing" as never, changeId: "landing" as never }),
@@ -835,7 +836,7 @@ for (const mode of localModes) {
         .pipe(
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(FlowEngine.layerMemory),
-          Layer.provideMerge(NodeCrypto.layer)
+          Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
         )
     )
     t.after(() => host.dispose())

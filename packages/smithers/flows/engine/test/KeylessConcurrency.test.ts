@@ -1,4 +1,3 @@
-import type * as Crypto from "effect/Crypto"
 /**
  * Issue #111: keyless same-declaration actions dispatched concurrently
  * take their ordinals from fiber arrival order, so a crash-resume that
@@ -12,6 +11,7 @@ import type * as Crypto from "effect/Crypto"
  * concurrent invocations distinguishable.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import { Action, Flow, FlowRuntime, StepIdentity } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Context, Deferred, Effect, Exit, Fiber, Layer, Scheduler, Schema } from "effect"

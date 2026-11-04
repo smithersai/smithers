@@ -7,7 +7,7 @@ import { Effect, Layer, Option } from "effect"
 import { describe, expect, it } from "vitest"
 import * as CellTurn from "../src/CellTurn.ts"
 import * as Notifications from "../src/Notifications.ts"
-import * as Steering from "../src/Steering.ts"
+import * as Steering from "../src/Steering.vibe"
 import { descriptor, emits, run, window } from "./fixtures/cellTurn.ts"
 
 const note = (id: string, files: string[]): Notification => ({

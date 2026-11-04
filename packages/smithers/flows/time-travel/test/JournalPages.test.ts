@@ -10,7 +10,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Journal from "@smthrs/journal/Journal"
 import type * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as Effect from "effect/Effect"
-import * as JournalPages from "../src/internal/JournalPages.ts"
+import * as JournalPages from "../src/internal/JournalPages.vibe"
 
 const entry = (seq: number): JournalEvent.Entry =>
   ({

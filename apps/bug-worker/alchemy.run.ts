@@ -19,7 +19,7 @@
  * A deploy without one fails instead of removing the live binding.
  */
 import * as Alchemy from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
+import * as Cloudflare from "@alchemy.run/cloudflare";
 import * as Config from "effect/Config";
 import * as Redacted from "effect/Redacted";
 import * as Schema from "effect/Schema";

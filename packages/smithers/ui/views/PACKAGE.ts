@@ -15,7 +15,7 @@ const cwd = "packages/smithers/ui/views"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [harnessPackage.lib, cryptoPackage.lib, flowPackage.lib],
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   cwd
 })
 
@@ -42,7 +42,7 @@ const { importRules, jevRules } = SdkRules({ cwd, role: "library" })
  * views bundle the realm and the bridge from them. A glob in another package
  * cannot reach them; a label can.
  */
-const sourceFiles = Smithers.Filegroup({ srcs: [Smithers.glob("src/**/*.ts")], cwd })
+const sourceFiles = Smithers.Filegroup({ srcs: [Smithers.glob("src/**/*.{ts,vibe}")], cwd })
 
 /** Security review: `security` reviews the diff, `securityAudit` audits the package. */
 const securityReview = Smithers.SecurityReview({
@@ -84,7 +84,7 @@ const securityReview = Smithers.SecurityReview({
         "Module text written into `ViewCodeError.message` or any field other than the redacted `detail` and `problems`.",
         "A metric attribute other than `limit`."
       ],
-      paths: ["src/PresentationRealm.ts", "src/ViewCode.ts"]
+      paths: ["src/PresentationRealm.ts", "src/ViewCode.vibe"]
     },
     {
       id: "frame-policy",
@@ -95,7 +95,7 @@ const securityReview = Smithers.SecurityReview({
         "A CSP directive that admits a scheme, a host, 'unsafe-inline' script or 'unsafe-eval', or drops script-src-attr 'none'.",
         "frameDocument writing view content, or a runtime or style sheet that can close its own element early."
       ],
-      paths: ["src/ViewCsp.ts"]
+      paths: ["src/ViewCsp.vibe"]
     },
     {
       id: "bridge-admission",
@@ -107,7 +107,7 @@ const securityReview = Smithers.SecurityReview({
         "Values over maxValuesBytes, or more than maxInteractionsPerSecond in a window, admitted.",
         "acceptInitialize accepting a nonce that does not match exactly."
       ],
-      paths: ["src/Bridge.ts", "src/Interactions.ts"]
+      paths: ["src/Bridge.vibe", "src/Interactions.vibe"]
     }
   ]
 })

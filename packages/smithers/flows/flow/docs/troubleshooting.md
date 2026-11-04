@@ -237,7 +237,7 @@ Two service requirements are often missed, because they are not action
 implementations:
 
 - **`Crypto`.** Every dispatch is recorded under a derived step identity, so even
-  the in-memory engine needs one. Provide `NodeCrypto.layer` from
+  the in-memory engine needs one. Provide `Crypto.layerFromDigest(NodeCrypto.layerDigest)` from
   `@effect/platform-node`, or a browser equivalent.
 - **`FlowEngine.SnapshotBoundary`.** A `compensable` action needs one, and the
   engine dies with `SnapshotBoundaryRequired` without it.

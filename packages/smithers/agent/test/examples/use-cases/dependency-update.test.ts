@@ -4,9 +4,9 @@ import * as Layer from "effect/Layer"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import type { Dependency } from "../../../examples/use-cases/dependency-update.ts"
-import { DependencyUpdate, layer, Verify } from "../../../examples/use-cases/dependency-update.ts"
-import * as Kit from "../../../examples/use-cases/kit.ts"
+import type { Dependency } from "../../../examples/use-cases/dependency-update.vibe"
+import { DependencyUpdate, layer, Verify } from "../../../examples/use-cases/dependency-update.vibe"
+import * as Kit from "../../../examples/use-cases/kit.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "dependency-update-"))
 

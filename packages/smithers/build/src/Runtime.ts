@@ -30,7 +30,7 @@ import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Schema from "effect/Schema"
 import * as BoundedOutput from "./internal/boundedOutput.ts"
-import * as Diagnostics from "./internal/diagnostic.ts"
+import * as Diagnostics from "./internal/diagnostic.vibe"
 import { normalizePlatform } from "./internal/platform.ts"
 import * as Validate from "./internal/validate.ts"
 

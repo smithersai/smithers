@@ -11,7 +11,7 @@ const cwd = "packages/smithers/agent/harness"
 
 const standard = BuildAndCheckTypeScriptPackage({
   cwd,
-  sources: Input.glob("{src,examples}/**/*.ts"),
+  sources: Input.glob("{src,examples}/**/*.{ts,vibe}"),
   testData: ["docs/api.md"]
 })
 
@@ -98,7 +98,7 @@ const securityReview = Smithers.SecurityReview({
         "A flow result materialized into the realm without the payloadBytes estimate, or a deep JSON payload whose handle building can overflow the host stack uncaught.",
         "Proxy or another getter-driven intrinsic available to cells that makes the variables-panel memory probe under-report held bytes."
       ],
-      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.ts", "src/VariablesPanel.ts"]
+      paths: ["src/QuickJSSandbox.ts", "src/Sandbox.ts", "src/VariablesPanel.vibe"]
     },
     {
       id: "flow-call-authorization",
@@ -123,7 +123,7 @@ const securityReview = Smithers.SecurityReview({
         "TruncatedOutput.reuse matching that a trivial re-encoding of the fragment (whitespace, JSON escaping) evades.",
         "An at option accepted by Cell.checkpointOf that does not name a checkpoint this run minted."
       ],
-      paths: ["src/CellTurn.ts", "src/TruncatedOutput.ts", "src/Cell.ts"]
+      paths: ["src/CellTurn.ts", "src/TruncatedOutput.vibe", "src/Cell.ts"]
     },
     {
       id: "prompt-injection-boundary",
@@ -138,15 +138,15 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/internal/untrustedData.ts",
-        "src/internal/cellPrompt.ts",
+        "src/internal/cellPrompt.vibe",
         "src/internal/printsObservation.ts",
-        "src/CallLedger.ts",
+        "src/CallLedger.vibe",
         "src/NarrowedCheck.ts",
         "src/Compaction.ts",
-        "src/Relevance.ts",
+        "src/Relevance.vibe",
         "src/Supervisor.ts",
-        "src/Steering.ts",
-        "src/Monitor.ts",
+        "src/Steering.vibe",
+        "src/Monitor.vibe",
         "src/Notifications.ts",
         "src/CellTurn.ts"
       ]
@@ -177,7 +177,7 @@ const securityReview = Smithers.SecurityReview({
         "src/UnresolvedFailure.ts",
         "src/FailedCall.ts",
         "src/UnmovedTree.ts",
-        "src/VacuousVerification.ts",
+        "src/VacuousVerification.vibe",
         "src/Sufficiency.ts",
         "src/CellTurn.ts"
       ]
@@ -193,7 +193,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/AgentEvent.ts",
-        "src/Transcript.ts",
+        "src/Transcript.vibe",
         "src/EngineLike.ts",
         "src/FlowBinding.ts",
         "src/HarnessError.ts"

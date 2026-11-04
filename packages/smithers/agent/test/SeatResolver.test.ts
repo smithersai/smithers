@@ -11,8 +11,8 @@
  */
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Seat from "../src/Seat.ts"
-import * as SeatResolver from "../src/SeatResolver.ts"
+import * as Seat from "../src/Seat.vibe"
+import * as SeatResolver from "../src/SeatResolver.vibe"
 
 describe("Seat.modelIdOf", () => {
   it("reads the half after the separator", () => {

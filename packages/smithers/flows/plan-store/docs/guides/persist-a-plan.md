@@ -46,8 +46,8 @@ covers why the ordering matters.
 
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import type * as Plan from "@smthrs/plan/Plan"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 
@@ -63,7 +63,7 @@ export const record = Effect.gen(function*() {
   }
   const reread = yield* store.get(plan.planId)
   return Option.isSome(reread) ? reread.value.digest : "missing"
-}).pipe(Effect.provide(planStore), Effect.provide(NodeCrypto.layer))
+}).pipe(Effect.provide(planStore), Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest)))
 ```
 
 Three outcomes, and each one means something different:

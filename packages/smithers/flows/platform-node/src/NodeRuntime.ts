@@ -9,6 +9,7 @@
  * @since 1.0.0
  */
 
+import { Crypto } from "@smthrs/crypto"
 import * as Database from "@smthrs/database/node/NodeDatabase"
 import * as NativeRuntime from "./NativeRuntime.ts"
 import * as Host from "./NodeHost.ts"
@@ -19,7 +20,7 @@ const runtime = NativeRuntime.make({
   name: "NodeRuntime",
   database: (filename) => Database.layer({ filename }),
   host: Host,
-  crypto: Host.NodeCrypto.layer
+  crypto: Crypto.layerFromDigest(Host.NodeCrypto.layerDigest)
 })
 
 /** Provides the migrated stores over the native SQL driver.

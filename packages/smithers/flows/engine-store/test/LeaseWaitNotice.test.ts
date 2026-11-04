@@ -10,11 +10,11 @@
  * every lease is fresh.
  */
 import { describe, expect, it } from "@effect/vitest"
+import type { Crypto } from "@smthrs/crypto"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"

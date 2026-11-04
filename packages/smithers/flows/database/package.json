@@ -34,20 +34,64 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./internal/*": null,
     "./*/index": null,
-    "./DatabaseMetrics": "./src/DatabaseMetrics.ts",
-    "./DurableWriter": "./src/DurableWriter.ts",
-    "./Migrations": "./src/Migrations.ts",
-    "./UnsupportedBackend": "./src/UnsupportedBackend.ts",
-    "./index": "./src/index.ts",
-    "./node/NodeDatabase": "./src/node/NodeDatabase.ts",
-    "./test/TestDatabase": "./src/test/TestDatabase.ts",
+    "./DatabaseMetrics": {
+      "types": "./.vibe/declarations/src/DatabaseMetrics.d.vibe.ts",
+      "vibelang-source": "./src/DatabaseMetrics.vibe",
+      "default": "./.vibelang/js/src/DatabaseMetrics.js"
+    },
+    "./DurableWriter": {
+      "types": "./src/DurableWriter.ts",
+      "vibelang-source": "./src/DurableWriter.ts",
+      "default": "./.vibelang/js/src/DurableWriter.js"
+    },
+    "./Migrations": {
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
+      "default": "./.vibelang/js/src/Migrations.js"
+    },
+    "./UnsupportedBackend": {
+      "types": "./src/UnsupportedBackend.ts",
+      "vibelang-source": "./src/UnsupportedBackend.ts",
+      "default": "./.vibelang/js/src/UnsupportedBackend.js"
+    },
+    "./index": {
+      "types": "./.vibe/declarations/src/index.d.vibe.ts",
+      "vibelang-source": "./src/index.vibe",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./node/NodeDatabase": {
+      "types": "./src/node/NodeDatabase.ts",
+      "vibelang-source": "./src/node/NodeDatabase.ts",
+      "default": "./.vibelang/js/src/node/NodeDatabase.js"
+    },
+    "./test/TestDatabase": {
+      "types": "./src/test/TestDatabase.ts",
+      "vibelang-source": "./src/test/TestDatabase.ts",
+      "default": "./.vibelang/js/src/test/TestDatabase.js"
+    },
     "./test/SlowNetwork": "./src/test/SlowNetwork.ts",
-    "./bun/BunDatabase": "./src/bun/BunDatabase.ts",
-    "./Dialect": "./src/Dialect.ts",
-    "./postgres/PostgresDatabase": "./src/postgres/PostgresDatabase.ts"
+    "./bun/BunDatabase": {
+      "types": "./src/bun/BunDatabase.ts",
+      "vibelang-source": "./src/bun/BunDatabase.ts",
+      "default": "./.vibelang/js/src/bun/BunDatabase.js"
+    },
+    "./Dialect": {
+      "types": "./.vibe/declarations/src/Dialect.d.vibe.ts",
+      "vibelang-source": "./src/Dialect.vibe",
+      "default": "./.vibelang/js/src/Dialect.js"
+    },
+    "./postgres/PostgresDatabase": {
+      "types": "./src/postgres/PostgresDatabase.ts",
+      "vibelang-source": "./src/postgres/PostgresDatabase.ts",
+      "default": "./.vibelang/js/src/postgres/PostgresDatabase.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -59,7 +103,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -204,13 +249,13 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
-    "@effect/sql-sqlite-node": "4.0.5",
-    "@effect/vitest": "4.0.5",
+    "@effect/sql-sqlite-node": "4.1.1",
+    "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -220,16 +265,16 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
+    "vibelang-vite": "file:../../../../.vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz",
     "vitest": "5.0.0",
-    "@effect/sql-sqlite-bun": "4.0.5",
+    "@effect/sql-sqlite-bun": "4.1.1",
     "@types/bun": "1.4.4",
-    "@effect/sql-pg": "4.0.5"
+    "@effect/sql-pg": "4.1.1"
   },
   "peerDependencies": {
-    "effect": "4.0.5",
-    "@effect/sql-sqlite-bun": "4.0.5"
+    "effect": "4.1.1",
+    "@effect/sql-sqlite-bun": "4.1.1"
   },
   "peerDependenciesMeta": {
     "@effect/sql-sqlite-node": {
@@ -241,5 +286,8 @@
     "@effect/sql-pg": {
       "optional": true
     }
+  },
+  "dependencies": {
+    "vibelang-runtime": "file:../../../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
   }
 }

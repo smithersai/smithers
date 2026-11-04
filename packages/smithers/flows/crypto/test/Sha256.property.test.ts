@@ -1,8 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, Effect } from "effect"
+import { Effect } from "effect"
 import * as FastCheck from "fast-check"
 import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
+import * as Crypto from "../src/Crypto.ts"
 import { digest, digestSync, syncCrypto } from "../src/index.ts"
 
 const params = {
@@ -12,7 +13,8 @@ const params = {
   markInterruptAsFailure: true
 } satisfies FastCheck.Parameters<unknown>
 
-const runDigest = (input: string | Uint8Array) => Effect.runSync(digest(input).pipe(Effect.provide(NodeCrypto.layer)))
+const runDigest = (input: string | Uint8Array) =>
+  Effect.runSync(digest(input).pipe(Effect.provide(Crypto.layerFromDigest(NodeCrypto.layerDigest))))
 
 const runSynchronousService = (input: string | Uint8Array) =>
   Effect.runSync(Effect.provideService(digest(input), Crypto.Crypto, syncCrypto))

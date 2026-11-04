@@ -10,6 +10,7 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
 import { expect, it } from "@effect/vitest"
+import { Crypto } from "@smthrs/crypto"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj/Jj"
@@ -33,7 +34,7 @@ const recordingNative = () => {
       return NodeDatabase.layer({ filename: ":memory:" })
     },
     host: NodeHost,
-    crypto: NodeCrypto.layer
+    crypto: Crypto.layerFromDigest(NodeCrypto.layerDigest)
   })
   return { native, opened }
 }
@@ -46,7 +47,11 @@ const isolatedFileSystem = Layer.succeed(
   KernelFileSystem.withIsolatedFileSystem(FileSystem.makeNoop({}))
 )
 
-const hostServices = Layer.mergeAll(NodeFileSystem.layer, NodeCrypto.layer, NodePath.layer)
+const hostServices = Layer.mergeAll(
+  NodeFileSystem.layer,
+  Crypto.layerFromDigest(NodeCrypto.layerDigest),
+  NodePath.layer
+)
 
 it.effect("roots a PostgreSQL store without a workspace under the current directory's .flows", () =>
   Effect.gen(function*() {

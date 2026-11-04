@@ -3,7 +3,7 @@ import { createServer, type RequestListener } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "vitest"
 import { type DurableChatGrant, DurableChatProducer } from "../src/DurableChatProducer.ts"
-import { createHostDiagnostics } from "../src/HostDiagnostics.ts"
+import { createHostDiagnostics } from "../src/HostDiagnostics.vibe"
 import { sourceLister, sourceReader } from "../src/HostTools.ts"
 
 const grant: DurableChatGrant = {

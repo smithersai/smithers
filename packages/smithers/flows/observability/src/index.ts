@@ -35,7 +35,7 @@ export * as Otlp from "./Otlp.ts"
  * @category handlers
  * @since 1.0.0-rc.16
  */
-export * as OtlpRelay from "./OtlpRelay.ts"
+export * as OtlpRelay from "./OtlpRelay.vibe"
 
 /**
  * @category observability
@@ -53,34 +53,34 @@ export * as FetchFailures from "./FetchFailures.ts"
  * @category observability
  * @since 0.1.0
  */
-export * as JournalLogger from "./JournalLogger.ts"
+export * as JournalLogger from "./JournalLogger.vibe"
 
 /**
  * @category observability
  * @since 1.0.0-rc.17
  */
-export * as LogFailures from "./LogFailures.ts"
+export * as LogFailures from "./LogFailures.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Logger from "./Logger.ts"
+export * as Logger from "./Logger.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Metric from "./Metric.ts"
+export * as Metric from "./Metric.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Otel from "./Otel.ts"
+export * as Otel from "./Otel.vibe"
 
 /**
  * @category observability
  * @since 0.1.0
  */
-export * as Resource from "./Resource.ts"
+export * as Resource from "./Resource.vibe"

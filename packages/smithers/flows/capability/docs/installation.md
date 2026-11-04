@@ -10,18 +10,19 @@ sidebar:
 Published on npm under the `next` tag. Install it with its `effect` peer:
 
 ```sh
-npm install @smthrs/capability@next effect@4.0.5
+npm install @smthrs/capability@next effect@4.1.1
 ```
 
 Name `@next` explicitly: `latest` still points at an older release candidate.
 
 The package requires Node.js 22.19.0 or later and ships as both ESM and
-CommonJS with TypeScript declarations. It has one runtime dependency,
+CommonJS with TypeScript declarations. It has two runtime dependencies:
 [`@smthrs/canonical`](/api/canonical), which supplies the record guard
-`Permission.isPermissionError` validates payloads with.
+`Permission.isPermissionError` validates payloads with, and `vibelang-runtime`,
+which the modules written in VibeLang import.
 
 [`effect`](https://effect.website) requires the exact peer
-`effect@4.0.5`. It supplies the `Schema`, `Option`, and `PlatformError`
+`effect@4.1.1`. It supplies the `Schema`, `Option`, and `PlatformError`
 types on the exported surface. Install one `effect` at that version: two copies of
 `effect` in one program are two sets of service tags.
 

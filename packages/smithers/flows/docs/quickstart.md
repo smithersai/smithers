@@ -24,7 +24,7 @@ give it something to read:
 ```bash
 mkdir flows-quickstart && cd flows-quickstart
 npm init -y && npm pkg set type=module
-npm install @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5
+npm install @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.1.1
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
@@ -36,7 +36,7 @@ driver. The published `1.0.0-rc.16` runtime is imported from
 the program imports it directly. These pins reproduce the published API used below.
 
 With pnpm 11, replace the `npm install` line with
-`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5`, then run
+`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.1.1`, then run
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind; an
 exact version is installed the day it is published. pnpm 11 also ends the install with

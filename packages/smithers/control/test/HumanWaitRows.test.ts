@@ -8,6 +8,7 @@
  * one row was odd would be worse than the gap this walk closes.
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { Crypto } from "@smthrs/crypto"
 import { DurableWriter } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
@@ -23,7 +24,7 @@ const stack = Layer.provideMerge(
   SqlControlRuntime.layer({}).pipe(Layer.orDie),
   Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: "reject" }), RunStore.layer).pipe(
     Layer.provideMerge(Layer.effectDiscard(EngineMigrations.run)),
-    Layer.provideMerge(Layer.merge(TestDatabase.layer, NodeCrypto.layer))
+    Layer.provideMerge(Layer.merge(TestDatabase.layer, Crypto.layerFromDigest(NodeCrypto.layerDigest)))
   )
 )
 

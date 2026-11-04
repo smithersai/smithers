@@ -16,8 +16,8 @@ import { readdirSync, readFileSync } from "node:fs"
 import { join, relative } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
 import * as Budget from "../src/Budget.ts"
-import * as RunawayGuard from "../src/RunawayGuard.ts"
-import * as Seat from "../src/Seat.ts"
+import * as RunawayGuard from "../src/RunawayGuard.vibe"
+import * as Seat from "../src/Seat.vibe"
 
 const smithers = fileURLToPath(new URL("../..", import.meta.url))
 const owners = ["flows/flow/src", "agent/model/src", "agent/harness/src", "agent/src", "control/src"]

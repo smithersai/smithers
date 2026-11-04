@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import * as Tokens from "../src/Tokens.ts"
+import * as Tokens from "../src/Tokens.vibe"
 
 const segment = (zone: "prefix" | "tail", value: number, estimated = true) =>
   new Tokens.Segment({

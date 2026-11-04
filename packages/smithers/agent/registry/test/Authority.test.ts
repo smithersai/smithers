@@ -1,10 +1,10 @@
 import { Option } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Descriptor from "../src/Descriptor.ts"
+import * as Descriptor from "../src/Descriptor.vibe"
 import * as Authority from "../src/internal/Authority.ts"
 import { inferEffectTier, maxTier } from "../src/internal/Authority.ts"
-import * as ModuleMetadata from "../src/internal/ModuleMetadata.ts"
-import * as MarkdownFlow from "../src/MarkdownFlow.ts"
+import * as ModuleMetadata from "../src/internal/ModuleMetadata.vibe"
+import * as MarkdownFlow from "../src/MarkdownFlow.vibe"
 
 describe("Authority", () => {
   it("returns the more conservative tier and keeps the left value when ranks tie", () => {
