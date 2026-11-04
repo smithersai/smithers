@@ -143,6 +143,18 @@ describe("needs", () => {
     expect(stackRepository(scratch)).toBe("roninjin10/smithers-github-tests")
   })
 
+  it("blocks production secret proof without an enabled scratch repository and its real Admin role", () => {
+    expect(NEEDS.secretEgressDeployment.met(local)).toBe(true)
+    const env = { E2E_SECRETS_EGRESS: "true", E2E_SECRETS_REPOSITORY: "tester/scratch", E2E_SECRETS_BRANCH: "proof" }
+    const run = { ...deployedAs("admin", env), repository: () => ({ role: "admin" as const, synced: true }) }
+    expect(NEEDS.secretEgressDeployment.blocked).toBe(true)
+    expect(NEEDS.secretEgressDeployment.met(run)).toBe(true)
+    for (const name of Object.keys(env)) expect(NEEDS.secretEgressDeployment.met({ ...run, env: { ...env, [name]: undefined } })).toBe(false)
+    expect(NEEDS.secretEgressDeployment.met({ ...run, repository: () => ({ role: "member", synced: true }) })).toBe(false)
+    expect(NEEDS.secretEgressDeployment.met({ ...run, env: { ...env, E2E_SECRETS_REPOSITORY: "smithersai/smithers" } })).toBe(false)
+    expect(NEEDS.secretEgressDeployment.met({ ...run, env: { ...env, E2E_SECRETS_EGRESS: "false" } })).toBe(false)
+  })
+
   it("requires the local secrets flag and fixture repository together", () => {
     for (const target of ["local", "deployment"] as const) {
       for (const flag of [undefined, "false", "true"]) {
@@ -501,7 +513,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "sharingPeople", "sharingGuest", "sharingModels", "vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "sharingPeople", "sharingGuest", "sharingModels", "vibelangMaintainer", "vibelangOpenPull", "secretEgressDeployment", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 

@@ -127,10 +127,10 @@ export const readRepositories = (path: string): Readonly<Record<string, Reposito
   return answers
 }
 
-/** The scratch repositories a deployment run names, which the setup asks about: issues, stack, factory and VibeLang. */
+/** The scratch repositories a deployment run names, which the setup asks about: issues, stack, factory, VibeLang and secrets. */
 export const scratchRepositoriesOf = (env: Readonly<Record<string, string | undefined>>): ReadonlyArray<string> => [
   ...new Set(
-    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY, env.E2E_VIBELANG_REPOSITORY]
+    [env.E2E_ISSUES_REPOSITORY, env.E2E_STACK_REPOSITORY, env.E2E_FACTORY_REPOSITORY, env.E2E_VIBELANG_REPOSITORY, env.E2E_SECRETS_REPOSITORY]
       .filter((name): name is string => /^[\w.-]+\/[\w.-]+$/.test(name ?? "") && !/^smithersai\//i.test(name!))
       .map((name) => name.toLowerCase()),
   ),
@@ -277,6 +277,19 @@ const needs = {
   devSignIn: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "it signs out and in as local development's person, who exists only without GitHub sign-in; in a deployment that would end the run's shared session",
+  },
+  secretEgressDeployment: {
+    met: (run) => run.target === "local" || (
+      run.env.E2E_SECRETS_EGRESS === "true" &&
+      /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SECRETS_REPOSITORY ?? "") &&
+      !/^smithersai\//i.test(run.env.E2E_SECRETS_REPOSITORY!) &&
+      !!run.env.E2E_SECRETS_BRANCH && adminOf(run, "E2E_SECRETS_REPOSITORY")
+    ),
+    reason: "production secret egress is off by default and secret writes are fenced to GITHUB_REPOSITORY; " +
+      "an authorized deployment must enable SANDBOX_SECRETS and admit an Admin's scratch repository before " +
+      "E2E_SECRETS_EGRESS=true, E2E_SECRETS_REPOSITORY and E2E_SECRETS_BRANCH can select this proof; " +
+      "server-log capture also requires explicit Cloudflare-tail authorization",
+    blocked: true,
   },
   sandboxSecrets: {
     met: (run) =>

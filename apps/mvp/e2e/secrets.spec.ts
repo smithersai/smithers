@@ -21,7 +21,7 @@ requires("member", "sandboxSecrets", "localLogs")
 test.use({ trace: "off" })
 
 const REPO = "/octocat/Spoon-Knife"
-const NAME = "DEMO_TOKEN"
+const NAME = `DEMO_${randomBytes(8).toString("hex").toUpperCase()}`
 const ALLOWED = "httpbingo.org"
 const OTHER = "httpbin.org"
 
@@ -39,11 +39,11 @@ const type = (page: Page, line: string, caption: string) =>
   })
 
 /**
- * Which of `needles` occur in what `command` writes to stdout, read here, outside the box, as it streams. A scan that
+ * How many of `needles` occur in what `command` writes to stdout, read here, outside the box, as it streams. A scan that
  * fails or reads nothing fails, so it never passes as clean.
  */
 const found = (command: string, args: ReadonlyArray<string>, needles: ReadonlyArray<string>) =>
-  new Promise<Array<string>>((resolve, reject) => {
+  new Promise<number>((resolve, reject) => {
     const targets = needles.map((needle) => Buffer.from(needle))
     const keep = Math.max(...targets.map((target) => target.length)) - 1
     const hits = new Set<string>()
@@ -58,15 +58,21 @@ const found = (command: string, args: ReadonlyArray<string>, needles: ReadonlyAr
     })
     child.on("error", reject)
     child.on("close", (code) =>
-      code === 0 && bytes > 0 ? resolve([...hits]) : reject(new Error(`${command} ${args[0]} read ${bytes} bytes, exit ${code}`)))
+      code === 0 && bytes > 0 ? resolve(hits.size) : reject(new Error(`${command} ${args[0]} read ${bytes} bytes, exit ${code}`)))
   })
 
 /** The branch machines `alchemy dev` runs in local Docker: every container but the compose services. */
-const boxes = () =>
+const boxes = (placeholder: string) =>
   execFileSync("docker", ["ps", "--format", "{{.ID}} {{.Image}}"]).toString().trim().split("\n")
     .map((line) => line.split(" ") as [string, string])
     .filter(([, image]) => !/postgres|electric|pgbouncer|buildkit/.test(image))
     .map(([id]) => id)
+    .filter((id) => {
+      try {
+        execFileSync("docker", ["exec", "--user", "0:0", id, "grep", "-Fxq", `${NAME}=${placeholder}`, "/run/smithers/env"], { stdio: "ignore" })
+        return true
+      } catch { return false }
+    })
 
 const secretsPage = (page: Page) => page.getByRole("main", { name: "Secrets" })
 const rowOf = (page: Page) => secretsPage(page).getByRole("list", { name: "Secrets" }).getByRole("listitem").filter({ hasText: NAME })
@@ -97,7 +103,7 @@ test("secrets: an Admin adds and rotates a secret, and a command on the branch's
     await expect(rowOf(page)).toContainText(ALLOWED, { timeout: 30_000 })
     // Never shown again: the field is empty and the page holds no part of it.
     await expect(form.getByLabel("Value")).toHaveValue("")
-    expect(await secretsPage(page).innerText()).not.toContain(first)
+    expect((await secretsPage(page).innerText()).includes(first), "the page contains no first value").toBe(false)
   })
 
   await step(`Rotate ${NAME} to a new value`, async () => {
@@ -107,7 +113,7 @@ test("secrets: an Admin adds and rotates a secret, and a command on the branch's
     await form.getByLabel("Value").fill(value)
     await form.getByRole("button", { name: "Save" }).click()
     await expect(form).toBeHidden({ timeout: 30_000 })
-    expect(await page.content()).not.toContain(value)
+    expect((await page.content()).includes(value), "the page contains no rotated value").toBe(false)
   })
 
   await step("Open the terminal on the branch's machine", async () => {
@@ -117,6 +123,12 @@ test("secrets: an Admin adds and rotates a secret, and a command on the branch's
       if ((await open.isVisible()) && (await open.isEnabled())) await open.click()
       await expect(terminalRows(page)).toContainText("/workspace", { timeout: 15_000 })
     }).toPass({ timeout: MACHINE })
+    // The preceding journey may have left a shell open before this name existed. Opening a new terminal wakes
+    // the machine and refreshes its names; reconnecting the old shell does not change its environment.
+    await type(page, "exit", "Close the previous shell")
+    await expect(open).toBeEnabled({ timeout: 30_000 })
+    await open.click()
+    await expect(terminalRows(page)).toContainText("/workspace", { timeout: MACHINE })
   })
 
   // The box holds a placeholder, never the value.
@@ -139,11 +151,11 @@ test("secrets: an Admin adds and rotates a secret, and a command on the branch's
   await expect(terminalRows(page)).toContainText(`${OTHER} 403`, { timeout: 60_000 })
 
   await step("Search the box and the logs for the values, from outside the box", async () => {
-    const machines = boxes()
-    expect(machines.length, "the branch's machine runs in local Docker").toBeGreaterThan(0)
+    const machines = boxes(placeholder)
+    expect(machines.length, "exactly this branch's machine holds its unique placeholder").toBe(1)
     for (const id of machines) {
-      expect(await found("docker", ["export", id], [first, value]), `container ${id}'s files`).toEqual([])
-      expect(await found("docker", ["exec", "--user", "0:0", id, "sh", "-c", "cat /proc/[0-9]*/environ 2>/dev/null; true"], [first, value]), `container ${id}'s processes`).toEqual([])
+      expect(await found("docker", ["export", id], [first, value]), `container ${id}'s files`).toBe(0)
+      expect(await found("docker", ["exec", "--user", "0:0", id, "sh", "-c", "cat /proc/[0-9]*/environ /proc/[0-9]*/cmdline 2>/dev/null; true"], [first, value]), `container ${id}'s processes`).toBe(0)
     }
     const lines = await logs.lines()
     expect(lines.filter((line) => line.text.includes(first) || line.text.includes(value)).length, "log lines with a value").toBe(0)
