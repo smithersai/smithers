@@ -4,7 +4,7 @@ import { chmodSync, mkdtempSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 // @ts-expect-error: a plain .mjs script, untyped.
-import { clientOf, comment, findMatch, laneFor, link, linkOf, normalizeTitle, open, parentRefOf, relate, repoOf, retryWrite, scopedWriteId, tokenFor, update } from "./track.mjs"
+import { clientOf, comment, findMatch, laneFor, link, linkOf, normalizeTitle, labelOf, open, parentRefOf, relate, repoOf, retryWrite, scopedWriteId, tokenFor, update } from "./track.mjs"
 
 type Sent = { url: string; init: RequestInit }
 const recorder = (answer: (url: string, init: RequestInit) => [number, unknown]) => {
@@ -21,6 +21,22 @@ const sleep = async () => {}
 const shape = (rows: Array<object> = []) => [...rows.map((value, i) => ({ headers: { operation: "insert" }, key: `k${i}`, value })), { headers: { control: "up-to-date" } }]
 
 describe("the lane helper", () => {
+  test("parses label metadata while preserving colon names and sends it with a name-only marker", async () => {
+    expect(labelOf("tree")).toBe("tree")
+    expect(labelOf("migrate:t3code")).toBe("migrate:t3code")
+    expect(labelOf("tree:123ABC")).toEqual({ name: "tree", color: "123ABC" })
+    expect(labelOf("migrate:t3code:123ABC:Migration: tree")).toEqual({ name: "migrate:t3code", color: "123ABC", description: "Migration: tree" })
+    expect(labelOf("tree::A tree")).toEqual({ name: "tree", description: "A tree" })
+    const dry = clientOf({ origin: "https://smithers.test", dryRun: true })
+    const labels = [labelOf("tree:123ABC:Tree"), labelOf("migrate:t3code")]
+    await open(dry, { repo: "acme/widgets", title: "Labels", body: "Details", labels })
+    const sent = dry.requests.find((request: { method: string }) => request.method === "POST")
+    expect(sent.body.labels).toEqual([{ name: "tree", color: "123ABC", description: "Tree" }, "migrate:t3code"])
+    expect(sent.body.body).toContain("labels: tree, migrate:t3code")
+    expect(sent.body.body).not.toContain("[object Object]")
+    await expect(open(dry, { repo: "acme/widgets", title: "Labels", body: "Details", labels: [{ name: "tree", description: "/Users/private/file" }] })).rejects.toThrow()
+  })
+
   test("reads a repository's token from the file its map names, and refuses anything else", () => {
     const token = `smm_${"x".repeat(43)}`
     const files: Record<string, string> = { "/map": '{"acme/a":{"file":"/a","agent":"fixer","lane":"lane-1"},"acme/b":{"file":"/b","agent":"fixer","lane":"lane-1"}}', "/a": `${token}\n`, "/b": "ghp_notours\n" }

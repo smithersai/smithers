@@ -186,7 +186,12 @@ export const cleanRecord = (record, options = {}) => {
   const out = { ...record }
   if ("title" in record) out.title = field("title", record.title, "exact")
   if ("body" in record) out.body = field("body", record.body, "text")
-  if (Array.isArray(record.labels)) out.labels = record.labels.map((label, i) => field(`labels[${i}]`, label, "exact"))
+  if (Array.isArray(record.labels)) out.labels = record.labels.map((label, i) =>
+    typeof label === "string" ? field(`labels[${i}]`, label, "exact") : {
+      ...label,
+      name: field(`labels[${i}].name`, label.name, "exact"),
+      ...(label.description === undefined ? {} : { description: field(`labels[${i}].description`, label.description, "exact") }),
+    })
   if (Array.isArray(record.links)) {
     out.links = record.links.map((link, i) => {
       const cleaned = { ...link }

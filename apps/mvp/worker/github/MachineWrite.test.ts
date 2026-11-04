@@ -104,6 +104,19 @@ describe("a machine token at the route", () => {
     expect(h.starts).toEqual([])
   })
 
+  test("validates label metadata and refuses reserved names and private descriptions at admission", async () => {
+    const h = await githubHarness(runtime, { actor: null })
+    await issueToken()
+    for (const label of [{ name: "" }, { name: "x".repeat(51) }, { name: "tree", color: "#ffffff" }, { name: "tree", color: "xyzxyz" }, { name: "tree", description: "x".repeat(101) }, { name: "tree", description: 1 }]) {
+      expect((await h.fetch(ROUTE, post(create({ labels: [label] })))).status).toBe(400)
+    }
+    expect((await h.fetch(ROUTE, post(create({ labels: [{ name: " SMITHERS:accepted" }] })))).status).toBe(403)
+    // A name that is only whitespace is no name.
+    expect((await h.fetch(ROUTE, post(create({ labels: [{ name: "  " }] })))).status).toBe(400)
+    expect((await h.fetch(ROUTE, post(create({ labels: [{ name: "tree", description: "/Users/private/file" }] })))).status).toBe(422)
+    expect((await h.fetch(ROUTE, post(create({ labels: ["bug", { name: "tree", description: "" }] })))).status).toBe(202)
+  })
+
   test("a token revoked or expired while its body arrived admits nothing", async () => {
     await issueToken()
     await sql(runtime, `UPDATE machine_tokens SET revoked_at = now()`)
@@ -354,6 +367,124 @@ describe("what a machine writes renders as written", () => {
 })
 
 describe("github/MachineDispatch", () => {
+  test.each([
+    { name: "missing", existing: false, race: false, lost: false },
+    { name: "existing", existing: true, race: false, lost: false },
+    { name: "concurrently created (422 already_exists)", existing: false, race: true, lost: false },
+    { name: "created with a lost answer", existing: false, race: false, lost: true },
+  ])("ensures a $name label before the issue POST through the paced User-Agent seam", async ({ existing, race, lost }) => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const label = { name: "migrate:t3code/tree", color: "aabbcc", description: "Migration tree" }
+    if (existing) github.labels.set(label.name.toLowerCase(), label)
+    if (race) github.faults.push({ match: posting(/^\/repos\/acme\/widgets\/labels$/), hold: async () => { github.labels.set(label.name.toLowerCase(), label) } })
+    if (lost) github.faults.push({ match: posting(/^\/repos\/acme\/widgets\/labels$/), lost: true })
+    const write = create({ labels: [label.name] })
+    await admitAs(write)
+    const d = await dispatcher(github)
+    await d.tick()
+    expect(github.seen("GET", /\/labels\/migrate%3At3code%2Ftree$/)).toHaveLength(1)
+    if (!existing) {
+      expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+      expect(github.seen("POST", /^\/repos\/acme\/widgets\/labels$/)).toHaveLength(1)
+      const before = github.calls.length
+      const held = await d.tick()
+      expect(held.waitMs).toBeGreaterThan(0)
+      expect(github.calls).toHaveLength(before)
+    }
+    for (let i = 0; i < 4 && (await row(write.writeId)).status === "pending"; i++) await d.next()
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
+    expect(github.seen("POST", /^\/repos\/acme\/widgets\/labels$/)).toHaveLength(existing ? 0 : 1)
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(1)
+    expect(github.issues.get(1)!.labels).toEqual([label.name])
+    expect(github.labels.get(label.name.toLowerCase())).toEqual(existing || race ? label : { name: label.name, color: "ededed", description: "" })
+    for (const request of github.calls) expect(request.userAgent).toBe("smithers-integrations")
+  })
+
+  test("a label POST permission 403 settles refused with its stored GitHub cause", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    github.faults.push({ match: posting(/^\/repos\/acme\/widgets\/labels$/), status: 403, message: "Resource not accessible by integration" })
+    const write = create({ labels: ["tree"] })
+    await admitAs(write)
+    const d = await dispatcher(github)
+    await d.tick()
+    expect(await row(write.writeId)).toMatchObject({ status: "refused", failure: "not_allowed", cause: "github_status:403", github_status: 403 })
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+    expect(d.logs.filter((log) => log.message === "github.machine_write.refused").map((log) => log.annotations)).toContainEqual({ writeId: write.writeId, outcome: "refused", failure: "not_allowed", cause: "github_status:403", githubStatus: 403 })
+  })
+
+  test.each([
+    { name: "lookup permission refusal", method: "GET", status: 403, expected: "refused", cause: "github_status:403" },
+    { name: "unrelated label validation failure", method: "POST", status: 422, expected: "refused", cause: "github_status:422" },
+    { name: "lookup outage", method: "GET", status: 503, expected: "pending", cause: null },
+    { name: "lookup rate limit", method: "GET", status: 429, expected: "pending", cause: null },
+    { name: "creation rate limit", method: "POST", status: 429, expected: "pending", cause: null },
+  ])("a $name stops before the issue and preserves the hold or stored cause", async ({ method, status, expected, cause }) => {
+    await issueToken()
+    const github = scriptedGitHub()
+    github.faults.push({ match: (verb, path) => verb === method && (method === "GET" ? path.endsWith("/labels/tree") : path === "/repos/acme/widgets/labels"), status })
+    const write = create({ labels: [{ name: "tree" }] })
+    await admitAs(write)
+    const d = await dispatcher(github)
+    await d.tick()
+    expect(await row(write.writeId)).toMatchObject({ status: expected, cause, github_status: expected === "refused" ? status : null })
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(0)
+    if (expected === "pending") {
+      const calls = github.calls.length
+      expect((await d.tick()).waitMs).toBeGreaterThan(0)
+      expect(github.calls).toHaveLength(calls)
+      if (status === 429) expect(await row(write.writeId)).toMatchObject({ tries: 0 })
+      for (let i = 0; i < 4 && (await row(write.writeId)).status === "pending"; i++) await d.next()
+      expect(await row(write.writeId)).toMatchObject({ status: "done" })
+      expect(github.labels.get("tree")).toEqual({ name: "tree", color: "ededed", description: "" })
+    }
+  })
+
+  test("an untrimmed label name is created and applied under its trimmed name, so the write finishes", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const write = create({ labels: [" tree ", { name: "area ", color: "123ABC" }] })
+    const h = await githubHarness(runtime, { actor: null })
+    expect((await h.fetch(ROUTE, post(write))).status).toBe(202)
+    // The payload is stored as sent, so the same request again is the same write, not a conflict.
+    expect((await h.fetch(ROUTE, post(write))).status).toBe(200)
+    const d = await dispatcher(github)
+    for (let i = 0; i < 8 && (await row(write.writeId)).status === "pending"; i++) await d.next()
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
+    expect([...github.labels.keys()].sort()).toEqual(["area", "tree"])
+    expect(github.seen("GET", /\/labels\/(%20|.*%20)/)).toHaveLength(0)
+  })
+
+  test("a write stored with an untrimmed label before trimming existed still finishes, and its resubmission is the same write", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    // Stored as a write admitted before label names were trimmed: straight through admit, untrimmed.
+    const write = create({ labels: ["tree "] })
+    await admitAs(write)
+    const h = await githubHarness(runtime, { actor: null })
+    expect((await h.fetch(ROUTE, post(write))).status).toBe(200)
+    const d = await dispatcher(github)
+    for (let i = 0; i < 8 && (await row(write.writeId)).status === "pending"; i++) await d.next()
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
+    expect([...github.labels.keys()]).toEqual(["tree"])
+    expect(github.seen("GET", /\/labels\/tree%20$/)).toHaveLength(0)
+  })
+
+  test("creates metadata labels and all twenty labels without spending the issue's retry budget", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const labels = Array.from({ length: 20 }, (_, i) => ({ name: `label-${i}`, color: "123ABC", description: `Label ${i}` }))
+    const write = create({ labels })
+    const h = await githubHarness(runtime, { actor: null })
+    expect((await h.fetch(ROUTE, post(write))).status).toBe(202)
+    const d = await dispatcher(github)
+    for (let i = 0; i < 24 && (await row(write.writeId)).status === "pending"; i++) await d.next()
+    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
+    expect(github.seen("POST", /^\/repos\/acme\/widgets\/labels$/)).toHaveLength(20)
+    for (const label of labels) expect(github.labels.get(label.name)).toEqual(label)
+  })
+
   // A real flow: its second round sleeps the real 7.5 s spacing after the send, so it needs more than the default 30 s
   // on a loaded host.
   test("the flow runs the queue to empty and stops: the App is the author, the body says which agent, labels go on", async () => {

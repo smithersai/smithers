@@ -142,7 +142,7 @@ export interface ScriptedGitHub {
   /** Whether the App was granted Contents: read; without it, a token asking for it is refused 422. */
   contentsGranted: boolean
   /** The repository's labels, by name without case. */
-  readonly labels: Map<string, { readonly name: string; readonly color: string }>
+  readonly labels: Map<string, { readonly name: string; readonly color: string; readonly description?: string }>
   /**
    * The repository's files on its default branch, by path, as the contents API reads them without a `ref`; with one,
    * it reads that branch's or commit's files.
@@ -377,12 +377,16 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
         apply: () => void github.statuses.set(sha, [...(github.statuses.get(sha) ?? []), status]),
       }
     }
+    if (rest.startsWith("/labels/") && method === "GET") {
+      const label = github.labels.get(decodeURIComponent(rest.slice("/labels/".length)).toLowerCase())
+      return { response: label === undefined ? json({ message: "Not Found" }, 404) : json(label) }
+    }
     if (rest === "/labels" && method === "POST") {
-      const input = body as { readonly name: string; readonly color: string }
+      const input = body as { readonly name: string; readonly color: string; readonly description?: string }
       if (github.labels.has(input.name.toLowerCase())) {
         return { response: json({ message: "Validation Failed", errors: [{ code: "already_exists" }] }, 422) }
       }
-      const label = { name: input.name, color: input.color }
+      const label = { name: input.name, color: input.color, description: input.description }
       return { response: json(label, 201), apply: () => void github.labels.set(input.name.toLowerCase(), label) }
     }
     const contentsMatch = /^\/contents\/(.+)$/.exec(url.pathname.slice(apiPath.length))

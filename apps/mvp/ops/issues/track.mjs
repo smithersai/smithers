@@ -3,7 +3,8 @@
 // repository of smithers.sh, with a machine token, so the App's bot is the author (docs/features/machine-tokens.md).
 // No dependencies.
 //
-//   node ops/issues/track.mjs open    --repo <o/n> --title <t> --body-file <f> [--key <kind:id>] [--label <l>]...
+//   node ops/issues/track.mjs open    --repo <o/n> --title <t> --body-file <f> [--key <kind:id>] [--label <name[:color[:description]]>]...
+//                                     (a suffix of six hex digits reads as a color: --label area:decade is "area" in #decade)
 //                                     [--parent <o/n>#<N>] [--dry-run]
 //   node ops/issues/track.mjs link    --repo <o/n> --issue <N> --kind lane|session|queue|pr|merge|review|assignee
 //                                     --ref <ref> [--state <s>] [--url https://...] [--text <label>] [--dry-run]
@@ -54,9 +55,19 @@ export class Refused extends Error {
 export const normalizeTitle = (title) =>
   String(title).toLowerCase().replace(/[`'"“”‘’]/g, "").replace(/[^a-z0-9#.:+-]+/g, " ").replace(/[.:]+(\s|$)/g, "$1").trim()
 
+/** Metadata starts at a six-digit hex color (or an empty color); other colons remain part of the name. */
+export const labelOf = (value) => {
+  const match = /^(.+?):([0-9a-fA-F]{6}|)(?::([\s\S]*))?$/.exec(value)
+  return match === null ? value : {
+    name: match[1],
+    ...(match[2] === "" ? {} : { color: match[2] }),
+    ...(match[3] === undefined ? {} : { description: match[3] }),
+  }
+}
+
 /** The marker block `open` appends: the stable key and the labels. */
 export const markerOf = ({ key, labels = [] }) =>
-  [key === undefined ? undefined : `key: ${key}`, labels.length === 0 ? undefined : `labels: ${labels.join(", ")}`].filter(Boolean).join("\n")
+  [key === undefined ? undefined : `key: ${key}`, labels.length === 0 ? undefined : `labels: ${labels.map((label) => typeof label === "string" ? label : label.name).join(", ")}`].filter(Boolean).join("\n")
 
 /** The body with the marker block, once. */
 export const bodyWithMarker = (body, marker) => (marker === "" || body.includes(marker) ? body : `${body.replace(/\s+$/, "")}\n\n${marker}\n`)
@@ -390,7 +401,7 @@ const main = async () => {
   let result
   if (command === "open") {
     if (values.title === undefined) throw new Refused("invalid", "--title is required", 1)
-    result = await open(client, { repo: values.repo, title: values.title, body: readBody(), key: values.key, labels: values.label ?? [], parent: values.parent }, options)
+    result = await open(client, { repo: values.repo, title: values.title, body: readBody(), key: values.key, labels: (values.label ?? []).map(labelOf), parent: values.parent }, options)
   } else if (command === "link") {
     needIssue()
     result = await link(client, { repo: values.repo, issue: values.issue, kind: values.kind, ref: values.ref, state: values.state, url: values.url, text: values.text, at: new Date().toISOString() }, options)

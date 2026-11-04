@@ -74,7 +74,28 @@ const Title = Schema.String.check(Schema.makeFilter((value: string) => value.tri
 const Text = Schema.String.check(Schema.isMaxLength(65_000))
 const Number_ = Schema.Number.check(Schema.isInt(), Schema.isBetween({ minimum: 1, maximum: 2_147_483_647 }))
 const WriteId = Schema.String.check(Schema.isPattern(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i))
-const Label = Schema.String.check(Schema.makeFilter((value: string) => value.length >= 1 && value.length <= 50))
+const LabelName = Schema.String.check(Schema.makeFilter((value: string) => value.trim().length >= 1 && value.length <= 50))
+const Label = Schema.Union([
+  LabelName,
+  Schema.Struct({
+    name: LabelName,
+    color: Schema.optional(Schema.String.check(Schema.isPattern(/^[0-9a-fA-F]{6}$/))),
+    description: Schema.optional(Schema.String.check(Schema.isMaxLength(100))),
+  }),
+])
+type Label = typeof Label.Type
+// GitHub stores a label's name trimmed, so every GitHub call and comparison uses the trimmed name. The stored payload,
+// and the hash a resubmission is matched by, keep the name as sent, so a write admitted before this still finishes and
+// an identical resubmission is still the same write.
+const labelName = (label: Label) => (typeof label === "string" ? label : label.name).trim()
+
+/** A concurrent creator won the same label: no other 422 validation error is a success. */
+const labelAlreadyExists = (status: number, json: unknown) => {
+  if (status !== 422 || typeof json !== "object" || json === null || !("errors" in json)) return false
+  const errors: unknown = json.errors
+  return Array.isArray(errors) && errors.length > 0 && errors.every((error: unknown) =>
+    typeof error === "object" && error !== null && "code" in error && error.code === "already_exists")
+}
 
 /** What a machine may ask. */
 export const MachineBody = Schema.Union([
@@ -118,13 +139,13 @@ export { escapeMarkdown, fitsGitHub }
 
 /** The refusal a body earns before it reaches the database, or nothing. */
 export const refusalOf = (body: MachineBody): "reserved_label" | "markup" | "credential" | "home_path" | undefined => {
-  if (body.op === "issue/create" && (body.labels ?? []).some(isReservedLabel)) return "reserved_label"
+  if (body.op === "issue/create" && (body.labels ?? []).some((label) => isReservedLabel(labelName(label)))) return "reserved_label"
   // A title is filed as written, and shows code spans: a backtick there is refused.
   if ("title" in body && body.title !== undefined && titleProblem(body.title) !== undefined) return "markup"
   return publicContentProblem([
     "title" in body ? body.title : undefined,
     "body" in body ? body.body : undefined,
-    ...(body.op === "issue/create" ? body.labels ?? [] : []),
+    ...(body.op === "issue/create" ? (body.labels ?? []).flatMap((label) => typeof label === "string" ? [label] : [label.name, label.description]) : []),
   ])
 }
 
@@ -474,6 +495,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         body: unknown,
         onOk: (json: unknown) => Effect.Effect<A, unknown, SqlClient.SqlClient>,
         as = token,
+        accepts?: (status: number, json: unknown) => boolean,
       ) =>
         Effect.gen(function* () {
           yield* holdFor(owner, SPACING_MS)
@@ -484,7 +506,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const answer = readAnswer(sent.success.status, sent.success.headers, sent.success.json, Date.now())
           if (answer.kind === "limited") return undefined
           if (answer.kind === "outage") return yield* noteLimited(owner, null)
-          if (answer.kind === "refused") return yield* refuse(write.id, answer.failure, `github_status:${sent.success.status}`, sent.success.status)
+          if (answer.kind === "refused" && !accepts?.(sent.success.status, sent.success.json)) return yield* refuse(write.id, answer.failure, `github_status:${sent.success.status}`, sent.success.status)
           yield* sql`UPDATE machine_dispatch SET penalty_ms = 60000 WHERE owner = ${owner}`
           return yield* onOk(sent.success.json)
         })
@@ -580,7 +602,30 @@ export const steps = <E, R>(services: Services<E, R>) => {
         }
 
         // issue/create. The number goes on the row the moment GitHub gives it, so a later tick goes on to the labels.
-        const labels = (payload.labels ?? []) as ReadonlyArray<string>
+        const requestedLabels = (payload.labels ?? []) as ReadonlyArray<Label>
+        const labels = requestedLabels.map(labelName)
+        /** One missing label consumes this tick's mutation; the next tick GETs again, even after a lost answer. */
+        const ensureLabels = Effect.gen(function* () {
+          for (const label of requestedLabels) {
+            const name = labelName(label)
+            const found = yield* get(`${path}/labels/${encodeURIComponent(name)}`)
+            const answer = readAnswer(found.status, found.headers, found.json, Date.now())
+            if (answer.kind === "ok") continue
+            if (found.status !== 404) {
+              if (answer.kind === "refused") yield* refuse(write.id, answer.failure, `github_status:${found.status}`, found.status)
+              else if (answer.kind !== "limited") yield* notNow
+              return false
+            }
+            const metadata: Exclude<Label, string> = typeof label === "string" ? { name } : label
+            yield* send("POST", `${path}/labels`, { name, color: metadata.color ?? "ededed", description: metadata.description ?? "" }, () =>
+              // Provisioning progress is not a failed issue attempt: all twenty requested labels must fit.
+              sql`UPDATE machine_writes SET tries = GREATEST(tries - 1, 0) WHERE id = ${write.id}::uuid`.pipe(
+                Effect.andThen(Effect.logInfo("github.machine_write").pipe(Effect.annotateLogs({ writeId: write.id, outcome: "label_ready" }))),
+              ), token, labelAlreadyExists)
+            return false
+          }
+          return true
+        })
         const settleOrLabels = (made: number, issue: unknown) =>
           Effect.gen(function* () {
             const has = new Set(((issue as { labels?: ReadonlyArray<{ name: string }> }).labels ?? []).map((label) => label.name.toLowerCase()))
@@ -598,13 +643,16 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const marked = GitHub.Once.issue(repository.owner, repository.name, { title: String(payload.title), body: text, since, author: appLogin })
           const sent = yield* once("issue", {
             find: (key) => Effect.map(onGitHub(marked.find(key)), Option.map((issue): Sent => ({ made: true, number: issue.number, json: issue }))),
-            perform: (key) => made(send("POST", `${path}/issues`, { title: payload.title, body: GitHub.Issues.withWriteMarker(text, key), ...(labels.length === 0 ? {} : { labels }) }, (json) =>
-              Effect.gen(function* () {
-                const number = (json as { number?: unknown } | undefined)?.number
-                // Done but unreadable: the next tick finds it by its marker.
-                if (typeof number !== "number") return yield* Effect.as(notNow, { made: false } as Sent)
-                return { made: true, number, json } as Sent
-              }))),
+            perform: (key) => Effect.gen(function* () {
+              if (!(yield* ensureLabels)) return { made: false } as Sent
+              return yield* made(send("POST", `${path}/issues`, { title: payload.title, body: GitHub.Issues.withWriteMarker(text, key), ...(labels.length === 0 ? {} : { labels }) }, (json) =>
+                Effect.gen(function* () {
+                  const number = (json as { number?: unknown } | undefined)?.number
+                  // Done but unreadable: the next tick finds it by its marker.
+                  if (typeof number !== "number") return yield* Effect.as(notNow, { made: false } as Sent)
+                  return { made: true, number, json } as Sent
+                })))
+            }),
           })
           if (!sent.made) return
           yield* sql`UPDATE machine_writes SET item_number = ${sent.number} WHERE id = ${write.id}::uuid`
