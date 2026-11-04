@@ -38,11 +38,13 @@ export const reconnectShapes = Effect.flatMap(IssuesStore, (store) =>
 /** How long a search waits for the next keypress before it asks the route. */
 export const SEARCH_AFTER = "150 millis"
 
-/** Whether this tab may ask, or keep, the issues route's answer on repository `id`: it decided this person may read it, and its list hasn't installed. */
-const searchable = (store: IssuesStore["Service"], id: string) =>
+/**
+ * Whether this tab may keep the issues route's answer on repository `id`: it decided this person may read it, and its
+ * list hasn't installed. Waits for the repository to open (the route opens it) and for its authority's answer.
+ */
+const keepable = (store: IssuesStore["Service"], id: string) =>
   Effect.gen(function* () {
-    const repo = store.opened(id)
-    if (repo === undefined) return false
+    const repo = yield* store.forRepo(id)
     const rows = yield* repo.accessState.rows.pipe(
       Stream.filter((rows) => rows[0]?.status !== "unknown"),
       Stream.runHead,
@@ -51,12 +53,22 @@ const searchable = (store: IssuesStore["Service"], id: string) =>
     return row.status === "allowed" && row.installed !== true
   })
 
+/** Whether this tab already knows it may not keep an answer on `id`: refused, or its list installed. Never waits. */
+const declined = (store: IssuesStore["Service"], id: string) =>
+  Effect.gen(function* () {
+    const repo = store.opened(id)
+    if (repo === undefined) return false
+    const row = Option.getOrUndefined(yield* Stream.runHead(repo.accessState.rows))?.[0]
+    return row !== undefined && row.status !== "unknown" && !(row.status === "allowed" && row.installed !== true)
+  })
+
 /**
  * A person typed search `q` in a list that hasn't synced yet: the issues route answers it, under the shapes' own rule,
- * so a search doesn't wait for the whole sync (docs/features/issues.md#the-browser). It asks only once this tab's own
- * authority on the repository says it may (decision 0110), and keeps the answer, in memory, only if that still holds
- * and this is still the last search asked. A refusal, another search and another repository forget it (`forgetSearch`).
- * One log line `issues.search` with the outcome and time; never the search.
+ * so a search doesn't wait for the whole sync (docs/features/issues.md#the-browser). It asks as soon as the person
+ * stops typing, unless this tab already knows it may not keep the answer, and doesn't wait for the repository to open:
+ * on a cold page that took seconds. It keeps the answer, in memory, only once this tab's own authority on the
+ * repository says it may (decision 0110) and this is still the last search asked. A refusal, another search and another
+ * repository forget it (`forgetSearch`). One log line `issues.search` with the outcome and time; never the search.
  */
 export const search = (owner: string, name: string, q: string) =>
   Effect.gen(function* () {
@@ -68,8 +80,7 @@ export const search = (owner: string, name: string, q: string) =>
     store.searches.repoId = id
     if (asked === "") return
     yield* Effect.sleep(SEARCH_AFTER)
-    if (store.searches.latest !== generation || !(yield* searchable(store, id))) return
-    if (store.searches.latest !== generation) return
+    if (store.searches.latest !== generation || (yield* declined(store, id))) return
     const startedAt = yield* Clock.currentTimeMillis
     const answer = yield* Effect.result(store.search(owner, name, asked))
     const fields = { durationMs: (yield* Clock.currentTimeMillis) - startedAt }
@@ -79,7 +90,7 @@ export const search = (owner: string, name: string, q: string) =>
       )
     }
     yield* Effect.logInfo("issues.search").pipe(Effect.annotateLogs({ ...fields, outcome: "answered", count: answer.success.length }))
-    if (store.searches.latest !== generation || !(yield* searchable(store, id))) return
+    if (store.searches.latest !== generation || !(yield* keepable(store, id))) return
     if (store.searches.latest !== generation) return
     yield* Effect.orDie(store.searched.insert({ id: SEARCHED, repoId: id, q: asked, issues: answer.success }))
   }).pipe(Effect.annotateLogs({ feature: "issues" }))

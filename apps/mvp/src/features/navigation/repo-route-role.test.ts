@@ -2,7 +2,8 @@ import { expect, test, vi } from "vitest"
 import { dom } from "../../../tests/fixtures/dom"
 
 Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom) })
-const { router } = await import("../../router")
+const { createAppRouter, FIRST_LOAD_PENDING_MIN_MS, FIRST_LOAD_PENDING_MS, PENDING_MIN_MS, PENDING_MS, router } = await import("../../router")
+const { createMemoryHistory } = await import("@tanstack/react-router")
 
 type Enter = (load: unknown) => Promise<void>
 
@@ -79,4 +80,23 @@ test("the issues list asks GitHub's spelling of the repository's name while its 
   warmed()
   release()
   await entering
+})
+
+// Proof (a) on production, 2026-11-04: the first paint showed a cold issues list's rows at about 0.8 s, but its search box
+// came with the list itself, once the route resolved, 2.3-3.8 s later. Its pending screen, with the box, now shows as soon
+// as the app renders; later navigations keep the previous page as long as before (decision 0020).
+test("a cold page's first load shows the issues list's pending screen at once, then navigations wait as before", async () => {
+  const { context, release } = contextOf()
+  const cold = createAppRouter({ history: createMemoryHistory({ initialEntries: ["/acme/widgets/issues"] }), context: context as never })
+  const loading = cold.load()
+  await vi.waitFor(() => {
+    const match = cold.state.matches.find((match) => match.routeId === "/$owner/$repo/issues")
+    expect(match?.status).toBe("pending")
+  }, { timeout: 500 })
+  // Shown at once, and gone at once when the page loaded: a fast first load waits no minimum (review, 2026-11-04).
+  expect([cold.options.defaultPendingMs, cold.options.defaultPendingMinMs]).toEqual([FIRST_LOAD_PENDING_MS, FIRST_LOAD_PENDING_MIN_MS])
+  expect(router.routesById["/$owner/$repo/issues"].options.pendingComponent?.name).toBe("IssuesPendingScreen")
+  release()
+  await loading
+  await vi.waitFor(() => expect([cold.options.defaultPendingMs, cold.options.defaultPendingMinMs]).toEqual([PENDING_MS, PENDING_MIN_MS]))
 })

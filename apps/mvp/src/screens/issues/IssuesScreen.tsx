@@ -1,8 +1,9 @@
+import { IssueSearchBox } from "../../features/issues/components/IssueSearchBox"
 import { IssueSort } from "../../features/issues/components/IssueSort"
 import { visibleRows, withSearched } from "../../features/issues/list"
 import { githubList } from "../../features/repo/scope"
 import { RepoHeader } from "../../features/repo/components/RepoHeader"
-import { Badge, Button, Card, CardContent, EmptyState, Input, IssuesView, LinkTabs, PageBody } from "@smthrs/ui"
+import { Badge, Button, Card, CardContent, EmptyState, IssuesView, LinkTabs, PageBody } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useNavigate, useParams, useSearch } from "@tanstack/react-router"
 import { useAuth } from "../../features/auth/components/AuthContext"
@@ -143,11 +144,7 @@ export function IssuesScreen() {
         {failure !== undefined ? null : listSync === "syncing" ? <p role="status" data-list-sync="" className="issues-syncing">Syncing issues…</p> : null}
         {(
           <div className="list-search-tools" role="search" aria-label="Search issues">
-            <Input aria-label="Search issues" placeholder="Search issues" value={search.q ?? ""}
-              onChange={(event) => {
-                if (listSync === "syncing") actions.search(owner, repo, event.currentTarget.value)
-                void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, q: event.currentTarget.value }, replace: true, resetScroll: false })
-              }} />
+            <IssueSearchBox owner={owner} repo={repo} q={search.q} ask={listSync === "syncing"} />
             <IssueSort value={search.sort ?? "updated"}
               onChange={(sort) => void navigate({ to: "/$owner/$repo/issues", params: { owner, repo }, search: { ...search, sort }, resetScroll: false })} />
           </div>

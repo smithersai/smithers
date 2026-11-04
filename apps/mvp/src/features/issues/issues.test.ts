@@ -351,9 +351,12 @@ describe("a new issue", () => {
     const release: Array<() => void> = []
     // This tab's authority, as a test sets it.
     let authority: { status: string; installed: boolean } = { status: "allowed", installed: false }
+    // The repository this tab opened, with `rows` as its authority's answers.
+    const repoOf = (rows: Stream.Stream<ReadonlyArray<{ status: string; installed: boolean }>>) => ({ accessState: { rows } }) as never
     const store = {
       ...tab.store,
-      opened: () => ({ accessState: { rows: Stream.sync(() => [authority]) } }) as never,
+      opened: () => repoOf(Stream.sync(() => [authority])),
+      forRepo: () => Effect.sync(() => repoOf(Stream.sync(() => [authority]))),
       search: (_owner: string, _name: string, q: string) => Effect.promise(() => new Promise<void>((resolve) => { asked.push(q); release.push(resolve) })).pipe(
         Effect.andThen(q === "refused" ? Effect.fail(new SearchNotAnswered({ status: 403 })) : Effect.succeed(answered(q))),
       ),
@@ -399,33 +402,52 @@ describe("a new issue", () => {
     // A search forgotten while this tab waits on its authority a last time: the answer doesn't stay.
     authority = { status: "allowed", installed: false }
     let checks = 0
-    const waiting = { ...store, opened: () => ({ accessState: { rows: Stream.fromEffect(Effect.gen(function* () {
+    const counted = () => repoOf(Stream.fromEffect(Effect.gen(function* () {
       checks++
       if (checks === 2) yield* tab.store.forgetSearch
       return [authority]
-    })) } }) as never }
+    })))
+    const waiting = { ...store, opened: counted, forRepo: () => Effect.sync(counted) }
     const lastWait = tab.runtime.runPromise(searchAction(OWNER, NAME, "lastwait").pipe(Effect.provideService(IssuesStore, waiting)))
     await until(() => expect(asked).toHaveLength(6))
     release[5]!()
     await lastWait
     expect(row()).toBeUndefined()
-    // Refused, or the list already installed, or a repository nobody opened: the route is never asked.
+    // Refused, or the list already installed, as this tab knows already: the route is never asked.
     authority = { status: "allowed", installed: true }
     await run("installed")
     authority = { status: "forbidden", installed: false }
     await run("forbidden")
-    await tab.runtime.runPromise(searchAction(OWNER, NAME, "unopened").pipe(Effect.provideService(IssuesStore, { ...store, opened: () => undefined })))
     expect(asked).toHaveLength(6)
-    // A keypress newer than the wait for this tab's authority: the older search stops there.
-    const unknown = { status: "unknown", installed: false }
-    let held = true
-    const slow = { ...store, opened: () => ({ accessState: { rows: Stream.fromEffect(Effect.sleep(held ? "60 millis" : "0 millis")).pipe(Stream.map(() => [{ ...unknown, status: "allowed" }])) } }) as never }
+    // A repository this tab hasn't opened yet, as on a cold page: the route is asked at once, and its answer stays once
+    // the repository opens and this tab's authority says it may. Before 2026-11-04 the search waited for the opening,
+    // seconds on a cold page (proof (a)'s browserListSearchMs).
+    authority = { status: "allowed", installed: false }
+    let opened!: () => void
+    const opening = new Promise<void>((resolve) => (opened = resolve))
+    const cold = { ...store, opened: () => undefined, forRepo: () => Effect.promise(() => opening).pipe(Effect.map(() => repoOf(Stream.sync(() => [authority])))) }
+    const unopened = tab.runtime.runPromise(searchAction(OWNER, NAME, "unopened").pipe(Effect.provideService(IssuesStore, cold)))
+    await until(() => expect(asked).toHaveLength(7))
+    release[6]!()
+    opened()
+    await unopened
+    expect(row()).toMatchObject({ repoId: REPO_ID, q: "unopened", issues: answered("unopened") })
+    // A keypress newer than the wait for this tab's authority: the older answer doesn't stay.
+    let decide!: () => void
+    const deciding = new Promise<void>((resolve) => (decide = resolve))
+    let waited = false
+    const slow = { ...store, opened: () => undefined, forRepo: () => Effect.sync(() => {
+      waited = true
+      return repoOf(Stream.fromEffect(Effect.promise(() => deciding)).pipe(Stream.map(() => [authority])))
+    }) }
     const older = tab.runtime.runPromise(searchAction(OWNER, NAME, "older").pipe(Effect.provideService(IssuesStore, slow)))
-    await new Promise((resolve) => setTimeout(resolve, 170))
+    await until(() => expect(asked).toHaveLength(8))
+    release[7]!()
+    await until(() => expect(waited).toBe(true))
     await tab.runtime.runPromise(tab.store.forgetSearch)
-    held = false
+    decide()
     await older
-    expect(asked).toHaveLength(6)
+    expect(row()).toBeUndefined()
     // Opening another repository forgets; opening this one again doesn't.
     await tab.runtime.runPromise(tab.store.searched.insert({ id: SEARCHED, repoId: REPO_ID, q: "kept", issues: [] }))
     tab.store.searches.repoId = REPO_ID

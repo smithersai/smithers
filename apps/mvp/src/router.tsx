@@ -37,6 +37,7 @@ import { commitmentSearch } from "./features/issues/lifecycle"
 import { workSearch } from "./features/issues/workView"
 import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
 import { ActionsScreen } from "./screens/actions/ActionsScreen"
+import { IssuesPendingScreen } from "./screens/issues/IssuesPendingScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
@@ -501,6 +502,7 @@ const issuesRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issues,
   component: IssuesScreen,
+  pendingComponent: IssuesPendingScreen,
   validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search), ...workSearch(search) }),
   beforeLoad: ({ context, params, ...load }) =>
     enterRepository(context, params,
@@ -782,6 +784,26 @@ const routeTree = rootRoute.addChildren([
 ])
 
 /** Builds an app router whose route context always reads this instance's navigation state. */
+/**
+ * How long a navigation waits before its route's pending screen replaces the page shown: the router's own default.
+ * Decision 0020 keeps the previous page until the next is ready, and a hovered link's warm usually makes that quick.
+ */
+export const PENDING_MS = 1_000
+
+/** How long a pending screen, once shown, stays at least: the router's own default, so it never flashes. */
+export const PENDING_MIN_MS = 500
+
+/**
+ * The page's first load has no previous page to keep: a route with a pending screen shows it as soon as the app renders,
+ * in the first paint's place (src/firstPaint/shell.ts), so a cold issues list takes a search at once instead of seconds
+ * later, when its route resolves (proof (a), browserListSearchMs). Once a load resolves, `PENDING_MS` and
+ * `PENDING_MIN_MS` apply.
+ */
+export const FIRST_LOAD_PENDING_MS = 0
+
+/** On the first load the pending screen stands in for nothing, so a page that loaded replaces it at once. */
+export const FIRST_LOAD_PENDING_MIN_MS = 0
+
 export const createAppRouter = (options: {
   readonly context?: RouterContext
   readonly history?: RouterHistory
@@ -795,6 +817,8 @@ export const createAppRouter = (options: {
     // A link's hover or focus preloads its page: its route's `beforeLoad` warms what it shows (`enter`).
     defaultPreload: "intent",
     defaultPreloadDelay: PRELOAD_DELAY_MS,
+    defaultPendingMs: FIRST_LOAD_PENDING_MS,
+    defaultPendingMinMs: FIRST_LOAD_PENDING_MIN_MS,
     // main.tsx's `RouterProvider` gives the real one before the first load.
     context: {
       repo: undefined!,
@@ -815,6 +839,10 @@ export const createAppRouter = (options: {
     ...options,
   })
   appRouter.update({ context: { ...appRouter.options.context, router: appRouter } })
+  const firstResolved = appRouter.subscribe("onResolved", () => {
+    firstResolved()
+    appRouter.update({ ...appRouter.options, defaultPendingMs: PENDING_MS, defaultPendingMinMs: PENDING_MIN_MS })
+  })
   return appRouter
 }
 
