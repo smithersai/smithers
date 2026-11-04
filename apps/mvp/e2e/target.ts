@@ -50,15 +50,15 @@ export const LOCAL_DEVELOPER: Identity = { origin: new URL(baseURL).origin, logi
  * Where a deployment's stored session lives: one folder per host, outside the repository so every workspace shares one
  * session and no copy of the checkout carries it. `E2E_SESSION_DIR` moves the root.
  */
-export const sessionFiles = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined } = process.env) => {
-  const dir = sessionDirOf(url, env)
+export const sessionFiles = (url: string, env: { readonly E2E_SESSION_DIR?: string | undefined; readonly E2E_RUN_DIR?: string | undefined } = process.env) => {
+  const dir = env.E2E_RUN_DIR ?? sessionDirOf(url, env)
   return {
     dir,
     session: join(dir, "session.json"),
     identity: join(dir, "identity.json"),
     conversation: join(dir, "conversation.json"),
     repositories: join(dir, "repositories.json"),
-    settings: join(dir, "e2e.env"),
+    settings: join(sessionDirOf(url, env), "e2e.env"),
   }
 }
 
@@ -69,7 +69,7 @@ export type Place = { readonly path: string; readonly conversationId: string }
  * The branch a deployment run asks in, so its questions never reach the team's home conversation that every Member
  * reads: tracked first by the test account, it stays the account's own until shared (docs/features/branch-workspace.md).
  */
-export const OWN_BRANCH = { owner: "roninjin10", name: "smithers-github-tests", ref: "smithers-e2e" } as const
+export const OWN_BRANCH = { owner: "roninjin10", name: "smithers-github-tests", ref: process.env.E2E_RUN_ID ? `smithers-e2e-${process.env.E2E_RUN_ID}` : "smithers-e2e" } as const
 
 /** Reads the place the setup tracked; undefined when it couldn't track one (e2e/deployment/sign-in.setup.ts). */
 export const readPlace = (path: string): Place | undefined => {

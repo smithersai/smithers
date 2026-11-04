@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process"
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { chmodSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -26,6 +26,19 @@ describe("a deployment run's settings file", () => {
     expect(sessionFiles("https://smithers.example", env).dir).toBe(sessionDirOf("https://smithers.example", env))
     expect(sessionDirOf("https://localhost:1338", {})).toBe(join(homedir(), ".smithers-e2e", "localhost_1338"))
     expect(settingsFileOf("https://smithers.example")).toBe(settingsFileOf("https://smithers.example", process.env))
+  })
+
+  it("isolates each run's session and metadata while retaining shared private settings", () => {
+    const shared = sessionFiles("https://smithers.example", { E2E_SESSION_DIR: root })
+    const a = sessionFiles("https://smithers.example", { E2E_SESSION_DIR: root, E2E_RUN_DIR: join(root, "run-a") })
+    const b = sessionFiles("https://smithers.example", { E2E_SESSION_DIR: root, E2E_RUN_DIR: join(root, "run-b") })
+    expect(a.settings).toBe(shared.settings)
+    expect(b.settings).toBe(shared.settings)
+    for (const field of ["session", "identity", "conversation", "repositories"] as const) {
+      expect(a[field]).not.toBe(b[field])
+      expect(a[field]).not.toBe(shared[field])
+      expect(a[field]).toContain(join(root, "run-a"))
+    }
   })
 
   it("adds its variables under the environment, which wins, and names the ones it set", () => {
@@ -73,36 +86,5 @@ describe("pnpm e2e:prod", () => {
     expect(run.status).toBe(2)
     expect(run.stderr).toContain(join(root, "smithers.example", "e2e.env"))
     expect(run.stderr).toContain("chmod 600")
-  })
-})
-
-describe("pnpm e2e:prod's lock", () => {
-  it("is held while Playwright runs and released before the recordings are made", () => {
-    const dir = mkdtempSync(join(tmpdir(), "e2e-prod-lock-"))
-    try {
-      const lock = join(dir, "run.lock")
-      const seen = join(dir, "seen.log")
-      // Stand-ins for Playwright (pnpm on PATH) and for e2e/gifs.mjs, run from the working directory: each notes the lock.
-      const bin = join(dir, "bin")
-      mkdirSync(bin)
-      writeFileSync(join(bin, "pnpm"), `#!/bin/sh\n[ -d "${lock}" ] && echo "tests: held" >> "${seen}" || echo "tests: free" >> "${seen}"\n`)
-      chmodSync(join(bin, "pnpm"), 0o755)
-      mkdirSync(join(dir, "e2e"))
-      writeFileSync(
-        join(dir, "e2e", "gifs.mjs"),
-        `import { appendFileSync, existsSync } from "node:fs"\nappendFileSync(${JSON.stringify(seen)}, existsSync(${JSON.stringify(lock)}) ? "recordings: held\\n" : "recordings: free\\n")\n`,
-      )
-      const prod = join(dirname(fileURLToPath(import.meta.url)), "prod.mjs")
-      const run = spawnSync(process.execPath, [prod], {
-        cwd: dir,
-        encoding: "utf8",
-        env: { PATH: `${bin}:${process.env.PATH}`, HOME: dir, E2E_PROD_URL: "https://smithers.example", E2E_SESSION_DIR: dir, E2E_PROD_LOCK: lock },
-      })
-      expect(run.status).toBe(0)
-      expect(readFileSync(seen, "utf8")).toBe("tests: held\nrecordings: free\n")
-      expect(existsSync(lock)).toBe(false)
-    } finally {
-      rmSync(dir, { recursive: true, force: true })
-    }
   })
 })

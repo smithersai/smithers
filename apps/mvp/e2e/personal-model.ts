@@ -7,6 +7,7 @@ import {
   PERSONAL_MODEL_SHAPE_ROUTE,
   type ConnectionKind,
   isProtocol,
+  baseUrlOf,
   type Protocol,
 } from "../src/features/personal-model/contract"
 import { KIND_LABEL, PROTOCOL_LABEL, TIER_LABEL } from "../src/features/personal-model/copy"
@@ -23,6 +24,17 @@ export const personalModelConfig = () => {
     baseUrl: process.env.E2E_PERSONAL_MODEL_BASE_URL || "https://api.openai.com",
     modelId: process.env.E2E_PERSONAL_MODEL_ID || "gpt-4.1-mini",
   }
+}
+
+/** A read-only bootstrap check: readers never replace a connection that already matches their configured fixture. */
+export const personalModelReady = async (request: APIRequestContext) => {
+  const key = process.env.E2E_PERSONAL_MODEL_KEY
+  if (!key) return true
+  const config = personalModelConfig()
+  const rows = await shapeRows<{ kind: string; active: boolean; protocol: string; base_url: string; fast_model: string; key_last4: string }>(request, PERSONAL_MODEL_SHAPE_ROUTE)
+  const row = rows[0]
+  return rows.length === 1 && row?.kind === "api_key" && row.active === true && row.protocol === config.protocol && row.base_url === baseUrlOf(config.baseUrl) &&
+    row.fast_model === config.modelId && row.key_last4 === [...key].slice(-4).join("")
 }
 
 /** Opens Add's menu in Settings' Your model `section` and a kind's form: its dialog. */

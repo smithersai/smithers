@@ -355,7 +355,7 @@ Run it after every production deploy:
 cd apps/mvp && ~/vault-ws-deployer/bin/mvp-prod-env node ops/deploy-smoke/run.ts
 ```
 
-It runs a short list of specs (`SPECS`, `ops/deploy-smoke/run.ts`) one after another, in Chromium and in WebKit, through `node e2e/prod.mjs`, each under `run.lock`, prints one pass or fail line per spec with its log's path, and exits non-zero on any failure, having run them all. It finds production's Neon project itself: the one in `NEON_ORG_ID` that Alchemy named for the stage. Each spec on it proves a failure that reached production once:
+It runs a short list of specs (`SPECS`, `ops/deploy-smoke/run.ts`) one after another, in Chromium and in WebKit, through `node e2e/prod.mjs`, each under its declared resource leases, prints one pass or fail line per spec with its log's path, and exits non-zero on any failure, having run them all. It finds production's Neon project itself: the one in `NEON_ORG_ID` that Alchemy named for the stage. Each spec on it proves a failure that reached production once:
 
 - `e2e/cold-path.spec.ts`: a person back after their role row expired, aged deterministically by `ops/role-age/expire.ts` (one row's `checked_at`, its role untouched): the first paint's read answers in time, `/role` and `/refs` never answer 503, and the next visit paints.
 - `e2e/first-paint.spec.ts`: search and New issue take a real click while a page still syncs, and nothing covers them.
@@ -378,7 +378,7 @@ E2E_SHIP_ACCEPTANCE=1 E2E_PROD_URL=<the production URL> pnpm e2e:prod
 ```
 
 `e2e/ship.ts` is the single required-feature manifest: each SCOPE-6/SCOPE-7 feature maps to specs,
-prerequisites and the required Chromium (`deployment`) and WebKit (`webkit`) targets. Before the account lock,
+prerequisites and the required Chromium (`deployment`) and WebKit (`webkit`) targets. Before taking resource leases,
 sign-in or any network work, the runner refuses missing credentials and missing or invalid fixture names/paths,
 including `E2E_PERSONAL_MODEL_KEY`, naming the variables without their values. The runner mirror must contain
 `.jj`; scratch repositories cannot be under `smithersai`. Settings still come from the private file below.
@@ -446,7 +446,7 @@ attachments. Creating a new historical failure needs a real failed action; produ
 propagate its status. The default is `node`. This keeps browser driving on a small machine without encoding there;
 media validation remains required.
 
-A run that was killed never reaches its own cleanup: a Working TODO it left holds the stack's lane, and its runner stays registered. So the setup puts each scratch repository the account administers back before any test (`cleanScratch`, `e2e/stackWrites.ts`): it retires every `e2e-` runner and its agent, drops every open TODO and sets one stacked lane, all through the product's routes, and prints what it found. `pnpm e2e:prod` holds the test account's lock, so nothing there is another run's. A refusal fails the setup at once, naming what stayed dirty. Don't wrap a run in `timeout`: `prod.mjs` waits for Playwright, and what a run finishes it cleans up itself.
+A run that was killed never reaches its own cleanup: a Working TODO it left holds the stack's lane, and its runner stays registered. So the setup puts each scratch repository the account administers back before any test (`cleanScratch`, `e2e/stackWrites.ts`): it retires every `e2e-` runner and its agent, drops every open TODO and sets one stacked lane, all through the product's routes, and prints what it found. `pnpm e2e:prod` cleans only the selected run's leased stack/factory repositories. A spec with neither resource performs no scratch cleanup. A refusal fails the setup at once, naming what stayed dirty. Don't wrap a run in `timeout`: `prod.mjs` waits for Playwright, and what a run finishes it cleans up itself.
 
 **Sign-in.**
 - The setup project (`e2e/deployment/sign-in.setup.ts`) signs the test account `codeplanesmithers` in the way a person does: through GitHub, from the account's own browser profile (`~/.multi-e2e-profile`, or `E2E_GITHUB_PROFILE`).
@@ -482,7 +482,7 @@ A run that was killed never reaches its own cleanup: a Working TODO it left hold
 
 **Broken.** A test known to fail on a target is marked `broken(name)` (TEST-5), naming its entry in `KNOWN_BROKEN` (`e2e/target.ts`). It is expected to fail there. If it passes, the run fails until the mark is removed. No entry is known today: `remoteFlows` was removed once production's remote flows ran (2026-10-21).
 
-**Summary.** The run ends with a table: each spec's passed, failed, broken, skipped and blocked counts, then each skip reason with its count. It writes `test-results-deployment/summary.json`. The command exits 1 on any of these:
+**Summary.** The run ends with a table: each spec's passed, failed, broken, skipped and blocked counts, then each skip reason with its count. It writes `test-results-deployment/<run-id>/summary.json`. The command exits 1 on any of these:
 - a failure;
 - a skip that names no need;
 - a blocked need;
@@ -492,16 +492,25 @@ A run that was killed never reaches its own cleanup: a Working TODO it left hold
 
 **Fixtures.** For a Member or above, the setup requests clones of `octocat/Spoon-Knife` and of the own branch's repository (`POST /api/repos`, idempotent), then tracks the own branch (`POST /api/branches`). It records the branch only when the branch is the account's own and unshared.
 
-**One run at a time.**
-- `pnpm e2e:prod` holds a lock directory while Playwright runs: `E2E_PROD_LOCK`, or `run.lock` beside the stored session. It releases it before making the videos and GIFs, which use neither the test account nor the deployment.
-- Run only the specs you need, and debug a failure after the run releases the lock, not inside it.
-- Its `owner` file names the run's pid and checkout. Another run waits for it.
-- A lock whose owner process has ended is reported and left in place for a person to remove.
+**Parallel runs.**
+- `e2e/resources.ts`, beside the target needs, declares each spec's shared resources. An empty declaration means reads or run-owned data; an unlisted spec fails before setup. Playwright's own `--list` discovery applies the selected files, projects and grep. The runner takes their union, deduplicating repository aliases and sorting resource names globally. It releases partial pool candidates before waiting, so selecting two pools cannot deadlock.
+- Repository mutations take an exclusive `repository:<owner/name>` lease; account settings, notification settings and model connections have distinct resources. Model consumers share read leases; specs that remove or restore connections take an exclusive lease. Ordinary conversation/branch data is run-owned. Model consumers probe the saved fixture under a shared lease. Only a missing or changed fixture releases every lease, takes the writer, rechecks and restores, then reacquires the resources and probes again. A ready reader keeps its lease through execution. Editors hold the writer throughout. A reader never overwrites another run's connections.
+- Leases live in `~/.smithers-e2e/<host>/resource-locks/`, with private owner files containing PID, hostname, nonce and acquisition time. A live, unknown or incomplete owner is never stolen. A dead local owner or an owner file missing for over five seconds is reported with its path and fails closed. A wait names the blocking path and owner/host. Acquisition, wait and release log their timestamps and resource names, never credentials or content. Interrupts reach the owned Playwright process group, and leases stay until it exits.
+- During the upgrade, `run.lock` (or `E2E_PROD_LOCK`) is a **shared compatibility fence**: new runners join it concurrently; old runners still wait outside it. An existing legacy owner must exit first. The fence's creator remains alive until every joined run exits Playwright, then removes only its own fence. This preserves safety with older checkouts without serializing new runners. A killed creator or participant is reported, never reclaimed.
+- All concurrent runners for an account must use the same host and session root. Directory leases do not coordinate independent filesystems. Remote compute may run tests/media, but a separate production browser host needs shared coordination before joining this account.
+
+**Scratch pool.** A run needing stack/factory scratch leases a member of the corresponding bounded pool (`<test-login>/smithers-e2e-stack-1` through `-4`, and `factory-1` through `-4`; `E2E_SCRATCH_POOL_SIZE` sets 1–16). Each member's lease is its repository resource, so explicitly selecting that same repository also conflicts. Exhaustion waits; it does not fall back onto an occupied pool member.
+
+Before creating a repository, the runner uses the test account's `E2E_GITHUB_TOKEN` through the library catalog's `@smthrs/integrations` client. It verifies `/user`, reads `/user/installations`, and requires the installation for `E2E_GITHUB_APP_ID` (or `GITHUB_APP_ID`) on that account to be active with `repository_selection: "all"`. This needs an App user token that can read its installations. It never assumes coverage or changes installation permissions. It creates a missing public, initialized repository only while holding its lease, and verifies its identity and Admin permission. It reconciles one open test-fixture issue for the TODO picker; the setup reads real repository sync readiness and the specs wait for the real issue projection. External-runner specs receive a private per-run `jj` clone, removed afterward.
+
+If credentials, installation verification or provisioning are unavailable, the runner logs a fallback and takes the configured `E2E_STACK_REPOSITORY`/`E2E_FACTORY_REPOSITORY` resource locks before setup. `E2E_SCRATCH_POOL=off` deliberately selects this fallback, including for the serialization proof. No credential or provider error body is printed.
+
+**Concurrent sign-in.** Only sign-in validation/refresh holds `session:refresh`. The setup atomically writes the shared session/identity, then copies a consistent pair into the private run directory. Each run reads its own snapshot, repository roles and conversation metadata; its branch ref includes the run ID. Refresh never invalidates an earlier session. The run directory and any scratch clone are removed when the runner exits. `--no-deps`, alternate configs and `--output` are refused because they bypass isolated setup or output.
 
 **Results.**
-- Playwright's results go to `test-results-deployment/`, apart from a local run's.
-- Videos and GIFs go to `~/Desktop/smithers-mvp/prod/`. A skipped test gets neither: it writes no manifest, so its blank recording is never made into media or checked (`e2e/manifests.ts`).
-- Two workers, no retries and no traces: a trace holds the session cookie.
+- Playwright's results go to `test-results-deployment/<run-id>/`, apart from a local run's.
+- Videos and GIFs go to `~/Desktop/smithers-mvp/prod/<run-id>/`. A skipped test gets neither: it writes no manifest, so its blank recording is never made into media or checked (`e2e/manifests.ts`).
+- One worker per run, no retries and no traces: a trace holds the session cookie.
 
 **Rehearsal.** A local stack that signs in through GitHub runs as a deployment: `E2E_TARGET=deployment BASE_URL=http://localhost:1338 pnpm exec playwright test`.
 

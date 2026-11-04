@@ -41,7 +41,7 @@ const viewport = { width: 1280, height: 800 }
 const deployment = (): PlaywrightTestConfig => {
   // When the run began, for the spend guard (e2e/spend.ts): set once here, inherited by every worker.
   process.env.E2E_RUN_STARTED_AT ??= String(Date.now())
-  const outputDir = "test-results-deployment"
+  const outputDir = process.env.E2E_OUTPUT_DIR ?? "test-results-deployment"
   return {
     outputDir,
     workers: 1,

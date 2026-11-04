@@ -92,7 +92,7 @@ export const shipFeaturesOf = (file: string) => {
   return SHIP_FEATURES.filter((feature) => feature.specs.includes(spec))
 }
 
-/** Check credentials and fixture names/paths before taking the account lock or making any network request. */
+/** Check credentials and fixture names/paths before taking resource leases or making any network request. */
 export const assertShipPrerequisites = (env: Env, args: ReadonlyArray<string> = []): void => {
   if (!shipAcceptance(env)) return
   if (args.length > 0) throw new Error("Ship acceptance runs the full suite; omit spec filters and Playwright options")
