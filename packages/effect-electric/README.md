@@ -80,6 +80,14 @@ volumes. To supply other services, run `node scripts/test-services.mjs` with bot
 `DATABASE_URL` and `ELECTRIC_URL`. Required services failing to start or answer
 fail the target; its integration cases never silently skip.
 
+The Node SQLite fixture uses separate connections to each test's own file, with
+real Web Locks held through `COMMIT`, `ROLLBACK` or close and synchronous batches.
+This matches the browser's `SharedSqlite` transaction ownership: another tab waits
+without blocking the owner. An async wrapper around synchronous `node:sqlite`
+alone cannot provide that contract; competing `BEGIN IMMEDIATE` calls fail with
+`SQLITE_BUSY` before the owning connection can resume. Fixture regressions and
+production sources both run under the 100% coverage gate.
+
 ## Learn more
 
 - [Overview](docs/README.md): what the package guarantees.

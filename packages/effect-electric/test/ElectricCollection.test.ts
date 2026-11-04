@@ -1193,7 +1193,7 @@ describe.skipIf(!electricUp)("persisted", () => {
 
   // Astra on 66193380's lineage: a tab learns of a refusal while another tab owns the device's rows. A watcher's own
   // truncate is dropped (internal/oneWriter.ts), so the wipe goes through the program that writes.
-  test("a watcher's evict wipes through the writer: gone from the device and from both programs", async () => {
+  test.each([false, true])("a watcher's evict wipes through the writer, before its first read: %s", async (unread) => {
     await run(Effect.gen(function*() {
       const { table, write } = yield* scratchTable
       yield* write({ id: "a", text: "one", n: 1 })
@@ -1206,8 +1206,10 @@ describe.skipIf(!electricUp)("persisted", () => {
       yield* eventually(() => storedRows(path, id) === 1)
       const watcherPersistence = yield* Layer.build(persistenceOn(path, device))
       const watcher = yield* faulty(persisted(table, id)).pipe(Effect.provide(watcherPersistence))
-      yield* watcher.collection.preload
-      yield* eventually(() => watcher.collection.tanstack.has("a"))
+      if (!unread) {
+        yield* watcher.collection.preload
+        yield* eventually(() => watcher.collection.tanstack.has("a"))
+      }
       // The server now refuses everyone, so the wipe's own new session brings nothing back.
       yield* writer.faults.refuse(403)
       yield* watcher.faults.refuse(403)

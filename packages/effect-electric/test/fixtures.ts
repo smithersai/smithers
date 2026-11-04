@@ -1,5 +1,5 @@
-import { TestSchemas } from "@smthrs/database"
 import { PgClient } from "@effect/sql-pg"
+import { TestSchemas } from "@smthrs/database"
 import { type Outbox, Persistence } from "@smthrs/effect-tanstack-db"
 import { BrowserCollectionCoordinator, createBrowserWASQLitePersistence } from "@tanstack/browser-db-sqlite-persistence"
 import { createPersistedTableName } from "@tanstack/db-sqlite-persistence-core"
@@ -7,8 +7,9 @@ import { Effect, Option, Redacted, Schedule } from "effect"
 import { SqlClient } from "effect/sql"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { DatabaseSync, type SQLInputValue } from "node:sqlite"
+import { DatabaseSync } from "node:sqlite"
 import { ShapeSource } from "../src/index.ts"
+import { sqlite } from "./sqlite.ts"
 
 // What the Electric-backed suites need: a real Postgres and Electric, a scratch table per test, and a network with
 // switches. Point them at your own with DATABASE_URL and ELECTRIC_URL; the defaults are apps/mvp's
@@ -88,18 +89,7 @@ export const databaseFile = () => join(tmpdir(), `effect-electric-${crypto.rando
  */
 export const persistenceOn = (path: string, device?: string) =>
   Persistence.layer({
-    open: () => {
-      const database = new DatabaseSync(path)
-      return {
-        execute: async <T>(sql: string, params: ReadonlyArray<unknown> = []): Promise<ReadonlyArray<T>> => {
-          const statement = database.prepare(sql)
-          if (statement.columns().length > 0) return statement.all(...(params as Array<SQLInputValue>)) as Array<T>
-          statement.run(...(params as Array<SQLInputValue>))
-          return []
-        },
-        close: () => database.close()
-      }
-    },
+    open: () => sqlite(path),
     make: (database, coordinator) =>
       createBrowserWASQLitePersistence({ database, ...(coordinator ? { coordinator } : {}) }),
     ...(device === undefined ? {} : {

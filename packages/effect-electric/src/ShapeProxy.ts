@@ -565,10 +565,10 @@ export const make = <R = never>(
         yield* ended(503, "access", "superseded", "replay_required")
         return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
       }
-      const body = JSON.stringify(filtered.value)
-      const guarded = HttpServerResponse.text(body, { status, headers: { ...responseHeaders, "content-type": "application/json" } })
+      const body = new TextEncoder().encode(JSON.stringify(filtered.value))
+      const guarded = HttpServerResponse.uint8Array(body, { status, headers: { ...responseHeaders, "content-type": "application/json" } })
       yield* record({ status, correlationId, upstream: "electric", live, phase, startedAt,
-        bytes: "contentLength" in guarded.body ? guarded.body.contentLength ?? 0 : 0, outcome: "complete" })
+        bytes: body.byteLength, outcome: "complete" })
       return guarded
     }
     // The body streams after this handler and its span end, outside its services, so the record runs with them.

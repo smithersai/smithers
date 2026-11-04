@@ -22,7 +22,7 @@ export default defineConfig({
       provider: "v8",
       // One report directory per process, so concurrent runs never destroy each other's coverage scratch.
       reportsDirectory: join(tmpdir(), `flows-effect-electric-coverage-${process.pid}`),
-      include: ["src/**/*.{ts,vibe}"],
+      include: ["src/**/*.{ts,vibe}", "test/sqlite.ts"],
       thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }
     }
   }

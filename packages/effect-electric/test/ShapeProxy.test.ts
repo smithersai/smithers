@@ -53,7 +53,7 @@ const postgresUp = electricUp &&
 type Fault =
   | { readonly _tag: "down" }
   | { readonly _tag: "empty"; readonly status: number }
-  | { readonly _tag: "answer"; readonly headers: Record<string, string> }
+  | { readonly _tag: "answer"; readonly headers: Record<string, string>; readonly body?: string }
   | { readonly _tag: "hold" }
   | { readonly _tag: "breakBody" }
   | { readonly _tag: "endlessBody" }
@@ -97,7 +97,7 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
           { status: 200, headers: { "content-type": "application/json" } }
         )
       case "answer":
-        return new Response("[]", { status: 200, headers: fault.headers })
+        return new Response(fault.body ?? "[]", { status: 200, headers: fault.headers })
       case "endlessBody":
         return new Response(
           new ReadableStream({ start: (controller) => controller.enqueue(new TextEncoder().encode("[")) }),
@@ -194,6 +194,50 @@ describe("refusals: no Electric needed", () => {
     expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason })).toBe(1)
     expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason })).toBe(1)
     expect(JSON.stringify(h.logs)).not.toContain(ELECTRIC_URL)
+  })
+
+  test.each([
+    ["invalid JSON", "not JSON", ["id"]],
+    ["an object instead of a batch", "{}", ["id"]],
+    ["no declared keys", "[]", []],
+    ["a null message", "[null]", ["id"]],
+    ["a primitive message", "[1]", ["id"]],
+    ["a null value", '[{"value":null}]', ["id"]],
+    ["a primitive value", '[{"value":1}]', ["id"]],
+    ["a missing key", '[{"value":{"text":"SENTINEL"}}]', ["id"]]
+  ] as const)("a faulty upstream with %s never publishes protected rows or a cursor", async (_, body, keyColumns) => {
+    let authorized = 0
+    const h = harness({ rowAccess: {
+      keyColumns,
+      allows: () => { authorized++; return true }
+    } })
+    h.fault({ _tag: "answer", headers: { "electric-offset": "123_0" }, body })
+    const response = await h.request("")
+    expect(response.status).toBe(502)
+    expect(authorized).toBe(0)
+    expect(response.headers.get("electric-offset")).toBeNull()
+    expect(await response.text()).toBe("")
+    expect(h.line()?.annotations).toMatchObject({ status: 502, outcome: "failed", bytes: 0 })
+    expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
+  })
+
+  test("a faulty upstream cannot leak extra delete fields or a denied value with no headers", async () => {
+    const h = harness({ rowAccess: { keyColumns: ["id"], allows: () => false } })
+    h.fault({ _tag: "answer", headers: {}, body: JSON.stringify([
+      { headers: { operation: "delete" }, value: { id: "☕", text: "SENTINEL" } },
+      { value: { id: "b", text: "SENTINEL" } },
+      { headers: { control: "up-to-date" } }
+    ]) })
+    const response = await h.request("")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("content-type")).toContain("application/json")
+    const body = await response.text()
+    expect(JSON.parse(body)).toEqual([
+      { headers: { operation: "delete" }, value: { id: "☕" } },
+      { headers: { control: "up-to-date" } }
+    ])
+    expect(h.line()?.annotations).toMatchObject({ status: 200, bytes: new TextEncoder().encode(body).byteLength })
+    expect(JSON.stringify(h.logs)).not.toContain("SENTINEL")
   })
 
   test("a bodyless upstream answer preserves its status and completes once with zero bytes", async () => {
