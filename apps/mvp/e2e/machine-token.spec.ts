@@ -17,7 +17,7 @@ test.skip(file === undefined, "needs E2E_MACHINE_TOKEN_FILE, issued by ops/machi
 const headers = () => ({ authorization: `Bearer ${readFileSync(file!, "utf8").trim()}`, "content-type": "application/json" })
 
 test("an agent token files an issue as the App, and a person-only act with it is refused", async ({ request, playwright }) => {
-  test.setTimeout(5 * 60_000)
+  test.setTimeout(7 * 60_000)
   // A context with no cookie, so only the token speaks. `request` is the test person's, used only to read the list.
   const bare = await playwright.request.newContext({ storageState: { cookies: [], origins: [] } })
   const writes = `${baseURL}/api/repos/${repo}/writes`
@@ -38,10 +38,15 @@ test("an agent token files an issue as the App, and a person-only act with it is
 
   // The author is the App's bot.
   // Read as the test person, whose session the fixture holds: the issue list takes no machine token.
-  const listed = await request.get(`${baseURL}/api/repos/${repo}/issues?q=${encodeURIComponent(`#${number}`)}`)
-  expect(listed.ok()).toBe(true)
-  const row = (await listed.json()).issues.find((candidate: { number: number }) => candidate.number === number)
-  expect(row.author.login).toMatch(/\[bot\]$/)
+  // The list route answers a bare array (worker/github/IssueList.ts), read from the synced items, so the new issue
+  // appears once GitHub's webhook has reached the deployment: poll until it does.
+  type Listed = { readonly number: number; readonly author: { readonly login: string | null } }
+  const listedRow = async () => {
+    const listed = await request.get(`${baseURL}/api/repos/${repo}/issues?q=${encodeURIComponent(`#${number}`)}`)
+    expect(listed.ok(), `issue list answered ${listed.status()}`).toBe(true)
+    return ((await listed.json()) as ReadonlyArray<Listed>).find((candidate) => candidate.number === number)
+  }
+  await expect.poll(async () => (await listedRow())?.author.login ?? `issue #${number} not listed`, { message: `the App bot authored issue #${number}`, timeout: 2 * 60_000, intervals: [2000] }).toMatch(/\[bot\]$/)
 
   // Sent again, it is the same write.
   const again = await bare.post(writes, { headers: headers(), data: { writeId, op: "issue/create", title, body: "Filed by the machine-token e2e." } })
