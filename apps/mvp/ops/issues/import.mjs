@@ -21,15 +21,17 @@
 // escapes, tab/CR/LF removal, and slash runs, `/./` and the fraction and division slashes read as `/`) of every
 // token is read for a URL's repository (GitHub-owned hosts, GitLab, Bitbucket,
 // github1s, Sourcegraph, smithers.sh, the API's /repos, and Pages, where `<owner>.github.io/<name>` names
-// `<owner>/<name>`), for a bare pair that starts a path (dotted names and path suffixes included; a lowercase
-// apps/packages/src/lib/test/docs/node_modules/worker/ops/e2e/dist root starts a file path instead), for every
-// other pair inside a repository's path, query keys and values, and fragment (the nested references), and, in any
-// position, for a pair under a watched owner (smithersai, roninjin10, evmts, codeplanesmithers, a target's owner and
-// a listed owner). Only the path's own structure is exempt: the repository name joined to the next segment, a route
+// `<owner>/<name>`), for a bare pair outside the prose rules that starts a path (dotted names and path suffixes
+// included; a lowercase apps/packages/src/lib/test/docs/node_modules/worker/ops/e2e/dist root starts a file path
+// instead), for every other pair inside a repository's path, query keys and values, and fragment (the nested
+// references), and, in any position, for a pair under a watched owner. Watched owners: smithersai, roninjin10,
+// codeplanesmithers, williamcory, fucory, tevm, evmts, dtechvision, each `--watched-owners <file>` line, a target's
+// owner, a listed owner, and every non-bare primary reference's owner in the run. Prose pairs and branch prefixes in `prose-data.mjs` need no lookup; other untied slash pairs require confirmation.
+// Bare colon candidates are redacted without lookup; explicit cross and transport forms retain confirmation. Only the path's own structure is exempt: the repository name joined to the next segment, a route
 // to its ref or number, a common ref to its first directory, and a file path after a path root. Gists, unknown
 // GitHub routes and zero-name code or unknown hosts are denied; example.org/com/net, developer.mozilla.org and
 // w3.org links are not code links. Each unconfirmed reference is redacted by its source span; a second layer redacts
-// every known private name (the private list, and names learned private under a watched owner) found as text in any
+// every known private name (the private list, and qualified pairs learned private under any owner) found as text in any
 // normalized reading. See work-links.md "Repository confirmation" for the readings and the bare-name rule.
 // Tree destinations, repeatable --repo targets and explicit draft repo fields are checked first, then primary
 // references in order, then nested ones, each only once a repository around it is public. --public-repos
@@ -81,7 +83,7 @@ import { execFileSync } from "node:child_process"
 import { chmodSync, existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import { parseArgs } from "node:util"
-import { cleanRecord } from "./scrub.mjs"
+import { cleanRecord, normalizeRepository, repositoryReferences } from "./scrub.mjs"
 import { confirmRepositories, publicCacheFile, publicReposOf } from "./repositories.mjs"
 import { PENDING_URL, draftRecords, formatRecord, fuzzRecords, migrationRecords, queuePlan, reviewRoundRecords, scopedRecords } from "./sources.mjs"
 import { MIGRATED_REPOS, place } from "./tree.mjs"
@@ -100,6 +102,7 @@ const { values } = parseArgs({
     source: { type: "string", multiple: true, default: [] },
     "private-repos": { type: "string" },
     "public-repos": { type: "string" },
+    "watched-owners": { type: "string" },
     repo: { type: "string", multiple: true, default: [] },
   },
 })
@@ -120,6 +123,11 @@ if (draftOnly) {
   }
 }
 const namedPublic = publicReposOf(values["public-repos"])
+/** `--watched-owners <file>`: one GitHub owner per line whose bare `owner/name` pairs are candidates anywhere. */
+const watchedOwners = values["watched-owners"] === undefined ? [] : readFileSync(values["watched-owners"], "utf8").split("\n").map((line) => line.trim()).filter(Boolean)
+for (const owner of watchedOwners) {
+  if (!/^[A-Za-z0-9](?:[A-Za-z0-9]|-(?=[A-Za-z0-9])){0,38}$/.test(owner)) throw new Error("--watched-owners holds one GitHub owner per line")
+}
 const namedPrivate = privateReposOf(values["private-repos"] ?? process.env.SMITHERS_PRIVATE_REPOS_FILE)
 // The private list forces names private everywhere, even where GitHub would answer public or a reference sits in a
 // path the scrub otherwise reads as a file. A run without one cannot honor it, so nothing is planned.
@@ -207,11 +215,11 @@ const skipped = draftRows.filter((row) => row.status !== "open").map(({ key, sta
 // transformation can erase credential context. Derived names get no new authority. This cache is the only
 // authority for public references.
 const initialNodes = place([]).nodes
-const repositoryVerdicts = await confirmRepositories([draftInputs, remote, pending, initialNodes, ...(selected.has("fuzz") ? pending.map(({ name }) => ({ url: `${PENDING_URL}/${name}` })) : [])], {
-  privateRepos: namedPrivate, publicRepos: namedPublic, cacheFile: publicCacheFile(), env: process.env,
+const repositoryVerdicts = await confirmRepositories([draftInputs.flatMap(({ source, drafts }) => [source, ...drafts]), remote, pending, initialNodes, ...(selected.has("fuzz") ? pending.map(({ name }) => ({ url: `${PENDING_URL}/${name}` })) : [])], {
+  privateRepos: namedPrivate, publicRepos: namedPublic, cacheFile: publicCacheFile(), env: process.env, watchedOwners,
   targets: [
     ...initialNodes.map((node) => node.repo), ...values.repo,
-    ...draftInputs.flatMap(({ drafts }) => drafts.map((draft) => draft?.repo)).filter((repo) => typeof repo === "string"),
+    ...draftInputs.flatMap(({ drafts }) => drafts.flatMap((draft) => typeof draft?.repo === "string" && repositoryReferences(draft).includes(normalizeRepository(draft.repo)) ? [draft.repo] : [])),
   ],
 })
 const scrubOptions = { privateRepos: namedPrivate, repositoryVerdicts }
@@ -302,11 +310,11 @@ const reports = remote.find((row) => row.kind === "lane-reports")
 const summary = {
   type: "summary",
   at: new Date().toISOString(),
-  repositories: [...repositoryVerdicts.values()],
+  repositories: [...repositoryVerdicts.byRepository.values()],
   repositoryRequests: repositoryVerdicts.requests,
   anonymousRepositoryRequests: repositoryVerdicts.anonymousRequests,
   authenticatedRepositoryRequests: repositoryVerdicts.authenticatedRequests,
-  unconfirmedRepositories: [...repositoryVerdicts.values()].filter((entry) => entry.verdict === "unconfirmed").map((entry) => entry.repo),
+  unconfirmedRepositories: [...repositoryVerdicts.byRepository.values()].filter((entry) => entry.verdict === "unconfirmed").map((entry) => entry.repo),
   nodes: tree.nodes.length,
   issues: tree.records.length,
   statuses,

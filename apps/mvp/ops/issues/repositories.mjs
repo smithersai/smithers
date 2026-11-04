@@ -83,7 +83,7 @@ const reader = async (env, request) => {
  */
 export const confirmRepositories = async (rows, {
   privateRepos = [], publicRepos = [], targets = [], cacheFile = null, timeoutMs = 10_000,
-  fetch: request = globalThis.fetch, env = {},
+  fetch: request = globalThis.fetch, env = {}, watchedOwners = [],
 } = {}) => {
   const forced = new Set(privateRepos.map(normalizeRepository))
   const allowed = new Set(publicRepos.filter(safeName).map(normalizeRepository))
@@ -99,8 +99,9 @@ export const confirmRepositories = async (rows, {
   const targetNames = targets.filter(safeName).map(normalizeRepository)
   const candidates = [
     ...targetNames.map((name) => ({ name, tier: "target", parents: [] })),
-    ...repositoryCandidates(rows, { owners: targetNames.map((name) => name.split("/")[0]), privateRepos }),
   ]
+  const discovered = repositoryCandidates(rows, { owners: [...targetNames.map((name) => name.split("/")[0]), ...watchedOwners], privateRepos })
+  candidates.push(...discovered.candidates)
   for (const { name: repo, tier, parents } of candidates) {
     if (verdicts.has(repo)) continue
     const put = (verdict, reason) => verdicts.set(repo, { repo, verdict, reason })
@@ -143,10 +144,12 @@ export const confirmRepositories = async (rows, {
     if (response.status !== 200) await response.body?.cancel().catch(() => {})
   }
   saveCache(cacheFile, cache)
-  // The scrub watches the targets' owners everywhere, as discovery did.
-  verdicts.targets = targetNames
-  verdicts.requests = sent.anonymous + sent.authenticated
-  verdicts.anonymousRequests = sent.anonymous
-  verdicts.authenticatedRequests = sent.authenticated
-  return verdicts
+  return {
+    byRepository: verdicts,
+    targets: targetNames,
+    watched: discovered.watched,
+    requests: sent.anonymous + sent.authenticated,
+    anonymousRequests: sent.anonymous,
+    authenticatedRequests: sent.authenticated,
+  }
 }

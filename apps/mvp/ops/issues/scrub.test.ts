@@ -122,7 +122,8 @@ describe("the public-content scrub", () => {
 
 describe("the importer's confirmed-repository policy", () => {
   test("denies an unconfirmed reference beside Markdown underscore punctuation", () => {
-    const result = clean("See _outside/hidden_ here.", { repositoryVerdicts: new Map() })
+    // `outside` is tied (a watched owner of this run), so its bare pair is a candidate.
+    const result = clean("See _outside/hidden_ here.", { repositoryVerdicts: { byRepository: new Map(), watched: ["outside"] } })
     expect(result.text).not.toContain("outside/hidden")
     expect(result.rules).toContain("private-repo")
   })
@@ -131,7 +132,8 @@ describe("the importer's confirmed-repository policy", () => {
 
 describe("strict repository redaction ordering", () => {
   test.each(["nyc-01/secret-vault", "mini/secret-vault", "https://github.com/nyc-01/secret-vault"])("does not leave a private basename after another rule masks its owner: %s", (text) => {
-    const result = clean(text, { repositoryVerdicts: new Map() })
+    // A listed private name, or a URL: either ties the pair, whatever its owner.
+    const result = clean(text, { repositoryVerdicts: new Map(), privateRepos: ["secret-vault"] })
     expect(result.ok).toBe(true)
     expect(result.text).toBe("[repo]")
   })

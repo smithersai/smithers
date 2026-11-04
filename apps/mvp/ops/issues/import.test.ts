@@ -63,10 +63,12 @@ globalThis.fetch = async (url, options) => {
 }
 `)
   const privateRepos = file("private-repos.txt", "hidden-repo\n")
+  // These tests' synthetic owners stand for owners a run ties to GitHub: their bare pairs are candidates.
+  const watched = file("watched-owners.txt", "stranger\noutside\no\nacme\nother\n")
   // Every run names a private list unless a test removes it: with none, the importer plans nothing.
   const run = (args: Array<string>, env: Record<string, string | undefined> = {}) => {
     const out = join(dir, `plan-${Math.random().toString(36).slice(2)}.jsonl`)
-    const result = spawnSync(process.execPath, ["--import", preload, IMPORT, "--out", out, ...args], {
+    const result = spawnSync(process.execPath, ["--import", preload, IMPORT, "--out", out, ...(args.includes("--watched-owners") ? [] : ["--watched-owners", watched]), ...args], {
       encoding: "utf8",
       env: { ...process.env, HOME: join(dir, `home-${Math.random().toString(36).slice(2)}`), SMITHERS_PRIVATE_REPOS_FILE: privateRepos, ...env, PATH: `${bin}:${process.env.PATH}`, FAKE_LOG: log, FETCH_LOG: fetchLog },
     })
@@ -202,6 +204,18 @@ describe("the importer's CLI", () => {
 describe("anonymous repository confirmation", () => {
   const draft = (body: string, more = {}) => JSON.stringify([{ draft_id: "visibility", title: "Confirm repository visibility", body, ...more }])
   const issue = (plan: Row[]) => plan.find((row) => row.type === "issue")
+  test("untied repository pairs are confirmed while prose alternatives survive", () => {
+    const { file, run } = setup()
+    const empty = file("no-watched.txt", "")
+    const drafts = file("prose.json", draft("Compare node/bun, ts/tsx and effect/schema with somebody/thing."))
+    const prose = run(["--draft", `sample=${drafts}`, "--watched-owners", empty])
+    expect(prose.status).toBe(0)
+    expect(prose.fetchCalls.map((call) => call.url.split("/repos/")[1])).toEqual(["smithersai/vibelang", "somebody/thing"])
+    expect(issue(prose.plan)?.body).toContain("Compare node/bun, ts/tsx and effect/schema with somebody/thing.")
+    const tied = run(["--draft", `sample=${drafts}`, "--watched-owners", file("watched-somebody.txt", "somebody\n")], { FETCH_REPLIES: JSON.stringify({ "somebody/thing": { status: 404 } }) })
+    expect(tied.fetchCalls.map((call) => call.url.split("/repos/")[1])).toEqual(["smithersai/vibelang", "somebody/thing"])
+    expect(issue(tied.plan)?.body).toContain("with [repo].")
+  })
 
   test("scrubs an unlisted private repository invisible to the App and records its 404", () => {
     const { file, run } = setup()
@@ -374,7 +388,8 @@ describe("repository confirmation review regressions", () => {
 
   test("reports repository names even when another scrub rule redacts them", () => {
     const { file, run } = setup()
-    const result = run(["--draft", `sample=${file("draft.json", JSON.stringify([{ title: "A reference", body: "mini/public" }]))}`])
+    // `mini` is also a host name the host rule masks; tied here as a watched owner.
+    const result = run(["--draft", `sample=${file("draft.json", JSON.stringify([{ title: "A reference", body: "mini/public" }]))}`, "--watched-owners", file("mini.txt", "mini\n")])
     expect(result.status).toBe(0)
     expect(result.summary.repositories).toContainEqual({ repo: "mini/public", verdict: "public", reason: "HTTP 200 private:false" })
   })
@@ -569,16 +584,15 @@ describe("credential property context", () => {
 })
 
 
-test("refuses a credential-named property even when its value is separately public", () => {
+test("refuses a credential-named property without probing its values or destination", () => {
   const { file, run } = setup()
   const result = run(["--draft", `sample=${file("draft.json", JSON.stringify([
-    { title: "Credential link", body: "stranger/open", links: [{ kind: "review", ref: "safe", password: "stranger/open" }] },
+    { repo: "stranger/open", title: "Credential link", body: "stranger/open", links: [{ kind: "review", ref: "safe", password: "stranger/open" }] },
   ]))}`])
   expect(result.status).toBe(0)
   expect(result.plan.filter((row) => row.type === "issue")).toEqual([])
-  expect(result.summary.repositories).toContainEqual({ repo: "stranger/open", verdict: "public", reason: "HTTP 200 private:false" })
+  expect(result.summary.repositories.some((entry) => entry.repo === "stranger/open")).toBe(false)
 })
-
 
 describe("GitHub empty-port URLs", () => {
   test.each([

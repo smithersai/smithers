@@ -60,3 +60,37 @@ describe("readings keep source offsets", () => {
     expect(texts("owner\u0338name")).toContain("owner/name")
   })
 })
+
+test.each([
+  ["codeplanesmithers: vault", "codeplanesmithers:vault"],
+  ["ϲodeplanesmithers &colon; vault", "ϲodeplanesmithers:vault"],
+  ["ϲodeplanesmithers\t:\nvault", "ϲodeplanesmithers:vault"],
+  ["aϲme&sol;vault", "aϲme/vault"],
+  ["aϹme&colon;vault", "aϹme:vault"],
+  ["aϲme%2Fvault", "aϲme/vault"],
+  ["aϲme\u200B/vault", "aϲme/vault"],
+  ["a%CF%B2me%252Fvault", "aϲme/vault"],
+  ["a&#x3f2;me&amp;sol;vault", "aϲme/vault"],
+  ["ϲodeplanesmithers&sol;vault", "ϲodeplanesmithers/vault"],
+  ["Ϲodeplanesmithers%3Avault", "Ϲodeplanesmithers:vault"],
+  ["aϲme&sol;**va<i>u</i>lt**", "aϲme/vault"],
+])("decoded look-alikes keep their original source span: %s", (text, decoded) => {
+  const source = `before ${text} after`
+  const reading = readingsOf(source).find((r) => r.text.includes(decoded))!
+  expect(reading).toBeDefined()
+  const at = reading.text.indexOf(decoded)
+  // Closing emphasis lies beyond the name and remains outside its redaction span.
+  expect(source.slice(reading.from[at], reading.to[at + decoded.length - 1])).toBe(text.replace(/\*\*$/, ""))
+})
+
+test.each([
+  ["%61%2F%62", "a/b", [[0, 3], [3, 6], [6, 9]]],
+  ["%61%CF%B2%62", "aϲb", [[0, 3], [3, 9], [9, 12]]],
+  ["%61%F0%9F%98%80%62", "a😀b", [[0, 3], [3, 15], [3, 15], [15, 18]]],
+  ["%61%FF%62", "aÿb", [[0, 3], [3, 6], [6, 9]]],
+  ["%25%36%31%25%32%46%25%36%32", "a/b", [[0, 9], [9, 18], [18, 27]]],
+] as const)("percent decoding retains each scalar's source range: %s", (source, decoded, spans) => {
+  const reading = readingsOf(source).find((r) => r.text === decoded)!
+  expect(reading).toBeDefined()
+  expect(reading.from.map((from, index) => [from, reading.to[index]])).toEqual(spans)
+})
