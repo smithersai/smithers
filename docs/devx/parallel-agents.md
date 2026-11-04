@@ -211,7 +211,13 @@ worker, infra and evals projects, and `--validated` doesn't skip it. `vibelang -
 tsconfig.json` alone skips worker tests, which let a type error reach main twice
 in two days (7ee5a29a, ab1b52fd). It runs on the farm with no local install and
 before `main-push.lock` is held: `SMITHERS_MINI_RUN` with five seconds of admission, then
-`SMITHERS_LAT_RUN` if the mini has no slot or doesn't answer. A type error refuses
+`SMITHERS_LAT_RUN` if the mini has no slot or doesn't answer, then cfbox if neither answers.
+Cfbox stages only `jj file list` source and sources the Cloud CI bootstrap
+helpers to install verified supported Node and pinned pnpm. It runs
+`pnpm install --frozen-lockfile` with install scripts at the root after the shared
+CI bootstrap, then `pnpm typecheck` in `apps/mvp` with the same receipt, and removes
+its staging tree after success, failure or cancellation. A failed install emits
+no typecheck receipt. All three clients failing refuses the land. A type error refuses
 the land. So does a farm that can't answer: the check counts only if the command's
 own `SMITHERS_TYPECHECK_EXIT` line comes back, because a client that skips a
 package also exits 0. Rerun when the farm has capacity. `commit.mjs --push` also
@@ -233,8 +239,9 @@ shared mutable ancestry, so a rebase cannot rewrite another workspace's commits.
 A failed fetch/test/push or cancellation releases only this invocation's lock.
 Pushing checks local and remote ancestry and emits the full landed commit id.
 
-Target-index preparation tries mini admission with `MINI_RUN_WAIT_SECONDS=0`.
-Exit 7 or `CAPACITY_TIMEOUT` on a failed attempt routes to
+Target-index preparation tries mini admission with `MINI_RUN_WAIT_SECONDS=5`.
+Exit 7 or `CAPACITY_TIMEOUT`, and exit 73 or `FARM_HEALTH DISK_FULL`, on a failed
+attempt route to
 `~/.vibe-orch/bin/cfbox` (`SMITHERS_CFBOX` overrides the client). Both hosts
 generate and drift-check before returning the same single base64 receipt; only
 a valid receipt and unchanged source permit writing the local projection.
@@ -244,8 +251,22 @@ Node and pnpm through the existing Cloud CI target-index gate and runs the
 projection helper. The Mac installs nothing. A temporary tree from `jj file
 list`, plus cfbox's `--with-deps` directory walker, avoids Git discovery and
 excludes VCS storage and ignored files. Staging is removed on success or failure.
-`SMITHERS_CFBOX_VIA` selects cfbox's upload relay where large direct uploads
-fail; relay mode omits dependency caching because cfbox does not support both.
+Both index generation and typecheck try a cached direct cfbox upload first.
+A confirmed pre-dispatch R2 upload failure (cfbox exit 125 with an R2 failure
+diagnostic, or cfbox's uncaught `TypeError: fetch failed`) retries
+once through `SMITHERS_CFBOX_RELAY`, or the first SSH destination in
+`latEndpoints` from the private `farm-config.json` beside `SMITHERS_LAT_RUN`
+(default `~/.smithers-lead/lat-run`). With no relay configured, the failure
+remains a failure. `SMITHERS_CFBOX_VIA` explicitly selects relay mode from the
+first attempt. Relay attempts omit both `--cache` and `--cache-key`, which cfbox
+cannot combine with `--via`. The retry renames the disposable staging directory
+to bypass cfbox's packing cache without copying source. A generic `upload failed`
+is ambiguous: the execution POST may already have run, so it never retries.
+The client's execution POST wraps fetch errors as `upload failed`; its uncaught
+fetch diagnostic identifies a failure before dispatch. Command-start markers,
+command failures and interrupted streams also prevent retries. Disk-full fallback
+and relay retries log their stage and reason
+without printing private configuration. No host alias is hardcoded here.
 The native `smithers-jj-export` helper is unnecessary for this path:
 `TargetIndex` uses `GeneratedFile` write/check actions on the build engine's
 Node filesystem, and its inventory prerequisite only reads declarations.

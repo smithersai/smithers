@@ -263,7 +263,7 @@ test("CLI interruption and failed fetch release the lock and retain source", asy
   assert.equal(readFileSync(join(lane, "feature.txt"), "utf8"), "retained\n")
 })
 
-test("capacity fallback and tests run without the push lock; a concurrent landing invalidates validation", async (t) => {
+test("disk-full fallback and tests run without the push lock; a concurrent landing invalidates validation", async (t) => {
   const { root, lane, directory, lock } = fixture(t)
   mkdirSync(join(root, ".smithers"))
   writeFileSync(join(root, ".smithers/target-index.json"), "[]\n")
@@ -280,7 +280,7 @@ test("capacity fallback and tests run without the push lock; a concurrent landin
   writeFileSync(mini, `#!${process.execPath}\n
     const fs = require("node:fs"), assert = require("node:assert/strict")
     assert.equal(fs.existsSync(process.env.SMITHERS_LAND_LOCK), false, "mini admission held push lock")
-    console.error("CAPACITY_TIMEOUT"); process.exit(7)
+    console.error("FARM_HEALTH DISK_FULL"); process.exit(73)
   `, { mode: 0o755 })
   writeFileSync(box, `#!${process.execPath}\n
     require("node:assert/strict").equal(require("node:fs").existsSync(process.env.SMITHERS_LAND_LOCK), false)
@@ -299,6 +299,7 @@ test("capacity fallback and tests run without the push lock; a concurrent landin
   assert.equal(other.status, 0, other.stderr)
   assert.equal(stale.status, 1, stale.stderr)
   assert.match(stale.stderr, /Main advanced during validation/)
+  assert.match(stale.stderr, /TARGET_INDEX host=mini status=disk_full exit=73/)
   assert.equal(existsSync(lock), false)
   assert.equal(jj(lane, ["file", "list", "-r", "main@origin", "one.txt"]), "")
   const retried = await runProcess(process.execPath, [script, "land", "--message", "first", "--test", "true"], { cwd: lane, env })

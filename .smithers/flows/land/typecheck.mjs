@@ -4,6 +4,7 @@ import { homedir, tmpdir } from "node:os"
 import { join } from "node:path"
 import { jj } from "./numbering.mjs"
 import { runProcess } from "./process.mjs"
+import { cfboxClient, runCfbox, withTrackedTree } from "./cfbox.mjs"
 
 const budgetMs = 20 * 60 * 1000
 const receipt = /^SMITHERS_TYPECHECK_EXIT=(\d+)$/m
@@ -13,7 +14,8 @@ export const command = 'pnpm typecheck ; echo "SMITHERS_TYPECHECK_EXIT=$?"'
 
 const clients = () => [
   process.env.SMITHERS_MINI_RUN ?? join(homedir(), ".smithers-lead/scratchpad-mirror/mini-run"),
-  process.env.SMITHERS_LAT_RUN ?? join(homedir(), ".smithers-lead/lat-run")
+  process.env.SMITHERS_LAT_RUN ?? join(homedir(), ".smithers-lead/lat-run"),
+  cfboxClient()
 ]
 
 /**
@@ -39,6 +41,23 @@ const runClient = async (client, root, signal) => {
 
 const tail = (text) => text.trimEnd().split("\n").slice(-40).join("\n")
 
+const runBox = async (box, root, signal) => {
+  try {
+    return await withTrackedTree(root, "smithers-typecheck-source-", async (tree) => {
+      const nodeVersion = readFileSync(join(root, ".node-version"), "utf8").trim()
+      // Reuse verified Node and pinned pnpm setup. Its CI install skips scripts;
+      // the normal install must succeed before typecheck may emit its receipt.
+      const result = await runCfbox(root, tree, ["bash", "-c", `source .github/scripts/ci/cloud.sh; ensure_js; pnpm install --frozen-lockfile; cd apps/mvp; set +e; ${command}`], {
+        box, signal, cpu: "4", cacheKey: `typecheck-node-${nodeVersion}`, timeoutMs: budgetMs
+      })
+      return { status: result.status, output: result.stdout + "\n" + result.stderr }
+    })
+  } catch (error) {
+    if (signal?.aborted) throw error
+    return { status: null, output: error.message }
+  }
+}
+
 /**
  * Refuses unless every apps/mvp project typechecks. A land that doesn't touch apps/mvp needs none. A farm that
  * can't answer refuses too, naming each client's result: a skipped check would look the same as a passed one.
@@ -51,13 +70,13 @@ export async function typecheckApp(root, {
   if (!touched()) return undefined
   const before = source()
   const tried = []
-  for (const client of clients()) {
+  for (const [index, client] of clients().entries()) {
     console.error(`TYPECHECK apps/mvp on ${client}`)
     const started = Date.now()
-    const { status, output } = await runClient(client, root, signal)
+    const { status, output } = await (index === 2 ? runBox : runClient)(client, root, signal)
     const answered = output.match(receipt)
-    if (!answered) {
-      tried.push(`${client}: exit ${status}, no typecheck receipt${/\bCAPACITY_TIMEOUT\b/.test(output) ? " (no capacity)" : ""}\n${tail(output)}`)
+    if (!answered || (status !== 0 && answered[1] === "0")) {
+      tried.push(`${client}: exit ${status}, ${answered ? "incomplete typecheck transport" : "no typecheck receipt"}${/\bCAPACITY_TIMEOUT\b/.test(output) ? " (no capacity)" : ""}\n${tail(output)}`)
       continue
     }
     if (source() !== before) throw new Error("Source changed during the farm typecheck; rerun land")
