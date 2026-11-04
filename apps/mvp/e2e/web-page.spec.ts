@@ -8,6 +8,7 @@ import { certificate } from "../dev/https.ts"
 import { VIEWS_ROUTE } from "../src/features/views/contract"
 import { WEB_PREVIEW_ROUTE, CANT_OPEN } from "../src/features/web/contract"
 import { expect, test } from "./devices"
+import { wholeText } from "./console"
 import { redactRequestErrors } from "./redact"
 import { baseURL, requires, target, writeHeaders, sessionFiles } from "./target"
 
@@ -316,11 +317,13 @@ test.describe("outside pages", () => {
     const added = viewsAdded(a.device.context)
     const outcomes: Array<string> = []
     a.page.on("console", message => {
-      const text = message.text()
-      if (text.includes("web.page.open") && /"web_mode"\s*:\s*"tab"/.test(text) && /"door"\s*:\s*"slash"/.test(text)) {
-        const outcome = /"outcome"\s*:\s*"([a-z]+)"/.exec(text)?.[1]
-        if (outcome !== undefined) outcomes.push(outcome)
-      }
+      if (!message.text().includes("web.page.open")) return
+      void wholeText(message).then(text => {
+        if (/"web_mode"\s*:\s*"tab"/.test(text) && /"door"\s*:\s*"slash"/.test(text)) {
+          const outcome = /"outcome"\s*:\s*"([a-z]+)"/.exec(text)?.[1]
+          if (outcome !== undefined) outcomes.push(outcome)
+        }
+      })
     })
     await a.openComposer()
 
