@@ -1,6 +1,7 @@
 import { expect, request as requests, test, type APIRequestContext } from "@playwright/test"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
 import { baseURL, guard, me, requires, sessionFiles, target } from "./target"
+import { serverErrorAnnotation } from "./problems"
 
 // Real prerequisite receipts, never a browser route replacement. A Member's read primes the shared About cache
 // using the deployment read token before a visitor asks; an exhausted anonymous IP quota cannot establish absence.
@@ -30,7 +31,14 @@ export const repositoryAbout = async (kind: "absentRepository" | "unsyncedReposi
     }
     const response = await authenticated.get(`/api/repos/${repository}/about`)
     expect(response.status(), `${kind} requires an authoritative About receipt, never a quota refusal`).toBe(kind === "absentRepository" ? 404 : 200)
-    if (kind === "absentRepository") expect(await response.json()).toMatchObject({ code: "not_found" })
+    if (kind === "absentRepository") {
+      expect(await response.json()).toMatchObject({ code: "not_found" })
+      // Both preview and mirror boundaries may answer this verified absence. Declare only its exact 404s.
+      test.info().annotations.push(
+        serverErrorAnnotation(404, `/api/repos/${repository}/about`),
+        serverErrorAnnotation(404, `/api/repos/${repository}/refs`),
+      )
+    }
     else expect(await response.json()).toMatchObject({ name: repository })
     return repository
   } finally { await authenticated.dispose() }

@@ -23,7 +23,7 @@ the infrastructure guide's deployment e2e settings.
 
 The absent-repository journey checks recovery and that no clone action or import
 exists. It no longer forces a clone of a name on which the person cannot hold a
-repository role (AUTH-8). GitHub's missing metadata remains unknown visibility
-under the existing privacy policy; no clone authority is inferred from a 404.
+repository role (AUTH-8). A metadata 404 denies work without distinguishing absence from an inaccessible
+private repository; no clone authority is inferred from it.
 The previous Not found/Retry journey assumed a launch despite that refusal and
 could not serve as an absence fixture under the current admission policy.
