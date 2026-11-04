@@ -315,8 +315,10 @@ const needReason = (override) => {
 
 // An override nobody can see is refused. The file must already exist: creating one on a host where
 // nobody reads it would hide the use, so off the host that has the inbox the override refuses.
+// It opens the inbox the way the writer below does, for append and never creating it: an inbox may be append-only
+// (macOS uappnd, Linux chattr +a), where access(W_OK) and a write-or-truncate open fail but O_APPEND succeeds.
 const assertInbox = () => {
-  try { accessSync(overrideInbox.path, constants.W_OK) }
+  try { closeSync(openSync(overrideInbox.path, constants.O_WRONLY | constants.O_APPEND)) }
   catch { throw new Error(`--no-review-needed refused: cannot write ${overrideInbox.path}, and a use must never go unseen. Get a review receipt, or land on the host that has this inbox.`) }
 }
 
