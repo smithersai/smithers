@@ -1,3 +1,4 @@
+import { expectServerError } from "./watch"
 // The issue-tracking proof (docs/features/work-links.md#the-proof), against a deployment, on a private repository
 // seeded with our real tracking records (apps/mvp/ops/issue-tracking/collect.mjs, seed.mjs):
 //
@@ -29,6 +30,9 @@ requires("trackingRepository")
 
 const env = process.env
 const repo = env.E2E_TRACKING_REPOSITORY ?? ""
+// The private issue-volume fixture has no readable public metadata or Code Storage mirror.
+expectServerError(404, `/api/repos/${repo}/about`)
+expectServerError(404, `/api/repos/${repo}/refs`)
 const [owner = "", name = ""] = repo.split("/")
 /** How many issues the volume and import phases need: the seed's progress decides the default. */
 const minimum = Number(env.E2E_TRACKING_MIN_ISSUES ?? "500")

@@ -1,4 +1,4 @@
-import { Button, Skeleton, PageHeader } from "@smthrs/ui"
+import { Button, PageHeader } from "@smthrs/ui"
 import { Link, useParams } from "@tanstack/react-router"
 import { OfflineFallback } from "../../features/navigation/components/OfflineFallback"
 import { SLOT } from "../../firstPaint/settled"
@@ -16,7 +16,6 @@ export function RepoPendingScreen() {
       />
       <OfflineFallback>
         <Button asChild variant="ghost"><Link to="/app">Back to chat</Link></Button>
-        <Skeleton className="repo-page-loading" />
       </OfflineFallback>
       <div {...SLOT} />
     </main>

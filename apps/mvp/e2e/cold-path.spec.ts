@@ -46,7 +46,9 @@ const paintRead = (page: Page) =>
 
 // The About read of a private repository answers 404 for anyone: it reads what GitHub says publicly. WebKit reports a
 // worker's failed request on the page's console, and the engine worker makes this one; Chromium doesn't.
+// This private issues-only fixture has no readable public metadata or Code Storage mirror.
 expectServerError(404, `/api/repos/${repo}/about`)
+expectServerError(404, `/api/repos/${repo}/refs`)
 
 test("a role row past its life: the first paint's read answers in time and paints, /role and /refs never answer 503, and the next visit paints", async ({ page, browser }) => {
   test.setTimeout(120_000)

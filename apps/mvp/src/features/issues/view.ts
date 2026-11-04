@@ -4,6 +4,17 @@ import { mayAsk, type Role } from "../auth/contract"
 import { hereOf, type RepoAnswer, viewerOf } from "../auth/viewer"
 import { GITHUB_LIMIT } from "../repo/contract"
 import { githubIssueUrl, MAX_BODY_LENGTH, MAX_TITLE_LENGTH, NOT_SENT_COPY, TRIAGE_STATES, type TriageState } from "./contract"
+import type { Searched } from "./schema"
+
+/** Only the exact issue read for this repository can stand in for its still-syncing summary. */
+export const earlySummaryOf = (read: Searched | undefined, repoId: string, number: number) => {
+  if (read?.repoId !== repoId || read.q !== `#${number}`) return undefined
+  const issue = read.issues.find((issue) => issue.number === number)
+  return issue === undefined ? undefined : {
+    number: issue.number, title: issue.title, state: issue.state,
+    author: issue.author.login, createdAt: issue.created_at,
+  }
+}
 
 type Pending = NonNullable<IssuesViewIssue["pending"]>
 
@@ -86,11 +97,10 @@ export type Refused = "sign_in" | "forbidden"
 export const refusedOf = (access: { readonly status: string } | undefined): Refused | undefined =>
   access?.status === "sign_in" || access?.status === "forbidden" ? access.status : undefined
 
-/** Authority or transport failure is terminal feedback, including before any issue shape can start. */
-export const listFailureOf = (access: { readonly status: string } | undefined, failure?: string, about?: { readonly state: string; readonly message: string | null } | null): string | undefined =>
-  failure === "rate_limited" || about?.state === "failed" && about.message === GITHUB_LIMIT
-    ? GITHUB_LIMIT
-    : failure !== undefined || access?.status === "unavailable" || about?.state === "failed" ? "Issues unavailable" : undefined
+/** Only issue transport and repository authority decide availability; the unrelated About flow cannot settle it. */
+export const listFailureOf = (access: { readonly status: string } | undefined, failure?: string): string | undefined =>
+  failure === "rate_limited" ? GITHUB_LIMIT
+    : failure !== undefined || access?.status === "unavailable" ? "Issues unavailable" : undefined
 
 /**
  * A repository's issues view in a conversation (decision 0004 §3): the repository's synced issues (queries.ts

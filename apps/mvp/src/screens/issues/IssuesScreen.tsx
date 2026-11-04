@@ -58,7 +58,6 @@ export function IssuesScreen() {
   const answer = useRepoAnswer(owner, repo)
   const repository = useRepo()
   const { data: roles } = useLiveQuery(repository.queries.roles)
-  const { data: about } = useLiveQuery(repository.queries.about)
   const todos = useTodos()
   const { data: todosView } = useLiveQuery(todos.queries.view)
   const todosRepoId = todosView?.repoId ?? ""
@@ -67,8 +66,7 @@ export function IssuesScreen() {
   const search = useSearch({ from: "/$owner/$repo/issues" })
   const list = listProps(rows ?? [], synced, access, triage !== undefined && !triage.paused)
   const { data: searched } = useLiveQuery(queries.searched)
-  const failure = listFailureOf(access, roles?.find((row) => row.id === repoId(owner, repo))?.failure,
-    (list.unknown || !isReady || access?.installed !== true) && about?.view.repoId === repoId(owner, repo) ? about.about : undefined)
+  const failure = listFailureOf(access, roles?.find((row) => row.id === repoId(owner, repo))?.failure)
   const listSync = listSyncOf(list.unknown, isReady, access)
   // Until the list has synced, the issues route answers a search; once it has, the device's own rows do.
   const searchable = listSync === "syncing" ? withSearched(rows ?? [], searched?.[0], repoId(owner, repo), search.q) : rows ?? []

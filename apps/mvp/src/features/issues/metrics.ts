@@ -1,5 +1,10 @@
 import { Metric } from "effect"
 
+/** Early issue reads and list searches, by purpose and outcome; never a query or issue content. */
+export const reads = Metric.counter("smithers_issue_reads", {
+  description: "Issue read outcomes by purpose", incremental: true,
+})
+
 // Usage metrics for issue writes, exported over OTLP with the rest of the browser's telemetry
 // (docs/observability.md#browser). Labels carry operations, doors and outcomes, never a title, a body or a login.
 

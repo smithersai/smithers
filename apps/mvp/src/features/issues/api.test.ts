@@ -202,3 +202,27 @@ describe("a search asked of the issues route", () => {
     expect(nobody).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered" } })
   })
 })
+
+
+describe("a direct issue read", () => {
+  const target = { number: 7, title: "The older target", state: "closed", author: { login: null }, comments: 0, created_at: "a", updated_at: "b", triage: "", commitment: null }
+  const read = (origin: string) => Effect.runPromise(
+    Effect.result(Effect.flatMap(IssuesClient, (client) => client.search("octo", "hello", "#7", 7))).pipe(
+      Effect.provide(IssuesClient.layer({ origin, within: "300 millis" })), Effect.provide(FetchHttpClient.layer),
+    ),
+  )
+
+  test("later refusal and stalled pages remain failures", async () => {
+    for (const status of [403, 0]) {
+      const gateway = await serve((request, response) => {
+        if (request.url!.includes("cursor=")) {
+          if (status !== 0) json(status, {})(request, response)
+        } else {
+          response.setHeader("link", '</api/repos/octo/hello/issues?cursor=next-page>; rel="next"')
+          json(200, [{ ...target, number: 99 }])(request, response)
+        }
+      })
+      expect(await read(gateway.origin)).toMatchObject({ _tag: "Failure", failure: { _tag: "SearchNotAnswered", ...(status === 0 ? {} : { status }) } })
+    }
+  })
+})

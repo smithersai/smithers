@@ -435,10 +435,6 @@ test("list availability explains a GitHub limit or a failed shape without claimi
   expect(listFailureOf({ status: "unavailable" })).toBe("Issues unavailable")
   expect(listFailureOf({ status: "allowed" }, "unavailable")).toBe("Issues unavailable")
   expect(listFailureOf({ status: "unavailable" }, "rate_limited")).toBe("GitHub limit reached")
-  expect(listFailureOf({ status: "allowed" }, undefined, { state: "failed", message: "GitHub limit reached" })).toBe("GitHub limit reached")
-  expect(listFailureOf({ status: "allowed" }, undefined, { state: "failed", message: "Couldn't load" })).toBe("Issues unavailable")
-  expect(listFailureOf({ status: "allowed" }, undefined, { state: "ready", message: null })).toBeUndefined()
-  expect(listFailureOf({ status: "allowed" }, undefined, null)).toBeUndefined()
 })
 
 // Will's VibeLang journey, 2026-10-31: a fresh device opening smithersai/vibelang's issues, which the deployment syncs,

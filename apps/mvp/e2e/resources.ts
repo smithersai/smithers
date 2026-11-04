@@ -80,6 +80,9 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
     "branch:roninjin10/smithers-github-tests/smithers-e2e-coedit",
     "model:read"
   ],
+  "cold-issue.spec.ts": [
+    "tracking"
+  ],
   "cold-path.spec.ts": [
     "tracking"
   ],
@@ -177,6 +180,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   ],
   "large-file.spec.ts": [],
   "list-search-sort.spec.ts": [],
+  "loading-detector.spec.ts": [],
   "local-first-conflicts.spec.ts": [
     "model:read"
   ],

@@ -209,14 +209,17 @@ device store and syncs as it always does; the first paint only stands in until t
    if the grant is still queued, boot waits for it instead of revoking the paint. A wipe, mark or refused grant
    settles that wait without a hold, and boot follows its normal wipe path. This fixes a fast WebKit boot arriving
    before its lock callback. Letting go of the adopted hold ends the paint first. The
-   node goes once the page takes its slot away with its own rows or title, or the issue page or the list marks its
-   `main` `data-first-paint="settled"`, which it does once it shows the page itself or why it can't (sign in, Not
-   found, GitHub's list), or once the route changes.
+   node goes once the page marks `data-first-paint="settled"`, which it does when it shows its own rows or title
+   or why it can't (sign in, Not found, GitHub's list), or once the route changes. An unrelated About-flow failure
+   cannot settle the issues list: its own transport and repository authority decide availability.
 
 The boot timeline marks `smithers.first_paint.painted` and how the paint ended (`handed_over`, `deadline`, `wipe`,
 `person_mismatch`, ...), plus `hand_over_waiting` and `hand_over_ready` when boot arrives before the lock grant,
-never a title or a person. The pending shell and its hold are boot/privacy infrastructure, so they remain in core;
-UI uses the catalog's `@smthrs/ui` entry without adding a library.
+never a title or a person. Direct issue reads use
+`issues.read` spans, `issues.search` logs and `smithers_issue_reads` counts with `purpose=issue`; list searches use
+`purpose=search`. The pending shell and its hold are boot/privacy infrastructure, so they remain in core;
+UI uses the catalog's `@smthrs/ui` entry without adding a library. Direct issue reads wait for restored repository
+authority, independently of summary transport availability, before retaining their answer through the data gate.
 
 ## Postgres
 
@@ -374,7 +377,7 @@ Agent attribution names the requester only when their stored GitHub login exists
 
 Detail routes use item-scoped Electric shapes: `items?repo=owner/name&number=N` and `comments?repo=owner/name&number=N`. The server validates N and binds it into an additional number/item-id predicate after repository authorization. Separate persisted collection identities retain each item's cursor; moving between issues cannot reuse another item's handle. Lists share summaries, sync and triage metadata. Explicit repository-wide readers retain their existing full-body demand.
 
-An item-scoped shape is new to Electric for each issue, so its first answer is the slowest request of a cold issue page. Until it arrives the page's heading comes from the issue's row in the repository's shared `item-summaries` shape: its title, number, state and author, with the body's skeleton and “Syncing issue…” below.
+An item-scoped shape is new to Electric for each issue. A direct issue route starts an exact-number read (`issues?q=%23N`) before initializing its collections. Since search also matches titles, it follows pagination until it finds that exact number or exhausts the answers, under one read deadline. The existing search client and in-memory result supply its title, number, state and author when the shell's first paint missed. The result waits for allowed device authority and passes through `RepoStore.gate`, including refusal restoration. The shared summaries and then the detail shape take over. Returning to a list reissues its URL search when a direct read replaced its answer; the generation fence drops late issue responses. Pending or failed reads show the requested issue number; there are no skeletons or “Syncing issue…” cards. Neither an early heading nor a summary claims to contain the body or comments. A failed detail sync keeps its unavailable state and Try again action alongside the known heading.
 
 The October 26 production probe measured boot render at 2.82 s, first issue content at 7.37 s, and initial detail transfer of 8.24 MB of bodies plus 19.46 MB of comments. The scoped-shape regression verifies that a detail downloads only its own body and comments. Post-deployment timings remain a lander check; this change makes no measured speedup claim before deployment.
 

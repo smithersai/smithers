@@ -17,7 +17,7 @@ import {
   WRITE_ID_NAMESPACE,
   type TriageDecision,
 } from "./contract"
-import { admissions, pendingActions, submissionFailures } from "./metrics"
+import { admissions, pendingActions, reads, submissionFailures } from "./metrics"
 import { recordShapeRetry } from "./shapeSync"
 import { type Draft, type QueuedWrite, SEARCHED, VIEW } from "./schema"
 import { IssuesStore } from "./store"
@@ -41,10 +41,14 @@ export const SEARCH_AFTER = "150 millis"
 
 /**
  * Whether this tab may keep the issues route's answer on repository `id`: it decided this person may read it, and its
- * list hasn't installed. Waits for the repository to open (the route opens it) and for its authority's answer.
+ * list hasn't installed (a direct issue may keep its heading after the list installs). Waits for the repository to open (the route opens it) and for its authority's answer.
  */
-const keepable = (store: IssuesStore["Service"], id: string) =>
+const keepable = (store: IssuesStore["Service"], id: string, issue: boolean) =>
   Effect.gen(function* () {
+    if (issue) {
+      const status = yield* store.authority(id).pipe(Stream.filter((status) => status !== "unknown"), Stream.runHead)
+      return Option.getOrUndefined(status) === "allowed"
+    }
     const repo = yield* store.forRepo(id)
     const rows = yield* repo.accessState.rows.pipe(
       Stream.filter((rows) => rows[0]?.status !== "unknown"),
@@ -55,8 +59,11 @@ const keepable = (store: IssuesStore["Service"], id: string) =>
   })
 
 /** Whether this tab already knows it may not keep an answer on `id`: refused, or its list installed. Never waits. */
-const declined = (store: IssuesStore["Service"], id: string) =>
+const declined = (store: IssuesStore["Service"], id: string, issue: boolean) =>
   Effect.gen(function* () {
+    // The server authorizes the early read now; publication waits for device authority in `keepable` and the gate.
+    // A summary transport failure must not prevent this independent read from answering.
+    if (issue) return false
     const repo = store.opened(id)
     if (repo === undefined) return false
     const row = Option.getOrUndefined(yield* Stream.runHead(repo.accessState.rows))?.[0]
@@ -71,30 +78,46 @@ const declined = (store: IssuesStore["Service"], id: string) =>
  * repository says it may (decision 0110) and this is still the last search asked. A refusal, another search and another
  * repository forget it (`forgetSearch`). One log line `issues.search` with the outcome and time; never the search.
  */
-export const search = (owner: string, name: string, q: string) =>
+export const search = (owner: string, name: string, q: string, number?: number) =>
   Effect.gen(function* () {
     const store = yield* IssuesStore
     const id = repoId(owner, name)
     const asked = q.trim()
+    const issue = number !== undefined
     yield* store.forgetSearch
     const generation = store.searches.latest
     store.searches.repoId = id
+    store.searches.issue = issue
     if (asked === "") return
-    yield* Effect.sleep(SEARCH_AFTER)
-    if (store.searches.latest !== generation || (yield* declined(store, id))) return
+    if (!issue) yield* Effect.sleep(SEARCH_AFTER)
+    if (store.searches.latest !== generation || (yield* declined(store, id, issue))) return
     const startedAt = yield* Clock.currentTimeMillis
-    const answer = yield* Effect.result(store.search(owner, name, asked))
-    const fields = { durationMs: (yield* Clock.currentTimeMillis) - startedAt }
+    const answer = yield* Effect.result(store.search(owner, name, asked, number))
+    const fields = { durationMs: (yield* Clock.currentTimeMillis) - startedAt, purpose: issue ? "issue" : "search" }
+    yield* Metric.update(Metric.withAttributes(reads, { purpose: fields.purpose, outcome: answer._tag === "Failure" ? "failed" : "answered" }), 1)
     if (answer._tag === "Failure") {
       return yield* Effect.logWarning("issues.search").pipe(
         Effect.annotateLogs({ ...fields, outcome: "failed", status: answer.failure.status ?? 0 }),
       )
     }
     yield* Effect.logInfo("issues.search").pipe(Effect.annotateLogs({ ...fields, outcome: "answered", count: answer.success.length }))
-    if (store.searches.latest !== generation || !(yield* keepable(store, id))) return
+    if (store.searches.latest !== generation || !(yield* keepable(store, id, issue))) return
     if (store.searches.latest !== generation) return
     yield* Effect.orDie(store.searched.insert({ id: SEARCHED, repoId: id, q: asked, issues: answer.success }))
-  }).pipe(Effect.annotateLogs({ feature: "issues" }))
+  }).pipe(Effect.annotateLogs({ feature: "issues" }), Effect.withSpan("issues.read", { attributes: { purpose: number !== undefined ? "issue" : "search" } }))
+
+/** Restores a URL's list search after navigation, including Back from a direct read that replaced its answer. */
+export const restoreSearch = (owner: string, name: string, q?: string) => Effect.gen(function* () {
+  const store = yield* IssuesStore
+  const asked = q?.trim() ?? ""
+  const retained = Option.getOrUndefined(yield* store.searched.get(SEARCHED))
+  if (!store.searches.issue && retained?.repoId === repoId(owner, name) && retained.q === asked) return
+  // `search` advances the generation before asking, so a late issue response cannot overwrite the restored list.
+  yield* search(owner, name, asked)
+})
+
+/** The direct page's early heading read, independent of Electric and without a typing debounce. */
+export const readIssue = (owner: string, name: string, number: number) => search(owner, name, `#${number}`, number)
 
 /** A person's Try again on an unavailable direct issue. */
 export const retry = Effect.flatMap(AuthStore, (auth) => auth.askCheck).pipe(

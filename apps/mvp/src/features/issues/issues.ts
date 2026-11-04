@@ -13,6 +13,8 @@ import {
   pauseTriage,
   retry,
   retryWrite,
+  readIssue,
+  restoreSearch,
   search,
   warm,
   runTriageAgain,
@@ -85,6 +87,10 @@ export interface IssuesActions {
   readonly retry: () => void
   /** A search typed in a list that hasn't synced: the issues route answers it. */
   readonly search: (owner: string, name: string, q: string) => void
+  /** Restores the URL search after navigation when a direct read replaced its answer. */
+  readonly restoreSearch: (owner: string, name: string, q?: string) => void
+  /** Starts a direct issue's heading read before route initialization waits for its collections. */
+  readonly readIssue: (owner: string, name: string, number: number) => void
   readonly setNewTitle: (owner: string, name: string, title: string) => void
   readonly setNewBody: (owner: string, name: string, body: string) => void
   readonly setCommentDraft: (owner: string, name: string, number: number, body: string) => void
@@ -145,6 +151,8 @@ export class Issues extends Context.Service<Issues, { readonly queries: IssuesQu
           warm: (owner, name, number) => promise(warm(owner, name, number)),
           retry: () => run(retry),
           search: (owner, name, q) => void promise(search(owner, name, q)),
+          restoreSearch: (owner, name, q) => void promise(restoreSearch(owner, name, q)),
+          readIssue: (owner, name, number) => void promise(readIssue(owner, name, number)),
           setNewTitle: (owner, name, title) => run(setNewTitle(owner, name, title)),
           setNewBody: (owner, name, body) => run(setNewBody(owner, name, body)),
           setCommentDraft: (owner, name, number, body) => run(setCommentDraft(owner, name, number, body)),

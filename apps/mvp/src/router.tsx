@@ -38,6 +38,7 @@ import { workSearch } from "./features/issues/workView"
 import { ActionRunScreen } from "./screens/actions/ActionRunScreen"
 import { ActionsScreen } from "./screens/actions/ActionsScreen"
 import { IssuesPendingScreen } from "./screens/issues/IssuesPendingScreen"
+import { IssuePendingScreen } from "./screens/issues/IssuePendingScreen"
 import { IssuesScreen } from "./screens/issues/IssuesScreen"
 import { NewIssueScreen } from "./screens/issues/NewIssueScreen"
 import { Landing } from "./screens/landing/Landing"
@@ -536,8 +537,9 @@ const issuesRoute = createRoute({
   component: repoGated(IssuesScreen),
   pendingComponent: IssuesPendingScreen,
   validateSearch: (search) => ({ ...commitmentSearch(search), ...listSearch(search), ...workSearch(search) }),
-  beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(context, params,
+  beforeLoad: ({ context, params, search, ...load }) => {
+    if (!load.preload) context.issues.actions.restoreSearch(params.owner, params.repo, search.q)
+    return enterRepository(context, params,
       load,
       () => Promise.all([context.issues.actions.warm(params.owner, params.repo), context.todos.actions.warm(params.owner, params.repo)]),
       () =>
@@ -545,7 +547,8 @@ const issuesRoute = createRoute({
           context.issues.actions.open(params.owner, params.repo),
           context.todos.actions.open(params.owner, params.repo),
         ]),
-    ),
+    )
+  },
 })
 
 /** `/$owner/$repo/issues/new`: the new-issue form. */
@@ -564,8 +567,7 @@ const issueRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: ROUTE_PATHS.issue,
   component: repoGated(IssueScreen),
-  pendingComponent: RepoPendingScreen,
-  ...LOADING_PENDING,
+  pendingComponent: IssuePendingScreen,
   params: {
     parse: (params) => {
       const number = issueNumberOf(params.number)
@@ -573,8 +575,9 @@ const issueRoute = createRoute({
     },
     stringify: (params) => ({ ...params, number: String(params.number) }),
   },
-  beforeLoad: ({ context, params, ...load }) =>
-    enterRepository(
+  beforeLoad: ({ context, params, ...load }) => {
+    if (!load.preload) context.issues.actions.readIssue(params.owner, params.repo, params.number)
+    return enterRepository(
       context,
       params,
       load,
@@ -584,7 +587,8 @@ const issueRoute = createRoute({
           context.issues.actions.open(params.owner, params.repo, params.number),
           context.todos.actions.open(params.owner, params.repo),
         ]),
-    ),
+    )
+  },
 })
 
 /**

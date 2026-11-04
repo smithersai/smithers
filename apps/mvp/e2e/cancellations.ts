@@ -1,4 +1,4 @@
-import type { Observation } from "./problems"
+import { requestCancelled, type Observation } from "./problems"
 
 /** WebKit's native network message, including the shortened URL Playwright gives its pageerror event. */
 export const accessControlURL = (origin: string, text: string): string | undefined => {
@@ -116,7 +116,7 @@ export class DocumentRequests {
   fail(id: number, error: string, at: number): void {
     const read = this.reads.get(id)
     if (read !== undefined) {
-      if (!/^(net::ERR_ABORTED|NS_BINDING_ABORTED|cancelled)$/.test(error)) read.state = "failed"
+      if (!requestCancelled(error)) read.state = "failed"
       else if (read.state === "pending") {
         read.state = "cancelled"
         read.cancelledAt = at

@@ -62,9 +62,10 @@ describe("problemOf: failed requests", () => {
   })
 
   it("leaves out a request the page cancelled itself, in every browser: the server failing is another error", () => {
-    for (const error of ["net::ERR_ABORTED", "NS_BINDING_ABORTED", "cancelled"]) {
+    for (const error of ["net::ERR_ABORTED", "NS_BINDING_ABORTED", "cancelled", "Load request cancelled"]) {
       expect(lineOf(failed(error, { url: app("/api/telemetry/v1/logs"), method: "POST" }))).toBeUndefined()
     }
+    expect(lineOf(failed("Load request cancelled by proxy"))).toContain("Load request cancelled by proxy")
     expect(lineOf(failed("net::ERR_CONNECTION_RESET"))).toBe("failed GET /api/shapes/pulls?offset net::ERR_CONNECTION_RESET")
   })
 

@@ -28,6 +28,7 @@
 .issues-loading { display: grid; gap: 10px; }
 .issues-loading-title { height: 24px; max-width: 24rem; }
 .issues-loading-body { height: 16px; }
+.issues-screen [data-first-paint-slot]:has(#first-paint) > .issue-unread-heading { display: none; }
 
 /* The new-issue form's description starts tall enough for a report. */
 .issues-screen .sui-issue-form textarea { min-height: 9rem; }

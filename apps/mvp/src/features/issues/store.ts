@@ -157,9 +157,11 @@ export class IssuesStore extends Context.Service<
     /** Takes the answer away. */
     readonly forgetSearch: Effect.Effect<void>
     /** Which search this tab asked last: only its answer is kept. */
-    readonly searches: { latest: number; repoId: string }
+    readonly searches: { latest: number; repoId: string; issue?: boolean }
     /** Asks the issues route. */
     readonly search: IssueWrites["Service"]["search"]
+    /** Device authority after refusal restoration, independent of any issue shape's transport. */
+    readonly authority: (id: string) => Stream.Stream<Access["status"]>
     readonly viewState: Query<typeof viewQuery>
     readonly forRepo: (id: string, number?: number) => Effect.Effect<RepoIssues>
     readonly opened: (id: string) => RepoIssues | undefined
@@ -227,7 +229,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
   const shownWrites = yield* repos.gate(writes)
   const sendingRows = yield* repos.gate(sending)
   const requestedRows = yield* repos.gate(requested)
-  const searches = { latest: 0, repoId: "" }
+  const searches: { latest: number; repoId: string; issue?: boolean } = { latest: 0, repoId: "" }
   // An answer still on its way is dropped too: it checks `latest` before it stays.
   const forgetSearch = Effect.gen(function* () {
     searches.latest++
@@ -487,9 +489,9 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
       yield* evictWhenRefused(authority, shapes, true)
       // Availability follows the shape the page reads. A summary receipt never certifies a missing detail body.
       yield* followAvailability(items, access, id)
-      // Its summaries are here: they answer every search from now on, and the route's answer goes.
+      // Its summaries answer list searches now. A direct issue keeps its heading until its own detail arrives.
       yield* items.currentApplied.pipe(
-        Effect.andThen(forgetSearchOf(id)),
+        Effect.andThen(Effect.suspend(() => searches.issue ? Effect.void : forgetSearchOf(id))),
         Effect.ignore,
         Effect.forkIn(scope, { startImmediately: true }),
       )
@@ -661,6 +663,7 @@ const make = Effect.fnUntraced(function* (config: IssuesConfig) {
     forgetSearch,
     searches,
     search,
+    authority: (id) => Stream.unwrap(Effect.as(repos.refusalsKnown, repositoryAccessChanges(auth, repos, id))),
     viewState: yield* viewQuery(view, drafts),
     forRepo,
     opened: (id) => repositories.get(id),

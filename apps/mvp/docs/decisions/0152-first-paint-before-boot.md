@@ -48,3 +48,36 @@ the DOM.
 Rendering the app on the server (the document would become private, and the service worker answers navigations from
 the precached shell anyway); keeping the answer on the device for a faster reload (a new private cache); reordering the
 restores (measured before: no gain).
+
+## 2026-11-04: an issue read after a missed shell paint
+
+The issue route starts `issues?q=%23N` before opening its collections. This reuses
+the list search client's deadline, in-memory answer, generation fencing and
+`RepoStore.gate`; nothing waits for Electric to render a known heading. Since
+search also matches titles, the direct read follows cursors until it finds the
+exact number or exhausts the results, under one deadline. The shell's deliberately
+short, empty-on-failure first-paint contract stays intact.
+
+The route result is retained only after this device establishes allowed repository
+authority and restores refusals; a failed summary transport cannot discard it.
+It never supplies a body or comments, and synced detail remains authoritative.
+A pending or failed read shows the requested issue number, without skeletons or
+"Syncing issue…". A known absence and a refusal keep their real page states.
+List navigation restores its URL search if a direct read replaced the retained
+answer, fencing late issue responses so browser Back cannot strand the list.
+An issue result survives list sync; detail failures keep the authorized heading
+alongside their unavailable state and Try again action.
+
+The separate WebKit list failure came from treating the unrelated About flow's
+failure as issue unavailability. That settled the list and removed authorized
+first paint while its own shape still waited. Only repository authority and the
+issue transport now decide list availability. Existing `repo.about.load`,
+`repo.role` and `issues.shape.sync` records identify those independent stages.
+
+`issues.read` spans, `issues.search` logs and `smithers_issue_reads` counts
+distinguish direct issue reads from list searches without query or content.
+This repairs existing navigation and issue presentation infrastructure, not a
+new feature or plugin. Catalog entries used: `@smthrs/ui` for the heading,
+`@smthrs/effect-tanstack-db` for the existing gated in-memory result, and the
+existing Effect HTTP issues client. No new runtime or cache.
+
