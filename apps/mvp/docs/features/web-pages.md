@@ -169,9 +169,9 @@ One count and one log line per opening, written where its door is known: the age
 | `worker/Views.test.ts` | every status of `POST /api/views`, the server's own check, `WEB_PAGES_LOCAL_HTTP` (production refuses `http://localhost`), and no page in any record |
 | `db/Database.test.ts` "0010_views" | positions from the messages' sequence, after the messages before them, and the table's checks |
 | `src/pwa.test.ts` | the service worker keeps no frame and no other origin; the page headers and the frame policy |
-| `e2e/web-page.spec.ts` | the real app, against local HTTPS fixtures or verified public HTTPS pages in a deployment: a page that allows framing shows in the chat, rendered, on a second device and at full size; one whose framing headers refuse the app is a card with its title, description, domain and icon, whose **Open in new tab** opens on Enter; with the real model, the agent asked to embed the refusing page adds the card, and its tab card opens the real page; a person's `/web … tab` opens straight from Enter; `javascript:` and the app's own origin are refused in the composer; the app's pages refuse framing |
+| `e2e/web-page.spec.ts`, `e2e/web-page-agent.spec.ts` | the real app, against local HTTPS fixtures or verified public HTTPS pages in a deployment: a page that allows framing shows in the chat, rendered, on a second device and at full size; one whose framing headers refuse the app is a card with its title, description, domain and icon, whose **Open in new tab** opens on Enter; with the real model, the agent asked to embed the refusing page adds the card, and its tab card opens the real page; a person's `/web … tab` opens straight from Enter; `javascript:` and the app's own origin are refused in the composer; the app's pages refuse framing |
 
-Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/web src/features/views worker/Views.test.ts worker/WebPreview.test.ts src/pwa.test.ts`, and `pnpm exec playwright test e2e/web-page.spec.ts` against `pnpm dev` on `:1337`. The spec's HTTPS pages use the dev certificate, which the dev Worker trusts when it is self-signed ([infrastructure](../infrastructure.md#https-and-http2)); the agent's two cases need the real model.
+Run them with the compose Postgres and Electric up (`pnpm db:up`): `pnpm exec vitest run src/features/web src/features/views worker/Views.test.ts worker/WebPreview.test.ts src/pwa.test.ts`, and `pnpm exec playwright test e2e/web-page.spec.ts e2e/web-page-agent.spec.ts` against `pnpm dev` on `:1337`. The spec's HTTPS pages use the dev certificate, which the dev Worker trusts when it is self-signed ([infrastructure](../infrastructure.md#https-and-http2)); the agent's two cases need the real model.
 
 View writes hold the branch row lock shared with share changes, then read edit access and insert in the same transaction. A pending revocation completes before the waiting writer checks access.
 
@@ -184,7 +184,7 @@ heading, cross-device sync and full screen, the refusal card's metadata and
 keyboard link, and the real agent's card and tab actions. View writes and agent
 questions stay in the test account's own conversation.
 
-Run `E2E_PROD_URL=<deployment HTTPS URL> pnpm e2e:prod web-page.spec.ts --project=deployment` with the test account's personal model configured.
+Run `E2E_PROD_URL=<deployment HTTPS URL> pnpm e2e:prod web-page.spec.ts web-page-agent.spec.ts --project=deployment` with the test account's personal model configured.
 `E2E_WEB_ALLOWS_URL`, `E2E_WEB_REFUSES_URL` and `E2E_WEB_TAB_URL` override the
 public fixture URLs. The allowing page needs a plain-text `h1`; the refusing
 page needs title, description and an HTTPS icon. The public tab page must
@@ -194,3 +194,10 @@ service is also checked: a runner-only success cannot bless an upstream
 refusal to the Worker. Preview titles and document titles are asserted
 separately.
 Local runs retain their own servers. See [decision 0163](../decisions/0163-production-web-page-fixtures.md).
+
+The person-driven journeys are in `web-page.spec.ts`; they declare no model
+resource. The two real-agent journeys are in `web-page-agent.spec.ts`, with
+a model read lease. Both use `web-page-fixtures.ts`. This keeps the runner's
+isolated setup and resource checks intact while allowing person-only proof
+without a funded model connection. Run just `web-page.spec.ts` for that proof;
+run both files for the full feature.

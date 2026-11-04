@@ -342,9 +342,8 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   "visitor-credentials.spec.ts": [],
   "visitor-issue-counts.spec.ts": [],
   "visitor-settings.spec.ts": [],
-  "web-page.spec.ts": [
-    "model:read"
-  ],
+  "web-page-agent.spec.ts": ["model:read"],
+  "web-page.spec.ts": [],
   "who-may-ask.spec.ts": [],
   "write-admission.spec.ts": [
     "issues"

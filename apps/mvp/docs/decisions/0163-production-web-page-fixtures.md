@@ -40,3 +40,12 @@ blocked popup. This is browser-boundary wiring (apps are exempt from SDK-4),
 not a new feature or second flow. The existing injected WebHost and durable
 fallback remain. The real browser regression waits for the destination URL,
 checks null opener and empty referrer, and asserts no view was added.
+
+Production model leases are declared per spec. Keep the five person-driven
+journeys in `web-page.spec.ts` with no model resource, and move the two
+real-agent journeys to `web-page-agent.spec.ts` with `model:read`. Both
+register the same real fixture hooks from `web-page-fixtures.ts`. This lets
+the supported production runner execute the person journeys with its full
+isolated setup even when the model prerequisite is unavailable; no setup
+flag, dependency check or agent assertion is bypassed. Full proof selects
+both files.

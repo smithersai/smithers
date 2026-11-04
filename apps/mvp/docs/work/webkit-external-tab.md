@@ -1,6 +1,6 @@
 ---
 title: Give external tabs a real browser receipt
-status: in-progress
+status: blocked
 area: web-pages
 owner: Codex GPT-6.1 Sol (e2e-webpage)
 updated: 2026-11-04
@@ -26,3 +26,9 @@ failed the retained direct-tab regression. Astra reviewed the final adapter
 without correctness/security findings. Fable's popup navigation race in the
 test is fixed by awaiting its destination URL. Lead deploys the pushed
 revision; this lane does not deploy.
+
+The complete local WebKit regression passes, including the real opening
+receipt and absence of opener, referrer and an extra card. Production
+confirmation of this browser adapter follows release deployment; this lane
+is not authorized to deploy. Operational receipts stay in the private lane
+status.
