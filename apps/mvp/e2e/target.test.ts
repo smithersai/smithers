@@ -667,7 +667,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "sharingPeople", "sharingGuest", "sharingModels", "vibelangMaintainer", "vibelangOpenPull", "secretEgressDeployment", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "sharingPeople", "sharingGuest", "sharingModels", "vibelangMaintainer", "secretEgressDeployment", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 

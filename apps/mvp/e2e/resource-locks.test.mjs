@@ -72,6 +72,29 @@ test("independent resources and shared readers coexist; a writer waits until eve
   assert.ok(log.some((line) => line.includes("waiting model")))
   assert.ok(log.some((line) => line.includes("released model")))
 })
+test("a pull review holds its reused head until the whole proof exits, while independent model readers coexist", async (t) => {
+  const locks = await lockAt(t)
+  const resources = resourcesFor(declarations(["pull-review.spec.ts"]), {})
+  const first = await locks.acquireAll(resources)
+  const partial = []
+  let blocked = false
+  try {
+    for (const resource of resources) {
+      const lease = await locks.tryAcquire(resource)
+      if (!lease) { blocked = true; break }
+      partial.push(lease)
+    }
+    assert.equal(blocked, true, "a second proof cannot refresh the first proof's head")
+    const reader = await locks.tryAcquire(read("account:model-connections"))
+    assert.ok(reader)
+    await reader.release()
+    assert.equal(await locks.tryAcquire(write("account:model-connections")), undefined)
+  } finally {
+    await releaseAll(partial)
+    await releaseAll(first)
+  }
+  await releaseAll(await locks.acquireAll(resources))
+})
 test("live owners and incomplete owners are never taken over; dead owners report exact path", async (t) => {
   const locks = await lockAt(t)
   const lease = await locks.acquire(write("repository:test/a"))

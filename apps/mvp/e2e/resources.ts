@@ -230,7 +230,7 @@ export const SPEC_RESOURCES: Readonly<Record<string, ReadonlyArray<string>>> = {
   ],
   "private-availability.spec.ts": [],
   "pull-recovery.spec.ts": [],
-  "pull-review.spec.ts": [],
+  "pull-review.spec.ts": ["model:read", "pull-review-fixture"],
   "pwa-update.spec.ts": [],
   "queue.spec.ts": [
     "model:read"

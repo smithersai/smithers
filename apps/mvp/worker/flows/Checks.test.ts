@@ -7,7 +7,8 @@ import { SandboxTools } from "@smthrs/sandbox"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/flows"
-import { Context, Effect, Exit, Fiber, Layer, Redacted, Scope, Stream } from "effect"
+import { Logger as StructuredLogger } from "@smthrs/observability"
+import { Context, Effect, Exit, Fiber, Layer, Logger, Redacted, Scope, Stream } from "effect"
 import { SqlClient } from "effect/sql"
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -286,6 +287,37 @@ describe("checks/Run", { timeout: 60_000 }, () => {
     ))
     expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
     expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
+  })
+
+  test.each(["quota_exceeded", "content_policy", "empty_answer"] as const)("a review records %s without provider messages or diff content", async (code) => {
+    const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
+    const maya = await signedIn(runtime, { login: "maya", token: github.userToken("maya") })
+    const privateText = "private-provider-message-and-credential-must-not-be-logged"
+    const { seat } = await judgeSeat(runtime, code === "empty_answer" ? judge("") : () =>
+      Stream.fail(new ModelError.ModelError({ code, message: privateText })))
+    // Cover a retained provider status as well as a refusal that has no status.
+    const reviewer = code === "quota_exceeded" ? {
+      ...seat,
+      model: Model.make({ stream: () => Stream.fail(new ModelError.ModelError({ code, message: privateText, httpStatus: 429 })) }),
+    } : seat
+    const { services } = await githubServices(runtime, github, { judge: seat })
+    const request = await opened(github, maya)
+    const logs: Array<ReturnType<typeof StructuredLogger.formatStructured.log>> = []
+    const logger = Logger.make((log) => void logs.push(StructuredLogger.formatStructured.log(log)))
+    const implementation = Checks.steps({ ...services, reviewerFor: () => reviewer })
+    const registration = Interpreter.layerWithImplementations(Checks.ReviewRun, Layer.mergeAll(
+      Checks.Review.toLayer((payload) => implementation.review(payload).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))),
+      Checks.Report.toLayer(implementation.report),
+    )).pipe(Layer.provideMerge(Action.layerImplementations))
+    const ran = await runFlow(Checks.ReviewRun, request, registration)
+    expect(ran.exit).toEqual(Exit.succeed({ statuses: [{ name: "review", state: "failure", outcome: "sent" }] }))
+    expect(github.pulls.get(request.prNumber)!.reviews).toHaveLength(0)
+    const failure = logs.find((log) => log.message === "checks.review" && log.annotations.outcome === "failed")
+    expect(failure?.annotations).toMatchObject({ repoId: request.repoId, sha: request.sha, prNumber: request.prNumber, stage: "model", errorCode: code })
+    if (code === "quota_exceeded") expect(failure?.annotations.providerStatus).toBe(429)
+    else expect(failure?.annotations).not.toHaveProperty("providerStatus")
+    expect(JSON.stringify(logs)).not.toContain(privateText)
+    expect(await runs()).toEqual([{ flow: "checks/review", status: "failed", sha: request.sha, launchedBy: maya.personId }])
   })
 
   test("a branch or head that isn't one, or a checkout that fails, runs no script: the head's checkout check fails", async () => {
