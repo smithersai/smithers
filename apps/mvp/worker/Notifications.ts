@@ -54,6 +54,12 @@ export const repositoryChecks = Metric.counter("smithers_notification_repository
   incremental: true,
 })
 
+/** Actual emit projection transitions, by direction; repeated withholding writes and counts nothing. */
+export const emissionTransitions = Metric.counter("smithers_notification_emission_transitions", {
+  description: "Notification emit projection transitions, by direction",
+  incremental: true,
+})
+
 /** Notification rows written, by `kind` (`run`, `main`, `release`) and `state`. */
 export const routed = Metric.counter("smithers_notifications_routed", {
   description: "Notification rows written for their recipients, by kind and state",
@@ -639,7 +645,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       let retryAfterSeconds = 0
       let unavailableRepositories = 0
       let allowedSubjects: Readonly<Record<string, string | null>> = {}
-      let replaySubjects = new Set<string>()
       let validateAccess: Effect.Effect<boolean, ShapeProxy.Refused, R> = Effect.succeed(true)
       return ShapeProxy.make({
       ...connection,
@@ -649,16 +654,22 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         const startedAt = yield* Clock.currentTimeMillis
         const actor = yield* ShapeAccess.actor
         const member = isMember(actor)
+        const policy = yield* BranchRoles
         const params: Record<string, string> = { "1": Option.isSome(actor) ? actor.value.subject.id : NOBODY }
         const base = member ? "recipient = $1" : "recipient = $1 AND mine = true"
-        const repositories = Option.isNone(actor) ? [] : yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
+        const candidates = Option.isNone(actor) ? [] : yield* Effect.flatMap(SqlClient.SqlClient, (sql) =>
           sql<{ readonly repoId: string; readonly installed: boolean; readonly denialSequence: string;
-            readonly readable: boolean | null; readonly reused: boolean }>`
+            readonly readable: boolean | null; readonly reused: boolean;
+            readonly permissionFresh: boolean; readonly visibilityFresh: boolean }>`
             SELECT candidates."repoId", EXISTS (SELECT 1 FROM github_repositories g
               WHERE g.repo_id = candidates."repoId" AND g.installation_id IS NOT NULL) AS installed,
               coalesce(a.denial_sequence, 0)::text AS "denialSequence", a.readable,
               coalesce(a.checked_at BETWEEN clock_timestamp() - make_interval(secs => ${TTL_MS / 1000})
-                AND clock_timestamp(), false) AS reused
+                AND clock_timestamp(), false) AS reused,
+              coalesce(r.checked_at BETWEEN clock_timestamp() - make_interval(secs => ${policy.grantFreshSeconds ?? FRESH_SECONDS})
+                AND clock_timestamp(), false) AS "permissionFresh",
+              coalesce(g.private IS NOT NULL AND g.visibility_verified_at BETWEEN
+                clock_timestamp() - make_interval(secs => ${TTL_MS / 1000}) AND clock_timestamp(), false) AS "visibilityFresh"
             FROM (SELECT repo_id AS "repoId" FROM notifications
             WHERE recipient = ${actor.value.subject.id} AND repo_id IS NOT NULL AND (${member} OR mine = true)
             UNION SELECT substring(subject FROM 6) AS "repoId" FROM watches
@@ -667,8 +678,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               WHERE w.principal_id = ${actor.value.subject.id} AND w.level <> 'muted' AND b.deleted_at IS NULL
             ) candidates LEFT JOIN notification_repository_access a
               ON a.recipient = ${actor.value.subject.id} AND a.repo_id = candidates."repoId"
+            LEFT JOIN github_repo_roles r ON r.person_id = ${actor.value.subject.id} AND r.repo_id = candidates."repoId"
+            LEFT JOIN github_repositories g ON g.repo_id = candidates."repoId"
             ORDER BY candidates."repoId"`
         ).pipe(Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable))
+        // A projection is not an authority receipt. Its cache must not outlive the permission or visibility
+        // that the configured resolver actually uses; otherwise repeated polls skip the renewal they need.
+        const repositories = candidates.map(row => {
+          const basis = policy.grantBasis?.(row.repoId, row.installed) ?? (row.installed ? "repository" : "public")
+          const authorityFresh = basis === "repository" ? row.permissionFresh : basis === "public" ? row.visibilityFresh : true
+          return { ...row, reused: row.reused && authorityFresh }
+        })
         const denialSequences = new Map(repositories.map(({ repoId, denialSequence }) => [repoId, denialSequence]))
         const reused = repositories.filter(row => row.reused)
         const unresolved = repositories.filter(row => !row.reused)
@@ -727,7 +747,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         if (Option.isSome(actor)) {
           const personId = actor.value.subject.id
           const repoIds = repositories.map(({ repoId }) => repoId)
-          const policy = yield* BranchRoles
           // One MVCC statement after the body is buffered: deployment authority, repository decisions, subjects
           // and cursor fences agree. Neither the request's old actor nor a cached log entry grants disclosure.
           validateAccess = Effect.flatMap(SqlClient.SqlClient, (sql) => sql.withTransaction(Effect.gen(function* () {
@@ -744,7 +763,10 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
             return yield* sql<{
               readonly subjects: Readonly<Record<string, string | null>>
               readonly repositories: ReadonlyArray<string>
-              readonly replaySubjects: ReadonlyArray<string>
+              readonly authorityUnknownSubjects: number
+              readonly withheldSubjects: number
+              readonly withdrawnSubjects: number
+              readonly restoredSubjects: number
               readonly prunedSubjects: ReadonlyArray<string>
               readonly access: ReadonlyArray<{ readonly repoId: string; readonly denialSequence: string }>
             }>`
@@ -791,6 +813,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                 RETURNING n.subject
               ), readable AS (
                 SELECT n.subject, n.repo_id,
+                  n.repo_id IS NOT NULL AND a.role IS NULL AS authority_unknown,
                   d.active AND (d.role IN ('member', 'maintainer', 'admin') OR n.mine = true)
                     AND (n.repo_id IS NULL OR a.readable = true AND a.role IN ('member', 'maintainer', 'admin'))
                     AND (n.kind <> 'fleet' OR ${FleetAudience.permits(sql, {
@@ -800,27 +823,46 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
                 LEFT JOIN authority a ON a.repo_id = n.repo_id
                 WHERE n.recipient = ${personId} AND n.feed_readable = true
                   AND NOT EXISTS (SELECT 1 FROM pruned WHERE pruned.subject = n.subject)
+              ), projected AS (
+                -- This transition commits AFTER Electric captured its offset. Withheld values can be dropped:
+                -- Electric will publish their deletes, and restoration publishes inserts at a later offset.
+                -- Keep scanning suppressed subjects so renewal alone restores them; unchanged decisions write nothing.
+                UPDATE notifications n SET emit_readable = r.permitted IS TRUE
+                FROM readable r WHERE n.recipient = ${personId} AND n.subject = r.subject
+                  AND n.emit_readable IS DISTINCT FROM (r.permitted IS TRUE)
+                RETURNING n.emit_readable
               ), permitted AS (
                 SELECT subject, repo_id FROM readable WHERE permitted = true
               )
               SELECT coalesce((SELECT jsonb_object_agg(subject, repo_id) FROM permitted), '{}'::jsonb) AS subjects,
                 ARRAY(SELECT DISTINCT repo_id FROM permitted WHERE repo_id IS NOT NULL) AS repositories,
-                ARRAY(SELECT subject FROM readable WHERE permitted IS NOT TRUE) AS "replaySubjects",
+                (SELECT count(*)::int FROM readable WHERE permitted IS NOT TRUE AND authority_unknown) AS "authorityUnknownSubjects",
+                (SELECT count(*)::int FROM readable WHERE permitted IS NOT TRUE) AS "withheldSubjects",
+                (SELECT count(*)::int FROM projected WHERE NOT emit_readable) AS "withdrawnSubjects",
+                (SELECT count(*)::int FROM projected WHERE emit_readable) AS "restoredSubjects",
                 ARRAY(SELECT subject FROM pruned) AS "prunedSubjects",
                 coalesce((SELECT jsonb_agg(jsonb_build_object('repoId', repo_id, 'denialSequence', denial_sequence::text)) FROM access WHERE repo_id = ANY(${repoIds}::text[])), '[]'::jsonb) AS access`
           }))).pipe(
             Effect.map(([current]) => {
               allowedSubjects = current!.subjects
-              replaySubjects = new Set(current!.replaySubjects)
               // Only reductions/pruning need a cursor fence. Restoration can emit its inserts immediately using
               // this snapshot; comparing old readability would unnecessarily refuse that safe recovery.
               const cursorStable = current!.access.length === repoIds.length && current!.access.every((row) =>
                 row.denialSequence === denialSequences.get(row.repoId))
               const reason = current!.access.length !== repoIds.length ? "cursor_unstable"
                 : cursorStable ? undefined : "denial_sequence_moved"
-              return { cursorStable, reason, subjects: Object.keys(allowedSubjects).length, replaySubjects: replaySubjects.size,
+              return { cursorStable, reason, subjects: Object.keys(allowedSubjects).length,
+                authorityUnknownSubjects: current!.authorityUnknownSubjects,
+                withheldSubjects: current!.withheldSubjects, withdrawnSubjects: current!.withdrawnSubjects,
+                restoredSubjects: current!.restoredSubjects, replaySubjects: 0,
                 prunedSubjects: current!.prunedSubjects.length, repositories: current!.repositories.length }
             }),
+            Effect.tap(fields => Effect.all([
+              Metric.update(Metric.withAttributes(emissionTransitions, { direction: "withdrawn" }), fields.withdrawnSubjects),
+              Metric.update(Metric.withAttributes(emissionTransitions, { direction: "restored" }), fields.restoredSubjects),
+              Effect.annotateCurrentSpan({ "notifications.withheld": fields.withheldSubjects,
+                "notifications.withdrawn": fields.withdrawnSubjects, "notifications.restored": fields.restoredSubjects }),
+            ])),
             Effect.tap(fields => Metric.update(Metric.withAttributes(repositoryPruned, { scope: "fleet" }), fields.prunedSubjects)),
             Effect.tap(({ reason: _reason, ...fields }) => Effect.logInfo("notifications.access.emit").pipe(Effect.annotateLogs(fields))),
             Effect.tap(fields => fields.reason === undefined ? Effect.void :
@@ -842,7 +884,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
         }))
         return {
           table: NOTIFICATIONS_TABLE,
-          where: `${base} AND feed_readable = true`,
+          where: `${base} AND feed_readable = true AND emit_readable = true`,
           params,
           columns: SYNCED_NOTIFICATION_COLUMNS,
         }
@@ -850,7 +892,6 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       rowAccess: { keyColumns: ["recipient", "subject"], validate: Effect.suspend(() => validateAccess).pipe(Effect.withSpan("notifications.access.emit")), allows: (row) =>
         typeof row["subject"] === "string" && Object.hasOwn(allowedSubjects, row["subject"])
           && (!Object.hasOwn(row, "repo_id") || row["repo_id"] === allowedSubjects[row["subject"]]),
-        retryIfDenied: (row) => typeof row["subject"] === "string" && replaySubjects.has(row["subject"]),
       },
       name: "notifications.shape",
       metric: shapes,

@@ -1,0 +1,15 @@
+# 0158 · Persist notification emission membership
+
+2026-11-04 · P1 notification feed repair, extending decision 0155 without changing authorization policy.
+
+A repository projection can remain readable after its underlying permission, public visibility or deployment receipt expires. The final authority snapshot correctly withholds those payloads, but a retained source row has no guaranteed future insert. Refusing every batch containing it pins unrelated notifications to the same cursor. There is no stored replay queue or worker to drain it.
+
+Add `notifications.emit_readable` in migration 0107 and include it in the fixed Electric shape predicate alongside `feed_readable`. After buffering, the existing locked SQL transaction derives allowed subjects and reconciles emission membership from the same authority snapshot. It withdraws retained unauthorized subjects and restores previously suppressed subjects only under known current authority. Both transitions happen after the upstream offset was captured; future Electric deletes and inserts therefore make advancing the buffered cursor safe. The scan includes suppressed subjects, and unchanged membership writes nothing. Repository access triggers continue to own `feed_readable` and cannot reset `emit_readable`. Fleet pruning excludes its deleted subjects from the update, preserving one writer per row within the statement.
+
+Projection reuse additionally requires a fresh underlying permission or public-visibility receipt for the configured grant route. Renewal uses the existing resolver and its bounded cooldown, not a new retry mechanism. The SDK invokes validation on bodyless live polls too; an idle 204 must be able to restore membership without waiting for an unrelated source update.
+
+The row guard remains authoritative for every emitted insert/update, including cached logs and the first snapshot of legacy rows. SQL failure and denial-sequence changes still withhold the whole response and cursor. No permission lifetime is extended and no expired receipt grants access. The notification caller no longer needs the SDK's `retryIfDenied` hook; other hosts keep that API.
+
+The migration preserves existing rows. Each recipient's first validated response settles their backlog without a scheduled job or production backfill. People offline incur no work until their next request. Recovery produces a new Electric insert rather than requiring another notification content update. The changed predicate causes existing Electric handles to refetch through the normal protocol.
+
+Use the existing catalog entries Effect SQL and `@smthrs/effect-electric`. This is the core feed's authorization primitive, not a feature plugin. Counts of unknown grants, withheld subjects and actual withdrawal/restoration transitions are correlated with the shape response; diagnostics carry no user content or secrets. Real Postgres/Electric regressions cover cursor continuation, recovery, unchanged-row identity, migrations and the pre-existing authorization races.

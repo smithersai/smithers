@@ -212,6 +212,30 @@ describe("refusals: no Electric needed", () => {
     }
   })
 
+  test.each([204, 205, 304])("an unexpected bodyless %i upstream response still reconciles and fences authority", async status => {
+    for (const outcome of ["pass", "superseded", "failed"] as const) {
+      let snapshots = 0
+      const h = harness({ rowAccess: { keyColumns: ["id"], allows: () => { throw new Error("No payload expected") },
+        validate: Effect.suspend(() => {
+          snapshots++
+          return outcome === "failed" ? Effect.fail(new ShapeProxy.Refused({ status: 503 })) : Effect.succeed(outcome === "pass")
+        }),
+      } })
+      // Fault injection at the HTTP service boundary: actual Electric may use JSON heartbeats when idle.
+      h.fault({ _tag: "empty", status })
+      const response = await h.request("?handle=idle&offset=0_0&live=true")
+      expect(snapshots).toBe(1)
+      expect(response.status).toBe(outcome === "pass" ? status : 503)
+      expect(await response.text()).toBe("")
+      if (outcome !== "pass") {
+        expect(response.headers.get("electric-offset")).toBeNull()
+        expect(response.headers.get("retry-after")).toBe("1")
+        expect(h.line()?.annotations.reason).toBe(outcome === "failed" ? "validate_failed" : "validate_superseded")
+      }
+      expect(h.logs).toHaveLength(1)
+    }
+  })
+
   // Astra on the 403 wipe: a client now wipes a repository on a shape's 403. Electric refusing the proxy's own credentials
   // is a bad deploy, not a person's refusal, and must never read as one.
   test.each([401, 403])("Electric's own %i reaches the browser as a retryable 503", async (status) => {
@@ -669,6 +693,43 @@ describe.skipIf(!electricUp)("through Electric", () => {
         expect(response.headers.get("electric-offset")).not.toBeNull()
         expect((await response.json() as Array<{ value?: unknown }>).filter(row => row.value)).toEqual([])
       }
+    })
+
+    test.each(["pass", "superseded", "failed"] as const)("a real idle live poll validates once before answering %s", async outcome => {
+      const initial = harness({ shape: { table } })
+      let cursor = new URLSearchParams({ offset: "-1" })
+      for (;;) {
+        const response = await initial.request(`?${cursor}`)
+        expect(response.status).toBe(200)
+        cursor = new URLSearchParams({ handle: response.headers.get("electric-handle")!, offset: response.headers.get("electric-offset")! })
+        const rows = await response.json() as Array<{ headers?: { control?: string } }>
+        if (rows.some(row => row.headers?.control === "up-to-date")) break
+      }
+      let snapshots = 0
+      const h = harness({ shape: { table }, rowAccess: {
+        keyColumns: ["id"], allows: () => { throw new Error("An idle response has no payload to authorize") },
+        validate: Effect.suspend(() => {
+          snapshots++
+          return outcome === "failed" ? Effect.fail(new ShapeProxy.Refused({ status: 503 })) : Effect.succeed(outcome === "pass")
+        }),
+      } })
+      const response = await h.request(`?${cursor}&live=true`)
+      expect(snapshots).toBe(1)
+      if (outcome === "pass") {
+        expect([200, 204]).toContain(response.status)
+        if (response.status === 200) expect((await response.json() as Array<{ value?: unknown }>).filter(row => row.value)).toEqual([])
+        else expect(await response.text()).toBe("")
+      } else {
+        expect(response.status).toBe(503)
+        expect(await response.text()).toBe("")
+        expect(response.headers.get("electric-offset")).toBeNull()
+        expect(response.headers.get("retry-after")).toBe("1")
+        expect(h.line()?.annotations).toMatchObject({
+          reason: outcome === "failed" ? "validate_failed" : "validate_superseded",
+          correlationId: response.headers.get("x-request-id"),
+        })
+      }
+      expect(h.logs).toHaveLength(1)
     })
 
     test("row access takes one buffered snapshot before evaluating emitted values", async () => {

@@ -179,7 +179,7 @@ export interface Options<R = never> extends Connection {
     readonly allows: (value: Readonly<Record<string, unknown>>) => boolean
     /** A denied value with no guaranteed replay transition requires retrying the original cursor. */
     readonly retryIfDenied?: (value: Readonly<Record<string, unknown>>) => boolean
-    /** Once the poll is buffered, prepare one current snapshot before allows runs. False/failure retries without a cursor. */
+    /** After buffering, including bodyless polls, prepare one current snapshot before allows runs. False/failure retries without a cursor. */
     readonly validate?: Effect.Effect<boolean, Refused, R> | undefined
   } | undefined
   /**
@@ -506,8 +506,20 @@ export const make = <R = never>(
       ),
       ...ownHeaders
     }
-    // These statuses cannot carry a response body, including an empty ReadableStream.
+    const validateRows = Effect.gen(function*() {
+      const valid = yield* Effect.result((options.rowAccess?.validate ?? Effect.succeed(true)).pipe(Effect.annotateLogs({ correlationId })))
+      if (Result.isFailure(valid) || !valid.success) {
+        yield* ended(503, "access", Result.isFailure(valid) ? "failed" : "superseded",
+          Result.isFailure(valid) ? "validate_failed" : "validate_superseded")
+        return false
+      }
+      return true
+    })
+    const accessRefused = () => HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
+    // Idle polls must reconcile authority too: suppressed rows otherwise cannot generate the insert that wakes
+    // this subscriber after permission renewal. Bodyless responses have nothing left to buffer.
     if ([204, 205, 304].includes(status)) {
+      if (options.rowAccess !== undefined && !(yield* validateRows)) return accessRefused()
       yield* record({
         status,
         live,
@@ -529,12 +541,7 @@ export const make = <R = never>(
       }
       // The host takes its current authority snapshot only after buffering, before any payload is authorized.
       // A cursor fence failure must withhold the entire cursor so a projection change cannot skip its deletes.
-      const valid = yield* Effect.result((guard.validate ?? Effect.succeed(true)).pipe(Effect.annotateLogs({ correlationId })))
-      if (Result.isFailure(valid) || !valid.success) {
-        yield* ended(503, "access", Result.isFailure(valid) ? "failed" : "superseded",
-          Result.isFailure(valid) ? "validate_failed" : "validate_superseded")
-        return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
-      }
+      if (!(yield* validateRows)) return accessRefused()
       let requiresReplay = false
       const filtered = yield* Effect.try(() => (messages.value as Array<unknown>).flatMap((message: unknown) => {
         if (typeof message !== "object" || message === null) throw new Error("invalid shape message")

@@ -104,6 +104,7 @@ import m0103 from "./migrations/0103_notification_access_projection.ts"
 import m0104 from "./migrations/0104_visibility_read_claims.ts"
 import m0105 from "./migrations/0105_notification_denial_sequence.ts"
 import m0106 from "./migrations/0106_machine_write_diagnostics.ts"
+import m0107 from "./migrations/0107_notification_emit_projection.ts"
 
 /** Every published migration identity, in ascending apply order. */
 export const migrations = {
@@ -212,4 +213,5 @@ export const migrations = {
   "0104_visibility_read_claims": m0104,
   "0105_notification_denial_sequence": m0105,
   "0106_machine_write_diagnostics": m0106,
+  "0107_notification_emit_projection": m0107,
 }

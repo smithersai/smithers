@@ -195,7 +195,7 @@ test("mixed repository availability preserves unrelated notices and public copie
   expect(warm.status).toBe(200)
   expect((await values(warm)).map((row) => row.subject).sort()).toEqual(["private-good", "public-a", "public-b", "unscoped"])
   expect(providers.map((github) => github.calls.length)).toEqual(coldRequests)
-  expect(warm.headers.get("retry-after")).toBeNull()
+  expect(Number(warm.headers.get("retry-after"))).toBeGreaterThan(0)
   expect(coldRequests.slice(0, 2)).toEqual([0, 0])
   console.info("mixed-feed-cost", { repositories: 4, rows: 5, coldGitHubRequests: coldRequests,
     warmGitHubRequests: providers.map((github, index) => github.calls.length - coldRequests[index]!), unavailable: 1 })
@@ -534,9 +534,9 @@ test("emit snapshot excludes non-mine rows when deployment denial lands between 
       return fetch(url, init)
     } })
   const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
-  expect(response.status).toBe(503)
-  expect(response.headers.get("electric-offset")).toBeNull()
-  expect(await response.text()).toBe("")
+  expect(response.status).toBe(200)
+  expect(response.headers.get("electric-offset")).not.toBeNull()
+  expect((await values(response)).map(row => row.subject)).toEqual(["mine"])
 })
 
 test("emit snapshot drops a cached fleet insert whose subject was pruned before a new request", async () => {
@@ -628,9 +628,9 @@ test.each(["refresh", "sign-in", "sign-out"] as const)("emit snapshot observes %
     }))
   } finally { release() }
   const response = await pending
-  expect(response.status).toBe(503)
-  expect(response.headers.get("electric-offset")).toBeNull()
-  expect(await response.text()).toBe("")
+  expect(response.status).toBe(200)
+  expect(response.headers.get("electric-offset")).not.toBeNull()
+  expect((await values(response)).map(row => row.subject)).toEqual(receipt === "sign-out" ? [] : ["mine"])
   expect(h.line("notifications.access.emit").at(-1)?.annotations).toMatchObject({ cursorStable: true, subjects: receipt === "sign-out" ? 0 : 1 })
 })
 
@@ -670,13 +670,13 @@ test.each(["deployment", "public-copy", "independent"] as const)("emit snapshot 
     expect(response.status).toBe(200)
     expect((await values(response)).map(row => row.subject)).toEqual(["mine"])
   } else {
-    expect(await response.text()).not.toContain("own payload")
-    expect(response.status).toBe(503)
-    expect(response.headers.get("electric-offset")).toBeNull()
+    expect(await values(response)).toEqual([])
+    expect(response.status).toBe(200)
+    expect(response.headers.get("electric-offset")).not.toBeNull()
   }
 })
 
-test("deployment filtering preserves the cursor so a retained insert replays after restoration", async () => {
+test("deployment filtering advances the cursor and publishes a retained insert after restoration", async () => {
   const f = await emitFixture(true)
   await sql(`DELETE FROM notifications WHERE recipient = $1 AND subject <> 'mine'`, f.id)
   let hold = false
@@ -718,16 +718,20 @@ test("deployment filtering preserves the cursor so a retained insert replays aft
   try { await record(null) } finally { hold = false; release() }
   const withheld = await pending
   expect(await withheld.text()).not.toContain("late followed payload")
-  // Follow the cursor the response really offered; 503 means retry the caller's unchanged original cursor.
+  // Follow the cursor the response really offered; withholding must now allow progress.
   const next = withheld.headers.has("electric-offset")
     ? new URLSearchParams({ handle: withheld.headers.get("electric-handle")!, offset: withheld.headers.get("electric-offset")! })
     : original
   await record("admin")
-  const recovered = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${next}`)
+  const renewed = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${next}`)
+  expect(renewed.status).toBe(200)
+  // Renewal publishes a new insert after this buffered offset; consume the cursor actually returned.
+  const restored = new URLSearchParams({ handle: renewed.headers.get("electric-handle")!, offset: renewed.headers.get("electric-offset")! })
+  const recovered = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?${restored}`)
   expect(recovered.status).toBe(200)
   expect((await values(recovered)).map(row => row.subject)).toContain("late-followed")
-  expect(withheld.status).toBe(503)
-  expect(withheld.headers.get("electric-offset")).toBeNull()
+  expect(withheld.status).toBe(200)
+  expect(withheld.headers.get("electric-offset")).not.toBeNull()
 })
 
 test.each(["deployment-expiry", "permission-expiry", "visibility-expiry", "visibility-private", "installation-loss"] as const)(
@@ -769,9 +773,9 @@ test.each(["deployment-expiry", "permission-expiry", "visibility-expiry", "visib
       else await sql(`UPDATE github_repositories SET installation_id = NULL WHERE repo_id = $1`, f.repoId)
     } finally { release() }
     const response = await pending
-    expect(response.status).toBe(503)
-    expect(response.headers.get("electric-offset")).toBeNull()
-    expect(await response.text()).toBe("")
+    expect(response.status).toBe(200)
+    expect(response.headers.get("electric-offset")).not.toBeNull()
+    expect(await values(response)).toEqual([])
   },
 )
 
