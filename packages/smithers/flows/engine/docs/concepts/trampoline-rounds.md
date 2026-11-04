@@ -38,6 +38,34 @@ Two consequences follow from resolving the target by tag:
   under the lineage deadline the previous round stamped on its `Flow.Handoff`,
   which a durable store persists with the round it opens.
 
+## Repeated authority stays bounded
+
+Handoffs carry the intersection of the caller's authority, earlier handoffs,
+and the target's declaration. Both the follower and durable store normalize
+that intersection at every handoff: identical groups are retained once, and an
+empty group still denies everything. Distinct restrictions remain conjunctive;
+normalization never widens authority. Repeating the same restrictions therefore
+does not add round-history-sized work to attenuation or state validation and
+redaction. An old run's next successor is normalized without rewriting history.
+
+The durable `handed-off` journal decision records `previousAuthorityGroups`
+and `authorityGroups` alongside its lineage, round and next execution id.
+The active span records `handoff.round`, `handoff.authorityGroups.before` and
+`handoff.authorityGroups.after`. These counts reveal growth without logging
+capability patterns or action payloads.
+
+The offline SQLite measurement is `packages/smithers/test/roundperf.mjs`.
+Run it from `packages/smithers` on a prepared test host with
+`node test/roundperf.mjs`. It executes 50, 200 and 800 rounds, each with a
+1 ms durable sleep and one recorded increment, asserting every result and
+action's order. `ROUND_PERF_OUT` selects the artifact directory;
+`ROUND_PERF_SIZES` changes the comma-separated sizes; `ROUND_PERF_PROFILE=1`
+captures one late round. Per-round statement counts, returned row counts and
+state-string bytes distinguish growing data from growing query counts. Wall
+times are observations on a shared host, not test thresholds. The deterministic
+regressions in `TrampolineFollow.test.ts` and the durable `Trampoline.test.ts`
+bound repeated pattern reads and persisted authority groups respectively.
+
 ## The next round's id is derived, not allocated
 
 Round 0's execution id is the one the caller executed, and it is also the

@@ -68,10 +68,11 @@ type CounterFlow = Flow.Flow<
 /** The recursion edge a body cannot name inside its own declaration. */
 const counters = new Map<string, CounterFlow>()
 
-const counter = (tag: string, maxRounds?: number): CounterFlow => {
+const counter = (tag: string, maxRounds?: number, boundedAuthority = false): CounterFlow => {
   const flow = Flow.make(tag, {
     payload: { value: Schema.Number, target: Schema.Number },
     success: Schema.Number,
+    ...(boundedAuthority ? { capabilities: ["fs:read:**"] } : {}),
     ...(maxRounds === undefined ? {} : { maxRounds }),
     body: ({ target, value }: { readonly value: number; readonly target: number }) =>
       Increment.call({ value }).pipe(
@@ -87,6 +88,7 @@ const counter = (tag: string, maxRounds?: number): CounterFlow => {
 }
 
 const Counter = counter("trampoline/counter")
+const AuthorityCounter = counter("trampoline/authority", undefined, true)
 const Bounded = counter("trampoline/bounded", 2)
 
 /** A two-leg lineage, so host routing can admit one leg while refusing the other. */
@@ -374,6 +376,38 @@ describe("a durable suspended caller", () => {
 })
 
 describe("a durable lineage", () => {
+  it.effect("stores constant authority work per round when handoffs repeat the same ceiling", () =>
+    Effect.gen(function*() {
+      const observed = yield* durable(Effect.gen(function*() {
+        const store = yield* RunStore.RunStore
+        const { calls, wiring } = yield* incarnation("bounded-authority", [Interpreter.layer(AuthorityCounter)])
+        const value = yield* AuthorityCounter.execute({ value: 0, target: 40 }, {
+          executionId: "bounded-authority"
+        }).pipe(Effect.provide(wiring))
+        const groups = yield* Effect.forEach(
+          [0, 10, 39],
+          (ordinal) =>
+            store.get(ordinal === 0 ? "bounded-authority" : roundId("bounded-authority", ordinal)).pipe(
+              Effect.map((row) => JSON.parse(row.stateJson).capabilityCeilings)
+            )
+        )
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const page = yield* journal.entries({ runId: roundId("bounded-authority", 10) as never, limit: 100 })
+        const handoff = page.entries.map((entry) => entry.payload as Record<string, unknown>)
+          .find((payload) => payload.decision === "handed-off")
+        return { value, calls, groups, handoff }
+      }))
+      expect(observed.value).toBe(40)
+      expect(observed.calls).toEqual(Array.from({ length: 40 }, (_, i) => i))
+      // Every read, fold, attenuation and write of a run visits these groups.
+      // Repeating the same restriction must not add history-sized work to a round.
+      expect(observed.groups[0]).toEqual([[{ action: "fs:read", resource: "**" }]])
+      expect(observed.groups.map((groups) => groups.length)).toEqual([1, 1, 1])
+      expect(observed.groups[2]).toEqual(observed.groups[0])
+      expect(observed.handoff).toMatchObject({ previousAuthorityGroups: 1, authorityGroups: 1, roundOrdinal: 11 })
+    }))
+
   it.effect("counts to its target across rounds, chaining each one under the lineage", () =>
     Effect.gen(function*() {
       const observed = yield* durable(Effect.gen(function*() {

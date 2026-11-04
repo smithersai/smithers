@@ -219,7 +219,12 @@ const handOff = Effect.fnUntraced(function*(follower: Follower, handoff: Flow.Ha
   // turns it back into the payload that round is planned with.
   const decode = Schema.decodeUnknownEffect(Schema.toCodecJson(target.payloadSchema))
   const payload = yield* Effect.orDie(decode(handoff.payload)) as Effect.Effect<object>
-  follower.capabilityCeilings = [...follower.capabilityCeilings, ...(handoff.capabilityCeilings ?? [[]])]
+  // A repeated ceiling is the same intersection, not another unit of history
+  // to re-attenuate on every later dispatch. Preserve all distinct groups.
+  follower.capabilityCeilings = CapabilitySet.fromGroups([
+    ...follower.capabilityCeilings,
+    ...(handoff.capabilityCeilings ?? [[]])
+  ]).groups
   const previousExecutionId = follower.lineage.executionId
   follower.lineage = {
     flow: target,

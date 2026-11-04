@@ -2241,6 +2241,11 @@ const continueLineage = (driver: Driver, seam: HandoffSeam, advanced: Successor)
     const target = driver.registrations.get(seam.handoff.flow)?.at(-1)
     const payload = yield* successorPayload(seam, target)
     const nextCeilings = successorCeilings(seam, target)
+    yield* Effect.annotateCurrentSpan({
+      "handoff.round": advanced.round.ordinal,
+      "handoff.authorityGroups.before": seam.state.capabilityCeilings!.length,
+      "handoff.authorityGroups.after": nextCeilings.length
+    })
     const nextStateJson = yield* encodeState(successorState(seam, payload, nextCeilings))
     const settledStateJson = yield* encodeState({
       ...seam.state,
@@ -2283,23 +2288,28 @@ const successorPayload = (seam: HandoffSeam, target: Registration | undefined): 
     ? Effect.succeed(seam.handoff.payload)
     : normalizePayload(target.flow, seam.handoff.payload)
 
-/** The authority the next round runs under: this round's, narrowed by the handoff and the target's declaration. */
+/**
+ * The next round's authority, narrowed by the handoff and target declaration.
+ * Normalize before persistence: duplicate groups otherwise enlarge every later
+ * state read, validation, redaction and write without changing authority.
+ */
 const successorCeilings = (
   seam: HandoffSeam,
   target: Registration | undefined
-): NonNullable<RunState["capabilityCeilings"]> => [
-  // The execution guard rejects missing persisted authority before a handler can hand off.
-  ...seam.state.capabilityCeilings!,
-  ...(seam.handoff.capabilityCeilings ?? [[]]),
-  // The successor records its own declaration, as admission would, so
-  // a later join compares against the authority it actually runs
-  // under. A target this process does not run has none here; the root
-  // caller's re-entry then carries a declaration the row lacks and is
-  // refused rather than trusted.
-  ...(target === undefined
-    ? []
-    : Flow.parseCapabilityCeilings(Flow.capabilityCeilings(target.flow.annotations)))
-]
+): NonNullable<RunState["capabilityCeilings"]> =>
+  CapabilitySet.fromGroups([
+    // The execution guard rejects missing persisted authority before a handler can hand off.
+    ...seam.state.capabilityCeilings!,
+    ...(seam.handoff.capabilityCeilings ?? [[]]),
+    // The successor records its own declaration, as admission would, so
+    // a later join compares against the authority it actually runs
+    // under. A target this process does not run has none here; the root
+    // caller's re-entry then carries a declaration the row lacks and is
+    // refused rather than trusted.
+    ...(target === undefined
+      ? []
+      : Flow.parseCapabilityCeilings(Flow.capabilityCeilings(target.flow.annotations)))
+  ]).groups
 
 /** The next round's opening state: the lineage's settings, carried forward. */
 const successorState = (
@@ -2380,6 +2390,8 @@ const commitHandoff = (driver: Driver, seam: HandoffSeam, advanced: Successor, w
           lineageId: advanced.round.rootExecutionId,
           roundOrdinal: advanced.round.ordinal,
           nextExecutionId: advanced.executionId,
+          previousAuthorityGroups: seam.state.capabilityCeilings!.length,
+          authorityGroups: write.nextCeilings.length,
           owner: driver.dependencies.owner
         },
         { cancelRequested: "absent" }
