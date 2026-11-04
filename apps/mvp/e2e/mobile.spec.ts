@@ -17,6 +17,7 @@ import { shapeRows } from "./shape"
 import { redactRequestErrors } from "./redact"
 import { baseURL, meets, requires, scriptedAgent, target, writeHeaders, me, stackRepository, syncedRepository, ownPlace, signedOut, sessionFiles } from "./target"
 import { BRANCH_UNAVAILABLE, COMMIT_UNAVAILABLE, COPY_DRAFT, FLOW_UNAVAILABLE, TERMINAL_UNAVAILABLE } from "../src/features/chat/engineAvailability"
+import { chooseIssue } from "./todoDraft"
 
 /** A private context can refuse OPFS; it must then explain actions that require the durable engine. */
 const hasDeviceStorage = (page: Page) => page.evaluate(() => navigator.storage.getDirectory().then(() => true, () => false))
@@ -511,6 +512,7 @@ for (const viewport of [{ width: 390, height: 844 }, { width: 768, height: 1024 
             return
           }
           todos.push({ repository: stackRepository(), title })
+          await chooseIssue(draft)
           await draft.getByRole("button", { name: "Commit", exact: true }).click()
           const row = page.locator('[data-slot="issues-row"]', { hasText: title })
           await expect(row).toContainText(/T\d+/, { timeout: 60_000 })

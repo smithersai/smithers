@@ -2,6 +2,7 @@ import { expect, test } from "./devices"
 import { github } from "./github"
 import { dropTodo } from "./stackWrites"
 import { requires, scratchRepository, stackRepository } from "./target"
+import { chooseIssue } from "./todoDraft"
 
 // Make TODO's and Commit's progress in the shared toast stack (decision 0124): Make TODO is the engine's run that keeps
 // the draft; Commit is Requested until the stack numbers its TODO, then Done, wherever the person went meanwhile.
@@ -38,6 +39,7 @@ test("Commit: progress survives navigation and settles on the numbered TODO", {
     const draft = page.getByRole("form", { name: "TODO draft" })
     await draft.getByLabel("Title", { exact: true }).fill(title)
     await draft.getByLabel("Prompt", { exact: true }).fill("Shared progress regression")
+    await chooseIssue(draft)
     await draft.getByRole("button", { name: "Commit", exact: true }).click()
     const toast = page.locator('[data-slot="toast"]').filter({ hasText: "Commit TODO" })
     await expect(toast).toBeVisible()

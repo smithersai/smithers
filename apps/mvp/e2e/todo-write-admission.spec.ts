@@ -2,6 +2,7 @@ import { admissionRecords } from "./admissionRecords"
 import { reloadAfter } from "../src/test/reloadTiming"
 import { expect, test as base } from "./devices"
 import { appHome, requires, stackRepository } from "./target"
+import { chooseIssue } from "./todoDraft"
 
 const test = base.extend<{ records: (page: import("@playwright/test").Page) => Promise<void> }>({
   records: async ({}, use, info) => {
@@ -25,6 +26,7 @@ for (const delay of [0, 100, 300] as const) {
     const draft = page.getByRole("form", { name: "TODO draft" })
     await draft.getByLabel("Title", { exact: true }).fill(title)
     await draft.getByLabel("Prompt", { exact: true }).fill("Keep the durable admission regression")
+    await chooseIssue(draft)
     await draft.getByRole("button", { name: "Commit", exact: true }).click()
     await reloadAfter(delay, () => page.reload())
     const row = page.getByRole("listitem").filter({ has: page.getByText(title, { exact: true }) })

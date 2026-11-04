@@ -399,6 +399,19 @@ export interface Options<R = never> {
    * watchers may read it besides those whose sessions say so (`Notifications.recordRepoEvent`). A deployment passes none.
    */
   readonly localPeople?: ReadonlyArray<Notifications.LocalPerson>
+  /**
+   * Local development without the App only (worker/DevChatApi.ts): a public repository it syncs beside its own, and the
+   * open issue it keeps there, so a draft on that repository's stack has an issue to hang under (decision 0153) and the
+   * end-to-end tests commit TODOs on a laptop. Reconcile never runs without the App, so the issues' shapes would
+   * otherwise be empty. A deployment never sets it, and with the App it is ignored.
+   */
+  readonly localSynced?: LocalSynced
+}
+
+/** Local development's synced repository and its one open issue (`Options.localSynced`). */
+export interface LocalSynced {
+  readonly repository: Repository
+  readonly issue: GitHub.Issues.Issue
 }
 
 /**
@@ -411,12 +424,18 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
     const connection = yield* ShapeProxy.config({ url: LOCAL_ELECTRIC_URL })
     const { repository } = options
     const allowed = options.allowed ?? Option.none<ReadonlySet<string>>()
+    // Local development's synced repository counts only where there is no App: a deployment with the App decides by
+    // its installations and allowed list alone.
+    const localSynced = Option.isNone(options.app) ? options.localSynced : undefined
     /**
      * Whether the deployment syncs and acts on repository `id` (decision 0079 §4): its own, or, with the App, any other
-     * the allowed list doesn't leave out. Whether the App is installed there is Reconcile's to find out.
+     * the allowed list doesn't leave out; without it, local development's synced repository too. Whether the App is
+     * installed there is Reconcile's to find out.
      */
     const mayAct = (id: string) =>
-      Option.isSome(options.app) ? RepoRoles.actsOn(repository, allowed)(id) : id === repository.id
+      Option.isSome(options.app)
+        ? RepoRoles.actsOn(repository, allowed)(id)
+        : id === repository.id || id === localSynced?.repository.id
     // Check current metadata for anonymous readers, using the shared metadata token policy.
     const readToken = yield* ReadToken.fromConfig.pipe(
       options.http === undefined ? Effect.provide(FetchHttpClient.layer) : Effect.provideService(HttpClient.HttpClient, options.http),
@@ -884,7 +903,17 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
      * `github_reconcile_starts` by outcome (`started`, `timed_out`, `not_started` with its error code).
      */
     const reconcileIfStale = (target: Repository) => Effect.gen(function* () {
-      if (Option.isNone(options.app)) return
+      if (Option.isNone(options.app)) {
+        // Local development's synced repository keeps its one issue, read as of its own `updated_at`: an upsert that
+        // changes nothing once the row is there, and puts it back if the dev database was reset.
+        if (localSynced !== undefined && target.id === localSynced.repository.id) {
+          yield* Store.upsertIssue(target.id, localSynced.issue, Date.parse(localSynced.issue.updated_at)).pipe(
+            Effect.provide(database),
+            Effect.catchCause(() => Effect.logWarning("github.local_synced.seed").pipe(Effect.annotateLogs({ repoId: target.id, outcome: "failed" }))),
+          )
+        }
+        return
+      }
       const now = yield* Clock.currentTimeMillis
       const state = yield* Store.syncState(target.id, ISSUES_STREAM).pipe(Effect.provide(database))
       if (state.syncedAt !== null) yield* Metric.update(Metrics.syncAge, Math.round((now - state.syncedAt) / 1000))

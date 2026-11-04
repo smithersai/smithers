@@ -1173,6 +1173,46 @@ describe("the shapes", () => {
         await sql(runtime, `TRUNCATE repo_about`)
       }
     })
+
+    test("local development's synced repository is synced and keeps its issue only without the App; otherwise nothing changes", async () => {
+      // worker/DevChatApi.ts names octocat/Spoon-Knife; acme/strangers stands in for it, so no other test's rows meet it.
+      const strangers = { owner: "acme", name: "strangers", id: "github/acme/strangers" } as const
+      const gadgetsRepo = { owner: "acme", name: "gadgets", id: GADGETS } as const
+      const issue = {
+        id: 101, node_id: "I_local_101", number: 1, title: "Local issue", body: "Kept locally.", state: "open" as const,
+        state_reason: null, user: null, comments: 0, created_at: "2026-11-01T00:00:00Z", updated_at: "2026-11-01T00:00:00Z",
+        closed_at: null, labels: [],
+      }
+      const localSynced = { repository: strangers, issue }
+      const kept = async () => (await sql(runtime, `SELECT number, title, state, fetched_at::text AS fetched, source_updated_at::text AS source
+        FROM items WHERE repo_id = '${strangers.id}'`)) as unknown as Array<unknown>
+      // Read as of the issue's own updated_at, so a second read is no newer and changes nothing.
+      const seeded = [{ number: 1, title: "Local issue", state: "open", fetched: "2026-11-01 00:00:00+00", source: "2026-11-01 00:00:00+00" }]
+      // Without the option, as every deployment: no App syncs only the deployment's own repository, as before.
+      const plain = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, app: null })
+      expect([await plain.maySync(OWN), await plain.maySync(strangers), await plain.maySync(gadgetsRepo)]).toEqual([true, false, false])
+      expect((await plain.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(404)
+      // With the App the option counts for nothing: the allowed list alone decides, and no row is written.
+      const withApp = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, allowed: new Set([OWN.id]), localSynced })
+      expect([await withApp.maySync(OWN), await withApp.maySync(strangers), await withApp.maySync(gadgetsRepo)]).toEqual([true, false, false])
+      expect((await withApp.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(404)
+      expect(await kept()).toEqual([])
+      // With the App and the repository allowed, it syncs as any other: Reconcile starts, and nothing is seeded.
+      const allowedApp = await githubHarness(runtime, { own: OWN, github: gadgets(), actor: null, allowed: new Set([OWN.id, strangers.id]), localSynced })
+      expect(await allowedApp.maySync(strangers)).toBe(true)
+      await allowedApp.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)
+      expect(allowedApp.starts.map((start) => start.flow)).toContain("github/Reconcile")
+      expect(await kept()).toEqual([])
+      // Local development (no App, the option set, its roles local, as ChatApiProgram makes them): that repository is
+      // synced too, and its shape keeps its one issue.
+      const local = await githubHarness(runtime, { own: OWN, github: gadgets(), app: null, localSynced, roleOptions: { local: true } })
+      expect([await local.maySync(OWN), await local.maySync(strangers), await local.maySync(gadgetsRepo)]).toEqual([true, true, false])
+      expect((await local.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(200)
+      expect(await kept()).toEqual(seeded)
+      // Again: the same row, its observation fence unmoved.
+      expect((await local.fetch(`${named(ITEM_SUMMARIES_SHAPE_ROUTE, "acme/strangers")}&offset=-1`)).status).toBe(200)
+      expect(await kept()).toEqual(seeded)
+    })
   })
 })
 

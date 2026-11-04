@@ -334,7 +334,7 @@ const needs = {
   },
   syncedRepository: {
     met: (run) => /^[\w.-]+\/[\w.-]+$/.test(run.env.E2E_SYNCED_REPOSITORY ?? ""),
-    reason: "it needs existing synced issues and pull requests: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
+    reason: "it needs existing synced issues and pull requests, at least one issue open: set E2E_SYNCED_REPOSITORY to the deployment's synced public owner/name; an empty or unfinished sync fails the fixture check",
     blocked: true,
   },
   modelQuotaRefusal: {

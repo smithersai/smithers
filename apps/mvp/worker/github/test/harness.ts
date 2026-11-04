@@ -114,10 +114,12 @@ export interface Options {
   /** The real `RepoRoles`, changed: a test that interleaves something between a role's read and its write. */
   readonly wrapRoles?: (roles: RepoRoles.RepoRoles<never>) => RepoRoles.RepoRoles<never>
   /** Options for the real `RepoRoles` the harness makes, such as a shorter refresh cooldown. */
-  readonly roleOptions?: Partial<Pick<RepoRoles.Options, "refreshCooldownSeconds" | "refreshDeadline">>
+  readonly roleOptions?: Partial<Pick<RepoRoles.Options, "refreshCooldownSeconds" | "refreshDeadline" | "local">>
   readonly repoFlows?: boolean
   /** Exercise the production fetch transport against a test HTTP server. */
   readonly metadata?: { readonly url: string; readonly token: string }
+  /** Local development's synced repository and issue (`Api.Options.localSynced`): none unless set. */
+  readonly localSynced?: Api.LocalSynced
 }
 
 let harnessKey: Promise<Redacted.Redacted<string>> | undefined
@@ -208,7 +210,7 @@ export const githubHarness = async (runtime: Runtime, options: Options = {}) => 
   })))
   const roles = options.wrapRoles === undefined ? real : options.wrapRoles(real)
   const routes = await runtime.runPromise(
-    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed) })),
+    observed(Api.make(database, { repository: own, app: configured, roles, ...(options.metadata === undefined ? { http: github.http } : {}), repoFlows: options.repoFlows === true, allowed: Option.fromUndefinedOr(options.allowed), ...(options.localSynced === undefined ? {} : { localSynced: options.localSynced }) })),
   )
   // Electric, as the routes call it: each table in this file's schema.
   const tables = new Set([

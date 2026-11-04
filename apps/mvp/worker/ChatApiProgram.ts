@@ -137,6 +137,11 @@ export interface ProgramOptions {
   readonly summaryDailyCap?: number
   readonly feedKey?: string
   /**
+   * Local development's synced repository and its one open issue (`GitHubApi.Options.localSynced`). Only `alchemy dev`
+   * sets it, and it counts only in local development: a signed-in `fallback` and no GitHub App.
+   */
+  readonly localSynced?: GitHubApi.LocalSynced
+  /**
    * A test deployment's own route, answered before ChatApi's (e2e/gates/Harness.ts): given the flow executions' namespace
    * and the app's database, it answers a request or passes it on. No deploy of ChatApi itself sets it.
    */
@@ -271,11 +276,13 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const repository = yield* GitHubConfig.repository
     const app = yield* GitHubConfig.configured
     const allowed = yield* RepoRoles.allowed
+    // Local development: `alchemy dev`'s signed-in developer and no App (worker/DevChatApi.ts). A deploy passes no options.
+    const local = options.fallback !== undefined && Option.isNone(app)
     const roles = yield* RepoRoles.make(database, {
       repository,
       app,
       allowed,
-      local: options.fallback !== undefined && Option.isNone(app),
+      local,
       ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
     })
     // Repository feeds (docs/features/feeds.md): an outside collector's documents under `FEED_KEYS`, the Maintainers'
@@ -295,6 +302,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       allowed,
       // Repository notifications reach local development's people, who have no session, by their fixed role.
       localPeople: localPeople.map((person) => ({ id: person.actor.subject.id, role: person.actor.role })),
+      ...(local && options.localSynced !== undefined ? { localSynced: options.localSynced } : {}),
     })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
