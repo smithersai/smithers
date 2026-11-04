@@ -38,11 +38,37 @@ accounting, not bearer material. A bare `token` is redacted even when numeric.
 
 **Textual.** `Redaction.defaultRules` scans inside any string for credential
 shapes seen in real bug reports: provider keys, bearer tokens, GitHub, GitLab, npm,
-AWS, Slack (tokens and webhook URLs), and Google credentials, URL passwords, Basic authorization, bare JWTs,
+AWS, Slack (tokens and webhook URLs), and Google credentials, Smithers machine
+tokens (`smm_` plus 43 base64url characters) and scoped gateway tokens
+(`smt1.<base64url claims>.<43-character base64url signature>`), URL passwords, Basic authorization, bare JWTs,
 PEM private-key blocks, INI/YAML credential assignments such as
 `SECRET = value` and `password: value`, credential flags such as
 `--password value`, cookie and session assignments, and embedded JSON
 credential members.
+
+Smithers prefix rules also match inside URLs and beside underscores, without
+requiring a credential field or authorization header. They redact the containing
+dotted identifier, including underscore wrappers, so a match inside another
+provider key or JWT cannot leave that enclosing credential partly visible.
+Sentence punctuation stays outside the replacement. When a Smithers token is
+present, the selected built-in contextual rules first read headers, assignments,
+flags and URL values at the token rule's position. Preceding custom rules run
+first. This keeps a token replacement
+from hiding a sensitive name or leaving a credential suffix behind. If contextual
+rewriting changes that text, the whole string is replaced: scanners can split
+a token across an assignment value and the next name. Custom
+rule policies retain their selected rules and replacements. A custom rule
+interposed before later contextual rules makes their composition uncertain;
+that value is replaced whole. Basic's partial base64 recognizer runs after
+Smithers recognition. Diagnostic redaction
+uses these same rules before terminal failure messages are stored; executable
+typed errors retain their original values for replay.
+
+Text containing both a Smithers token and a private-key block is replaced
+whole: the grammars can overlap, so rewriting either alone can expose the
+other credential. This protection also applies when a selected PEM rule uses
+a custom replacement marker alongside the Smithers rules; a PEM-only policy
+retains its own behavior.
 
 An assignment's value is read by a scanner rather than a regular expression,
 because where a value ends depends on quotes, escapes, and brackets. Each shape
@@ -110,7 +136,12 @@ CLI's error output.
 Redact a diagnostic before rendering or bounding it. Redacting a rendering line
 by line, or after a bound, is how a key's body escaped. A stream that must be
 emitted line by line uses `Redaction.lineRedactor()`: it holds lines while the
-rules say a value is still open and redacts the block whole once it closes. A
+multiline rules say a value is still open and redacts the block whole once it closes.
+Continuation checks omit the single-line Smithers prefix rules, so conservative
+whole-value masking cannot hold unrelated later lines. If a matching Smithers
+rule encounters an opaque custom rule before later contexts, closure is uncertain:
+the stream stays withheld until its existing bound or flush. Preceding custom
+rules keep their precedence. A
 value still open after `Redaction.maxHeldLines` lines or 64 KiB withholds the
 rest of the stream, and `flush` emits one placeholder for it.
 

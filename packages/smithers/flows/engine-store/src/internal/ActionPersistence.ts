@@ -600,7 +600,7 @@ const spendEnumeratedKey = (budget: InertJsonBudget, key: PropertyKey): boolean 
  * failure path neither executes user code nor leaves an attempt running because
  * its error was too large for the store.
  */
-const inertJson = (value: unknown, budget: InertJsonBudget): unknown => {
+const inertJson = (value: unknown, budget: InertJsonBudget, redactText = true): unknown => {
   const active = new WeakSet<object>()
 
   const reduce = (current: unknown, depth: number): InertJsonReduction => {
@@ -662,11 +662,10 @@ const inertJson = (value: unknown, budget: InertJsonBudget): unknown => {
             if ((!descriptor.enumerable && !(key === "message" && preserveMessage)) || !("value" in descriptor)) {
               continue
             }
-            // `message` and `stack` are observability text, never a field replay
-            // classifies on, and a git or HTTP failure embeds its remote URL,
-            // credentials included. They meet the journal's own rules; every
-            // other member, `_tag` included, stays byte-exact for replay.
-            const member = (key === "message" || key === "stack") && typeof descriptor.value === "string"
+            // Declared Fail values are executable schema-encoded data, including
+            // message/stack literals and refinements. Only defect diagnostics use
+            // textual redaction here; their diagnostic copies are not typed errors.
+            const member = redactText && (key === "message" || key === "stack") && typeof descriptor.value === "string"
               ? Redaction.redact(descriptor.value)
               : descriptor.value
             const reduced = reduce(member, depth + 1)
@@ -719,7 +718,7 @@ const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
       return { reasons: [{ _tag: "Die", defect: null }] }
     }
     if (Cause.isFailReason(reason)) {
-      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget) })
+      reasons.push({ _tag: "Fail", error: inertJson(reason.error, budget, false) })
     } else if (Cause.isDieReason(reason)) {
       reasons.push({ _tag: "Die", defect: inertJson(reason.defect, budget) })
     } else {

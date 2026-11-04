@@ -3,7 +3,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
-import { RunStore } from "@smthrs/run-store"
+import { Journal } from "@smthrs/journal"
+import { AttemptStore, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
 import * as Deferred from "effect/Deferred"
@@ -25,6 +26,126 @@ const jj = Jj.make({ snapshot: noWorkspace, restore: noWorkspace, diff: noWorksp
   workspaceAdd: noWorkspace, workspaceForget: noWorkspace, status: noWorkspace })
 
 describe("nested action failure coordinates", () => {
+  for (const [name, credential, expected, whole] of [
+    ...["smm_", "smt1.e30."].flatMap((prefix) => [
+      ["ordinary", "aB0_-".repeat(8) + "aAQ"],
+      ["interior provider key", "A".repeat(30) + "-sk-" + "B".repeat(8) + "Q"],
+      ["interior machine token", "AAAA-smm_" + "B".repeat(33) + "Q_upstream"]
+    ].map(([shape, suffix]) => [`${prefix} (${shape})`, prefix + suffix, "[REDACTED]"])),
+    ["enclosing API key", `sk-proj-ABsmm_${"B".repeat(42)}Q`, "[REDACTED]"],
+    ["enclosing GitHub PAT", `github_pat_ABCsmm_${"B".repeat(42)}Q`, "[REDACTED]"],
+    ["enclosing GitLab token", `glpat-ABCsmm_${"B".repeat(42)}Q`, "[REDACTED]"],
+    ["enclosing JWT", `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpbnZlbnRlZCJ9.smm_${"B".repeat(38)}Q_upstream`, "[REDACTED]"],
+    ...["smm_", "smt1.e30."].flatMap((prefix) => {
+      const token = prefix + "A".repeat(42) + "Q"
+      return [
+        [`contextual ${prefix} Basic`, `Authorization: Basic ${token}`, "[REDACTED]", true],
+        [`contextual ${prefix} bearer`, `Authorization: Bearer ${token}+remainingSecret`, "[REDACTED]", true],
+        [`contextual ${prefix} query`, `https://example.test/?sig=${token}+remainingSecret`, "[REDACTED]", true],
+        [`contextual ${prefix} assignment`, `${token}_password=remainingSecret`, "[REDACTED]", true]
+      ]
+    }),
+    ...["smm_", "smt1.e30."].map((prefix) => [
+      `fragmented contextual ${prefix}`,
+      `password=${prefix}${"A".repeat(42)}Q_password=tail`,
+      "[REDACTED]", true
+    ]),
+    ...["smm_", "smt1.e30."].map((prefix) => [
+      `overlapping PEM ${prefix}`,
+      prefix + "A".repeat(30) + "-----BEGINABQ PRIVATE KEY-----\nbody\n-----END PRIVATE KEY-----",
+      "[REDACTED]", true
+    ])
+  ]) {
+    it.live(`redacts ${name} in the stored terminal failure and replay`, () =>
+      withCrypto(Effect.scoped(Effect.gen(function*() {
+        const message = `upstream rejected ${credential}`
+        let calls = 0
+        const engine = yield* EngineStore.make({ owner: { hostId: "token-failure" }, journalSource: "token-failure" })
+        const action = Action.make({ name: "TokenFailure/Action", success: Schema.String, error: Schema.String,
+          idempotencyKey: "token-failure", execute: Effect.suspend(() => { calls++; return Effect.fail(message) }) })
+        yield* engine.register(Root, () => action)
+        for (let attempt = 0; attempt < 2; attempt++) {
+          const exit = yield* Effect.exit(engine.execute(Root, { executionId: "token-root", payload: {} }))
+          expect(Exit.isFailure(exit) && exit.cause.reasons.some((reason) => Cause.isFailReason(reason) && reason.error === message)).toBe(true)
+          const row = yield* (yield* RunStore.RunStore).get("token-root")
+          expect(row.status).toBe("failed")
+          const failure = JSON.parse(row.stateJson).failure
+          expect(failure).toMatchObject({ action: "TokenFailure/Action", attempts: 1 })
+          expect(failure.message).toBe(JSON.stringify(whole ? expected : `upstream rejected ${expected}`))
+          expect(JSON.stringify(failure)).not.toContain(credential)
+        }
+        expect(calls).toBe(1)
+      }).pipe(
+        Effect.provideService(Jj.Jj, jj),
+        Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
+        Effect.provide(StepBoundary.layerTest()), Effect.provide(TestStores.layer())
+      ))))
+  }
+
+  for (const prefix of ["smm_", "smt1.e30."]) {
+    it.live(`preserves a structured token error through failed-attempt crash replay (${prefix})`, () =>
+      withCrypto(Effect.scoped(Effect.gen(function*() {
+        const token = prefix + "A".repeat(42) + "Q"
+        const error = { _tag: "TokenRejected", message: `rejected ${token}`, stack: `at upstream (${token})` }
+        const schema = Schema.Struct({ _tag: Schema.Literal(error._tag),
+          message: Schema.Literal(error.message), stack: Schema.Literal(error.stack) })
+        const flow = Flow.make("StructuredToken/Root", { payload: {}, success: Schema.String,
+          error: schema, body: opaqueHandlerBody })
+        const reached = yield* Deferred.make<void>()
+        const finish = yield* Deferred.make<void>()
+        let calls = 0
+        const action = Action.make({ name: "StructuredToken/Action", success: Schema.String, error: schema,
+          idempotencyKey: "structured-token", execute: Effect.suspend(() => { calls++; return Effect.fail(error) }) })
+        const create = Effect.gen(function*() {
+          const engine = yield* EngineStore.make({ owner: { hostId: "structured-token" },
+            journalSource: "structured-token", isAlive: () => Effect.succeed(false) })
+          yield* engine.register(flow, () => Effect.gen(function*() {
+            const exit = yield* Effect.exit(Effect.gen(function*() { return yield* action }))
+            yield* Deferred.succeed(reached, undefined)
+            yield* Deferred.await(finish)
+            return yield* exit
+          }))
+          return engine
+        })
+        const first = yield* create
+        const running = yield* Effect.forkChild(first.execute(flow, { executionId: "structured-root", payload: {} }))
+        yield* Deferred.await(reached)
+        const runs = yield* RunStore.RunStore
+        expect((yield* runs.get("structured-root")).status).toBe("running")
+        const journal = yield* Journal.Journal
+        yield* journal.flush
+        const entries = yield* journal.entries({ runId: "structured-root" as never, limit: 100 })
+        const settled = entries.entries.find((entry) => entry.eventType === "flows.engine.attempt-finished")!
+        expect(settled).toBeDefined()
+        const identity = settled.payload as { runId: string; stepKeyDigest: string; attempt: number }
+        const attempts = yield* AttemptStore.AttemptStore
+        const recorded = yield* attempts.get(identity)
+        expect(recorded._tag).toBe("Some")
+        if (recorded._tag === "Some") expect(recorded.value.state).toBe("failed")
+        // Interrupt only after the attempt is durable, while root settlement is held.
+        yield* Fiber.interrupt(running)
+        yield* Deferred.succeed(finish, undefined)
+        const restarted = yield* create
+        const exit = yield* Effect.exit(restarted.execute(flow, { executionId: "structured-root", payload: {} }))
+        expect(Exit.isFailure(exit)).toBe(true)
+        if (Exit.isFailure(exit)) {
+          const reason = exit.cause.reasons.find(Cause.isFailReason)
+          expect(reason?.error).toEqual(error)
+        }
+        if (recorded._tag === "Some") expect(recorded.value.error).toMatchObject({ reasons: [{ _tag: "Fail", error }] })
+        expect(calls).toBe(1)
+        const row = yield* runs.get("structured-root")
+        expect(row.status).toBe("failed")
+        const diagnostic = JSON.stringify(JSON.parse(row.stateJson).failure)
+        expect(diagnostic).not.toContain(token)
+        expect(diagnostic).toContain("[REDACTED")
+      }).pipe(
+        Effect.provideService(Jj.Jj, jj),
+        Effect.provideService(DurableEngineState.DurableEngineState, DurableEngineState.makeMemory()),
+        Effect.provide(StepBoundary.layerTest()), Effect.provide(TestStores.layer())
+      ))))
+  }
+
   for (const replay of [false, true]) {
     it.live(`keeps separate origins when the parent handles only the first child failure (${replay ? "replay" : "live"})`, () =>
       withCrypto(Effect.scoped(Effect.gen(function*() {

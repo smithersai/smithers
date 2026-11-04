@@ -582,11 +582,11 @@ describe("action executor failure paths", () => {
     }))
 
   /**
-   * A git or HTTP failure message embeds the remote URL, credentials included.
-   * `message` and `stack` are observability text, so the journal's redaction
-   * rules run over them on write; the typed `_tag` replay classifies on stays.
+   * Encoded failure fields are executable data: message and stack may be
+   * literal or refined members of the declared error schema. Diagnostic
+   * projections and journal payloads own redaction, not the attempt error.
    */
-  it.effect("redacts credentials in a failure message and stack before the row is written", () =>
+  it.effect("preserves executable failure message and stack before the row is written", () =>
     Effect.gen(function*() {
       const token = "ghs_A1b2C3d4E5f6G7h8I9j0K1l2M3n4O5p6Q7r8"
       const remote = `https://x-access-token:${token}@github.com/acme/private.git/`
@@ -600,16 +600,7 @@ describe("action executor failure paths", () => {
 
       const row = Option.getOrThrow(result.row)
       expect(row.state).toBe("failed")
-      expect(JSON.stringify(row.error)).not.toContain(token)
-      expect(row.error).toMatchObject({
-        reasons: [{
-          _tag: "Fail",
-          error: {
-            _tag: "GitCloneFailed",
-            message: "fatal: unable to access 'https://x-access-token:[REDACTED]@github.com/acme/private.git/': 403"
-          }
-        }]
-      })
+      expect(row.error).toEqual({ reasons: [{ _tag: "Fail", error }] })
     }))
 
   it.effect("rejects ill-formed string values and keys before store admission", () =>
