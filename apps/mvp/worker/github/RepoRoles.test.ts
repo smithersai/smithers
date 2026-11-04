@@ -373,19 +373,16 @@ test.each([false, true] as const)("deployment work uses session authority even w
   expect(github.calls).toHaveLength(0)
 })
 
-test.each([404, 410])("uninstalled metadata %s is retryable unavailable, never a private receipt", async (status) => {
+test("uninstalled metadata 404 records a bounded denial shared by resolver instances", async () => {
   const github = scriptedGitHub("acme", "widgets")
-  github.faults.push({ match: (_, path) => path === "/repos/acme/widgets", status })
+  github.faults.push({ match: (_, path) => path === "/repos/acme/widgets", status: 404 })
   const made = await roles(github)
-  const answer = await Effect.runPromise(Effect.result(RepoRoles.workUninstalled(made, maya, OTHER)))
-  expect(answer).toMatchObject({ _tag: "Failure", failure: { code: "unavailable", retryAfterSeconds: expect.any(Number) } })
-  expect(RepoRoles.REFUSALS.unavailable).toBe(503)
-  const [row] = await sql(runtime, `SELECT private, visibility_verified_at IS NULL AS unverified
+  expect(await Effect.runPromise(RepoRoles.workUninstalled(made, maya, OTHER))).toBeNull()
+  const [row] = await sql(runtime, `SELECT private, visibility_verified_at IS NOT NULL AS verified
     FROM github_repositories WHERE repo_id = '${OTHER.id}'`)
-  expect(row).toMatchObject({ private: null, unverified: true })
-  await sql(runtime, `UPDATE github_repositories SET visibility_read_until = now() - interval '1 second' WHERE repo_id = '${OTHER.id}'`)
-  expect(await Effect.runPromise(RepoRoles.workUninstalled(made, maya, OTHER))).toBe("admin")
-  expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(2)
+  expect(row).toMatchObject({ private: true, verified: true })
+  expect(await Effect.runPromise(RepoRoles.workUninstalled(await roles(github), maya, OTHER))).toBeNull()
+  expect(github.seen("GET", /^\/repos\/acme\/widgets$/)).toHaveLength(1)
 })
 
 describe("workRole: the role a person works with on Smithers' own copy of a repository", () => {

@@ -71,7 +71,7 @@ export const REFUSALS = {
 export type Refusal = keyof typeof REFUSALS
 
 /** Finite operation names only: provider messages and SQL text never enter diagnostics. */
-const stages = ["configuration", "allowlist", "database", "row_read", "claim", "account_read", "app_auth", "installation_token", "permission", "role_record", "deadline", "cooldown"] as const
+const stages = ["configuration", "allowlist", "database", "row_read", "claim", "account_read", "app_auth", "installation_token", "permission", "metadata", "visibility_record", "role_record", "deadline", "cooldown"] as const
 
 export class RoleRefused extends Schema.TaggedError<RoleRefused>()("@smthrs/mvp/github/RoleRefused", {
   code: Schema.Literals(Object.keys(REFUSALS) as Array<Refusal>),
@@ -522,6 +522,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
       const visible = answer.visible
       if (Option.isNone(visible)) return yield* new RoleRefused({
         code: answer.rateLimited ? "rate_limited" : "unavailable", retryAfterSeconds: answer.retryAfterSeconds ?? 5,
+        stage: "metadata", upstreamStatus: answer.upstreamStatus,
       })
       const recorded = yield* VisibilityReceipt.recordRepository(repository.id, { private: !visible.value }, observedAt)
       // A rejected update lost to a newer commit. Read it in a new statement (the insert's snapshot predates
@@ -531,7 +532,7 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
           visibility_verified_at > clock_timestamp() - interval '60 seconds'
             AND visibility_verified_at <= clock_timestamp() AS fresh
         FROM github_repositories WHERE repo_id = ${repository.id}`)[0]
-      if (winning?.fresh !== true) return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: 1 })
+      if (winning?.fresh !== true) return yield* new RoleRefused({ code: "unavailable", retryAfterSeconds: 1, stage: "visibility_record" })
       return winning.public
     }).pipe(Effect.mapError((error) => error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" })))
 
@@ -591,8 +592,8 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>, opt
         ? Effect.succeed(uninstalled(actor, repository))
         : Effect.gen(function* () {
           const publicNow = yield* visibility(repository)
-          const role = yield* SessionStore.freshRole(actor)
-          return publicNow ? role : null
+          if (!publicNow) return null
+          return yield* SessionStore.freshRole(actor)
         }).pipe(Effect.provide(database), Effect.mapError((error) => error instanceof RoleRefused ? error : new RoleRefused({ code: "unavailable" }))),
     } satisfies RepoRoles<R>
   })

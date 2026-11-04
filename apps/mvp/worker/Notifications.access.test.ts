@@ -1,6 +1,7 @@
 // Feed authorization through the real ChatApi handler, Postgres, Electric and RepoRoles.
 import { Effect, Layer, Option, Stream } from "effect"
 import { SqlClient } from "effect/sql"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { beforeEach, expect, test, vi } from "vitest"
 import * as TestDatabase from "../db/TestDatabase.ts"
 import { NOTIFICATIONS_SHAPE_ROUTE } from "../src/features/attention/contract.ts"
@@ -1199,4 +1200,36 @@ test("a newly unavailable resolver without a retry hint uses the fallback only f
   expect(await values(warm)).toEqual([])
   expect(warm.headers.get("retry-after")).toBeNull()
   expect(calls).toBe(1)
+})
+
+
+test("24 missing repositories settle denials and the next notification read reuses them", async () => {
+  const id = crypto.randomUUID()
+  const actor: Actor = { subject: { kind: "person", id }, role: "member" }
+  await sql(`INSERT INTO people (id, github_id, github_login) VALUES ($1, $2, 'refusal-reader')`, id, accountIdOf("refusal-reader"))
+  await sql(`INSERT INTO notifications (recipient, subject, kind, state, repo_id, title, href)
+    SELECT $1, 'missing:' || n, 'main', 'update', 'github/acme/missing-' || n, 'withheld', '/app'
+    FROM generate_series(1, 24) n`, id)
+  let calls = 0
+  // Fault at the Effect transport only; roles, their receipts, the handler and Electric are real.
+  const http = HttpClient.make(request => Effect.sync(() => {
+    calls++
+    return HttpClientResponse.fromWeb(request, new Response('{}', { status: 404 }))
+  }))
+  const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
+  const roles = await runtime.runPromise(RepoRoles.make(scratch.database, {
+    repository: repositoryOf("acme/home"), app: Option.none(), http,
+  }))
+  const { h } = await proxy(actor, BranchRoles.layer(roles))
+  for (let read = 0; read < 2; read++) {
+    const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+    expect(response.status).toBe(200)
+    expect(response.headers.get("retry-after")).toBeNull()
+    expect(await values(response)).toEqual([])
+    expect(calls).toBe(24)
+  }
+  expect(h.line("notifications.access").map(line => line.annotations)).toEqual([
+    expect.objectContaining({ repositories: 24, reused: 0, permitted: 0, unavailable: 0 }),
+    expect.objectContaining({ repositories: 24, reused: 24, permitted: 0, unavailable: 0 }),
+  ])
 })

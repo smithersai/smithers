@@ -29,6 +29,7 @@ import {
 import { CHECKS_SHAPE_ROUTE, compareRoute, PULLS_SHAPE_ROUTE } from "../../src/features/pulls/contract.ts"
 import * as Actor from "../Actor.ts"
 import { FlowStarter, StartConflict, StartUnavailable } from "../Flows.ts"
+import * as WriteAdmission from "../WriteAdmission.ts"
 import { testFile } from "../test/harness.ts"
 import { handles, make, parseWritesPath, RECONCILE_START_TIMEOUT } from "./Api.ts"
 import * as Metrics from "./Metrics.ts"
@@ -201,7 +202,9 @@ describe("POST /api/github/webhook", () => {
     expect(get.status).toBe(405)
     expect(h.starts).toEqual([])
     expect(h.count(Metrics.webhooks, { event: "issues", outcome: "refused" })).toBe(2)
-    expect(h.count(Metrics.webhooks, { event: "issues", outcome: "too_large" })).toBe(1)
+    // Route-capped admission rejects this body before the webhook handler runs.
+    expect(h.count(WriteAdmission.bodies, { status: "413" })).toBe(1)
+    expect(h.count(Metrics.webhooks, { event: "issues", outcome: "too_large" })).toBe(0)
   })
 
   test("with REPO_FLOWS on, a push or a pull request of any installed repository starts its triggers/Dispatch; off, none", async () => {
@@ -1262,19 +1265,19 @@ test("an item read whose Reconcile start never resolves answers at the timeout, 
   expect(h.count(Metrics.reconcileStarts, { outcome: "timed_out" })).toBe(1)
 })
 
-test("GitHub's 404 to an anonymous metadata read is unavailable to every shape, never a cached private answer", async () => {
+test("GitHub's 404 to an anonymous metadata read is a cached denial for every shape", async () => {
   await sql(runtime, `INSERT INTO github_repositories (repo_id, github_id, private) VALUES ('${REPOSITORY.id}', 1, false)`)
   const github = scriptedGitHub(REPOSITORY.owner, REPOSITORY.name)
   github.private = true
   const h = await githubHarness(runtime, { actor: null, github, app: app({ privateKey: await import("./test/scriptedGitHub.ts").then((m) => m.appKey()) }) })
   const routes = [ITEM_SUMMARIES_SHAPE_ROUTE, ITEMS_SHAPE_ROUTE, COMMENTS_SHAPE_ROUTE, SYNC_SHAPE_ROUTE]
   for (const route of routes) {
-    expect((await h.fetch(`${route}?offset=-1`)).status).toBe(503)
+    expect((await h.fetch(`${route}?offset=-1`)).status).toBe(401)
   }
-  // A 404 cannot tell a private repository from one GitHub can't show now: each request asks again.
-  expect(h.count(Metrics.visibilityReads, { outcome: "unavailable", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(routes.length)
+  // Missing and inaccessible give the same denial; a second shape reuses the bounded receipt.
+  expect(h.count(Metrics.visibilityReads, { outcome: "not_found", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(1)
   expect(h.count(Metrics.visibilityReads, { outcome: "private", statusClass: "4xx", rateLimited: "false", remaining: "unknown", errorCode: "delivery-failed" })).toBe(0)
-  expect(h.line("github.visibility")).toHaveLength(routes.length)
+  expect(h.line("github.visibility")).toHaveLength(1)
 })
 
 
@@ -1338,9 +1341,9 @@ test.each([undefined, "metadata-fixture-token"])("default metadata transport che
   }
 })
 
-// Astra on the data gate after 499b1e44: a metadata 404/410 is retryable unavailable, and the role route's `readable`
-// must say so rather than `false`, which the client's data gate shows as "You don't have access".
-test.each([404, 410])("readable is unavailable, never false, when a public repository's metadata answers %s", async (status) => {
+// A metadata 404 definitively denies public access without revealing whether the repository exists.
+// Other failed reads remain unavailable, preserving the data gate's retry action.
+test.each([404, 410])("readable distinguishes a metadata denial from an unavailable read (%s)", async (status) => {
   const server = createServer((request, response) => {
     expect(request.url).toBe("/repos/acme/widgets")
     response.writeHead(status, { "content-type": "application/json" })
@@ -1361,7 +1364,8 @@ test.each([404, 410])("readable is unavailable, never false, when a public repos
         Effect.provide(Actor.signedOut),
         Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(new Request("http://app.test/"))),
       )
-      expect(readable).toMatchObject({ unavailable: true })
+      if (status === 404) expect(readable).toBe(false)
+      else expect(readable).toMatchObject({ unavailable: true })
     })).pipe(Effect.provideService(ConfigProvider.ConfigProvider, config)))
   } finally {
     server.closeAllConnections()
