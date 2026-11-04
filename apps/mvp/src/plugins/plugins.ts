@@ -56,7 +56,7 @@ export const presses = Metric.counter("smithers_plugin_presses", {
 // decision: `current` reads the rule each time, so a session or role change shows in the next read.
 const gatedViews = new WeakMap<object, Host.Live<unknown>>()
 const EMPTY_ROWS: ReadonlyArray<never> = Object.freeze([])
-const gateLive = <R>(plugins: { readonly visible: (id: string) => boolean; readonly onVisibility: (listener: () => void) => () => void }, id: string, live: Host.Live<R>): Host.Live<R> => {
+export const gateLive = <R>(plugins: { readonly visible: (id: string) => boolean; readonly onVisibility: (listener: () => void) => () => void }, id: string, live: Host.Live<R>): Host.Live<R> => {
   const known = gatedViews.get(live)
   if (known !== undefined) return known as Host.Live<R>
   const gated: Host.Live<R> = {
@@ -107,7 +107,9 @@ export const liveQueryOf = <R extends object>(query: Gated<R>) =>
     // a cached stream value could still expose rows synchronously after permission was refused.
     const snapshot = () => {
       const rows = query.tanstack.toArray
-      if (rows.length !== current.length || rows.some((row, index) => row !== current[index])) current = Object.freeze(rows)
+      if (rows.length !== current.length || rows.some((row, index) => row !== current[index])) {
+        current = rows.length === 0 ? EMPTY_ROWS : Object.freeze(rows)
+      }
       return current
     }
     const listeners = new Set<() => void>()
