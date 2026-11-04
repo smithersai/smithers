@@ -60,7 +60,14 @@ export function PullsScreen() {
   const pending = page.unknown || access?.installed !== true
   const unknown = listPageOf(rows ?? [], { owner, name: repo }, synced, pullAccessOf(access, view), isReady).unknown || access?.installed !== true
   return (
-    <main className="pulls-screen" aria-label="Pull requests"><RepoHeader />
+    <main className="pulls-screen" aria-label="Pull requests"
+      data-access-status={access?.status ?? "unknown"}
+      data-access-installed={access?.installed === true}
+      data-pull-status={view?.pullStatus ?? "unknown"}
+      data-pull-installed={view?.installed === true}
+      data-query-ready={isReady}
+      data-sync-complete={synced !== undefined}
+      data-list-ready={!pending}><RepoHeader />
       <PageBody width="wide">
         {pending ? <p role="status" data-list-sync="" className="pulls-syncing">Syncing pull requests…</p> : null}
         <div className="list-search-tools" role="search" aria-label="Search pulls">
