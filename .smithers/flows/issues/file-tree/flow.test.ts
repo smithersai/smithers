@@ -330,6 +330,42 @@ const retryCursor = (fake: { origin: string }, extra = {}): typeof Cursor.Type =
 }
 const replayRound = async (cursor: typeof Cursor.Type) => advance(cursor, JSON.parse(JSON.stringify(await step(cursor))))
 
+test("an accepted write whose response is lost is re-sent with the same id, gets 200 and creates one issue", async () => {
+  const fake = await startFakeSmithers()
+  try {
+    let cursor = retryCursor(fake)
+    // The accepted machine write has not settled yet, so the issues shape cannot find it on the next round.
+    fake.pending = () => true
+    fake.script((method: string, path: string) => method === "POST" && path.endsWith("/writes"), [["reset-after-write", {}, {}]])
+    cursor = await replayRound(cursor)
+    assert.equal(cursor.submitted, false)
+    assert.equal(cursor.waitMs, 2000)
+    assert.equal(fake.writes.size, 1, "the write was recorded before the transport failed")
+    const [writeId, write] = [...fake.writes.entries()][0]!
+    assert.equal(write.op, "issue/create")
+    assert.equal(write.status, "pending")
+    assert.equal(fake.posts(/writes$/).length, 1)
+    assert.equal(fake.posts(/writes$/)[0].status, null, "the client received no acceptance response")
+
+    cursor = await replayRound(JSON.parse(JSON.stringify(cursor)))
+    assert.equal(cursor.submitted, true)
+    assert.equal(cursor.waitMs, 0)
+    assert.equal(fake.writes.size, 1, "re-sending must reuse the accepted write")
+    assert.deepEqual(fake.posts(/writes$/).map(entry => [entry.writeId, entry.status]), [[writeId, null], [writeId, 200]])
+    assert.equal(fake.submissions.get(writeId), 2)
+
+    fake.pending = () => false
+    cursor = await replayRound(cursor)
+    assert.equal(cursor.stage, "link")
+    assert.equal(cursor.number, write.number)
+    assert.equal(cursor.counts.created, 1)
+    assert.deepEqual(cursor.exceptions, [])
+    const issues = [...fake.writes.values()].filter(write => write.op === "issue/create" && write.status === "done")
+    assert.equal(issues.length, 1)
+    assert.match(issues[0].body, /^key: draft:retry:1$/m)
+  } finally { await fake.close() }
+})
+
 for (const status of [503, 429, 502, 504, "reset"]) {
   test(`transient submit ${status} survives a recorded round and succeeds with the same write id`, async () => {
     const fake = await startFakeSmithers()

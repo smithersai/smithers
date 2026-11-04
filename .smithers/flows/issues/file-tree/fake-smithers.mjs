@@ -29,7 +29,10 @@ export const startFakeSmithers = ({ liveTokens = Object.keys(LANES), lanes = LAN
       const url = new URL(req.url, "http://fake")
       const path = url.pathname
       const body = raw === "" ? undefined : JSON.parse(raw)
-      log.push({ method: req.method, path, at: Date.now(), writeId: body?.writeId, offset: url.searchParams.get("offset") })
+      const entry = { method: req.method, path, at: Date.now(), writeId: body?.writeId, offset: url.searchParams.get("offset"), status: null }
+      log.push(entry)
+      res.on("finish", () => { entry.status = res.statusCode })
+      let resetAfterWrite = false
       const scripted = scripts.find((s) => s.match(req.method, path) && s.answers.length > 0)
       if (scripted !== undefined) {
         const [status, answer, headers] = scripted.answers.shift()
@@ -40,7 +43,8 @@ export const startFakeSmithers = ({ liveTokens = Object.keys(LANES), lanes = LAN
           setTimeout(() => res.destroy(), 10)
           return
         }
-        return json(res, status, answer, headers)
+        if (status === "reset-after-write") resetAfterWrite = true
+        else return json(res, status, answer, headers)
       }
       // The issues shape, signed out, as Electric sends it: every issue a create made, then up to date.
       if (req.method === "GET" && path === "/api/shapes/items") {
@@ -81,6 +85,8 @@ export const startFakeSmithers = ({ liveTokens = Object.keys(LANES), lanes = LAN
         for (const link of body.links) links.set(`${m[1]}/${m[2]}#${m[3]} ${link.kind} ${link.ref}`, link)
         answer = [200, { links: body.links.length, changed: body.links.length }]
       } else answer = [404, { path }]
+      // Lose the acceptance response only after the normal write handler recorded the effect.
+      if (resetAfterWrite) return req.socket.destroy()
       if (held !== undefined && held.match(req.method, path)) {
         const gate = held
         held = undefined
