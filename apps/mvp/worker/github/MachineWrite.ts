@@ -186,8 +186,8 @@ export const admit = (write: { readonly repoId: string; readonly owner: string; 
 export const statusOf = (id: string, repoId: string, machine: Machine) =>
   Effect.gen(function* () {
     const sql = yield* SqlClient.SqlClient
-    const [row] = yield* sql<{ readonly status: string; readonly failure: string | null; readonly number: number | null }>`
-      SELECT status, failure, item_number AS number FROM machine_writes
+    const [row] = yield* sql<{ readonly status: string; readonly failure: string | null; readonly cause: string | null; readonly githubStatus: number | null; readonly number: number | null }>`
+      SELECT status, failure, cause, github_status AS "githubStatus", item_number AS number FROM machine_writes
       WHERE id = ${id}::uuid AND repo_id = ${repoId} AND agent = ${machine.agent} AND lane = ${machine.lane}`
     return Option.fromNullishOr(row)
   })
@@ -213,7 +213,7 @@ export const retry = (id: string, repoId: string, machine: Machine, mayAct: (id:
       if (write.status === "pending") return "pending" as const
       if (!(yield* hasRoom(machine.tokenSha256))) return "backlog" as const
       yield* sql`
-        UPDATE machine_writes SET status = 'pending', failure = NULL, settled_at = NULL, tries = 0, queued_at = clock_timestamp(),
+        UPDATE machine_writes SET status = 'pending', failure = NULL, cause = NULL, github_status = NULL, settled_at = NULL, tries = 0, queued_at = clock_timestamp(),
           token_sha256 = ${machine.tokenSha256}
         WHERE id = ${id}::uuid`
       return "pending" as const
@@ -393,9 +393,16 @@ export const steps = <E, R>(services: Services<E, R>) => {
   /** Whether GitHub names this App as the author. */
   const byThisApp = (user: { readonly login?: string | null | undefined } | null | undefined) => user?.login === appLogin
 
-  const settle = (id: string, status: "done" | "refused" | "failed", failure: string | null, number: number | null) =>
+  const settle = (
+    id: string,
+    status: "done" | "refused" | "failed",
+    failure: string | null,
+    number: number | null,
+    cause: string | null = failure,
+    githubStatus: number | null = null,
+  ) =>
     Effect.flatMap(SqlClient.SqlClient, (sql) => sql`
-      UPDATE machine_writes SET status = ${status}, failure = ${failure}, item_number = COALESCE(${number}, item_number), settled_at = now()
+      UPDATE machine_writes SET status = ${status}, failure = ${failure}, cause = ${cause}, github_status = ${githubStatus}, item_number = COALESCE(${number}, item_number), settled_at = now()
       WHERE id = ${id}::uuid AND status = 'pending'`)
 
   /** A settled refusal names the check, with no GitHub message, payload or credentials. */
@@ -404,7 +411,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
     failure: string,
     cause: "allow_list" | "installation" | `github_status:${number}` | "lane" | "revoked" | "invalid" | "has_parent" | "superseded",
     githubStatus: number | null = null,
-  ) => settle(id, "refused", failure, null).pipe(
+  ) => settle(id, "refused", failure, null, cause, githubStatus).pipe(
     Effect.andThen(Effect.logWarning("github.machine_write.refused").pipe(
       Effect.annotateLogs({ writeId: id, outcome: "refused", failure, cause, githubStatus }),
     )),

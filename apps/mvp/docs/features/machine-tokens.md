@@ -14,7 +14,7 @@ agent ─ Bearer smm_… ─ POST /api/repos/<o>/<n>/writes ─▶ machine_write
                                                           round: a durable sleep, one tick
                                                           tick: the hold ─ oldest write ─ its authority
                                                                 ─ token ─ reads ─ at most one POST ──▶ as the App (issues: write)
-agent ─ GET /api/repos/<o>/<n>/writes/<id> ◀─ { status, failure, number }
+agent ─ GET /api/repos/<o>/<n>/writes/<id> ◀─ { status, failure, cause, githubStatus, number }
 ```
 
 - **Issuing.** `~/vault-ws-deployer/bin/mvp-prod-env node ops/machine-token/issue.ts --project <neon id> --by <name> --repo <o/n> --agent <agent> --lane <lane> --out <file>`. It runs under the deployment's production credentials, writes only the token's digest, and prints one audit JSON line. `--revoke <digest>` ends a token at once. No person signs anything. That is acceptable because this operator can already write this database: the command gives them no power they lack, and a token it makes does less than they can.
@@ -34,7 +34,7 @@ agent ─ GET /api/repos/<o>/<n>/writes/<id> ◀─ { status, failure, number }
 | Route | Answers |
 |---|---|
 | `POST /api/repos/<owner>/<name>/writes` with `Authorization: Bearer smm_…` | `{ writeId, op: "issue/create", title, body, labels? }`, `{ writeId, op: "issue/update", number, title?, body?, state? }`, `{ writeId, op: "issue/comment", number, body }` or `{ writeId, op: "issue/relate", number, parent: { repo, number } }`. `202 { writeId }` new, `200 { writeId, status }` already taken. `401 authentication`: unknown, expired, revoked or another repository's. `403 forbidden`: out of scope, a `smithers:` label, or a parent's repository it holds no token on. `422 public_content`, `429 rate_limited` with `retry-after`, `400 invalid`, `409 conflict`, `413 too_large`, `503 not_configured`, `503 unavailable` |
-| `GET /api/repos/<owner>/<name>/writes/<id>` | The agent and lane's own write: `200 { status, failure, number }`, `status` `pending`, `done`, `refused` or `failed`; `404 not_found`; `401 authentication` |
+| `GET /api/repos/<owner>/<name>/writes/<id>` | The agent and lane's own write: `200 { status, failure, cause, githubStatus, number }`, `status` `pending`, `done`, `refused` or `failed`. `cause` names the refusal check or failed reason; `githubStatus` is the upstream HTTP status when available. Both are nullable, null for pending/done writes and older receipts, and cleared on retry; `404 not_found`; `401 authentication` |
 | `POST /api/repos/<owner>/<name>/writes/<id>/retry` | Puts the agent and lane's `failed` write at the back of the queue, under this token, which needs the write's scope and room, and the parent's repository; its marker keeps it one issue. A write already pending starts its dispatcher again, so a lost start can be made good. `202 { writeId, status }`; `403 forbidden`; `429 rate_limited`; `409 conflict` when it isn't theirs, or has settled otherwise |
 | `POST /api/repos/<owner>/<name>/issues/<n>/links` | [Work links](work-links.md), within `work/link`, with `source` `machine:<agent>/<lane>` |
 

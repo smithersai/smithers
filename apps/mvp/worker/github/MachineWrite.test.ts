@@ -36,7 +36,7 @@ const create = (fields: object = {}) => ({ writeId: crypto.randomUUID(), op: "is
 const machineOf = (lane = "lane-1", token = TOKEN): MachineWrite.Machine => ({ agent: "fixer", lane, scope: [], tokenSha256: digestSync(token) })
 const admitAs = (body: unknown, machine = machineOf()) => runtime.runPromise(MachineWrite.admit({ repoId: REPOSITORY.id, owner: "acme", machine, body: body as MachineWrite.MachineBody }))
 const row = async (id: string) =>
-  ((await sql(runtime, `SELECT status, failure, tries, item_number AS number FROM machine_writes WHERE id = '${id}'`)) as unknown as Array<Record<string, unknown>>)[0]!
+  ((await sql(runtime, `SELECT *, item_number AS number FROM machine_writes WHERE id = '${id}'`)) as unknown as Array<Record<string, unknown>>)[0]!
 /** Lets the next call go at once. */
 const clear = () => sql(runtime, `UPDATE machine_dispatch SET next_at = now() - interval '1 second'`)
 const posting = (pattern: RegExp) => (method: string, path: string) => method === "POST" && pattern.test(path)
@@ -76,7 +76,7 @@ describe("a machine token at the route", () => {
     expect((await h.fetch(ROUTE, post({ ...write, title: "Other" }))).status).toBe(409)
     await sql(runtime, `UPDATE machine_writes SET status = 'done', item_number = 7 WHERE id = '${write.writeId}'`)
     const status = await h.fetch(`${ROUTE}/${write.writeId}`, { headers: { authorization: `Bearer ${TOKEN}` } })
-    expect(await status.json()).toEqual({ status: "done", failure: null, number: 7 })
+    expect(await status.json()).toEqual({ status: "done", failure: null, cause: null, githubStatus: null, number: 7 })
   })
 
   test("refuses a token that is unknown, expired, revoked, on another repository or out of scope", async () => {
@@ -467,7 +467,7 @@ describe("github/MachineDispatch", () => {
     const after = create({ title: "After" }) as { writeId: string }
     await admitAs(after)
     await d.next()
-    expect(await row(stuck.writeId)).toMatchObject({ status: "failed", failure: "exhausted" })
+    expect(await row(stuck.writeId)).toMatchObject({ status: "failed", failure: "exhausted", cause: "exhausted", github_status: null })
     await d.next()
     expect(await row(after.writeId)).toMatchObject({ status: "done" })
   })
@@ -515,7 +515,7 @@ describe("github/MachineDispatch", () => {
     const dying = MachineWrite.steps({ ...value, tokens: { ...value.tokens, forInstallation: () => Effect.die("boom") } as never })
     const epoch = await runtime.runPromise(MachineWrite.launch("acme"))
     expect(await Effect.runPromise(dying.tick({ owner: "acme", epoch, round: 0, waitMs: 0 }))).toMatchObject({ stop: false })
-    expect(await row(write.writeId)).toMatchObject({ status: "failed", failure: "defect" })
+    expect(await row(write.writeId)).toMatchObject({ status: "failed", failure: "defect", cause: "defect", github_status: null })
     await Effect.runPromise(MachineWrite.steps(value).tick({ owner: "acme", epoch, round: 1, waitMs: 0 }))
     expect(await row(after.writeId)).toMatchObject({ status: "done" })
   })
@@ -758,6 +758,25 @@ describe("github/MachineDispatch", () => {
     expect(JSON.stringify(d.logs)).not.toContain("Resource not accessible")
   })
 
+  test.each([
+    { outcome: "GitHub create POST refusal", fault: { match: posting(/\/issues$/), status: 403, message: "Resource not accessible by integration" }, status: "refused", failure: "not_allowed", cause: "github_status:403", githubStatus: 403, number: null },
+    { outcome: "installation refusal", fault: { match: (method: string, path: string) => method === "GET" && path.endsWith("/installation"), status: 404 }, status: "refused", failure: "app_not_installed", cause: "installation", githubStatus: 404, number: null },
+    { outcome: "done write", fault: undefined, status: "done", failure: null, cause: null, githubStatus: null, number: 1 },
+  ])("a $outcome stores its diagnostics and GET returns them", async ({ fault, status, failure, cause, githubStatus, number }) => {
+    const h = await githubHarness(runtime, { actor: null })
+    await issueToken()
+    const github = scriptedGitHub()
+    const write = create()
+    await admitAs(write)
+    const d = await dispatcher(github)
+    if (fault !== undefined) github.faults.push(fault)
+    await d.tick()
+    expect.soft(await row(write.writeId)).toMatchObject({ status, failure, cause, github_status: githubStatus, number })
+    const response = await h.fetch(`${ROUTE}/${write.writeId}`, { headers: { authorization: `Bearer ${TOKEN}` } })
+    expect(response.status).toBe(200)
+    expect(await response.json()).toEqual({ status, failure, cause, githubStatus, number })
+  })
+
   test("a slash in a token's agent or lane can't reach the table", async () => {
     await expect(issueToken({ token: "smm_a", agent: "a/b" })).rejects.toThrow()
     await expect(issueToken({ token: "smm_b", lane: "b/c" })).rejects.toThrow()
@@ -897,15 +916,16 @@ describe("a failed write's way back", () => {
     await d.tick()
     await sql(runtime, `UPDATE machine_writes SET tries = ${MachineWrite.MAX_TRIES}`)
     await d.next()
-    expect(await row(write.writeId)).toMatchObject({ status: "failed", failure: "exhausted" })
+    expect(await row(write.writeId)).toMatchObject({ status: "failed", failure: "exhausted", cause: "exhausted", github_status: null })
     // Resubmitting answers what it settled, and starts nothing.
     const starts = h.starts.length
     expect(await (await h.fetch(ROUTE, post(write))).json()).toEqual({ writeId: write.writeId, status: "failed" })
     expect(h.starts).toHaveLength(starts)
     expect((await retry("smm_lane-2")).status).toBe(409)
     expect((await retry()).status).toBe(202)
+    expect(await row(write.writeId)).toMatchObject({ status: "pending", failure: null, cause: null, github_status: null })
     await d.next()
-    expect(await row(write.writeId)).toMatchObject({ status: "done", number: 1 })
+    expect(await row(write.writeId)).toMatchObject({ status: "done", failure: null, cause: null, github_status: null, number: 1 })
     expect(github.issues.size).toBe(1)
   })
 })
