@@ -98,6 +98,7 @@
     "@vitejs/plugin-react": "6.1.2",
     "alchemy": "2.0.0-beta.83",
     "esbuild": "0.28.2",
+    "fast-check": "4.9.0",
     "happy-dom": "20.13.2",
     "miniflare": "5.20261019.0-beta",
     "minimatch": "10.2.6",

@@ -597,6 +597,9 @@ importers:
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
+      fast-check:
+        specifier: 4.9.0
+        version: 4.9.0
       happy-dom:
         specifier: 20.13.2
         version: 20.13.2
