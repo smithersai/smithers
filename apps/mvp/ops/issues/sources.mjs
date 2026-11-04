@@ -8,12 +8,16 @@ import { MIGRATED_REPOS, nodeOfParentText } from "./tree.mjs"
 const VIBELANG = "smithersai/vibelang"
 const MAX_TITLE = 200
 const MAX_BODY = 8000
-const PENDING_URL = "https://github.com/smithersai/vibelang/blob/main/typescript/tsc/internal/vibelangfuzz/testdata/pending"
+export const PENDING_URL = "https://github.com/smithersai/vibelang/blob/main/typescript/tsc/internal/vibelangfuzz/testdata/pending"
 
 const short = (text) => createHash("sha1").update(text).digest("hex").slice(0, 12)
 const clip = (text, limit) => (text.length <= limit ? text : `${text.slice(0, limit - 1)}…`)
 const oneLine = (text) => clip(String(text).replace(/\s+/g, " ").trim(), MAX_TITLE)
-const body = (lines) => clip(lines.filter((line) => line !== undefined).join("\n").trim(), MAX_BODY)
+const joinedBody = (lines) => lines.filter((line) => line !== undefined).join("\n").trim()
+const body = (lines) => clip(joinedBody(lines), MAX_BODY)
+const formatting = (unformatted) => unformatted ? { oneLine: String, body: joinedBody } : { oneLine, body }
+/** Format only after the importer has validated the complete per-finding fields. */
+export const formatRecord = (record) => ({ ...record, title: oneLine(record.title), body: body([record.body]) })
 
 /** `migrate:<repo>` when a name names an example repository. */
 export const migrateLabels = (...names) => {
@@ -95,7 +99,8 @@ const findingIds = (label, round) => {
  * reviewer's "Still open from earlier rounds" table, one record per finding (a row naming two reviewers' ids is one).
  * `files` is `[{ reviewer, round, text }]` of that round.
  */
-export const reviewRoundRecords = (files) => {
+export const reviewRoundRecords = (files, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
   const records = new Map()
   const seen = new Map()
   const add = (ids, make) => {
@@ -164,7 +169,8 @@ const scopedParent = (scope) => (/doc/.test(scope) ? "tree:docs" : /preview|queu
  * Open findings of a scoped review (`### RC-1 [major] ...`, `### RD-001 ...`): those that no heading or line naming
  * them marks fixed.
  */
-export const scopedRecords = (scope, text) => {
+export const scopedRecords = (scope, text, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
   const records = []
   const done = new Set()
   for (const { match, text: section } of sections(text, /^### ([A-Z]+-\d+)\b\s*(?:\[(\w+)\]|—\s*(\w+)\s*—)?\s*(.*)$/)) {
@@ -195,7 +201,7 @@ export const scopedRecords = (scope, text) => {
  * (an addendum, correction or count is part of its finding), and dated `## 2026-10-31: title` entries. A finding is
  * fixed when its own section, or another heading naming its id, says so.
  */
-export const migrationRecords = (repo, text) => {
+export const migrationRecords = (repo, text, options = {}) => {
   const records = []
   const seen = new Set()
   const headings = text.split("\n").filter((line) => /^#{2,4} /.test(line))
@@ -208,7 +214,7 @@ export const migrationRecords = (repo, text) => {
     const elsewhere = headings.filter((line) => new RegExp(`\\b${id}\\b(?![\\w-])`).test(line))
     if (FIXED.test(section) || elsewhere.some((line) => FIXED.test(line))) continue
     const title = rest.replace(/^\s*(\([^)]*\))?\s*:?\s*/, "")
-    records.push(migrationRecord(repo, id, title, section))
+    records.push(migrationRecord(repo, id, title, section, options))
   }
   const dated = /^## (?:drive-[\w-]+,\s*)?(20\d\d-\d\d-\d\d)(?:[ T]\d\d:\d\d(?::\d\d(?:\.\d+)?)?(?:Z|\+00:00)?)?:\s*(.+)$/
   for (const { match, text: section } of sections(text, dated)) {
@@ -217,12 +223,14 @@ export const migrationRecords = (repo, text) => {
     const id = `${match[1]}-${short(title)}`
     if (seen.has(id)) continue
     seen.add(id)
-    records.push(migrationRecord(repo, id, title, section))
+    records.push(migrationRecord(repo, id, title, section, options))
   }
   return records
 }
 
-const migrationRecord = (repo, id, title, section) => ({
+const migrationRecord = (repo, id, title, section, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
+  return ({
   key: `migrate:${repo}:${id}`,
   kind: "migration",
   repo: VIBELANG,
@@ -231,7 +239,8 @@ const migrationRecord = (repo, id, title, section) => ({
   labels: ["migration-finding", `migrate:${repo}`],
   links: [{ kind: "review", ref: `migrate-${repo}:${id}`, label: `migration finding ${id}` }],
   parent: `tree:repos:${repo}`,
-})
+  })
+}
 
 // ── Fuzz findings: the pending gaps on main ───────────────────────────────────────────────────────────────────────
 
@@ -241,7 +250,8 @@ const migrationRecord = (repo, id, title, section) => ({
  * several keys. Corpus lines only mark reproductions. `files` is `[{ name, text }]`. Returns `{ records, areas }`,
  * `areas` the tree's area nodes.
  */
-export const fuzzRecords = (files) => {
+export const fuzzRecords = (files, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
   const groups = new Map()
   for (const { name, text } of files) {
     const area = name.replace(/\.txt$/, "")
@@ -321,8 +331,9 @@ const DRAFT_STATUSES = new Map([
  * Legacy `state` supplies status when `status` is absent; absence of both means open. A repository's tracking draft carries
  * `asNode`: it becomes that node's issue instead of a child of it.
  */
-export const draftRecords = (source, drafts) =>
-  drafts.map((draft) => {
+export const draftRecords = (source, drafts, { unformatted = false } = {}) => {
+  const { oneLine, body } = formatting(unformatted)
+  return drafts.map((draft) => {
     const key = `draft:${source}:${draft.draft_id ?? draft.id ?? draft.key ?? short(draft.title)}`
     const value = draft.status === undefined ? (draft.state === undefined ? "open" : draft.state) : draft.status
     const status = typeof value === "string" ? DRAFT_STATUSES.get(value.toLowerCase()) : undefined
@@ -349,3 +360,4 @@ export const draftRecords = (source, drafts) =>
       ...(asNode === undefined ? {} : { asNode }),
     }
   })
+}

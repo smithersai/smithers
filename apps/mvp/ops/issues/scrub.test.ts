@@ -119,3 +119,20 @@ describe("the public-content scrub", () => {
     expect(JSON.stringify(result.problems)).not.toContain("claude-9")
   })
 })
+
+describe("the importer's confirmed-repository policy", () => {
+  test("denies an unconfirmed reference beside Markdown underscore punctuation", () => {
+    const result = clean("See _outside/hidden_ here.", { repositoryVerdicts: new Map() })
+    expect(result.text).not.toContain("outside/hidden")
+    expect(result.rules).toContain("private-repo")
+  })
+})
+
+
+describe("strict repository redaction ordering", () => {
+  test.each(["nyc-01/secret-vault", "mini/secret-vault", "https://github.com/nyc-01/secret-vault"])("does not leave a private basename after another rule masks its owner: %s", (text) => {
+    const result = clean(text, { repositoryVerdicts: new Map() })
+    expect(result.ok).toBe(true)
+    expect(result.text).toBe("[repo]")
+  })
+})

@@ -2,7 +2,7 @@
 // (worker/github/MachineWrite.ts) and the lane helper (ops/issues/scrub.mjs). The server files a machine's text with
 // every ASCII punctuation character backslash-escaped (`escapeMarkdown`), so GitHub shows exactly the text written: no
 // emphasis, links, entities, HTML or mentions can join, hide or reveal anything. What a page shows is then the text
-// itself, and this reads it as written and with percent escapes and numeric entities decoded, for credentials and home
+// itself, and this reads it as written and with NFKC, percent escapes and numeric/named entities decoded, for credentials and home
 // paths. Every pattern is linear in the text's length. Plain JavaScript, so the lane helper runs it under node.
 
 /** Credential shapes. Each one starts where its run starts, so a long run is tried once. */
@@ -82,7 +82,9 @@ const percentDecoded = (run) => {
 }
 const decodeOnce = (text) =>
   text
+    .normalize("NFKC")
     .replace(/(?:%[0-9a-f]{2})+/gi, percentDecoded)
+    .replace(/&(sol|period|commat|amp);/g, (_, name) => ({ sol: "/", period: ".", commat: "@", amp: "&" })[name])
     // The whole reference, leading zeros and all: `&#00000000115;` is `s`. A value past Unicode decodes to nothing.
     .replace(/&#(x[0-9a-f]+|\d+);?/gi, (_, code) => {
       const digits = code[0].toLowerCase() === "x" ? code.slice(1).replace(/^0+(?=.)/, "") : code.replace(/^0+(?=.)/, "")
@@ -96,7 +98,7 @@ const decodeOnce = (text) =>
 const unescape = (text) => text.replace(/\\([!-/:-@[-`{-~])/g, "$1")
 
 /**
- * `text` as written, then decoded (percent escapes, numeric entities, invisible characters dropped, Markdown
+ * `text` as written, then decoded (NFKC, percent escapes, numeric/named entities, invisible characters dropped, Markdown
  * backslashes) round by round, three rounds at most. A page shows the text as written; a reader can still decode what it shows.
  */
 export const formsOf = (text) => {

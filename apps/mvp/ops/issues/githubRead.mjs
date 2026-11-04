@@ -26,7 +26,8 @@ const readPrivate = (file) => {
 /** Only installation access tokens; do not accidentally accept a personal credential. Also used by revoke. */
 export const readPrivateToken = (file) => {
   const token = readPrivate(file).trim()
-  if (!/^ghs_[A-Za-z0-9_]+$/.test(token)) throw new Error("GitHub read token file is invalid")
+  // GitHub's installation tokens are no longer 40 characters: current ones run to hundreds, with dots and dashes.
+  if (!/^ghs_[A-Za-z0-9_.-]+$/.test(token) || token.length > 2048) throw new Error("GitHub read token file is invalid")
   return token
 }
 
@@ -53,8 +54,7 @@ export const githubRead = ({ env = process.env, fetch = globalThis.fetch } = {})
     tokenExpired = Date.parse(scope.expires_at) <= Date.now()
     return credentials
   }
-  const get = async (pathOrUrl) => {
-    refuseUncheckedTls(env)
+  const target = (pathOrUrl) => {
     let url
     try { url = new URL(pathOrUrl, "https://api.github.com") } catch {
       // URL's TypeError retains the input in a property, including any userinfo. Discard it without a cause.
@@ -65,6 +65,13 @@ export const githubRead = ({ env = process.env, fetch = globalThis.fetch } = {})
     const match = /^\/repos\/([A-Za-z0-9_-]+)\/([A-Za-z0-9_.-]+)(?:\/|$)/.exec(url.pathname)
     const covered = credential && match && match[1].toLowerCase() === credential.owner &&
       (credential.repos === null || credential.repos.includes(match[2].toLowerCase()))
+    return { url, credential, covered }
+  }
+  /** Whether a read of `pathOrUrl` would send the token now: in scope and not yet found expired. */
+  const covers = (pathOrUrl) => Boolean(target(pathOrUrl).covered && !tokenExpired)
+  const get = async (pathOrUrl) => {
+    refuseUncheckedTls(env)
+    const { url, credential, covered } = target(pathOrUrl)
     const send = async (authorized) => {
       const headers = { "user-agent": GitHub.GitHubClient.USER_AGENT, accept: "application/vnd.github+json", "x-github-api-version": "2022-11-28",
         ...(authorized ? { authorization: `token ${credential.token}` } : {}) }
@@ -83,5 +90,5 @@ export const githubRead = ({ env = process.env, fetch = globalThis.fetch } = {})
     await response.body?.cancel().catch(() => {})
     return send(false)
   }
-  return { get, summary: () => ({ authenticated, anonymous, tokenExpired }) }
+  return { get, covers, summary: () => ({ authenticated, anonymous, tokenExpired }) }
 }
