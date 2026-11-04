@@ -12,7 +12,8 @@ import * as Store from "./Store.ts"
 //   applies their permissions. One within 5 minutes of expiry starts the session's `auth/RecheckRole`, the one redeemer
 //   of the single-use refresh token, and fails `refreshing`, which the step's retry policy waits out.
 // - `forInstallation`: the App's installation token for one repository, minted per step with only the permission it
-//   needs, so GitHub shows `smithers[bot]`.
+//   needs, so GitHub shows `smithers[bot]`. A step that spans two repositories of the installation (a sub-issue whose
+//   parent is in another repository) names the other in `also`, and the one token covers both.
 // No token enters a journal, a step key, an error or a record: a step asks for one when it calls GitHub and drops it.
 
 /** How long before a user token's stated expiry a write stops using it and has the session refresh it. */
@@ -170,16 +171,21 @@ export const make = (services: Services) => {
       return found.id
     })
 
-  /** An installation token for `repository`, minted with only `access` (`permissionsOf`). */
+  /**
+   * An installation token for `repository`, minted with only `access` (`permissionsOf`). `also` names other repositories
+   * of the same installation the token must reach too: GitHub mints one token only within one installation.
+   */
   const forInstallation = (
     repository: Repository,
     access: Access,
+    also: ReadonlyArray<Repository> = [],
   ): Effect.Effect<Redacted.Redacted<string>, TokenUnavailable, SqlClient.SqlClient> =>
     Effect.gen(function* () {
       const installationId = yield* installation(repository)
+      const names = [repository.name, ...also.map((other) => other.name).filter((name) => name.toLowerCase() !== repository.name.toLowerCase())]
       const minted = yield* services.app.installationToken({
         installationId,
-        repositories: [repository.name],
+        repositories: names,
         permissions: permissionsOf(access),
       }).pipe(Effect.result)
       if (minted._tag === "Success") {

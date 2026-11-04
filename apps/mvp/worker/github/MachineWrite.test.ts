@@ -2,7 +2,7 @@
 // owner's one dispatcher, a failed write's way back, and `github/Write` left as it was.
 import { digestSync } from "@smthrs/crypto"
 import { Effect, Exit, Logger } from "effect"
-import { HttpClient } from "effect/http"
+import { HttpClient, HttpClientResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { writeExecutionId } from "../../src/features/issues/contract.ts"
@@ -14,7 +14,7 @@ import * as Host from "./Host.ts"
 import * as MachineWrite from "./MachineWrite.ts"
 import { admit, reset, REPOSITORY, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { githubHarness } from "./test/harness.ts"
-import { BOT_LOGIN, scriptedGitHub as makeScriptedGitHub } from "./test/scriptedGitHub.ts"
+import { BOT_LOGIN, INSTALLATION_ID, scriptedGitHub as makeScriptedGitHub } from "./test/scriptedGitHub.ts"
 import * as Write from "./Write.ts"
 
 const githubs: Array<ReturnType<typeof makeScriptedGitHub>> = []
@@ -569,6 +569,48 @@ describe("github/MachineDispatch", () => {
     await admitAs(other)
     await d.next()
     expect(await row(other.writeId)).toMatchObject({ status: "refused", failure: "has_parent" })
+  })
+
+  test("a sub-issue across repositories mints one token for both repositories, Issues: write only", async () => {
+    await issueToken()
+    await issueToken({ token: "smm_parent", repoId: "github/acme/plan" })
+    await sql(runtime, `INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/acme/plan', ${INSTALLATION_ID})`)
+    const github = scriptedGitHub()
+    const child = github.open("Child", "What and why.")
+    // GitHub reads `sub_issue_id` with the parent's token: a token that can't see the child's repository is refused.
+    const reaches: Array<ReadonlyArray<string>> = []
+    const http = HttpClient.make((request, url) => {
+      if (request.method !== "POST" || url.pathname !== "/repos/acme/plan/issues/1/sub_issues") return github.http.execute(request)
+      const bearer = request.headers["authorization"]?.replace(/^Bearer /, "")
+      const repositories = (github.minted.find((minted) => minted.token === bearer)?.body as { repositories?: ReadonlyArray<string> } | undefined)?.repositories ?? []
+      reaches.push(repositories)
+      const sees = repositories.includes("plan") && repositories.includes("widgets")
+      return Effect.succeed(HttpClientResponse.fromWeb(request, Response.json(sees ? { number: 1 } : { message: "Resource not accessible by integration" }, { status: sees ? 201 : 403 })))
+    })
+    const relate = { writeId: crypto.randomUUID(), op: "issue/relate", number: child.number, parent: { repo: "acme/plan", number: 1 } }
+    await admitAs(relate)
+    const d = await dispatcher({ ...github, http })
+    await d.tick()
+    expect(await row(relate.writeId)).toMatchObject({ status: "done", failure: null, cause: null, number: child.number })
+    expect(reaches).toEqual([["plan", "widgets"]])
+    expect(github.minted.at(-1)!.body).toEqual({ repositories: ["plan", "widgets"], permissions: { issues: "write" } })
+  })
+
+  test("a sub-issue in its own repository mints for that one repository", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const parent = github.open("Parent", "What and why.")
+    const child = github.open("Child", "What and why.")
+    const relate = { writeId: crypto.randomUUID(), op: "issue/relate", number: child.number, parent: { repo: "acme/widgets", number: parent.number } }
+    await admitAs(relate)
+    const d = await dispatcher(github)
+    await d.tick()
+    expect(await row(relate.writeId)).toMatchObject({ status: "done" })
+    expect(github.subIssueParents.get(child.number)).toBe(parent.number)
+    expect(github.minted.map((minted) => minted.body)).toEqual([
+      { repositories: ["widgets"], permissions: { issues: "write" } },
+      { repositories: ["widgets"], permissions: { issues: "write" } },
+    ])
   })
 
   test("F1 a pending write stops when its token, or its parent's, is revoked", async () => {

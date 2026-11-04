@@ -548,7 +548,11 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const id = (child.json as { id?: unknown } | undefined)?.id
           if (child.status === 404 || child.status === 410) return yield* refuse(write.id, "not_found", `github_status:${child.status}`, child.status)
           if (child.status !== 200 || typeof id !== "number") return yield* notNow
-          const parentToken = yield* services.tokens.forInstallation(target, "write").pipe(Effect.result)
+          // A parent in another repository: GitHub reads `sub_issue_id` with the parent's token, so that token must reach
+          // the child's repository too. One token covers both, with Issues: write only. The same repository is one name.
+          const parentToken = yield* (target.id === repository.id
+            ? services.tokens.forInstallation(target, "write")
+            : services.tokens.forInstallation(target, "write", [repository])).pipe(Effect.result)
           if (parentToken._tag === "Failure") return yield* notMinted(parentToken.failure)
           return yield* send("POST", `/repos/${target.owner}/${target.name}/issues/${parent.number}/sub_issues`, { sub_issue_id: id }, () =>
             settle(write.id, "done", null, number), parentToken.success)
