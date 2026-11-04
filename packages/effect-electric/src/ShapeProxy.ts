@@ -193,8 +193,11 @@ export interface Options<R = never> extends Connection {
   readonly metric?: Metric.Counter<number> | undefined
 }
 
-// How a request ended: its response sent in full; `aborted` by the browser, before Electric answered (status 499) or
-// mid-body; or `failed` reading Electric's body.
+// Closed, content-free causes of a 503 response.
+type Reason = "sse_refused" | "shape_refused" | "electric_unavailable" | "electric_503"
+  | "validate_failed" | "validate_superseded" | "replay_required"
+
+// How a request ended: complete, aborted by the browser, failed while reading, or superseded by access.
 type Outcome = "complete" | "aborted" | "failed" | "superseded"
 
 // The Electric client's protocol parameters: the only browser parameters the proxy forwards. Every other one is
@@ -350,14 +353,16 @@ export const make = <R = never>(
     readonly outcome: Outcome
     readonly correlationId: string
     readonly upstream: string
+    readonly reason?: Reason | undefined
   }) =>
     Effect.gen(function*() {
       const { status, live, phase, bytes, outcome } = request
-      const { correlationId, upstream } = request
+      const { correlationId, upstream, reason } = request
+      const refusal: Readonly<Record<string, string>> = reason === undefined ? {} : { reason }
       const statusClass = `${Math.floor(status / 100)}xx`
-      yield* Metric.update(Metric.withAttributes(responses, { name, statusClass }), 1)
+      yield* Metric.update(Metric.withAttributes(responses, { name, statusClass, ...refusal }), 1)
       const durationMs = (yield* Clock.currentTimeMillis) - request.startedAt
-      yield* Metric.update(Metric.withAttributes(metric, { status: String(status), live: String(live) }), 1)
+      yield* Metric.update(Metric.withAttributes(metric, { status: String(status), live: String(live), ...refusal }), 1)
       const level = status >= 500 || outcome === "failed"
         ? "Error"
         : status >= 400 && outcome !== "aborted"
@@ -365,6 +370,7 @@ export const make = <R = never>(
         : "Info"
       yield* Effect.logWithLevel(level)(name).pipe(
         Effect.annotateLogs({
+          ...refusal,
           route: name,
           correlationId,
           upstream,
@@ -397,10 +403,10 @@ export const make = <R = never>(
         correlationId,
         upstream
       })
-    const ended = (status: number, upstream: string, outcome: Outcome = "complete") =>
+    const ended = (status: number, upstream: string, outcome: Outcome = "complete", reason?: Reason) =>
       Effect.andThen(
         answered(status, upstream),
-        record({ status, live, phase, startedAt, bytes: 0, outcome, correlationId, upstream })
+        record({ status, live, phase, startedAt, bytes: 0, outcome, correlationId, upstream, reason })
       )
 
     if (request.method !== "GET") {
@@ -409,7 +415,7 @@ export const make = <R = never>(
     }
 
     if (options.rowAccess !== undefined && ["live_sse", "experimental_live_sse"].some((key) => incoming.get(key) === "true")) {
-      yield* ended(503, "access")
+      yield* ended(503, "access", "complete", "sse_refused")
       return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, "retry-after": "5" } })
     }
 
@@ -424,7 +430,7 @@ export const make = <R = never>(
     }
     if (Result.isFailure(decided)) {
       const { status, retryAfter } = decided.failure
-      yield* ended(status, decided.failure.upstream ?? "access")
+      yield* ended(status, decided.failure.upstream ?? "access", "complete", status === 503 ? "shape_refused" : undefined)
       return HttpServerResponse.empty({
         status,
         headers: {
@@ -489,7 +495,7 @@ export const make = <R = never>(
     const upstreamStatus = response.value.status
     if (upstreamStatus === 401 || upstreamStatus === 403 || (upstreamStatus >= 300 && upstreamStatus < 400 && upstreamStatus !== 304)) {
       yield* Stream.runDrain(response.value.stream).pipe(Effect.timeout("10 millis"), Effect.ignore)
-      yield* ended(503, "electric")
+      yield* ended(503, "electric", "complete", "electric_unavailable")
       return HttpServerResponse.empty({ status: 503, headers: { "retry-after": "5", ...ownHeaders, ...noStore } })
     }
     const { status, headers, stream } = response.value
@@ -523,9 +529,10 @@ export const make = <R = never>(
       }
       // The host takes its current authority snapshot only after buffering, before any payload is authorized.
       // A cursor fence failure must withhold the entire cursor so a projection change cannot skip its deletes.
-      const valid = yield* Effect.result(guard.validate ?? Effect.succeed(true))
+      const valid = yield* Effect.result((guard.validate ?? Effect.succeed(true)).pipe(Effect.annotateLogs({ correlationId })))
       if (Result.isFailure(valid) || !valid.success) {
-        yield* ended(503, "access", Result.isFailure(valid) ? "failed" : "superseded")
+        yield* ended(503, "access", Result.isFailure(valid) ? "failed" : "superseded",
+          Result.isFailure(valid) ? "validate_failed" : "validate_superseded")
         return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
       }
       let requiresReplay = false
@@ -548,7 +555,7 @@ export const make = <R = never>(
         return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
       }
       if (requiresReplay) {
-        yield* ended(503, "access", "superseded")
+        yield* ended(503, "access", "superseded", "replay_required")
         return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
       }
       const body = JSON.stringify(filtered.value)
@@ -568,6 +575,7 @@ export const make = <R = never>(
       Stream.onExit((exit) =>
         record({
           status,
+          reason: status === 503 ? "electric_503" : undefined,
           correlationId,
           upstream: "electric",
           live,

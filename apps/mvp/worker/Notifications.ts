@@ -816,13 +816,23 @@ export const make = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
               // this snapshot; comparing old readability would unnecessarily refuse that safe recovery.
               const cursorStable = current!.access.length === repoIds.length && current!.access.every((row) =>
                 row.denialSequence === denialSequences.get(row.repoId))
-              return { cursorStable, subjects: Object.keys(allowedSubjects).length, replaySubjects: replaySubjects.size,
+              const reason = current!.access.length !== repoIds.length ? "cursor_unstable"
+                : cursorStable ? undefined : "denial_sequence_moved"
+              return { cursorStable, reason, subjects: Object.keys(allowedSubjects).length, replaySubjects: replaySubjects.size,
                 prunedSubjects: current!.prunedSubjects.length, repositories: current!.repositories.length }
             }),
             Effect.tap(fields => Metric.update(Metric.withAttributes(repositoryPruned, { scope: "fleet" }), fields.prunedSubjects)),
-            Effect.tap(fields => Effect.logInfo("notifications.access.emit").pipe(Effect.annotateLogs(fields))),
+            Effect.tap(({ reason: _reason, ...fields }) => Effect.logInfo("notifications.access.emit").pipe(Effect.annotateLogs(fields))),
+            Effect.tap(fields => fields.reason === undefined ? Effect.void :
+              Effect.logWarning("notifications.access.refused").pipe(Effect.annotateLogs({
+                reason: fields.reason, subjects: fields.subjects, repositories: fields.repositories,
+              }))),
             Effect.map(fields => fields.cursorStable),
-            Effect.provide(database), Effect.mapError(() => ShapeAccess.unavailable),
+            Effect.provide(database),
+            Effect.tapError(() => Effect.logWarning("notifications.access.refused").pipe(Effect.annotateLogs({
+              reason: "read_failed", subjects: Object.keys(allowedSubjects).length, repositories: repoIds.length,
+            }))),
+            Effect.mapError(() => ShapeAccess.unavailable),
           )
         }
         yield* Effect.logInfo("notifications.access").pipe(Effect.annotateLogs({

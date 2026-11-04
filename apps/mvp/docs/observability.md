@@ -676,7 +676,8 @@ The personal feed: a run's state routed to its people, GitHub's `main` and relea
 | `notifications.watch`, `notifications.ack` | log | ChatApi | `conversationId` or `subject`, `act`, `version`, `status`, `durationMs`, `bytes`, `existing`, `errorCode` |
 | `notifications.request` | span | ChatApi | `smithers.route`, `http.response.status_code` |
 | `smithers_notification_requests` | counter | ChatApi | `route` (`watch`, `ack`), `status` |
-| `smithers_notification_shape_requests` | counter | ChatApi | `status`, `live` |
+| `smithers_notification_shape_requests` | counter | ChatApi | `status`, `live`; `reason` on 503 |
+| `notifications.access.refused` | Warn log | ChatApi, buffered validation | `reason` (`cursor_unstable`, `denial_sequence_moved`, `read_failed`), `subjects`, `repositories`, `correlationId` |
 | `notifications.access` | log, span | ChatApi | `repositories`, `reused`, `permitted`, `unavailable`, `retryAfterSeconds`, `durationMs` |
 | `smithers_notification_repository_checks` | counter | ChatApi | `outcome` (`allowed`, `denied`, `unavailable`), `reused` (`true`, `false`) |
 | `notifications.watch`, `notifications.ack` | log, span | engine worker | `subject`, `act`, `version`, `outcome` (`sent`, `refused`, `unsent`), `status` |
@@ -1217,3 +1218,21 @@ API errors echo a valid incoming `cf-ray` as `x-smithers-ray`, following the app
 The e2e problem log appends `code=<body code> x-smithers-ray=<ray>` to every 5xx, declared, retried or not, using Cloudflare's `cf-ray` when the app's header is absent. Each line also goes to the run's output as `server error: <line>`, passing or not, and the deploy smoke prints it under its spec. Separate rays remain separate lines, so a repeated stack failure retains each correlation identifier. Missing or unreadable JSON uses `code=unknown`; a missing ray uses `x-smithers-ray=none`. Only a bounded machine-readable top-level code and a valid ray are retained: no response bodies, arbitrary headers, query values, tokens, cookies, logins or additional person identifiers. Declared matches and allowed shape retries keep their existing text and counts. Error-body collection waits at most two seconds at teardown; status failures are recorded immediately even when their bodies never complete.
 
 Tests: `worker/home/Api.test.ts` verifies one existing role outcome line per fresh failure and held cooldown, fields, correlation, unchanged responses and metric counts, and absence of private person, login, cookie and token sentinels. `worker/RequestRay.test.ts` checks error-header propagation, validation and unchanged successes. `e2e/problems.test.ts` checks per-ray undeclared output, each declared 5xx's code and ray, missing and malformed diagnostics, and private-content exclusion. `e2e/watch.test.ts` uses real HTTP and browser events to verify error-body collection during teardown and a body that never finishes.
+
+Every ShapeProxy 503 completion line and both its per-route counter and
+`electric_shape_responses` include a closed `reason`: `sse_refused`,
+`shape_refused`, `electric_unavailable`, `electric_503`, `validate_failed`,
+`validate_superseded`, or `replay_required` ([paths](../../../packages/effect-electric/docs/shape-proxy.md)).
+Other statuses omit it. The existing generated `correlationId` remains on the
+line and response's `x-request-id`; it is never a metric attribute.
+
+Notifications validation emits exactly one `notifications.access.refused` line
+when it returns false or fails. `cursor_unstable` means the access-row count
+differs from the requested repository count; `denial_sequence_moved` means a
+same-sized snapshot has a changed denial sequence. `read_failed` means the
+validation database Effect failed. It records only the reason, subject and
+repository counts, correlation ID and tracing identifiers. Successful snapshots
+count permitted subjects and repositories; failed reads count the subjects
+prepared so far and requested repositories. No URL, parameter, row, body,
+header value, token or error message is included. The shared proxy completion
+then records `validate_superseded` or `validate_failed` with the same correlation.

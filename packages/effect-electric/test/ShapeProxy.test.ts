@@ -173,6 +173,29 @@ const harness = (options: Partial<ShapeProxy.Options<HttpServerRequest.HttpServe
 const until = (assertion: () => void) => vi.waitFor(assertion, { timeout: 5_000, interval: 10 })
 
 describe("refusals: no Electric needed", () => {
+  test.each([
+    ["sse_refused", { rowAccess: { keyColumns: ["id"], allows: (): boolean => true } }, "?live_sse=true", undefined, "5"],
+    ["shape_refused", { shape: Effect.fail(new ShapeProxy.Refused({ status: 503, retryAfter: 17 })) }, "", undefined, "17"],
+    ["electric_unavailable", {}, "", 401, "5"],
+    ["electric_503", {}, "", 503, "5"],
+    ["validate_failed", { rowAccess: { keyColumns: ["id"], allows: (): boolean => true,
+      validate: Effect.fail(new ShapeProxy.Refused({ status: 503 })) } }, "", 200, "1"],
+    ["validate_superseded", { rowAccess: { keyColumns: ["id"], allows: (): boolean => true,
+      validate: Effect.succeed(false) } }, "", 200, "1"],
+  ] as const)("503 records %s in its log and both counters", async (reason, options, search, status, retryAfter) => {
+    const h = harness(options)
+    if (status !== undefined) h.fault(status === 200 ? { _tag: "answer", headers: {} } : { _tag: "empty", status })
+    const response = await h.request(search)
+    expect(response.status).toBe(503)
+    expect(response.headers.get("retry-after")).toBe(retryAfter)
+    await response.text()
+    await until(() => expect(h.logs).toHaveLength(1))
+    expect(h.line()?.annotations).toMatchObject({ reason, correlationId: response.headers.get("x-request-id") })
+    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason })).toBe(1)
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason })).toBe(1)
+    expect(JSON.stringify(h.logs)).not.toContain(ELECTRIC_URL)
+  })
+
   test("a bodyless upstream answer preserves its status and completes once with zero bytes", async () => {
     for (const status of [200, 204, 205, 304, 503]) {
       const h = harness()
@@ -184,7 +207,8 @@ describe("refusals: no Electric needed", () => {
       expect((await response.arrayBuffer()).byteLength).toBe(0)
       await until(() => expect(h.logs).toHaveLength(1))
       expect(h.line()?.annotations).toMatchObject({ status, bytes: 0, outcome: "complete" })
-      expect(h.count(ShapeProxy.defaultMetric, { status: String(status), live: "false" })).toBe(1)
+      expect(h.line()?.annotations["reason"]).toBe(status === 503 ? "electric_503" : undefined)
+      expect(h.count(ShapeProxy.defaultMetric, { status: String(status), live: "false", ...(status === 503 ? { reason: "electric_503" } : {}) })).toBe(1)
     }
   })
 
@@ -303,9 +327,9 @@ describe("refusals: no Electric needed", () => {
     expect(h.upstream).toEqual([])
     expect(h.logs.map((line) => line.annotations.upstream)).toEqual(["access", "access", "database"])
     expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "4xx" })).toBe(2)
-    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx" })).toBe(1)
+    expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason: "shape_refused" })).toBe(1)
     expect(new Set(h.logs.map((line) => line.annotations.correlationId)).size).toBe(3)
-    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false" })).toBe(1)
+    expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason: "shape_refused" })).toBe(1)
     const servers = h.spans.filter(({ kind }) => kind === "server")
     expect(servers.map(({ attributes }) => attributes.get("http.response.status_code"))).toEqual([401, 403, 503])
 
@@ -637,7 +661,10 @@ describe.skipIf(!electricUp)("through Electric", () => {
         expect(response.headers.get("electric-offset")).toBeNull()
         expect(response.headers.get("electric-handle")).toBeNull()
         expect(await response.text()).toBe("")
-        expect(h.line()?.annotations).toMatchObject({ upstream: "access", outcome: "superseded" })
+        expect(h.line()?.annotations).toMatchObject({ upstream: "access", outcome: "superseded", reason: "replay_required",
+          correlationId: response.headers.get("x-request-id") })
+        expect(h.count(ShapeProxy.defaultMetric, { status: "503", live: "false", reason: "replay_required" })).toBe(1)
+        expect(h.count(ShapeProxy.responses, { name: "electric.shape", statusClass: "5xx", reason: "replay_required" })).toBe(1)
       } else {
         expect(response.headers.get("electric-offset")).not.toBeNull()
         expect((await response.json() as Array<{ value?: unknown }>).filter(row => row.value)).toEqual([])

@@ -1118,6 +1118,28 @@ test("a future-dated denial is not reused and its newer receipt cannot be overwr
   expect(h.line("notifications.access")[0]?.annotations).toMatchObject({ reused: 0 })
 })
 
+test.each(["cursor_unstable", "denial_sequence_moved"] as const)("refused feed validation names %s without payload", async reason => {
+  const f = await decisionFixture()
+  const { h } = await proxy(f.actor, f.roles, async () => {
+    if (reason === "cursor_unstable") {
+      await sql(`DELETE FROM notification_repository_access WHERE recipient = $1`, f.id)
+    } else {
+      await sql(`UPDATE notification_repository_access SET denial_sequence = denial_sequence + 1 WHERE recipient = $1`, f.id)
+    }
+  })
+  const response = await h.fetch(`${NOTIFICATIONS_SHAPE_ROUTE}?offset=-1`)
+  expect(response.status).toBe(503)
+  expect(await response.text()).toBe("")
+  const refused = h.line("notifications.access.refused")
+  expect(refused).toHaveLength(1)
+  expect(refused[0]?.annotations).toMatchObject({ reason, subjects: reason === "cursor_unstable" ? 0 : 1,
+    repositories: reason === "cursor_unstable" ? 0 : 1, correlationId: response.headers.get("x-request-id") })
+  expect(Object.keys(refused[0]!.annotations).sort()).toEqual([
+    "correlationId", "reason", "repositories", "span_id", "subjects", "trace_id",
+  ])
+  expect(h.line("notifications.shape").at(-1)?.annotations).toMatchObject({ reason: "validate_superseded" })
+})
+
 // Fault the injected database layer at each real access stage, without replacing SQL or Electric.
 test.each([1, 2, 3, 4])("database unavailability at access stage %s withholds payload and cursor", async stage => {
   const f = await decisionFixture()
@@ -1146,6 +1168,11 @@ test.each([1, 2, 3, 4])("database unavailability at access stage %s withholds pa
   expect(upstream).toHaveLength(stage === 4 ? 1 : 0)
   expect(f.calls).toEqual(stage < 3 ? [] : f.repos)
   expect(await f.receipts()).toHaveLength(stage === 4 ? 1 : 0)
+  expect(h.line("notifications.shape").at(-1)?.annotations).toMatchObject({ reason: stage === 4 ? "validate_failed" : "shape_refused" })
+  const refused = h.line("notifications.access.refused")
+  expect(refused).toHaveLength(stage === 4 ? 1 : 0)
+  if (stage === 4) expect(refused[0]?.annotations).toMatchObject({ reason: "read_failed", subjects: 0, repositories: 1,
+    correlationId: response.headers.get("x-request-id") })
 })
 
 test("a newly unavailable resolver without a retry hint uses the fallback only for that request", async () => {

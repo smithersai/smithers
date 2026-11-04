@@ -252,3 +252,21 @@ Only repositories resolved as unavailable during this request contribute
 (`allowed`, `denied`, `unavailable`) and `reused` (`true`, `false`). Reused withheld
 receipts count as denied because the receipt records readability, not a provider
 failure classification. No repository names or recipient IDs enter the metric.
+
+A refused buffered validation logs one `notifications.access.refused` line with
+`reason`: `cursor_unstable` for an access-row count mismatch,
+`denial_sequence_moved` for a changed sequence in a same-sized snapshot, or
+`read_failed` for a failed database read. It carries only `subjects` and
+`repositories` counts plus the proxy's `correlationId` and tracing identifiers.
+A failed read counts subjects prepared so far and requested repositories;
+a completed snapshot counts permitted subjects and repositories.
+The correlation matches the shape response's `x-request-id`.
+
+`notifications.shape`, `smithers_notification_shape_requests`, and the shared
+`electric_shape_responses` counter carry `reason` on every 503:
+`sse_refused`, `shape_refused`, `electric_unavailable`, `electric_503`,
+`validate_failed`, `validate_superseded`, or `replay_required`
+([paths](../../../../packages/effect-electric/docs/shape-proxy.md)).
+Other statuses omit it. Retry-after and cursor withholding behavior are unchanged.
+No URL, parameter, row, body, header value or token enters these diagnostics;
+request IDs never become metric attributes.
