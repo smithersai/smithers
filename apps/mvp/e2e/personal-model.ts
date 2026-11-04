@@ -11,6 +11,7 @@ import {
 } from "../src/features/personal-model/contract"
 import { KIND_LABEL, PROTOCOL_LABEL, TIER_LABEL } from "../src/features/personal-model/copy"
 import { shapeRows } from "./shape"
+import { personalModelTestDiagnostic } from "./personal-model-result"
 import { baseURL, me } from "./target"
 
 /** Only an explicitly supplied test-account credential may configure the release path. Never return it to a reporter. */
@@ -110,7 +111,7 @@ export const restorePersonalModel = async (request: APIRequestContext) => {
   expect(tested.status(), "personal model Test answered").toBe(200)
   const result = await tested.json().catch(() => { throw new Error("Personal model Test returned invalid JSON (details withheld)") }) as { ok?: unknown }
   // Never attach the response body: a provider could echo credentials or prompt content.
-  expect(result.ok === true, "saved personal model passes Test").toBe(true)
+  expect(result.ok === true, `saved personal model passes Test (${personalModelTestDiagnostic(result)})`).toBe(true)
 }
 
 /**
