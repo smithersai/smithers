@@ -1,3 +1,4 @@
+import { withUserAgent } from "./github/Http.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Config, Duration, Effect, Function, type Layer, Metric, Option, Redacted, Ref, Schema } from "effect"
 import { HttpClient } from "effect/http"
@@ -290,6 +291,7 @@ export const make = <E, R>(
         ? Effect.succeed(false)
         : Effect.flatMap(HttpClient.HttpClient, (client) =>
             client.head(`${GITHUB_WEB}/${encodeURIComponent(owner)}/${encodeURIComponent(name)}`)).pipe(
+            withUserAgent,
             Effect.timeout(REQUEST_TIMEOUT),
             Effect.map((response) => response.status === 404),
             Effect.orElseSucceed(() => false),

@@ -61,6 +61,14 @@ import * as Environment from "../Environment.ts"
 import { type GitHubConfig, resolve } from "./Config.ts"
 
 /**
+ * The identity every host uses for GitHub HTTP requests, including outside the REST client.
+ *
+ * @category constants
+ * @since 1.0.0
+ */
+export const USER_AGENT = "smithers-integrations"
+
+/**
  * The response header in which the GitHub proxy names the instant a refused
  * request may be retried. A 429 that carries it was never sent to GitHub.
  *
@@ -457,7 +465,7 @@ const build = (
 
   const headers: Record<string, string> = {
     accept: "application/vnd.github+json",
-    "user-agent": "smithers-integrations",
+    "user-agent": USER_AGENT,
     "x-github-api-version": "2022-11-28"
   }
   if (basic !== undefined) headers["authorization"] = `Basic ${basic}`

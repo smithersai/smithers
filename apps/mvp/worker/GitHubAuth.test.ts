@@ -11,6 +11,7 @@ import { GitHubAuth, GitHubRefused, type Permission } from "./GitHubAuth.ts"
 interface Seen {
   readonly method: string
   readonly path: string
+  readonly userAgent: string | undefined
   readonly authorization: string | undefined
   readonly form: Record<string, string>
   readonly body: string
@@ -30,6 +31,7 @@ const github = async (answer: (path: string) => { readonly status: number; reado
       seen.push({
         method: request.method!,
         path,
+        userAgent: request.headers["user-agent"],
         authorization: request.headers.authorization,
         form: Object.fromEntries(new URLSearchParams(body)),
         body,
@@ -64,6 +66,14 @@ const refused = (step: GitHubRefused["step"], reason: GitHubRefused["reason"]) =
 const token = Redacted.make("ghu_loopback")
 
 describe("the GitHub App adapter", () => {
+  test("OAuth code exchange and refresh identify Smithers to GitHub", async () => {
+    const { service, seen } = await github(() => ({ status: 200, body: { access_token: "ghu_new", token_type: "bearer" } }))
+    await Effect.runPromise(service.exchange({ code: Redacted.make("code"), codeVerifier: Redacted.make("verifier"), redirectUri: "https://app.test/cb" }))
+    await Effect.runPromise(service.refresh(Redacted.make("refresh")))
+    expect(seen).toHaveLength(2)
+    for (const request of seen) expect(request.userAgent).toBe("smithers-integrations")
+  })
+
   test("builds GitHub's authorization URL with the App's client id, state and an S256 challenge", async () => {
     const { service, origin } = await github(() => ({ status: 404, body: {} }))
     const url = new URL(service.authorizeUrl({ state: "s".repeat(43), codeChallenge: "c".repeat(43), redirectUri: "https://app.test/cb" }))

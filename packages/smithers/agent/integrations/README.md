@@ -27,7 +27,9 @@ An explicitly blank `token` disables the environment token fallback.
 The package runs in a browser, a Cloudflare Worker, Node and Bun: crypto is
 WebCrypto, and HTTP is the Effect `HttpClient` you provide, usually
 `FetchHttpClient.layer`. A test provides its own client to inject a transport
-fault. The client never follows a redirect. A host without a process
+fault. GitHub requests identify the client with `GitHub.GitHubClient.USER_AGENT`; hosts
+use the same exported value for GitHub OAuth, git HTTP and other direct requests.
+The client never follows a redirect. A host without a process
 environment, such as a Worker, passes the token in the config or an `env`
 record.
 

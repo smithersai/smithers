@@ -1,3 +1,4 @@
+import { withUserAgent } from "./Http.ts"
 import { digestSync } from "@smthrs/crypto"
 import { Action, Flow, Interpreter, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Core, GitHub } from "@smthrs/integrations"
@@ -302,7 +303,7 @@ const call = <E, R>(services: Services<E, R>, http: HttpClient.HttpClient, token
     const response = yield* HttpClient.execute(request)
     const json: unknown = yield* response.json.pipe(Effect.orElseSucceed(() => undefined))
     return { status: response.status, headers: new Headers(response.headers as Record<string, string>), json }
-  }).pipe(Effect.provideService(HttpClient.HttpClient, http))
+  }).pipe(withUserAgent, Effect.provideService(HttpClient.HttpClient, http))
 
 // ── The flow ────────────────────────────────────────────────────────────────────────────────────────────────────
 

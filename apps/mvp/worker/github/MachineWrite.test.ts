@@ -4,7 +4,7 @@ import { digestSync } from "@smthrs/crypto"
 import { Effect, Exit, Logger } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test, vi } from "vitest"
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { writeExecutionId } from "../../src/features/issues/contract.ts"
 import { attribution } from "../../src/features/issues/publicContent.mjs"
 import { FlowStarter } from "../Flows.ts"
@@ -14,8 +14,22 @@ import * as Host from "./Host.ts"
 import * as MachineWrite from "./MachineWrite.ts"
 import { admit, reset, REPOSITORY, services, signedIn, sql, writeRow } from "./test/fixtures.ts"
 import { githubHarness } from "./test/harness.ts"
-import { BOT_LOGIN, scriptedGitHub } from "./test/scriptedGitHub.ts"
+import { BOT_LOGIN, scriptedGitHub as makeScriptedGitHub } from "./test/scriptedGitHub.ts"
 import * as Write from "./Write.ts"
+
+const githubs: Array<ReturnType<typeof makeScriptedGitHub>> = []
+const scriptedGitHub: typeof makeScriptedGitHub = (...args) => {
+  const github = makeScriptedGitHub(...args)
+  githubs.push(github)
+  return github
+}
+afterEach(() => {
+  for (const github of githubs.splice(0)) {
+    for (const call of github.calls) {
+      expect(call.userAgent, `${call.method} ${call.path}`).toBe("smithers-integrations")
+    }
+  }
+})
 
 const runtime = testFile("github_machine_write")
 beforeEach(() => reset(runtime))

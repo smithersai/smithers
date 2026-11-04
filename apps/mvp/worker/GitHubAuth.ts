@@ -1,3 +1,4 @@
+import { withUserAgent } from "./github/Http.ts"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Clock, Config, Context, Effect, Layer, Redacted, Schema } from "effect"
 import type { HttpClient } from "effect/http"
@@ -151,7 +152,7 @@ const make = (options: {
       provider: "GitHub",
     }
     // The services the `@smthrs/integrations` calls need: the caller's `HttpClient`.
-    const context = yield* Effect.context<HttpClient.HttpClient>()
+    const context = yield* Effect.context<HttpClient.HttpClient>().pipe(withUserAgent)
     const refused = (step: GitHubRefused["step"]) => (error: Core.IntegrationError.IntegrationError) =>
       new GitHubRefused({ step, reason: reasonOf(error) })
     const tokens = (grant: Core.OAuthToken.Grant) =>

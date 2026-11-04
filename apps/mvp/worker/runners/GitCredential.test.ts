@@ -7,17 +7,31 @@ import { digestSync } from "@smthrs/crypto"
 import { Effect, Logger, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
-import { beforeEach, describe, expect, test } from "vitest"
+import { afterEach, beforeEach, describe, expect, test } from "vitest"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import * as TodoSession from "../flows/TodoSession.ts"
 import { app } from "../github/test/harness.ts"
-import { appKey, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
+import { appKey, scriptedGitHub as makeScriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import * as RunContentTest from "../test/runContent.ts"
 import { testFile } from "../test/harness.ts"
 import * as RunnersApi from "./Api.ts"
 import * as GitCredential from "./GitCredential.ts"
 import * as Jobs from "./Jobs.ts"
 import * as Store from "./Store.ts"
+
+const githubs: Array<ReturnType<typeof makeScriptedGitHub>> = []
+const scriptedGitHub: typeof makeScriptedGitHub = (...args) => {
+  const github = makeScriptedGitHub(...args)
+  githubs.push(github)
+  return github
+}
+afterEach(() => {
+  for (const github of githubs.splice(0)) {
+    for (const call of github.calls) {
+      expect(call.userAgent, `${call.method} ${call.path}`).toBe("smithers-integrations")
+    }
+  }
+})
 
 const runtime = testFile("runner_git_credential")
 const REPO = "github/acme/widgets"

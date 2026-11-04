@@ -178,6 +178,7 @@ export const scriptedGitHub = () => {
   const faults = new Map<string, number | "rate_limited" | "network">()
   const answers = new Map<string, (url: URL) => Response>()
   const calls: Array<string> = []
+  const userAgents: Array<string | null> = []
   const authorizations: Array<string | null> = []
   const minted: Array<{ readonly token: string; readonly repositories: unknown; readonly permissions: unknown }> = []
   let held: Promise<void> | undefined
@@ -275,6 +276,7 @@ export const scriptedGitHub = () => {
     const authorization = request.headers.get("authorization")
     const asked = (key: string) => {
       calls.push(key)
+      userAgents.push(request.headers.get("user-agent"))
       authorizations.push(authorization)
       return faulted(key) ?? answers.get(key)?.(url)
     }
@@ -338,6 +340,7 @@ export const scriptedGitHub = () => {
      * App's installation), `graphql`, `access_tokens` for an installation token, or `web` for github.com's own page.
      */
     calls,
+    userAgents,
     /** Each request's `Authorization` header, or `null` for an anonymous one, in the order of `calls`. */
     authorizations,
     /** The installation tokens GitHub minted, with the repositories and permissions each was asked for. */

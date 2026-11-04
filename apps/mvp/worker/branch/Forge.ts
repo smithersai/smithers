@@ -1,3 +1,4 @@
+import { withUserAgent } from "../github/Http.ts"
 import { CreateRefused } from "./CreateRefused.ts"
 export { CreateRefused } from "./CreateRefused.ts"
 import { type CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
@@ -114,7 +115,7 @@ export class Forge extends Context.Service<
 /** A branch's commit on its forge, through the forge's credential: `ref_not_found` when it has no such branch. */
 export const branchHead = (repository: Repository, branch: string, namespace: CodeStorage.RefNamespace = "default") =>
   Effect.flatMap(Forge, (forge) =>
-    Effect.flatMap(forge.upstream(repository, namespace), (upstream) => GitRemote.ref(upstream, branch)))
+    Effect.flatMap(forge.upstream(repository, namespace), (upstream) => GitRemote.ref(upstream, branch))).pipe((effect) => withUserAgent(effect, true))
 
 /** Creates `branch` on the repository's forge at the commit `from` names. */
 export const createBranch = (repository: Repository, branch: string, from: string) =>
@@ -147,7 +148,7 @@ export const failureFields = (
 /** The repository's default branch on its forge. */
 export const defaultBranch = (repository: Repository) =>
   Effect.flatMap(Forge, (forge) =>
-    Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.head(upstream)))
+    Effect.flatMap(forge.upstream(repository), (upstream) => GitRemote.head(upstream))).pipe((effect) => withUserAgent(effect, true))
 
 /**
  * The forge a branch's machine checks `branch` out through: GitHub for what lives there (`forge: "github"`, a TODO's
@@ -186,4 +187,4 @@ export const proxy = (
   }
   const remote = yield* forgeOf(deployment, branch).upstream(branch)
   return yield* GitProxy.uploadPack(request, remote, branch.namespace === "ephemeral" ? branch.branch : undefined)
-}).pipe(Effect.withSpan("sandbox.forge", { kind: "server" }))
+}).pipe((effect) => withUserAgent(effect, true), Effect.withSpan("sandbox.forge", { kind: "server" }))

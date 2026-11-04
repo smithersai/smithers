@@ -1,3 +1,4 @@
+import { withUserAgent } from "../github/Http.ts"
 import { Egress } from "@smthrs/secrets"
 import { Effect, Layer, Metric } from "effect"
 import type { HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -78,6 +79,7 @@ export const forward = (
   request: HttpServerRequest.HttpServerRequest,
 ): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpClient.HttpClient> =>
   Egress.forward(request, POLICY).pipe(
+    (effect) => withUserAgent(effect, true),
     Effect.provide(services),
     Effect.withSpan("sandbox.registry.egress"),
   )

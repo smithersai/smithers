@@ -51,6 +51,25 @@ const github = () => {
 }
 
 describe("Forge.layerConfig", () => {
+  test("git discovery, branch reads and proxy requests identify Smithers to GitHub", async () => {
+    const host = github()
+    const repository = { owner: "octocat", name: "Spoon-Knife" }
+    value(await run(defaultBranch(repository), {}, host.fetch))
+    value(await run(branchHead(repository, "main"), {}, host.fetch))
+    for (const [method, path] of [["GET", "/info/refs?service=git-upload-pack"], ["POST", "/git-upload-pack"]]) {
+      const request = HttpServerRequest.fromWeb(new Request(`http://forge.test${path}`, {
+        method,
+        headers: { "git-protocol": "version=2", "content-type": "application/x-git-upload-pack-request" },
+        body: method === "POST" ? "0014command=ls-refs\n00010000" : undefined,
+      }))
+      const response = value(await run(Effect.flatMap(Forge, (forge) => proxy(request, forge, repository)), {}, host.fetch))
+      expect(response.status).toBe(200)
+      await HttpServerResponse.toWeb(response).arrayBuffer()
+    }
+    expect(host.seen).toHaveLength(4)
+    for (const request of host.seen) expect(request.userAgent).toBe("smithers-integrations")
+  })
+
   test("without Code Storage: the public repository on GitHub, with no credential, GITHUB_TOKEN or not", async () => {
     const configs: ReadonlyArray<Record<string, string>> = [{}, { GITHUB_TOKEN: "ghp_sentinel" }, { CODE_STORAGE_ORG: "acme" }]
     for (const config of configs) {

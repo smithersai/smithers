@@ -119,6 +119,7 @@ export interface Fault {
 
 /** One request GitHub saw: its method, path, and which kind of token made it. */
 export interface Call {
+  readonly userAgent: string | undefined
   readonly method: string
   readonly path: string
   readonly token: "jwt" | "installation" | "user" | "none"
@@ -1018,7 +1019,7 @@ export const scriptedGitHub = (owner = "acme", name = "widgets", botLogin = BOT_
     Effect.suspend(() => {
       const method = request.method
       const who = caller(request.headers["authorization"])
-      github.calls.push({ method, path: url.pathname, token: who.token === "installation-contents" ? "installation" : who.token })
+      github.calls.push({ userAgent: request.headers["user-agent"], method, path: url.pathname, token: who.token === "installation-contents" ? "installation" : who.token })
       const raw = request.body._tag === "Uint8Array" ? decoder.decode(request.body.body) : undefined
       const body: unknown = raw === undefined || raw === "" ? undefined : JSON.parse(raw)
       const fault = github.faults.findIndex((candidate) => candidate.match(method, url.pathname))

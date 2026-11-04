@@ -315,6 +315,7 @@ describe("GitHubClient over a real HTTP server", () => {
     expect(created).toEqual({ id: 7, url: "https://x" })
     const [sent] = fixture.requests
     expect(sent?.headers["authorization"]).toBe(`Bearer ${TOKEN}`)
+    expect(sent?.headers["user-agent"]).toBe("smithers-integrations")
     expect(sent?.headers["x-github-api-version"]).toBe("2022-11-28")
     expect(sent?.headers["content-type"]).toBe("application/json")
     expect(JSON.parse(sent?.body ?? "{}")).toEqual({ body: "hello" })
