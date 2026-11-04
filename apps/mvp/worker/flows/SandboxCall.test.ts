@@ -300,6 +300,27 @@ describe("the steps", () => {
     }
   })
 
+  test("checkout failures retain their safe stage and exit in the tool receipt and correlated log", async () => {
+    const steps = SandboxCall.steps(await database())
+    const branch: SandboxBranch = { branchId: "b-checkout", owner: "octocat", name: "Spoon-Knife", branch: "main" }
+    const failure = new CheckoutFailed({ exitCode: 71, checkoutFailure: "branch" })
+    const checked = await observed(steps.tool({ branch, ownerId: OWNER, callId: "c-checkout",
+      call: { tool: "write", path: "README.md", content: SENTINEL } }).pipe(
+      Effect.provide(machine([Effect.fail(failure)]).layer),
+    ))
+    expect(Exit.isFailure(checked.exit) && Cause.squash(checked.exit.cause)).toEqual(failure)
+    expect(checked.lines).toMatchObject([{
+      message: "sandbox.tool", level: "WARN", annotations: {
+        branchId: "b-checkout", callId: "c-checkout", tool: "write",
+        errorCode: "@smthrs/mvp/branch/CheckoutFailed", exitCode: 71, checkoutFailure: "branch",
+      },
+    }])
+    expect(JSON.stringify(checked.lines)).not.toContain(SENTINEL)
+    const receipt = Schema.decodeUnknownSync(SandboxCall.ToolFailed.payloadSchema)(JSON.parse(JSON.stringify({ error: failure })))
+    expect(receipt.error).toEqual(failure)
+    expect(SandboxCall.failureOf(receipt.error)).toEqual({ status: "failed", failure: "checkout" })
+  })
+
   test("record counts and logs a call it settled, with a command's exit code; one it didn't, it only logs", async () => {
     const steps = SandboxCall.steps(await database())
     const done = await running()

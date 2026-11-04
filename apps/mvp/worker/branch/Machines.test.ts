@@ -1,7 +1,7 @@
 // The branches' machines' contract (worker/branch/Machines.ts): how a tool call's and a command operation's plain
 // outcomes, as they cross a Durable Object's RPC, become the typed answers the flows read.
 import { SandboxTools } from "@smthrs/sandbox"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Schema } from "effect"
 import { describe, expect, test } from "vitest"
 import {
   type CommandOutcome,
@@ -11,7 +11,7 @@ import {
   ranOf,
   routed,
   type SleepOutcome,
-  type ToolOutcome,
+  ToolOutcome,
 } from "./Machines.ts"
 import { CheckoutFailed, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
 
@@ -40,6 +40,16 @@ describe("ranOf", () => {
     expect(await failure({ _tag: "Unavailable" })).toEqual(new SandboxUnavailable({ reason: "exec" }))
     // No machine free under the sandbox limits (worker/branch/Budget.ts): the step tries again.
     expect(await failure({ _tag: "Waiting" })).toEqual(new SandboxUnavailable({ reason: "waiting" }))
+  })
+
+  test("checkout diagnostics survive the RPC codec and typed failure; legacy outcomes remain readable", async () => {
+    const details = { exitCode: 72, checkoutFailure: "clone" } as const
+    const wire = Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", ...details, stderr: "private-sentinel" })
+    const failure = await Effect.runPromise(Effect.flip(ranOf(wire)))
+    expect(failure).toEqual(new CheckoutFailed(details))
+    expect(JSON.stringify(failure)).not.toContain("private-sentinel")
+    expect(Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed" })).toEqual({ _tag: "CheckoutFailed" })
+    expect(() => Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", checkoutFailure: "private-sentinel" })).toThrow()
   })
 })
 
@@ -90,6 +100,9 @@ describe("commandsOver", () => {
     expect(await failure({ _tag: "Refused", reason: "path" })).toEqual(new SandboxTools.ToolRefused({ reason: "path" }))
     expect(await failure({ _tag: "Lost" })).toEqual(new SandboxTools.ToolLost())
     expect(await failure({ _tag: "CheckoutFailed" })).toEqual(new CheckoutFailed())
+    expect(await failure({ _tag: "CheckoutFailed", exitCode: 70, checkoutFailure: "forge" })).toEqual(
+      new CheckoutFailed({ exitCode: 70, checkoutFailure: "forge" }),
+    )
     expect(await failure({ _tag: "Unavailable", reason: "start_timeout" })).toEqual(new SandboxStartTimedOut())
     expect(await failure({ _tag: "Unavailable" })).toEqual(new SandboxUnavailable({ reason: "exec" }))
     expect(await failure({ _tag: "Waiting" })).toEqual(new SandboxUnavailable({ reason: "waiting" }))

@@ -50,8 +50,23 @@ export class SandboxStartTimedOut extends Schema.TaggedError<SandboxStartTimedOu
   {},
 ) {}
 
-/** The branch couldn't be checked out in the machine: its forge refused the clone. Not retried. */
-export class CheckoutFailed extends Schema.TaggedError<CheckoutFailed>()("@smthrs/mvp/branch/CheckoutFailed", {}) {}
+/** Safe checkout diagnostics carried across RPC and into the durable tool step's failure receipt. */
+export const CheckoutDetails = Schema.Struct({
+  exitCode: Schema.optional(Schema.Int),
+  checkoutFailure: Schema.optional(Schema.Literals(["forge", "branch", "clone", "other"])),
+})
+
+/** The branch couldn't be checked out in the machine. Legacy receipts lack diagnostics. Not retried. */
+export class CheckoutFailed extends Schema.TaggedError<CheckoutFailed>()("@smthrs/mvp/branch/CheckoutFailed", CheckoutDetails.fields) {}
+
+/** The container's plain RPC answer, also understood by hosts deployed before diagnostics existed. */
+export const CheckoutOutcome = Schema.Struct({ _tag: Schema.Literal("CheckoutFailed"), ...CheckoutDetails.fields })
+
+/** Picks only bounded checkout metadata; neither output nor a provider's message crosses this boundary. */
+export const checkoutDetails = (outcome: typeof CheckoutDetails.Type): typeof CheckoutDetails.Type => ({
+  ...(outcome.exitCode === undefined ? {} : { exitCode: outcome.exitCode }),
+  ...(outcome.checkoutFailure === undefined ? {} : { checkoutFailure: outcome.checkoutFailure }),
+})
 
 // What each failure is to the flow engine: a machine that couldn't answer is retried, as infrastructure; a start that ran
 // out of time or a refused checkout isn't, as the steps above say (`Fault`, the engine's default retry of a keyed step).

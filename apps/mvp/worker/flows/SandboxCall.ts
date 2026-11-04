@@ -5,7 +5,7 @@ import { Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { CALL_FAILURES, COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
 import { Machines } from "../branch/Machines.ts"
-import { CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
+import { checkoutDetails, CheckoutFailed, SandboxBranch, SandboxStartTimedOut, SandboxUnavailable } from "../branch/Sandboxes.ts"
 import { codeOf } from "../ErrorCode.ts"
 import { Command, ToolCall } from "./SandboxCommand.ts"
 
@@ -188,7 +188,8 @@ export const steps = <E, R>(database: Layer.Layer<SqlClient.SqlClient, E, R>) =>
       Effect.map(({ result, generation }): Outcome => ({ status: "done", result, generation })),
       Effect.tapError((error) =>
         Effect.logWarning("sandbox.tool").pipe(
-          Effect.annotateLogs({ callId, branchId: branch.branchId, tool: call.tool, errorCode: codeOf(error) }),
+          Effect.annotateLogs({ callId, branchId: branch.branchId, tool: call.tool, errorCode: codeOf(error),
+            ...(error._tag === "@smthrs/mvp/branch/CheckoutFailed" ? checkoutDetails(error) : {}) }),
         )
       ),
       Effect.withSpan("sandbox.call.tool", {

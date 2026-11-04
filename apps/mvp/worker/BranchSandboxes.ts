@@ -32,7 +32,9 @@ import { asUser, configuredSessionOn, failureFields, runOn, type UserOptions } f
 import { Forge, proxy } from "./branch/Forge.ts"
 import {
   type Attachment,
+  checkoutDetails,
   CheckoutFailed,
+  type CheckoutOutcome,
   type Revoked,
   SandboxBranch,
   Sandboxes,
@@ -179,7 +181,7 @@ interface Loopback {
 export type Woken =
   | { readonly _tag: "Woken"; readonly generation: number }
   | { readonly _tag: "Unavailable"; readonly reason?: "start_timeout" }
-  | { readonly _tag: "CheckoutFailed" }
+  | typeof CheckoutOutcome.Type
   | { readonly _tag: "Waiting" }
 
 /** The object's methods, as ChatApi and the flow host call them. */
@@ -412,7 +414,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
           const took: Partial<Record<`${WakeStage}Ms`, number>> = {}
           const timed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
             Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
-              Effect.tap(effect, () =>
+              Effect.onExit(effect, () =>
                 Effect.map(Clock.currentTimeMillis, (now) => void (took[`${stage}Ms`] = now - startedAt))))
           return Effect.gen(function* () {
             yield* state.storage.put("branch", branch)
@@ -431,10 +433,12 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
             stage = "checkout"
             const exit = yield* timed(run(checkoutArgv(branch.branch, forgeRemote(branch.owner, branch.name), branch.namespace), SANDBOX_USER))
             if (exit !== 0) {
+              const diagnostics = { exitCode: exit, checkoutFailure: CHECKOUT_FAILURES[exit] ?? "other" } as const
               yield* Effect.logWarning("sandbox.checkout").pipe(
-                Effect.annotateLogs({ branchId: branch.branchId, exitCode: exit, failure: CHECKOUT_FAILURES[exit] ?? "other" }),
+                Effect.annotateLogs({ branchId: branch.branchId, generation, namespace: branch.namespace ?? "default",
+                  forge: branch.forge ?? "deployment", ...diagnostics, failure: diagnostics.checkoutFailure, ...took }),
               )
-              return { _tag: "CheckoutFailed" } as const
+              return { _tag: "CheckoutFailed", ...diagnostics } as const
             }
             // A fresh generation gets the working copy the last one saved (worker/branch/Machine.ts); once. A machine
             // that doesn't answer fails the wake, which is tried again, before anything can save over the checkpoint.
@@ -454,7 +458,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
               Effect.as(
                 Effect.andThen(
                   Effect.logWarning("sandbox.wake").pipe(
-                    Effect.annotateLogs({ branchId: branch.branchId, stage, ...failureFields(cause) }),
+                    Effect.annotateLogs({ branchId: branch.branchId, stage, ...took, ...failureFields(cause) }),
                   ),
                   // A machine that never started gives its slot back; one that did keeps it until it sleeps.
                   stage === "start" ? Budget.release(branch.branchId).pipe(Effect.provide(database), Effect.ignore) : Effect.void,
@@ -1006,7 +1010,7 @@ export const sandboxesOver = (objects: Objects, keep: Keep = noKeep) => Effect.g
           Effect.provideService(RuntimeContext, runtime),
           Effect.orElseSucceed((): Woken => ({ _tag: "Unavailable" })),
         )
-        if (woken._tag === "CheckoutFailed") return yield* new CheckoutFailed()
+        if (woken._tag === "CheckoutFailed") return yield* new CheckoutFailed(checkoutDetails(woken))
         if (woken._tag === "Waiting") return yield* new SandboxUnavailable({ reason: "waiting" })
         if (woken._tag === "Unavailable") return yield* new SandboxUnavailable({ reason: "start" })
         yield* keep(branch.branchId, woken.generation).pipe(Effect.provideService(RuntimeContext, runtime))

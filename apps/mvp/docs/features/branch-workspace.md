@@ -126,6 +126,13 @@ typed errors; branch names, response text, URLs and credentials are never record
 
 ## The forge
 
+Checkout failures retain their exit code and bounded `checkoutFailure` (`forge`,
+`branch`, `clone`, `other`) across the object RPC in the durable tool step's error
+receipt. Its `sandbox.tool` log correlates them by call and branch id. Existing
+receipts without these fields remain readable. `sandbox.checkout` additionally
+records namespace, forge, generation and stage durations; failed wake stages keep
+their elapsed time. No command output, URL or credential is recorded.
+
 The box has no credential and no internet. It reaches the package registries through its egress ([the machine](sandbox-tools.md#the-machine)), and its repository only through `http://forge.smithers.internal`, which `SandboxObject` intercepts (`interceptOutboundHttp`) and answers with `@smthrs/effect-code-storage`'s `GitProxy.uploadPack`: only `info/refs?service=git-upload-pack` and `git-upload-pack` (a push and anything else is 403), to the branch's own repository whatever the guest's path names, with the read credential added outside the box (`worker/branch/Forge.ts`):
 
 | Forge | When | Credential |
