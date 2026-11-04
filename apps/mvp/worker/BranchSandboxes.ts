@@ -28,7 +28,7 @@ import {
   type ToolOutcome,
 } from "./branch/Machines.ts"
 import { userOf } from "./branch/Users.ts"
-import { asUser, configuredSessionOn, failureFields, runOn, type UserOptions } from "./branch/Session.ts"
+import { asUser, configuredSessionOn, failureFields, runOn, stageTimer, type UserOptions } from "./branch/Session.ts"
 import { Forge, proxy } from "./branch/Forge.ts"
 import {
   type Attachment,
@@ -412,10 +412,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
         Effect.suspend(() => {
           let stage: WakeStage = "admit"
           const took: Partial<Record<`${WakeStage}Ms`, number>> = {}
-          const timed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-            Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
-              Effect.onExit(effect, () =>
-                Effect.map(Clock.currentTimeMillis, (now) => void (took[`${stage}Ms`] = now - startedAt))))
+          const timed = stageTimer<WakeStage>(() => stage, took)
           return Effect.gen(function* () {
             yield* state.storage.put("branch", branch)
             if (!(yield* timed(admitted(branch, ownerId)))) return { _tag: "Waiting" } as const
@@ -436,7 +433,7 @@ const implementation = <E, R, CE, CCR, CR, BR = never>(
               const diagnostics = { exitCode: exit, checkoutFailure: CHECKOUT_FAILURES[exit] ?? "other" } as const
               yield* Effect.logWarning("sandbox.checkout").pipe(
                 Effect.annotateLogs({ branchId: branch.branchId, generation, namespace: branch.namespace ?? "default",
-                  forge: branch.forge ?? "deployment", ...diagnostics, failure: diagnostics.checkoutFailure, ...took }),
+                  forge: branch.forge ?? "deployment", exitCode: exit, failure: diagnostics.checkoutFailure, ...took }),
               )
               return { _tag: "CheckoutFailed", ...diagnostics } as const
             }

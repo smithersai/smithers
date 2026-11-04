@@ -48,6 +48,11 @@ describe("ranOf", () => {
     const failure = await Effect.runPromise(Effect.flip(ranOf(wire)))
     expect(failure).toEqual(new CheckoutFailed(details))
     expect(JSON.stringify(failure)).not.toContain("private-sentinel")
+    // Live RPC passes plain data directly; the picker must exclude extras without a codec's help.
+    const raw = { _tag: "CheckoutFailed", ...details, stderr: "private-sentinel" } as const
+    const direct = await Effect.runPromise(Effect.flip(ranOf(raw)))
+    expect(direct).toEqual(new CheckoutFailed(details))
+    expect(JSON.stringify(direct)).not.toContain("private-sentinel")
     expect(Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed" })).toEqual({ _tag: "CheckoutFailed" })
     expect(() => Schema.decodeUnknownSync(ToolOutcome)({ _tag: "CheckoutFailed", checkoutFailure: "private-sentinel" })).toThrow()
   })

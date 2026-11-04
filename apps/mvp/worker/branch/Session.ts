@@ -54,6 +54,15 @@ export const failureFields = (cause: Cause.Cause<unknown>) => {
   return { errorCode: codeOf(error), errorName: error instanceof Error ? error.name : typeof error }
 }
 
+/** Records a stage's elapsed time when it succeeds, fails or is interrupted, without recording its input or cause. */
+export const stageTimer = <S extends string>(stage: () => S, took: Partial<Record<`${S}Ms`, number>>) =>
+  <A, E, R>(effect: Effect.Effect<A, E, R>) =>
+    Effect.flatMap(Clock.currentTimeMillis, (startedAt) => {
+      const key = `${stage()}Ms` as const
+      return Effect.onExit(effect, () =>
+        Effect.map(Clock.currentTimeMillis, (now) => void (took[key] = now - startedAt)))
+    })
+
 /** The stage a terminal's session start has reached, as its `sandbox.session` line names it. */
 export type SessionStage = "start" | "provision" | "session"
 
@@ -81,10 +90,7 @@ export const sessionOn = <R>(options: Services<R> & { readonly timeoutMs: number
   Effect.suspend(() => {
     let stage: SessionStage = "start"
     const took: Partial<Record<`${SessionStage}Ms`, number>> = {}
-    const timed = <A, E, R>(effect: Effect.Effect<A, E, R>) =>
-      Effect.flatMap(Clock.currentTimeMillis, (startedAt) =>
-        Effect.tap(effect, () =>
-          Effect.map(Clock.currentTimeMillis, (now) => void (took[`${stage}Ms`] = now - startedAt))))
+    const timed = stageTimer<SessionStage>(() => stage, took)
     return Effect.gen(function* () {
       yield* timed(Effect.andThen(options.start, options.touch))
       stage = "provision"
