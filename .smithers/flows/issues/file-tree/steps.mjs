@@ -178,6 +178,18 @@ export const step = async (cursor) => {
   const { sha, rows } = readPlan(cursor.plan)
   if (sha !== cursor.sha) throw new Refused("plan", "the plan changed since the run validated it", 2)
   const all = fileRows(rows)
+  const result = await stepRow(cursor, all, rows)
+  // Only a future link needs a created node's number. Keep the current row's
+  // parent through every submit/watch retry, and retain null for failed parents.
+  // In particular, never carry leaf-node receipts into every later handoff.
+  const needed = new Set(all.slice(cursor.index).map((row) => row.parent).filter((key) => key !== undefined))
+  const candidates = new Set([...Object.keys(cursor.nodes), ...(result.nodeKey === null ? [] : [result.nodeKey])])
+  const forgetNodes = [...candidates].filter((key) => !needed.has(key))
+  return forgetNodes.length === 0 ? result : { ...result, forgetNodes }
+}
+
+/** Runs the current stage; `step` adds its live-parent projection to the recorded outcome. */
+const stepRow = async (cursor, all, rows) => {
   const row = all[cursor.index]
   const at = rows.find((r) => r.type === "summary")?.at ?? new Date(0).toISOString()
   const postLinks = async (repo, number, links, fields) => {

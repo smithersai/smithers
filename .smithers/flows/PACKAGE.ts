@@ -627,6 +627,7 @@ const issuesFileTree = Smithers.NodeTest({
   summary: "Filing an issue plan as GitHub sub-issues recovers by exact key and survives a kill.",
   runner: Smithers.testRunner([
     Smithers.file("//.smithers/flows/issues/file-tree/flow.test.ts"),
+    Smithers.file("//packages/smithers/test/roundbytes.test.mjs"),
     Smithers.file("//.smithers/flows/issues/file-tree/resume.test.mjs")
   ]),
   timeout: "30m",
@@ -634,7 +635,8 @@ const issuesFileTree = Smithers.NodeTest({
   srcs: [
     sources,
     Smithers.file("//.smithers/flows/issues/file-tree/steps.mjs"),
-    Smithers.file("//.smithers/flows/issues/file-tree/fake-smithers.mjs")
+    Smithers.file("//.smithers/flows/issues/file-tree/fake-smithers.mjs"),
+    Smithers.file("//packages/smithers/test/roundbytes.mjs")
   ],
   deps: [mvpPackage.issueFileTreeSources],
   cwd

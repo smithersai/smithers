@@ -12,7 +12,8 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { LANES, startFakeSmithers } from "./fake-smithers.mjs"
-import FileTree, { layer } from "./flow.ts"
+import FileTree, { advance, type Cursor, type Outcome, layer } from "./flow.ts"
+import { step } from "./steps.mjs"
 
 type Row = Record<string, unknown>
 const node = (key: string, title: string, parent: string | undefined, depth: number): Row => ({ type: "node", key, repo: "acme/plan", title, about: `${title}.`, parent, depth, labels: ["tree"] })
@@ -232,4 +233,50 @@ test("after the issues, posts a queue entry's work link on the issue it names, a
   } finally {
     await fake.close()
   }
+})
+
+
+test("a recorded pruning outcome survives JSON replay, preserves needed failed parents, and cleans legacy cursors on a retry", async () => {
+  const dir = mkdtempSync(join(tmpdir(), "file-tree-live-parents-"))
+  const plan = join(dir, "plan.jsonl")
+  const rows = planRows([issue("draft:x:1", "Leaf", "acme/plan")])
+  writeFileSync(plan, rows.map(row => JSON.stringify(row)).join("\n") + "\n")
+  const { readPlan } = await import("./steps.mjs")
+  let cursor: typeof Cursor.Type = {
+    plan, sha: readPlan(plan).sha, total: 3, index: 2, stage: "create", submitted: false, attempt: 0,
+    number: null, waitMs: 0, nodes: { "tree:root": 1, "tree:a": null, "old:leaf": 99 },
+    dryRun: true, origin: "http://unused", counts: { created: 2, linked: 1, queueLinks: 0, exceptions: 0 }, exceptions: []
+  }
+  // Submit is an unfinished action outcome, so cleanup must not depend on done.
+  const pending = await step(cursor)
+  assert.equal(pending.done, false)
+  assert.deepEqual(pending.forgetNodes, ["tree:root", "old:leaf"])
+  const recorded = JSON.parse(JSON.stringify(pending)) as typeof Outcome.Type
+  cursor = advance(cursor, recorded)
+  assert.deepEqual(cursor.nodes, { "tree:a": null }, "a required failed parent remains known")
+  assert.equal(cursor.attempt, 1)
+  cursor = advance(cursor, await step(cursor))
+  assert.equal(cursor.stage, "link")
+  const missing = await step(cursor)
+  assert.equal(missing.exception, "no parent: the row's parent has no issue")
+  assert.deepEqual(advance(cursor, missing).nodes, { "tree:a": null })
+
+  // Old journals lack forgetNodes and continue to replay their old cursor.
+  const { forgetNodes: _, ...legacy } = recorded
+  assert.deepEqual(advance({ ...cursor, nodes: { "old:leaf": 99 } }, legacy).nodes, { "old:leaf": 99 })
+})
+
+test("leaf-node receipts are forgotten, while a later descendant still links to its recorded parent", async () => {
+  const fake = await startFakeSmithers()
+  try {
+    const rows = [node("tree:root", "Root", undefined, 1), node("tree:branch", "Branch", "tree:root", 2),
+      ...Array.from({ length: 20 }, (_, i) => node(`tree:leaf:${i}`, `Leaf ${i}`, "tree:root", 2)),
+      issue("draft:x:1", "Last child", "acme/plan", { parent: "tree:branch", links: [] }),
+      { type: "summary", at: "2026-11-02T00:00:00.000Z", maxDepth: 3 }]
+    const report = ok(await run(fake, rows))
+    assert.deepEqual(report.exceptions, [])
+    const relates = [...fake.writes.values()].filter(write => write.op === "issue/relate")
+    assert.equal(relates.length, 22)
+    assert.deepEqual(relates.at(-1)?.parent, { repo: "acme/plan", number: 2 })
+  } finally { await fake.close() }
 })

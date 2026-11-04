@@ -63,6 +63,7 @@ export const Cursor = Schema.Struct({
   number: Schema.NullOr(Schema.Number),
   /** How long this round sleeps before its attempt. */
   waitMs: Schema.Number,
+  /** Only nodes still referenced by an unprocessed row; settled mappings stay in the journal. */
   nodes: Schema.Record(Schema.String, Schema.NullOr(Schema.Number)),
   dryRun: Schema.Boolean,
   origin: Schema.String,
@@ -109,7 +110,9 @@ export const Outcome = Schema.Struct({
   done: Schema.Boolean,
   exception: Schema.NullOr(Schema.String),
   /** The row's key when the row is a tree node others hang under; its number goes in the cursor's `nodes`. */
-  nodeKey: Schema.NullOr(Schema.String)
+  nodeKey: Schema.NullOr(Schema.String),
+  /** Completed mappings no remaining row needs. Absent in previously recorded outcomes. */
+  forgetNodes: Schema.optionalKey(Schema.Array(Schema.String))
 })
 
 const implementationVersion = "issues/file-tree/v3"
@@ -179,7 +182,9 @@ export const layer = Layer.mergeAll(
  * @category utils
  */
 export const advance = (cursor: typeof Cursor.Type, outcome: typeof Outcome.Type): typeof Cursor.Type => {
-  if (!outcome.done) return { ...cursor, submitted: outcome.submitted, attempt: cursor.attempt + 1, waitMs: outcome.waitMs }
+  const forgotten = new Set(outcome.forgetNodes ?? [])
+  const nodes = Object.fromEntries(Object.entries(cursor.nodes).filter(([key]) => !forgotten.has(key)))
+  if (!outcome.done) return { ...cursor, nodes, submitted: outcome.submitted, attempt: cursor.attempt + 1, waitMs: outcome.waitMs }
   const exception = outcome.exception === null ? [] : [`${cursor.index}:${cursor.stage}: ${outcome.exception}`]
   const number = cursor.stage === "create" ? outcome.number : cursor.number
   const nodeKey = cursor.stage === "create" ? outcome.nodeKey : null
@@ -196,7 +201,7 @@ export const advance = (cursor: typeof Cursor.Type, outcome: typeof Outcome.Type
     waitMs: 0,
     counts,
     exceptions: [...cursor.exceptions, ...exception].slice(-500),
-    nodes: nodeKey === null ? cursor.nodes : { ...cursor.nodes, [nodeKey]: number }
+    nodes: nodeKey === null || forgotten.has(nodeKey) ? nodes : { ...nodes, [nodeKey]: number }
   }
   const nextStage = STAGES[STAGES.indexOf(cursor.stage) + 1] as typeof Cursor.Type["stage"] | undefined
   // A row with no issue has nothing to label, link or post.
