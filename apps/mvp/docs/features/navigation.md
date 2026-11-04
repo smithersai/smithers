@@ -50,6 +50,8 @@ click, or app/navigate ─────────▶ route beforeLoad ──▶
 | `e2e/tree-click.spec.ts` | Signed in, hover then click three files in Spoon-Knife's tree: no document load within 5 s of any click, the workspace on screen every frame, no `/refs`, `/role`, `/home` or `POST /api/branches` on the clicks, and each file's first line within 100 ms of its click (the measured time is the `timings` annotation) |
 | `e2e/navigate.spec.ts` | A hovered link's page opens with no pending frame and the previous page never blanks; the repository page a person navigates to is never blank and keeps its box as it fills |
 
+The hover probe starts at the actual click event, after hover and browser actionability checks. It checks the destination main's loading elements and the global page bar; a pending answer on the page being left is allowed. Every recorded frame must still show a populated main. `navigation-frames` retains times, route, main, content-presence booleans and loading elements' tags, slots, roles and structural positions, without message text or HTML. `e2e/loading.test.ts` exercises the recorder in real Chromium, including a blank main and unrelated skeletons.
+
 Unknown routes use the router's not-found component: the shared `@smthrs/ui` `NotFound` view, navigation, theme and account controls, and a Back to chat link. Route errors retain the same recovery shell and Retry. No raw error details are shown.
 
 Compatibility paths redirect with replacement: `/settings` to `/app/settings`, repository `/secrets` to `/settings/secrets`, and repository `/actions` to `/runs`. Runs is the canonical repository list; it shows Smithers flow runs.

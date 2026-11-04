@@ -57,6 +57,7 @@ test("clone by slash: /clone octocat/Hello-World runs repo/clone, and the reposi
 })
 
 test("clone by the agent: asked to clone octocat/Spoon-Knife, it calls repo/clone", { annotation: { type: "summary", description: "Asked to clone a repository, the agent runs the same clone flow." } }, async ({ devices, request }) => {
+  requires("liveModel")
   const word = devices.word
   const [a] = await devices.open("A")
   const question = `Clone octocat/Spoon-Knife, then reply with the word clone-${word}.`
