@@ -1,5 +1,5 @@
 import { strict as assert } from "node:assert"
-import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync } from "node:fs"
+import { mkdtempSync, readFileSync, writeFileSync, existsSync, mkdirSync, rmSync, readdirSync, lstatSync, unlinkSync, rmdirSync, symlinkSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test } from "node:test"
@@ -40,6 +40,42 @@ test("sync refuses a working copy below the lane's top, before rewriting anythin
   const before = jj(root, ["log", "-r", "all()", "--no-graph", "-T", 'commit_id ++ "\\n"'])
   assert.throws(() => syncWorkspace(root), /lane's top/)
   assert.equal(jj(root, ["log", "-r", "all()", "--no-graph", "-T", 'commit_id ++ "\\n"']), before)
+})
+
+test("a regular file at the landing lock path is refused immediately and preserved", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "devx-lock-file-"))
+  const lock = join(directory, "main-push.lock")
+  writeFileSync(lock, "")
+  t.after(() => { unlinkSync(lock); rmdirSync(directory) })
+  const before = lstatSync(lock)
+  const start = performance.now()
+  const error = await acquireLock(lock, { timeoutMs: 1200 }).then(
+    (release) => { release(); assert.fail("acquired a regular file lock") },
+    (error) => error
+  )
+  assert.ok(performance.now() - start < 250, "refuse before waiting for the lock timeout")
+  assert.ok(error.message.includes(lock), "error names the lock path")
+  assert.match(error.message, /regular file.*not the directory form \(mkdir lock \+ owner\).*confirming no lander holds it/)
+  assert.equal(lstatSync(lock).isFile(), true)
+  assert.equal(lstatSync(lock).ino, before.ino)
+  assert.equal(readFileSync(lock, "utf8"), "")
+})
+
+test("a symbolic link at the landing lock path is refused without touching its target", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "devx-lock-link-"))
+  const lock = join(directory, "main-push.lock")
+  const target = join(directory, "target")
+  mkdirSync(target)
+  writeFileSync(join(target, "owner"), "existing owner\n")
+  symlinkSync(target, lock)
+  t.after(() => { unlinkSync(lock); unlinkSync(join(target, "owner")); rmdirSync(target); rmdirSync(directory) })
+  await assert.rejects(acquireLock(lock, { timeoutMs: 1200 }), (error) => {
+    assert.ok(error.message.includes(lock))
+    assert.match(error.message, /symbolic link.*not the directory form/)
+    return true
+  })
+  assert.equal(lstatSync(lock).isSymbolicLink(), true)
+  assert.equal(readFileSync(join(target, "owner"), "utf8"), "existing owner\n")
 })
 
 test("one mkdir lock coordinates legacy owners, bounded waits and concurrent tool users", async (t) => {

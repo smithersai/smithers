@@ -42,6 +42,12 @@ export async function acquireLock(path, { timeoutMs = 300000, signal } = {}) {
     signal?.throwIfAborted()
     try { mkdirSync(path); break } catch (error) {
       if (error.code !== "EEXIST") throw error
+      let entry
+      try { entry = lstatSync(path) } catch (error) { if (error.code === "ENOENT") continue; throw error }
+      if (!entry.isDirectory()) {
+        const kind = entry.isFile() ? "a regular file" : entry.isSymbolicLink() ? "a symbolic link" : entry.isFIFO() ? "a FIFO" : entry.isSocket() ? "a socket" : entry.isBlockDevice() ? "a block device" : entry.isCharacterDevice() ? "a character device" : "an unknown filesystem entry"
+        throw new Error(`Landing lock ${path} is ${kind}, not the directory form (mkdir lock + owner); remove it only after confirming no lander holds it`)
+      }
       if (!announced) { console.error(`WAITING landing lock: ${path}`); announced = true }
       if (Date.now() - start >= timeoutMs) {
         const owner = existsSync(join(path, "owner")) ? readFileSync(join(path, "owner"), "utf8").trim().slice(0, 240) : "ownerless (not reclaimed)"
