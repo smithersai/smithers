@@ -47,6 +47,39 @@ export const OnParentExit = Schema.Literals(["cancel", "detach"])
 export type OnParentExit = typeof OnParentExit.Type
 
 /**
+ * Bounded, redacted terminal failure facts. Optional on historical run state.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const Failure = Schema.Struct({
+  executionId: Schema.optionalKey(Schema.String),
+  tag: Schema.String,
+  message: Schema.String,
+  nodeId: Schema.optionalKey(Schema.String),
+  action: Schema.optionalKey(Schema.String),
+  attempts: Schema.NullOr(Schema.Number),
+  retryable: Schema.Boolean
+})
+/**
+ * Operator-facing failure facts persisted with the terminal transition.
+ * @category models
+ * @since 1.0.0
+ */
+export type Failure = typeof Failure.Type
+
+/**
+ * Origin of one cause reason, retained separately from the primary diagnostic.
+ * @category schemas
+ * @since 1.0.0
+ */
+export const FailureCoordinates = Schema.Struct({
+  executionId: Schema.String,
+  action: Schema.optionalKey(Schema.String),
+  nodeId: Schema.optionalKey(Schema.String),
+  attempts: Schema.NullOr(PositiveSafeInt)
+})
+
+/**
  * The versioned state stored for a durable flow run: which flow it is, the
  * encoded `payload` it was started with, and — as they arrive — its
  * `result` and its cancellation timestamp.
@@ -84,6 +117,8 @@ export const RunState = Schema.Struct({
   // `Flow.Handoff` that opened it.
   deadline: Schema.optionalKey(Flow.LineageDeadline),
   result: Schema.optionalKey(Schema.Unknown),
+  failure: Schema.optionalKey(Failure),
+  failureSites: Schema.optionalKey(Schema.Array(Schema.NullOr(FailureCoordinates))),
   // `run` is the cancellation run its flow declared (`Flow.OnCancel`), admitted with the cancellation.
   cancellation: Schema.optionalKey(Schema.Struct({
     interruptedAtMs: Schema.Number.check(Schema.isGreaterThanOrEqualTo(0)),

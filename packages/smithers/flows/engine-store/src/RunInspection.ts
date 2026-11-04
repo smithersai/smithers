@@ -8,11 +8,9 @@
  * `flows_journal_events`), never a copy of them. Every value it releases
  * passes through `@smthrs/journal`'s `Redaction.redact` first and is then cut
  * to {@link valueLimitBytes} of UTF-8, so a credential-shaped string never
- * leaves it and a large value costs a reader a known number of bytes. A
- * failure is reduced to a closed code, the failure's tag, so a provider's
- * error text is not released. The one message released is a run's defect, on
- * its `transitioned` decision: the engine wrote it redacted and cut, for an
- * operator to read why the run died.
+ * leaves it and a large value costs a reader a known number of bytes. Raw failure payloads are reduced to closed codes. A terminal run additionally
+ * exposes `failure`: its bounded, redacted message and engine coordinates,
+ * persisted atomically with its transition. Historical runs can lack it.
  *
  * Built with the engine's flows (`layerWith({ flows })`), the reads know each
  * flow's payload and success schemas and, from each flow's plan, each action's
@@ -42,7 +40,8 @@ import { RunStore } from "@smthrs/run-store"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Read from "./internal/ExecutionSnapshotRead.ts"
-import { RunState } from "./RunState.ts"
+import { type Failure, RunState } from "./RunState.ts"
+import * as FailureDiagnostic from "./internal/FailureDiagnostic.ts"
 
 /**
  * The most bytes of UTF-8 one released value holds: 16 KiB.
@@ -237,7 +236,7 @@ export interface JournalPage {
  * @since 1.0.0
  */
 export interface Inspection {
-  readonly run: RunSummary & { readonly input: Value; readonly result: Value | null }
+  readonly run: RunSummary & { readonly input: Value; readonly result: Value | null; readonly failure?: Failure }
   readonly steps: ReadonlyArray<Step>
   readonly children: ReadonlyArray<Child>
   readonly journal: JournalPage
@@ -688,7 +687,8 @@ const detailOf = (row: RunRow, schemas: Schemas) => {
   return {
     ...summaryOf(row),
     input: valueOf(displayed(schemas.payloadOf(flowName), payload)),
-    result: resultOf(result, schemas.successOf(flowName))
+    result: resultOf(result, schemas.successOf(flowName)),
+    ...(row.state_json.failure === undefined ? {} : { failure: FailureDiagnostic.bound(row.state_json.failure) })
   }
 }
 

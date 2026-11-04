@@ -53,6 +53,22 @@ export const resume = (planOrRunId: string, allowCodeDrift = false, quiet = fals
       return yield* Effect.fail(Settlement.declined(receipt.runId, yield* RunReads.summary(control, receipt.runId)))
     }
     yield* Settlement.report(settlement)
+    if (receipt._tag === "Terminal" && receipt.status === "failed") {
+      const details = yield* RunReads.terminalFailure(control.watch({ runId: planOrRunId, follow: false }), planOrRunId)
+      const failure = details.failure
+      const run = yield* RunReads.summary(control, planOrRunId).pipe(Effect.catch(() => Effect.succeed(undefined)))
+      return {
+        ...receipt,
+        cause: details.unavailable ? "failure details unavailable; retry runs show after the connection recovers"
+          : failure === undefined ? "no cause recorded in this historical run" : `${failure.tag}: ${failure.message}`,
+        ...(failure === undefined ? {} : { failure }),
+        // A terminal run never resumes. A retryable fault's remedy is the same input in a fresh run once its cause
+        // clears; a flow names anything more specific in its failure message, which `cause` carries.
+        next: failure?.retryable === true
+          ? `Retryable: once the cause clears, start a fresh run with flow start ${run?.flowId ?? "<flow>"}`
+          : `Start fresh with flow start ${run?.flowId ?? "<flow>"}`
+      }
+    }
     return Settlement.receiptDocument(receipt, settlement)
   })
 

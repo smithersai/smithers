@@ -7,7 +7,7 @@
 import * as CapabilitySet from "@smthrs/capability/CapabilitySet"
 import { DatabaseError, DurableWriter } from "@smthrs/database/DurableWriter"
 import { FlowEngine } from "@smthrs/engine"
-import { Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
+import { Fault, Flow, FlowRuntime, Interpreter, RunMetrics } from "@smthrs/flow"
 import { Journal, Redaction } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
@@ -26,10 +26,11 @@ import * as DurableEngineState from "../DurableEngineState.ts"
 import * as EngineStoreMetrics from "../EngineStoreMetrics.ts"
 import { EventTypes } from "../EventTypes.ts"
 import * as ExecutionFacts from "../ExecutionFacts.ts"
-import { type OnParentExit, type ReleaseCause, RunState } from "../RunState.ts"
+import { type Failure, type OnParentExit, type ReleaseCause, RunState } from "../RunState.ts"
 import * as WakeBus from "../WakeBus.ts"
 import * as ActionPersistence from "./ActionPersistence.ts"
 import * as EffectRecords from "./EffectRecords.ts"
+import * as FailureDiagnostic from "./FailureDiagnostic.ts"
 import * as ExitEncoding from "./ExitEncoding.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as RetrySource from "./RetrySource.ts"
@@ -3128,6 +3129,30 @@ const defectRecord = (exit: Exit.Exit<unknown, unknown>): Interpreter.Defect | u
   return { ...defect, message: typeof message === "string" ? message : "" }
 }
 
+/** The failure and engine coordinates, redacted before the terminal transaction writes them. */
+const failureRecord = (exit: Exit.Exit<unknown, unknown>, executionId: string): Failure | undefined => {
+  if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return undefined
+  const reason = exit.cause.reasons.find((reason) => Cause.isFailReason(reason) || Cause.isDieReason(reason))
+  if (reason === undefined) return undefined
+  const error = Cause.isFailReason(reason) ? reason.error : Cause.isDieReason(reason) ? reason.defect : undefined
+  const projected = ExitEncoding.projectValue(error)
+  const site = FailureDiagnostic.site(Context.getOrUndefined(Cause.reasonAnnotations(reason), FlowEngine.FailureSite))
+  const defect = Interpreter.defectOf(Cause.fromReasons([reason]))
+  const message = projected.message
+  const nodeId = site?.nodeId ?? defect?.nodeId
+  const action = site?.action ?? defect?.action
+  const safeTag = String(Redaction.redactDiagnostic(projected.tag ?? projected.code ?? defect?.tag ?? "failed"))
+  return FailureDiagnostic.bound({
+    executionId: site?.executionId ?? executionId,
+    tag: safeTag.slice(0, 200),
+    message,
+    ...(nodeId === undefined ? {} : { nodeId }),
+    ...(action === undefined ? {} : { action }),
+    attempts: site?.attempts ?? null,
+    retryable: Cause.isFailReason(reason) && ["infra", "wait"].includes(Fault.of(error).class)
+  })
+}
+
 /** Writes a round's own settlement: a terminal status, or a park. */
 const settleResult = (
   driver: Driver,
@@ -3140,6 +3165,12 @@ const settleResult = (
   Effect.gen(function*() {
     const executionId = attempt.executionId
     const encodedResult = yield* encodeResult(flow, result)
+    const failure = result._tag === "Complete" ? failureRecord(result.exit, executionId) : undefined
+    const failureSites = result._tag === "Complete" && Exit.isFailure(result.exit)
+      ? result.exit.cause.reasons.map((reason) => {
+        const site = Context.getOrUndefined(Cause.reasonAnnotations(reason), FlowEngine.FailureSite)
+        return FailureDiagnostic.site(site) ?? null
+      }) : undefined
     const nextState: RunState = { ...activeState, result: encodedResult.encoded }
     const status = settledStatus(encodedResult, result)
     const waiting = status === "suspended" ? yield* parkReason(driver, executionId, instance) : null
@@ -3163,12 +3194,13 @@ const settleResult = (
       driver,
       executionId,
       status,
-      yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
+      FailureDiagnostic.withinState(yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }), failure, failureSites),
       {
         decision: "transitioned",
         status,
         owner: driver.dependencies.owner,
-        ...(defect === undefined ? {} : { defect })
+        ...(defect === undefined ? {} : { defect }),
+        ...(failure === undefined ? {} : { failure })
       },
       { cancelRequested: "absent" },
       // A suspension is not an exit: the run is parked and will settle
@@ -4154,6 +4186,17 @@ const decodeSettlement = (
     }))
   )(state.result).pipe(
     Effect.orDie,
+    Effect.map((result) => {
+      if (result._tag !== "Complete" || Exit.isSuccess(result.exit)) return result
+      const primary = result.exit.cause.reasons.findIndex((reason) => Cause.isFailReason(reason) || Cause.isDieReason(reason))
+      return new Flow.Complete({ exit: Exit.failCause(Cause.fromReasons(result.exit.cause.reasons.map((reason, index) => {
+        // An old primary diagnostic describes only its first failure, never every reason.
+        const site = state.failureSites?.[index] ?? (state.failureSites === undefined && index === primary && state.failure !== undefined
+          ? { ...state.failure, executionId: state.failure.executionId ?? executionId } : undefined)
+        const coordinates = FailureDiagnostic.site(site)
+        return coordinates === undefined ? reason : reason.annotate(Context.make(FlowEngine.FailureSite, coordinates))
+      }))) })
+    }),
     Effect.map(Option.some)
   ) as Effect.Effect<Option.Option<Flow.Result<unknown, unknown>>>
 }

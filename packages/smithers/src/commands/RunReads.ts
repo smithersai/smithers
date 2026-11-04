@@ -4,8 +4,10 @@
  * @since 1.0.0
  */
 
-import type { Control as ControlService } from "@smthrs/control"
-import { Effect } from "effect"
+import type { Control as ControlService, ControlSchema } from "@smthrs/control"
+import type { Failure } from "@smthrs/engine-store/RunState"
+import { Effect, Stream } from "effect"
+import { failureOf } from "../cli/RunActivity.ts"
 import * as CliError from "../CliError.ts"
 import * as BoundedEvents from "../internal/BoundedEvents.ts"
 import * as Settlement from "./Settlement.ts"
@@ -23,6 +25,21 @@ export const events = (control: ControlService.Service, runId: string) =>
     Effect.mapError((error) =>
       error instanceof CliError.ResourceLimitError ? error : Settlement.watchFailure(error, runId, "event-history read")
     )
+  )
+
+/**
+ * Retains only the terminal diagnostic, regardless of the history's size.
+ * A failed optional read must not discard the already-known terminal receipt.
+ * @category getters
+ * @since 1.0.0
+ */
+export const terminalFailure = <E, R>(events: Stream.Stream<ControlSchema.ControlEvent, E, R>, runId: string) =>
+  Stream.runFold(events, () => undefined as Failure | undefined,
+    (latest, event) => failureOf([event], runId) ?? latest).pipe(
+    Effect.map((failure) => ({ failure, unavailable: false })),
+    Effect.catch(() => Effect.logWarning("Terminal failure details are unavailable").pipe(
+      Effect.as({ failure: undefined, unavailable: true })
+    ))
   )
 
 /**

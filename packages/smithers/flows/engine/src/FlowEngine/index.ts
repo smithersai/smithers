@@ -16,6 +16,7 @@ export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "./ActionKey.t
 export * from "./Authority.ts"
 export * from "./Encoded.ts"
 export * from "./FlowInstance.ts"
+export * from "./FailureSite.ts"
 export * from "./layerMemory.ts"
 /**
  * @category models

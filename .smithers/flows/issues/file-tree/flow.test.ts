@@ -5,6 +5,7 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Interpreter } from "@smthrs/flow"
+import * as Fault from "@smthrs/flow/Fault"
 import { Effect, Exit, Layer } from "effect"
 import assert from "node:assert/strict"
 import { mkdtempSync, writeFileSync } from "node:fs"
@@ -12,7 +13,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
 import { LANES, startFakeSmithers } from "./fake-smithers.mjs"
-import FileTree, { advance, type Cursor, type Outcome, layer } from "./flow.ts"
+import FileTree, { FileRefused, Round, advance, type Cursor, type Outcome, layer } from "./flow.ts"
 import { readPlan, step } from "./steps.mjs"
 
 type Row = Record<string, unknown>
@@ -379,6 +380,7 @@ test("503 forever exhausts a bounded recorded retry budget with a named cause", 
     }
     assert.equal((failure as { code?: string })?.code, "unavailable_exhausted")
     assert.match((failure as Error).message, /create.*12 attempts/)
+    assert.match((failure as Error).message, /after the outage, start a fresh run of the same plan; key markers dedupe/)
     assert.equal(fake.posts(/writes$/).length, 12)
   } finally { await fake.close() }
 })
@@ -415,7 +417,7 @@ for (const status of [503, "reset"]) {
       fake.script((method: string, path: string) => method === "GET" && path.includes("/writes/"), [[status, {}, {}]])
       const exit = await run(fake, planRows([]))
       assert.ok(Exit.isFailure(exit))
-      assert.match(JSON.stringify(exit.cause), /identity verification unavailable/)
+      assert.match(JSON.stringify(exit.cause), /identity verification unavailable: HTTP \d+: after the outage, start a fresh run of the same plan/)
       assert.doesNotMatch(JSON.stringify(exit.cause), /not live/)
       assert.equal(fake.writes.size, 0)
     } finally { await fake.close() }
@@ -527,4 +529,25 @@ test("the report retains every failed key beyond 500 exceptions", () => {
   assert.equal(next.exceptions.length, 501)
   assert.equal(next.exceptions[0], "key:0:create: refused")
   assert.equal(next.exceptions[500], "last:key:create: refused: HTTP 422 invalid")
+})
+
+test("outage exhaustion and verification unavailability are retryable faults; identity refusal stays permanent", () => {
+  for (const code of ["unavailable", "unavailable_exhausted"]) {
+    assert.equal(Fault.of(new FileRefused({ code, message: "unavailable" })).class, "infra")
+  }
+  assert.equal(Fault.of(new FileRefused({ code: "identity", message: "not live" })).class, "user")
+})
+
+test("an exhausted round settles without entering the engine's automatic infrastructure retry policy", { timeout: 4000 }, async (t) => {
+  const fake = await startFakeSmithers()
+  try {
+    const cursor = retryCursor(fake, { retryCount: 11 })
+    fake.script((method: string, path: string) => method === "POST" && path.endsWith("/writes"), Array.from({ length: 20 }, () => [503, {}, {}]))
+    const exit = await Effect.runPromiseExit(Round.execute(cursor, { executionId: "exhausted-round" }).pipe(
+      Effect.provide(Interpreter.layerWithImplementations(Round, layer).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provideMerge(NodeCrypto.layer)))
+    ), { signal: t.signal })
+    assert.ok(Exit.isFailure(exit))
+    assert.match(JSON.stringify(exit.cause), /unavailable_exhausted/)
+    assert.equal(fake.posts(/writes$/).length, 1)
+  } finally { await fake.close() }
 })

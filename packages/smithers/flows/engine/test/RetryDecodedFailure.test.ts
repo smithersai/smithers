@@ -1,7 +1,7 @@
 import { expect } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Effect, Exit, Option, Schema, SchemaGetter } from "effect"
+import { Cause, Context, Effect, Exit, Option, Schema, SchemaGetter } from "effect"
 import { FlowEngine } from "../src/index.ts"
 import { liveEffect } from "./Harness.ts"
 import { scriptedEngine } from "./ScriptedEngine.ts"
@@ -156,7 +156,12 @@ liveEffect("an engine-error recognizer leaves an unrecognized business error in 
   return Effect.gen(function*() {
     const result = yield* engine.actionExecute(action, 1)
     expect(result._tag).toBe("Complete")
-    expect(result._tag === "Complete" && result.exit).toEqual(Exit.fail("declared"))
+    expect(result._tag === "Complete" && Exit.isFailure(result.exit) && result.exit.cause.reasons)
+      .toEqual([expect.objectContaining({ _tag: "Fail", error: "declared" })])
+    if (result._tag === "Complete" && Exit.isFailure(result.exit)) {
+      expect(Context.getOrUndefined(Cause.reasonAnnotations(result.exit.cause.reasons[0]!), FlowEngine.FailureSite))
+        .toEqual({ executionId: "unrecognized", action: action.name, attempts: 1 })
+    }
     expect(recognized).toEqual(["declared"])
   }).pipe(Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(flow, "unrecognized")))
 })

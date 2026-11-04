@@ -299,3 +299,67 @@ describe("runs show and runs logs on a live parent run", { timeout: 180_000 }, (
     }
   })
 })
+
+
+describe("terminal failure diagnosis through the real CLI", { timeout: 180_000 }, () => {
+  it.each(["direct", "handled-child", "outage", "nested-action"])("runs show and terminal resume name the action failure and a fresh-run remedy (%s)", async (scenario) => {
+    const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-failed-diagnosis-")))
+    try {
+      const dir = join(root, ".smithers", "flows", "failing")
+      await mkdir(dir, { recursive: true })
+      await symlink(nodeModules, join(root, "node_modules"), "dir")
+      if (scenario === "outage") await writeFile(join(dir, "file-tree-errors.ts"), await readFile(new URL("../../../.smithers/flows/issues/file-tree/errors.ts", import.meta.url), "utf8"))
+      const message = JSON.stringify(`terminal write rejected${scenario === "outage" ? ": after the outage, start a fresh run of the same plan; key markers dedupe" : ""} ghp_${"q".repeat(36)}`)
+      const body = scenario === "nested-action" ? "Wrap.call({})"
+        : scenario === "handled-child" ? `Child.child({ message: "handled child A" }).pipe(Node.catch({ onFailure: Node.capture({}, () => Node.succeed("handled")) }), Node.andThen(Child.child({ message: ${message} })))`
+        : `Write.call({ message: ${message} })`
+      await writeFile(join(dir, "flow.ts"), `import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { Effect, Layer, Schema } from "effect"
+${scenario === "outage" ? 'import { FileRefused as Refused } from "./file-tree-errors.ts"' : 'class Refused extends Schema.TaggedError<Refused>()("diagnosis/Permanent", { message: Schema.String }) {}'}
+const Write = Action.make("diagnosis/Write", { payload: { message: Schema.String }, success: Schema.String, error: Refused, retryPolicy: RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: ${scenario === "nested-action" ? 3 : 1} }) })
+const Child = Flow.make("diagnosis/Child", { payload: { message: Schema.String }, success: Schema.String, error: Refused,
+  body: Node.capture({}, ({ message }) => Write.call({ message })) })
+const Wrap = Action.make("diagnosis/Wrap", { payload: {}, success: Schema.String, error: Refused })
+export const layer = Layer.mergeAll(Interpreter.layer(Child), Wrap.toLayer(() => Child.execute({ message: ${message} })), Write.toLayer(({ message }) => Effect.fail(new Refused({ message${scenario === "outage" ? ', code: "unavailable_exhausted"' : ""} }))))
+export default Flow.make("failing", {
+  description: "Named failure", capabilities: [],
+  effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "sealed" },
+  payload: {}, success: Schema.String, error: Refused,
+  body: Node.capture({}, () => ${body})
+})`)
+      const launched = await command(root, ["flow", "start", "failing", "--data", "{}", "--wait"]).finished
+      expect(launched.code, launched.stdout + launched.stderr).toBe(1)
+      const recordedRun = controlRun(root)
+      expect(recordedRun, launched.stdout + launched.stderr).toBeDefined()
+      const runId = recordedRun!.run_id
+      const shown = await show(root, runId)
+      const engineDb = new DatabaseSync(join(root, ".flows", "engine.db"), { readOnly: true })
+      const failures = engineDb.prepare("SELECT run_id, state_json FROM flows_runs WHERE status = 'failed'").all().map(row => {
+        const state = JSON.parse(String(row.state_json))
+        return { executionId: row.run_id, flowName: state.flowName, failure: state.failure }
+      })
+      engineDb.close()
+      expect(shown.failure, JSON.stringify(failures)).toMatchObject({ tag: scenario === "outage" ? "issues/file-tree/Refused" : "diagnosis/Permanent", action: "diagnosis/Write", attempts: scenario === "nested-action" ? 3 : 1, retryable: scenario === "outage" })
+      if (scenario === "nested-action") {
+        const origin = failures.find(row => row.executionId === shown.failure.executionId)
+        expect(origin).toMatchObject({ flowName: "diagnosis/Child", failure: shown.failure })
+      }
+      expect(shown.failure.message).toContain("terminal write rejected")
+      expect(shown.failure.nodeId).toEqual(expect.any(String))
+      const resumed = await command(root, ["runs", "resume", runId]).finished
+      expect(resumed.code, resumed.stdout + resumed.stderr).toBe(1)
+      const receipt = JSON.parse(resumed.stdout)
+      expect(receipt._tag).toBe("Terminal")
+      expect(receipt.failure).toMatchObject(shown.failure)
+      if (scenario === "outage") {
+        expect(receipt.next).toContain("Retryable: once the cause clears, start a fresh run")
+        expect(receipt.next).not.toContain("Start fresh")
+        expect(receipt.cause).toContain("after the outage, start a fresh run of the same plan; key markers dedupe")
+        expect(shown.failure.message).toContain("after the outage, start a fresh run of the same plan; key markers dedupe")
+      }
+      expect(receipt.next).toContain("flow start failing")
+      expect(JSON.stringify([shown, receipt])).not.toContain("q".repeat(36))
+    } finally { await rm(root, { recursive: true, force: true }) }
+  })
+})

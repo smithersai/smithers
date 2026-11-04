@@ -40,6 +40,7 @@ import * as CachePublication from "./CachePublication.ts"
 import * as CallFacts from "./CallFacts.ts"
 import * as CopiedRecord from "./CopiedRecord.ts"
 import * as EffectRecords from "./EffectRecords.ts"
+import * as FailureDiagnostic from "./FailureDiagnostic.ts"
 import * as HostReflection from "./HostReflection.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as ProvenanceSlot from "./ProvenanceSlot.ts"
@@ -454,13 +455,21 @@ export const earliestBoundarySnapshot = (
     return Option.none()
   })
 
+const FailureSiteJson = Schema.Struct({
+  executionId: Schema.String,
+  action: Schema.optionalKey(Schema.String),
+  attempts: Schema.NullOr(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))),
+  nodeId: Schema.optionalKey(Schema.String)
+})
+const reasonSite = { failureSite: Schema.optionalKey(FailureSiteJson) }
 const CauseJson = Schema.Struct({
   reasons: Schema.Array(Schema.Union([
-    Schema.Struct({ _tag: Schema.Literal("Fail"), error: Schema.Unknown }),
-    Schema.Struct({ _tag: Schema.Literal("Die"), defect: Schema.Unknown }),
+    Schema.Struct({ _tag: Schema.Literal("Fail"), error: Schema.Unknown, ...reasonSite }),
+    Schema.Struct({ _tag: Schema.Literal("Die"), defect: Schema.Unknown, ...reasonSite }),
     Schema.Struct({
       _tag: Schema.Literal("Interrupt"),
-      fiberId: Schema.optional(Schema.NullOr(Schema.Number))
+      fiberId: Schema.optional(Schema.NullOr(Schema.Number)),
+      ...reasonSite
     })
   ]))
 })
@@ -717,6 +726,18 @@ const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
       reasons.push({ _tag: "Interrupt", fiberId: reason.fiberId ?? null })
     }
   }
+  // Optional diagnostics cannot consume the budget needed to replay typed errors.
+  // Project the allowlist before charging it, then admit only what still fits.
+  for (let index = 0; index < reasons.length; index++) {
+    const site = FailureDiagnostic.site(Context.getOrUndefined(Cause.reasonAnnotations(cause.reasons[index]!), FlowEngine.FailureSite))
+    if (site === undefined) continue
+    const candidate = { ...budget }
+    if (!spendNodes(candidate, 1)) continue
+    const decoded = Schema.decodeUnknownResult(FailureSiteJson)(inertJson(site, candidate))
+    if (decoded._tag !== "Success") continue
+    reasons[index] = { ...reasons[index]!, failureSite: decoded.success }
+    Object.assign(budget, candidate)
+  }
   return { reasons }
 }
 
@@ -753,14 +774,10 @@ const rehydrateCause = (error: unknown): Cause.Cause<unknown> => {
   const decoded = Schema.decodeUnknownResult(CauseJson)(error)
   if (decoded._tag === "Success" && decoded.success.reasons.length > 0) {
     return Cause.fromReasons(decoded.success.reasons.map((reason) => {
-      switch (reason._tag) {
-        case "Fail":
-          return Cause.makeFailReason(reason.error)
-        case "Die":
-          return Cause.makeDieReason(reason.defect)
-        case "Interrupt":
-          return Cause.makeInterruptReason(reason.fiberId ?? undefined)
-      }
+      const rebuilt = reason._tag === "Fail" ? Cause.makeFailReason(reason.error)
+        : reason._tag === "Die" ? Cause.makeDieReason(reason.defect)
+        : Cause.makeInterruptReason(reason.fiberId ?? undefined)
+      return reason.failureSite === undefined ? rebuilt : rebuilt.annotate(Context.make(FlowEngine.FailureSite, reason.failureSite))
     }))
   }
   return Cause.die(error)

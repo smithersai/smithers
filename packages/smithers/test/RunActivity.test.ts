@@ -355,6 +355,18 @@ describe("RunActivity.show", () => {
     codeDrift: { recorded: "a", current: "b" }
   })
 
+  it("uses the terminal root's causal failure when a handled child and a later child share a tag", () => {
+    const a = { tag: "same/Failure", message: "handled child A", action: "A", nodeId: "a", attempts: 1, retryable: false, executionId: "child-A" }
+    const b = { ...a, message: "terminal child B", action: "B", nodeId: "b", attempts: 3, executionId: "child-B" }
+    const events = [
+      engine("child-A", "flows.engine.run-decision", { decision: "transitioned", status: "failed", failure: a }),
+      engine("child-B", "flows.engine.run-decision", { decision: "transitioned", status: "failed", failure: b }),
+      engine(runId, "flows.engine.run-decision", { decision: "transitioned", status: "failed", failure: b })
+    ]
+    expect(RunActivity.show(run("failed"), events).failure).toEqual(b)
+    expect(RunActivity.show(run("failed"), events.slice(0, 2)).failure).toBeUndefined()
+  })
+
   it("advances updatedAt to the last progress and leaves endedAt empty while the run is live", () => {
     const shown = RunActivity.show(run("running"), tree())
     expect(shown.updatedAt).toBeGreaterThan(2)

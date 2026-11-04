@@ -21,23 +21,13 @@
  *
  * @since 1.0.0
  */
-import { Action, Flow, Sleep } from "@smthrs/flow"
-import * as Fault from "@smthrs/flow/Fault"
+import { Action, Flow, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
 import { STAGES, step, verify } from "./steps.mjs"
+import { FileRefused } from "./errors.ts"
 
-/**
- * The plan, the identity or GitHub refused the run; the message names why, never a secret.
- *
- * @since 1.0.0
- * @category errors
- */
-export class FileRefused extends Schema.TaggedError<FileRefused>()("issues/file-tree/Refused", {
-  code: Schema.String,
-  message: Schema.String
-}) {}
-Fault.register("issues/file-tree/Refused", "user")
+export { FileRefused } from "./errors.ts"
 
 const FileError = Schema.Union([FileRefused, Sleep.SleepRequestInvalid])
 
@@ -121,6 +111,8 @@ export const Outcome = Schema.Struct({
 })
 
 const implementationVersion = "issues/file-tree/v3"
+// Rounds own the outage budget. Exhaustion must settle, even though the fault remains retryable for the operator.
+const oneAttempt = RetryPolicy.make({ initialMs: 1, factor: 1, maxMs: 1, maxAttempts: 1 })
 
 /**
  * Maps what a step threw onto the flow's error, which the run keeps. A thrown step is a refusal: rate limits come back
@@ -142,7 +134,8 @@ export const Verify = Action.make("issues/file-tree/verify", {
   payload: Request,
   success: Schema.Struct({ sha: Schema.String, total: Schema.Number }),
   error: FileRefused,
-  nondeterministic: true
+  nondeterministic: true,
+  retryPolicy: oneAttempt
 })
 
 /**
@@ -159,7 +152,8 @@ export const Step = Action.make("issues/file-tree/step", {
   payload: Cursor,
   success: Outcome,
   error: FileRefused,
-  nondeterministic: true
+  nondeterministic: true,
+  retryPolicy: oneAttempt
 })
 
 const run = <A>(thunk: () => Promise<A>) => Effect.tryPromise({ try: thunk, catch: failure })

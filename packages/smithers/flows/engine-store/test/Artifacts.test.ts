@@ -1,4 +1,4 @@
-import { execFileSync } from "node:child_process"
+import { execFileSync, spawnSync } from "node:child_process"
 import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
@@ -39,7 +39,8 @@ describe("built artifacts", () => {
   it(
     "preserves service identity between root and subpath exports",
     () => {
-      execFileSync(process.execPath, ["scripts/build.mjs"], { cwd: packageRoot })
+      const build = spawnSync(process.execPath, ["scripts/build.mjs"], { cwd: packageRoot, encoding: "utf8" })
+      expect(build.status, `${build.error?.message ?? ""}\n${build.stdout ?? ""}\n${build.stderr ?? ""}`).toBe(0)
       execFileSync(process.execPath, ["test/fixtures/artifact-esm.mjs"], { cwd: packageRoot })
       execFileSync(process.execPath, ["test/fixtures/artifact-cjs.cjs"], { cwd: packageRoot })
     },

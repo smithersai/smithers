@@ -39,6 +39,8 @@ const WATCH_MS = 5_000
 /** Bounded per-stage outage budget, carried by recorded round outcomes. */
 const MAX_UNAVAILABLE_ATTEMPTS = 12
 const MAX_WAIT_MS = 300_000
+/** A terminal run does not resume: an outage's remedy is a fresh run, which finds every filed row by its key marker. */
+const AFTER_OUTAGE = "after the outage, start a fresh run of the same plan; key markers dedupe"
 const transient = (status) => status === 0 || status === 429 || status >= 500
 class PermanentRequest extends Error {
   constructor(response) { super("request refused"); this.response = response }
@@ -48,7 +50,7 @@ class TransientRequest extends Error {
 }
 const unavailable = (cursor, headers, fields) => {
   const retryCount = (cursor.retryCount ?? 0) + 1
-  if (retryCount >= MAX_UNAVAILABLE_ATTEMPTS) throw new Refused("unavailable_exhausted", `${cursor.stage} unavailable after ${retryCount} attempts`, 4)
+  if (retryCount >= MAX_UNAVAILABLE_ATTEMPTS) throw new Refused("unavailable_exhausted", `${cursor.stage} unavailable after ${retryCount} attempts: ${AFTER_OUTAGE}`, 4)
   const raw = headers.get("retry-after")
   const seconds = raw === null || raw.trim() === "" ? NaN : Number(raw)
   const delay = Number.isFinite(seconds) ? (seconds >= 0 ? seconds * 1000 : NaN) : raw === null ? NaN : Math.max(0, Date.parse(raw) - Date.now())
@@ -157,7 +159,7 @@ export const verify = async ({ plan, acceptDropped, dryRun, origin }) => {
   if (!dryRun) {
     for (const repo of repos) {
       const { status } = await request({ dryRun, origin }, repo, { path: "/writes/00000000-0000-4000-8000-000000000000" })
-      if (transient(status)) throw new Refused("unavailable", `identity verification unavailable: HTTP ${status}`, 4)
+      if (transient(status)) throw new Refused("unavailable", `identity verification unavailable: HTTP ${status}: ${AFTER_OUTAGE}`, 4)
       if (status !== 404) throw new Refused("identity", `the machine token for ${repo} is not live: HTTP ${status}`, 3)
     }
   }

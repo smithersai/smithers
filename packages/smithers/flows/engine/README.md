@@ -146,3 +146,7 @@ that arrives with a different payload, is refused with
 the request body by default. Set the `executionId` option on either
 `FlowProxyServer` layer to apply one `ExecutionIdScope` to execute, discard, and
 resume requests before they reach the engine.
+
+A terminal action failure carries `FlowEngine.FailureSite` cause annotations with its action name, actual durable attempt count and interpreted node address. The registered flow's schema boundary preserves those annotations; durable hosts can persist a diagnostic without inspecting action payloads or repeating the action.
+
+Action error codecs and outcome decoding preserve cause annotations, including the original failure site of a child flow invoked inside an action. Durable hosts retain those coordinates in failed-attempt evidence for replay.
