@@ -179,3 +179,6 @@ page headers and primary actions. It keeps the existing anchor as its start,
 clears their visible bounds across wrapping, mounting and scrolling, and uses
 a scrollable gap in a crowded viewport. It takes no layout space. Include
 plugin headers and custom primary controls in the host's selector.
+# Notification focus
+
+`NotificationPanel` closes on Escape even when completion removed its focused answer field. A nested control that prevents the key keeps ownership of it; closing returns focus to the opener.

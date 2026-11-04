@@ -71,12 +71,14 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
     })
     await expect(entry(tab, subject).getByRole("button", { name: "Answer" })).toBeVisible()
   }
-  // Ben, on another page, sees her run waiting, named, in the page stack, with no Answer of his own.
+  // Ben sees a generic branch-scoped run label, without Ann's prompt or question.
   await expect(stack(b)).toHaveAttribute("data-placement", "anchored")
-  await expect(entry(b, subject), "Ben: Ann's run on his branch toasts").toContainText("Waiting · local-developer", {
+  await expect(entry(b, subject), "Ben: Ann's run on his branch toasts").toContainText("Waiting · Agent run · smithersai/smithers/main", {
     timeout: SYNCED_WITHIN,
   })
-  await expect(entry(b, subject)).toContainText(word)
+  await expect(entry(b, subject)).not.toContainText(question)
+  await expect(entry(b, subject)).not.toContainText(word)
+  await expect(entry(b, subject)).not.toContainText(PROMPT)
   await expect(entry(b, subject).getByRole("button", { name: "Answer" })).toHaveCount(0)
   // His top bar has the bell on this page too.
   await expect(bell(b)).toBeVisible()
@@ -148,7 +150,10 @@ test("live work: Ann's run toasts for Ben on her branch, and her notifications f
 
   // Ann: the bell opens her notifications; Dismiss closes the entry on both devices.
   await expect(async () => {
-    if (await panel(a1).isVisible()) await a1.page.keyboard.press("Escape")
+    if (await panel(a1).isVisible()) {
+      await a1.page.keyboard.press("Escape")
+      await expect(panel(a1), "Escape closes the panel after its answer field disappears").toHaveCount(0, { timeout: 2_000 })
+    }
     await bell(a1).click({ timeout: 2_000 })
     await notification(a1, subject).getByRole("button", { name: "Dismiss" }).click({ timeout: 2_000 })
   }).toPass({ timeout: SYNCED_WITHIN, intervals: [250, 500, 1_000] })
