@@ -1,6 +1,6 @@
 ---
 title: Ship audit stale tests and Conversation landmarks
-status: in-progress
+status: done
 area: e2e
 owner: Codex GPT-6.1 Sol stale-tests-2
 updated: 2026-11-04
@@ -17,6 +17,6 @@ Conversation landmarks: four real local e2e cases pass, home and branch on Chrom
 
 Pull search: production case passes after waiting for the unmatched search's real sync-completion receipt. Completion arrives; no transition rewrite is needed. Safe access/query/sync attributes contain no user content. Four-project typecheck and 21 pull-view tests pass; the real Postgres attention + pull-view run passes all 39 cases.
 
-Offline engine: the real built PWA validates the strict hashed precache binary, proves network loss and restores its persistent draft offline on both browsers. The production reopen also exposed a forbidden busy/skeleton pending frame; its product fix and final verification are in progress.
+Offline engine: the real built PWA validates the strict hashed precache binary, proves network loss and restores its persistent draft offline on both browsers. The production reopen also exposed a forbidden busy/skeleton pending frame. The navigation frame now has neither; its rendered regression passes. Final four-project typecheck, seven pending-frame/real-relay tests and both built-PWA browser offline journeys pass. The old production build still needs the lead's deployment before its shared no-loading observer can pass.
 
 All heavy work runs remotely. Private lane STATUS records pushed revisions and receipts. No deployment by this lane. Astra review has no findings. Fable review was attempted twice but timed out or had no available account; no Fable pass claimed.

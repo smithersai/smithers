@@ -7,7 +7,10 @@ import { connect, type Socket } from "node:net"
  */
 export type OfflineTransport = Awaited<ReturnType<typeof offlineTransport>>
 
-export const offlineTransport = async ({ defaultPort = 443 }: { readonly defaultPort?: number } = {}) => {
+export const offlineTransport = async ({ defaultPort = 443, hosts = {} }: {
+  readonly defaultPort?: number
+  readonly hosts?: Readonly<Record<string, string>>
+} = {}) => {
   const sockets = new Set<Socket>()
   let cut = false
   let forwarded = 0
@@ -22,7 +25,7 @@ export const offlineTransport = async ({ defaultPort = 443 }: { readonly default
   server.on("connect", (request, client, head) => {
     if (cut) { client.destroy(); return }
     const destination = new URL(`tcp://${request.url}`)
-    const upstream = keep(connect(Number(destination.port || defaultPort), destination.hostname))
+    const upstream = keep(connect(Number(destination.port || defaultPort), hosts[destination.hostname] ?? destination.hostname))
     client.on("close", () => upstream.destroy())
     upstream.on("close", () => client.destroy())
     upstream.on("connect", () => {

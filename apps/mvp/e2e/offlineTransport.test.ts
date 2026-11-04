@@ -58,11 +58,11 @@ test("a refused upstream and a non-CONNECT request close without inventing a res
   } finally { await relay.close() }
 })
 
-test("a CONNECT without a port reaches the configured real upstream", async () => {
+test("a CONNECT host alias without a port reaches the configured real upstream", async () => {
   const echo = createServer(socket => socket.pipe(socket))
   echo.listen(0, "127.0.0.1")
   await once(echo, "listening")
-  const relay = await offlineTransport({ defaultPort: (echo.address() as AddressInfo).port })
+  const relay = await offlineTransport({ defaultPort: (echo.address() as AddressInfo).port, hosts: { "device.test": "127.0.0.1" } })
   const address = new URL(relay.proxy.server)
   const client = connect(Number(address.port), address.hostname)
   try {
@@ -73,7 +73,7 @@ test("a CONNECT without a port reaches the configured real upstream", async () =
       client.once("close", () => reject(new Error("relay closed before forwarding")))
       client.once("error", reject)
     })
-    client.write("CONNECT 127.0.0.1 HTTP/1.1\r\nHost: localhost\r\n\r\nreal upstream")
+    client.write("CONNECT device.test HTTP/1.1\r\nHost: device.test\r\n\r\nreal upstream")
     expect(await response).toBe("HTTP/1.1 200 Connection Established\r\n\r\nreal upstream")
     expect(relay.forwarded()).toBe(1)
   } finally {
