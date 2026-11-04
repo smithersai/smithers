@@ -1,7 +1,7 @@
 // Machine writes (worker/github/MachineWrite.ts): the token's scope and end at the route, the App as the author, the
 // owner's one dispatcher, a failed write's way back, and `github/Write` left as it was.
 import { digestSync } from "@smthrs/crypto"
-import { Effect, Exit } from "effect"
+import { Effect, Exit, Logger } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test, vi } from "vitest"
@@ -46,14 +46,21 @@ const dispatcher = async (github: ReturnType<typeof scriptedGitHub>) => {
   const { tick } = MachineWrite.steps(value)
   const epoch = await runtime.runPromise(MachineWrite.launch("acme"))
   let round = 0
+  const logs: Array<ReturnType<typeof Logger.formatStructured.log>> = []
+  const logger = Logger.make((options) => void logs.push(Logger.formatStructured.log(options)))
+  const run = <A, E>(effect: Effect.Effect<A, E>) => Effect.runPromise(effect.pipe(
+    Effect.provideService(Logger.CurrentLoggers, new Set([logger])),
+  ))
   return {
+    logs,
+    run,
     value,
     epoch,
-    tick: () => Effect.runPromise(tick({ owner: "acme", epoch, round: round++, waitMs: 0 })),
+    tick: () => run(tick({ owner: "acme", epoch, round: round++, waitMs: 0 })),
     /** The next tick with any hold lifted, as the time passing would. */
     next: async () => {
       await clear()
-      return Effect.runPromise(tick({ owner: "acme", epoch, round: round++, waitMs: 0 }))
+      return run(tick({ owner: "acme", epoch, round: round++, waitMs: 0 }))
     },
   }
 }
@@ -713,7 +720,7 @@ describe("github/MachineDispatch", () => {
     const d = await dispatcher(github)
     const tick = (mayAct: (id: string) => boolean) => async () => {
       await clear()
-      return Effect.runPromise(MachineWrite.steps({ ...value, mayAct }).tick({ owner: "acme", epoch: d.epoch, round: Math.floor(Math.random() * 1e9), waitMs: 0 }))
+      return d.run(MachineWrite.steps({ ...value, mayAct }).tick({ owner: "acme", epoch: d.epoch, round: Math.floor(Math.random() * 1e9), waitMs: 0 }))
     }
     const posts = () => github.calls.filter((call) => call.method === "POST" && !call.path.endsWith("/access_tokens")).length
     const issue = create() as { writeId: string }
@@ -725,6 +732,30 @@ describe("github/MachineDispatch", () => {
     await tick((id) => id !== "github/acme/plan")()
     expect(await row(relate.writeId)).toMatchObject({ status: "refused", failure: "not_allowed" })
     expect(posts()).toBe(0)
+    expect(d.logs.filter((log) => log.message === "github.machine_write.refused").map((log) => ({ level: log.level, ...log.annotations }))).toEqual([
+      { level: "WARN", writeId: issue.writeId, outcome: "refused", failure: "not_allowed", cause: "allow_list", githubStatus: null },
+      { level: "WARN", writeId: relate.writeId, outcome: "refused", failure: "not_allowed", cause: "allow_list", githubStatus: null },
+    ])
+  })
+
+  test("a GitHub permission 403 logs its status cause and settles after one try", async () => {
+    await issueToken()
+    const github = scriptedGitHub()
+    const write = create()
+    await admitAs(write)
+    const d = await dispatcher(github)
+    github.faults.push({ match: posting(/\/issues$/), status: 403, message: "Resource not accessible by integration" })
+    await d.tick()
+    expect(await row(write.writeId)).toMatchObject({ status: "refused", failure: "not_allowed", tries: 1 })
+    await d.next()
+    expect(github.seen("POST", /\/issues$/)).toHaveLength(1)
+    expect(d.logs.filter((log) => log.message === "github.machine_write.refused").map((log) => ({ level: log.level, ...log.annotations }))).toEqual([
+      { level: "WARN", writeId: write.writeId, outcome: "refused", failure: "not_allowed", cause: "github_status:403", githubStatus: 403 },
+    ])
+    expect(JSON.stringify(d.logs)).not.toContain(write.title)
+    expect(JSON.stringify(d.logs)).not.toContain(write.body)
+    expect(JSON.stringify(d.logs)).not.toContain(TOKEN)
+    expect(JSON.stringify(d.logs)).not.toContain("Resource not accessible")
   })
 
   test("a slash in a token's agent or lane can't reach the table", async () => {

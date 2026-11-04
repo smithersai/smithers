@@ -398,6 +398,18 @@ export const steps = <E, R>(services: Services<E, R>) => {
       UPDATE machine_writes SET status = ${status}, failure = ${failure}, item_number = COALESCE(${number}, item_number), settled_at = now()
       WHERE id = ${id}::uuid AND status = 'pending'`)
 
+  /** A settled refusal names the check, with no GitHub message, payload or credentials. */
+  const refuse = (
+    id: string,
+    failure: string,
+    cause: "allow_list" | "installation" | `github_status:${number}` | "lane" | "revoked" | "invalid" | "has_parent" | "superseded",
+    githubStatus: number | null = null,
+  ) => settle(id, "refused", failure, null).pipe(
+    Effect.andThen(Effect.logWarning("github.machine_write.refused").pipe(
+      Effect.annotateLogs({ writeId: id, outcome: "refused", failure, cause, githubStatus }),
+    )),
+  )
+
   /** The one write this tick handles. Every GitHub answer passes `observed`, so a limit on any call is heard. */
   const work = (write: Row, owner: string) =>
     Effect.gen(function* () {
@@ -419,6 +431,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
       /** A token GitHub wouldn't give: a refusal only when it says so, else this write waits. */
       const notMinted = (failure: {
         readonly reason: string
+        readonly upstreamStatus?: number | undefined
         readonly retryAfterMillis?: number | undefined
         readonly rateLimited?: boolean | undefined
         readonly headerLimited?: boolean | undefined
@@ -428,7 +441,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
         failure.rateLimited === true || failure.headerLimited === true
           ? limited(failure.fullWaitMillis ?? failure.retryAfterMillis ?? null)
           : failure.reason === "app_not_installed" || failure.reason === "not_allowed"
-          ? settle(write.id, "refused", failure.reason, null)
+          ? refuse(write.id, failure.reason, "installation", failure.upstreamStatus ?? null)
           : failure.retryAfterMillis !== undefined
           ? noteLimited(owner, failure.retryAfterMillis)
           : holdFor(owner, READ_RETRY_MS)
@@ -463,7 +476,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const answer = readAnswer(sent.success.status, sent.success.headers, sent.success.json, Date.now())
           if (answer.kind === "limited") return undefined
           if (answer.kind === "outage") return yield* noteLimited(owner, null)
-          if (answer.kind === "refused") return yield* settle(write.id, "refused", answer.failure, null)
+          if (answer.kind === "refused") return yield* refuse(write.id, answer.failure, `github_status:${sent.success.status}`, sent.success.status)
           yield* sql`UPDATE machine_dispatch SET penalty_ms = 60000 WHERE owner = ${owner}`
           return yield* onOk(sent.success.json)
         })
@@ -488,17 +501,17 @@ export const steps = <E, R>(services: Services<E, R>) => {
           const number = payload.number as number
           const parent = payload.parent as { readonly repo: string; readonly number: number }
           const target = repositoryOf(parent.repo)
-          if (target.owner.toLowerCase() !== repository.owner.toLowerCase()) return yield* settle(write.id, "refused", "invalid", null)
+          if (target.owner.toLowerCase() !== repository.owner.toLowerCase()) return yield* refuse(write.id, "invalid", "invalid")
           const now = yield* get(`${path}/issues/${number}/parent`)
           if (now.status === 200) {
             const url = String((now.json as { url?: unknown } | undefined)?.url ?? "")
             const same = url.toLowerCase().endsWith(`/repos/${parent.repo}/issues/${parent.number}`.toLowerCase())
-            return yield* settle(write.id, same ? "done" : "refused", same ? null : "has_parent", same ? number : null)
+            return yield* (same ? settle(write.id, "done", null, number) : refuse(write.id, "has_parent", "has_parent", now.status))
           }
           if (now.status !== 404) return yield* notNow
           const child = yield* get(`${path}/issues/${number}`)
           const id = (child.json as { id?: unknown } | undefined)?.id
-          if (child.status === 404 || child.status === 410) return yield* settle(write.id, "refused", "not_found", null)
+          if (child.status === 404 || child.status === 410) return yield* refuse(write.id, "not_found", `github_status:${child.status}`, child.status)
           if (child.status !== 200 || typeof id !== "number") return yield* notNow
           const parentToken = yield* services.tokens.forInstallation(target, "write").pipe(Effect.result)
           if (parentToken._tag === "Failure") return yield* notMinted(parentToken.failure)
@@ -527,7 +540,7 @@ export const steps = <E, R>(services: Services<E, R>) => {
             SELECT 1 FROM machine_writes
             WHERE repo_id = ${write.repoId} AND op = 'issue/create' AND status = 'done' AND item_number = ${number}
               AND agent = ${write.agent} AND lane = ${write.lane} LIMIT 1`
-          if (own === undefined) return yield* settle(write.id, "refused", "not_allowed", null)
+          if (own === undefined) return yield* refuse(write.id, "not_allowed", "lane")
           // Updates to one issue land in admission order, field by field: a field a newer done update set is that
           // update's, and the rest of this one still goes. With nothing left, it is superseded and sends nothing.
           const newer = yield* sql<{ readonly payload: Record<string, unknown> }>`
@@ -535,13 +548,13 @@ export const steps = <E, R>(services: Services<E, R>) => {
             WHERE repo_id = ${write.repoId} AND op = 'issue/update' AND status = 'done' AND item_number = ${number} AND seq > ${write.seq}::bigint`
           const taken = new Set(newer.flatMap((row) => UPDATE_FIELDS.filter((field) => row.payload[field] !== undefined)))
           const wanted = UPDATE_FIELDS.filter((field) => payload[field] !== undefined && !taken.has(field))
-          if (wanted.length === 0) return yield* settle(write.id, "refused", "superseded", null)
+          if (wanted.length === 0) return yield* refuse(write.id, "superseded", "superseded")
           const asked = (field: (typeof UPDATE_FIELDS)[number]) => wanted.includes(field) ? payload[field] : undefined
           const issue = yield* get(`${path}/issues/${number}`)
-          if (issue.status === 404 || issue.status === 410) return yield* settle(write.id, "refused", "not_found", null)
+          if (issue.status === 404 || issue.status === 410) return yield* refuse(write.id, "not_found", `github_status:${issue.status}`, issue.status)
           if (issue.status !== 200) return yield* notNow
           const found = issue.json as { readonly body?: string | null; readonly user?: { readonly login?: string } | null }
-          if (!byThisApp(found.user)) return yield* settle(write.id, "refused", "not_allowed", null)
+          if (!byThisApp(found.user)) return yield* refuse(write.id, "not_allowed", "lane", issue.status)
           const marker = GitHub.Issues.writeIdOf(found.body ?? "")
           const fields = {
             ...(asked("title") === undefined ? {} : { title: payload.title }),
@@ -643,12 +656,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
       const parent = write.op === "issue/relate" ? (write.payload.parent as { readonly repo: string }).repo : undefined
       const authorized = (yield* tokenHeld(write.tokenSha256, write.repoId, write.op)) && (yield* parentHeld(write.agent, write.lane, write.repoId, parent))
       if (!authorized) {
-        yield* settle(write.id, "refused", "revoked", null)
+        yield* refuse(write.id, "revoked", "revoked")
         return yield* wake(0)
       }
       // So does the deployment's list, which may have changed since: this repository and the parent's.
       if (!services.mayAct(write.repoId) || (parent !== undefined && !services.mayAct(repositoryOf(parent).id))) {
-        yield* settle(write.id, "refused", "not_allowed", null)
+        yield* refuse(write.id, "not_allowed", "allow_list")
         return yield* wake(0)
       }
       yield* work(write, owner).pipe(

@@ -26,8 +26,15 @@ test("an agent token files an issue as the App, and a person-only act with it is
   const made = await bare.post(writes, { headers: headers(), data: { writeId, op: "issue/create", title, body: "Filed by the machine-token e2e." } })
   expect(made.status()).toBe(202)
 
-  await expect.poll(async () => (await (await bare.get(`${writes}/${writeId}`, { headers: headers() })).json()).status, { timeout: 4 * 60_000, intervals: [2000] }).toBe("done")
-  const { number } = await (await bare.get(`${writes}/${writeId}`, { headers: headers() })).json()
+  let settled: { status: string; failure: string | null; number: number | null } = { status: "pending", failure: null, number: null }
+  await expect.poll(async () => {
+    const response = await bare.get(`${writes}/${writeId}`, { headers: headers() })
+    expect(response.ok()).toBe(true)
+    settled = await response.json()
+    return settled.status
+  }, { timeout: 4 * 60_000, intervals: [2000] }).not.toBe("pending")
+  expect(settled.status, `machine write status=${settled.status} failure=${settled.failure}`).toBe("done")
+  const { number } = settled
 
   // The author is the App's bot.
   // Read as the test person, whose session the fixture holds: the issue list takes no machine token.
