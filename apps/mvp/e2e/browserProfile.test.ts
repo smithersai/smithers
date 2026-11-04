@@ -1,8 +1,31 @@
 import { describe, expect, test } from "vitest"
-import { browserProfile } from "./browserProfile"
+import { browserProfile, deviceCookies } from "./browserProfile"
+import { mkdtemp, rm, writeFile } from "node:fs/promises"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 
 describe("persistent browser environment", () => {
   const directory = "/temporary/profile"
+  test("an explicitly signed-in device never inherits the owner's cookie, including an explicitly signed-out device", async () => {
+    const cookie = { name: "session", value: "test-only-owner", domain: "app.example.com", path: "/", expires: -1,
+      httpOnly: true, secure: true, sameSite: "Lax" as const }
+    const owner = { cookies: [cookie], origins: [] }
+    const other = { cookies: [{ ...cookie, value: "test-only-other" }], origins: [] }
+    expect(await deviceCookies(undefined, async () => owner)).toEqual(owner.cookies)
+    const refuseFallback = async (): Promise<typeof owner> => { throw new Error("An explicit device must not read the owner") }
+    expect(await deviceCookies(other, refuseFallback)).toEqual(other.cookies)
+    expect(await deviceCookies({ cookies: [], origins: [] }, refuseFallback)).toEqual([])
+    const directory = await mkdtemp(join(tmpdir(), "sharing-state-"))
+    const path = join(directory, "session.json")
+    try {
+      await writeFile(path, JSON.stringify(other), { mode: 0o600 })
+      expect(await deviceCookies(path, refuseFallback)).toEqual(other.cookies)
+      await writeFile(path, "invalid test-only secret")
+      await expect(deviceCookies(path, refuseFallback)).rejects.toThrow("storage state is unreadable or invalid")
+    } finally {
+      await rm(directory, { recursive: true, force: true })
+    }
+  })
   test("macOS WebKit isolates Foundation storage and preserves other launch options", () => {
     expect(browserProfile("webkit", "darwin", directory, { headless: true, locale: "en-GB" }, { PATH: "/tools", CFFIXED_USER_HOME: "/shared" })).toEqual({
       headless: true, locale: "en-GB", env: { PATH: "/tools", CFFIXED_USER_HOME: directory },

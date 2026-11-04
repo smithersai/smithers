@@ -6,6 +6,7 @@ import { fileURLToPath } from "node:url"
 import { DEV_URL } from "../dev/https"
 import { DEVICE_PERSON_HEADER, type Role, ROLES } from "../src/features/auth/contract"
 import { sessionDirOf } from "./settings"
+import { personSettings } from "./people"
 
 // What the e2e tests run against, and what each test needs from it (docs/rules.md, test.e2e-declared-needs). One suite
 // runs locally against `alchemy dev` and against a deployment (docs/rulings.md TEST-4). A test that needs something a
@@ -235,6 +236,21 @@ const needs = {
   devPeople: {
     met: (run) => run.target === "local" && !githubAppLocally(run),
     reason: "local development's second and third people (the smithers_dev_person cookie) exist only without GitHub sign-in; a deployment needs another real test account",
+  },
+  sharingPeople: {
+    met: (run) => run.target === "local" ? !githubAppLocally(run) : personSettings("teammate", run.env) !== undefined,
+    reason: "two real people are required: set E2E_TEAMMATE_LOGIN and E2E_TEAMMATE_SESSION (an absolute path to that test account's private app session); its live identity must differ from the owner and have Member access on the scratch repository",
+    blocked: true,
+  },
+  sharingGuest: {
+    met: (run) => run.target === "local" ? !githubAppLocally(run) : personSettings("guest", run.env) !== undefined,
+    reason: "the role ceiling needs a real Guest: set E2E_GUEST_LOGIN and E2E_GUEST_SESSION (an absolute private app-session path); the deployment must confirm Guest access on the scratch repository",
+    blocked: true,
+  },
+  sharingModels: {
+    met: (run) => run.target === "local",
+    reason: "both sharing participants need an active saved model that can answer Fast; the sharing helper verifies each account's live model shape before the composer journey (provision and Test each account's own model in Settings)",
+    blocked: true,
   },
   outsideRoles: {
     met: (run) => run.target === "deployment",
@@ -584,6 +600,13 @@ export const requires = (...names: ReadonlyArray<NeedName>) => {
       base.skip(({ browserName }) => !meets(name, { ...thisRun, browserName: () => browserName }), describeNeed(name))
     }
   }
+}
+
+/** A blocked prerequisite established from live per-account data rather than run-wide configuration. */
+export const requiresVerified = (name: NeedName, available: boolean) => {
+  if (!inTest() || !NEEDS[name].blocked) throw new Error("A live prerequisite must be a declared blocked need inside a test")
+  record(name)
+  base.skip(!available, describeNeed(name))
 }
 
 /** The needs each running test declared, by its TestInfo: helpers such as `devices.open` adapt to them. */

@@ -1,4 +1,7 @@
 import { persistent } from "./persistent"
+import { deviceCookies } from "./browserProfile"
+import { distinctPerson, personSettings, personState, type OtherPerson } from "./people"
+import type { SessionAnswer } from "./deployment/session"
 import { answerTo, questionIn } from "./messages"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract"
 import { test as base, type APIRequestContext, type BrowserContext, type BrowserContextOptions, type Locator, type Page, type TestInfo } from "@playwright/test"
@@ -495,6 +498,40 @@ class Devices {
     return this.openOn(false, names, { name: "smithers_dev_person", value: "teammate" })
   }
 
+  /** The sharing proof's other person, verified before opening any app page. */
+  async openSharingPerson(person: OtherPerson, owner: Tab, repository: string, ...names: Array<string>) {
+    guard(person === "teammate" ? "sharingPeople" : "sharingGuest")
+    if (target === "local") {
+      const login = person === "teammate" ? "local-teammate" : "local-guest"
+      // sharingPeople/sharingGuest have the same local constraint as devPeople.
+      const tabs = await this.openEach(false, names, { name: "smithers_dev_person", value: person })
+      return { login, personId: login, tabs }
+    }
+    const settings = personSettings(person, process.env)
+    if (settings === undefined) throw new Error("The sharing test account is not configured")
+    const origin = new URL(this.testInfo.project.use.baseURL!).origin
+    const stored = personState(settings.session, origin)
+    const state = { cookies: [...stored.cookies], origins: [] }
+    const probe = await this.openContext({ storageState: state })
+    try {
+      const ownerResponse = await owner.page.request.get("/api/auth/session")
+      const otherResponse = await probe.request.get("/api/auth/session")
+      expect(ownerResponse.status()).toBe(200)
+      expect(otherResponse.status()).toBe(200)
+      const identity = distinctPerson(await ownerResponse.json() as SessionAnswer, await otherResponse.json() as SessionAnswer, settings.login)
+      const roleResponse = await probe.request.get(`/api/repos/${repository}/role`)
+      expect(roleResponse.status(), "the deployment verifies the other person's repository role").toBe(200)
+      const { role } = await roleResponse.json() as { role: string | null }
+      expect(person === "guest" ? role === "guest" : ["member", "maintainer", "admin"].includes(role ?? ""),
+        `the ${person}'s real role on the sharing repository`).toBe(true)
+      this.testInfo.annotations.push({ type: "sharing identity", description: `${identity.login}: distinct person, repository role ${role}` })
+      const tabs = await this.openEach(false, names, undefined, undefined, undefined, state)
+      return { ...identity, tabs }
+    } finally {
+      await probe.close()
+    }
+  }
+
   // As `open`, signed in as local development's person `person` (`teammate`, a Member, `guest`, a Guest,
   // `maintainer`, a Maintainer, `newcomer-<id>`, a Member nobody was before, or `owner-<id>` and `reader-<id>`, people
   // with no role on its repository who are the Admin and a Guest of octocat/Spoon-Knife: worker/DevChatApi.ts), so a
@@ -534,10 +571,12 @@ class Devices {
     cookie?: Cookie,
     path?: string,
     signedOut?: Cookie,
+    storageState?: BrowserContextOptions["storageState"],
   ) {
     return Promise.all(
       names.map(async (name) => {
         const context = await this.openContext({
+          ...(storageState === undefined ? {} : { storageState }),
           proxy: this.proxy,
           viewport: this.viewport,
           extraHTTPHeaders: this.extraHTTPHeaders,
@@ -670,7 +709,8 @@ export const test = base.extend<{ devices: Devices; spendGuard: void; problems: 
     const openContext = async (options: BrowserContextOptions) => {
       if (browserName !== "webkit") return browser.newContext(options)
       const profile = await persistent(playwright.webkit, { ...contextOptions, baseURL, ignoreHTTPSErrors, ...options })
-      await profile.context.addCookies((await context.storageState()).cookies)
+      // An explicit second identity must never be overwritten by the project's owner's cookies.
+      await profile.context.addCookies(await deviceCookies(options.storageState, () => context.storageState()))
       profiles.push(profile)
       return profile.context
     }

@@ -272,6 +272,22 @@ describe("needs", () => {
     expect(NEEDS.noGitHubApp.met({ ...local, env: { E2E_ISSUES_REPOSITORY: "a/b" } })).toBe(false)
   })
 
+  it("blocks production sharing without distinct test-account settings and preserves local identity restrictions", () => {
+    for (const [name, prefix] of [["sharingPeople", "E2E_TEAMMATE"], ["sharingGuest", "E2E_GUEST"]] as const) {
+      expect(NEEDS[name].met(local)).toBe(true)
+      expect(NEEDS[name].met({ ...local, env: { GITHUB_APP_CLIENT_ID: "configured" } })).toBe(false)
+      expect(NEEDS[name].met(deployedAs("admin"))).toBe(false)
+      expect(describeNeed(name)).toMatch(/^blocked /)
+      expect(NEEDS[name].met(deployedAs("member", { [`${prefix}_LOGIN`]: "another-test", [`${prefix}_SESSION`]: "/private/session.json" }))).toBe(true)
+      expect(NEEDS[name].met(deployedAs("member", { [`${prefix}_LOGIN`]: "another-test", [`${prefix}_SESSION`]: "relative.json" }))).toBe(false)
+    }
+    // Supporting real sessions never makes local developer cookies valid in production.
+    expect(NEEDS.devPeople.met(deployedAs("admin", { E2E_TEAMMATE_LOGIN: "other", E2E_TEAMMATE_SESSION: "/private/session.json" }))).toBe(false)
+    expect(NEEDS.sharingModels.met(local)).toBe(true)
+    expect(NEEDS.sharingModels.met(deployedAs("member"))).toBe(false)
+    expect(describeNeed("sharingModels")).toMatch(/^blocked /)
+  })
+
   it("for roles on another repository: proved against a deployment, where roles are per repository; VibeLang's maintainer, locally or at run time", () => {
     // Local development without the App keeps its people's roles on every repository (decision 0079).
     expect(NEEDS.outsideRoles.met(local)).toBe(false)
@@ -485,7 +501,7 @@ describe("needs", () => {
 
   it("each say why, and missing account or fixture prerequisites block the run", () => {
     for (const name of Object.keys(NEEDS) as Array<NeedName>) expect(NEEDS[name].reason.length, name).toBeGreaterThan(20)
-    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
+    expect((Object.keys(NEEDS) as Array<NeedName>).filter((name) => NEEDS[name].blocked)).toEqual(["timelineVisualFixture", "sharingPeople", "sharingGuest", "sharingModels", "vibelangMaintainer", "vibelangOpenPull", "absentRepository", "unsyncedRepository", "failedRun", "repositoryRun", "emptySecretsRepository", "syncedRepository", "member", "ownConversation", "maintainer"])
   })
 })
 

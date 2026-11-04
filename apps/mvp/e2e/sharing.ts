@@ -1,0 +1,151 @@
+import { Effect } from "effect"
+import { clearGrants, SharingCleanup } from "./sharingCleanup"
+import type { Page } from "@playwright/test"
+import { expect } from "@playwright/test"
+import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract"
+import { PERSONAL_MODEL_SHAPE_ROUTE, resolveTier, type SavedConnection } from "../src/features/personal-model/contract"
+import { OWN_BRANCH, requiresVerified, target, writeHeaders } from "./target"
+import { shapeRows } from "./shape"
+import type { Tab } from "./devices"
+
+/** Settle the test's questions while the asker still has edit access, before removing any grants. */
+export const settleSharingQuestions = async (tab: Tab) => {
+  const failures: Error[] = []
+  for (const { answerId, status } of tab.asked) {
+    if (status !== undefined && status >= 400) continue
+    try {
+      const response = await tab.page.request.post(`/api/answers/${answerId}`, {
+        headers: { ...writeHeaders(), [DEVICE_PERSON_HEADER]: NO_DEVICE_DATA },
+        data: { status: "failed", failure: "unfinished" },
+      })
+      if (response.status() === 200) continue
+      if (response.status() === 409 && (await response.json() as { code?: string }).code === "settled") continue
+      failures.push(new Error(`Sharing question cleanup returned ${response.status()}`))
+    } catch {
+      failures.push(new Error("Sharing question cleanup transport failed (details withheld)"))
+    }
+  }
+  if (failures.length > 0) throw new AggregateError(failures, "Sharing questions were not settled before revocation")
+}
+
+/** Read readiness as the UI does; no key, provider response or saved connection is put in an artifact. */
+export const requireSharingModels = async (...pages: ReadonlyArray<Page>) => {
+  if (target === "local") return
+  for (const page of pages) {
+    type Row = Pick<SavedConnection, "id" | "kind" | "active" | "protocol"> & {
+      base_url: string | null; fast_model: string | null; implement_model: string | null; hard_model: string | null
+    }
+    const rows = await shapeRows<Row>(page.request, PERSONAL_MODEL_SHAPE_ROUTE)
+    requiresVerified("sharingModels", resolveTier(rows.map((row) => ({
+      id: row.id, kind: row.kind, active: row.active, protocol: row.protocol, baseUrl: row.base_url,
+      fastModel: row.fast_model, implementModel: row.implement_model, hardModel: row.hard_model,
+    })), "fast") !== undefined)
+  }
+}
+
+/** A separate scratch branch; sharing must never expose the other suites' private conversation. */
+export const sharingRepository = (kind: "sharing" | "coedit") => target === "local"
+  ? { owner: "octocat", name: "Hello-World", ref: kind === "sharing" ? "test" : "octocat-patch-1" }
+  : { owner: OWN_BRANCH.owner, name: OWN_BRANCH.name, ref: `smithers-e2e-${kind}` }
+
+export type SharedBranch = { readonly branchId: string; readonly conversationId: string; readonly access: string }
+
+export const share = (page: Page, branch: SharedBranch, data: { login: string; access: "view" | "edit" } | { grantee: string; access: "view" | "edit" | null }) =>
+  page.request.post(`/api/branches/${branch.branchId}/shares`, { data, headers: writeHeaders() })
+
+/** The owner removes every grant on this dedicated fixture, including one left by an interrupted run. */
+export const clearShares = (page: Page, branch: SharedBranch, known: ReadonlyArray<string>) =>
+  Effect.runPromise(clearGrants(known).pipe(Effect.provideService(SharingCleanup, {
+    remove: (grantee) => Effect.gen(function* () {
+      const response = yield* Effect.tryPromise({
+        try: () => share(page, branch, { grantee, access: null }),
+        catch: () => new Error("Fixture grant revocation transport failed (details withheld)"),
+      })
+      if (response.status() !== 200) return yield* Effect.fail(new Error(`Fixture grant revocation returned ${response.status()}`))
+    }),
+    discover: Effect.tryPromise({
+      try: async () => (await shapeRows<{ grantee: string }>(page.request, `/api/shapes/shares?branch=${branch.branchId}`)).map((row) => row.grantee),
+      catch: () => new Error("Fixture grant discovery failed; all known revocations were attempted"),
+    }),
+  })))
+
+export const trackSharedBranch = async (page: Page, kind: "sharing" | "coedit") => {
+  const repo = sharingRepository(kind)
+  const track = (create = false) => page.request.post("/api/branches", { data: { ...repo, ...(create ? { create } : {}) }, headers: writeHeaders() })
+  const first = await track()
+  const response = target === "deployment" && first.status() === 404 ? await track(true) : first
+  expect([200, 201], "the test account tracks its dedicated scratch branch").toContain(response.status())
+  const branch = await response.json() as SharedBranch
+  expect(branch.access, "only the owner can reset this fixture").toBe("owner")
+  return branch
+}
+
+/** Direct API probes bind the cookie to the actual other person, so CSRF/device refusal cannot mask authorization. */
+export const personHeaders = (personId: string) => ({ ...writeHeaders(), [DEVICE_PERSON_HEADER]: personId })
+
+export const canWrite = async (page: Page, branch: SharedBranch, personId: string) => {
+  const response = await page.request.post(`/api/texts/${crypto.randomUUID()}`, {
+    headers: personHeaders(personId),
+    data: { scope: { conversation: branch.conversationId }, id: crypto.randomUUID(), update: "AAA=" },
+  })
+  expect(response.status(), "the API admits an editor's valid text update").toBe(200)
+}
+
+export const cannotWrite = async (page: Page, branch: SharedBranch, personId: string, code: "view_only" | "forbidden") => {
+  const response = await page.request.post(`/api/texts/${crypto.randomUUID()}`, {
+    headers: personHeaders(personId),
+    // A valid empty Yjs update. Authorization must refuse it before any update is stored.
+    data: { scope: { conversation: branch.conversationId }, id: crypto.randomUUID(), update: "AAA=" },
+  })
+  expect(response.status(), "the API enforces the person's branch access").toBe(403)
+  expect(await response.json()).toEqual({ code })
+  const grant = await page.request.post(`/api/branches/${branch.branchId}/shares`, {
+    headers: personHeaders(personId), data: { grantee: "repository", access: "edit" },
+  })
+  expect(grant.status(), "a non-owner cannot widen access").toBe(403)
+  expect(await grant.json()).toEqual({ code: "forbidden" })
+}
+
+/** Sockets independent of the app: hiding the UI cannot make this revocation assertion pass. */
+export const holdLiveSessions = async (page: Page, paths: ReadonlyArray<string>) => {
+  await page.evaluate(async (paths) => {
+    const held: Array<{ socket: WebSocket; closed: number | null; closedAt: number | null }> = []
+    Object.assign(window, { sharingProofSockets: held })
+    await Promise.all(paths.map((path) => new Promise<void>((resolve, reject) => {
+      const socket = new WebSocket(`${location.origin.replace(/^http/, "ws")}${path}`)
+      const record = { socket, closed: null as number | null, closedAt: null as number | null }
+      held.push(record)
+      const timer = setTimeout(() => reject(new Error("A sharing proof socket did not join")), 15_000)
+      socket.addEventListener("message", () => { clearTimeout(timer); resolve() }, { once: true })
+      socket.addEventListener("close", (event) => { clearTimeout(timer); record.closed = event.code; record.closedAt = performance.now(); reject(new Error(`A sharing proof socket closed before joining: ${event.code}`)) })
+    })))
+  }, [...paths])
+}
+
+/** Measured on the same device clock as closure; every probe is still live when removal starts. */
+export const startRevocation = (page: Page) => page.evaluate(() => {
+  const held = (window as unknown as { sharingProofSockets: Array<{ socket: WebSocket; closed: number | null }> }).sharingProofSockets
+  if (held.length !== 3 || held.some((held) => held.socket.readyState !== WebSocket.OPEN || held.closed !== null)) {
+    throw new Error("All three sharing sessions must remain open until removal")
+  }
+  return performance.now()
+})
+
+export const liveSessionsRevoked = async (page: Page, startedAt: number) => {
+  await expect.poll(() => page.evaluate(() =>
+    (window as unknown as { sharingProofSockets: Array<{ closed: number | null }> }).sharingProofSockets.map((held) => held.closed),
+  ), { message: "the server revokes the room, text and terminal sockets", timeout: 5_000 }).toEqual([1008, 1008, 1008])
+  const closed = await page.evaluate(() =>
+    (window as unknown as { sharingProofSockets: Array<{ closedAt: number }> }).sharingProofSockets.map((held) => held.closedAt))
+  for (const at of closed) {
+    expect(at, "the socket closes after removal starts").toBeGreaterThanOrEqual(startedAt)
+    expect(at - startedAt, "revocation closes each socket within five seconds of the removal action").toBeLessThanOrEqual(5_000)
+  }
+}
+
+export const emptyShape = async (page: Page, path: string) => {
+  const response = await page.request.get(path)
+  expect(response.status()).toBe(200)
+  const rows = await response.json() as Array<{ value?: unknown }>
+  expect(rows.filter((row) => row.value !== undefined), "the revoked person receives no private rows").toEqual([])
+}
