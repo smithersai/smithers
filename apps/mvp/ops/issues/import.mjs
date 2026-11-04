@@ -3,22 +3,32 @@
 // (tree.mjs). It reads, scrubs, deduplicates and places; it posts nothing. The plan is a mode-600 JSONL file that
 // may hold private text in its dropped rows, so it never goes in a repository.
 //
-//   node ops/issues/import.mjs --out <plan.jsonl> [--host <lane host>] [--draft <source>=<file or host:path>]...
-//                              [--replace-findings <repo>]... [--pending-ref main]
+//   node ops/issues/import.mjs --out <plan.jsonl> --draft <source>=<file>... [--private-repos <file>]
+//   node ops/issues/import.mjs --out <plan.jsonl> [--source lane-host|fuzz]... [--host <lane host>]
+//                              [--draft <source>=<file or host:path>]... [--replace-findings <repo>]... [--pending-ref main]
 //
-// Sources, read at run time:
-// - the lane host, over SSH, read-only: the merge queue (`~/vibe/mq/queue.jsonl`, latest state per id; its entries are
+// Draft mode, the first form: one or more `--draft` and no `--source`. It reads only the named local draft files, then
+// places, scrubs, deduplicates and plans them with the whole tree. It runs no `gh` and no `ssh`, so an agent holding
+// only the App's machine token can plan its drafts: agent actions go through the App, never a personal login. A
+// `host:path` draft needs ssh, so draft mode refuses it; copy the file here, or select a source. It reads no existing
+// issues: `issues/file-tree` reuses an issue or a tree node by its `key:` marker when it files
+// (ops/issues/track.mjs `findMatch`). Private repository names for the scrub come from `--private-repos <file>` or
+// $SMITHERS_PRIVATE_REPOS_FILE, one per line, as for track.mjs; with none, nothing is planned.
+//
+// The second form reads the selected sources, every source when no `--source` and no `--draft` is given:
+// - `lane-host`, over SSH, read-only: the merge queue (`~/vibe/mq/queue.jsonl`, latest state per id; its entries are
 //   work, so they file no issue: one naming none goes in `<out>.queue-unlinked.jsonl`, mode 600, until TODO leaves
 //   can hold it), the latest
 //   spec-review round and the scoped reviews (`~/vibe/review-spec/loop`), and each example repository's migration
 //   inbox (`~/vibe/review-spec/fuzz-coverage/inbox/migrate-<repo>.md`); lane reports (`~/lanes/*.REPORT.md`) are
 //   counted and dated only, since they hold no open/fixed finding records;
-// - main's pending fuzz gaps (`typescript/tsc/internal/vibelangfuzz/testdata/pending/*.txt` on smithersai/vibelang),
+// - `fuzz`, main's pending fuzz gaps (`typescript/tsc/internal/vibelangfuzz/testdata/pending/*.txt` on smithersai/vibelang),
 //   through `gh api`;
 // - the agents' issue drafts, `--draft <source>=<file>` (a JSON array or JSONL; `host:path` reads over SSH). A
 //   source whose drafts cover its whole migration inbox, `--replace-findings <repo>`, stands in for that inbox's
 //   parsed findings. A repository's tracking draft becomes its tree node's issue.
-// Private repository names for the scrub come from `gh repo list <owner> --visibility private`, held in memory.
+// Private repository names for the scrub come from `gh repo list <owner> --visibility private`, held in memory, and
+// the `--private-repos` file. `gh` and `ssh` use the operator's own logins, so only an operator runs this form.
 //
 // Plan rows, in filing order: `{"type":"node", ...}` (the tree), then `{"type":"issue", ...}` (drafts, then findings;
 // each with key, repo, title, body, labels, links, parent, depth), then `{"type":"queue-link", key, repo, issue, link}`
@@ -32,7 +42,10 @@ import { parseArgs } from "node:util"
 import { cleanRecord } from "./scrub.mjs"
 import { draftRecords, fuzzRecords, migrationRecords, queuePlan, reviewRoundRecords, scopedRecords } from "./sources.mjs"
 import { MIGRATED_REPOS, place } from "./tree.mjs"
-import { markerOf, bodyWithMarker } from "./track.mjs"
+import { markerOf, bodyWithMarker, privateReposOf } from "./track.mjs"
+
+/** The sources besides drafts: each needs the operator's own logins (`ssh` to the lane host, `gh`). */
+const SOURCES = ["lane-host", "fuzz"]
 
 const { values } = parseArgs({
   options: {
@@ -41,9 +54,30 @@ const { values } = parseArgs({
     draft: { type: "string", multiple: true, default: [] },
     "pending-ref": { type: "string", default: "main" },
     "replace-findings": { type: "string", multiple: true, default: [] },
+    source: { type: "string", multiple: true, default: [] },
+    "private-repos": { type: "string" },
   },
 })
 if (values.out === undefined) throw new Error("--out <plan.jsonl> is required")
+for (const source of values.source) if (!SOURCES.includes(source)) throw new Error(`--source is one of ${SOURCES.join(", ")}`)
+const draftOnly = values.draft.length > 0 && values.source.length === 0
+const selected = new Set(draftOnly ? [] : values.source.length === 0 ? SOURCES : values.source)
+const drafts = values.draft.map((spec) => {
+  const at = spec.indexOf("=")
+  if (at <= 0) throw new Error(`--draft is <source>=<file>, not ${spec}`)
+  return { source: spec.slice(0, at), file: spec.slice(at + 1) }
+})
+/** A draft file named `<host>:<path>` with no local file of that name: read over SSH. */
+const remoteDraft = (file) => (existsSync(file) ? null : /^([\w.-]+):((?:~|\/).*)$/.exec(file))
+if (draftOnly) {
+  for (const { source, file } of drafts) {
+    if (remoteDraft(file) !== null) throw new Error(`--draft ${source}=${file} is on another host and needs ssh: draft mode reads local files only. Copy it here, or add --source lane-host`)
+  }
+}
+const namedPrivate = privateReposOf(values["private-repos"] ?? process.env.SMITHERS_PRIVATE_REPOS_FILE)
+if (draftOnly && namedPrivate.length === 0) {
+  throw new Error("no private repository names: draft mode reads them from --private-repos <file> or SMITHERS_PRIVATE_REPOS_FILE, one per line, never from gh. The scrub would miss them, so nothing is planned")
+}
 
 // One read-only pass on the lane host. It opens files for reading and lists directories; nothing else.
 const REMOTE = String.raw`
@@ -77,28 +111,29 @@ times = sorted(int(os.path.getmtime(p)) for p in reports)
 print(json.dumps({"kind": "lane-reports", "count": len(reports), "oldest": times[0] if times else None, "newest": times[-1] if times else None}))
 `
 
-const remote = execFileSync("ssh", ["-o", "BatchMode=yes", values.host, "python3", "-"], { input: REMOTE, maxBuffer: 1024 * 1024 * 1024, encoding: "utf8" })
+const remote = !selected.has("lane-host") ? [] : execFileSync("ssh", ["-o", "BatchMode=yes", values.host, "python3", "-"], { input: REMOTE, maxBuffer: 1024 * 1024 * 1024, encoding: "utf8" })
   .split("\n")
   .filter((line) => line.trim() !== "")
   .map((line) => JSON.parse(line))
 
 const gh = (...args) => execFileSync("gh", args, { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 })
 const pendingPath = "typescript/tsc/internal/vibelangfuzz/testdata/pending"
-const pendingNames = JSON.parse(gh("api", `repos/smithersai/vibelang/contents/${pendingPath}?ref=${values["pending-ref"]}`)).map((file) => file.name).filter((name) => name.endsWith(".txt"))
+const pendingNames = !selected.has("fuzz") ? [] : JSON.parse(gh("api", `repos/smithersai/vibelang/contents/${pendingPath}?ref=${values["pending-ref"]}`)).map((file) => file.name).filter((name) => name.endsWith(".txt"))
 const pending = pendingNames.map((name) => ({ name, text: gh("api", "-H", "Accept: application/vnd.github.raw", `repos/smithersai/vibelang/contents/${pendingPath}/${name}?ref=${values["pending-ref"]}`) }))
-const privateRepos = ["smithersai", "roninjin10"].flatMap((owner) => {
+const listedPrivate = draftOnly ? [] : ["smithersai", "roninjin10"].flatMap((owner) => {
   try {
     return JSON.parse(gh("repo", "list", owner, "--visibility", "private", "--limit", "500", "--json", "name")).map((repo) => repo.name)
   } catch {
     return []
   }
 })
+const privateRepos = [...new Set([...namedPrivate, ...listedPrivate])]
 if (privateRepos.length === 0) throw new Error("no private repository names: the scrub would miss them, so nothing is planned")
 
-/** A draft file: local, or `<host>:<path>` read over SSH (read-only) when no local file has that name. */
+/** A draft file: local, or `<host>:<path>` read over SSH (read-only) when no local file has that name; never in draft mode. */
 const readDrafts = (file) => {
-  const remotePath = /^([\w.-]+):((?:~|\/).*)$/.exec(file)
-  const text = (remotePath !== null && !existsSync(file)
+  const remotePath = remoteDraft(file)
+  const text = (remotePath !== null
     ? execFileSync("ssh", ["-o", "BatchMode=yes", remotePath[1], "cat", "--", remotePath[2].replace(/^~\//, "")], { encoding: "utf8", maxBuffer: 256 * 1024 * 1024 })
     : readFileSync(file, "utf8")).trim()
   if (text.startsWith("[")) return JSON.parse(text)
@@ -116,10 +151,7 @@ const round = remote.filter((row) => row.kind === "round")
 const queue = queuePlan(remote.filter((row) => row.kind === "queue").map((row) => row.entry))
 const replaced = new Set(values["replace-findings"])
 const records = [
-  ...values.draft.flatMap((spec) => {
-    const [source, file] = [spec.slice(0, spec.indexOf("=")), spec.slice(spec.indexOf("=") + 1)]
-    return draftRecords(source, readDrafts(file))
-  }),
+  ...drafts.flatMap(({ source, file }) => draftRecords(source, readDrafts(file))),
   ...reviewRoundRecords(round.map((row) => ({ reviewer: row.reviewer, round: row.round, text: row.text }))),
   ...remote.filter((row) => row.kind === "scoped").flatMap((row) => scopedRecords(row.scope, row.text)),
   ...remote.filter((row) => row.kind === "migration" && !replaced.has(row.repo)).flatMap((row) => migrationRecords(row.repo, row.text)),
@@ -185,7 +217,8 @@ const summary = {
   droppedByRule: count(dropped.flatMap((row) => row.problems.flatMap((p) => p.rules)), (rule) => rule),
   droppedByField: count(dropped.flatMap((row) => row.problems.map((p) => p.field.replace(/\[\d+\]/, "[]"))), (field) => field),
   laneReports: reports === undefined ? null : { count: reports.count, oldest: reports.oldest && new Date(reports.oldest * 1000).toISOString(), newest: reports.newest && new Date(reports.newest * 1000).toISOString(), imported: 0 },
-  fuzzSource: `smithersai/vibelang@${values["pending-ref"]}:${pendingPath} (${pending.length} areas)`,
+  sources: [...(drafts.length === 0 ? [] : ["drafts"]), ...selected],
+  fuzzSource: selected.has("fuzz") ? `smithersai/vibelang@${values["pending-ref"]}:${pendingPath} (${pending.length} areas)` : null,
 }
 const out = resolve(values.out)
 mkdirSync(dirname(out), { recursive: true, mode: 0o700 })
