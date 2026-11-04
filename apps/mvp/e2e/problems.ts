@@ -179,7 +179,7 @@ export const serverErrorAnnotation = (status: Status, path: string) => {
     throw new Error(`expectServerError: ${status} is not a 4xx or 5xx status or "failed"`)
   }
   if (!path.startsWith("/") || /[\s?]/.test(path)) throw new Error(`expectServerError: "${path}" is not a pathname such as /api/auth/session`)
-  return { type: EXPECTED_SERVER_ERROR, description: `${status} ${path}` }
+  return { type: EXPECTED_SERVER_ERROR, description: `${status} ${path.replace(UUID, ":id")}` }
 }
 
 /** The services a run's target runs without, for `environmentAnnotations`. */

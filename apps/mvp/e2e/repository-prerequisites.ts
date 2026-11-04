@@ -1,6 +1,6 @@
 import { expect, request as requests, test, type APIRequestContext } from "@playwright/test"
 import { DEVICE_PERSON_HEADER } from "../src/features/auth/contract"
-import { baseURL, guard, me, sessionFiles, target } from "./target"
+import { baseURL, guard, me, requires, sessionFiles, target } from "./target"
 
 // Real prerequisite receipts, never a browser route replacement. A Member's read primes the shared About cache
 // using the deployment read token before a visitor asks; an exhausted anonymous IP quota cannot establish absence.
@@ -34,6 +34,29 @@ export const repositoryAbout = async (kind: "absentRepository" | "unsyncedReposi
     else expect(await response.json()).toMatchObject({ name: repository })
     return repository
   } finally { await authenticated.dispose() }
+}
+
+/** A real repository on which this account may clone, which no run has imported yet. */
+export const cloneHeaderRepository = async (request: APIRequestContext) => {
+  requires("member")
+  if (target === "local") return "octocat/linguist"
+  requires("githubScratch")
+  const candidates = [...new Set([
+    process.env.E2E_ISSUES_REPOSITORY, process.env.E2E_FACTORY_REPOSITORY,
+    process.env.E2E_TRACKING_REPOSITORY, process.env.E2E_VIBELANG_REPOSITORY,
+  ].filter((name): name is string => Boolean(name)))].filter(name => name.split("/")[0]!.toLowerCase() === me().login.toLowerCase())
+  for (const repository of candidates) {
+    const role = await request.get(`/api/repos/${repository}/role`)
+    expect(role.status(), "the clone layout fixture needs a real repository authority receipt").toBe(200)
+    const answer = await role.json() as { role: string | null }
+    if (!["member", "maintainer", "admin"].includes(answer.role ?? "")) continue
+    const refs = await request.get(`/api/repos/${repository}/refs`)
+    expect([200, 204], "the fixture's mirror state must be known").toContain(refs.status())
+    if (refs.status() !== 204) continue
+    await test.info().attach("clone-header-repository", { body: JSON.stringify({ repository, role: answer.role, refsStatus: refs.status() }), contentType: "application/json" })
+    return repository
+  }
+  throw new Error("Clone layout needs an unimported scratch repository where the test account is a Member or above. The account has no clone authority on octocat/linguist.")
 }
 
 /** Complete a real clone before testing tree-to-file redirects, including the signed-out variant. */

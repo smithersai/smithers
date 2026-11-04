@@ -7,6 +7,7 @@ import { resetBranches } from "../test/branch.ts"
 import { branchRoles, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
 import * as Conversations from "./Conversations.ts"
+import { RoleRefused } from "../github/RepoRoles.ts"
 import { visible as visibleIn } from "./RefReads.ts"
 
 const runtime = testFile("branch_ref_reads")
@@ -20,6 +21,19 @@ const visible = (repository: string, who: Parameters<typeof visibleIn>[1]) =>
     const scratch = yield* Effect.service(TestDatabase.Scratch)
     return yield* visibleIn(repository, who).pipe(Effect.provide(branchRoles(scratch.database)))
   })
+
+test("an empty ref set needs no GitHub role; existing private refs still fail closed when role lookup fails", async () => {
+  const unavailable = new RoleRefused({ code: "unavailable" })
+  const roles = Layer.succeed(BranchRoles, BranchRoles.of({
+    roleOn: () => Effect.fail(unavailable),
+    workUninstalled: () => Effect.fail(unavailable),
+  }))
+  const read = visibleIn(repo, actor("reader")).pipe(Effect.provide(roles))
+  expect(await runtime.runPromise(read)).toEqual([])
+  await runtime.runPromise(Conversations.track(repo, "private", "open", "a".repeat(40), "owner", undefined, "ephemeral"))
+  const result = await runtime.runPromise(Effect.result(read))
+  expect(result).toMatchObject({ _tag: "Failure", failure: { code: "unavailable" } })
+})
 
 test("only an owner or current share can discover an ephemeral ref; existing refs remain public", async () => {
   const make = (name: string, namespace: "default" | "ephemeral") =>

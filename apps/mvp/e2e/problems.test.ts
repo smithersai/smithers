@@ -132,6 +132,16 @@ describe("problemOf: console and page errors", () => {
 })
 
 describe("declarations", () => {
+  it("matches a deliberate missing-fixture response after UUIDs are redacted without hiding other failures", () => {
+    const path = "/api/repos/account/absent-0f8fad5b-d9cb-469f-a165-70867728950e/about"
+    const [declaration] = declarationsOf([serverErrorAnnotation(404, path)])
+    const missing = problemOf(ORIGIN, consoleError("Failed to load resource: the server responded with a status of 404 ()", app(path)))!
+    expect(declares(declaration!, missing)).toBe(true)
+    expect(declares(declaration!, problemOf(ORIGIN, response(503, app(path)))!)).toBe(false)
+    const other = problemOf(ORIGIN, consoleError("Failed to load resource: the server responded with a status of 404 ()", app(path.replace("/about", "/refs"))))!
+    expect(declares(declaration!, other)).toBe(false)
+  })
+
   it("names a status on a path, or a failed request, as an annotation", () => {
     expect(serverErrorAnnotation(503, "/api/auth/session")).toEqual({ type: EXPECTED_SERVER_ERROR, description: "503 /api/auth/session" })
     expect(serverErrorAnnotation("failed", "/api/runs/*/credential")).toEqual({ type: EXPECTED_SERVER_ERROR, description: "failed /api/runs/*/credential" })
