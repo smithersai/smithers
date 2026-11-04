@@ -72,6 +72,13 @@ Compiled UI plugin chunks run with the app's full power: the import rules are hy
 | `open(view)` | Navigates to one of the plugin's views (`app/navigate`). |
 | `events(view)` | The view's local events the keymap delivered (`j`, `k`). |
 
+Live query snapshots retain their array identity while row references and order
+are unchanged, including hidden empty snapshots, so React subscribers do not
+render indefinitely. Each read still consults the repository gate synchronously;
+a permission refusal hides rows before the asynchronous stream catches up.
+The real-collection regression is `src/plugins/liveQuery.test.ts`; see
+[decision 0160](../decisions/0160-plugin-live-snapshots.md).
+
 ## The action strip
 
 Under a plugin's view, in host UI (`ActionStrip.tsx`, `src/plugins/strip.ts`): one button per person-only event whose key's `when` holds for the selected item. An event that picks one of the item's choices (`$item.options[$event.index]`) is one button per choice, keyed `1` to `9`. One text box fills every text field (a note); it declares `i`, which the app's one-key shortcuts focus, and `Esc` leaves it. A note belongs to its item: it is kept on the device per view and item (`plugin-drafts`, src/device/registry.ts), so a reload keeps it and it never rides with another item, and it is dropped once its answer went. A button acts only on the item it was drawn for: if that item moved on meanwhile (answered on another device, a new version), the press does nothing (`stale`). While a press is on its way the strip shows `Sending` and further presses do nothing, so two presses record one answer; a failed press shows `Not sent`, keeps the note, and the next press retries. A view's keys are its own bindings: another plugin's binding of an event with the same name never changes this strip.

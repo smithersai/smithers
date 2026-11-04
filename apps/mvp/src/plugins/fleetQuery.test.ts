@@ -81,6 +81,7 @@ test("a fleet query answers no rows while its repository may not show, and tells
     for (const listener of shown.listeners) listener()
     expect(told).toBe(1)
     expect(live.current()).toEqual([])
+    expect(live.current()).toBe(live.current())
     shown.now = true
     stop()
   })))

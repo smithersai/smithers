@@ -55,11 +55,12 @@ export const presses = Metric.counter("smithers_plugin_presses", {
 // One gated view per live query, so two reads of one query answer the same object, as the queries do. It holds no
 // decision: `current` reads the rule each time, so a session or role change shows in the next read.
 const gatedViews = new WeakMap<object, Host.Live<unknown>>()
+const EMPTY_ROWS: ReadonlyArray<never> = []
 const gateLive = <R>(plugins: { readonly visible: (id: string) => boolean; readonly onVisibility: (listener: () => void) => () => void }, id: string, live: Host.Live<R>): Host.Live<R> => {
   const known = gatedViews.get(live)
   if (known !== undefined) return known as Host.Live<R>
   const gated: Host.Live<R> = {
-    current: () => plugins.visible(id) ? live.current() : [],
+    current: () => plugins.visible(id) ? live.current() : EMPTY_ROWS,
     subscribe: (listener) => {
       const rows = live.subscribe(listener)
       const visibility = plugins.onVisibility(listener)
@@ -101,13 +102,21 @@ export const liveOf = <R>(rows: Stream.Stream<ReadonlyArray<R>>, initial: Readon
 export const liveQueryOf = <R extends object>(query: Gated<R>) =>
   Effect.gen(function* () {
     query.tanstack.startSyncImmediate()
+    let current: ReadonlyArray<R> = EMPTY_ROWS
+    // TanStack allocates toArray on each read. Keep an unchanged React snapshot stable, but read the gate now:
+    // a cached stream value could still expose rows synchronously after permission was refused.
+    const snapshot = () => {
+      const rows = query.tanstack.toArray
+      if (rows.length !== current.length || rows.some((row, index) => row !== current[index])) current = rows
+      return current
+    }
     const listeners = new Set<() => void>()
     yield* query.rows.pipe(
       Stream.runForEach(() => Effect.sync(() => { for (const listener of listeners) listener() })),
       Effect.forkScoped({ startImmediately: true }),
     )
     return {
-      current: () => query.tanstack.toArray,
+      current: snapshot,
       subscribe: (listener: () => void) => {
         listeners.add(listener)
         return () => void listeners.delete(listener)
