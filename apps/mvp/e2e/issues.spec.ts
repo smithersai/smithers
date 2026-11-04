@@ -1,5 +1,5 @@
 import { expect, type Browser, type BrowserContext, type Page, type TestInfo } from "@playwright/test"
-import { strictTest as base } from "./watch"
+import { expectOfflineErrors, strictTest as base } from "./watch"
 import { writeFile } from "node:fs/promises"
 import { SIGN_IN, SIGN_OUT } from "../src/features/auth/contract"
 import {
@@ -150,15 +150,30 @@ test("two devices: A opens an issue, B sees GitHub number it and comments, A see
   const b = await devices.open("B")
   const title = `Smithers e2e ${new Date().toISOString()}`
 
-  // A opens the issue: Requested at once as #–, then numbered once GitHub has it.
+  // A keeps the queued write in the URL until GitHub creates the numbered issue.
   await a.page.goto(`/${scratch}/issues/new`)
   await a.page.getByLabel("Title").fill(title)
   await a.page.getByLabel("Description").fill("Opened by the two-device e2e test.")
-  await a.page.getByRole("button", { name: "Create issue" }).click()
-  await expect(a.page).toHaveURL(new RegExp(`/${scratch}/issues$`))
+  // Keep the real origin offline while observing admission so a fast GitHub
+  // completion cannot race the queued-state assertions.
+  expectOfflineErrors()
+  await a.context.setOffline(true)
+  try {
+    await a.page.getByRole("button", { name: "Create issue" }).click()
+    await expect(a.page).toHaveURL(new RegExp(`/${scratch}/issues/new\\?write=[0-9a-f-]{36}$`))
+    await expect(a.page.getByRole("status").filter({ hasText: /^Requested$/ })).toBeVisible()
+  } finally {
+    await a.context.setOffline(false)
+  }
+  await expect(a.page).toHaveURL(new RegExp(`/${scratch}/issues/\\d+$`), { timeout: 120_000 })
+  const numberedIssue = a.page.url()
+  await expect(a.page.getByRole("heading", { name: title })).toBeVisible()
+
+  // The list is a separate visit after the completion receipt, on both devices.
+  await a.page.goto(`/${scratch}/issues`)
   const row = (page: Page) => page.getByRole("listitem").filter({ hasText: title })
   await expect(row(a.page)).toBeVisible({ timeout: 30_000 })
-  await expect(row(a.page)).toContainText(/#\d+/, { timeout: 120_000 })
+  await expect(row(a.page).locator(".sui-issues-number")).toHaveText(`#${new URL(numberedIssue).pathname.split("/").at(-1)}`, { timeout: 120_000 })
 
   // B sees it, numbered, and comments on it.
   await b.page.goto(`/${scratch}/issues`)
@@ -168,11 +183,11 @@ test("two devices: A opens an issue, B sees GitHub number it and comments, A see
   const comment = `Comment from B ${Date.now()}`
   await b.page.getByLabel("Comment").fill(comment)
   await b.page.getByRole("button", { name: "Comment" }).click()
-  await expect(b.page.getByText(comment)).toBeVisible({ timeout: 30_000 })
+  await expect(b.page.getByLabel("Comments", { exact: true }).getByText(comment, { exact: true })).toBeVisible({ timeout: 30_000 })
 
   // A sees B's comment once GitHub has it.
   await row(a.page).getByRole("link", { name: title }).click()
-  await expect(a.page.getByText(comment)).toBeVisible({ timeout: 120_000 })
+  await expect(a.page.getByLabel("Comments", { exact: true }).getByText(comment, { exact: true })).toBeVisible({ timeout: 120_000 })
 })
 
 test("who triages: a Maintainer gets New issue, and no triage switch before the issues sync; signed out, neither", { annotation: { type: "summary", description: "A Maintainer's triage switch waits for the issue sync; a signed-out person gets neither." } }, async ({ devices }) => {
