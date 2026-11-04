@@ -697,8 +697,9 @@ Tracking a branch, its conversation, its terminals, its machine, sharing it and 
 |---|---|---|---|
 | `branch.track` | log, span | ChatApi | `repoId`, `outcome` (`tracked`, `existing`, or the refusal), `mode`, `forge`, `status`, `bytes`, `durationMs`, `errorCode` |
 | `smithers_branch_tracks` | counter | ChatApi | `outcome` |
-| `terminal.open`, `terminal.connect` | log, span | ChatApi | `terminalId`, `branchId`, `access`, `outcome`, `code`, `status`, `durationMs`, `errorCode` |
+| `terminal.open`, `terminal.connect` | log, span | ChatApi | `terminalId`, `branchId`, `access`, `outcome`, `code`, `status`, `durationMs`, `errorCode`; a recovered missing shell adds `recoveredTerminalId` to the log and `smithers.terminal.recovered` to the span |
 | `smithers_terminal_requests` | counter | ChatApi | `route` (`open`, `connect`), `outcome` |
+| `smithers_terminal_recoveries` | counter | ChatApi | a new open recovered the person's stale row after its shell ended; no labels |
 | `terminal.shape` | log, span | ChatApi | `status`, `live`, `durationMs`, `bytes`, `outcome` |
 | `terminal.show` | log, span | browser | `preloadMs`, `rowCount`, `outcome` (`ready`, `failed`, `cancelled`); no identifiers or content |
 | `terminal.show.failed` | log | browser | background selection or presence completion failed; no error contents |
