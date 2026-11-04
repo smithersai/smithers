@@ -26,7 +26,7 @@ const contextOf = () => {
     },
     home: { actions: { warm: () => undefined, open: () => undefined } },
     todos: { actions: { warm: () => undefined, open: () => undefined } },
-    issues: { actions: { warm: async () => undefined, open: async () => undefined } },
+    issues: { actions: { warm: async () => undefined, open: async () => undefined, readIssue: vi.fn(), restoreSearch: vi.fn() } },
   }
   return { context, role, release }
 }
@@ -47,6 +47,7 @@ test("a navigation to a repository page asks the person's role once, before the 
     ...load(false),
   })
   await vi.waitFor(() => expect(role).toHaveBeenCalledWith("acme", "widgets", false))
+  expect(context.issues.actions.readIssue).toHaveBeenCalledExactlyOnceWith("acme", "widgets", 7)
   release()
   await entering
   expect(role).toHaveBeenCalledTimes(1)
@@ -73,10 +74,12 @@ test("the issues list asks GitHub's spelling of the repository's name while its 
   const entering = (router.routesById["/$owner/$repo/issues"].options.beforeLoad as unknown as Enter)({
     context: { ...context, repo: { actions: { ...context.repo.actions, warmRoute: () => warming, canonicalName } } },
     params: { owner: "acme", repo: "widgets" },
+    search: {},
     ...load(false),
     location: { pathname: "/acme/widgets/issues", searchStr: "", hash: "" },
   })
   await vi.waitFor(() => expect(canonicalName).toHaveBeenCalledWith("acme", "widgets"))
+  expect(context.issues.actions.restoreSearch).toHaveBeenCalledExactlyOnceWith("acme", "widgets", undefined)
   warmed()
   release()
   await entering
@@ -98,10 +101,11 @@ test("a cold page's first load shows the issues list's pending screen at once, t
   expect(router.routesById["/$owner/$repo/issues"].options.pendingComponent?.name).toBe("IssuesPendingScreen")
   // Pending screens that are a loading state keep the usual wait on the first load too: a cold path paints none.
   for (const route of Object.values(router.routesById) as Array<{ id: string; options: { pendingComponent?: { name: string }; pendingMs?: number; pendingMinMs?: number } }>) {
-    if (route.options.pendingComponent === undefined || route.options.pendingComponent.name === "IssuesPendingScreen") continue
+    if (route.options.pendingComponent === undefined || ["IssuesPendingScreen", "IssuePendingScreen"].includes(route.options.pendingComponent.name)) continue
     expect([route.id, route.options.pendingMs, route.options.pendingMinMs]).toEqual([route.id, PENDING_MS, PENDING_MIN_MS])
   }
   release()
   await loading
+  expect(cold.state.matches.find((match) => match.routeId === "/$owner/$repo/issues")?.status).toBe("success")
   await vi.waitFor(() => expect([cold.options.defaultPendingMs, cold.options.defaultPendingMinMs]).toEqual([PENDING_MS, PENDING_MIN_MS]))
 })

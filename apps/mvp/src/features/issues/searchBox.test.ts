@@ -2,8 +2,8 @@ import { createMemoryHistory, createRootRoute, createRouter, RouterContextProvid
 import { act, createElement, type ReactNode } from "react"
 import { afterEach, expect, test, vi } from "vitest"
 import { Collection } from "@smthrs/effect-tanstack-db"
-import { Effect, Schema } from "effect"
-import { ChatProvider } from "../../AppContext"
+import { Effect } from "effect"
+import { Searched } from "./schema"
 import { dom } from "../../../tests/fixtures/dom"
 
 Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom) })
@@ -75,14 +75,17 @@ test("the list's pending screen is no loading state: no aria-busy, progress bar 
 
 test("a cold issue waiting for its route and shapes paints no loading state", async () => {
   const { createRoute, RouterProvider } = await import("@tanstack/react-router")
-  const { RepoPendingScreen } = await import("../../screens/repo/RepoPendingScreen")
+  const { IssuePendingScreen } = await import("../../screens/issues/IssuePendingScreen")
+  const { router } = await import("../../router")
+  expect(router.routesById["/$owner/$repo/issues/$number"].options.pendingComponent).toBe(IssuePendingScreen)
   const top = createRootRoute()
-  const issue = createRoute({ getParentRoute: () => top, path: "/$owner/$repo/issues/$number", component: RepoPendingScreen })
+  const issue = createRoute({ getParentRoute: () => top, path: "/$owner/$repo/issues/$number", component: IssuePendingScreen })
   const pending = createRouter({ routeTree: top.addChildren([issue]), history: createMemoryHistory({ initialEntries: ["/acme/widgets/issues/7"] }) })
   await pending.load()
   await Effect.runPromise(Effect.scoped(Effect.gen(function* () {
-    const connection = yield* Collection.local({ id: "cold-connection", schema: Schema.Struct({ id: Schema.String, status: Schema.String }), getKey: (row) => row.id, initialData: [{ id: "connection", status: "online" }] })
-    yield* Effect.promise(async () => { await act(() => root.render(createElement(ChatProvider, { value: { queries: { connection: connection.tanstack } } as never }, createElement(RouterProvider, { router: pending })))) })
+    const searched = yield* Collection.local<Searched, string>({ id: "cold-issue-searched", schema: Searched, getKey: (row) => row.id })
+    yield* Effect.promise(async () => { await act(() => root.render(createElement(IssuesProvider, { value: { queries: { searched: searched.tanstack } } as never }, createElement(RouterProvider, { router: pending })))) })
+    expect(dom.document.querySelector(".issue-unread-heading")?.textContent).toBe("Issue #7")
     expect(dom.document.querySelector("[data-first-paint-slot]")).not.toBeNull()
     expect(dom.document.querySelector('[aria-busy="true"], [role="progressbar"], [data-slot="skeleton"]')).toBeNull()
     yield* Effect.promise(async () => { await show(null) })
