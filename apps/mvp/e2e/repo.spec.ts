@@ -74,29 +74,15 @@ test("refusals: a repository GitHub doesn't have says Not found, and so does a m
   // AppShell is a sibling route: this page has just the header's connection live region.
   await expect(page.getByRole("status", { name: "Connection", exact: true })).toHaveCount(1)
   await expect(header.getByRole("status", { name: "Connection", exact: true })).toHaveAttribute("aria-live", "polite")
-  // About answers independently of a clone's launch, execution and Electric settlement.
-  // Its unnamed status is distinct from Connection; status roles don't derive their name from their text.
-  await expect(header.getByRole("status").filter({ hasText: /^Not found$/ })).toHaveText("Not found", { timeout: 30_000 })
-  await header.getByRole("button", { name: "Clone", exact: true }).click()
-  // The same header text cannot prove the requested clone finished: require its feed outcome and recovery action.
-  const subject = `clone:github/octocat/${name}`
-  const entry = page.locator(`[data-slot="toast"][data-subject="${subject}"]`)
-  await expect(entry).toContainText(`Clone · octocat/${name} · Not found`, { timeout: 120_000 })
-  await expect(entry.getByRole("button", { name: "Try again", exact: true })).toBeVisible()
-  await expect(entry).not.toContainText("Requested")
+  // Absent and inaccessible repositories share one answer. Once absence is known, Clone is not offered.
+  const refs = await page.request.get(`/api/repos/octocat/${name}/refs`)
+  expect(refs.status()).toBe(404)
+  expect(await refs.json()).toEqual({ code: "not_found" })
+  await expect(page.getByText("Not found", { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("button", { name: "Clone", exact: true })).toHaveCount(0)
   await page.reload()
-  await page.getByRole("button", { name: /^Notifications/ }).click()
-  const panel = page.getByRole("dialog", { name: "Notifications" })
-  const failed = panel.locator(`[data-subject="${subject}"]`)
-  await expect(failed).toContainText(`octocat/${name} · Not found`, { timeout: 30_000 })
-  await expect(failed.getByRole("button", { name: "Try again", exact: true })).toBeVisible()
-  await failed.getByRole("button", { name: "Dismiss", exact: true }).click()
-  await expect(failed).toHaveCount(0)
-  await page.reload()
-  await page.getByRole("button", { name: /^Notifications/ }).click()
-  await expect(panel).toBeVisible()
-  await expect(failed).toHaveCount(0)
-  await page.keyboard.press("Escape")
+  await expect(page.getByText("Not found", { exact: true }).first()).toBeVisible({ timeout: 30_000 })
+  await expect(page.getByRole("status", { name: "Connection", exact: true })).toHaveCount(1)
   await openReady(page)
   await page.goto(`${REPO}/blob/main/no-such-file.md`)
   await expect(page.getByText("Not found").first()).toBeVisible({ timeout: 30_000 })

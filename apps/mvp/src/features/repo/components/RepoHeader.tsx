@@ -2,11 +2,9 @@ import { Button, PageHeader } from "@smthrs/ui"
 import { useLiveQuery } from "@tanstack/react-db"
 import { Link, useLocation } from "@tanstack/react-router"
 import { Notices } from "../../attention/components/Notices"
-import { NotificationsBell } from "../../attention/components/NotificationsBell"
 import { useAuth } from "../../auth/components/AuthContext"
 import { mayManageDomains, signInHref } from "../../auth/contract"
 import { ownRepository } from "../../auth/viewer"
-import { ConnectionPill } from "../../chat/components/ConnectionPill"
 import { SETTINGS } from "../../domains/copy"
 import { ISSUES } from "../../issues/contract"
 import { SecretsLink } from "../../secrets/components/SecretsLink"
@@ -19,6 +17,7 @@ import { minimizedOf } from "../embedView"
 import { aboutOf, headerOf } from "../view"
 import { Slot } from "../../../plugins/components/Slot"
 import { useRepo, useRepoAnswer } from "./RepoContext"
+import { RepoHeaderControls } from "./RepoHeaderControls"
 
 // Back to chat, which minimizes the repository's page into the chat (ruling FE-9, src/features/views/minimize.ts); the
 // repository's name, which opens its home or root, its Issues, its Stack, for a Member or above its Secrets and,
@@ -85,12 +84,7 @@ export function RepoHeader({ backTarget, notices = true }: { readonly backTarget
               </>
             )
             : null}
-          <div role="status" aria-label="Connection" aria-live="polite">
-            <ConnectionPill />
-          </div>
-          <span className="repo-header-bell">
-            <NotificationsBell />
-          </span>
+          <RepoHeaderControls />
         </>
       }
     >

@@ -19,8 +19,8 @@ export const visible = (repo: string, signedIn: Option.Option<Actor>) =>
         (SELECT access FROM branch_shares s WHERE s.branch_id = b.id AND s.grantee = ${REPOSITORY_GRANTEE}) AS repository
       FROM branches b WHERE b.repo_id = ${repo} AND b.ref_namespace = 'ephemeral'
         AND b.deleted_at IS NULL ORDER BY b.name`
-    // No private ref exists to authorize. An unimported or absent repository must still reach the normal
-    // empty-mirror response when GitHub cannot resolve a role on that name.
+    // No private ref exists to authorize. The repository HTTP reader still classifies a missing mirror from
+    // metadata; this empty private-ref set says nothing about existence or public readability.
     if (rows.length === 0) return []
     const actor = Option.isNone(signedIn)
       ? signedIn

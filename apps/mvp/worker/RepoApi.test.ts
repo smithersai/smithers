@@ -1287,6 +1287,7 @@ test("refs retains a role refusal's diagnostics, ray and retryable rate limit", 
     roleOn: () => Effect.fail(new RepoRoles.RoleRefused({ code: "rate_limited", stage: "permission", upstreamStatus: 429, retryAfterSeconds: 12 })),
   })) })
   await sql("INSERT INTO github_repositories (repo_id, installation_id) VALUES ('github/octocat/spoon-knife', 77)")
+  await runtime.runPromise(Conversations.track("github/octocat/spoon-knife", "private-ref", "open", "a".repeat(40), "octocat", undefined, "ephemeral"))
   const ray = "0123456789abcdef-SJC"
   const response = await h.fetch(refsRoute("octocat", "Spoon-Knife"), { headers: { "cf-ray": ray, cookie: "PRIVATE_COOKIE" } })
   expect(response.status).toBe(503)

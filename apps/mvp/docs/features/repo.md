@@ -434,4 +434,26 @@ window. Do not widen token access. `repo.about.read` records the website's answe
 The repository header's bell participates in the header's wrapping flow, including
 on tablet issue and pull pages; it reserves its own space beside the actions.
 
-Ephemeral ref discovery first reads the stored ref rows. An empty set needs no repository-role lookup, so opening an unimported or absent repository can return the normal empty-mirror response even when GitHub cannot resolve a role on that name. Populated private refs still require current authority and fail closed when it is unavailable (`worker/branch/RefReads.test.ts`).
+Ephemeral ref discovery first reads the stored ref rows. An empty set needs no repository-role lookup. The repository HTTP reader still verifies metadata before classifying an absent local mirror as not found, not imported, or unavailable. Populated private refs require current authority and fail closed when it is unavailable (`worker/branch/RefReads.test.ts`).
+
+### Missing and inaccessible repositories
+
+A GitHub metadata 404 denies public readability for 60 seconds, equally for an
+absent repository and a private repository the read cannot access. It does not
+identify which. The role route and notification gate reuse this negative receipt;
+5xx responses, transport failures, timeouts and rate limits remain retryable.
+Visibility refusals name the `metadata` stage and upstream status in correlated
+logs. Metrics carry bounded outcome/status dimensions, never repository names.
+
+Refs without a ready local head consult the shared About reader: a confirmed
+public repository answers 204 `not_imported`; absent/private answers 404
+`not_found`; upstream failures retain their code and `Retry-After`. Tree retains
+its existing missing-repository and missing-file classification. The refusal
+page says `Not found` for a signed-in person's denied access; signed-out visitors
+are offered Sign in where it is configured. Its header shows the URL's repository name and shared personal
+controls (connection, notifications and toasts), and never mounts the repository's cached content. A known
+missing repository offers no Clone action.
+
+Repository pages have one Connection live region, owned by the header. A home
+embedded without a header retains its own Connection region.
+
