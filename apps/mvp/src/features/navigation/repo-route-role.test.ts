@@ -61,3 +61,22 @@ test("a link's preload asks no role", async () => {
   })
   expect(role).not.toHaveBeenCalled()
 })
+
+// Proof (a) on production, 2026-11-04: a cold issues list showed its search box 2.8-3.8 s after its first rows, as the
+// route's warm (up to `pageWait`) and then GitHub's spelling of the name (up to `pageWait` again) ran one after the other.
+test("the issues list asks GitHub's spelling of the repository's name while its warm is still loading", async () => {
+  const { context, release } = contextOf()
+  let warmed!: () => void
+  const warming = new Promise<void>((resolve) => (warmed = resolve))
+  const canonicalName = vi.fn(context.repo.actions.canonicalName)
+  const entering = (router.routesById["/$owner/$repo/issues"].options.beforeLoad as unknown as Enter)({
+    context: { ...context, repo: { actions: { ...context.repo.actions, warmRoute: () => warming, canonicalName } } },
+    params: { owner: "acme", repo: "widgets" },
+    ...load(false),
+    location: { pathname: "/acme/widgets/issues", searchStr: "", hash: "" },
+  })
+  await vi.waitFor(() => expect(canonicalName).toHaveBeenCalledWith("acme", "widgets"))
+  warmed()
+  release()
+  await entering
+})

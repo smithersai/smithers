@@ -145,9 +145,13 @@ const enterRepo = (
   enter(load, async () => {
     // A navigation asks once, as it starts, beside the page's warm reads; a warm that needs the role joins this read.
     if (!load.preload) context.repo.actions.role(params.owner, params.repo, staysInRepository(shownPath(context), params))
-    await warm()
-    const canonical = await context.repo.actions.canonicalName(params.owner, params.repo)
-    const fileAtTree = load.location.pathname.split("/")[3] === "tree" && await context.repo.actions.fileAtTree(params)
+    // The checks run beside the warm, never after it: each waits up to `pageWait` on its own, and in turn they added up
+    // (a cold issues list showed its search box a second later than its warm allowed).
+    const [, canonical, fileAtTree] = await Promise.all([
+      warm(),
+      context.repo.actions.canonicalName(params.owner, params.repo),
+      load.location.pathname.split("/")[3] === "tree" && context.repo.actions.fileAtTree(params),
+    ])
     const href = canonicalRepoHref(load.location, params, canonical, fileAtTree)
     if (href !== undefined) throw redirect({ href, replace: true })
   }, open)
