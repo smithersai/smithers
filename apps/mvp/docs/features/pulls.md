@@ -246,3 +246,5 @@ Pull request bodies and conversation comments use the issue store's item-scoped 
 Comparisons are cached by repository and both commit SHAs. A read owns its cache row; completion after a refusal, wipe, or replacement read cannot modify another comparison. Forks that share SHAs keep separate rows.
 
 The list screen exposes safe readiness receipts as `data-access-status`, `data-access-installed`, `data-pull-status`, `data-pull-installed`, `data-query-ready`, `data-sync-complete` and `data-list-ready`. They carry no row or search content.
+
+`list-search-sort.spec.ts` records these transitions, verifies that the unmatched search is in the URL and has no matching rows, then waits for the real `data-list-sync` completion receipt before asserting the empty state. The production pull case completes successfully; a cached row is not its completion receipt.
