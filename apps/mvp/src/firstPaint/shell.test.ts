@@ -248,14 +248,14 @@ describe("the shell", () => {
     expect(shell.outcome()).toBe("painted")
     expect(b.marks).toEqual(["smithers.first_paint.painted"])
     // The page adopts the hold: no gap, and the shell's end never lets go of it.
-    const release = shell.handOver()!
+    const release = (await shell.handOver())!
     shell.revoke()
     await b.settle()
     expect([b.node(), b.lock.held]).toEqual([null, true])
     release()
     await b.settle()
     expect(b.lock.released).toBe(true)
-    expect(shell.handOver()).toBeUndefined()
+    expect(await shell.handOver()).toBeUndefined()
   })
 
   test("a closed issue with no author, and a list's rows as links", async () => {
@@ -536,7 +536,7 @@ describe("the shell", () => {
       channel: () => ({ postMessage: () => {}, close: () => {}, onmessage: null }),
       reload: () => {},
     }, { engine: "engine", outbox: "outbox" })
-    expect(await wipe.open(shell.handOver())).toBe(true)
+    expect(await wipe.open(await shell.handOver())).toBe(true)
     expect(shown.lock.asked).toBe(1)
     wipe.close()
     expect([shown.node(), shell.outcome()]).toEqual([null, "released"])
@@ -547,7 +547,8 @@ describe("the shell", () => {
     const pending = startShell(reading.host)!
     reading.lock.grant()
     await reading.settle()
-    pending.handOver()!()
+    const releasePending = (await pending.handOver())!
+    releasePending()
     reading.read.answer(200, painted())
     await reading.settle()
     await reading.settle()
@@ -571,7 +572,7 @@ describe("the shell", () => {
     const shell = startShell(b.host)!
     await b.paint(body, status)
     expect([b.node(), shell.outcome(), b.lock.held]).toEqual([null, why, false])
-    expect(shell.handOver()).toBeUndefined()
+    expect(await shell.handOver()).toBeUndefined()
   })
 
   test("a failed read, or one past its wait, paints nothing", async () => {
@@ -622,17 +623,51 @@ describe("the shell", () => {
     expect([b.node(), shell.outcome()]).toEqual([null, "mark"])
   })
 
-  test("hand-over: before the grant the shell stops asking; with the mark present it revokes; after its end, nothing", async () => {
+  test("a fast app waits for the shell's pending lock grant and adopts the same hold", async () => {
+    const b = browser()
+    const shell = startShell(b.host)!
+    const adoption = Promise.resolve(shell.handOver())
+    b.lock.grant()
+    const release = await adoption
+    expect(typeof release).toBe("function")
+    expect(b.lock.asked).toBe(1)
+    expect(b.marks).toEqual(["smithers.first_paint.hand_over_waiting", "smithers.first_paint.hand_over_ready"])
+    b.read.answer(200, painted())
+    await b.settle()
+    expect([b.node() !== null, b.lock.held]).toEqual([true, true])
+    release!()
+    await b.settle()
+    expect([b.node(), b.lock.released]).toEqual([null, true])
+  })
+
+  test("a wipe while adoption waits settles it without fetching or keeping a hold", async () => {
+    const b = browser()
+    const shell = startShell(b.host)!
+    const adoption = shell.handOver()
+    b.channels[0]!.onmessage!(new MessageEvent("message", { data: "wipe" }))
+    expect(await adoption).toBeUndefined()
+    expect([b.lock.aborted, b.read.url, shell.outcome()]).toEqual([true, undefined, "wipe"])
+  })
+
+  test("a refused lock grant settles adoption without reading private data", async () => {
+    const b = browser()
+    const shell = startShell({ ...b.host, locks: { request: (() => Promise.reject(new Error("lock unavailable"))) as never } })!
+    expect(await shell.handOver()).toBeUndefined()
+    expect([b.read.url, shell.outcome(), b.channels[0]!.closed]).toEqual([undefined, "none", true])
+  })
+
+  test("hand-over: a mark revokes before or after the grant; after its end, nothing", async () => {
     const early = browser()
     const shell = startShell(early.host)!
-    expect(shell.handOver()).toBeUndefined()
-    expect([early.lock.aborted, shell.outcome()]).toEqual([true, "revoked"])
+    early.setMark("1")
+    expect(await shell.handOver()).toBeUndefined()
+    expect([early.lock.aborted, shell.outcome()]).toEqual([true, "mark"])
 
     const marked = browser()
     const markedShell = startShell(marked.host)!
     await marked.paint(painted())
     marked.setMark("1")
-    expect(markedShell.handOver()).toBeUndefined()
+    expect(await markedShell.handOver()).toBeUndefined()
     await marked.settle()
     expect([marked.node(), marked.lock.held, markedShell.outcome()]).toEqual([null, false, "mark"])
 
@@ -641,7 +676,7 @@ describe("the shell", () => {
     const readingShell = startShell(reading.host)!
     reading.lock.grant()
     await reading.settle()
-    const release = readingShell.handOver()!
+    const release = (await readingShell.handOver())!
     reading.read.answer(200, painted())
     await reading.settle()
     await reading.settle()

@@ -121,6 +121,32 @@ interface Load {
 }
 
 /**
+ * How long a navigation waits before its route's pending screen replaces the page shown: the router's own default.
+ * Decision 0020 keeps the previous page until the next is ready, and a hovered link's warm usually makes that quick.
+ */
+export const PENDING_MS = 1_000
+
+/** How long a pending screen, once shown, stays at least: the router's own default, so it never flashes. */
+export const PENDING_MIN_MS = 500
+
+/**
+ * The page's first load has no previous page to keep: a route whose pending screen is no loading state (the issues
+ * list's: its search box beside the first paint's rows) shows it as soon as the app renders, so a cold issues list
+ * takes a search at once instead of seconds later, when its route resolves (proof (a), browserListSearchMs). Once a
+ * load resolves, `PENDING_MS` and `PENDING_MIN_MS` apply.
+ */
+export const FIRST_LOAD_PENDING_MS = 0
+
+/** On the first load the pending screen stands in for nothing, so a page that loaded replaces it at once. */
+export const FIRST_LOAD_PENDING_MIN_MS = 0
+
+/**
+ * A route whose pending screen is a loading state (a skeleton, `aria-busy`): it keeps the router's usual wait on the
+ * first load too, so a cold path that loads within it never paints one (e2e/fixtures.ts `watchForSpinners`).
+ */
+const LOADING_PENDING = { pendingMs: PENDING_MS, pendingMinMs: PENDING_MIN_MS } as const
+
+/**
  * Every route opens what it shows in `beforeLoad`, never a loader: the router runs `beforeLoad` afresh for each
  * navigation and each preload, while a navigation adopts a loader a preload left in flight (router-core's flights), so
  * a loader can't tell a preload from the click that follows it. A preload only warms what the page shows; a navigation
@@ -238,6 +264,7 @@ const newFlowRoute = createRoute({
   path: ROUTE_PATHS.newFlow,
   component: NewFlowScreen,
   pendingComponent: FlowPendingScreen,
+  ...LOADING_PENDING,
   validateSearch: (search: Record<string, unknown>): { readonly name?: string } =>
     typeof search.name === "string" && search.name !== "" ? { name: search.name } : {},
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openNew(load.search.name)),
@@ -249,6 +276,7 @@ const draftRoute = createRoute({
   path: ROUTE_PATHS.draft,
   component: DraftScreen,
   pendingComponent: FlowPendingScreen,
+  ...LOADING_PENDING,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openDraft(load.params.draftId)),
 })
 
@@ -258,6 +286,7 @@ const codeRoute = createRoute({
   path: ROUTE_PATHS.code,
   component: CodeScreen,
   pendingComponent: FlowPendingScreen,
+  ...LOADING_PENDING,
   beforeLoad: (load) => enter(load, local, () => load.context.flows.actions.openCode(load.params.name)),
 })
 
@@ -379,6 +408,7 @@ const treeRoute = createRoute({
   path: ROUTE_PATHS.tree,
   component: TreeScreen,
   pendingComponent: BranchPendingScreen,
+  ...LOADING_PENDING,
   validateSearch: branchSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(context, params, load, () => Promise.all([context.repo.actions.warmRoute("tree", params, { L: search.L }), context.home.actions.warm(params.owner, params.repo)]), () =>
@@ -404,6 +434,7 @@ const blobRoute = createRoute({
   path: ROUTE_PATHS.blob,
   component: BlobScreen,
   pendingComponent: BranchPendingScreen,
+  ...LOADING_PENDING,
   validateSearch: lineSearch,
   beforeLoad: ({ context, params, search, ...load }) =>
     enterRepo(context, params, load, () => context.repo.actions.warmRoute("blob", params, search), () =>
@@ -533,6 +564,7 @@ const issueRoute = createRoute({
   path: ROUTE_PATHS.issue,
   component: IssueScreen,
   pendingComponent: RepoPendingScreen,
+  ...LOADING_PENDING,
   params: {
     parse: (params) => {
       const number = issueNumberOf(params.number)
@@ -784,25 +816,6 @@ const routeTree = rootRoute.addChildren([
 ])
 
 /** Builds an app router whose route context always reads this instance's navigation state. */
-/**
- * How long a navigation waits before its route's pending screen replaces the page shown: the router's own default.
- * Decision 0020 keeps the previous page until the next is ready, and a hovered link's warm usually makes that quick.
- */
-export const PENDING_MS = 1_000
-
-/** How long a pending screen, once shown, stays at least: the router's own default, so it never flashes. */
-export const PENDING_MIN_MS = 500
-
-/**
- * The page's first load has no previous page to keep: a route with a pending screen shows it as soon as the app renders,
- * in the first paint's place (src/firstPaint/shell.ts), so a cold issues list takes a search at once instead of seconds
- * later, when its route resolves (proof (a), browserListSearchMs). Once a load resolves, `PENDING_MS` and
- * `PENDING_MIN_MS` apply.
- */
-export const FIRST_LOAD_PENDING_MS = 0
-
-/** On the first load the pending screen stands in for nothing, so a page that loaded replaces it at once. */
-export const FIRST_LOAD_PENDING_MIN_MS = 0
 
 export const createAppRouter = (options: {
   readonly context?: RouterContext

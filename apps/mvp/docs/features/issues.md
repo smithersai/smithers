@@ -206,13 +206,17 @@ device store and syncs as it always does; the first paint only stands in until t
    mark first.
 4. **Hand-over.** The app's boot adopts the shell's hold as its own `smithers-data` hold with no gap
    (`PageWipe.open(adopted)`, `src/wipe.ts`): the shell hands it over only while it holds it and the mark is absent;
-   otherwise it revokes and the boot runs as it did before. Letting go of the adopted hold ends the paint first. The
+   if the grant is still queued, boot waits for it instead of revoking the paint. A wipe, mark or refused grant
+   settles that wait without a hold, and boot follows its normal wipe path. This fixes a fast WebKit boot arriving
+   before its lock callback. Letting go of the adopted hold ends the paint first. The
    node goes once the page takes its slot away with its own rows or title, or the issue page or the list marks its
    `main` `data-first-paint="settled"`, which it does once it shows the page itself or why it can't (sign in, Not
    found, GitHub's list), or once the route changes.
 
 The boot timeline marks `smithers.first_paint.painted` and how the paint ended (`handed_over`, `deadline`, `wipe`,
-`person_mismatch`, ...), never a title or a person.
+`person_mismatch`, ...), plus `hand_over_waiting` and `hand_over_ready` when boot arrives before the lock grant,
+never a title or a person. The pending shell and its hold are boot/privacy infrastructure, so they remain in core;
+UI uses the catalog's `@smthrs/ui` entry without adding a library.
 
 ## Postgres
 

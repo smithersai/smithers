@@ -3,7 +3,7 @@ import { act, createElement, type ReactNode } from "react"
 import { afterEach, expect, test, vi } from "vitest"
 import { dom } from "../../../tests/fixtures/dom"
 
-Object.assign(globalThis, { self: dom, customElements: dom.customElements })
+Object.assign(globalThis, { self: dom, customElements: dom.customElements, scrollTo: dom.scrollTo.bind(dom) })
 const { createRoot } = await import("react-dom/client")
 const { IssueSearchBox } = await import("./components/IssueSearchBox")
 const { IssuesProvider } = await import("./components/IssuesContext")
@@ -53,4 +53,19 @@ test("a list's own box that goes focused, an abandoned pending screen and anothe
   await typedIn("widgets")
   await show(box("gadgets", false))
   expect(dom.document.activeElement).not.toBe(input())
+})
+
+// The deploy smoke on c78d0c83 (2026-11-04): the first version's pending screen carried aria-busy, and a cold list
+// painted a loading state (e2e/fixtures.ts `watchForSpinners`). It shows the search box and the painted rows' slot only.
+test("the list's pending screen is no loading state: no aria-busy, progress bar or skeleton", async () => {
+  const { createRoute, RouterProvider } = await import("@tanstack/react-router")
+  const { IssuesPendingScreen } = await import("../../screens/issues/IssuesPendingScreen")
+  const top = createRootRoute()
+  const list = createRoute({ getParentRoute: () => top, path: "/$owner/$repo/issues", component: IssuesPendingScreen })
+  const pending = createRouter({ routeTree: top.addChildren([list]), history: createMemoryHistory({ initialEntries: ["/acme/widgets/issues"] }) })
+  await pending.load()
+  await act(() => root.render(createElement(IssuesProvider, { value: issues }, createElement(RouterProvider, { router: pending }))))
+  expect(dom.document.querySelector('input[aria-label="Search issues"]')).not.toBeNull()
+  expect(dom.document.querySelector("[data-first-paint-slot]")).not.toBeNull()
+  expect(dom.document.querySelector('[aria-busy="true"], [role="progressbar"], [data-slot="skeleton"]')).toBeNull()
 })

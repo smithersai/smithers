@@ -96,6 +96,11 @@ test("a cold page's first load shows the issues list's pending screen at once, t
   // Shown at once, and gone at once when the page loaded: a fast first load waits no minimum (review, 2026-11-04).
   expect([cold.options.defaultPendingMs, cold.options.defaultPendingMinMs]).toEqual([FIRST_LOAD_PENDING_MS, FIRST_LOAD_PENDING_MIN_MS])
   expect(router.routesById["/$owner/$repo/issues"].options.pendingComponent?.name).toBe("IssuesPendingScreen")
+  // Pending screens that are a loading state keep the usual wait on the first load too: a cold path paints none.
+  for (const route of Object.values(router.routesById) as Array<{ id: string; options: { pendingComponent?: { name: string }; pendingMs?: number; pendingMinMs?: number } }>) {
+    if (route.options.pendingComponent === undefined || route.options.pendingComponent.name === "IssuesPendingScreen") continue
+    expect([route.id, route.options.pendingMs, route.options.pendingMinMs]).toEqual([route.id, PENDING_MS, PENDING_MIN_MS])
+  }
   release()
   await loading
   await vi.waitFor(() => expect([cold.options.defaultPendingMs, cold.options.defaultPendingMinMs]).toEqual([PENDING_MS, PENDING_MIN_MS]))

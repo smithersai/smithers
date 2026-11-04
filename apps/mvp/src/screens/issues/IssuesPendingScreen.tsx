@@ -6,7 +6,8 @@ import "./issues-screen.css"
 
 /**
  * `/$owner/$repo/issues` while its route still loads: the repository's name, the search box and the slot the first
- * paint's rows sit in, from the URL only. A search typed here asks the issues route at once (`IssueSearchBox`); the
+ * paint's rows sit in, from the URL only. It is no loading state: no `aria-busy`, spinner or skeleton, as a cold path
+ * paints none (e2e/fixtures.ts `watchForSpinners`); the rows already painted are what it shows. A search typed here asks the issues route at once (`IssueSearchBox`); the
  * list shows its answer once the route opens. On a cold page the route shows this as soon as the app renders
  * (router.tsx `FIRST_LOAD_PENDING_MS`), seconds before the list can.
  */
@@ -16,7 +17,7 @@ export function IssuesPendingScreen() {
   const owner = params.owner ?? ""
   const repo = params.repo ?? ""
   return (
-    <main className="issues-screen" aria-label="Issues" aria-busy="true">
+    <main className="issues-screen" aria-label="Issues">
       <PageHeader
         className="repo-header"
         aria-label="Repository"

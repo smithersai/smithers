@@ -116,9 +116,9 @@ export type Ended =
 export interface Shell {
   /**
    * The app's page takes over the shell's `smithers-data` hold: its release, when the shell holds it and the mark is
-   * still absent; otherwise `undefined`, after the shell revoked what it had and stopped asking for the lock.
+   * still absent. Waits for a pending grant; a wipe, revocation or refused grant resolves to `undefined`.
    */
-  readonly handOver: () => (() => void) | undefined
+  readonly handOver: () => Promise<(() => void) | undefined>
   /** The page's session answer: a paint read for anyone else goes. */
   readonly verify: (session: SessionAnswer) => void
   /**
@@ -209,6 +209,8 @@ export const startShell = (host: ShellHost): Shell | undefined => {
 
   let state: "pending" | "painted" | "none" | Ended = "pending"
   let granted = false
+  let grantSettled!: () => void
+  const ready = new Promise<void>((resolve) => { grantSettled = resolve })
   let adopted = false
   let release: (() => void) | undefined
   let node: HTMLElement | undefined
@@ -239,6 +241,7 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   const end = (why: Ended | "none") => {
     if (state !== "pending" && state !== "painted") return
     state = why
+    grantSettled()
     node?.remove()
     node = undefined
     seed = undefined
@@ -337,6 +340,7 @@ export const startShell = (host: ShellHost): Shell | undefined => {
   // The hold first, then the read; nothing private exists outside it.
   void host.locks.request(DATA_LOCK, { mode: "shared", signal: asking.signal }, () => {
     granted = true
+    grantSettled()
     return new Promise<void>((resolve) => {
       // Revoked while it waited: let go at once.
       if (state !== "pending") return resolve()
@@ -356,16 +360,24 @@ export const startShell = (host: ShellHost): Shell | undefined => {
         .catch(() => end("none"))
     })
   }).catch(() => {
-    // expected: an aborted lock request, the shell's own revocation
+    // An aborted request already ended; a refused grant must also release an app waiting to adopt it.
+    end("none")
   })
 
   return {
-    handOver: () => {
+    handOver: async () => {
       if (state !== "pending" && state !== "painted") return undefined
-      if (!granted) {
-        // Not granted yet (a wipe holds the data): the page's own path decides; the shell stops asking.
-        end("revoked")
+      if (!unmarked(host.marks)) {
+        end("mark")
         return undefined
+      }
+      if (!granted) {
+        // A fast bundle can reach this before WebKit dispatches the lock callback. Keep the shell's queued
+        // request: adopting an ungranted hold would be unsafe, and revoking it loses the first paint entirely.
+        host.mark("smithers.first_paint.hand_over_waiting")
+        await ready
+        if (state !== "pending" && state !== "painted") return undefined
+        host.mark("smithers.first_paint.hand_over_ready")
       }
       if (!unmarked(host.marks)) {
         end("mark")

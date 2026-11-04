@@ -10,7 +10,7 @@ const recording = () => {
   const answers: Array<SessionAnswer> = []
   const routes: Array<[string, string]> = []
   const shell: Shell = {
-    handOver: () => undefined,
+    handOver: async () => undefined,
     verify: (answer) => void answers.push(answer),
     routed: (pathname, search) => void routes.push([pathname, search]),
     revoke: () => {},

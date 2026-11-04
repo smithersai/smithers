@@ -20,7 +20,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { type APIRequestContext, type Page, type Request } from "@playwright/test"
 import { workStatusOf, type WorkLinkKind, type WorkLinkState } from "../src/features/issues/work"
-import { expect, test } from "./fixtures"
+import { expect, spinnersSeen, test } from "./fixtures"
 import { cleanUp, type Runner, startRunner } from "./runner"
 import { configureStack, dropTodo, serverState, stackChange } from "./stackWrites"
 import { baseURL, requires } from "./target"
@@ -200,6 +200,9 @@ test("(a) volume: the list pages, searches, filters and opens one issue at the s
     await page.getByRole("searchbox", { name: "Search issues" }).or(page.getByRole("textbox", { name: "Search issues" })).fill(`#${probe.number}`)
     await expect(page.locator(`a[href$="/${repo}/issues/${probe.number}"]`).first()).toBeVisible({ timeout: 60_000 })
   })
+  // A cold path paints no loading state (e2e/fixtures.ts `watchForSpinners`): not the list, its search or, below, the
+  // issue. The fixture checks only the last page at the end; the list's own document is gone by then.
+  expect(await spinnersSeen(page), "the list and its search painted no loading state").toEqual([])
   // Where the issue open's time goes: each API request the page made meanwhile, from the open's start. A live shape
   // request waits for changes by design and is left out; /role, the shapes' first reads and the issue route stay.
   const openRequests: Array<{ path: string; offset: string | null; status: number | null; startMs: number; endMs: number }> = []
@@ -228,6 +231,7 @@ test("(a) volume: the list pages, searches, filters and opens one issue at the s
   })
   page.off("requestfinished", onFinished)
   page.off("requestfailed", onFinished)
+  expect(await spinnersSeen(page), "the issue painted no loading state").toEqual([])
   const latest = (match: (path: string) => boolean) => {
     const matched = openRequests.filter((request) => match(request.path))
     return matched.length === 0 ? null : {

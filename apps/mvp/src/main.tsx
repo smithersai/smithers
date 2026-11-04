@@ -500,7 +500,7 @@ const page = {
 // (src/test/e2e.ts). A production build drops this branch, and the test module with it. Either way, a wipe a sign-out
 // marked finishes first, and a page whose wipe couldn't delete starts on stores that aren't the device's
 // (src/wipe.ts `unwiped`). Leaving on a wipe drops the view, then stops the program.
-void Promise.all([wipe.open(firstPaint?.handOver()), claimEditorTabId({
+void Promise.all([Promise.resolve(firstPaint?.handOver()).then((held) => wipe.open(held)), claimEditorTabId({
   storage: { getItem: (key) => sessionStorage.getItem(key), setItem: (key, value) => sessionStorage.setItem(key, value) },
   locks: navigator.locks, page: window, randomId: () => crypto.randomUUID(),
 })]).then(([wiped, editorTab]) => {
