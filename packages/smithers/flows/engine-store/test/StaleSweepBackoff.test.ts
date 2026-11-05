@@ -31,6 +31,7 @@ import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
+import * as Queue from "effect/Queue"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -158,6 +159,44 @@ const refusalEvidenceOf = (runId: string) =>
     (entries) => entries.map((entry) => (entry.payload as { readonly evidence: string }).evidence)
   )
 
+/** Observe completed sweep iterations through the next delegated heartbeat sleep. */
+const sweepTicks = Effect.gen(function*() {
+  const clock = yield* Clock.Clock
+  const scheduled = yield* Queue.unbounded<number>()
+  let count = 0
+  let started = false
+  const observed: Clock.Clock = {
+    ...clock,
+    sleep: (duration) =>
+      Duration.toMillis(duration) === heartbeatMs
+        ? Effect.suspend(() => Queue.offer(scheduled, ++count).pipe(Effect.andThen(clock.sleep(duration))))
+        : clock.sleep(duration)
+  }
+  const tick = (millis: number, driver: RunDriver.Service) =>
+    Effect.gen(function*() {
+      if (!started) {
+        yield* Queue.take(scheduled)
+        started = true
+      }
+      // Advance one real heartbeat at a time. A larger jump may let a
+      // PostgreSQL sweep read the first deadline while its IO spans the rest
+      // of the jump, so that sweep legitimately precedes a later backoff.
+      for (let elapsed = 0; elapsed < millis; elapsed += heartbeatMs) {
+        yield* TestClock.adjust(Math.min(heartbeatMs, millis - elapsed))
+        yield* Queue.take(scheduled)
+        // A sweep schedules detached drains. Its next sleep proves scheduling
+        // finished, while follow joins those drains without starting idle runs.
+        // Wait for their journal writes before observing or advancing time.
+        for (const executionId of yield* driver.active) {
+          yield* driver.execute(TestFlow, { executionId, payload: {}, discard: false, follow: true })
+        }
+      }
+    }).pipe(
+      Effect.onError(() => Effect.logError("sweep tick did not complete", { scheduled: count, advanceMs: millis }))
+    )
+  return { clock: observed, tick }
+})
+
 // A timed-out case stops awaiting its children; teardown still kills their process groups.
 afterEach(ChildProcesses.reap)
 
@@ -168,6 +207,9 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
         const store = yield* RunStore.RunStore
         /** Owner nonces the probe was asked about, in order, per tick. */
         const probed: Array<string> = []
+        for (let index = 1; index <= rows; index++) yield* insertStaleRun(index)
+        yield* TestClock.adjust(staleAfterMs)
+        const ticks = yield* sweepTicks
         const driver = yield* RunDriver.make({
           owner: { hostId: "sweep-host", pid: 1, nonce: "sweeper" },
           journalSource: "stale-sweep-backoff",
@@ -179,26 +221,20 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
               return true
             }),
           engine: Effect.succeed(fakeEngine)
-        })
+        }).pipe(Effect.provideService(Clock.Clock, ticks.clock))
         yield* driver.register(TestFlow, () => Effect.succeed("never reached"))
-        for (let index = 1; index <= rows; index++) {
-          yield* insertStaleRun(index)
-        }
-
-        // Cross the staleness horizon so every row is sweepable, then take
-        // exactly two sweep ticks.
-        yield* TestClock.adjust(staleAfterMs + heartbeatMs)
-        yield* TestDatabase.until(Effect.sync(() => probed.length >= 64))
-        yield* TestDatabase.until(refusalsOf(runIdOf(64)).pipe(Effect.map((rows) => rows.length === 1)))
+        // The driver starts at the staleness horizon: both observations below
+        // advance exactly one heartbeat and wait for that sweep's drains.
+        yield* ticks.tick(heartbeatMs, driver)
+        expect((yield* refusalsOf(runIdOf(64))).length).toBe(1)
         const afterFirstTick = [...probed]
-        yield* TestClock.adjust(heartbeatMs)
-        yield* TestDatabase.until(Effect.sync(() => probed.length >= 65))
-        yield* TestDatabase.until(refusalsOf(runIdOf(65)).pipe(Effect.map((rows) => rows.length === 1)))
+        yield* ticks.tick(heartbeatMs, driver)
+        expect((yield* refusalsOf(runIdOf(65))).length).toBe(1)
         const afterSecondTick = [...probed]
 
         // Then keep ticking well past the first backoff: the refusals repeat,
         // and the journal must not.
-        yield* TestClock.adjust(heartbeatMs * 10)
+        yield* ticks.tick(heartbeatMs * 10, driver)
 
         return {
           afterFirstTick,
@@ -236,34 +272,9 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
         const sql = yield* Effect.service(SqlClient.SqlClient)
         const writer = yield* DurableWriter.DurableWriter
         const probed: Array<number> = []
-        // A PostgreSQL read can finish before the sweep schedules its next
-        // heartbeat. Observe the real clock's sleep registration, rather than
-        // the earlier database callback, before advancing virtual time again.
-        const clock = yield* Clock.Clock
-        let sleeps = 0
-        const observedClock: Clock.Clock = {
-          ...clock,
-          sleep: (duration) =>
-            Effect.sync(() => {
-              if (Duration.toMillis(duration) === heartbeatMs) sleeps++
-            }).pipe(Effect.andThen(clock.sleep(duration)))
-        }
-        const tick = (millis: number) =>
-          Effect.gen(function*() {
-            yield* TestDatabase.until(Effect.sync(() => sleeps > 0))
-            const before = sleeps
-            yield* TestClock.adjust(millis)
-            yield* TestDatabase.until(Effect.sync(() => sleeps > before)).pipe(
-              Effect.onError(() =>
-                Effect.logError("sweep did not schedule its next heartbeat", {
-                  before,
-                  sleeps,
-                  probes: probed.length,
-                  advanceMs: millis
-                })
-              )
-            )
-          })
+        yield* insertStaleRun(1)
+        yield* TestClock.adjust(staleAfterMs)
+        const { clock, tick } = yield* sweepTicks
         const driver = yield* RunDriver.make({
           owner: { hostId: "sweep-host", pid: 1, nonce: "sweeper" },
           journalSource: "stale-sweep-backoff",
@@ -273,9 +284,8 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
               return true
             }),
           engine: Effect.succeed(fakeEngine)
-        }).pipe(Effect.provideService(Clock.Clock, observedClock))
+        }).pipe(Effect.provideService(Clock.Clock, clock))
         yield* driver.register(TestFlow, () => Effect.succeed("never reached"))
-        yield* insertStaleRun(1)
 
         /** Rewrites the row's lease, which is what a stalling owner does. */
         const setHeartbeat = (heartbeatAtMs: number) =>
@@ -286,28 +296,29 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
 
         // Three refusals in a row: the wait doubles each time, so by the third
         // the row is deferred for several ticks.
-        yield* tick(staleAfterMs + heartbeatMs)
-        yield* TestDatabase.until(Effect.sync(() => probed.length >= 1))
-        yield* TestDatabase.until(refusalsOf(runIdOf(1)).pipe(Effect.map((rows) => rows.length === 1)))
-        yield* tick(heartbeatMs * 2)
-        yield* TestDatabase.until(Effect.sync(() => probed.length >= 2))
-        yield* tick(heartbeatMs * 4)
-        yield* TestDatabase.until(Effect.sync(() => probed.length >= 3))
+        yield* tick(heartbeatMs, driver)
+        expect(probed).toHaveLength(1)
+        expect((yield* refusalsOf(runIdOf(1))).length).toBe(1)
+        yield* tick(heartbeatMs * 2, driver)
+        expect(probed).toHaveLength(2)
+        yield* tick(heartbeatMs * 4, driver)
+        expect(probed).toHaveLength(3)
+        expect(probed).toEqual([1, 3, 7].map((tick) => staleAfterMs + heartbeatMs * tick))
         const afterThreeRefusals = probed.length
 
         // The owner starts heartbeating again, so the row leaves the stale
         // window entirely and the sweep stops seeing it.
         const nowMs = yield* Clock.currentTimeMillis
         yield* setHeartbeat(nowMs)
-        yield* tick(heartbeatMs)
+        yield* tick(heartbeatMs, driver)
         const whileFresh = probed.length
 
         // …and then stalls again, under a new lease. The refusal the driver
         // was holding was about the old one, so this stall is arbitrated now
         // rather than waiting out a backoff it did not earn.
         yield* setHeartbeat((yield* Clock.currentTimeMillis) - staleAfterMs - 1)
-        yield* tick(heartbeatMs)
-        yield* TestDatabase.until(Effect.sync(() => probed.length >= 4))
+        yield* tick(heartbeatMs, driver)
+        expect(probed).toHaveLength(4)
         return { afterThreeRefusals, whileFresh, afterNewLease: probed.length }
       }))
 
