@@ -24,7 +24,7 @@ import type { ConformanceViolation, EngineSubjectError } from "./TestingError.ts
  */
 export interface ConformanceCase {
   readonly name: string
-  readonly run: (engine: EngineSubject) => void!ConformanceViolation | EngineSubjectError
+  readonly run: (engine: EngineSubject) => void!(ConformanceViolation | EngineSubjectError)
 }
 
 // Frozen at definition, case by case as well as as a list. `coreSuite()` with

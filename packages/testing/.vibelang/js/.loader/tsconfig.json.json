@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/testing"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -84,13 +84,6 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/jj/tsconfig.json"
-    },
-    "size": 1284,
-    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
-   },
-   {
-    "path": {
      "relative": "packages/smithers/flows/core/tsconfig.json"
     },
     "size": 1328,
@@ -103,7 +96,7 @@
      "relative": "packages/testing/src"
     },
     null,
-    "hyU9WicyjaZscocLQCYSKQGhltAmtQAwbMoVxLbL-fw",
+    "V-lgFvnrRBE3cIY0WC3c9cCZISpSPGuMFS3Vpdb8qbE",
     [],
     {
      "recursive": true,
@@ -200,7 +193,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -225,7 +218,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -247,7 +240,7 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
@@ -261,91 +254,91 @@
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15090,
-    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
+    "hash": "5FOkC86vo7tOtcOeOCK-OP2Phqst49qpq5bwzD1uplY"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/scorers/package.json"
     },
     "size": 7252,
-    "hash": "7I_MxrfFJFmN45codJGRANYKdp10q5jr_6eK6RYiaHQ"
+    "hash": "io3pn0WU0gCX4_xJrXz7-TMcuudGEn6oA4A6W6APWzE"
    },
    {
     "path": {
      "relative": "packages/testing/package.json"
     },
     "size": 18582,
-    "hash": "n1dBIdBZMkLak5RMgWXSC0YgiHk1FCmb4PfR1tYjoto"
+    "hash": "rn9OPW8fGW6PQzaIA96tShLcjYkzMxGcc0ucvFKnGh8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
+    "hash": "9hRV6N_JW35Lw3SvPT7NdkOD2ZSzUnHKf1zoVZqe5zM"
    },
    {
     "path": {
@@ -366,14 +359,14 @@
      "relative": "packages/smithers/flows/platform-browser/package.json"
     },
     "size": 6886,
-    "hash": "EADV79TfahTz-aFPpXS9mZMhDmyrLNWAkK7tXWzgbac"
+    "hash": "UQdb8lMO2erntGuYFTz9uA89Rd5Bj6lAfuSYctayDlY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jNdvnCgiUuOZHdrFItXIA-FehSkGnK5p9AVrYdLxwuo"
    },
    {
     "path": {
@@ -3440,8 +3433,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -3468,8 +3461,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -3762,8 +3755,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
     },
-    "size": 14820,
-    "hash": "3_MssCulhT6JRs8AaVdGkfPVyzlGApBZgSAY0Iy7ubo"
+    "size": 15216,
+    "hash": "4pmwUEfSoBLUBBDQiK5c6jK6VfFuS6q8LH8xSCOSras"
    },
    {
     "path": {
@@ -4070,8 +4063,8 @@
     "path": {
      "relative": "packages/testing/src/Conformance.vibe"
     },
-    "size": 2795,
-    "hash": "o3wFryXVQAyMrZpmgGXi27BJcCjzfnhWhVxoB4EVTjY"
+    "size": 2797,
+    "hash": "_dqP7TH6HI-FUlQh9-7NO3GDME0NjzFf_AArRzpLIvs"
    },
    {
     "path": {
@@ -4558,10 +4551,17 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/database/src/postgres/QualifiedRead.ts"
+    },
+    "size": 3893,
+    "hash": "sCZLQXPVzDBlAeXKx8zv1vw0ZcS56LPepTWLbFexDqk"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/database/src/postgres/PostgresDatabase.ts"
     },
-    "size": 22893,
-    "hash": "UHez2HBhkcidzvA7wwdLI2qGXDHHdwj30ba09FSCJKo"
+    "size": 26981,
+    "hash": "bnLOD5EtKP6dLSTzLZ1CCm-mRjUug0pU97YQpbGyjxc"
    },
    {
     "path": {
@@ -4572,10 +4572,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.ts"
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
     },
-    "size": 3418,
-    "hash": "68CYu5Lm3xepr2Uf5pEB7o7ftVSsUpuy2uofaNT5SUo"
+    "size": 2658,
+    "hash": "zgtLVmyJCNcelev27tzGorJbOLm10p5FvwdmztaHm04"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
+    },
+    "size": 1661,
+    "hash": "Z9nX0gw3Gsop0v_SvdFZAFJgorP9adVHIkOH2Th0ZiA"
    },
    {
     "path": {
@@ -4595,8 +4602,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/node/NodeDatabase.ts"
     },
-    "size": 4572,
-    "hash": "iwpmUbsZGE7zWrJ5_kHGgK5NKjMMehn9a1q7GnjlxV8"
+    "size": 4574,
+    "hash": "F-iQ3fbR2RG6Dp-ec3sYZhZXU8zSEYUYsUxdeDRPJ1c"
    },
    {
     "path": {
@@ -4614,7 +4621,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/jj/src/internal/JjInternalFault.vibe"
+     "relative": "packages/smithers/flows/jj/src/internal/JjInternalFault.ts"
     },
     "size": 1345,
     "hash": "aBTX6PGp3TBaX2175gQHspE40CASnwqa4LtLMjEAkcw"
@@ -4630,15 +4637,15 @@
     "path": {
      "relative": "packages/smithers/flows/jj/src/browser/WasiPreview1.ts"
     },
-    "size": 46834,
-    "hash": "6m21PeNXVLan0GyAwSjio40R_zc4F5SXo7FM2st1Pms"
+    "size": 46832,
+    "hash": "F8vTPJ1P1_TsAfc3fDGALPiet81c6GnkzPWdAiUFngQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/src/browser/BrowserJj.ts"
     },
-    "size": 31469,
-    "hash": "x0AvR5bp3YH1OLhsMiMaFcuBeiEr3hHI45CFsnjbEGU"
+    "size": 31467,
+    "hash": "mqnFwMhgr2NnbhDwEqazyPxO1aJ4rkIiFl8FJQfJPXU"
    },
    {
     "path": {
@@ -7103,13 +7110,19 @@
     "relative": "packages/smithers/flows/database/src/internal/UnsupportedDatabase.vibe"
    },
    {
+    "relative": "packages/smithers/flows/database/src/postgres/QualifiedRead.ts"
+   },
+   {
     "relative": "packages/smithers/flows/database/src/postgres/PostgresDatabase.ts"
    },
    {
     "relative": "packages/smithers/flows/database/src/TestSchemas.ts"
    },
    {
-    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.ts"
+    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
    },
    {
     "relative": "packages/smithers/flows/database/src/internal/ReleasePolicy.ts"
@@ -7127,7 +7140,7 @@
     "relative": "packages/smithers/flows/journal/src/test/TestJournal.ts"
    },
    {
-    "relative": "packages/smithers/flows/jj/src/internal/JjInternalFault.vibe"
+    "relative": "packages/smithers/flows/jj/src/internal/JjInternalFault.ts"
    },
    {
     "relative": "packages/smithers/flows/jj/src/browser/WasiFs.ts"
