@@ -83,11 +83,12 @@ const reasons: Record<string, PlatformError.SystemErrorTag | undefined> = {
  * @since 1.0.0
  */
 export interface PublicationRequest {
-  readonly operation: "syncDirectory"
+  readonly operation: "syncDirectory" | "makePrivateDirectory" | "writePrivateFile"
   readonly boundaryRoot: string
   readonly logicalRoot: string
   readonly rootIdentity: string
   readonly path: string
+  readonly data?: string
 }
 
 /** Native host operations use the same bounded transport as kernel requests. @internal */
@@ -295,8 +296,11 @@ const toInfo = (value: unknown): FileSystem.File.Info => {
     atime: Option.some(date(info.atime, "atime")),
     birthtime: optional(info.birthtime, (raw) => date(raw, "birthtime")),
     dev: BigInt(integer(info.dev, "dev")),
-    ino: optional(info.ino, (raw) => typeof raw === "string" && /^(0|[1-9][0-9]{0,19})$/.test(raw) &&
-      BigInt(raw) <= 0xffffffffffffffffn ? BigInt(raw) : BigInt(integer(raw, "ino"))),
+    ino: optional(info.ino, (raw) =>
+      typeof raw === "string" && /^(0|[1-9][0-9]{0,19})$/.test(raw) &&
+        BigInt(raw) <= 0xffffffffffffffffn ?
+        BigInt(raw) :
+        BigInt(integer(raw, "ino"))),
     mode: integer(info.mode, "mode"),
     nlink: Option.some(BigInt(integer(info.nlink, "nlink"))),
     uid: Option.some(integer(info.uid, "uid")),
@@ -506,7 +510,9 @@ export const convert = <A>(
     request.operation === "makeDirectory" ||
     request.operation === "remove" ||
     request.operation === "rename" ||
-    request.operation === "syncDirectory"
+    request.operation === "syncDirectory" ||
+    request.operation === "makePrivateDirectory" ||
+    request.operation === "writePrivateFile"
   ) {
     if (value !== null) {
       throw atomicHelperFault("result_malformed", `atomic helper returned a non-null ${request.operation} result`)

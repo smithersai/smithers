@@ -75,10 +75,25 @@ fn exchange(
     stdout.flush()
 }
 
+pub(super) fn publication_name() -> String {
+    static SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let sequence = SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let stamp = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    format!(
+        ".smithers-private-{}-{stamp}-{sequence}",
+        std::process::id()
+    )
+}
+
 pub(super) fn syscall(operation: &str) -> &'static str {
     match operation {
         "readFile" | "readFileString" | "writeFile" | "writeFileString" | "digest" => "open",
         "syncDirectory" => "fsync",
+        "makePrivateDirectory" => "mkdir",
+        "writePrivateFile" => "publish",
         "exists" => "access",
         "stat" => "stat",
         "readLink" => "readlink",

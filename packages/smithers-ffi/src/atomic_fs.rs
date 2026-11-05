@@ -96,6 +96,25 @@ fn directory(root: &File, parts: &[&OsStr], create: bool, mode: u32) -> io::Resu
     }
     Ok(current)
 }
+/// Prepare private recovery components on checked handles, flushing every
+/// parent entry even when a previous interrupted publication created it.
+fn private_directory(root: &File, parts: &[&OsStr]) -> io::Result<File> {
+    let mut current = duplicate(root)?;
+    for name in parts {
+        let child = directory(&current, &[*name], true, 0o700)?;
+        if fstat(&child)?.st_uid != unsafe { libc::geteuid() } {
+            return Err(error(libc::EACCES, "private directory owner differs"));
+        }
+        if unsafe { libc::fchmod(child.as_raw_fd(), 0o700) } < 0 {
+            return Err(io::Error::last_os_error());
+        }
+        child.sync_all()?;
+        current.sync_all()?;
+        current = child;
+    }
+    Ok(current)
+}
+
 fn root(path: &str) -> io::Result<File> {
     let start = open_at(
         libc::AT_FDCWD,
@@ -570,6 +589,22 @@ fn glob_walk(
 }
 
 fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Result<Value> {
+    run_observed(request, content_limit, response_limit, &mut |stage| {
+        eprintln!(
+            "atomic-publication pid={} stage={stage}",
+            std::process::id()
+        );
+    })
+}
+
+/// The observer records stage names only; tests terminate a real process at
+/// each boundary, leaving the filesystem exactly as a crashed owner would.
+pub(super) fn run_observed(
+    request: &Value,
+    content_limit: usize,
+    response_limit: usize,
+    observe: &mut dyn FnMut(&str),
+) -> io::Result<Value> {
     let operation = field(request, "operation")?;
     let boundary = field(request, "boundaryRoot")?;
     let root = root(boundary).map_err(|_| error(libc::EPERM, "atomic root unavailable"))?;
@@ -578,8 +613,79 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
     }
     let options = &request["options"];
     match operation {
+        "makePrivateDirectory" => {
+            private_directory(&root, &confined(request, field(request, "path")?)?)?;
+            Ok(Value::Null)
+        }
+        "writePrivateFile" => {
+            let parts = confined(request, field(request, "path")?)?;
+            let (name, parents) = parts
+                .split_last()
+                .ok_or_else(|| error(libc::EPERM, "refusing root mutation"))?;
+            let bytes = base64::engine::general_purpose::STANDARD
+                .decode(field(request, "data")?)
+                .map_err(|_| invalid("invalid base64"))?;
+            if bytes.len() > content_limit {
+                return Err(error(libc::EFBIG, "payload exceeds content limit"));
+            }
+            let dir = private_directory(&root, parents)?;
+            match lstat_at(&dir, name) {
+                Ok(stat) if stat.st_mode & libc::S_IFMT != libc::S_IFREG || stat.st_nlink > 1 => {
+                    return Err(error(
+                        libc::EPERM,
+                        "backup destination is not an unaliased regular file",
+                    ))
+                }
+                Err(e) if e.raw_os_error() != Some(libc::ENOENT) => return Err(e),
+                _ => {}
+            }
+            let temporary = atomic_protocol::publication_name();
+            let temporary = OsStr::new(&temporary);
+            let mut file = open_at(
+                dir.as_raw_fd(),
+                temporary,
+                libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL,
+                0o600,
+            )?;
+            let result = (|| {
+                observe("temporary-created");
+                if unsafe { libc::fchmod(file.as_raw_fd(), 0o600) } < 0 {
+                    return Err(io::Error::last_os_error());
+                }
+                file.write_all(&bytes)?;
+                file.sync_all()?;
+                observe("file-synced");
+                let from = cstring(temporary)?;
+                let to = cstring(name)?;
+                if unsafe {
+                    libc::renameat(dir.as_raw_fd(), from.as_ptr(), dir.as_raw_fd(), to.as_ptr())
+                } < 0
+                {
+                    return Err(io::Error::last_os_error());
+                }
+                observe("renamed");
+                dir.sync_all()?;
+                observe("directory-synced");
+                Ok(Value::Null)
+            })();
+            if result.is_err() {
+                // Preserve the publication failure. Cleanup must never replace
+                // or conceal a file/directory flush failure.
+                let temporary = cstring(temporary)?;
+                unsafe {
+                    libc::unlinkat(dir.as_raw_fd(), temporary.as_ptr(), 0);
+                }
+            }
+            result
+        }
         "syncDirectory" => {
-            directory(&root, &confined(request, field(request, "path")?)?, false, 0)?.sync_all()?;
+            directory(
+                &root,
+                &confined(request, field(request, "path")?)?,
+                false,
+                0,
+            )?
+            .sync_all()?;
             Ok(Value::Null)
         }
         "exists" | "stat" | "realPath" => {
