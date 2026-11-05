@@ -271,6 +271,26 @@ export const missingCodingExecutables = (
   ).map(([name]) => name)
 }
 
+/** Refuse coding host startup when its native binding lacks a required capability. */
+export const requireCodingBinding = (options: Pick<Options, "sourcePublication">) =>
+  Effect.gen(function*() {
+    const binding = yield* (yield* NativeCoding).read()
+    if (!binding.capabilities?.includes("apply-files/v1")) {
+      return yield* Effect.die(
+        new Error(
+          "Update the workspace native adapter before starting the coding host; apply-files/v1 is required"
+        )
+      )
+    }
+    if (options.sourcePublication !== "local-only" && !binding.capabilities.includes("import-source/v1")) {
+      return yield* Effect.die(
+        new Error(
+          "Update the workspace native adapter before starting the coding host; import-source/v1 is required"
+        )
+      )
+    }
+  })
+
 /** Explicit host model pins override repository and generated role defaults. */
 export const operatorSeats = (
   environment: Readonly<Record<string, string | undefined>>
@@ -1087,21 +1107,9 @@ export const layer = (platform: NativeControl.Platform, options: Options, suppli
               }
               // Plue's adapter verifies the owning workspace binding. A missing native
               // binary, incorrect repository binding or invalid receipt prevents serve.
-              const binding = yield* Context.get(context, NativeCoding).read()
-              if (!binding.capabilities?.includes("apply-files/v1")) {
-                return yield* Effect.die(
-                  new Error(
-                    "Update the workspace native adapter before starting repository jobs; apply-files/v1 is required"
-                  )
-                )
-              }
-              if (options.sourcePublication !== "local-only" && !binding.capabilities.includes("import-source/v1")) {
-                return yield* Effect.die(
-                  new Error(
-                    "Update the workspace native adapter before starting repository jobs; import-source/v1 is required"
-                  )
-                )
-              }
+              yield* requireCodingBinding(options).pipe(
+                Effect.provideService(NativeCoding, Context.get(context, NativeCoding))
+              )
             })
           ),
           Layer.orDie
