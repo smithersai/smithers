@@ -25,5 +25,6 @@ export const targetsInstall = (
   // run operation merely because an install has been configured.
   if (args.run !== undefined) return false
   const env = runtime.environment ?? process.env
-  return !!(new Session(env).config().api_origin || env.SMITHERS_TOKEN || env.SMITHERS_TOKEN_FILE)
+  // A credential authenticates a destination; it does not configure one.
+  return !!new Session(env).config().api_origin
 }
