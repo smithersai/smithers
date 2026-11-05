@@ -12,6 +12,7 @@
  *
  * Run by `pnpm plan` and `pnpm deploy` before Alchemy builds the image. `pnpm dev` runs it with `--if-missing`, which
  * keeps a pack already there: a local box may run an older runner than the checkout until the pack is redone.
+ * `--built` is for graph callers whose library dependencies have already established fresh build outputs.
  */
 import { existsSync } from "node:fs"
 import { mkdir, mkdtemp, readdir, rm, writeFile } from "node:fs/promises"
@@ -48,14 +49,14 @@ export const closureOf = (name, manifests = readWorkspaceManifests()) => {
 }
 
 /** Packs the CLI's closure into `output`, replacing what was there. */
-export const pack = async (output = fileURLToPath(new URL("./cli/", import.meta.url))) => {
+export const pack = async (output = fileURLToPath(new URL("./cli/", import.meta.url)), { rebuild = true } = {}) => {
   await mkdir(output, { recursive: true })
   for (const entry of await readdir(output)) await rm(join(output, entry), { recursive: true, force: true })
   const staging = await mkdtemp(join(tmpdir(), "smthrs-box-cli-"))
   try {
     const packed = []
     for (const directory of closureOf(CLI)) {
-      packed.push(await packWorkspace(directory, output, staging, { rebuild: true }))
+      packed.push(await packWorkspace(directory, output, staging, { rebuild }))
     }
     await writeFile(join(output, "manifest.json"), `${JSON.stringify(packed, null, 2)}\n`)
     await writeFile(
@@ -74,6 +75,6 @@ export const pack = async (output = fileURLToPath(new URL("./cli/", import.meta.
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
   if (process.argv[2] === "--if-missing" && existsSync(new URL("./cli/manifest.json", import.meta.url))) process.exit(0)
-  const packed = await pack()
+  const packed = await pack(undefined, { rebuild: process.argv[2] !== "--built" })
   console.log(`packed ${packed.length} packages for the sandbox image: ${packed.map((each) => each.filename).join(", ")}`)
 }

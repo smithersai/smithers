@@ -76720,6 +76720,29 @@
     }
   },
   {
+    "label": "//packages/smithers/flows/platform-cloudflare:sandboxCli",
+    "package": "packages/smithers/flows/platform-cloudflare",
+    "name": "sandboxCli",
+    "rule": "NodeBinary",
+    "kinds": [
+      "build"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "apps/mvp/infra/sandbox/pack-cli.mjs"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//.smithers/flows:automationModules"
+    ],
+    "source": {
+      "file": "packages/smithers/flows/platform-cloudflare/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/smithers/flows/platform-cloudflare:security",
     "package": "packages/smithers/flows/platform-cloudflare",
     "name": "security",
@@ -76792,6 +76815,18 @@
     "cacheable": false,
     "inputs": [
       {
+        "kind": "file",
+        "path": "apps/mvp/infra/sandbox/Dockerfile"
+      },
+      {
+        "kind": "file",
+        "path": "apps/mvp/infra/sandbox/tmux.conf"
+      },
+      {
+        "kind": "file",
+        "path": "apps/mvp/infra/sandbox/.dockerignore"
+      },
+      {
         "kind": "glob",
         "pattern": "packages/smithers/flows/platform-cloudflare/src/**/*.ts",
         "exclude": []
@@ -76812,7 +76847,8 @@
     ],
     "outputs": [],
     "dependencies": [
-      "//packages/smithers/flows/platform-cloudflare:lib"
+      "//packages/smithers/flows/platform-cloudflare:lib",
+      "//packages/smithers/flows/platform-cloudflare:sandboxCli"
     ],
     "hosts": [
       "linux"
