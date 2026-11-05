@@ -4,10 +4,22 @@ import { Effect, Exit, Layer, Logger, Path, PlatformError, Sink, Stream } from "
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
-import { chmodSync, existsSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "node:fs"
+import {
+  chmodSync,
+  closeSync,
+  existsSync,
+  mkdtempSync,
+  openSync,
+  readdirSync,
+  realpathSync,
+  rmSync,
+  writeFileSync,
+  writeSync
+} from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import * as AwsSandbox from "../src/AwsSandbox/index.ts"
+import { elapsed } from "../src/internal/deadline.ts"
 import { ProviderError } from "../src/RemoteChildProcessSpawner/ProviderError.ts"
 import type { Session } from "../src/Sandbox/Session.ts"
 import * as SandboxConformance from "../src/SandboxConformance/index.ts"
@@ -290,6 +302,11 @@ const encoder = new TextEncoder()
 const decoder = new TextDecoder()
 
 interface CliFaults {
+  /** Delay a real guest wrapper immediately before publishing its child PID. */
+  readonly beforePidWrite?: string
+  /** Read the real host process table when the guest's Linux /proc is unavailable. */
+  readonly hostProcessTable?: boolean
+
   readonly wait?: (remote: string) => Effect.Effect<void> | undefined
   readonly removeResult?: "failed" | "missing"
 
@@ -333,7 +350,16 @@ const fakeCli = (faults: CliFaults = {}) => {
       const remoteIndex = command.args.indexOf("--command")
       // Guest pids live under a fixed guest path; on this host they live
       // under the test's own root instead.
-      const remote = command.args[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
+      const requested = command.args[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
+      // Adapt only Linux's PID/PPID enumeration to the real host process
+      // table; keep the product's awk traversal and STOP/TERM/CONT sequence.
+      // The gated regression exercises this portable transport on Linux too.
+      const processTable = faults.hostProcessTable === true
+        ? requested.replace(/for d in \/proc\/\[0-9\]\*; .*?done \| awk/s, "ps -axo pid=,ppid= | awk")
+        : requested
+      const remote = faults.beforePidWrite === undefined
+        ? processTable
+        : processTable.replace("echo \"$p\" >", `${faults.beforePidWrite}; echo "$p" >`)
       const chunks = Stream.isStream(command.options.stdin)
         ? yield* Stream.runCollect(command.options.stdin as Stream.Stream<Uint8Array>)
         : undefined
@@ -996,7 +1022,7 @@ describe("AwsSandbox", () => {
       // Twelve bytes at five per slice is three commands for the first write.
       const writes = cli.calls.filter((call) => call.remote.includes("base64 -d"))
       expect(writes.filter((call) => call.remote.includes("deep/tree/out.bin"))).toHaveLength(3)
-      expect(cli.calls.some((call) => call.remote.includes("kids()"))).toBe(true)
+      expect(cli.calls.some((call) => call.remote.startsWith("/bin/sh -c '( : > "))).toBe(true)
       expect(fake.stopInputs).toHaveLength(1)
     }), 60_000)
 
@@ -1535,7 +1561,7 @@ describe("AwsSandbox", () => {
         const cli = fakeCli()
         yield* acquired(transportProvider(fake, cli), (session) =>
           Effect.gen(function*() {
-            const kills = () => cli.calls.filter((call) => call.remote.includes("kids()")).length
+            const kills = () => cli.calls.filter((call) => call.remote.startsWith("/bin/sh -c '( : > ")).length
             yield* Effect.scoped(Effect.asVoid(session.spawn("sleep 30", {})))
             expect(kills()).toBe(1)
             yield* output(session, "true")
@@ -1549,7 +1575,7 @@ describe("AwsSandbox", () => {
     Effect.gen(function*() {
       const cli = fakeCli({
         guestResult: (remote) =>
-          remote.includes("kids()") ? { code: 1, payload: "kill: operation not permitted" } : undefined
+          remote.startsWith("/bin/sh -c '( : > ") ? { code: 1, payload: "kill: operation not permitted" } : undefined
       })
       yield* acquired(transportProvider(fakeEcs(), cli), (session) =>
         Effect.scoped(
@@ -1588,7 +1614,7 @@ describe("AwsSandbox", () => {
             drop = false
             yield* Scope.close(scope, Exit.void)
             const calls = [...healthy.calls, ...dropping.calls]
-            expect(calls.filter((call) => call.remote.includes("kids()"))).toHaveLength(1)
+            expect(calls.filter((call) => call.remote.startsWith("/bin/sh -c '( : > "))).toHaveLength(1)
           }))
       }),
     30_000
@@ -1710,7 +1736,15 @@ describe("AwsSandbox", () => {
           "/bin/sh -c 'if [ -e /tmp/.smthrs-sbx/0.pid.cancel ]; then c=143; "
             + "elif cd <workdir>; then /bin/sh -c '\\''echo framed; exit 4'\\'' & p=$!; "
             + "echo \"$p\" > /tmp/.smthrs-sbx/0.pid; if [ -e /tmp/.smthrs-sbx/0.pid.cancel ]; "
-            + "then kill -s TERM \"$p\" 2>/dev/null; fi; wait \"$p\"; c=$?; else c=127; fi; "
+            + "then ( : > /tmp/.smthrs-sbx/0.pid.cancel || exit 1; n=0; while [ ! -s /tmp/.smthrs-sbx/0.pid ] && [ \"$n\" -lt 5"
+            + " ]; do sleep 1; n=$((n+1)); done; p=$(cat /tmp/.smthrs-sbx/0.pid 2>/dev/null); if [ -z \"$p\" ]; then exit 0; fi"
+            + "; kids() { t=$1; for d in /proc/[0-9]*; do read -r s 2>/dev/null < \"$d/stat\" || continue; r=${s##*) }; set -- "
+            + "$r; printf '\\''%s %s\\n'\\'' \"${d#/proc/}\" \"$2\"; done | awk -v root=\"$t\" '\\''{ pid=$1+0; parent=$2+0; sibling[pi"
+            + "d]=first[parent]; first[parent]=pid } END { root+=0; stack[1]=root; seen[root]=1; depth=1; while (depth) { pid"
+            + "=stack[depth]; child=first[pid]; if (child != \"\") { first[pid]=sibling[child]; if (!seen[child]++) stack[++dep"
+            + "th]=child; } else { if (pid != root) print pid; depth-- } } }'\\''; }; set -- $(kids \"$p\") \"$p\"; kill -s STOP \""
+            + "$@\" 2>/dev/null; if kill -s TERM \"$@\" 2>/dev/null || kill -s TERM \"$p\" 2>/dev/null || ! kill -0 \"$p\" 2>/dev/nu"
+            + "ll; then r=0; else r=1; fi; kill -s CONT \"$@\" 2>/dev/null; exit $r ); fi; wait \"$p\"; c=$?; else c=127; fi; "
             + "printf '\\''\\n__smthrs_exit_<nonce>_%s__\\n'\\'' \"$c\"'"
         )
       }),
@@ -1752,6 +1786,68 @@ describe("AwsSandbox", () => {
       for (const nonce of nonces) expect(nonce).toMatch(/^[0-9a-f]{32}$/)
       expect(new Set(nonces).size).toBe(nonces.length)
     }), 60_000)
+
+  it.effect("cancels descendants when the signal precedes PID publication", () =>
+    Effect.scoped(Effect.gen(function*() {
+      const childReady = join(root, "child-ready.fifo")
+      const wrapperReady = join(root, "wrapper-ready.fifo")
+      const publish = join(root, "publish.fifo")
+      const childPid = join(root, "descendant.pid")
+      expect(yield* local.exitCode(ChildProcess.make("mkfifo", [childReady, wrapperReady, publish]))).toBe(0)
+      // The faulty transport holds publication, without a timing-dependent
+      // sleep. The real command has already started its own child by the
+      // time both readiness pipes have been read.
+      const openGate = (path: string) =>
+        Effect.acquireRelease(
+          Effect.sync(() => openSync(path, "r+")),
+          (fd) => Effect.sync(() => closeSync(fd))
+        )
+      // Holding both ends makes the tiny readiness/publication writes bounded
+      // even when an assertion interrupts the wrapper before it reaches read.
+      yield* openGate(childReady)
+      yield* openGate(wrapperReady)
+      const publishFd = yield* openGate(publish)
+      const cli = fakeCli({
+        hostProcessTable: true,
+        beforePidWrite: `printf ready > "${wrapperReady}"; read -r resume < "${publish}"`
+      })
+      let stopped = false
+      yield* acquired(transportProvider(fakeEcs(), cli), (session) =>
+        Effect.scoped(Effect.gen(function*() {
+          const running = yield* session.spawn(
+            `sleep 3600 & child=$!; printf '%s\\n' "$child" > "${childPid}"; printf ready > "${childReady}"; wait "$child"`,
+            {}
+          )
+          yield* Effect.addFinalizer(() =>
+            Effect.sync(() => writeSync(publishFd, "resume\n")).pipe(
+              Effect.andThen(Effect.suspend(() =>
+                stopped ? Effect.void : local.exitCode(ChildProcess.make("sh", [
+                  "-c",
+                  `if [ -s "${childPid}" ]; then kill -s KILL "$(cat "${childPid}")" 2>/dev/null || true; fi`
+                ])).pipe(Effect.ignore)
+              ))
+            )
+          )
+          const ready = (path: string) => local.string(ChildProcess.make("dd", [`if=${path}`, "bs=5", "count=1"]))
+          expect(yield* ready(childReady)).toBe("ready")
+          expect(yield* ready(wrapperReady)).toBe("ready")
+          expect(yield* local.exitCode(ChildProcess.make("sh", ["-c", `kill -0 "$(cat "${childPid}")"`]))).toBe(0)
+          yield* session.kill!(running, "SIGTERM")
+          expect(cli.calls.some((call) => call.remote.includes("ps -axo pid=,ppid= | awk"))).toBe(true)
+          expect(existsSync(join(root, ".pids/0.pid.cancel"))).toBe(true)
+          expect(existsSync(join(root, ".pids/0.pid"))).toBe(false)
+          writeSync(publishFd, "resume\n")
+          stopped = yield* Effect.raceFirst(
+            Effect.as(running.exitCode, true),
+            Effect.as(elapsed("15 seconds"), false)
+          )
+          expect(
+            stopped,
+            "cancelled before PID publication: the wrapper must stop descendants and close their output pipes"
+          ).toBe(true)
+          expect(yield* running.exitCode).toBe(143)
+        })))
+    })), 60_000)
 
   it.effect("passes the sandbox conformance suite through the CLI session transport", () =>
     Effect.gen(function*() {
