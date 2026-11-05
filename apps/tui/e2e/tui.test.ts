@@ -4,7 +4,10 @@
  * Model turns use offline replay seats. Historical traces exercise projections;
  * successful coding cases use current-protocol cells that execute real flows.
  */
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { TerminalRecording } from "@smthrs/testing"
 import { afterEach, beforeEach, describe, expect, it } from "bun:test"
+import { Effect } from "effect"
 import { spawnSync } from "node:child_process"
 import {
   appendFileSync,
@@ -2992,4 +2995,74 @@ export default Flow.make("${tag}", {
     await tui.click("✗ 1 extension")
     await tui.until((screen) => screen.includes("review: ctrl+c is the built-in Clear key"), 5_000, "problem view")
   }, 60_000)
+})
+
+describe("terminal recording evidence", () => {
+  it("records real TUI session commands and keyboard navigation as a replay and GIF", async () => {
+    const root = mkdtempSync(join(tmpdir(), "tui-recording-"))
+    const home = join(root, "home")
+    const cwd = join(root, "project")
+    mkdirSync(home)
+    mkdirSync(cwd)
+    const artifacts = process.env.SMITHERS_TERMINAL_ARTIFACTS ?? join(app, ".cache", "terminal-evidence")
+    mkdirSync(artifacts, { recursive: true })
+    const out = join(mkdtempSync(join(artifacts, "session-")), "recording")
+    const recording = await Effect.runPromise(TerminalRecording.make({
+      title: "TUI: session and keys",
+      columns: 110,
+      rows: 40,
+      env: { PATH: process.env.PATH ?? "" }
+    }))
+    const capture = (label: string) => Effect.runPromise(recording.capture(label, tui!.screen()))
+    try {
+      tui = await Tui.start({
+        cwd,
+        command: `bun ${join(app, "src", "main.tsx")} ${cwd}`,
+        env: {
+          HOME: home,
+          XDG_CONFIG_HOME: join(home, "config"),
+          XDG_DATA_HOME: join(home, "data"),
+          XDG_CACHE_HOME: join(home, "cache"),
+          XDG_STATE_HOME: join(home, "state"),
+          PATH: process.env.PATH ?? "",
+          SMITHERS_AUTH_FILE: join(home, "auth.json"),
+          SMITHERS_DISABLE_SYSTEM_KEYRING: "1",
+          SMITHERS_TUI_SESSION_DIR: join(root, "sessions"),
+          // No model turns: only real local commands are exercised.
+          SMITHERS_TUI_REPLAY: join(app, "test", "fixtures", "pong.jsonl")
+        }
+      })
+      await tui.until(drawn, 20_000, "fresh session")
+      await capture("Fresh session")
+      await tui.press("?")
+      await tui.until(
+        (screen) => screen.includes("Pick model") && screen.includes("Previous model"),
+        5_000,
+        "keyboard navigation"
+      )
+      await capture("Keyboard shortcuts")
+      await tui.press("?")
+      await tui.type("/new")
+      await tui.press(key.enter)
+      await tui.until((screen) => screen.includes("New conversation started"), 5_000, "new conversation")
+      await capture("New conversation")
+      await tui.type("/quit")
+      await tui.press(key.enter)
+      expect(await tui.waitForExit(5_000)).toEqual({ code: 0 })
+      const evidence = await Effect.runPromise(recording.write(out).pipe(Effect.provide(NodeServices.layer)))
+      const manifest = JSON.parse(readFileSync(evidence.manifest, "utf8"))
+      expect(manifest.frames.map((frame: TerminalRecording.Frame) => frame.label)).toEqual([
+        "Fresh session",
+        "Keyboard shortcuts",
+        "New conversation"
+      ])
+      expect(readFileSync(evidence.gif).subarray(0, 6).toString()).toBe("GIF89a")
+      expect(existsSync(join(home, "auth.json"))).toBe(false)
+      console.info(`Terminal evidence: ${evidence.manifest}`)
+    } finally {
+      await tui?.stop()
+      tui = undefined
+      rmSync(root, { recursive: true, force: true })
+    }
+  }, 30_000)
 })

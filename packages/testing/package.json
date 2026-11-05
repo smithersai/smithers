@@ -443,7 +443,8 @@
     "@smthrs/plan": "1.0.0-rc.16",
     "@smthrs/platform-browser": "1.0.0-rc.16",
     "@smthrs/scorers": "1.0.0-rc.16",
-    "@smthrs/canonical": "1.0.0-rc.16"
+    "@smthrs/canonical": "1.0.0-rc.16",
+    "string-width": "7.2.0"
   },
   "peerDependencies": {
     "effect": "4.0.5",

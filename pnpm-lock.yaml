@@ -849,6 +849,9 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@smthrs/ui-styleguide':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/ui-styleguide
@@ -6595,6 +6598,9 @@ importers:
       '@smthrs/scorers':
         specifier: 1.0.0-rc.16
         version: link:../smithers/agent/scorers
+      string-width:
+        specifier: 7.2.0
+        version: 7.2.0
     devDependencies:
       '@effect/language-service':
         specifier: 0.87.2

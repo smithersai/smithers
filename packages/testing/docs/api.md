@@ -3,8 +3,8 @@ title: "API reference"
 description: "Every public export of @smthrs/testing: the tier layers, plan and journal assertions, the engine subject port and its conformance suite, the host suite, the record-and-replay model doubles, score gates, typed failures, and the process fault primitives."
 ---
 
-`@smthrs/testing` exports twenty-four modules from its root entry point, and each is
-also importable from `@smthrs/testing/<Module>`:
+`@smthrs/testing` exports module namespaces from its root entry point.
+Import a namespace from the root or use a declared package subpath:
 
 ```ts
 import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
@@ -2117,3 +2117,49 @@ SIGTERM and exits `1` with the message on a parse or startup failure.
 | `FlowEngineLike` scheduler passes awaiting a published result: 1000     | Fails typed rather than spinning                                        |
 | Conformance pin wait: a bounded live-clock schedule, roughly one second | Fails rather than hanging                                               |
 | `ScoreGate` sample count                                                | No limit; the minimum is an iterative reduction, not an argument spread |
+
+## RealCliDriver
+
+Import `{ RealCliDriver }` from `@smthrs/testing`. `make(options)` allocates a
+scoped temporary project and fresh HOME, XDG, auth, session and temporary roots.
+`run(args, input?)` executes literal arguments and optional piped input, returning
+`{ code, stdout, stderr }`. `execute({ executable, args?, cwd, env?, input?,
+timeoutMs?, maxBytes? })` runs one command without allocating state.
+
+Provide the library catalog's injected filesystem, path and supervised process
+services, such as `NodeHost.layer` from `@smthrs/platform-node`. No ambient
+environment is inherited; explicitly supply PATH and required configuration.
+State roots override caller-supplied values. Both output pipes drain concurrently
+with UTF-8 decoding. The default deadline is 30 seconds and the combined byte
+budget is 1 MiB. `DriverError.reason` distinguishes invalid bounds, timeout and
+output overflow; platform failures retain their typed errors. Scope closure
+terminates the owned process group and removes temporary state.
+
+## TerminalRecording
+
+Import `{ TerminalRecording }` from `@smthrs/testing`. `make({ title, columns?,
+rows?, frameDurationMs?, maxFrames?, renderer?, env? })` creates a bounded
+recording. `capture(label, screen)` accepts public, settled plain-text screens;
+never pass credentials, private input or ANSI escapes. `write(newDirectory)`
+returns `{ gif, cast, manifest }` after successful conversion through real
+FFmpeg 7+ with drawtext, fontconfig and palette filters.
+
+Defaults are 110 columns, 40 rows, 800 ms per frame and 64 frames. Durations
+use GIF's 10 ms precision. Frames must fit the row count and terminal display
+width, including wide and combining glyphs, checked with the TUI's existing
+`string-width` library inside the Effect capture boundary. Fixed geometry,
+explicit row positioning and an asciinema v2 timeline make replay independent of
+process latency. Replaying identical saved frames in the same renderer/font
+environment produces identical GIF bytes. Each new destination retains text
+frames, row files, `terminal.filter`, `terminal.cast` and renderer diagnostics;
+`manifest.json` is created only after a successful GIF conversion. A failed
+conversion preserves evidence without a success manifest; stale destinations
+are refused.
+
+The CLI journey in `packages/smithers/test/e2e/cli-journey.test.ts` covers fresh
+signed-out state, credential refusal and current repository URLs. The
+`terminal recording evidence` case in `apps/tui/e2e/tui.test.ts` uses the
+production TUI in a real PTY for session commands and keyboard navigation.
+`SMITHERS_TERMINAL_ARTIFACTS` selects the parent evidence directory; each run
+creates a fresh child. The CLI additionally accepts `SMITHERS_TERMINAL_PATH`
+for a native executable PATH when a host shim depends on its original HOME.

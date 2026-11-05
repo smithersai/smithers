@@ -162,9 +162,8 @@ See the [guide](./docs/guides/script-a-model.md).
 
 ## Seven modules stay off the root barrel
 
-The root entry point exports one namespace per module, and each is also
-importable from `@smthrs/testing/<Module>`. Seven are reachable only by
-subpath.
+The root entry point exports module namespaces, including `RealCliDriver`
+and `TerminalRecording`. Seven additional modules are reachable only by subpath.
 
 `TestHost` is the deterministic host bundle: an in-memory filesystem, scripted
 interpreter, `TestClock`, and seeded PRNG. It remains a subpath so importing

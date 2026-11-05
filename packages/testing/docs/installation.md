@@ -49,10 +49,12 @@ The root entry point re-exports every module as a namespace:
 import { Conformance, EngineSubject, JournalAssertions, TestLayers } from "@smthrs/testing"
 ```
 
-Each module is also importable from its own subpath, which is the form the
-[API reference](./api.md) uses:
+Many modules are also importable from a declared subpath, which is the form
+the [API reference](./api.md) uses. Import `RealCliDriver` and
+`TerminalRecording` from the root:
 
 ```ts
+import { RealCliDriver, TerminalRecording } from "@smthrs/testing"
 import * as JournalAssertions from "@smthrs/testing/JournalAssertions"
 import * as TestLayers from "@smthrs/testing/TestLayers"
 ```
