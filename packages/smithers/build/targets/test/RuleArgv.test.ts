@@ -562,5 +562,4 @@ describe("DepsLint", () => {
     })
     expect(plannedArgv(target)).toEqual(["pnpm", "exec", "depcheck"])
   })
-
 })
