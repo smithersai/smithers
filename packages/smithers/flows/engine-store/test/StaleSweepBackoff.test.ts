@@ -236,18 +236,33 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
         const sql = yield* Effect.service(SqlClient.SqlClient)
         const writer = yield* DurableWriter.DurableWriter
         const probed: Array<number> = []
-        // Each sweep tick ends with the pending-admission read, and the sweeper
-        // then sleeps one heartbeat from whatever the clock reads. Advancing
-        // the clock while a tick is still running schedules the next tick past
-        // the new time, where nothing ever wakes it, so every advance here waits
-        // for the tick it started to finish.
-        const engineState = yield* DurableEngineState.DurableEngineState
-        let ticks = 0
+        // A PostgreSQL read can finish before the sweep schedules its next
+        // heartbeat. Observe the real clock's sleep registration, rather than
+        // the earlier database callback, before advancing virtual time again.
+        const clock = yield* Clock.Clock
+        let sleeps = 0
+        const observedClock: Clock.Clock = {
+          ...clock,
+          sleep: (duration) =>
+            Effect.sync(() => {
+              if (Duration.toMillis(duration) === heartbeatMs) sleeps++
+            }).pipe(Effect.andThen(clock.sleep(duration)))
+        }
         const tick = (millis: number) =>
           Effect.gen(function*() {
-            const before = ticks
+            yield* TestDatabase.until(Effect.sync(() => sleeps > 0))
+            const before = sleeps
             yield* TestClock.adjust(millis)
-            yield* TestDatabase.until(Effect.sync(() => ticks > before))
+            yield* TestDatabase.until(Effect.sync(() => sleeps > before)).pipe(
+              Effect.onError(() =>
+                Effect.logError("sweep did not schedule its next heartbeat", {
+                  before,
+                  sleeps,
+                  probes: probed.length,
+                  advanceMs: millis
+                })
+              )
+            )
           })
         const driver = yield* RunDriver.make({
           owner: { hostId: "sweep-host", pid: 1, nonce: "sweeper" },
@@ -258,13 +273,7 @@ describe("the stale-running sweep backs off refused rows (B-04)", () => {
               return true
             }),
           engine: Effect.succeed(fakeEngine)
-        }).pipe(Effect.provideService(DurableEngineState.DurableEngineState, {
-          ...engineState,
-          pendingRunTail: (flowName, eligibleBeforeMs) =>
-            engineState.pendingRunTail(flowName, eligibleBeforeMs).pipe(Effect.ensuring(Effect.sync(() => {
-              ticks = ticks + 1
-            })))
-        }))
+        }).pipe(Effect.provideService(Clock.Clock, observedClock))
         yield* driver.register(TestFlow, () => Effect.succeed("never reached"))
         yield* insertStaleRun(1)
 
