@@ -8,7 +8,6 @@
  * @since 1.0.0
  */
 
-import * as Effect from "effect/Effect"
 import * as Metric from "effect/Metric"
 
 /**
@@ -44,8 +43,8 @@ const resultAttributes = (result: unknown): Record<string, unknown> =>
 const observe = <A, E, R>(
   method: string,
   input: unknown,
-  effect: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R> =>
+  effect: A!E!R
+): A!E!R =>
   effect.pipe(
     Effect.tap((result) => Effect.annotateCurrentSpan(resultAttributes(result))),
     Effect.onExit((exit) =>
@@ -54,7 +53,7 @@ const observe = <A, E, R>(
         1
       )
     ),
-    Effect.withSpan(`MemoryStore.${method}`, { attributes: inputAttributes(input) })
+    withSpan(`MemoryStore.${method}`, { attributes: inputAttributes(input) })
   )
 
 /**
@@ -69,7 +68,7 @@ export const instrument = <S extends object>(service: S): S => {
   for (const [method, member] of Object.entries(service)) {
     instrumented[method] = typeof member === "function"
       ? (input: unknown, ...rest: ReadonlyArray<unknown>) =>
-        observe(method, input, (member as (...args: ReadonlyArray<unknown>) => Effect.Effect<unknown>)(input, ...rest))
+        observe(method, input, (member as (...args: ReadonlyArray<unknown>) => unknown!!)(input, ...rest))
       : Effect.isEffect(member)
       ? observe(method, undefined, member)
       : member

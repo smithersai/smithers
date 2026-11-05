@@ -1,6 +1,6 @@
 import { Effect, Metric, Tracer } from "effect"
 import { describe, expect, it } from "vitest"
-import { operations } from "../src/internal/Instrument.ts"
+import { operations } from "../src/internal/Instrument.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as TestMemory from "../src/test/TestMemory.ts"
 

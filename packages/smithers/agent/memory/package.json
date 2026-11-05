@@ -162,7 +162,8 @@
     "src/RecallKeyword.vibe",
     "src/WithMemory.vibe",
     "src/internal/Fts.vibe",
-    "src/internal/MemoryFtsFold.vibe"
+    "src/internal/MemoryFtsFold.vibe",
+    "src/internal/Instrument.vibe"
   ],
   "publishConfig": {
     "access": "public",
