@@ -1,5 +1,5 @@
 import { execFileSync } from "node:child_process"
-import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
@@ -7,7 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url"
 import { expect, it } from "vitest"
 
 it("does not credit native tsx copies with Vite-transformed coverage", () => {
-  const root = mkdtempSync(join(tmpdir(), "vitest-native-coverage-"))
+  // Coverage filenames use real paths, including through macOS TMPDIR aliases.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "vitest-native-coverage-")))
   const require = createRequire(import.meta.url)
   const loaderRequire = createRequire(new URL("../../smithers/build/build-cli/package.json", import.meta.url))
   const tsx = pathToFileURL(loaderRequire.resolve("tsx/esm/api")).href

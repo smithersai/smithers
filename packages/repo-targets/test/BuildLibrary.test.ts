@@ -14,7 +14,8 @@ import {
 
 const roots: Array<string> = []
 const scratch = () => {
-  const root = mkdtempSync(join(tmpdir(), "repo-targets-build-library-"))
+  // Node and source-map tools resolve macOS temporary-directory aliases.
+  const root = realpathSync(mkdtempSync(join(tmpdir(), "repo-targets-build-library-")))
   roots.push(root)
   return root
 }
