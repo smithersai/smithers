@@ -150,11 +150,11 @@ const unavailable = (operation: string): EngineUnavailableError =>
 export const makeNoop = (overrides: Partial<EngineSubject> = {}): EngineSubject =>
   EngineSubject.of({
     name: "unavailable",
-    run: effect () => throw unavailable("run"),
-    result: effect () => throw unavailable("result"),
-    interrupt: effect () => throw unavailable("interrupt"),
-    resume: effect () => throw unavailable("resume"),
-    journal: effect () => throw unavailable("journal"),
+    run: effect () => (throw unavailable("run")),
+    result: effect () => (throw unavailable("result")),
+    interrupt: effect () => (throw unavailable("interrupt")),
+    resume: effect () => (throw unavailable("resume")),
+    journal: effect () => (throw unavailable("journal")),
     ...overrides
   })
 

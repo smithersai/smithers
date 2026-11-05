@@ -74,7 +74,7 @@ export const rederive = <S>(
   frame: Frame,
   projection: Projection<S>,
   options: ReplayOptions
-): S!TimeTravelError!Journal.Journal | CacheStore.CacheStore =>
+): S!TimeTravelError!(Journal.Journal | CacheStore.CacheStore) =>
   Effect.fn("Replay.rederive")(effect () => {
     try Effect.annotateCurrentSpan({
       runId: options.runId,

@@ -290,7 +290,7 @@ const resume = effect (
 export const project = (
   runId: string,
   options: ProjectOptions = {}
-): State!TimeTravelError!Journal.Journal | TimeTravelStore =>
+): State!TimeTravelError!(Journal.Journal | TimeTravelStore) =>
   effect {
     const journal = try Journal.Journal
     const store = try TimeTravelStore

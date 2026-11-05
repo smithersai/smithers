@@ -78,7 +78,7 @@ export interface ForkOptions {
    * refusal and before the assessment reads them. A fork of a live parent is
    * refused without reading its journal at all.
    */
-  readonly refreshAnchors?: (void!never!Journal.Journal | TimeTravelStore) | undefined
+  readonly refreshAnchors?: (void!never!(Journal.Journal | TimeTravelStore)) | undefined
   /**
    * Fault injection between the fork's durable steps, the seam the crash
    * suite uses to kill a real process after the workspace exists and before
@@ -317,13 +317,13 @@ export interface Result extends ForkRecord {
  */
 export const fork = (
   options: ForkOptions
-): Result!TimeTravelError!| CacheStore.CacheStore
+): Result!TimeTravelError!(| CacheStore.CacheStore
   | EffectHandlerRegistry
   | Jj
   | Journal.Journal
   | RunStore.RunStore
   | Scope.Scope
-  | TimeTravelStore =>
+  | TimeTravelStore) =>
   Effect.fn("Fork.fork")(effect () => {
     try Effect.annotateCurrentSpan({
       parentRunId: options.parentRunId,

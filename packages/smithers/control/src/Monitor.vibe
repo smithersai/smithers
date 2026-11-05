@@ -310,7 +310,7 @@ export interface Options {
   ) => Receipt!ControlError
 }
 
-const summaryOf = (runId: RunId): RunSummary | undefined!ControlError!Control =>
+const summaryOf = (runId: RunId): (RunSummary | undefined)!ControlError!Control =>
   Effect.flatMap(Control, (control) =>
     control.list({ _tag: "runs", filters: { runId } })
     |> Effect.map(%, (listed) => listed._tag === "runs" ? listed.items[0] : undefined))
@@ -353,7 +353,7 @@ const terminal = (summary: RunSummary | undefined): boolean =>
  */
 export const run = effect (
   options: Options
-): Report!ControlError!Control | Journal.Journal => {
+): Report!ControlError!(Control | Journal.Journal) => {
   const intervalMs = options.intervalMs ?? options.healthCheck?.policy.intervalMs ?? 1_000
   const maxChecks = options.maxChecks ?? 10
   const stallBeats = options.stallBeats ?? 3

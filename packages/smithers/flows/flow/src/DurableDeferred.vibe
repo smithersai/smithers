@@ -134,10 +134,10 @@ export const make = <
 
 const await_: <Success extends Schema.Constraint, Error extends Schema.Constraint>(
   self: DurableDeferred<Success, Error>
-) => Success["Type"]!Error["Type"]!| FlowRuntime
+) => Success["Type"]!Error["Type"]!(| FlowRuntime
   | FlowInstance
   | Success["DecodingServices"]
-  | Error["DecodingServices"] =
+  | Error["DecodingServices"]) =
   // Untraced because deferred polling participates in the flow scheduler hot path.
   effect <
     Success extends Schema.Constraint,
@@ -192,35 +192,35 @@ export const into: {
     self: DurableDeferred<Success, Error>
   ): <R>(
     effect: Success["Type"]!Error["Type"]!R
-  ) => Success["Type"]!Error["Type"]!| R
+  ) => Success["Type"]!Error["Type"]!(| R
     | FlowRuntime
     | FlowInstance
     | Success["DecodingServices"]
     | Success["EncodingServices"]
     | Error["DecodingServices"]
-    | Error["EncodingServices"]
+    | Error["EncodingServices"])
   <Success extends Schema.Constraint, Error extends Schema.Constraint, R>(
     effect: Success["Type"]!Error["Type"]!R,
     self: DurableDeferred<Success, Error>
-  ): Success["Type"]!Error["Type"]!| R
+  ): Success["Type"]!Error["Type"]!(| R
     | FlowRuntime
     | FlowInstance
     | Success["DecodingServices"]
     | Success["EncodingServices"]
     | Error["DecodingServices"]
-    | Error["EncodingServices"]
+    | Error["EncodingServices"])
 } = dual(
   2,
   <Success extends Schema.Constraint, Error extends Schema.Constraint, R>(
     effect: Success["Type"]!Error["Type"]!R,
     self: DurableDeferred<Success, Error>
-  ): Success["Type"]!Error["Type"]!| R
+  ): Success["Type"]!Error["Type"]!(| R
     | FlowRuntime
     | FlowInstance
     | Success["DecodingServices"]
     | Success["EncodingServices"]
     | Error["DecodingServices"]
-    | Error["EncodingServices"] =>
+    | Error["EncodingServices"]) =>
     Effect.contextWith(
       (context: Context<FlowRuntime | FlowInstance>) => {
         const engine = Context.get(context, FlowRuntime)
@@ -277,13 +277,13 @@ export const raceAll = <
   success: Success
   error: Error
   effects: Effects
-}): Effect.Success<Effects[number]>!Effect.Error<Effects[number]>!| Effect.Services<Effects[number]>
+}): Effect.Success<Effects[number]>!Effect.Error<Effects[number]>!(| Effect.Services<Effects[number]>
   | Success["DecodingServices"]
   | Success["EncodingServices"]
   | Error["DecodingServices"]
   | Error["EncodingServices"]
   | FlowRuntime
-  | FlowInstance => {
+  | FlowInstance) => {
   const deferred = make<any, any>(`raceAll/${options.name}`, {
     success: options.success,
     error: options.error
@@ -536,7 +536,7 @@ export const tokenFromPayload: {
     readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
   }): <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>
-  ) => Token!never!Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]
+  ) => Token!never!(Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"])
   <
     Success extends Schema.Constraint,
     Error extends Schema.Constraint,
@@ -547,7 +547,7 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Token!never!Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]
+  ): Token!never!(Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"])
 } = dual(
   2,
   <
@@ -560,7 +560,7 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Token!never!Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"] =>
+  ): Token!never!(Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]) =>
     Effect.map(options.flow.executionId(options.payload), (executionId) =>
       tokenFromExecutionId(self, {
         flow: options.flow,
@@ -584,14 +584,14 @@ export const done: {
     readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
   }): (
     self: DurableDeferred<Success, Error>
-  ) => void!TokenInvalid!FlowRuntime | Success["EncodingServices"] | Error["EncodingServices"]
+  ) => void!TokenInvalid!(FlowRuntime | Success["EncodingServices"] | Error["EncodingServices"])
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>,
     options: {
       readonly token: Token
       readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
     }
-  ): void!TokenInvalid!FlowRuntime | Success["EncodingServices"] | Error["EncodingServices"]
+  ): void!TokenInvalid!(FlowRuntime | Success["EncodingServices"] | Error["EncodingServices"])
 } = dual(
   2,
   // Untraced because awaiting a deferred re-enters the scheduler recursively.
@@ -633,14 +633,14 @@ export const succeed: {
     readonly value: Success["Type"]
   }): (
     self: DurableDeferred<Success, Error>
-  ) => void!TokenInvalid!FlowRuntime | Success["EncodingServices"]
+  ) => void!TokenInvalid!(FlowRuntime | Success["EncodingServices"])
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>,
     options: {
       readonly token: Token
       readonly value: Success["Type"]
     }
-  ): void!TokenInvalid!FlowRuntime | Success["EncodingServices"]
+  ): void!TokenInvalid!(FlowRuntime | Success["EncodingServices"])
 } = dual(
   2,
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
@@ -649,7 +649,7 @@ export const succeed: {
       readonly token: Token
       readonly value: Success["Type"]
     }
-  ): void!TokenInvalid!FlowRuntime | Success["EncodingServices"] =>
+  ): void!TokenInvalid!(FlowRuntime | Success["EncodingServices"]) =>
     done(self, {
       token: options.token,
       exit: Exit.succeed(options.value)
@@ -668,14 +668,14 @@ export const fail: {
     readonly error: Error["Type"]
   }): (
     self: DurableDeferred<Success, Error>
-  ) => void!TokenInvalid!FlowRuntime | Error["EncodingServices"]
+  ) => void!TokenInvalid!(FlowRuntime | Error["EncodingServices"])
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>,
     options: {
       readonly token: Token
       readonly error: Error["Type"]
     }
-  ): void!TokenInvalid!FlowRuntime | Error["EncodingServices"]
+  ): void!TokenInvalid!(FlowRuntime | Error["EncodingServices"])
 } = dual(
   2,
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
@@ -684,7 +684,7 @@ export const fail: {
       readonly token: Token
       readonly error: Error["Type"]
     }
-  ): void!TokenInvalid!FlowRuntime | Error["EncodingServices"] =>
+  ): void!TokenInvalid!(FlowRuntime | Error["EncodingServices"]) =>
     done(self, {
       token: options.token,
       exit: Exit.fail(options.error)
@@ -703,14 +703,14 @@ export const failCause: {
     readonly cause: Cause.Cause<Error["Type"]>
   }): (
     self: DurableDeferred<Success, Error>
-  ) => void!TokenInvalid!FlowRuntime | Error["EncodingServices"]
+  ) => void!TokenInvalid!(FlowRuntime | Error["EncodingServices"])
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>,
     options: {
       readonly token: Token
       readonly cause: Cause.Cause<Error["Type"]>
     }
-  ): void!TokenInvalid!FlowRuntime | Error["EncodingServices"]
+  ): void!TokenInvalid!(FlowRuntime | Error["EncodingServices"])
 } = dual(
   2,
   <Success extends Schema.Constraint, Error extends Schema.Constraint>(
@@ -719,7 +719,7 @@ export const failCause: {
       readonly token: Token
       readonly cause: Cause.Cause<Error["Type"]>
     }
-  ): void!TokenInvalid!FlowRuntime | Error["EncodingServices"] =>
+  ): void!TokenInvalid!(FlowRuntime | Error["EncodingServices"]) =>
     done(self, {
       token: options.token,
       exit: Exit.failCause(options.cause)

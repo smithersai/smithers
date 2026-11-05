@@ -204,7 +204,7 @@ export const rearms = Metric.counter("smithers_cloudflare_sandbox_rearms", {
 export const wake = <F, E, R>(
   machine: Machine<F, E, R>,
   options: WakeOptions<F>
-): WakeOutcome!E | StartTimedOut!R =>
+): WakeOutcome!(E | StartTimedOut)!R =>
   effect {
     const running = try machine.running
     if (!running) {
@@ -256,7 +256,7 @@ export const wake = <F, E, R>(
 export const rearm = <F, E, R>(
   machine: Pick<Machine<F, E, R>, "running" | "setInactivityTimeout">,
   inactivityTimeoutMs: number = defaultInactivityTimeoutMs
-): "rearmed" | "stopped"!E!R =>
+): ("rearmed" | "stopped")!E!R =>
   effect {
     if (!(try machine.running)) return "stopped" as const
     try machine.setInactivityTimeout(inactivityTimeoutMs)
