@@ -91,9 +91,20 @@ export interface PublicationRequest {
   readonly data?: string
 }
 
-/** Native host operations use the same bounded transport as kernel requests. @internal */
+/**
+ * Native host operations use the same bounded transport as kernel requests.
+ *
+ * @since 1.0.0
+ * @private
+ */
 export type HostRequest = KernelFileSystem.AtomicRequest | PublicationRequest
 
+/**
+ * One bounded host request or an atomic kernel request batch.
+ *
+ * @since 1.0.0
+ * @private
+ */
 export type FramedRequest = HostRequest | KernelFileSystem.AtomicBatchRequest
 
 /** The operand a framed request names, for a failure's `pathOrDescriptor`. */

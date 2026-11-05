@@ -1,10 +1,20 @@
-/** Owner-private native publication, shared by host consumers. @since 1.0.0 */
+/**
+ * Owner-private native publication, shared by host consumers.
+ *
+ * @since 1.0.0
+ */
+
 import { Effect, type PlatformError } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { basename, dirname, isAbsolute, join, relative, resolve, sep } from "node:path"
 import type { HostRequest } from "./internal/AtomicFileSystemProtocol.ts"
 
-/** @since 1.0.0 @category models */
+/**
+ * Native operations that publish and append with owner-only access.
+ *
+ * @since 1.0.0
+ * @category models
+ */
 export interface Service {
   readonly directory: (root: string, directory: string) => Effect.Effect<string, PlatformError.PlatformError>
   readonly write: (root: string, file: string, bytes: Uint8Array) => Effect.Effect<void, PlatformError.PlatformError>
@@ -12,7 +22,12 @@ export interface Service {
   readonly append: (file: string, text: string) => Effect.Effect<void, PlatformError.PlatformError>
 }
 
-/** @internal */
+/**
+ * Constructs owner-private publication against the host executor.
+ *
+ * @since 1.0.0
+ * @private
+ */
 export const make = (
   execute: (request: HostRequest) => Effect.Effect<unknown, PlatformError.PlatformError>,
   failure: (path: string, cause: unknown) => PlatformError.PlatformError

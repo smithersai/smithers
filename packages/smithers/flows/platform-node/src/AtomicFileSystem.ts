@@ -446,16 +446,16 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
  */
 export const layer: Layer.Layer<FileSystem.FileSystem> = layerWith({})
 
+const defaultOwner = OwnerPrivate.make(
+  executeFramed({}, resolveSettings({})),
+  privateFailure
+)
 /**
  * Private publication service. The host owns native access checks and durable
  * append; consumers can inject a faulty service to exercise refusal paths.
  * @since 1.0.0
  * @category services
  */
-const defaultOwner = OwnerPrivate.make(
-  executeFramed({}, resolveSettings({})),
-  privateFailure
-)
 export const ownerPrivate = Context.Reference<OwnerPrivate.Service>("@smthrs/platform-node/OwnerPrivate", {
   defaultValue: () => defaultOwner
 })
