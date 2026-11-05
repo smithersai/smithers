@@ -1,5 +1,5 @@
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
-import { Context, Effect, Exit, Fiber, Layer, Metric, Option, Queue, References, Scope, Stream, Tracer } from "effect"
+import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Option, Queue, References, Scope, Stream, Tracer } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { Collection, Outbox } from "../src/index.ts"
 import { id, memoryStorage, Note, note, webLocks, withLogs } from "./fixtures.ts"
@@ -2223,10 +2223,12 @@ describe("round 4 recovery regressions", () => {
             mutation: () => new Outbox.Retry({ held: true })
           })
           const states: Outbox.Status[] = []
+          const observedHold = yield* Deferred.make<void>()
           yield* outbox.status.pipe(
             Stream.runForEach((state) =>
-              Effect.sync(() => {
+              Effect.gen(function*() {
                 states.push(state)
+                if (state.held) yield* Deferred.succeed(observedHold, undefined)
               })
             ),
             Effect.forkScoped
@@ -2234,6 +2236,8 @@ describe("round 4 recovery regressions", () => {
           const write = yield* save(outbox, notes, note("held", 1))
           yield* write.admitted
           yield* Effect.promise(() => until(() => expect(failures).toBeGreaterThan(0)))
+          // Storage can fail before the status stream's consumer is scheduled.
+          yield* Deferred.await(observedHold)
           expect(states.at(-1)?.held).toBe(true)
           online = false
           failIndex = false
