@@ -203,7 +203,8 @@ export interface SignalReceipt {
   readonly state: SignalCommand["state"]
   readonly rejection?: "unauthorized" | undefined
 }
-/** @category models
+/** Select a bounded page of signal receipts for one run, after an optional sequence.
+ * @category models
  * @since 1.0.0
  */
 export interface SignalQuery {
@@ -212,7 +213,8 @@ export interface SignalQuery {
   readonly after?: number | undefined
   readonly commandId?: string | undefined
 }
-/** @category models
+/** Signal receipts and the optional sequence cursor for the following page.
+ * @category models
  * @since 1.0.0
  */
 export interface SignalPage {
