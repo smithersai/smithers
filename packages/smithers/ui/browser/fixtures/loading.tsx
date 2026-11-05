@@ -5,6 +5,7 @@
  * `window.load(ms)` starts a load that settles after `ms`; every probe drives the page through it.
  */
 import { useState } from "react";
+import { flushSync } from "react-dom";
 import { createRoot } from "react-dom/client";
 import { Button } from "../../src/button";
 import { ChatMessage } from "../../src/chat/ChatMessage";
@@ -23,7 +24,8 @@ declare global {
 
 let setPhase: (phase: Phase) => void = () => {};
 window.load = (ms) => {
-  setPhase("loading");
+  // A probe must observe the committed loading DOM before controlling its native animations.
+  flushSync(() => setPhase("loading"));
   setTimeout(() => setPhase("done"), ms);
 };
 
