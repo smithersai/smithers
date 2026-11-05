@@ -4,6 +4,7 @@
  * attempt rows, and the fence guard on the failed-attempt finish path.
  */
 import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Notifying from "@smthrs/journal/test/Notifying"
 import { Jj } from "@smthrs/kernel"
@@ -11,6 +12,7 @@ import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
+import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -148,6 +150,52 @@ const settleCause = (runId: string, cause: Cause.Cause<unknown>) => {
 const settleDefect = (runId: string, defect: unknown) => settleCause(runId, Cause.die(defect))
 
 describe("action executor failure paths", () => {
+  for (const spare of [0, 1]) {
+    it.effect(`keeps failure payloads when optional coordinates have only ${spare} nodes left`, () =>
+      Effect.gen(function*() {
+        // The cause wrapper spends two nodes, each reason three, and this
+        // array root is already counted in its reason. Coordinates must fit in the remainder.
+        const payload = new Array(ActionPersistence.maxInertJsonNodes - 5 - spare).fill(0)
+        const annotated = Cause.makeFailReason(payload).annotate(Context.make(FlowEngine.FailureSite, {
+          executionId: "large",
+          action: "step",
+          attempts: 1
+        }))
+        const result = yield* settleCause(`coordinate-budget-${spare}`, Cause.fromReasons([annotated]))
+        expect(Option.getOrThrow(result.row)).toMatchObject({
+          state: "failed",
+          error: { reasons: [{ _tag: "Fail", error: payload }] }
+        })
+        const error = Option.getOrThrow(result.row).error as { reasons: Array<{ failureSite?: unknown }> }
+        expect(error.reasons[0]!.failureSite).toBeUndefined()
+      }))
+  }
+
+  it.effect("replays an admitted failure coordinate without dispatching the action again", () =>
+    run(Effect.gen(function*() {
+      const runId = "failure-site-replay"
+      const key = `failure/${runId}`
+      yield* activate(runId, ownerA)
+      const coordinates = { executionId: runId, nodeId: "node", action: "step", attempts: 1 }
+      const cause = Cause.fromReasons([
+        Cause.makeFailReason("refused").annotate(Context.make(FlowEngine.FailureSite, coordinates))
+      ])
+      yield* executor({ runId, execute: () => Effect.failCause(cause) })(input(key)).pipe(Effect.exit)
+      const persisted = yield* (yield* AttemptStore.AttemptStore).get({ runId, stepKeyDigest: sha256(key), attempt: 1 })
+      expect(Option.getOrThrow(persisted).error).toEqual({
+        reasons: [{ _tag: "Fail", error: "refused", failureSite: coordinates }]
+      })
+      const replayed = yield* executor({ runId, execute: () => Effect.die("must not dispatch") })(input(key)).pipe(
+        Effect.exit
+      )
+      expect(Exit.isFailure(replayed)).toBe(true)
+      if (Exit.isFailure(replayed)) {
+        expect(Cause.squash(replayed.cause)).toBe("refused")
+        expect(Context.getOrUndefined(Cause.reasonAnnotations(replayed.cause.reasons[0]!), FlowEngine.FailureSite))
+          .toEqual(coordinates)
+      }
+    })))
+
   for (const mode of ["defect", "interruption"] as const) {
     it.effect(`does not report replay when the persisted attempt read ends in ${mode}`, () =>
       run(Effect.gen(function*() {

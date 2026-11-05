@@ -1444,10 +1444,11 @@ const holdCacheAddress = <A, E, R>(
       deps.isAlive ?? Ownership.leaseLiveness(),
       effect
     ).pipe(
-      Effect.catch((error) =>
-        error instanceof ConsensusError && error.code === "fence_lost"
-          ? Effect.interrupt
-          : Effect.fail(error)
+      // Only lease loss changes the cause. Rebuilding every typed failure
+      // discarded its diagnostic annotations, including on durable replay.
+      Effect.catchIf(
+        (error) => error instanceof ConsensusError && error.code === "fence_lost",
+        () => Effect.interrupt
       )
     )
   )
