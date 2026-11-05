@@ -13,7 +13,7 @@ it("shows only factory content: its issues and numbers, never flows or runs", ()
   expect(Panels.decode(panel)).toEqual(panel)
   expect(panel.id).toBe("smithers")
   expect(panel.summary).toBe(factory.metrics)
-  expect(panel.rows.map((row) => row.id)).toEqual(["factory:todo", "issue:7"])
+  expect(panel.rows.map((row) => row.id)).toEqual(["cloud:identity", "factory:todo", "issue:7"])
 })
 
 it("lists the homepage's apps after the issues, running the ones this directory discovers", () => {
@@ -23,15 +23,21 @@ it("lists the homepage's apps after the issues, running the ones this directory 
   ]
   const panel = Smithers.panel(apps, discovered, factory)
   expect(Panels.decode(panel)).toEqual(panel)
-  expect(panel.rows.map((row) => row.id)).toEqual(["factory:todo", "issue:7", "app:review", "app:issue.implement"])
-  expect(panel.rows[2]).toEqual({
+  expect(panel.rows.map((row) => row.id)).toEqual([
+    "cloud:identity",
+    "factory:todo",
+    "issue:7",
+    "app:review",
+    "app:issue.implement"
+  ])
+  expect(panel.rows[3]).toEqual({
     id: "app:review",
     label: "Review a PR",
     details: [{ kind: "text", text: "review" }],
     action: { label: "Review a PR", action: { kind: "flow", flow: "review" } }
   })
   // A flow the app home names but this directory does not discover is listed, and runs nowhere here.
-  expect(panel.rows[3]).toEqual({
+  expect(panel.rows[4]).toEqual({
     id: "app:issue.implement",
     label: "Fix an issue",
     details: [{ kind: "text", text: "issue.implement" }]
@@ -41,9 +47,9 @@ it("lists the homepage's apps after the issues, running the ones this directory 
 })
 
 it("says how to see the factory's issues when the person is not signed in to Cloud", () => {
-  const panel = Smithers.panel([], discovered, "signed-out")
+  const panel = Smithers.panel([], discovered, "signed-out", { logged_in: false })
   expect(Panels.decode(panel)).toEqual(panel)
-  expect(panel.rows).toEqual([{
+  expect(panel.rows).toEqual([{ id: "cloud:identity", label: "Signed out", details: [] }, {
     id: "factory:sign-in",
     label: "Sign in to see the factory: smthrs auth login",
     details: []
@@ -54,7 +60,7 @@ it("says how to see the factory's issues when the person is not signed in to Clo
 it("keeps a read with no numbers valid", () => {
   const panel = Smithers.panel([], discovered, { metrics: "", rows: [] })
   expect(Panels.decode(panel)).toEqual(panel)
-  expect(panel).toMatchObject({ summary: "Factory", rows: [{ id: "factory:todo" }] })
+  expect(panel).toMatchObject({ summary: "Factory", rows: [{ id: "cloud:identity" }, { id: "factory:todo" }] })
 })
 
 it("leads the factory's issues with the row that names how to file a TODO", () => {
@@ -63,7 +69,7 @@ it("leads the factory's issues with the row that names how to file a TODO", () =
     rows: [{ id: "issue:x", label: "#1 T", details: [] }]
   })
   expect(Panels.decode(panel)).toEqual(panel)
-  expect(panel.rows.slice(0, 2)).toEqual([
+  expect(panel.rows.slice(1, 3)).toEqual([
     { id: "factory:todo", label: "File a TODO", details: [{ kind: "text", text: "/todo <title>" }] },
     { id: "issue:x", label: "#1 T", details: [] }
   ])

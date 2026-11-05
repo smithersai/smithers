@@ -203,7 +203,7 @@ auth["auth logout"] = async (c, _a, o) => {
   return await c.session.clear(str(o.hostname))
 }
 auth["auth status"] = async (c, _a, o) => {
-  const target = c.session.target(str(o.hostname)), resolved = await c.session.resolve(target.api_url)
+  const target = c.session.target(str(o.hostname)), resolved = await c.session.resolve(target.api_url, c.runtime.signal)
   if (!resolved) {
     if (!o.context) c.runtime.exit?.(1)
     return { logged_in: false, token_set: false, ...target }

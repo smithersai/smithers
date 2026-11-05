@@ -15,7 +15,7 @@ import { flushSync, useKeyboard, usePaste, useRenderer, useTerminalDimensions } 
 import * as CloudSession from "@smthrs/cli/CloudSession"
 import * as FailureCopy from "@smthrs/model/FailureCopy"
 import * as Form from "@smthrs/ui/flow-form"
-import { Schema } from "effect"
+import { Effect, Schema } from "effect"
 import { basename } from "node:path"
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react"
 import { ActivityView } from "./activity-view.tsx"
@@ -595,6 +595,7 @@ export function App(props: AppProps) {
   const homeApps = useMemo(() => Home.read(props.host.cwd), [props.host.cwd])
   // The factory's issue list, read from Cloud as the signed-in person while the Smithers tab shows.
   const [factory, setFactory] = useState<Smithers.Factory | "signed-out" | undefined>()
+  const [identity, setIdentity] = useState<CloudSession.AuthStatus>()
   const factoryRepo = useMemo(() => Factory.repository(props.host.cwd, process.env), [props.host.cwd])
   // `/todo` files through the session it resolves; the filer keeps a request id per unanswered TODO.
   const todoCloud = useRef<CloudSession.Cloud | undefined>(undefined)
@@ -602,16 +603,28 @@ export function App(props: AppProps) {
   const smithersShown = surface === `ui:${Smithers.id}`
   useEffect(() => {
     if (!smithersShown) return
+    setIdentity(undefined)
     const controller = new AbortController()
     // One read at a time; a failed read clears the list rather than leaving it stale. The session is
     // resolved once (it may ask the keyring) and again only after Cloud refuses it.
     let reading = false
     let cloud: CloudSession.Cloud | undefined
-    const read = async () => {
-      if (reading || factoryRepo === undefined) return
-      reading = true
+    const authentication = CloudSession.layerAuthentication(process.env)
+    const readIdentity = async () => {
+      try {
+        const status = await Effect.runPromise(Smithers.readIdentity.pipe(Effect.provide(authentication)), {
+          signal: controller.signal
+        })
+        if (!controller.signal.aborted) setIdentity(status)
+      } catch {
+        if (!controller.signal.aborted) setIdentity(undefined)
+      }
+    }
+    const readFactory = async () => {
+      if (factoryRepo === undefined) return
       try {
         cloud ??= await CloudSession.signedIn(process.env)
+        if (controller.signal.aborted) return
         if (cloud === undefined) return setFactory("signed-out")
         const stack = await Factory.load(cloud.get, factoryRepo, controller.signal)
         if (!controller.signal.aborted) {
@@ -623,6 +636,13 @@ export function App(props: AppProps) {
         if (refused) cloud = undefined
         setFactory(refused ? "signed-out" : undefined)
         Log.write("factory.read", error)
+      }
+    }
+    const read = async () => {
+      if (reading) return
+      reading = true
+      try {
+        await Promise.all([readIdentity(), readFactory()])
       } finally {
         reading = false
       }
@@ -636,7 +656,7 @@ export function App(props: AppProps) {
   }, [smithersShown, factoryRepo])
   const smithersPanel = homeApps.length === 0 && factoryRepo === undefined
     ? undefined
-    : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory)
+    : Smithers.panel(homeApps, new Set(runs.listed().map((flow) => flow.name)), factory, identity)
   const smithersKey = smithersPanel === undefined ? "" : JSON.stringify(smithersPanel)
   useEffect(() => {
     contributions.plugin(
