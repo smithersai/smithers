@@ -25,7 +25,10 @@ describe("workspace option boundaries", () => {
     [{ runtime: {} }, /runtime/],
     [{ packageManager: {} }, /packageManager/],
     [{ nodeModules: {} }, /nodeModules/],
-    [{ toolchains: [], environment: Nix.Environment({ flake: { _tag: "File", path: "flake.nix" } }) }, /non-empty/],
+    [
+      { toolchains: [null], environment: Nix.Environment({ flake: { _tag: "File", path: "flake.nix" } }) },
+      /toolchain layer/
+    ],
     [{ flags: {} }, /flags/],
     [{ host: {} }, /host/],
     [{ memory: {} }, /memory/],
