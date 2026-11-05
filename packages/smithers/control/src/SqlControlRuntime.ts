@@ -149,6 +149,11 @@ export type DurableFlow = MemoryFlow
  * @since 0.1.0
  */
 export interface Options {
+  /** Host admission policy checked within the durable launch transaction. */
+  readonly authorizeLaunch?:
+    | ((card: PlanCard, sql: SqlClient.SqlClient) => Effect.Effect<void, PlanDenied | PersistenceError>)
+    | undefined
+
   readonly flows?: ReadonlyArray<DurableFlow> | undefined
   /**
    * Reads the current flow catalog for each plan and listing. When supplied,
@@ -478,6 +483,7 @@ const makeRuntime = (
     : Object.freeze({ ...options.owner })
   const isAlive = options.isAlive
   const approvalAuthority = options.approvalAuthority ?? ApprovalAuthority.local
+  const authorizeLaunch = options.authorizeLaunch
 
   return Effect.gen(function*() {
     const crypto = yield* Crypto.Crypto
@@ -1971,6 +1977,7 @@ const makeRuntime = (
           return parked
         }
         if (plan.decision !== "approved") return yield* new PlanDenied({ planId })
+        yield* authorizeLaunch?.(plan.card, sql) ?? Effect.void
 
         const sequence = yield* nextSequence("run")
         const runId = reservedRunId ?? `run-${sequence}`

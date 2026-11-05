@@ -28,6 +28,7 @@ import * as Failure from "../internal/Failure.ts"
 import * as FeaturedFlows from "../internal/FeaturedFlows.ts"
 import * as RunListing from "../internal/RunListing.ts"
 import * as NodeControl from "../NodeControl.ts"
+import * as TriggerPlans from "../operator/TriggerPlans.ts"
 import * as Project from "../Project.ts"
 import * as Bridge from "./ControlBridge.ts"
 import { prepareHistoryRun, reconcileHistory } from "./HistoryCommands.ts"
@@ -1004,6 +1005,54 @@ export const pendingApprovals = (runId?: string) =>
  */
 export const createApprovalsCli = (runtime: Bridge.Runtime = {}) =>
   Cli.create("approvals", { description: "Find and resolve pending approval requests" })
+    .command("trigger-plan", {
+      description: "Prepare exact standing consent for an enabled trigger",
+      args: z.object({ trigger: z.string().min(1) }),
+      options,
+      run: (c) =>
+        guard(c, () => {
+          const config = Bridge.configuration(c.options, runtime)
+          if (config.remote !== undefined) {
+            throw new CliError.UnsupportedError({ message: "Standing trigger approval requires a local --root" })
+          }
+          return Bridge.query(TriggerPlans.previewApproval(config.root, c.args.trigger), c.options, runtime, {
+            plansFlows: true
+          })
+        })
+    })
+    .command("grant-trigger", {
+      description: "Grant the exact standing consent returned by approvals trigger-plan (JSON or @file)",
+      mcp: false,
+      args: z.object({ approval: z.string() }),
+      options,
+      run: (c) =>
+        guard(c, async () => {
+          const config = Bridge.configuration(c.options, runtime)
+          if (config.remote !== undefined) {
+            throw new CliError.UnsupportedError({ message: "Standing trigger approval requires a local --root" })
+          }
+          const consent = Schema.decodeUnknownSync(Schema.fromJsonString(TriggerPlans.StandingApproval))(
+            await payload(c.args.approval)
+          )
+          return Bridge.query(TriggerPlans.grantApproval(config.root, consent), c.options, runtime, {
+            plansFlows: true
+          })
+        })
+    })
+    .command("revoke-trigger", {
+      description: "Revoke a standing trigger grant, preserving its historical uses",
+      mcp: false,
+      args: z.object({ grant: z.string().min(1) }),
+      options,
+      run: (c) =>
+        guard(c, () => {
+          const config = Bridge.configuration(c.options, runtime)
+          if (config.remote !== undefined) {
+            throw new CliError.UnsupportedError({ message: "Standing trigger approval requires a local --root" })
+          }
+          return Bridge.query(TriggerPlans.revokeApproval(config.root, c.args.grant), c.options, runtime)
+        })
+    })
     .command("list", {
       description: "List pending in-run approvals with their exact authorization payloads",
       mcp: { annotations: { readOnlyHint: true } },

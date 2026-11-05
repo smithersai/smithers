@@ -3,10 +3,16 @@ import { NodeServices } from "@effect/platform-node"
 import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { ApprovalAuthority, Control, ControlRuntime } from "@smthrs/control"
 import { PersistenceError, Unauthorized } from "@smthrs/control/ControlError"
+import * as ControlLive from "@smthrs/control/ControlLive"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { NotificationQueue } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { NodeRuntime } from "@smthrs/platform-node"
+import { Registry } from "@smthrs/registry"
 import * as Executable from "@smthrs/registry/Executable"
+import * as Scheduler from "@smthrs/triggers/Scheduler"
+import * as SqlTriggerStore from "@smthrs/triggers/SqlTriggerStore"
+import * as TriggerStore from "@smthrs/triggers/TriggerStore"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -15,9 +21,11 @@ import { DatabaseSync } from "node:sqlite"
 import { afterAll, describe, expect, it } from "vitest"
 import * as Application from "../src/Application.ts"
 import * as Bridge from "../src/cli/ControlBridge.ts"
-import { createRunsCli } from "../src/cli/ControlCommands.ts"
+import { createApprovalsCli, createRunsCli } from "../src/cli/ControlCommands.ts"
 import { targetsInstall } from "../src/internal/backend/Destination.ts"
 import * as NodeControl from "../src/NodeControl.ts"
+import { databaseLayer } from "../src/operator/Store.ts"
+import * as TriggerPlans from "../src/operator/TriggerPlans.ts"
 
 const home = mkdtempSync(join(tmpdir(), "smithers-control-triage-"))
 afterAll(() => rmSync(home, { recursive: true, force: true }))
@@ -377,3 +385,303 @@ it("#4246 exposes the owning run inside a real module action", async () => {
   expect(observed).toEqual([receipt.runId])
   expect(await Effect.runPromise(ControlRuntime.CurrentRunId)).toBeUndefined()
 })
+
+it("#4269 binds standing approval to a trigger revision and revokes it across restart", async () => {
+  const root = join(home, "standing-approval")
+  const controlLayer = () => {
+    const engine = NodeControl.engineDurable(root)
+    return ControlLive.layer.pipe(
+      Layer.provide([engine.runtime, engine.journal, Registry.layerNoop(), NotificationQueue.layerNoop()])
+    )
+  }
+  const run = <A, E>(effect: Effect.Effect<A, E, Control.Control | Scheduler.Runner>) =>
+    Effect.runPromise(effect.pipe(
+      Effect.provide(TriggerPlans.layer(root).pipe(Layer.provideMerge(controlLayer())))
+    ))
+  const declaration = {
+    id: "daily",
+    flowId: "system/test",
+    input: { suite: "scheduled" },
+    cron: "0 * * * *",
+    overlap: "skip",
+    catchUp: "none",
+    maxCatchUp: 1,
+    enabled: true
+  } as const
+  const register = (input: typeof declaration) =>
+    Effect.runPromise(
+      Effect.gen(function*() {
+        const store = yield* TriggerStore.TriggerStore
+        yield* store.register(input)
+      }).pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(root)))))
+    )
+  await register(declaration)
+  const preview = await run(TriggerPlans.previewApproval(root, "daily"))
+  const grant = await run(TriggerPlans.grantApproval(root, preview))
+  expect(await run(TriggerPlans.grantApproval(root, preview))).toEqual(grant)
+  const occurrence = (n: number) => Scheduler.idempotencyKey("daily", n)
+  const start = (n: number) =>
+    run(
+      Effect.flatMap(Scheduler.Runner, (runner) =>
+        runner.start({ flowId: declaration.flowId, input: declaration.input, idempotencyKey: occurrence(n) }))
+    )
+  const inspect = (handle: string) => run(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect(handle)))
+  const first = await start(1000)
+  await inspect(first)
+  const firstPlan = await TriggerPlans.inspect(root, first)
+  expect(firstPlan).toMatchObject({ status: "running", runId: expect.any(String) })
+  await inspect(first)
+  expect(await TriggerPlans.inspect(root, first)).toEqual(firstPlan)
+  await run(TriggerPlans.revokeApproval(root, grant.grantId))
+  await run(TriggerPlans.revokeApproval(root, grant.grantId))
+  const second = await start(2000)
+  await inspect(second)
+  expect(await TriggerPlans.inspect(root, second)).toMatchObject({ status: "waiting-approval", runId: null })
+  const nextPreview = await run(TriggerPlans.previewApproval(root, "daily"))
+  await run(TriggerPlans.grantApproval(root, nextPreview))
+  const third = await start(3000)
+  await register(declaration)
+  await inspect(third)
+  expect(await TriggerPlans.inspect(root, third)).toMatchObject({ status: "waiting-approval", runId: null })
+})
+
+it.each(["before", "after"] as const)("#4269 revocation survives a crash %s Control acceptance", async (crash) => {
+  const root = join(home, `standing-crash-${crash}`)
+  const base = () => {
+    const engine = NodeControl.engineDurable(root)
+    return ControlLive.layer.pipe(
+      Layer.provide([engine.runtime, engine.journal, Registry.layerNoop(), NotificationQueue.layerNoop()])
+    )
+  }
+  const run = <A, E>(effect: Effect.Effect<A, E, Control.Control | Scheduler.Runner>, control = base()) =>
+    Effect.runPromise(effect.pipe(
+      Effect.provide(TriggerPlans.layer(root).pipe(Layer.provideMerge(control)))
+    ))
+  await Effect.runPromise(
+    Effect.flatMap(TriggerStore.TriggerStore, (store) =>
+      store.register({
+        id: "daily",
+        flowId: "system/test",
+        input: {},
+        cron: "0 * * * *",
+        overlap: "skip",
+        catchUp: "none",
+        maxCatchUp: 1,
+        enabled: true
+      })).pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(root)))))
+  )
+  const cli = async (args: string[]) => {
+    let output = ""
+    const codes: number[] = []
+    await createApprovalsCli({ environment }).serve([...args, "--root", root, "--json"], {
+      stdout: (text) => {
+        output += text
+      },
+      exit: (code) => {
+        codes.push(code)
+      }
+    })
+    expect(codes.every((code) => code === 0), output).toBe(true)
+    return JSON.parse(output)
+  }
+  const preview = await cli(["trigger-plan", "daily"])
+  const grant = await cli(["grant-trigger", JSON.stringify(preview)])
+  const handle = await run(
+    Effect.flatMap(
+      Scheduler.Runner,
+      (runner) =>
+        runner.start({ flowId: "system/test", input: {}, idempotencyKey: Scheduler.idempotencyKey("daily", 1000) })
+    )
+  )
+  const broken = Layer.effect(
+    Control.Control,
+    Effect.map(Control.Control, (control) =>
+      Control.make({
+        ...control,
+        run: (input) =>
+          crash === "before" ? Effect.interrupt : control.run(input).pipe(Effect.andThen(Effect.interrupt))
+      }))
+  ).pipe(Layer.provide(base()))
+  const crashed = await run(Effect.exit(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect(handle))), broken)
+  expect(crashed._tag).toBe("Failure")
+  await cli(["revoke-trigger", grant.grantId])
+  await run(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect(handle)))
+  const entry = await TriggerPlans.inspect(root, handle)
+  expect(entry?.runId).toEqual(crash === "before" ? null : expect.any(String))
+  const db = new DatabaseSync(NodeControl.databasePath(root), { readOnly: true })
+  try {
+    expect(db.prepare("SELECT * FROM control_trigger_approval_uses").all()).toHaveLength(1)
+    expect(
+      db.prepare("SELECT revoked_at_ms FROM control_trigger_approvals WHERE grant_id = ?").get(grant.grantId)
+        ?.revoked_at_ms
+    ).toEqual(expect.any(Number))
+    expect(db.prepare("SELECT * FROM flows_journal_events WHERE event_type = 'control.approval.approved'").all().length)
+      .toBeGreaterThanOrEqual(2)
+  } finally {
+    db.close()
+  }
+  if (crash === "before") {
+    const error = await run(Effect.gen(function*() {
+      return yield* Effect.flip(
+        (yield* Control.Control).run({
+          _tag: "Plan",
+          planId: entry!.plan.planId,
+          digest: entry!.plan.digest,
+          envelope: entry!.plan.envelope,
+          idempotencyKey: entry!.idempotencyKey
+        })
+      )
+    }))
+    expect(error._tag).toBe("/control/PlanDenied")
+  }
+})
+
+it("#4269 rechecks operator authority and preserves a manual denial", async () => {
+  const root = join(home, "standing-authority")
+  let authorized = false
+  const policy: ApprovalAuthority.Service = {
+    authorize: (request, context) =>
+      Effect.suspend(() =>
+        authorized
+          ? ApprovalAuthority.local.authorize(request, context)
+          : Effect.fail(new Unauthorized({ message: "operator authority revoked" }))
+      )
+  }
+  const base = () => {
+    const engine = NodeControl.engineDurable(root, undefined, { approvalAuthority: policy })
+    return ControlLive.layer.pipe(
+      Layer.provide([engine.runtime, engine.journal, Registry.layerNoop(), NotificationQueue.layerNoop()])
+    )
+  }
+  const run = <A, E>(effect: Effect.Effect<A, E, Control.Control | Scheduler.Runner>) =>
+    Effect.runPromise(effect.pipe(
+      Effect.provide(TriggerPlans.layer(root).pipe(Layer.provideMerge(base())))
+    ))
+  await Effect.runPromise(
+    Effect.flatMap(TriggerStore.TriggerStore, (store) =>
+      store.register({
+        id: "daily",
+        flowId: "system/test",
+        input: {},
+        cron: "0 * * * *",
+        overlap: "skip",
+        catchUp: "none",
+        maxCatchUp: 1,
+        enabled: true
+      })).pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(root)))))
+  )
+  const preview = await run(TriggerPlans.previewApproval(root, "daily"))
+  expect((await run(Effect.flip(TriggerPlans.grantApproval(root, preview))))._tag).toBe("/control/Unauthorized")
+  authorized = true
+  const stale = { ...preview, declarationDigest: "stale" }
+  expect((await run(Effect.flip(TriggerPlans.grantApproval(root, stale)))).message)
+    .toContain("no longer matches")
+  const grant = await run(TriggerPlans.grantApproval(root, preview))
+  authorized = false
+  expect((await run(Effect.flip(TriggerPlans.revokeApproval(root, grant.grantId))))._tag).toBe("/control/Unauthorized")
+  const db = new DatabaseSync(NodeControl.databasePath(root), { readOnly: true })
+  try {
+    expect(db.prepare("SELECT grant_id, revoked_at_ms FROM control_trigger_approvals").all())
+      .toEqual([{ grant_id: grant.grantId, revoked_at_ms: null }])
+  } finally {
+    db.close()
+  }
+  authorized = true
+  const handle = await run(Effect.flatMap(Scheduler.Runner, (runner) =>
+    runner.start({
+      flowId: "system/test",
+      input: {},
+      idempotencyKey: Scheduler.idempotencyKey("daily", 1000)
+    })))
+  const entry = await TriggerPlans.inspect(root, handle)
+  await run(
+    Effect.flatMap(Control.Control, (control) => control.deny(entry!.plan.approval))
+  )
+  await run(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect(handle)))
+  expect(await TriggerPlans.inspect(root, handle)).toMatchObject({ status: "failed", runId: null })
+  await run(TriggerPlans.revokeApproval(root, grant.grantId))
+  expect((await run(Effect.flip(TriggerPlans.grantApproval(root, preview)))).message).toContain("revoked")
+})
+
+it.each(["approval", "revoked-approval", "acceptance"] as const)(
+  "#4269 recovers an interrupted %s using its recorded consent",
+  async (stage) => {
+    const root = join(home, `standing-recovery-${stage}`)
+    let authorized = true
+    const policy: ApprovalAuthority.Service = {
+      authorize: (request, context) =>
+        Effect.suspend(() =>
+          authorized
+            ? ApprovalAuthority.local.authorize(request, context)
+            : Effect.fail(new Unauthorized({ message: "future approval authority withdrawn" }))
+        )
+    }
+    const base = () => {
+      const engine = NodeControl.engineDurable(root, undefined, { approvalAuthority: policy })
+      return ControlLive.layer.pipe(
+        Layer.provide([engine.runtime, engine.journal, Registry.layerNoop(), NotificationQueue.layerNoop()])
+      )
+    }
+    const run = <A, E>(effect: Effect.Effect<A, E, Control.Control | Scheduler.Runner>, control = base()) =>
+      Effect.runPromise(effect.pipe(Effect.provide(TriggerPlans.layer(root).pipe(Layer.provideMerge(control)))))
+    await Effect.runPromise(
+      Effect.flatMap(TriggerStore.TriggerStore, (store) =>
+        store.register({
+          id: "daily",
+          flowId: "system/test",
+          input: {},
+          cron: "0 * * * *",
+          overlap: "skip",
+          catchUp: "none",
+          maxCatchUp: 1,
+          enabled: true
+        })).pipe(Effect.provide(SqlTriggerStore.layer.pipe(Layer.provide(databaseLayer(root)))))
+    )
+    const original = await run(TriggerPlans.grantApproval(root, await run(TriggerPlans.previewApproval(root, "daily"))))
+    const handle = await run(Effect.flatMap(Scheduler.Runner, (runner) =>
+      runner.start({
+        flowId: "system/test",
+        input: {},
+        idempotencyKey: Scheduler.idempotencyKey("daily", 1000)
+      })))
+    const broken = Layer.effect(
+      Control.Control,
+      Effect.map(Control.Control, (control) =>
+        Control.make({
+          ...control,
+          ...(stage !== "acceptance" ?
+            { approve: () => Effect.interrupt } :
+            {
+              run: (input: Parameters<typeof control.run>[0]) =>
+                control.run(input).pipe(Effect.andThen(Effect.interrupt))
+            })
+        }))
+    ).pipe(Layer.provide(base()))
+    expect((await run(Effect.exit(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect(handle))), broken))._tag)
+      .toBe("Failure")
+    if (stage !== "acceptance") {
+      const newer = await run(TriggerPlans.grantApproval(root, await run(TriggerPlans.previewApproval(root, "daily"))))
+      expect(newer.grantId).not.toBe(original.grantId)
+      if (stage === "revoked-approval") await run(TriggerPlans.revokeApproval(root, original.grantId))
+    } else {
+      authorized = false
+    }
+    await run(Effect.flatMap(Scheduler.Runner, (runner) => runner.inspect(handle)))
+    const recovered = await TriggerPlans.inspect(root, handle)
+    expect(recovered).toMatchObject(
+      stage === "revoked-approval"
+        ? { status: "waiting-approval", runId: null }
+        : { status: "running", runId: expect.any(String) }
+    )
+    const db = new DatabaseSync(NodeControl.databasePath(root), { readOnly: true })
+    try {
+      expect(db.prepare("SELECT grant_id FROM control_trigger_approval_uses WHERE handle = ?").get(handle))
+        .toEqual({ grant_id: original.grantId })
+      expect(db.prepare("SELECT COUNT(*) AS count FROM control_runs").get()?.count).toBe(
+        stage === "revoked-approval" ? 0 : 1
+      )
+    } finally {
+      db.close()
+    }
+  }
+)
