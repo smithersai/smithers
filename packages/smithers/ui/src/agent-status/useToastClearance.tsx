@@ -1,3 +1,4 @@
+/** @jsxImportSource react */
 import { useLayoutEffect, type RefObject } from "react";
 import { toastClearance } from "./toastClearance";
 
