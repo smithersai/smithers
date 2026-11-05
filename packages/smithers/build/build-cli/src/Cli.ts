@@ -50,6 +50,29 @@ import * as TrustedReview from "./TrustedReview.ts"
 import * as Watch from "./Watch.ts"
 import { type RemoteCacheAccess, remoteCacheOf, type ResolvedRemoteCache } from "./Workspace.ts"
 
+/**
+ * Selects the workspace install declaration without evaluating its action.
+ * @category selection
+ * @since 1.0.0
+ */
+export const selectInstallTarget = (
+  targets: ReadonlyArray<PackageIndex.IndexedTarget>
+): PackageIndex.IndexedTarget => {
+  const all = targets.filter((row) => Target.metadata(row.target).target === "Install")
+  const roots = all.filter((row) => row.packagePath === "")
+  const installs = roots.length === 0 ? all : roots
+  if (installs.length !== 1) {
+    throw new Error(
+      installs.length === 0
+        ? "the workspace declares no Install target"
+        : `${roots.length > 0 ? "the root PACKAGE.ts" : "the workspace"} declares more than one Install target: ${
+          installs.map(({ label }) => label).sort().join(", ")
+        }; run one explicitly with smthrs run <label>`
+    )
+  }
+  return installs[0]!
+}
+
 const workspaceOption = z.object({
   workspace: z.string().default(process.cwd()).describe("Directory inside a workspace containing WORKSPACE.ts"),
   cacheDir: z.string().optional().describe(
@@ -1690,16 +1713,7 @@ const makeCommands = (config: RuntimeConfig) =>
         const reporter = reporterFor(context, config)
         try {
           const index = await openPackageIndex(context.options, config)
-          const installs = index.targets().filter((row) =>
-            row.packagePath === "" && Target.metadata(row.target).target === "Install"
-          )
-          if (installs.length !== 1) {
-            throw new Error(
-              installs.length === 0
-                ? "the root PACKAGE.ts declares no Install target"
-                : "the root PACKAGE.ts declares more than one Install target"
-            )
-          }
+          const install = selectInstallTarget(index.targets())
           const cacheDirectory = context.options.cacheDir === undefined
             ? index.workspace.cache.directory
             : Config.normalizeCacheDirectory(context.options.cacheDir)
@@ -1712,7 +1726,7 @@ const makeCommands = (config: RuntimeConfig) =>
             cacheDirectory,
             ...(remoteCache === undefined ? {} : { remoteCache }),
             verb: "run",
-            patterns: [installs[0]!.label],
+            patterns: [install.label],
             environment: config.environment,
             signal: config.signal,
             reporter
