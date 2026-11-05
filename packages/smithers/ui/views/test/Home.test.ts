@@ -130,11 +130,11 @@ describe("Home.read", () => {
       { type: "text", text: "a </p> b" },
       { type: "text", text: "<!-- hidden -->" },
       { type: "text", text: "<?xml?>" },
-      // Links: none, a scheme other than http(s), a relative URL, spaces, too long, an HTML label.
+      // Links: none, a scheme other than http(s), a protocol-relative URL, spaces, too long, an HTML label.
       { type: "links", links: [] },
       { type: "links", links: [{ label: "Run", url: "javascript:alert(1)" }] },
       { type: "links", links: [{ label: "Data", url: "data:text/html,hi" }] },
-      { type: "links", links: [{ label: "Here", url: "/app" }] },
+      { type: "links", links: [{ label: "Here", url: "//example.com/app" }] },
       { type: "links", links: [{ label: "Space", url: "https://exa mple.com" }] },
       { type: "links", links: [{ label: "Quote", url: "https://example.com/\"x" }] },
       { type: "links", links: [{ label: "Long", url: `https://example.com/${long(Home.maximumUrlLength)}` }] },
@@ -185,7 +185,7 @@ describe("Home.read", () => {
       { type: "cards", cards: [] },
       { type: "cards", cards: Array.from({ length: Home.maximumEntries + 1 }, () => ({ title: "a" })) },
       { type: "cards", cards: [{ text: "no title" }] },
-      { type: "cards", cards: [{ title: "a", url: "/relative" }] },
+      { type: "cards", cards: [{ title: "a", url: "//example.com/relative" }] },
       { type: "cards", cards: [{ title: "a" }], more: { label: "More", url: "ftp://x" } },
       // Stats: none, too many, a missing label.
       { type: "stats", stats: [] },

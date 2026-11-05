@@ -91,7 +91,8 @@ export const Title = Format.Title
 export const Prose = Format.Prose
 
 /**
- * A link target: an absolute `http` or `https` URL.
+ * A link target: a safe absolute `http` or `https` URL, or an origin-relative
+ * path starting with one `/`, using the reader's schema.
  *
  * @category schemas
  * @since 1.0.0
