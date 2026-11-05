@@ -1,0 +1,117 @@
+{
+  "schemaVersion": 1,
+  "observedAt": "2026-11-05",
+  "delivery": "Shared lane status and this committed ledger; no external messages, owner acceptance or completed fixes asserted.",
+  "items": [
+    {
+      "id": "home-relative-links",
+      "owner": "sm-b07 / views + targets owners",
+      "issues": [
+        4361
+      ],
+      "evidence": "/home/lane/sm/status/sm-b07.md",
+      "kind": "owner-reported-red-on-private-lane",
+      "state": "unresolved-at-snapshot",
+      "cause": "Existing Home tests reject relative paths that the requested behavior must allow.",
+      "handoff": "Owner/integration lane must update the obsolete read-only assertions and retain the new relative-link regression. Re-run both full package gates. B31 did not execute or fix this red."
+    },
+    {
+      "id": "cache-publisher-trust",
+      "owner": "sm-b15 / targets integration owner",
+      "issues": [
+        3714
+      ],
+      "evidence": "/home/lane/sm/status/sm-b15.md",
+      "kind": "owner-reported-conflicting-assertions",
+      "state": "unresolved-at-snapshot",
+      "cause": "Existing GithubCiGen tests expect obsolete multi-trunk publisher behavior and omit repository identity.",
+      "handoff": "Owner migrates existing tests and generated output. Preserve environment trust and leave publishers disabled until verified. No B31 implementation writes or execution claim."
+    },
+    {
+      "id": "workspace-toolchain-selection",
+      "owner": "sm-b18 + targets declaration owner; sm-b16 for dispatcher integration",
+      "issues": [
+        4249,
+        4263
+      ],
+      "evidence": "/home/lane/sm/status/sm-b18.md",
+      "kind": "owner-reported-scope-blocker",
+      "state": "unresolved-at-snapshot",
+      "cause": "Actual no-toolchain refusal lives outside B18's write allowlist; skills need public registration and dispatcher wiring.",
+      "handoff": "Declaration/export/dispatcher owners integrate their pieces and publish source-matched standalone install and skills receipts. No mocked install result."
+    },
+    {
+      "id": "tui-identity",
+      "owner": "sm-b06 + TUI app owner",
+      "issues": [
+        4385
+      ],
+      "evidence": "/home/lane/sm/status/sm-b06.md",
+      "kind": "owner-reported-scope-blocker",
+      "state": "unresolved-at-snapshot",
+      "cause": "TUI successful factory loading drops authenticated identity before the panel receives it.",
+      "handoff": "App owner wires identity across the existing boundary; B06 retains signed-out/unavailable behavior and process-level regression evidence."
+    },
+    {
+      "id": "terminal-process-e2e",
+      "owner": "sm-b27",
+      "issues": [
+        4383
+      ],
+      "evidence": "/home/lane/sm/status/sm-b27.md",
+      "kind": "coordination",
+      "state": "awaiting-execution-receipts",
+      "handoff": "Use real isolated CLI/TUI child processes; retain stdin, output, exit, cancellation and durable run receipts. B31 requires terminal/public-authoring/installed-consumer coverage and never adopts fake terminal completion."
+    },
+    {
+      "id": "cell-tool-benchmark",
+      "owner": "sm-b30",
+      "issues": [
+        1846
+      ],
+      "evidence": "/home/lane/sm/status/sm-b30.md",
+      "kind": "coordination",
+      "state": "awaiting-execution-receipts",
+      "handoff": "Matched task/model/tool conditions, useful-work correctness checks, baseline review and complete raw samples; local and live evidence remain separate."
+    },
+    {
+      "id": "retained-historical-folds",
+      "owner": "owning retained SDK package from inventory",
+      "issues": [
+        2290,
+        2301,
+        2303,
+        2304
+      ],
+      "kind": "historical-not-fresh-execution",
+      "state": "awaiting-source-matched-reconciliation",
+      "cause": "Historical WebFetch/kernel HTTP deadline, timeout validation and redirect/grant evidence still concerns retained libraries; source presence does not qualify current tests.",
+      "handoff": "Reconcile all retained folded acceptance in historical-issue.json against current package ownership; preserve timeout budget, cancellation, final URL, per-hop grants and bounded redirects. Removed Go/old-app folds stay out of scope. No historical receipt is automatically promoted."
+    },
+    {
+      "id": "live-and-platform-qualification",
+      "owner": "MVP integration owner and native host owners sm-b13/sm-b14",
+      "issues": [
+        2290
+      ],
+      "kind": "unexecuted-required-matrix",
+      "state": "awaiting-execution-receipts",
+      "cause": "B31 is not authorized to deploy, write Cloudflare or production GitHub, or manufacture authenticated sessions; Linux checks do not qualify Windows, macOS or live runtime behavior.",
+      "handoff": "Owners supply authorized real local/live browser/API/CLI/TUI/authoring, native recovery and benchmark runs with source-matched artifacts. Preserve 100% floors, skips and all missing coverage explicitly."
+    },
+    {
+      "id": "coverage-campaign-cli-host",
+      "owner": "platform-node native helper/CLI host owner (sm-b13 / sm-b24 integration)",
+      "issues": [
+        2290
+      ],
+      "kind": "fresh-executed-host-refusal",
+      "state": "unresolved",
+      "command": "pnpm exec smthrs flow start test/coverage-campaign --data {\"mode\":\"status\"} --wait",
+      "exitCode": 1,
+      "artifact": "evidence/cli-host-refusal.log",
+      "cause": "Default descriptor-relative filesystem isolation refuses a missing smithers-jj-export helper. No old helper or isolation bypass substituted.",
+      "handoff": "Provide the current native helper through the supported package/host installation, then qualify registry loading and the durable CLI path. The real in-memory-engine execution/replay/refusal test passes independently."
+    }
+  ]
+}

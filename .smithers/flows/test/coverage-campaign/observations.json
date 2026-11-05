@@ -1,0 +1,144 @@
+{
+  "schemaVersion": 1,
+  "issue": 2290,
+  "scope": "Ancillary execution evidence. These observations do not qualify any package matrix cell.",
+  "productSourceSha256": "7643f9ce5bfa47c87fc35546dfe5009c290ed0b1f7108e38d9d508b6173f6720",
+  "sourceBaseCommit": "965a4b232380e0dc440a4792518d2bce706a4782",
+  "observations": [
+    {
+      "id": "campaign-first-red",
+      "kind": "new-capability-absent",
+      "outcome": "failed",
+      "exitCode": 1,
+      "artifact": "evidence/before.log",
+      "limitation": "Initial new regression file could not import the absent campaign module. This is not a reproduced product implementation bug.",
+      "artifactSha256": "bac74eccdcc532de213a86d42a00a7b6635ab7c470f70803c0c539af972f39d6"
+    },
+    {
+      "id": "mvp-four-project-typecheck",
+      "kind": "typecheck",
+      "outcome": "passed",
+      "exitCode": 0,
+      "command": {
+        "cwd": "repository root",
+        "argv": [
+          "~/lanes/bin/run-heavy",
+          "/home/lane/sm/ws-sm-b31",
+          "--",
+          "pnpm install --frozen-lockfile && cd apps/mvp && pnpm typecheck"
+        ]
+      },
+      "projects": [
+        "tsconfig.json",
+        "worker/tsconfig.json",
+        "infra/tsconfig.json",
+        "evals/tsconfig.json"
+      ],
+      "runtime": {
+        "node": "26.5.0",
+        "platform": "linux",
+        "execution": "run-heavy pg-free box"
+      },
+      "artifact": "evidence/mvp-typecheck.log",
+      "limitation": "Compile/typecheck only; no measured product behavioral coverage or E2E.",
+      "artifactSha256": "2f664ad41b3332b6550d1eee896a1fa71230e40e2a731a8f38653967dd394506"
+    },
+    {
+      "id": "cli-host-refusal",
+      "kind": "real-cli",
+      "outcome": "failed",
+      "exitCode": 1,
+      "artifact": "evidence/cli-host-refusal.log",
+      "limitation": "Missing required current native helper; retained fail-closed host refusal. No isolation bypass, old helper substitution or passing registry-load claim.",
+      "artifactSha256": "b3f77f679cf9a46b7d1d674e51c628afa08e1272c761be1c9a77f7ddb168342b"
+    },
+    {
+      "id": "fable-review",
+      "kind": "review",
+      "outcome": "unavailable",
+      "exitCode": 1,
+      "artifact": "evidence/fable-unavailable.log",
+      "limitation": "Remote Claude CLI is not logged in. No review verdict or approval claimed.",
+      "artifactSha256": "ca901b5be3db10d7195703bfaf9ad3b674be07855555b3cb8f6ed0555be38a59"
+    },
+    {
+      "id": "campaign-regressions",
+      "kind": "focused-behavior-and-coverage",
+      "outcome": "passed",
+      "exitCode": 0,
+      "tests": 25,
+      "coverage": {
+        "lines": 100,
+        "branches": 100,
+        "functions": 100,
+        "statements": "not independently measured by native Node"
+      },
+      "files": [
+        "campaign.mjs",
+        "io.mjs",
+        "main.mjs",
+        "report.mjs",
+        "flow.ts"
+      ],
+      "artifact": "evidence/after.log",
+      "command": {
+        "cwd": "repository root",
+        "argv": [
+          "node",
+          "--import",
+          "vibelang/register",
+          "--test",
+          "--test-concurrency=1",
+          "--experimental-test-coverage",
+          "--test-coverage-include=.smithers/flows/test/coverage-campaign/campaign.mjs",
+          "--test-coverage-include=.smithers/flows/test/coverage-campaign/io.mjs",
+          "--test-coverage-include=.smithers/flows/test/coverage-campaign/report.mjs",
+          "--test-coverage-include=.smithers/flows/test/coverage-campaign/main.mjs",
+          "--test-coverage-include=.smithers/flows/test/coverage-campaign/flow.ts",
+          "--test-coverage-include=.smithers/flows/test/coverage-campaign/flow.ts",
+          "--test-coverage-lines=100",
+          "--test-coverage-branches=100",
+          "--test-coverage-functions=100",
+          ".smithers/flows/test/coverage-campaign/*.test.mjs"
+        ]
+      },
+      "limitation": "25 campaign tests only. Real in-memory engine proves action execution/replay/failure propagation; it does not qualify persistent storage or default CLI host. No product package unit/integration/E2E/fuzz/benchmark cell qualified.",
+      "artifactSha256": "dd8d6800cd82d7ededc4d661faefb75107f829340aded8c460a612d9fb65a274"
+    },
+    {
+      "id": "astra-regressions",
+      "kind": "review-discovered-inventory-bugs",
+      "outcome": "passed-after-fix",
+      "before": "evidence/astra-findings-before.log",
+      "after": "evidence/astra-findings-after.log",
+      "cause": "Shipped test helpers were omitted by test-directory classification; non-root manifest executables missed CLI/consumer E2E requirements.",
+      "fix": "Retain conservative source and public-entrypoint dependency roots; derive executable boundaries from every manifest bin.",
+      "limitation": "B31 preparation fixes only; no package campaign cell qualified."
+    },
+    {
+      "id": "post-rebase-campaign-validation",
+      "kind": "focused-behavior-and-coverage",
+      "outcome": "passed",
+      "exitCode": 0,
+      "testedCommit": "d2d4ab5c91b5",
+      "sourceBaseCommit": "965a4b232380e0dc440a4792518d2bce706a4782",
+      "tests": 25,
+      "coverage": {
+        "lines": 100,
+        "branches": 100,
+        "functions": 100,
+        "statements": "not independently measured by native Node"
+      },
+      "artifact": "evidence/rebased.log",
+      "artifactSha256": "90e2fa4ec814c99ebd2b286577b78b9c9d3659c7bab338f9ce5d46c8e2498948",
+      "implementationSha256": {
+        "campaign.mjs": "fde2868b55354a57131cc56f94d951bda0903b645e065031e5535c3b5f9a177e",
+        "io.mjs": "7cb57ff1b06586563c453a52672a7eb89bb7c2810107d74025a01edac49116c2",
+        "main.mjs": "121fce542eb1ddaad2888d12d41086f44ba90c63328f3b0b3e1b71be0778d983",
+        "flow.ts": "adaf427299e4f4de993476eea3b89db3f76362168b4ed2c05458807a61831121",
+        "report.mjs": "39789339836833eb326621ec36445a949d4f3d45134161da567fdb3e45f1112a"
+      },
+      "limitation": "Fresh fetch/rebase validation of the same 5 implementation files; subsequent receipt-only amendment changes no executable code. No product campaign cell qualified."
+    }
+  ]
+}

@@ -1,0 +1,3362 @@
+[
+  {
+    "surface": ".smithers/flows",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/coding",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/review",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/review/seeded-bugs",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": ".smithers/flows/wiki",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/bug-worker",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/maintainer-site",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/mvp",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/patterns-site",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/site",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "apps/tui",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "evals/authoring",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/effect-code-storage",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/effect-electric",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/effect-tanstack-db",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/errors",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/repo-targets",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/rpc",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers-ffi",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/chain",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/evals",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/fs",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness-detect",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/ale",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/harbor",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/harness/benchmarks/swebench",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/integrations",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/memory",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/model",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/model-host",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/plugin",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/registry",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/regression",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/scorers",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/std",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/agent/triggers",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build/build-cli",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build/infra",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/build/targets",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/control",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/artifacts",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/canonical",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/capability",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/core",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/crypto",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/database",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/engine",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/engine-store",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/flow",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/jj",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/jj-wasm",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/journal",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/kernel",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/keys",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/observability",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/patterns",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/plan",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/plan-store",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-browser",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-bun",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-cloudflare",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/platform-node",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/run-store",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/sandbox",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/secrets",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/step-cache",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/sync",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/flows/time-travel",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/gateway",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/mcp",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/migrate",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/notifications",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/repo-view",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/terminal-frame",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/ui-styleguide",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smithers/ui/views",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/smthrs-deprecation",
+    "tier": "benchmark",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "unit",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "integration",
+    "environment": "node"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "e2e",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "e2e",
+    "environment": "live"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "fuzz",
+    "environment": "bounded"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "fuzz",
+    "environment": "long"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "benchmark",
+    "environment": "local"
+  },
+  {
+    "surface": "packages/testing",
+    "tier": "benchmark",
+    "environment": "live"
+  }
+]

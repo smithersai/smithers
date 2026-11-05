@@ -1,0 +1,51 @@
+{
+  "schemaVersion": 1,
+  "issue": 2290,
+  "scopeAuthority": ["AGENTS.md", "apps/mvp/AGENTS.md", "apps/mvp/docs/rulings.md", "2026-11-04 batch B31"],
+  "scope": "Every extant pnpm member, target-only package and non-fixture native crate. MVP includes all inventoried feature, plugin, screen, browser-engine, Worker/API and storage areas. Supporting apps and SDK CLI/TUI/public authoring/installed consumers stay visible.",
+  "removed": {
+    "paths": ["apps/app", "apps/server", "apps/backend", "packages/backend", "packages/smithers-machined"],
+    "reason": "SCOPE-3 removal on 2026-10-21, SCOPE-8 hosted app, ARCH-1 Effect Workers; old Go/credits/desktop app acceptance does not authorize restoration.",
+    "landing": "Historical mythical/Smithers Cloud/owner-PR wording is superseded for this repository by HOST-3/HOST-4 and the explicit Mac lander lane contract. No GitHub writes, deployments or wiki publication in B31."
+  },
+  "order": ["unit", "integration", "e2e", "fuzz", "benchmark"],
+  "unit": {
+    "assertions": ["valid and invalid parameter combinations", "boundary and Unicode cases", "every error class", "ordering and mutation-sensitive invariants", "lifecycle, cancellation, crash recovery and idempotency"],
+    "coverage": "Four measured dimensions at 100% where instrumentation supports them, exact production denominator, all configured exclusions and ignored branches listed, child-process and platform evidence separate. A configured floor is never measured coverage. Unsupported instrumentation stays an unresolved qualification, not zero work or a silent exemption.",
+    "faults": "Inject a faulty Effect service. No mocks, retries, increased timeouts, reduced assertions or lowered floors."
+  },
+  "integration": {
+    "independent": true,
+    "dependencies": ["real database and migrations", "real adapters and filesystems", "real child processes and transports", "real host services, cleanup and cancellation"],
+    "rule": "A standalone invocation must establish the result without running the unit suite first. Faults cross real boundaries through injected faulty Effect services."
+  },
+  "e2e": {
+    "environments": ["local", "live"],
+    "boundaries": ["browser", "http-api", "cli", "terminal", "public-authoring", "installed-consumer"],
+    "cases": ["happy path", "denied access and failed launch", "duplicate request", "offline and multi-device", "reload and process death", "cancellation and resumed execution", "browser 5xx, request, console and page error watchers"],
+    "artifacts": ["source-matched Playwright or terminal/HTTP/consumer result", "video and console on UI failure", "trace and durable run receipts", "GIF on request"],
+    "rule": "No route mocks, fake backend or build-only durability claim. Agents never approve or merge customer PRs. No production writes or spending by B31."
+  },
+  "fuzz": {
+    "tool": "Existing pinned fast-check and packages/repo-targets/test-utils/effect-property.mjs; packages/repo-targets/test/EffectProperty.test.ts proves ambient services, cleanup, replay and shrinking. No new dependency.",
+    "bounded": {"seed": 20261105, "numRuns": 1000, "budgetMs": 60000},
+    "long": {"seed": 20261105, "numRuns": 100000, "budgetMs": 3600000},
+    "classes": ["canonical and bounded JSON", "keys, hashes and FileSet identities", "capability/grant and URL decoding", "journal paging and replay", "sync ordering, reconnect and rewind", "notification and home/view input state", "public CLI syntax and persisted-history decoding"],
+    "retain": ["exact source and runtime", "seed and fast-check replay path", "generator and shrink configuration", "original and minimized counterexample bytes and SHA-256", "standalone replay argv", "actual completed run count, budget and termination reason"],
+    "rule": "Budgets bound a campaign; they never raise an owning test timeout or count a timed-out campaign as passed. Both bounded and long cells remain required."
+  },
+  "benchmark": {
+    "environments": ["local", "live"],
+    "reuse": [".smithers/flows/bench/README.md", ".smithers/flows/bench/gate/gate.mjs", "apps/mvp/docs/benchmarks.md", "apps/tui/bench/flow-discovery.ts", "B30 matched cell/tool benchmark"],
+    "retain": ["correctness assertions and independently expected output hashes", "fixture roster and useful work counts", "cold/warmup/warm policy", "raw samples and runtime/host conditions", "baseline hash and review", "method, artifacts and limitations"],
+    "rule": "Never replace a baseline automatically. Existing deterministic cost gates remain authoritative. Shared-host wall times and compile-only Windows evidence do not establish live performance or runtime qualification."
+  },
+  "receipt": {
+    "identity": ["unique id", "surface", "tier", "environment", "full jj commit", "sourceSha256"],
+    "reproduction": ["cwd and argv", "environment variable names only in limitations", "runtime version/platform/arch", "startedAt and finishedAt", "exitCode and outcome", "passed/failed/skipped/todo counts"],
+    "artifacts": "Repository-relative paths under this directory with kind and SHA-256; verifier reads actual bytes and rejects symlink escape. Include raw logs plus machine test/coverage/trace/counterexample/sample reports. Never store secrets or authenticated session files.",
+    "review": "Structural integrity is not process attestation. A reviewer must compare raw machine reports and counters, assertions, exact source, tool output and limitations. Fixture receipts in tests never enter ledger.json.",
+    "aggregation": "No unit result qualifies integration, no local result qualifies live, no configured floor qualifies coverage, no empty inventory completes. Red receipts and skipped cases stay visible; preparation is not campaign completion."
+  },
+  "ownerHandoff": "Record failing command, exact source, raw artifact, cause, proposed regression and owner lane in handoffs.json. B31 writes only its campaign directory and status; implementation fixes belong to owner batches. No owner acknowledgment is assumed."
+}
