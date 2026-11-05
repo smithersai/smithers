@@ -420,7 +420,7 @@ pub(super) fn run(
                 "r+" => (false, false, false, false),
                 "w" | "w+" => (true, false, true, false),
                 "wx" | "wx+" => (true, true, false, false),
-                "a" | "a+" => (true, false, false, true),
+                "a" | "a+" | "a-private" => (true, false, false, true),
                 "ax" | "ax+" => (true, true, false, true),
                 _ => return Err(invalid("unknown file open flag")),
             };
@@ -453,6 +453,9 @@ pub(super) fn run(
                     Err(failure) => return Err(failure),
                 }
             };
+            if flag == "a-private" {
+                super::atomic_windows_handle::verify_private(&file)?;
+            }
             if truncate {
                 file.set_len(0)?;
             }
@@ -466,6 +469,9 @@ pub(super) fn run(
                 file.set_permissions(permissions)?;
             }
             file.sync_all()?;
+            if flag == "a-private" {
+                dir.sync()?;
+            }
             Ok(Value::Null)
         }
         "makeDirectory" => {

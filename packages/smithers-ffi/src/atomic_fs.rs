@@ -654,7 +654,7 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
                 "w+" => (libc::O_RDWR | libc::O_CREAT, true),
                 "wx" => (libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL, false),
                 "wx+" => (libc::O_RDWR | libc::O_CREAT | libc::O_EXCL, false),
-                "a" => (libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND, false),
+                "a" | "a-private" => (libc::O_WRONLY | libc::O_CREAT | libc::O_APPEND, false),
                 "a+" => (libc::O_RDWR | libc::O_CREAT | libc::O_APPEND, false),
                 "ax" => (
                     libc::O_WRONLY | libc::O_CREAT | libc::O_EXCL | libc::O_APPEND,
@@ -679,11 +679,25 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
             }
             let mode = options["mode"].as_u64().unwrap_or(0o666) as u32;
             let mut file = checked_file(&root, request, field(request, "path")?, flags, mode)?;
+            if flag == "a-private" {
+                let metadata = fstat(&file)?;
+                // Inspect the opened inode, never a pathname checked before open.
+                if metadata.st_uid != unsafe { libc::geteuid() }
+                    || metadata.st_mode & 0o777 != 0o600
+                {
+                    return Err(error(libc::EACCES, "file is not owner-private"));
+                }
+            }
             if truncate && unsafe { libc::ftruncate(file.as_raw_fd(), 0) } < 0 {
                 return Err(io::Error::last_os_error());
             }
             file.write_all(&bytes)?;
             file.sync_all()?;
+            if flag == "a-private" {
+                parent(&root, request, field(request, "path")?, false, 0)?
+                    .0
+                    .sync_all()?;
+            }
             Ok(Value::Null)
         }
         "makeDirectory" => {
@@ -997,6 +1011,35 @@ mod tests {
         let pinned = super::root(root.to_str().unwrap()).unwrap();
         json!({"operation":operation,"boundaryRoot":root,"logicalRoot":root,
             "rootIdentity":identity(&pinned).unwrap(),"path":path})
+    }
+
+    #[test]
+    fn owner_private_append_checks_the_open_inode_before_writing() {
+        use std::os::unix::fs::PermissionsExt;
+        let temp = tempdir().unwrap();
+        let root = fs::canonicalize(temp.path()).unwrap();
+        let target = root.join("turns.jsonl");
+        let mut append = request(&root, "writeFileString", &target);
+        append["data"] = json!("one\n");
+        append["options"] = json!({"flag":"a-private","mode":0o600});
+        run(&append, 1024, 1024).unwrap();
+        append["data"] = json!("two\n");
+        run(&append, 1024, 1024).unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"one\ntwo\n");
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o644)).unwrap();
+        assert_eq!(
+            run(&append, 1024, 1024).unwrap_err().raw_os_error(),
+            Some(libc::EACCES)
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"one\ntwo\n");
+        fs::set_permissions(&target, fs::Permissions::from_mode(0o600)).unwrap();
+        fs::hard_link(&target, root.join("alias")).unwrap();
+        assert!(run(&append, 1024, 1024).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"one\ntwo\n");
     }
 
     #[cfg(target_os = "linux")]

@@ -17,8 +17,8 @@
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
-import { Effect, Ref, Stream } from "effect"
-import { appendFileSync } from "node:fs"
+import { NodeHost } from "@smthrs/platform-node"
+import { Effect, Ref, Semaphore, Stream } from "effect"
 import * as ScriptedModel from "./ScriptedModel.ts"
 
 /**
@@ -104,17 +104,17 @@ export interface Options {
 export const make = (options: Options = {}): Effect.Effect<TurnLog> =>
   Effect.gen(function*() {
     const state = yield* Ref.make<ReadonlyArray<Entry>>([])
+    const publication = yield* NodeHost.AtomicFileSystem.ownerPrivate
+    const serial = yield* Semaphore.make(1)
     const record: TurnLog["record"] = (kind, step, detail = {}) =>
-      Ref.modify(state, (entries): readonly [Entry, ReadonlyArray<Entry>] => {
+      serial.withPermits(1)(Effect.gen(function*() {
+        const entries = yield* Ref.get(state)
         const entry: Entry = { ...detail, n: entries.length + 1, at: new Date().toISOString(), kind, step }
-        return [entry, [...entries, entry]]
-      }).pipe(
-        Effect.flatMap((entry) =>
-          options.file === undefined
-            ? Effect.void
-            : Effect.sync(() => appendFileSync(options.file!, `${JSON.stringify(entry)}\n`, { mode: 0o600 }))
-        )
-      )
+        if (options.file !== undefined) {
+          yield* publication.append(options.file, `${JSON.stringify(entry)}\n`).pipe(Effect.orDie)
+        }
+        yield* Ref.set(state, [...entries, entry])
+      }))
     const chat: TurnLog["chat"] = (request, step, detail = {}) =>
       record("chat", step, {
         model: request.modelId,

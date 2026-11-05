@@ -7,7 +7,7 @@
 
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
-import { Effect, FileSystem, Layer, PlatformError, Semaphore, Stream } from "effect"
+import { Context, Effect, FileSystem, Layer, PlatformError, Semaphore, Stream } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { availableParallelism } from "node:os"
 import {
@@ -19,6 +19,7 @@ import {
 import * as Protocol from "./internal/AtomicFileSystemProtocol.ts"
 import * as Transport from "./internal/AtomicFileSystemTransport.ts"
 import { AtomicHelperError } from "./internal/AtomicHelperError.ts"
+import * as OwnerPrivate from "./OwnerPrivate.ts"
 
 export { AtomicHelperError, AtomicHelperErrorCode } from "./internal/AtomicHelperError.ts"
 
@@ -413,3 +414,17 @@ export const layerWith = (options: Options): Layer.Layer<FileSystem.FileSystem> 
  * @category layers
  */
 export const layer: Layer.Layer<FileSystem.FileSystem> = layerWith({})
+
+/**
+ * Private publication service. The host owns native access checks and durable
+ * append; consumers can inject a faulty service to exercise refusal paths.
+ * @since 1.0.0
+ * @category services
+ */
+export const ownerPrivate = Context.Reference<OwnerPrivate.Service>("@smthrs/platform-node/OwnerPrivate", {
+  defaultValue: () =>
+    OwnerPrivate.make(
+      executeFramed({}, resolveSettings({})),
+      (path, cause) => Protocol.failure({ operation: "writeFileString", path, data: "" }, cause)
+    )
+})

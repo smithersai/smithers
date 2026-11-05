@@ -471,6 +471,31 @@ fn reparse_target(bytes: &[u8]) -> io::Result<OsString> {
 pub(super) struct Directory(File);
 
 impl Directory {
+    /// Flush publication metadata through a writable handle to this pinned
+    /// directory. A refused flush is an error, never best-effort durability.
+    pub(super) fn sync(&self) -> io::Result<()> {
+        use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+        use windows_sys::Win32::Storage::FileSystem::{
+            ReOpenFile, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+        };
+        // SAFETY: reopen the live pinned object, without resolving a pathname.
+        let handle = unsafe {
+            ReOpenFile(
+                self.0.as_raw_handle(),
+                FILE_GENERIC_WRITE | FILE_READ_ATTRIBUTES,
+                FILE_SHARE_READ | FILE_SHARE_WRITE,
+                FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            )
+        };
+        if handle == INVALID_HANDLE_VALUE {
+            return Err(io::Error::last_os_error());
+        }
+        // SAFETY: ReOpenFile transfers a new owned handle on success.
+        let file = unsafe { File::from_raw_handle(handle) };
+        no_reparse(&file)?;
+        file.sync_all()
+    }
+
     /// Recovery directories may be reused only with the exact private ACL we
     /// create. A pre-existing broadly accessible directory is not a private slot.
     pub(super) fn private_child(&self, name: &OsStr) -> io::Result<Self> {
@@ -857,7 +882,7 @@ impl Directory {
     }
 }
 
-fn verify_private(file: &File) -> io::Result<()> {
+pub(super) fn verify_private(file: &File) -> io::Result<()> {
     use windows_sys::Win32::Security::Authorization::{GetSecurityInfo, SE_FILE_OBJECT};
     use windows_sys::Win32::Security::{
         GetAce, GetSecurityDescriptorControl, ACCESS_ALLOWED_ACE, DACL_SECURITY_INFORMATION,
@@ -933,6 +958,83 @@ mod tests {
     use std::fs;
     use std::io::{Read, Write};
     use std::os::windows::fs::{symlink_dir, symlink_file};
+
+    #[test]
+    fn private_file_denies_reads_under_an_anonymous_identity() {
+        use windows_sys::Win32::Security::{ImpersonateAnonymousToken, RevertToSelf};
+        use windows_sys::Win32::System::Threading::GetCurrentThread;
+        struct Revert;
+        impl Drop for Revert {
+            fn drop(&mut self) {
+                assert_ne!(unsafe { RevertToSelf() }, 0);
+            }
+        }
+        let temp = tempfile::tempdir().unwrap();
+        let root = Directory::root(temp.path()).unwrap();
+        let mut private = root.create_private_file(OsStr::new("private")).unwrap();
+        private.write_all(b"private bytes").unwrap();
+        private.sync_all().unwrap();
+        drop(private);
+        // Positive control grants the anonymous identity read access, proving
+        // the read below reaches the leaf DACL rather than failing at a parent.
+        let user = current_user_sid().unwrap();
+        let sddl: Vec<_> = format!("O:{user}D:P(A;;FA;;;{user})(A;;FR;;;AN)")
+            .encode_utf16()
+            .chain(Some(0))
+            .collect();
+        let mut descriptor = ptr::null_mut();
+        assert_ne!(
+            unsafe {
+                ConvertStringSecurityDescriptorToSecurityDescriptorW(
+                    sddl.as_ptr(),
+                    SDDL_REVISION_1,
+                    &mut descriptor,
+                    ptr::null_mut(),
+                )
+            },
+            0
+        );
+        let security = LocalAllocation(descriptor);
+        let mut control = open_with(
+            Some(&root.0),
+            name_units(OsStr::new("control")).unwrap(),
+            FILE_GENERIC_READ | FILE_GENERIC_WRITE,
+            false,
+            FILE_SHARE_READ,
+            Some(&security),
+        )
+        .unwrap();
+        control.write_all(b"public control").unwrap();
+        drop(control);
+        // A real read attempt under a different security identity, relative to
+        // the pinned parent so ancestor traversal cannot explain the denial.
+        assert_ne!(unsafe { ImpersonateAnonymousToken(GetCurrentThread()) }, 0);
+        let revert = Revert;
+        let mut control = open(
+            Some(&root.0),
+            name_units(OsStr::new("control")).unwrap(),
+            FILE_READ_DATA,
+            false,
+            true,
+        )
+        .unwrap();
+        let mut bytes = Vec::new();
+        control.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"public control");
+        let result = open(
+            Some(&root.0),
+            name_units(OsStr::new("private")).unwrap(),
+            FILE_READ_DATA,
+            false,
+            true,
+        );
+        assert_eq!(result.unwrap_err().kind(), io::ErrorKind::PermissionDenied);
+        drop(revert);
+        assert_eq!(
+            fs::read(temp.path().join("private")).unwrap(),
+            b"private bytes"
+        );
+    }
 
     #[test]
     fn rejects_aliases_streams_and_traversal_components() {

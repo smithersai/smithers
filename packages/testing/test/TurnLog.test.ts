@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Model from "@smthrs/model/Model"
 import { ModelRequest } from "@smthrs/model/ModelRequest"
+import { NodeHost } from "@smthrs/platform-node"
 import { Effect, Stream } from "effect"
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -59,7 +60,16 @@ describe("TurnLog", () => {
           })
           // A detail never overwrites the log's own fields.
           expect(lines[1]).toMatchObject({ n: 2, kind: "evaluation", step: "route" })
-          expect(statSync(file).mode & 0o777).toBe(0o600)
+          if (process.platform === "win32") {
+            // The native owner rechecks the protected DACL on the opened inode.
+            // Its Windows suite additionally proves read denial under a second
+            // token with a readable control; POSIX mode bits cannot do that.
+            const owner = yield* NodeHost.AtomicFileSystem.ownerPrivate
+            yield* owner.append(file, "")
+            expect(readFileSync(file, "utf8").trimEnd().split("\n").map((line) => JSON.parse(line))).toEqual(lines)
+          } else {
+            expect(statSync(file).mode & 0o777).toBe(0o600)
+          }
         }),
       (directory) => Effect.sync(() => rmSync(directory, { recursive: true, force: true }))
     ))
