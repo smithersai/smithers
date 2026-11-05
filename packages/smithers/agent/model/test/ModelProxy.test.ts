@@ -1296,14 +1296,20 @@ describe("ModelProxy client", () => {
     const logger = Logger.make((options) => {
       logs.push(Logger.formatStructured.log(options))
     })
+    let bodyRead: () => void = () => undefined
+    const reading = new Promise<void>((resolve) => (bodyRead = resolve))
     let pulls = 0
     const body = new ReadableStream<Uint8Array>({
       pull: () => {
         pulls += 1
+        bodyRead()
         return new Promise(() => undefined)
       }
-    })
+    }, { highWaterMark: 0 })
     const incoming = HttpServerRequest.fromWeb(new Request(url, post(body)))
+    // Let an eager body prefetch happen before the server fiber can start.
+    await Promise.resolve()
+    expect(pulls).toBe(0)
 
     await Effect.runPromise(
       Effect.gen(function*() {
@@ -1312,11 +1318,12 @@ describe("ModelProxy client", () => {
             Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)
           )
         )
-        while (pulls === 0) yield* Effect.sleep("1 millis")
+        yield* Effect.promise(() => reading)
         yield* Fiber.interrupt(fiber)
       }).pipe(Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
     )
 
+    expect(pulls).toBe(1)
     expect(logs.map((line) => [line.message, line.level, line.annotations.outcome])).toEqual([
       ["model.proxy.serve", "INFO", "interrupted"]
     ])
