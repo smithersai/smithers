@@ -1031,7 +1031,10 @@ const resolveTool = async (context: PlanContext, reference: Record<string, unkno
             const selected = await PackageTree.probeVersion(rustup, {
               cwd: context.root,
               args: ["which", ...(channel === undefined ? [] : ["--toolchain", channel]), name],
-              environment: context.environment
+              // `rustup which` can install a missing channel. Planning must
+              // only inspect it: an install changes the identity between
+              // probes and can leave the first cached result under a stale key.
+              environment: { ...context.environment, RUSTUP_AUTO_INSTALL: "0" }
             })
             const selectedPath = selected.output.trim()
             if (selected.exitCode === 0 && NodePath.isAbsolute(selectedPath) && NodeFs.existsSync(selectedPath)) {

@@ -9,6 +9,7 @@ import type { BigIntStats } from "node:fs"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
 import * as Path from "node:path"
+import { pathToFileURL } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as PackageRunner from "../src/internal/PackageRunner.ts"
 import * as PackageDiscovery from "../src/PackageDiscovery.ts"
@@ -429,6 +430,40 @@ exec '${tools}/sdk/bin/go' "$@"
     await write(tools, "sdk/bin/go", compiler(tools, "first"))
     await Fs.mkdir(Path.join(tools, "sdk/pkg/tool"), { recursive: true })
     await assertReplacement(root, tools, () => write(tools, "sdk/bin/go", compiler(tools, "second")))
+  })
+
+  it("keeps a missing rustup toolchain read-only while planning", async () => {
+    expect(PackageTree.findOnPath("rustup")).toBeDefined()
+    const { root, tools } = await fixture(
+      "S.Cargo.Test({ workspace: true, sandbox: \"none\" })",
+      "toolchains: [S.Rust.Toolchain({ workspace: S.file(\"//Cargo.toml\"), channel: \"stable\" })],"
+    )
+    await write(root, "Cargo.toml", "[workspace]\nmembers = []\n")
+    await write(tools, "cargo", "#!/bin/sh\necho cargo-1\n")
+    const rustupHome = await directory()
+    const distribution = await directory()
+    await write(rustupHome, "settings.toml", "version = \"12\"\nprofile = \"minimal\"\n")
+    const environment = {
+      ...process.env,
+      RUSTUP_HOME: rustupHome,
+      // A real, empty local distribution makes an accidental install observable
+      // without reaching the network or changing the developer's toolchains.
+      RUSTUP_DIST_SERVER: pathToFileURL(distribution).href,
+      RUSTUP_AUTO_INSTALL: "1"
+    }
+    const loaded = await PackageLoader.load(await PackageDiscovery.discover(root))
+    const options = {
+      index: PackageIndex.make(loaded),
+      patterns: ["//:dist"],
+      cacheDirectory: ".flows",
+      verb: "auto" as const,
+      environment
+    }
+    const first = await PackageExec.plan(options)
+    expect(await Fs.readdir(rustupHome)).toEqual(["settings.toml"])
+    const second = await PackageExec.plan(options)
+    expect(second.nodes.get("//:dist")?.keyPreview).toBe(first.nodes.get("//:dist")?.keyPreview)
+    expect(environment.RUSTUP_AUTO_INSTALL).toBe("1")
   })
 
   it("misses after replacing the rustup-selected cargo behind an unchanged proxy", async () => {
