@@ -3,7 +3,7 @@
 import { createServer, type Server } from "node:http"
 import type { AddressInfo } from "node:net"
 import { build } from "esbuild"
-import { chromium, type Browser, type Page } from "playwright"
+import { chromium, type Browser, type Page } from "@playwright/test"
 import { Context, Effect, Layer } from "effect"
 import { HttpServerResponse } from "effect/http"
 import { afterAll, beforeAll, expect, test } from "vitest"
