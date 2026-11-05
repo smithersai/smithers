@@ -44,7 +44,7 @@ const securityReview = Smithers.SecurityReview({
         "src/FileSystemArtifactStore.ts",
         "src/RemoteArtifacts.ts",
         "src/CombinedArtifacts.ts",
-        "src/measureBytes.ts"
+        "src/measureBytes.vibe"
       ]
     },
     {

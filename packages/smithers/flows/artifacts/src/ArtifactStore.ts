@@ -35,7 +35,7 @@ export {
   ArtifactStoreErrorCode
 } from "./ArtifactStoreError.vibe"
 export { defaultDirectory, type FileSystemOptions, makeFileSystem } from "./FileSystemArtifactStore.ts"
-export { measureBytes } from "./measureBytes.ts"
+export { measureBytes } from "./measureBytes.vibe"
 export { makeMemory } from "./MemoryArtifactStore.vibe"
 export { makeNoop } from "./NoopArtifactStore.vibe"
 export { snapshotBytes } from "./snapshotBytes.vibe"

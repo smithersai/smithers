@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/artifacts"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -26,7 +26,7 @@
      "relative": "packages/smithers/flows/artifacts/src"
     },
     null,
-    "azN0MgA3NC1W3p2VyOiDFAIMNrUleoy_iY17hFsGBtU",
+    "u9n8ZmUlWA4TUvHBnbn_KwmcQrrhbx-wn7igP-kqmZg",
     [],
     {
      "recursive": true,
@@ -195,7 +195,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -220,7 +220,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -249,14 +249,14 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "size": 7128,
+    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
    },
    {
     "path": {
@@ -1844,10 +1844,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+     "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
     },
-    "size": 881,
-    "hash": "G7louxHWm_lsKwN6BSd5VpF_9nmoMy16ufzJyz9r_bI"
+    "size": 864,
+    "hash": "D_W-_nxnXk8SHN5s8V2opTJ_w24LfvGYpiZUF5r6muk"
    },
    {
     "path": {
@@ -1867,15 +1867,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/FileSystemArtifactStore.ts"
     },
-    "size": 22837,
-    "hash": "J_ZzIMFuwXtQmkTdwIvr6_QPSL-ZtAKHhnNZTB1BN1E"
+    "size": 22839,
+    "hash": "0RWkt7rtkgK0wbaWBQpWNhD1pm1r2QJGuRRMSAXKB_c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/MemoryArtifactStore.vibe"
     },
-    "size": 3205,
-    "hash": "2FvTYZPZ7fUn57w6Y3VlYxpI1AKqzEiRyD36OvqSzQQ"
+    "size": 3207,
+    "hash": "nuHd16l_91sKtHt1r6FeA1ZhFsDop0Ff5zykt86RnGA"
    },
    {
     "path": {
@@ -1888,8 +1888,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStore.ts"
     },
-    "size": 5516,
-    "hash": "BSNCat2Z9Fqlfz33UB5QllHd2-2-rLM9dF9yIpoIluc"
+    "size": 5518,
+    "hash": "7E5nB5RuyNNVrY-FDt-cSmYzBz_QRURE88DatRYLWTU"
    },
    {
     "path": {
@@ -2951,7 +2951,7 @@
     "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+    "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
@@ -3063,6 +3063,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
+     }
+    ],
+    "code": "/**\n * Measuring artifact bytes: the SHA-256 content address of one immutable\n * snapshot, computed through the injected `Crypto` service.\n *\n * @since 1.0.0-rc.0\n */\nimport { Sha256 } from \"@smthrs/crypto\";\nimport * as Effect from \"effect/Effect\";\nimport { ArtifactStoreError } from \"./ArtifactStoreError.js\";\nconst digestFailure = (cause) => new ArtifactStoreError({\n    code: \"digest_failed\",\n    message: \"the Crypto service failed to compute an artifact digest\",\n    cause\n});\n/**\n * Measures one immutable byte snapshot without ever retaining it in an error.\n *\n * @category utilities\n * @since 1.0.0-rc.0\n */\nexport const measureBytes = (bytes) => Effect.mapError(Sha256.digest(bytes), digestFailure);\n",
+    "map": {
+     "version": 3,
+     "file": "measureBytes.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;GAKG;AAEH,OAAO,EAAe,MAAM,EAAE,MAAM,gBAAgB,CAAA;AACpD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAEvC,OAAO,EAAE,kBAAkB,EAAE,MAAM,yBAA2B,CAAA;AAE9D,MAAM,aAAa,GAAG,CAAC,KAAc,EAAsB,EAAE,CAC3D,IAAI,kBAAkB,CAAC;IACrB,IAAI,EAAE,eAAe;IACrB,OAAO,EAAE,yDAAyD;IAClE,KAAK;CACN,CAAC,CAAA;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAAC,KAAiB,EAA2C,EAAE,CACjE,MAAM,CAAC,QAAQ,CAAvC,MAAM,CAAC,MAAM,CAAC,KAAK,CAAC,EAAuB,aAAa,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
      }
     ],
@@ -3117,7 +3137,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {

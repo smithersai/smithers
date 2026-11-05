@@ -23,5 +23,5 @@ const digestFailure = (cause: unknown): ArtifactStoreError =>
  * @category utilities
  * @since 1.0.0-rc.0
  */
-export const measureBytes = (bytes: Uint8Array): Effect.Effect<Digest, ArtifactStoreError, Crypto.Crypto> =>
-  Sha256.digest(bytes).pipe(Effect.mapError(digestFailure))
+export const measureBytes = (bytes: Uint8Array): Digest!ArtifactStoreError!Crypto.Crypto =>
+  Sha256.digest(bytes) |> Effect.mapError(%, digestFailure)

@@ -19,7 +19,7 @@ import { ArtifactCorruption, ArtifactMissing, ArtifactStoreError } from "./Artif
 import * as ArtifactStoreMetrics from "./ArtifactStoreMetrics.vibe"
 import * as ArtifactLocks from "./internal/ArtifactLocks.ts"
 import * as ArtifactPath from "./internal/ArtifactPath.ts"
-import { measureBytes } from "./measureBytes.ts"
+import { measureBytes } from "./measureBytes.vibe"
 import { snapshotBytes } from "./snapshotBytes.vibe"
 import { validateDigest } from "./validateDigest.vibe"
 
