@@ -21,6 +21,26 @@ export const alive = (pid) => {
   try { process.kill(pid, 0); return true } catch (error) { if (error.code === "ESRCH") return false; if (error.code === "EPERM") return true; throw error }
 }
 
+// Start identity is optional for old tickets. Never inspect argv or environment;
+// a zombie has exited, and a reused PID is not the recorded process.
+export function processStartTime(pid) {
+  if (!Number.isSafeInteger(pid) || pid <= 0) throw new Error("Invalid recorded process pid")
+  if (!alive(pid)) return undefined
+  const result = spawnSync("ps", ["-p", String(pid), "-o", "stat=", "-o", "lstart="], {
+    encoding: "utf8", env: { ...process.env, LC_ALL: "C", TZ: "UTC" }, timeout: 5000, killSignal: "SIGKILL", maxBuffer: 64 * 1024
+  })
+  const row = result.stdout?.trim().match(/^(\S+)\s+(.+)$/)
+  if (result.error || result.status !== 0 || !row) {
+    if (!alive(pid)) return undefined
+    throw new Error("Cannot verify recorded process start time")
+  }
+  return row[1].startsWith("Z") ? undefined : row[2]
+}
+const recordedProcessAlive = (pid, startTime) => {
+  const started = processStartTime(pid)
+  return started !== undefined && (startTime === undefined || started === startTime)
+}
+
 // Every prepared decision is nonempty. POSIX rename cannot replace another nonempty
 // directory: the winning claim and its complete contents become visible together.
 export function claimDecision(directory, kind, name = "decision", owner) {
@@ -96,7 +116,7 @@ export function expiry(directory, now, staleMs, maxHoldMs) {
   const held = text(join(directory, "held"))
   if (held !== undefined && now - Number(held) >= maxHoldMs) return "max hold expired"
   if (now - Number(text(join(directory, "heartbeat")) ?? owner.startTime) >= staleMs) return "heartbeat expired"
-  if (owner.host === hostname() && !alive(owner.pid)) return "process gone"
+  if (owner.host === hostname() && !recordedProcessAlive(owner.pid, owner.processStartTime)) return "process gone"
 }
 
 // Read only process-group metadata globally. Inspect argv only for our recorded
@@ -137,10 +157,22 @@ export function killPublisher(record) {
   if (!groupAlive(record)) return
   try { process.kill(-record.pid, "SIGKILL") } catch (error) { if (error.code !== "ESRCH") throw error }
 }
-export function publicationStopped(directory, now) {
-  // External farm jobs outlive a dead queue owner. Only their owner/host's explicit
-  // completion proof releases exclusion; PID death and lease age are not that proof.
-  if (existsSync(join(directory, "external-work.json")) && !existsSync(join(directory, "external-work-stopped"))) return false
+export function publicationStopped(directory, now, log = (line) => console.error(line)) {
+  const external = text(join(directory, "external-work.json"))
+  if (external && !existsSync(join(directory, "external-work-stopped"))) {
+    const record = JSON.parse(external)
+    // Remote boxes have their own lifetime. Admission follows this host's client
+    // processes, but never reclaims work from a live owner or a surviving client.
+    if (record.host !== hostname()) return false
+    try {
+      if (recordedProcessAlive(record.ownerPid, record.ownerStartTime)) return false
+      if (!Array.isArray(record.clients) || record.clients.some(client => recordedProcessAlive(client.pid, client.startTime))) return false
+    } catch { return false } // Missing/unknown process identity retains exclusion.
+    for (const client of record.clients) client.state = "stopped"
+    atomicWrite(join(directory, "external-work.json"), JSON.stringify(record))
+    atomicWrite(join(directory, "external-work-stopped"), JSON.stringify({ proof: "local-owner-and-clients-exited", byPid: process.pid, time: Date.now() }))
+    log(`EXTERNAL_WORK owner=${record.ownerPid} clients=${record.clients.length} stopped proof=local-owner-and-clients-exited`)
+  }
   if (decision(directory) !== "push" || existsSync(join(directory, "publisher-stopped"))) return true
   const bytes = text(join(directory, "publisher.json"))
   if (!bytes) return true // No permission to execute is sent before this record exists.
@@ -187,7 +219,7 @@ export async function acquireLock(path, {
     ticket = String(number).padStart(16, "0"); directory = join(queue, ticket)
     try { mkdirSync(directory, { mode: 0o700 }); break } catch (error) { if (error.code !== "EEXIST") throw error; number++ }
   }
-  const owner = { host: hostname(), pid: process.pid, startTime: now(), staleMs, maxHoldMs, token: randomUUID() }
+  const owner = { host: hostname(), pid: process.pid, processStartTime: processStartTime(process.pid), startTime: now(), staleMs, maxHoldMs, token: randomUUID() }
   let child, publication, publishing, released = false, releasing, position, stopRequested = false
   const retained = new Set()
   const done = () => existsSync(join(directory, "done"))
@@ -225,7 +257,7 @@ export async function acquireLock(path, {
       await publishing?.catch(() => {})
       await stopChild(child)
       signal?.removeEventListener("abort", aborted)
-      if (!publicationStopped(directory, Date.now())) throw new Error("Publication termination is not confirmed; lock retained")
+      if (!publicationStopped(directory, Date.now(), log)) throw new Error("Publication termination is not confirmed; lock retained")
       finishTicket(directory, path, owner, "released", onEvent)
     })()
     return releasing
@@ -283,7 +315,7 @@ export async function acquireLock(path, {
         // A newly refreshed holder may have won publication concurrently with our
         // stale observation. Inspect the complete decision and recheck expiry.
         if (!revoked && !expiry(other, now(), staleMs, maxHoldMs)) continue
-        if (!publicationStopped(other, now())) {
+        if (!publicationStopped(other, now(), log)) {
           if (!retained.has(name)) { retained.add(name); log(`RETAIN landing ticket ${BigInt(name)}: publication termination unconfirmed`) }
           continue
         }

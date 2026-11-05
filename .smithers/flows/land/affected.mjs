@@ -13,7 +13,7 @@ import { basename, dirname, join, posix } from "node:path"
 import { jj } from "./numbering.mjs"
 import { farmHosts, runClient } from "./typecheck.mjs"
 import { runProcess, boundedSpawnSync as spawnSync } from "./process.mjs"
-import { acquireLock, atomicWrite } from "./lock.mjs"
+import { acquireLock, atomicWrite, processStartTime } from "./lock.mjs"
 import { sourcePath } from "./files.mjs"
 
 const jobContext = new AsyncLocalStorage()
@@ -22,30 +22,28 @@ const recoveryEvidence = (output) => ({
   servers: [...new Map([...output.matchAll(/^\[lat-run\] ([A-Za-z0-9_.-]+) slot (\d+)\r?$/gm)].map((match) => [`${match[1]}:${match[2]}`, { host: match[1], slot: Number(match[2]) }])).values()].slice(0, 8),
   ended: [...new Map([...output.matchAll(/^cfbox: (?:\[(\d+)\] )?exit (-?\d+); command /gm)].map((match) => [match[1] ?? "1", { job: Number(match[1] ?? 1), exit: Number(match[2]) }])).values()].slice(0, maxPgJobs)
 })
-export const boxTerminationProven = (output, jobs, status) => {
-  const ended = new Set([...output.matchAll(/^cfbox: (?:\[(\d+)\] )?exit -?\d+; command /gm)].filter((match) => match[1] || jobs === 1).map((match) => Number(match[1] ?? 1)))
-  const started = new Set([...output.matchAll(/^cfbox: (?:\[(\d+)\] )?box \S+ .*started /gm)].map((match) => Number(match[1] ?? 1)))
-  // An explicit capacity rejection proves this request did not launch. Absence of
-  // a start message alone proves nothing: its acknowledgment may have been lost.
-  const rejected = status === 125 ? new Set([...output.matchAll(/^cfbox: (?:\[(\d+)\] )?no (?:pg|base|playwright|node) \d+-vCPU box became free .*\(CFBOX_WAIT_MAX=/gm)].map((match) => Number(match[1] ?? 1))) : new Set()
-  return Array.from({ length: jobs }, (_, i) => i + 1).every((id) => ended.has(id) || (rejected.has(id) && !started.has(id)))
-}
 const clientLifetime = (client, log, boxJobs) => {
   const context = jobContext.getStore()
   if (!context) return {}
   const record = { client, log, boxJobs, state: "starting", started: Date.now() }
   context.clients.push(record); context.save()
   return {
-    onStart: (pid) => { record.pid = pid; record.state = "running"; context.save() },
+    onStart: (pid) => {
+      record.pid = pid; record.state = pid === undefined ? "stopped" : "running"; context.save()
+      record.startTime = pid === undefined ? undefined : processStartTime(pid); context.save()
+    },
     onEnd: (status, signal, interrupted) => {
       record.status = status; record.signal = signal
       record.interrupted = Boolean(interrupted)
-      const output = readFileSync(log, "utf8")
-      record.recovery = recoveryEvidence(output)
-      const relay = process.env.SMITHERS_CFBOX_VIA ?? "nyc-01"
-      if (boxJobs && /^[A-Za-z0-9_.-]+$/.test(relay)) record.recovery.relay = relay
-      record.state = status === 0 && !signal && !interrupted ? "completed" : boxJobs && boxTerminationProven(output, boxJobs, status) ? "stopped" : "unconfirmed"
-      context.save()
+      // runProcess calls onEnd only after the client's close. An interrupted or
+      // failed client has still exited; remote boxes keep their own lifetime.
+      record.state = status === 0 && !signal && !interrupted ? "completed" : "stopped"
+      try {
+        const output = readFileSync(log, "utf8")
+        record.recovery = recoveryEvidence(output)
+        const relay = process.env.SMITHERS_CFBOX_VIA ?? "nyc-01"
+        if (boxJobs && /^[A-Za-z0-9_.-]+$/.test(relay)) record.recovery.relay = relay
+      } finally { context.save() }
     }
   }
 }
@@ -771,17 +769,20 @@ export async function withPgAdmission(body, { path = process.env.SMITHERS_AFFECT
     throw new AffectedIncomplete("pg-admission", "the pg queue could not grant admission", `Retry the affected gate after checking the admission queue at ${path}.`)
   } finally { signal?.removeEventListener("abort", abortWaiting) }
   const directory = join(`${path}.queue`, release.ticket)
-  const context = { host: hostname(), ownerPid: process.pid, clients: [], save() {
-    atomicWrite(join(directory, "external-work.json"), JSON.stringify({ host: this.host, ownerPid: this.ownerPid, clients: this.clients }))
+  const context = { host: hostname(), ownerPid: process.pid, ownerStartTime: processStartTime(process.pid), clients: [], save() {
+    atomicWrite(join(directory, "external-work.json"), JSON.stringify({ host: this.host, ownerPid: this.ownerPid, ownerStartTime: this.ownerStartTime, clients: this.clients }))
   } }
   context.save() // Before any client can start, including one whose launch acknowledgment is lost.
   let executionError
   try { signal?.throwIfAborted(); release.check(); return await jobContext.run(context, body) }
   catch (error) { executionError = error; throw error }
   finally {
-    // An ambiguous transport/cancellation cannot establish remote termination.
-    // Keep the admission record for a host operator to confirm every recorded job stopped.
-    if (context.clients.every((client) => ["completed", "stopped"].includes(client.state))) atomicWrite(join(directory, "external-work-stopped"), JSON.stringify({ proof: "all-clients-completed-or-termination-proven", time: Date.now() }))
+    // Every awaited client has closed before the gate settles, including failure
+    // and cancellation. Publish that proof before retiring the admission ticket.
+    // A pre-launch abort can settle runProcess before its onStart callback.
+    for (const client of context.clients) if (client.state === "starting" && client.pid === undefined) client.state = "stopped"
+    context.save()
+    if (context.clients.every((client) => ["completed", "stopped"].includes(client.state))) atomicWrite(join(directory, "external-work-stopped"), JSON.stringify({ proof: "all-clients-exited", time: Date.now() }))
     try { await release() }
     catch { if (executionError?.status === "refused") throw executionError; throw new AffectedIncomplete(executionError?.stage ?? "pg-cleanup", `job termination is unconfirmed; admission retained at ${directory}`, `${executionError?.retry ?? ""} Confirm termination of the clients/jobs in external-work.json, record the host stop proof, then retry the affected gate.`.trim()) }
   }

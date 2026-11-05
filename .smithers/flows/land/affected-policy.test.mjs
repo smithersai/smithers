@@ -182,7 +182,7 @@ test("policy: two gates queue; each holds at most seven pg jobs", async (t) => {
   assert.ok(batches.every((batch) => batch.length <= 7))
 })
 
-test("policy: admission errors are incomplete and cleanup retains the original failed stage", async (t) => {
+test("policy: a gate ending incomplete releases admission immediately and preserves its stage", async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "gate-stage-"))
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   const path = join(directory, "pg.lock")
@@ -194,11 +194,17 @@ test("policy: admission errors are incomplete and cleanup retains the original f
   await assert.rejects(gate.withPgAdmission(() => gate.onFarm(directory, { labels: [], vitest: true }, { clients: [client] }), { path }), (error) => {
     assert.equal(error.stage, "pg-admission")
     assert.equal(error.status, "incomplete")
-    assert.match(error.message, /admission retained/)
-    assert.match(error.retry, /Confirm termination/)
-    assert.ok(existsSync(path))
+    assert.doesNotMatch(error.message, /admission retained/)
+    assert.equal(existsSync(path), false)
     return true
   })
+  const ticket = join(`${path}.queue`, "0000000000000001")
+  const record = JSON.parse(readFileSync(join(ticket, "external-work.json"), "utf8"))
+  assert.equal(record.clients[0].state, "stopped")
+  assert.ok(existsSync(join(ticket, "external-work-stopped")))
+  let entered = false
+  await gate.withPgAdmission(() => { entered = true }, { path, timeoutMs: 1000 })
+  assert.equal(entered, true)
 })
 
 test("policy: pg work has no mini fallback", () => {
@@ -206,12 +212,19 @@ test("policy: pg work has no mini fallback", () => {
   assert.ok(gate.affectedHosts().some((host) => host.box))
 })
 
+test("policy: interruption before client launch cannot strand admission", async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), "gate-prelaunch-stop-")), path = join(directory, "pg.lock")
+  t.after(() => rmSync(directory, { recursive: true, force: true }))
+  const controller = new AbortController()
+  controller.abort(new Error("fixture before launch"))
+  await assert.rejects(gate.withPgAdmission(() => gate.onFarm(directory, { labels: [] }, {
+    clients: ["/nonexistent-fixture-client"], signal: controller.signal
+  }), { path }), /fixture before launch/)
+  assert.equal(existsSync(path), false)
+  await gate.withPgAdmission(() => {}, { path, timeoutMs: 1000 })
+})
+
 test("policy: proven capacity non-launch releases admission for the next gate", async (t) => {
-  const rejected = (id) => `cfbox: [${id}] no pg 4-vCPU box became free in 1s (CFBOX_WAIT_MAX=1): capacity exhausted\n`
-  assert.equal(gate.boxTerminationProven(rejected(1), 7, 125), false, "one rejected request cannot prove six siblings stopped")
-  assert.equal(gate.boxTerminationProven(Array.from({ length: 7 }, (_, i) => rejected(i + 1)).join(""), 7, 125), true)
-  assert.equal(gate.boxTerminationProven("cfbox: [1] box abc (pg, 4 vCPU) started in 1s\n" + rejected(1), 1, 125), false)
-  assert.equal(gate.boxTerminationProven("cfbox: [1] exit 0; command 1s, wall 1s\n", 1, 255), true, "job termination proof releases resources but does not authorize execution proof")
   const directory = mkdtempSync(join(tmpdir(), "gate-capacity-")), path = join(directory, "pg.lock"), client = join(directory, "cfbox")
   const previous = process.env.SMITHERS_CFBOX
   process.env.SMITHERS_CFBOX = client
@@ -228,30 +241,29 @@ test("policy: proven capacity non-launch releases admission for the next gate", 
   assert.equal(existsSync(path), false, "a failed single-box command has still terminated")
 })
 
-test("policy: a canceled client exiting zero does not prove its remote jobs stopped", { timeout: 10000 }, async (t) => {
+test("policy: an interrupted gate releases admission after its client exits, retaining recovery metadata", { timeout: 10000 }, async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "gate-handled-signal-")), path = join(directory, "pg.lock"), client = join(directory, "client"), ready = join(directory, "ready")
   t.after(() => rmSync(directory, { recursive: true, force: true }))
   writeFileSync(client, `#!${process.execPath}\nimport {writeFileSync} from 'node:fs';process.on('SIGTERM',()=>process.exit(0));console.log('[lat-run] fixture-host slot 3\\ncfbox: [1] box deadbeef (pg, 4 vCPU) started in 1s\\nTOKEN=must-not-be-recorded');writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},100);\n`, { mode: 0o755 })
   const controller = new AbortController()
   const running = gate.withPgAdmission(() => gate.onFarm(directory, { labels: [], vitest: true }, { clients: [client], signal: controller.signal }), { path, signal: controller.signal })
-  const rejected = assert.rejects(running, (error) => error.status === "incomplete" && /admission retained/.test(error.message))
+  const rejected = assert.rejects(running, /fixture cancellation/)
   while (!existsSync(ready)) await new Promise((resolve) => setTimeout(resolve, 10))
   controller.abort(new Error("fixture cancellation"))
   await rejected
-  assert.ok(existsSync(path))
+  assert.equal(existsSync(path), false)
   const ticket = readdirSync(`${path}.queue`).find((name) => existsSync(join(`${path}.queue`, name, "external-work.json")))
   const record = JSON.parse(readFileSync(join(`${path}.queue`, ticket, "external-work.json")))
+  assert.equal(record.clients[0].state, "stopped")
+  assert.equal(typeof record.clients[0].startTime, "string")
+  assert.ok(existsSync(join(`${path}.queue`, ticket, "external-work-stopped")))
   assert.deepEqual(record.clients[0].recovery.boxes, [{ job: 1, idPrefix: "deadbeef", image: "pg", cpu: 4 }])
   assert.deepEqual(record.clients[0].recovery.servers, [{ host: "fixture-host", slot: 3 }])
   assert.ok(!JSON.stringify(record).includes("must-not-be-recorded"))
   assert.equal(existsSync(record.clients[0].log), false, "recovery metadata survives temporary log cleanup")
-  const waiting = new AbortController()
   let entered = false
-  const next = gate.withPgAdmission(() => { entered = true }, { path, signal: waiting.signal })
-  const canceled = assert.rejects(next, /stop fixture waiter/)
-  await new Promise((resolve) => setTimeout(resolve, 50))
-  assert.equal(entered, false)
-  waiting.abort(new Error("stop fixture waiter")); await canceled
+  await gate.withPgAdmission(() => { entered = true }, { path, timeoutMs: 1000 })
+  assert.equal(entered, true)
 })
 
 test("policy: a missing browser executable is infrastructure even with a file receipt", () => {
@@ -297,7 +309,7 @@ test("policy: all successful job records still need successful client completion
   for (const exit of [137, 255, null]) assert.notEqual(gate.boxOutcomes(output, exit, 1)[0].status, 0)
 })
 
-test("policy: a killed gate cannot release admission while its client survives", { timeout: 10000 }, async (t) => {
+test("policy: live owner and client hold admission; a killed owner is reclaimed once its client dies", { timeout: 10000 }, async (t) => {
   const directory = mkdtempSync(join(tmpdir(), "gate-owner-death-")), path = join(directory, "pg.lock")
   const client = join(directory, "client"), ready = join(directory, "ready")
   writeFileSync(client, `#!${process.execPath}\nrequire('node:fs').writeFileSync(${JSON.stringify(ready)}, 'ready'); setInterval(() => {}, 1000)\n`, { mode: 0o755 })
@@ -315,10 +327,16 @@ test("policy: a killed gate cannot release admission while its client survives",
   for (let i = 0; !existsSync(ready) && i < 300; i++) await new Promise((resolve) => setTimeout(resolve, 10))
   assert.ok(existsSync(ready))
   const ticket = join(`${path}.queue`, "0000000000000001")
-  clientPid = JSON.parse(readFileSync(join(ticket, "external-work.json"), "utf8")).clients[0].pid
-  const exited = once(holder, "exit"); holder.kill("SIGKILL"); await exited
+  for (let i = 0; !clientPid && i < 300; i++) {
+    clientPid = JSON.parse(readFileSync(join(ticket, "external-work.json"), "utf8")).clients[0].pid
+    if (!clientPid) await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+  assert.ok(Number.isSafeInteger(clientPid), "client PID must be durably recorded")
   let entered = false
   second = gate.withPgAdmission(async () => { entered = true }, { path, signal: controller.signal })
+  await new Promise((resolve) => setTimeout(resolve, 350))
+  assert.equal(entered, false, "a live owner with a live client must retain admission")
+  const exited = once(holder, "exit"); holder.kill("SIGKILL"); await exited
   await new Promise((resolve) => setTimeout(resolve, 350))
   const enteredWhileAlive = entered
   process.kill(-clientPid, 0) // The original real client group is still alive.
@@ -328,11 +346,12 @@ test("policy: a killed gate cannot release admission while its client survives",
     try { process.kill(-clientPid, 0) } catch (error) { if (error.code === "ESRCH") { stopped = true; break } }
     await new Promise((resolve) => setTimeout(resolve, 10))
   }
-  assert.ok(stopped, "the fixture must confirm termination before writing its stop proof")
-  writeFileSync(join(ticket, "external-work-stopped"), JSON.stringify({ proof: "fixture-client-group-terminated" }))
+  assert.ok(stopped, "the fixture must confirm client termination")
   await second
   assert.equal(enteredWhileAlive, false)
   assert.equal(entered, true)
+  const proof = JSON.parse(readFileSync(join(ticket, "external-work-stopped"), "utf8"))
+  assert.equal(proof.proof, "local-owner-and-clients-exited")
 })
 
 

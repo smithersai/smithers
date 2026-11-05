@@ -3,11 +3,11 @@ import { spawn, spawnSync } from "node:child_process"
 import { once } from "node:events"
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { createServer } from "node:net"
-import { tmpdir } from "node:os"
+import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { test } from "node:test"
-import { acquireLock, claimDecision, finishTicket, groupSnapshot, killPublisher, publicationStopped } from "./lock.mjs"
+import { acquireLock, claimDecision, finishTicket, groupSnapshot, killPublisher, processStartTime, publicationStopped } from "./lock.mjs"
 
 const moduleUrl = new URL("./lock.mjs", import.meta.url).href
 function fixture(t) {
@@ -115,6 +115,27 @@ test("a remote publication needs a termination receipt even after its deadline",
   assert.equal(publicationStopped(directory, Date.now() + 1e9), false)
   writeFileSync(join(directory, "publisher-stopped"), "confirmed")
   assert.equal(publicationStopped(directory, Date.now() + 1e9), true)
+})
+
+for (const scenario of [
+  { name: "live local owner", ownerPid: process.pid, clients: [], stopped: false },
+  { name: "remote owner", host: "remote.fixture.invalid", ownerPid: 2147483647, clients: [], stopped: false },
+  { name: "dead local owner with a live client", ownerPid: 2147483647, clients: [{ pid: process.pid }], stopped: false },
+  { name: "dead local owner with a reused client pid", ownerPid: 2147483647, clients: [{ pid: process.pid, startTime: "previous process start" }], stopped: true },
+  { name: "reused owner pid with dead clients", ownerPid: process.pid, ownerStartTime: "previous process start", clients: [{ pid: 2147483647 }], stopped: true },
+  { name: "dead owner with an unrecorded client pid", ownerPid: 2147483647, clients: [{ state: "starting" }], stopped: false }
+]) test(`external work recovery: ${scenario.name}`, (t) => {
+  const { directory } = fixture(t)
+  const record = { host: hostname(), ...scenario }
+  writeFileSync(join(directory, "external-work.json"), JSON.stringify(record))
+  const logs = []
+  assert.equal(publicationStopped(directory, Date.now(), line => logs.push(line)), scenario.stopped)
+  assert.equal(existsSync(join(directory, "external-work-stopped")), scenario.stopped)
+  if (scenario.stopped) {
+    assert.match(logs.join("\n"), /owner=.*clients=.*stopped/)
+    const recovered = JSON.parse(readFileSync(join(directory, "external-work.json"), "utf8"))
+    assert.ok(recovered.clients.every(client => client.state === "stopped"))
+  }
 })
 
 test("process-name-only or missing process observations never prove publication stopped", () => {
@@ -312,4 +333,13 @@ for (const reason of ["deadline", "cancellation", "unconfirmed termination"]) te
   assert.equal(proof.proof, "local-group-probe", "the parent must confirm termination independently")
   const next = await acquireLock(lock, { timeoutMs: 1000 })
   next.check(); await next()
+})
+
+test("a process start identity does not change with the reader's time zone", (t) => {
+  const zone = process.env.TZ
+  t.after(() => { if (zone === undefined) delete process.env.TZ; else process.env.TZ = zone })
+  process.env.TZ = "America/Los_Angeles"
+  const here = processStartTime(process.pid)
+  process.env.TZ = "Asia/Tokyo"
+  assert.equal(processStartTime(process.pid), here)
 })

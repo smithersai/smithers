@@ -379,6 +379,15 @@ metadata reads and exports use the remaining timeout alongside the farm clients'
 cancellation signal. If hashing times out before the diff is known, incomplete
 evidence retains the pinned head. Neither entrypoint prepares source.
 
+Pg admission records each local farm client's PID and process start time in
+`external-work.json`. Client exit, including failure or interruption, marks it
+stopped; after every client exits, `external-work-stopped` is written before
+release. Remote boxes have their own lifetime. If a gate is killed, a waiter
+on the same host reclaims it only after the owner and all recorded client
+processes are dead, checking recorded start times against PID reuse. Recovery
+writes the stop receipt and logs owner PID, client count and proof. A live owner,
+a surviving client, an unknown process identity or a remote host retains admission.
+
 
 ## Implemented: workspace and landing lifecycle
 
