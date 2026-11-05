@@ -1,11 +1,19 @@
 import { NodeCrypto } from "@effect/platform-node"
-import { ApprovalAuthority, ControlRuntime } from "@smthrs/control"
+import { NodeServices } from "@effect/platform-node"
+import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
+import { ApprovalAuthority, Control, ControlRuntime } from "@smthrs/control"
 import { PersistenceError, Unauthorized } from "@smthrs/control/ControlError"
-import { Effect } from "effect"
+import { Action, Flow, Interpreter } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { NodeRuntime } from "@smthrs/platform-node"
+import * as Executable from "@smthrs/registry/Executable"
+import { Effect, Layer, Schema, Stream } from "effect"
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
+import { DatabaseSync } from "node:sqlite"
 import { afterAll, describe, expect, it } from "vitest"
+import * as Application from "../src/Application.ts"
 import * as Bridge from "../src/cli/ControlBridge.ts"
 import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import { targetsInstall } from "../src/internal/backend/Destination.ts"
@@ -222,4 +230,150 @@ it("#4247 pages signal delivery receipts across restart without reading answer p
     ))._tag
   )
     .toBe("/control/InvalidInput")
+})
+
+it("#4246 resolves a persisted child execution to the operator's control run", async () => {
+  const root = join(home, "execution-correlation")
+  const engine = NodeControl.engineDurable(root)
+  const runId = await Effect.runPromise(
+    Effect.gen(function*() {
+      const runtime = yield* ControlRuntime.ControlRuntime
+      const { card } = yield* runtime.plan({ flowId: "system/test", input: {} })
+      yield* runtime.resolveApproval(yield* runtime.lookupApproval(card.approval.target), "approved", operator, "once")
+      const launched = yield* runtime.launch(card.planId, card.digest, card.envelope)
+      if (launched._tag !== "Started") throw new Error("expected launch")
+      return launched.run.runId
+    }).pipe(Effect.provide(engine.runtime), Effect.scoped)
+  )
+  await Effect.runPromise(Effect.void.pipe(
+    Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
+    Effect.provide(NodeServices.layer),
+    Effect.provide(NodeCrypto.layer)
+  ))
+  const db = new DatabaseSync(join(root, ".flows", "engine.db"))
+  try {
+    // Deliberately corrupt ancestry exercises refusal of historical damaged rows.
+    db.exec("PRAGMA foreign_keys = OFF")
+    const insert = db.prepare(
+      "INSERT INTO flows_runs (run_id, status, created_at_ms, state_json, parent_run_id, lineage_id, round_ordinal) VALUES (?, 'completed', 1, ?, ?, ?, ?)"
+    )
+    const state = JSON.stringify({ version: 1, flowName: "body", payload: {} })
+    insert.run(runId, state, null, runId, 0)
+    insert.run("body-execution", state, runId, "body-execution", 0)
+    insert.run("nested-execution", state, "body-execution", "nested-execution", 0)
+    insert.run("later-round", state, null, "nested-execution", 1)
+    insert.run("unrelated", state, null, "unrelated", 0)
+    insert.run("missing-parent", state, "missing", "missing-parent", 0)
+    insert.run("cycle-a", state, "cycle-b", "cycle-a", 0)
+    insert.run("cycle-b", state, "cycle-a", "cycle-b", 0)
+    insert.run(
+      "spawned",
+      JSON.stringify({ version: 1, flowName: "body", payload: "x".repeat(17 * 1024 * 1024) }),
+      null,
+      "spawned",
+      0
+    )
+    db.prepare("INSERT INTO flows_run_parents (child_id, parent_id, seq) VALUES (?, ?, ?)").run("spawned", runId, 1)
+    for (let depth = 0; depth < 130; depth++) {
+      insert.run(`deep-${depth}`, state, depth === 129 ? runId : `deep-${depth + 1}`, `deep-${depth}`, 0)
+    }
+  } finally {
+    db.close()
+  }
+  for (const execution of [runId, "nested-execution", "later-round", "spawned"]) {
+    let output = ""
+    const codes: number[] = []
+    await createRunsCli({ environment }).serve(["show", execution, "--root", root, "--json"], {
+      stdout: (text) => {
+        output += text
+      },
+      exit: (code) => {
+        codes.push(code)
+      }
+    })
+    expect(codes.every((code) => code === 0), output).toBe(true)
+    expect(JSON.parse(output)).toMatchObject({ runId, flowId: "system/test" })
+  }
+  for (const execution of ["unrelated", "missing-parent", "cycle-a", "deep-0"]) {
+    expect(
+      await Bridge.read(Bridge.resolveRunId(execution, { root, quiet: true }, { environment }), { root, quiet: true }, {
+        environment
+      })
+    ).toBe(execution)
+  }
+})
+
+it("#4246 exposes the owning run inside a real module action", async () => {
+  const root = join(home, "action-correlation")
+  mkdirSync(join(root, ".smithers", "flows", "correlation"), { recursive: true })
+  writeFileSync(
+    join(root, ".smithers", "flows", "correlation", "flow.ts"),
+    `import { Flow } from "@smthrs/flow"; import { Node } from "@smthrs/plan"; import { Schema } from "effect";
+    export default Flow.make("correlation", { description: "Observe the owning run.", capabilities: [], effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, payload: {}, success: Schema.String, body: Node.capture({}, () => Node.succeed("identity")) });`
+  )
+  const Identity = Action.make("correlation/Identity", { payload: {}, success: Schema.String })
+  const observed: Array<string | undefined> = []
+  const Child = Flow.make("correlation/child", {
+    payload: {},
+    success: Schema.String,
+    body: Node.capture({}, () => Identity.call({}))
+  })
+  const Main = Flow.make("correlation", {
+    description: "Observe the owning run.",
+    capabilities: [],
+    effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" },
+    payload: {},
+    success: Schema.String,
+    body: Node.capture({}, () => Child.to({}))
+  })
+  const modules = Executable.layer({
+    delegates: [],
+    load: () =>
+      Effect.succeed({
+        default: Main,
+        layer: Layer.mergeAll(
+          Interpreter.layer(Child),
+          Identity.toLayer(() =>
+            Effect.gen(function*() {
+              const runId = yield* ControlRuntime.CurrentRunId
+              observed.push(runId)
+              return runId ?? "missing"
+            })
+          )
+        )
+      })
+  }).pipe(Layer.orDie)
+  const registry = NodeControl.layerRegistry(root)
+  const engine = NodeControl.engineDurable(root, registry)
+  const executor = NodeControl.layerExecutor(registry, engine, root, {
+    evaluator: ScriptedJudge.layerAll,
+    environment,
+    modules
+  })
+  const receipt = await Effect.runPromise(
+    Effect.gen(function*() {
+      const control = yield* Control.Control
+      const plan = yield* control.plan({ flowId: "correlation", input: {} })
+      yield* control.approve(plan.approval)
+      const receipt = yield* control.run({
+        _tag: "Plan",
+        planId: plan.planId,
+        digest: plan.digest,
+        envelope: plan.envelope,
+        idempotencyKey: "identity"
+      })
+      if (receipt._tag !== "Accepted" || receipt.runId === undefined) throw new Error("expected launch")
+      const events = yield* control.watch({ runId: receipt.runId, follow: true }).pipe(
+        Stream.takeUntil((event) => event.kind === "control.run.completed" || event.kind === "control.run.failed"),
+        Stream.runCollect
+      )
+      expect(events.at(-1)?.kind).toBe("control.run.completed")
+      return receipt
+    }).pipe(
+      Effect.provide(Application.layer({ root }, registry, engine, executor) as Layer.Layer<Control.Control>),
+      Effect.scoped
+    )
+  )
+  expect(observed).toEqual([receipt.runId])
+  expect(await Effect.runPromise(ControlRuntime.CurrentRunId)).toBeUndefined()
 })

@@ -124,6 +124,7 @@ import * as HostLanguageServers from "./HostLanguageServers.ts"
 import * as LocalControl from "./LocalControl.ts"
 import * as ModuleAdmission from "./ModuleAdmission.ts"
 import * as ModuleAuthority from "./ModuleAuthority.ts"
+import { ModuleOwner } from "./ModuleOwner.ts"
 import {
   askPolicy,
   cellLimits,
@@ -1873,7 +1874,20 @@ export const make = (
           Layer.provide(Layer.succeedContext(memoryServices)),
           Layer.provide(QuickJSSandbox.layer.pipe(Layer.orDie)),
           Layer.provide(Layer.succeed(Steering.Source, authority!.steering)),
-          Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, authority!.runtime))
+          Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, {
+            ...authority!.runtime,
+            register: (flow, handler, options) =>
+              authority!.runtime.register(
+                flow,
+                (payload, executionId) =>
+                  Effect.flatMap(Effect.serviceOption(ModuleOwner), (owner) =>
+                    handler(payload, executionId).pipe(Effect.provideService(
+                      ControlRuntime.CurrentRunId,
+                      Option.isSome(owner) ? owner.value.rootId : undefined
+                    ))),
+                options
+              )
+          }))
         ))
         const catalog = registrations === undefined ? undefined : Context.get(registrations, Executable.Catalog)
         // Product hosts must establish their pinned source before any run

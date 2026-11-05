@@ -437,8 +437,9 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
             return Bridge.read(
               Effect.gen(function*() {
                 const control = yield* Control.Control
-                const page = yield* control.list({ _tag: "runs", filters: { runId: c.args.run } })
-                const run = page._tag === "runs" ? page.items.find((row) => row.runId === c.args.run) : undefined
+                const runId = yield* Bridge.resolveRunId(c.args.run, c.options, runtime)
+                const page = yield* control.list({ _tag: "runs", filters: { runId } })
+                const run = page._tag === "runs" ? page.items.find((row) => row.runId === runId) : undefined
                 if (run === undefined) throw unknownRun(c.args.run)
                 const stream = control.watch({ runId: run.runId, follow: false })
                 if (c.options.field !== undefined) {

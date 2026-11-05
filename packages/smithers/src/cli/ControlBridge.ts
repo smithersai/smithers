@@ -25,6 +25,7 @@ import * as GatewayHistory from "../history/GatewayHistory.ts"
 import * as HistoryWorkspace from "../history/History.ts"
 import * as CommandStatus from "../internal/CommandStatus.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
+import * as NativeExecutionRead from "../internal/NativeExecutionRead.ts"
 import * as Telemetry from "../internal/Telemetry.ts"
 import * as NodeControl from "../NodeControl.ts"
 import { layerTriggerScheduler } from "../operator/Triggers.ts"
@@ -394,6 +395,29 @@ export const read = async <A, E>(
     ),
     runtime
   )
+
+/** Resolve a native execution only through this host's persisted parent links.
+ * Visibility is checked for the resulting control root before it is returned.
+ * Remote hosts retain their own identifier and authorization semantics.
+ * @category queries
+ * @since 1.0.0
+ */
+export const resolveRunId = (id: string, options: ConnectionOptions, runtime: Runtime = {}) =>
+  Effect.gen(function*() {
+    const control = yield* Control.Control
+    const visible = (runId: string) =>
+      control.list({ _tag: "runs", filters: { runId }, limit: 1 }).pipe(
+        Effect.map((page) => page._tag === "runs" && page.items.some((run) => run.runId === runId))
+      )
+    if (yield* visible(id)) return id
+    const config = configuration(options, runtime)
+    if (config.remote !== undefined) return id
+    const filename = config.databases?.engine ?? NodeControl.executionDatabasePath(config.stateRoot ?? config.root)
+    if (!DatabaseLocation.exists(filename)) return id
+    return (yield* NativeExecutionRead.controlRunId(id, visible).pipe(
+      Effect.provide(NodeDatabase.layer({ filename, readOnly: true }))
+    )) ?? id
+  })
 
 /** Inspect the local durable receipt ledger after the control visibility check.
  * Remote transports must expose the same query before they can offer this verb.

@@ -804,6 +804,17 @@ export class ControlRuntime extends Context.Service<ControlRuntime, Service>()(
 ) {}
 
 /**
+ * The operator-visible run owning the current native flow/action. Hosts restore
+ * it from persisted ancestry on every handler entry, including resumed children.
+ * Undefined outside a control-owned execution; attribution is never authority.
+ * @category context
+ * @since 1.0.0
+ */
+export const CurrentRunId = Context.Reference<string | undefined>("/control/CurrentRunId", {
+  defaultValue: () => undefined
+})
+
+/**
  * Constructs a runtime service from an implementation record.
  *
  * @category constructors
