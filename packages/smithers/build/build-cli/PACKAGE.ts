@@ -112,7 +112,12 @@ const test = Smithers.Vitest({
 const lint = Smithers.EsLint({
   sources: [sources, javascript, examples],
   deps: [],
-  configs: [Smithers.file("eslint.config.js"), Smithers.file("tsconfig.lint.json"), rootJSDocConfig, rootInvariantsConfig],
+  configs: [
+    Smithers.file("eslint.config.js"),
+    Smithers.file("tsconfig.lint.json"),
+    rootJSDocConfig,
+    rootInvariantsConfig
+  ],
   maxWarnings: 0,
   fix: false,
   cwd
