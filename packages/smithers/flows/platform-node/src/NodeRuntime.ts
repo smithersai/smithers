@@ -10,12 +10,11 @@
  */
 
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
-import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as Database from "@smthrs/database/node/NodeDatabase"
 import * as Runtime from "@smthrs/flows/Runtime"
-import { Context, Effect, FileSystem, Layer } from "effect"
-import { SqlClient } from "effect/sql/SqlClient"
-import { basename, dirname, join } from "node:path"
+import { Layer } from "effect"
+import type { SqlClient } from "effect/sql/SqlClient"
+import { publishFreshDatabaseLayer } from "./internal/DatabasePublication.ts"
 import * as NativeRuntime from "./NativeRuntime.ts"
 import * as Host from "./NodeHost.ts"
 
@@ -39,62 +38,8 @@ export const publishFreshDatabase = <A, E>(
   filename: string,
   database: (filename: string) => Layer.Layer<SqlClient>,
   initialize: Layer.Layer<A, E, SqlClient>
-): Layer.Layer<SqlClient> => {
-  const open = (file: string) =>
-    database(file).pipe(
-      Layer.tap((context) => {
-        const sql = Context.get(context, SqlClient)
-        // A fresh scope/memo map on every writer attempt also closes any stores
-        // that registered finalizers before a failed initialization.
-        return DurableWriter.make(sql).write(
-          Effect.scoped(Layer.build(initialize)).pipe(Effect.provideContext(context))
-        )
-      }),
-      Layer.orDie
-    )
-  return Layer.suspend(() =>
-    Layer.unwrap(
-      Effect.gen(function*() {
-        if (
-          Database.postgresLocation(filename) !== undefined || filename === "" ||
-          filename === ":memory:" || filename.startsWith("file:")
-        ) return open(filename)
-        const fs = yield* FileSystem.FileSystem
-        if (yield* fs.exists(filename)) return open(filename)
-        yield* fs.makeDirectory(dirname(filename), { recursive: true, mode: 0o700 })
-        yield* Effect.scoped(Effect.gen(function*() {
-          const directory = yield* fs.makeTempDirectoryScoped({
-            directory: dirname(filename),
-            prefix: `.${basename(filename)}.initializing-`
-          })
-          const staged = join(directory, "store.db")
-          // No SQL handle or WAL sidecar may survive publication under a new name.
-          yield* Effect.scoped(Layer.build(open(staged)))
-          yield* Effect.scoped(Effect.gen(function*() {
-            const file = yield* fs.open(staged, { flag: "r" })
-            yield* file.sync
-          }))
-          yield* fs.link(staged, filename).pipe(Effect.catch((error) =>
-            error.reason._tag === "AlreadyExists"
-              ? Effect.gen(function*() {
-                // A dangling symlink is not a competing, complete store. Never
-                // fall through to an adapter that would create its target in place.
-                if (!(yield* fs.exists(filename))) return yield* Effect.fail(error)
-              })
-              : Effect.fail(error)
-          ))
-          if (process.platform !== "win32") {
-            yield* Effect.scoped(Effect.gen(function*() {
-              const directory = yield* fs.open(dirname(filename), { flag: "r" })
-              yield* directory.sync
-            }))
-          }
-        }))
-        return open(filename)
-      }).pipe(Effect.provide(NodeFileSystem.layer), Effect.orDie)
-    )
-  )
-}
+): Layer.Layer<SqlClient> =>
+  publishFreshDatabaseLayer(filename, database, initialize, process.platform).pipe(Layer.provide(NodeFileSystem.layer))
 
 const runtime = NativeRuntime.make({
   name: "NodeRuntime",
