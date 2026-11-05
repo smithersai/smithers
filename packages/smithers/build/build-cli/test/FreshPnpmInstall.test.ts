@@ -1,3 +1,4 @@
+import { ProcessSandbox } from "@smthrs/platform-node"
 import * as Exec from "@smthrs/targets/Exec"
 import * as Manager from "@smthrs/targets/PackageManager"
 import * as Runtime from "@smthrs/targets/Runtime"
@@ -258,7 +259,10 @@ const StoreProbe = Target.make("B17.PnpmStoreProbe", {
 })
 
 const storeProbe = async (root: string, marker?: string) => {
-  const pnpm = await Fs.realpath((await execFile("sh", ["-c", "command -v pnpm"])).stdout.trim())
+  // Match the host's admitted program, including pnpm/action-setup's shell shim.
+  // The alias itself need not be mounted inside an action's sandbox.
+  const pnpm = ProcessSandbox.launcher("pnpm", process.env.PATH, [], root, ProcessSandbox.host()).program
+  expect(Path.isAbsolute(pnpm)).toBe(true)
   await write(
     root,
     "probe.cjs",
@@ -268,7 +272,7 @@ const fs = require("node:fs")
 const path = require("node:path")
 const { execFileSync } = require("node:child_process")
 // Use the real selected manager; the sandbox intentionally hides ungranted PATH aliases.
-const store = execFileSync(process.execPath, [${JSON.stringify(pnpm)}, "store", "path"], { encoding: "utf8" }).trim()
+const store = execFileSync(${JSON.stringify(pnpm)}, ["store", "path"], { encoding: "utf8" }).trim()
 assert.ok(store.startsWith(${JSON.stringify(Path.join(root, ".flows/store/pnpm") + Path.sep)}), store)
 assert.equal(process.env.pnpm_config_verify_deps_before_run, "false")
 assert.equal(process.env.B17_DECLARED_ENV, ${JSON.stringify(marker)})
