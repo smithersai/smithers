@@ -41,6 +41,8 @@ matrix script retains its existing password support and disposable-server path.
 
 ## The shortest real use
 
+Declaration paths use `Options.declarationRoot`, or the injected `Workspace` root from `@smthrs/kernel`. Without either, journal records omit declaration paths; the store never reads a process working directory.
+
 `EngineStore.layer` is the composition. It provides `FlowRuntime`, the service
 that executes a flow durably, and the snapshot boundary the engine measures
 each step against:

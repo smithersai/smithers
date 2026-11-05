@@ -86,28 +86,16 @@ export const relativePath = EngineEvent.relativePath
 const asJson = (value: unknown): typeof Schema.Json.Type => JSON.parse(JSON.stringify(value))
 
 /**
- * The directory declaration paths are recorded relative to.
- *
- * `process` is absent in a worker and in a browser, and a host that cannot
- * name its own working directory records no declaration path at all rather
- * than one a reader would have to guess the meaning of. `host` is the global
- * object by default and is named here so both answers are reachable without
- * taking the real one away from the runtime. Its optional shape requires no
- * Node ambient type declarations.
+ * The directory declaration paths are recorded relative to, supplied by the
+ * host's workspace configuration. A host with no root records no path.
  *
  * @since 0.1.0
  * @category accessors
  */
 export const hostRoot = (
   explicit: string | undefined,
-  // Read through Reflect so the default needs no Node ambient declarations.
-  host: { readonly process?: { readonly cwd?: () => string } | undefined } = {
-    process: Reflect.get(globalThis, "process")
-  }
-): string | undefined => {
-  if (explicit !== undefined) return explicit
-  return typeof host.process?.cwd === "function" ? host.process.cwd() : undefined
-}
+  workspace?: { readonly root: string } | undefined
+): string | undefined => explicit ?? workspace?.root
 
 const summary = (scope: Scope, node: FlowRuntime.NodeSummary) => {
   const path = node.declaredAt === undefined ? undefined : relativePath(scope.root, node.declaredAt.path)
