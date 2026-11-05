@@ -87,7 +87,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -222,7 +222,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -357,7 +357,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -492,7 +492,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -627,7 +627,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -762,7 +762,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -897,7 +897,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -1032,7 +1032,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2216,7 +2216,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2360,7 +2360,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2504,7 +2504,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2648,7 +2648,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2792,7 +2792,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -2936,7 +2936,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -3080,7 +3080,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
@@ -3224,7 +3224,7 @@ jobs:
       - name: "Install system packages"
         run: |
           if command -v apt-get >/dev/null 2>&1; then
-            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'openssh-server'
+            sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends 'bubblewrap' 'ffmpeg' 'openssh-server'
             if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
               sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
             fi
