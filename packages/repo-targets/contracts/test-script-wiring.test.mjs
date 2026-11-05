@@ -124,8 +124,26 @@ describe("test-file ownership", () => {
     for (const label of ["//.smithers/flows:issueClaim", "//.smithers/flows:evidenceBindings", "//.smithers/flows:releaseRehearsal", "//.smithers/flows:releaseVersion"]) {
       assert.ok(scripts.includes(`smthrs test '${label}'`), label)
     }
-    const test = workflow.jobs.test.steps.flatMap((step) => step.run ? [step.run] : []).join("\n")
-    assert.match(test, /smthrs ci '\/\/packages\/\.\.\.'/)
+    // Package suites now belong to eight disjoint, required workspace jobs.
+    // Check the emitted selectors against the real target inventory so losing
+    // a package, duplicating it or making its owner advisory still fails here.
+    const shards = Object.entries(workflow.jobs).filter(([id]) => /^test(?:-\d+)?$/.test(id))
+    assert.equal(shards.length, 8)
+    const selected = shards.flatMap(([id, job]) => {
+      assert.notEqual(job["continue-on-error"], true, id)
+      const steps = job.steps.filter((step) => step.name === "Workspace targets")
+      assert.equal(steps.length, 1, id)
+      assert.match(steps[0].run, /^pnpm exec smthrs ci /, id)
+      const patterns = [...steps[0].run.matchAll(/'(\/\/packages\/[^']+:\*)'/g)].map((match) => match[1])
+      assert.ok(patterns.length > 0, id)
+      return patterns
+    })
+    const inventory = JSON.parse(readFileSync(join(root, ".smithers/target-index.json"), "utf8"))
+    const expected = [...new Set(inventory.filter((row) => row.package.startsWith("packages/") &&
+      row.kinds.some((kind) => ["build", "test", "lint", "docs"].includes(kind)))
+      .map((row) => `//${row.package}:*`))].sort()
+    assert.ok(expected.includes("//packages/repo-targets:*"))
+    assert.deepEqual(selected.sort(), expected, "every package needs exactly one required CI owner")
     assert.notEqual(workflow.jobs.repository["continue-on-error"], true)
   })
 })
