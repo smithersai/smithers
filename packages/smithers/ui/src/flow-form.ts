@@ -59,6 +59,8 @@ export type OptionProvider = (typeof OPTION_PROVIDERS)[number]
 export interface FieldOption {
   readonly value: string
   readonly label: string
+  /** The schema literal behind a select value; preserves booleans and numeric/string collisions. */
+  readonly literal?: unknown
   /** The human cannot pick it; `reason` says why (not installed, no credential). */
   readonly disabled?: boolean
   readonly reason?: string
@@ -162,12 +164,14 @@ const unwrapOptional = (ast: SchemaAST.AST): { readonly ast: SchemaAST.AST; read
 }
 
 const literalOptions = (ast: SchemaAST.AST): ReadonlyArray<FieldOption> | undefined => {
-  if (ast._tag === "Literal") return [{ value: String(ast.literal), label: String(ast.literal) }]
-  if (ast._tag === "Union" && ast.types.length > 0 && ast.types.every((member) => member._tag === "Literal")) {
-    return ast.types.map((member) => {
-      const literal = String((member as SchemaAST.Literal).literal)
-      return { value: literal, label: literal }
-    })
+  const members = ast._tag === "Literal" ? [ast] : ast._tag === "Union" ? ast.types : []
+  if (members.length > 0 && members.every(member => member._tag === "Literal")) {
+    const values = members.map(member => (member as SchemaAST.Literal).literal)
+    const labels = values.map(String)
+    const encode = labels.includes("") || new Set(labels).size !== labels.length
+    return values.map((literal, index) => ({
+      value: encode ? `__choice_${index}` : labels[index]!, label: encode && typeof literal === "string" ? JSON.stringify(literal) : labels[index]!, ...(encode ? { literal } : {})
+    }))
   }
   return undefined
 }
@@ -209,7 +213,7 @@ const formObject = (ast: SchemaAST.AST, payload: Readonly<Record<string, unknown
       const inner = unwrapOptional(signature.type).ast
       if (inner._tag === "Never") return false
       const literals = literalOptions(inner)
-      return literals === undefined || literals.some(option => option.value === String(value))
+      return literals === undefined || literals.some(option => "literal" in option ? Object.is(option.literal, value) : option.value === String(value))
     })
   )
 }
@@ -361,7 +365,9 @@ const inputShape = (input: Schema.Top, payload: Readonly<Record<string, unknown>
  * `assembleArgs` writes and every list grammar reads. Text that is not the
  * JSON an object field needs is the form's refusal, not the flow's problem.
  */
-const asProperty = (shape: PropertyShape | undefined, value: FieldValue, arrays: ArrayEncoding): { readonly value: unknown } | { readonly invalid: true } => {
+const asProperty = (shape: PropertyShape | undefined, value: FieldValue, arrays: ArrayEncoding, field: FormField): { readonly value: unknown } | { readonly invalid: true } => {
+  const option = field.options?.find(option => option.value === value)
+  if (option !== undefined && "literal" in option) return { value: option.literal }
   if (typeof value !== "string" || shape === undefined) return { value }
   if (shape.tag === "Arrays" && arrays === "words") return { value: value.trim() === "" ? [] : value.trim().split(/\s+/) }
   if (shape.ast._tag === "Literal" && String(shape.ast.literal) === value) return { value: shape.ast.literal }
@@ -415,6 +421,9 @@ export const submissionPayload = (
     const property = shape.get(field.name)
     const value = draft[field.name]
     if (value !== undefined) {
+      // A cleared optional JSON structure is absent; empty text remains a string answer.
+      if (value === "" && arrays === "json" && property?.optional &&
+        (property.tag === "Objects" || property.tag === "Arrays")) continue
       if (field.kind === "number") {
         if (String(value).trim() === "" && !field.required) continue
         const number = typeof value === "number" ? value : Number(String(value).trim())
@@ -422,7 +431,7 @@ export const submissionPayload = (
         payload[field.name] = number
         continue
       }
-      const converted = asProperty(property, value, arrays)
+      const converted = asProperty(property, value, arrays, field)
       if ("invalid" in converted) return { error: `${field.label} is not valid JSON. Fix it before submitting the form.` }
       payload[field.name] = converted.value
       continue
@@ -437,6 +446,10 @@ export const submissionPayload = (
 const coerce = (field: FormField, value: unknown, arrays: ArrayEncoding): FieldValue | undefined => {
   if (value === undefined || value === null) return undefined
   if (Array.isArray(value)) return arrays === "json" ? JSON.stringify(value) : value.map(String).join(" ")
+  if (field.kind === "select") {
+    const option = field.options?.find(option => "literal" in option && Object.is(option.literal, value))
+    if (option !== undefined) return option.value
+  }
   switch (field.kind) {
     case "number": {
       const number = typeof value === "number" ? value : Number(String(value).trim())
@@ -731,4 +744,61 @@ export const missingLabels = (fields: ReadonlyArray<FormField>, draft: FormDraft
 export const fileSubmission = (input: Schema.Top, fields: ReadonlyArray<FormField>, given: Readonly<Record<string, unknown>>, draft: FormDraft): Submission => {
   const missing = missingLabels(fields, draft)
   return missing.length > 0 ? { error: `Needs: ${missing.join(", ")}` } : submissionPayload(input, fields, given, draft, "json")
+}
+
+/** A host-authorized projection of one durable HumanTask wait. A token is an address, never permission. */
+export interface HumanTaskWait {
+  readonly token: string
+  /** Persisted host receipt revision. Advance on each submission result, including repeated failures. */
+  readonly revision: string | number
+  readonly request: {
+    readonly kind: "ask" | "confirm" | "select" | "json"
+    readonly options?: ReadonlyArray<string> | undefined
+    readonly schema?: unknown
+  }
+  readonly state: "requested" | "submitting" | "failed-submission" | "answered" | "rejected" | "expired" | "cancelled" | "unavailable"
+  readonly canAnswer: boolean
+  readonly value?: unknown
+  readonly error?: string
+  /** Supply HumanTask.validate(value, request) at the host boundary; never duplicate its validation rules. */
+  readonly validate: (value: unknown) => string | undefined
+}
+
+/** Dispatch through the host's authorized durable answer flow. */
+export interface HumanTaskAnswer {
+  readonly token: string
+  readonly value: unknown
+}
+
+/** Derive the shared form from the durable question, keeping JSON values typed. */
+export const humanTaskForm = (wait: HumanTaskWait) => {
+  const request = wait.request
+  const schema = request.schema as Record<string, unknown> | undefined
+  const object = request.kind === "json" && schema !== null && typeof schema === "object" &&
+    schema.type === "object" && schema.enum === undefined && schema.nullable !== true && schema.properties !== null && typeof schema.properties === "object" &&
+    Object.keys(schema.properties).length > 0 && Object.values(schema.properties).every(property => {
+      if (property === null || typeof property !== "object") return false
+      const field = property as Record<string, unknown>
+      return field.nullable !== true && field.type !== "null" &&
+        (field.type !== undefined || Array.isArray(field.enum)) &&
+        (!Array.isArray(field.enum) || field.enum.every(value => value !== null && typeof value !== "object"))
+    })
+  const raw = request.kind === "json" && !object
+  const answerSchema = request.kind === "confirm" ? { enum: [true, false] } :
+    request.kind === "select" ? { enum: request.options ?? [] } : { type: "string" }
+  return {
+    schema: request.kind === "select" && !request.options?.length ? undefined :
+      object ? schema : { type: "object", properties: { answer: answerSchema }, required: ["answer"] },
+    values: object ? wait.value as Readonly<Record<string, unknown>> | undefined :
+      wait.value === undefined ? undefined : { answer: raw ? JSON.stringify(wait.value) : wait.value },
+    answer: (payload: Readonly<Record<string, unknown>>): { value: unknown } | { error: string } => {
+      let value: unknown = object ? payload : payload.answer
+      if (raw) {
+        try { value = JSON.parse(String(value)) }
+        catch { return { error: "Answer is not valid JSON." } }
+      }
+      const error = wait.validate(value)
+      return error === undefined ? { value } : { error }
+    }
+  }
 }

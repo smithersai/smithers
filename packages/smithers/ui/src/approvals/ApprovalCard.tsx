@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { useId, useState, type ComponentProps, type ReactNode } from "react";
+import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { cn } from "../cn";
 import { useInjectUiCss } from "../styles";
 import { safeHref } from "../internal/safeHref";
@@ -25,6 +25,14 @@ export type ApprovalResource = {
 export type ApprovalCardProps = Omit<ComponentProps<"div">, "children" | "title"> & {
   title: ReactNode;
   state: ApprovalState;
+  /** The host authorizes the caller; the durable wait token only identifies the question. */
+  wait?: {
+    readonly token: string;
+    readonly canAnswer: boolean;
+    /** Persisted host receipt revision, including each failed submission. */
+    readonly revision: string | number;
+  };
+  onAnswer?: (answer: { readonly token: string; readonly value: boolean; readonly note?: string }) => void;
   summary?: ReactNode;
   risk?: ApprovalRiskLevel;
   proposedActions?: readonly ReactNode[];
@@ -44,9 +52,15 @@ export type ApprovalCardProps = Omit<ComponentProps<"div">, "children" | "title"
  * or uncontrolled, or a custom noteEditor slot), and approve/deny actions
  * wired through the Confirmation state machine.
  */
-export function ApprovalCard({
+export function ApprovalCard(props: ApprovalCardProps) {
+  return <ApprovalCardContent key={props.wait?.token} {...props} />;
+}
+
+function ApprovalCardContent({
   title,
-  state,
+  state: hostState,
+  wait,
+  onAnswer,
   summary,
   risk,
   proposedActions,
@@ -62,6 +76,24 @@ export function ApprovalCard({
   ...props
 }: ApprovalCardProps) {
   useInjectUiCss();
+  const [decision, setDecision] = useState<"approve" | "deny" | undefined>();
+  const dispatch = useRef({ state: hostState, revision: wait?.revision, sent: false });
+  if (dispatch.current.state !== hostState || !Object.is(dispatch.current.revision, wait?.revision)) {
+    dispatch.current = { state: hostState, revision: wait?.revision, sent: false };
+    if (decision !== undefined) setDecision(undefined);
+  }
+  const state = decision === undefined ? hostState : decision === "approve" ? "approving" : "denying";
+  const allowed = wait === undefined || (wait.canAnswer && wait.token !== "" && onAnswer !== undefined);
+  const decide = (next: "approve" | "deny") => {
+    if (!allowed || (hostState !== "requested" && hostState !== "failed-submission") || dispatch.current.sent) return;
+    if (wait === undefined) {
+      (next === "approve" ? onApprove : onDeny)?.(note === "" ? undefined : note);
+      return;
+    }
+    dispatch.current.sent = true;
+    setDecision(next);
+    onAnswer!({ token: wait.token, value: next === "approve", ...(note === "" ? {} : { note }) });
+  };
   const [uncontrolledNote, setUncontrolledNote] = useState(defaultNote ?? "");
   const isNoteControlled = controlledNote !== undefined;
   const note = isNoteControlled ? controlledNote : uncontrolledNote;
@@ -96,14 +128,14 @@ export function ApprovalCard({
           {noteEditor !== undefined ? (
             noteEditor
           ) : showNote ? (
-            <ApprovalNote value={note} onValueChange={setNote} />
+            <ApprovalNote value={note} onValueChange={setNote} readOnly={state !== "requested" && state !== "failed-submission" || !allowed} />
           ) : null}
           {children}
         </ConfirmationRequest>
         {state === "requested" || state === "failed-submission" ? (
           <ConfirmationActions>
-            <ConfirmationAction decision="approve" onDecide={() => onApprove?.(note === "" ? undefined : note)} />
-            <ConfirmationAction decision="deny" onDecide={() => onDeny?.(note === "" ? undefined : note)} />
+            <ConfirmationAction decision="approve" disabled={!allowed} onDecide={() => decide("approve")} />
+            <ConfirmationAction decision="deny" disabled={!allowed} onDecide={() => decide("deny")} />
           </ConfirmationActions>
         ) : null}
         <ConfirmationAccepted />
