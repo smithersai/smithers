@@ -25,7 +25,6 @@ import { z } from "incur"
 import { randomUUID } from "node:crypto"
 import { link, mkdir, open, readdir, readFile, realpath, rename, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve, sep } from "node:path"
-import { pathToFileURL } from "node:url"
 import * as Presentation from "../cli/Presentation.ts"
 import * as CliError from "../CliError.ts"
 import type * as Environment from "../Environment.ts"
@@ -33,6 +32,7 @@ import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
 import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
 import * as Project from "../Project.ts"
 import * as EvaluationHost from "./EvaluationHost.ts"
+import * as LoadSuite from "./LoadSuite.ts"
 
 export { Host } from "./EvaluationHost.ts"
 
@@ -150,7 +150,7 @@ export const load = async (root: string, selector: string, runtime: RuntimeConfi
   runtime.signal?.throwIfAborted()
   let imported: unknown
   try {
-    imported = await import(pathToFileURL(file).href)
+    imported = await Effect.runPromise(LoadSuite.load(file))
   } catch {
     // The module's own error text is the author's code, not a sentence for
     // this command; running the file directly shows it.

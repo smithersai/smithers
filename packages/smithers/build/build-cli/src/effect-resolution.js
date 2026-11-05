@@ -73,6 +73,7 @@ const typescriptBootstrap = Symbol.for("smthrs/effect-resolution-typescript-boot
 const registration = Symbol.for("smthrs/effect-resolution-registration")
 const ownership = Symbol.for("smthrs/effect-resolution-ownership")
 const buildModuleParameter = "smithers-build-module"
+const admittedBuildModules = Symbol.for("smthrs/effect-resolution-build-modules")
 
 /**
  * This file's own URL with every query stripped.
@@ -234,7 +235,7 @@ const buildModuleBase = (url) => {
   const base = fileModuleBase(url)
   if (base === undefined) return undefined
   const parsed = new URL(url)
-  if (parsed.searchParams.get(buildModuleParameter) === "1") return base
+  if (parsed.searchParams.get(buildModuleParameter) === "1" || globalThis[admittedBuildModules]?.has(base)) return base
   const pathname = decodeURIComponent(new URL(base).pathname)
   // File flows and the registry's content-pinned load siblings are authored
   // ES modules too, even when their repository declares type: commonjs.
@@ -451,5 +452,10 @@ export const installEffectResolution = (packages = {}, options = {}) => {
 export const buildModuleUrl = (url) => {
   const marked = new URL(url)
   marked.searchParams.set(buildModuleParameter, "1")
+  // tsx resolves the query-free file before restoring its namespace and the
+  // admission marker. Keep the explicit admission visible to the inner format
+  // hook, including when another physical resolver copy installed that hook.
+  const base = fileModuleBase(marked.href)
+  if (base !== undefined) (globalThis[admittedBuildModules] ??= new Set()).add(base)
   return marked.href
 }
