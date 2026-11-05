@@ -444,7 +444,8 @@
     "@smthrs/platform-browser": "1.0.0-rc.16",
     "@smthrs/scorers": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
-    "string-width": "7.2.0"
+    "string-width": "7.2.0",
+    "@smthrs/platform-node": "workspace:*"
   },
   "peerDependencies": {
     "effect": "4.0.5",
@@ -463,7 +464,6 @@
     "@effect/language-service": "0.87.2",
     "@effect/vitest": "4.0.5",
     "@eslint/js": "9.39.5",
-    "@smthrs/platform-node": "1.0.0-rc.16",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",

@@ -57,7 +57,7 @@
       "dependencies": {
         "@effect/platform-bun": "4.0.5",
         "@effect/platform-node": "4.0.5",
-        "@pierre/diffs": "^1.3.6",
+        "@pierre/diffs": "1.5.2",
         "@smthrs/agent": "workspace:*",
         "@smthrs/build-cli": "workspace:*",
         "@smthrs/capability": "workspace:*",
@@ -226,8 +226,10 @@
         "@vitejs/plugin-react": "6.1.2",
         "alchemy": "2.0.0-beta.83",
         "esbuild": "0.28.2",
+        "fast-check": "4.9.0",
         "happy-dom": "20.13.2",
         "miniflare": "5.20261019.0-beta",
+        "minimatch": "10.2.6",
         "typescript": "^5.9.3",
         "vibelang": "0.0.8",
         "vibelang-unplugin": "0.0.8",
@@ -324,6 +326,7 @@
       },
       "devDependencies": {
         "@eslint/js": "9.39.5",
+        "@smthrs/testing": "workspace:*",
         "@smthrs/ui-styleguide": "workspace:*",
         "@types/react": "19.2.18",
         "@xterm/headless": "6.0.0",
@@ -388,6 +391,7 @@
         "@electric-sql/client": "1.5.28",
         "@eslint/js": "9.39.5",
         "@journeyapps/wa-sqlite": "1.7.2",
+        "@smthrs/database": "workspace:*",
         "@tanstack/browser-db-sqlite-persistence": "0.2.36",
         "@tanstack/db": "0.15.1",
         "@tanstack/db-sqlite-persistence-core": "0.4.11",
@@ -490,6 +494,7 @@
       "name": "@smthrs/repo-targets",
       "version": "0.0.0",
       "dependencies": {
+        "@effect/sql-pg": "4.0.5",
         "@smthrs/targets": "workspace:*",
         "effect": "4.0.5",
       },
@@ -996,8 +1001,10 @@
       "name": "@smthrs/model-host",
       "version": "1.0.0-rc.0",
       "dependencies": {
+        "@smthrs/agent": "workspace:*",
         "@smthrs/cli": "workspace:*",
         "@smthrs/crypto": "workspace:*",
+        "@smthrs/flow": "workspace:*",
         "@smthrs/kernel": "workspace:*",
         "@smthrs/memory": "workspace:*",
         "@smthrs/model": "workspace:*",
@@ -1008,6 +1015,9 @@
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@eslint/js": "9.39.5",
+        "@smthrs/engine": "workspace:*",
+        "@smthrs/plan": "workspace:*",
+        "@smthrs/platform-node": "workspace:*",
         "@types/bun": "1.4.4",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
@@ -2783,7 +2793,7 @@
         "@codemirror/view": "6.43.11",
         "@milkdown/crepe": "7.22.1",
         "@milkdown/kit": "7.22.1",
-        "@pierre/diffs": "^1.3.6",
+        "@pierre/diffs": "1.5.2",
         "@smthrs/ui": "workspace:*",
       },
       "devDependencies": {
@@ -2923,13 +2933,14 @@
         "@smthrs/model": "1.0.0-rc.16",
         "@smthrs/plan": "1.0.0-rc.16",
         "@smthrs/platform-browser": "1.0.0-rc.16",
+        "@smthrs/platform-node": "workspace:*",
         "@smthrs/scorers": "1.0.0-rc.16",
+        "string-width": "7.2.0",
       },
       "devDependencies": {
         "@effect/language-service": "0.87.2",
         "@effect/vitest": "4.0.5",
         "@eslint/js": "9.39.5",
-        "@smthrs/platform-node": "1.0.0-rc.16",
         "@types/node": "26.4.1",
         "@vitest/coverage-v8": "5.0.0",
         "dprint": "0.57.1",
@@ -3982,7 +3993,7 @@
 
     "@pagefind/windows-x64": ["@pagefind/windows-x64@1.5.2", "", { "os": "win32", "cpu": "x64" }, "sha512-Fa2Iyw7kaDRzGMfNYNUXNW2zbL5FQVDgSOcbDHdzBrDEdpqOqg8TcZ68F22ol6NJ9IGzvUdmeyZypLW5dyhqsg=="],
 
-    "@pierre/diffs": ["@pierre/diffs@1.3.6", "", { "dependencies": { "@pierre/theme": "2.0.0", "@pierre/theming": "1.0.1", "@shikijs/transformers": "4.4.3", "diff": "9.0.0", "hast-util-to-html": "9.0.5", "lru_map": "0.4.1", "shiki": "4.4.3" }, "peerDependencies": { "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0" } }, "sha512-a3woaW2QHy78JDxPJK0OJzwZUN4xoQLLIS/pceO8X6+L8gA5D682mP7/w3YxxEVRPXOaoe/p/RJ5Oj/3nrEzew=="],
+    "@pierre/diffs": ["@pierre/diffs@1.5.2", "", { "dependencies": { "@pierre/theme": "2.0.0", "@pierre/theming": "1.0.1", "@shikijs/transformers": "^3.0.0 || ^4.0.0", "diff": "9.0.0", "hast-util-to-html": "9.0.5", "lru_map": "0.4.1", "shiki": "^3.0.0 || ^4.0.0" }, "peerDependencies": { "react": "^18.3.1 || ^19.0.0", "react-dom": "^18.3.1 || ^19.0.0" }, "optionalPeers": ["react", "react-dom"] }, "sha512-QVxIWQEnNoko22k63maERzozd29+FtaUNpRrZiw603WMe5R1mFSED+jMtPkcVP3SDYS1DWg5K7sa7sJbr3xkNQ=="],
 
     "@pierre/theme": ["@pierre/theme@2.0.0", "", {}, "sha512-yNDd9GYLQl1mEUJR8AneJ5e4ohLIHQd/wZLWr4fagt78vS2RwwZNW530vVgHqXFAyFVcFlRmGUD5ramXH46OXw=="],
 
@@ -6878,7 +6889,6 @@
 
     "@smthrs/migrate/typescript": ["typescript@7.0.2", "", { "optionalDependencies": { "@typescript/typescript-aix-ppc64": "7.0.2", "@typescript/typescript-darwin-arm64": "7.0.2", "@typescript/typescript-darwin-x64": "7.0.2", "@typescript/typescript-freebsd-arm64": "7.0.2", "@typescript/typescript-freebsd-x64": "7.0.2", "@typescript/typescript-linux-arm": "7.0.2", "@typescript/typescript-linux-arm64": "7.0.2", "@typescript/typescript-linux-loong64": "7.0.2", "@typescript/typescript-linux-mips64el": "7.0.2", "@typescript/typescript-linux-ppc64": "7.0.2", "@typescript/typescript-linux-riscv64": "7.0.2", "@typescript/typescript-linux-s390x": "7.0.2", "@typescript/typescript-linux-x64": "7.0.2", "@typescript/typescript-netbsd-arm64": "7.0.2", "@typescript/typescript-netbsd-x64": "7.0.2", "@typescript/typescript-openbsd-arm64": "7.0.2", "@typescript/typescript-openbsd-x64": "7.0.2", "@typescript/typescript-sunos-x64": "7.0.2", "@typescript/typescript-win32-arm64": "7.0.2", "@typescript/typescript-win32-x64": "7.0.2" }, "bin": { "tsc": "bin/tsc" } }, "sha512-8FYau96o3NKOhbjKi/qNvG/W5jhzxkbdm5sj9AbZ/5T5sWqn3hJgLfGx27sRKZWTvyzCP8dLRBTf5tBTSRVUNA=="],
 
-
     "@smthrs/mvp/alchemy": ["alchemy@2.0.0-beta.83", "", { "dependencies": { "@alchemy.run/cloudflare-runtime": "2.0.0-beta.83", "@alchemy.run/floci": "2.0.0-beta.83", "@alchemy.run/node-utils": "2.0.0-beta.83", "@alchemy.run/sigil": "0.1.0-alpha.1", "@distilled.cloud/acme": "1.0.0-rc.15", "@distilled.cloud/aws": "1.0.0-rc.15", "@distilled.cloud/axiom": "1.0.0-rc.15", "@distilled.cloud/cloudflare": "1.0.0-rc.15", "@distilled.cloud/core": "1.0.0-rc.15", "@distilled.cloud/doppler": "1.0.0-rc.15", "@distilled.cloud/fly-io": "1.0.0-rc.15", "@distilled.cloud/gcp": "1.0.0-rc.15", "@distilled.cloud/hetzner": "1.0.0-rc.15", "@distilled.cloud/iceberg": "1.0.0-rc.15", "@distilled.cloud/infisical": "1.0.0-rc.15", "@distilled.cloud/neon": "1.0.0-rc.15", "@distilled.cloud/planetscale": "1.0.0-rc.15", "@distilled.cloud/prisma": "1.0.0-rc.15", "@distilled.cloud/railway": "1.0.0-rc.15", "@distilled.cloud/stripe": "1.0.0-rc.15", "@distilled.cloud/turso": "1.0.0-rc.15", "@distilled.cloud/zerossl": "1.0.0-rc.15", "@effect/sql-d1": "4.0.5", "@effect/sql-sqlite-do": "4.0.5", "@libsql/client": "0.17.4", "@neon/functions": "0.11.0", "@octokit/rest": "22.0.1", "@octokit/webhooks": "14.2.0", "@prisma/dev": "0.20.0", "@types/aws-lambda": "8.10.163", "capnweb": "0.12.0", "fflate": "0.8.3", "libsodium-wrappers": "0.8.4", "pathe": "2.0.3", "picomatch": "4.0.7", "rolldown": "1.2.5", "tinyglobby": "0.2.17", "yaml": "2.9.0" }, "peerDependencies": { "@alchemy.run/frontend-frameworks": "2.0.0-beta.83", "@aws/durable-execution-sdk-js": "^2.1.0", "@effect/platform-bun": "4.0.5", "@effect/platform-node": "4.0.5", "@effect/sql-libsql": "^4.0.0", "@effect/sql-mysql2": "^4.0.0", "@effect/sql-pg": "^4.0.0", "@effect/vitest": "4.0.5", "@prisma/orm-postgres": "^8.0.0-rc.11", "@vercel/nft": "^1.10.2", "drizzle-kit": "1.0.0-rc.5-ab785fc", "drizzle-orm": "1.0.0-rc.5-ab785fc", "effect": "4.0.5", "mongodb": "^6.10.0", "mysql2": "^3.24.2", "pg": "^8.22.0", "prisma": "^8.0.0-rc.15", "vite": "^8.0.7", "ws": "^8.21.0" }, "optionalPeers": ["@alchemy.run/frontend-frameworks", "@aws/durable-execution-sdk-js", "@effect/platform-bun", "@effect/platform-node", "@effect/sql-libsql", "@effect/sql-mysql2", "@effect/sql-pg", "@effect/vitest", "@prisma/orm-postgres", "@vercel/nft", "drizzle-kit", "drizzle-orm", "mongodb", "mysql2", "pg", "prisma", "vite", "ws"], "bin": { "alchemy": "./bin/cli.js" } }, "sha512-t0N4FwLU1JxLnKZGdsBNdqiycWDM5HEYmmIguMImplE07Vh+FPpMR8ypk3K3TY5Tg0sFFppXFVwtwiDp6xlX9w=="],
 
     "@smthrs/mvp/vite": ["vite@8.3.4", "", { "dependencies": { "lightningcss": "1.33.0", "picomatch": "4.0.7", "postcss": "8.5.31", "rolldown": "1.2.14", "tinyglobby": "0.2.17" }, "optionalDependencies": { "fsevents": "2.3.3" }, "peerDependencies": { "@types/node": "^20.19.0 || >=22.12.0", "@vitejs/devtools": "^0.7.1", "esbuild": "^0.27.0 || ^0.28.0", "jiti": ">=1.21.0", "less": "^4.0.0", "sass": "^1.70.0", "sass-embedded": "^1.70.0", "stylus": ">=0.54.8", "sugarss": "^5.0.0", "terser": "^5.16.0", "tsx": "^4.8.1", "yaml": "^2.4.2" }, "optionalPeers": ["@types/node", "@vitejs/devtools", "esbuild", "jiti", "less", "sass", "sass-embedded", "stylus", "sugarss", "terser", "tsx", "yaml"], "bin": { "vite": "bin/vite.js" } }, "sha512-IftLE8phJhdNRIGNEV4JCCvfNScoZQVfcXaN8TQropWGJtOHcu+iAB9pHcuGvmEb/kddw0LBe/jS8ztdC6xdiQ=="],
@@ -7096,7 +7106,6 @@
     "workbox-build/pretty-bytes": ["pretty-bytes@5.6.0", "", {}, "sha512-FFw039TmrBqFK8ma/7OL3sDz/VytdtJr044/QUJtH0wK9lb9jLq9tJyIxUwtQJHwar2BqtiA4iCWSwo9JLkzFg=="],
 
     "workbox-build/source-map": ["source-map@0.8.0", "", {}, "sha512-d8EqvL+k/SOXCreS/SUzg2ciyHqBBLcN/yuRjFsbvVhHTE2pgei7oAhmPM7kWFbkX6OSMQfUq4KbkF3au9lhYQ=="],
-
 
     "wrangler/fsevents": ["fsevents@2.3.3", "", { "os": "darwin" }, "sha512-5xoDfX+fL7faATnagmWPpbFtwh/R77WmMMqqHGS65C3vvB0YHrgF+B1YmZ3441tMj5n63k0212XNoJwzlhffQw=="],
 
