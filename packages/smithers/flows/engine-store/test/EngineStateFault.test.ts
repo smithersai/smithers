@@ -115,4 +115,29 @@ describe("EngineStateFault", () => {
       expect((yield* state.recordRunParent("child", "parent"))._tag).toBe("Recorded")
       expect((yield* state.recordRunParent("child", "parent"))._tag).toBe("Existing")
     }).pipe(Effect.provide(database)))
+
+  for (const childHasChildren of [false, true]) {
+    it.effect(`returns the winning parent edge when insertion finds a concurrent winner (${childHasChildren})`, () =>
+      Effect.gen(function*() {
+        const sql = yield* SqlClient.SqlClient
+        const state = yield* DurableEngineState.make
+        for (const id of ["child", "parent", "grandchild"]) yield* insertRun(id)
+        if (childHasChildren) yield* state.recordRunParent("grandchild", "child")
+        // The database supplies the competing row before the caller's insert
+        // returns, reproducing ON CONFLICT with no RETURNING row deterministically.
+        yield* sql`CREATE TRIGGER competing_parent BEFORE INSERT ON flows_run_parents
+          WHEN NEW.child_id = 'child' AND NEW.parent_id = 'parent'
+          BEGIN
+            INSERT OR IGNORE INTO flows_run_parents (child_id, parent_id, seq) VALUES (NEW.child_id, NEW.parent_id, NEW.seq);
+            SELECT RAISE(IGNORE);
+          END`
+        const outcome = yield* state.recordRunParent("child", "parent")
+        expect(outcome._tag).toBe("Existing")
+        expect(yield* state.runParents("child")).toEqual([{
+          childId: "child",
+          parentId: "parent",
+          seq: childHasChildren ? 2 : 1
+        }])
+      }).pipe(Effect.provide(database)))
+  }
 })

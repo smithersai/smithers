@@ -17,6 +17,7 @@ import * as Clock from "effect/Clock"
 import type * as Crypto from "effect/Crypto"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
@@ -51,7 +52,8 @@ const withEngine = <A, E>(
     engine: FlowRuntime.FlowRuntime["Service"],
     store: RunStore.Service,
     state: DurableEngineState.Service
-  ) => Effect.Effect<A, E, Services>
+  ) => Effect.Effect<A, E, Services>,
+  wrapStore: (store: RunStore.Service) => RunStore.Service = (store) => store
 ) => {
   const state = DurableEngineState.makeMemory()
   return withCrypto(
@@ -62,7 +64,7 @@ const withEngine = <A, E>(
           owner: { hostId: "cancel-parked-host" },
           journalSource: "cancel-parked-test",
           isAlive: () => Effect.succeed(false)
-        })) as FlowRuntime.FlowRuntime["Service"]
+        }).pipe(Effect.provideService(RunStore.RunStore, wrapStore(store)))) as FlowRuntime.FlowRuntime["Service"]
         return yield* body(engine, store, state)
       }).pipe(
         Effect.provideService(DurableEngineState.DurableEngineState, state),
@@ -171,4 +173,63 @@ describe("cancel requests reach parked runs (issue #27)", () => {
       expect(result.bodyRuns).toBe(1)
       expect(result.row.status).toBe("cancelled")
     }))
+})
+
+describe("durable cancellation follow-up", () => {
+  for (const admission of ["success", "tagged failure", "defect", "interrupt"] as const) {
+    it.effect(`retains truthful cancellation when follow-up admission ends with ${admission}`, () => {
+      const Cleanup = Flow.make(`OnCancel/Cleanup/${admission}`, {
+        payload: { name: Schema.String },
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
+      const Original = Flow.make(`OnCancel/Original/${admission}`, {
+        payload: { name: Schema.String },
+        success: Schema.String,
+        body: opaqueHandlerBody
+      })
+        .annotate(Flow.OnCancel, { flow: Cleanup, executionId: ({ name }) => `cleanup:${name}` })
+      const gate = DurableDeferred.make(`on-cancel-${admission}`, { success: Schema.String })
+      let injected = false
+      return withEngine((engine, store) =>
+        Effect.gen(function*() {
+          yield* engine.register(Original, () => DurableDeferred.await(gate))
+          yield* engine.register(Cleanup, ({ name }) => Effect.succeed(`cleaned:${name}`))
+          yield* executeUntilParked(engine, Original, {
+            executionId: "original",
+            payload: { name: "item" },
+            discard: true
+          })
+          yield* store.requestCancel("original", yield* Clock.currentTimeMillis)
+          const resumed = yield* Effect.exit(engine.resume(Original, "original"))
+          const row = yield* store.get("original")
+          if (admission === "interrupt") {
+            expect(Exit.isFailure(resumed)).toBe(true)
+            expect(row.status).not.toBe("cancelled")
+          } else {
+            expect(Exit.isSuccess(resumed)).toBe(true)
+            expect(row.status).toBe("cancelled")
+            expect(JSON.parse(row.stateJson).cancellation.run).toBe(
+              admission === "success" ? "cleanup:item" : undefined
+            )
+          }
+          if (admission === "success") {
+            expect(yield* engine.execute(Cleanup, { executionId: "cleanup:item", payload: { name: "item" } })).toBe(
+              "cleaned:item"
+            )
+          } else expect(injected).toBe(true)
+        }), (store) => ({
+          ...store,
+          create: (runId, stateJson, options) => {
+            if (runId !== "cleanup:item" || admission === "success") return store.create(runId, stateJson, options)
+            injected = true
+            return admission === "interrupt"
+              ? Effect.interrupt
+              : Effect.die(
+                admission === "defect" ? new Error("admission unavailable") : { _tag: "AdmissionUnavailable" }
+              )
+          }
+        }))
+    })
+  }
 })

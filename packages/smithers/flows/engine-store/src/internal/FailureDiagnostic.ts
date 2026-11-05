@@ -5,9 +5,15 @@
  */
 
 import { BoundedJson } from "@smthrs/canonical"
+import { FlowEngine } from "@smthrs/engine"
+import { Fault, Interpreter } from "@smthrs/flow"
 import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
+import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
+import * as Exit from "effect/Exit"
 import type { Failure, FailureCoordinates } from "../RunState.ts"
+import * as ExitEncoding from "./ExitEncoding.ts"
 import * as HostReflection from "./HostReflection.ts"
 
 const utf8 = new TextEncoder()
@@ -31,11 +37,15 @@ const attempts = (value: number | null) => value !== null && Number.isSafeIntege
 
 /**
  * Only allowlisted coordinates cross a durable cause boundary.
+ * The host reflection may be supplied for a runtime without native proxy detection.
  * @private
  * @since 1.0.0-rc.17
  */
-export const site = (value: unknown): typeof FailureCoordinates.Type | undefined => {
-  if (typeof value !== "object" || value === null || HostReflection.host.isProxy(value)) return undefined
+export const site = (
+  value: unknown,
+  reflection: HostReflection.Reflection = HostReflection.host
+): typeof FailureCoordinates.Type | undefined => {
+  if (typeof value !== "object" || value === null || reflection.isProxy(value)) return undefined
   try {
     const own = (key: string): unknown => {
       const descriptor = Object.getOwnPropertyDescriptor(value, key)
@@ -95,4 +105,32 @@ export const withinState = (
   // An all-null list carries no information and could itself exceed admission.
   if (sites?.some((site) => site !== null)) admit({ failureSites: sites })
   return JSON.stringify(state)
+}
+
+/**
+ * The failure and engine coordinates, redacted before a terminal transaction writes them.
+ * @private
+ * @since 1.0.0-rc.17
+ */
+export const record = (exit: Exit.Exit<unknown, unknown>, executionId: string): Failure | undefined => {
+  if (Exit.isSuccess(exit) || Cause.hasInterruptsOnly(exit.cause)) return undefined
+  const reason = exit.cause.reasons.find((reason) => Cause.isFailReason(reason) || Cause.isDieReason(reason))
+  if (reason === undefined) return undefined
+  const error = Cause.isFailReason(reason) ? reason.error : reason.defect
+  const projected = ExitEncoding.projectValue(error)
+  const coordinates = site(Context.getOrUndefined(Cause.reasonAnnotations(reason), FlowEngine.FailureSite))
+  const defect = Interpreter.defectOf(Cause.fromReasons([reason]))
+  const message = projected.message
+  const nodeId = coordinates?.nodeId ?? defect?.nodeId
+  const action = coordinates?.action ?? defect?.action
+  const safeTag = String(Redaction.redactDiagnostic(projected.tag ?? projected.code ?? defect?.tag ?? "failed"))
+  return bound({
+    executionId: coordinates?.executionId ?? executionId,
+    tag: safeTag.slice(0, 200),
+    message,
+    ...(nodeId === undefined ? {} : { nodeId }),
+    ...(action === undefined ? {} : { action }),
+    attempts: coordinates?.attempts ?? null,
+    retryable: Cause.isFailReason(reason) && ["infra", "wait"].includes(Fault.of(error).class)
+  })
 }
