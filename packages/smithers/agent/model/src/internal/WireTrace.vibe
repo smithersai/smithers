@@ -117,7 +117,7 @@ let calls = 0
 export const record = (
   prepared: Traced,
   sink: Sink.WireTrace | undefined
-): TracedCall | undefined!! =>
+): (TracedCall | undefined)!! =>
   Effect.suspend(() => {
     if (sink === undefined) return Effect.succeed(undefined)
     const id = ++calls
