@@ -1572,6 +1572,7 @@ describe("the split cache credential", () => {
     cacheTokenSecret: Secret("CACHE_READ_TOKEN"),
     cacheWriteTokenSecret: Secret("CACHE_WRITE_TOKEN"),
     cacheWriteEnvironment: "cache-publish",
+    cacheWriteRepository: "smithersai/smithers",
     jobs: [readerJob, publisherJob]
   }
 
@@ -1580,7 +1581,9 @@ describe("the split cache credential", () => {
     const readerBlock = rendered.slice(rendered.indexOf("  \"reader\":"), rendered.indexOf("  \"publish\":"))
     const publishBlock = rendered.slice(rendered.indexOf("  \"publish\":"))
     expect(publishBlock).toContain(
-      "    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}"
+      "    if: ${{ github.event_name == 'push' && github.repository == 'smithersai/smithers' && " +
+        "github.event.repository.default_branch != '' && " +
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}"
     )
     expect(publishBlock).toContain("          \"CACHE_READ_TOKEN\": \"${{ secrets.CACHE_READ_TOKEN }}\"")
     expect(publishBlock).toContain("          \"CACHE_WRITE_TOKEN\": \"${{ secrets.CACHE_WRITE_TOKEN }}\"")
@@ -1609,16 +1612,22 @@ describe("the split cache credential", () => {
     expect(render(goldenAttrs)).not.toContain("SMITHERS_CACHE_NAMESPACE")
   })
 
-  it("guards a multi-trunk workflow with one ref clause per push branch", () => {
+  it("keeps extra push triggers from granting publication authority", () => {
     const rendered = render(attrsOf({ ...splitAttrs, pushBranches: ["main", "release"] }))
     expect(rendered).toContain(
-      "    if: ${{ github.event_name == 'push' && " +
-        "(github.ref == 'refs/heads/main' || github.ref == 'refs/heads/release') }}"
+      "    if: ${{ github.event_name == 'push' && github.repository == 'smithersai/smithers' && " +
+        "github.event.repository.default_branch != '' && " +
+        "github.ref == format('refs/heads/{0}', github.event.repository.default_branch) }}"
     )
   })
 
   it("refuses a publishing job with no declared write credential", () => {
-    const { cacheWriteTokenSecret: _dropped, cacheWriteEnvironment: _environment, ...withoutWrite } = splitAttrs
+    const {
+      cacheWriteTokenSecret: _dropped,
+      cacheWriteEnvironment: _environment,
+      cacheWriteRepository: _repository,
+      ...withoutWrite
+    } = splitAttrs
     expect(() => render(attrsOf(withoutWrite))).toThrow(/no cacheWriteTokenSecret is declared/)
   })
 
@@ -1627,7 +1636,7 @@ describe("the split cache credential", () => {
     expect(() => render(attrsOf(withoutEnvironment))).toThrow(/needs cacheWriteEnvironment/)
     expect(() => render(attrsOf({ ...splitAttrs, cacheWriteEnvironment: "${{ github.ref }}" })))
       .toThrow(/needs cacheWriteEnvironment/)
-    const { cacheWriteTokenSecret: _write, ...withoutWrite } = splitAttrs
+    const { cacheWriteTokenSecret: _write, cacheWriteRepository: _repository, ...withoutWrite } = splitAttrs
     expect(() => render(attrsOf({ ...withoutWrite, jobs: [readerJob] })))
       .toThrow(/cacheWriteEnvironment is declared but no cacheWriteTokenSecret/)
   })

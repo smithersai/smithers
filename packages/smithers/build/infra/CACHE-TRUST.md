@@ -9,8 +9,9 @@ computes that key.
 
 A remote build cache has untrusted readers and trusted writers. This is how
 remote caches are deployed generally, in Bazel, Buck2, Nx, and Turborepo alike,
-and the reason is the same everywhere: reading a result is harmless, publishing
-one is a claim about what a build produces.
+and the reason is the same everywhere: publishing a result is a claim about
+what a build produces. Read access exposes cached results and artifacts; it
+is not a confidentiality boundary.
 
 - A **reader** is any job that pulls. That includes a job building an
   unreviewed branch, so a read credential is expected to be widely held and is
@@ -47,8 +48,15 @@ Two mechanisms enforce it, and only the first is a control:
 | `SMITHERS_CACHE_READ_TOKEN`  | Read credential  | Every job            |
 | `SMITHERS_CACHE_WRITE_TOKEN` | Write credential | Post-merge jobs only |
 
-A `pull_request`-triggered job receives the read credential and no write
-credential. It pulls at full speed and publishes nothing.
+Read-only access for same-repository pull requests and manual topic-branch
+runs is intentional. Those jobs may execute unreviewed declarations, tests,
+the CLI and the repository-local setup action while holding the read token.
+It exposes all results and artifacts that token's server-side repository and
+namespace scope permits, and can renew their last-access retention. Never
+store credentials or private data in a cache readable by contributors.
+The server must refuse PUT and DELETE with that token; client namespacing is
+not authorization. Fork pull requests normally receive no GitHub secrets and
+run without authenticated remote hits.
 
 The write secret lives in a GitHub environment, not in the repository. A
 repository secret reaches any workflow that a branch of the repository
@@ -66,24 +74,49 @@ requests receive no secrets at all, and no workflow here uses
 `publishesToCache` boolean. `render` still computes the shared entries
 (endpoint and read token) once and spreads them onto every generated step; the
 write entry is rendered only into a job that declares `publishesToCache`, and
-that job is emitted with
-`if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/<branch>' }}`
-over the declared push branches, so a `pull_request` run of it never starts,
-let alone holds the credential.
+that job requires a literal `cacheWriteRepository: "owner/repository"` plus
+`cacheWriteEnvironment`. Its job-level guard requires all of:
+
+- The event is `push`.
+- `github.repository` equals the declared repository, excluding a fork's own
+  default-branch push.
+- The event has a nonempty repository default branch and `github.ref` equals
+  `format('refs/heads/{0}', github.event.repository.default_branch)`.
+
+`pushBranches` selects workflow triggers; it grants no publication authority.
+A release-branch trigger can run reader jobs without obtaining the writer.
+Manual runs, PRs (including `pull_request_target`), tags, schedules and pushes
+whose repository or branch fails these comparisons cannot start a publishing
+job. [GitHub compares strings without case sensitivity](https://docs.github.com/en/actions/reference/workflows-and-actions/expressions),
+so the guard also admits
+a case variant such as `MAIN` when the default branch is `main`. The environment
+must select the exact default branch; the job guard alone is not that boundary.
+A default branch rename also requires updating the protected environment and triggers;
+until then GitHub may withhold the credential or not start the workflow.
+
+`GithubRender`'s `Github.Setup.cacheToken` is likewise a reader credential:
+its action inputs and composite step environment intentionally remain
+available on PR and manual branch runs. When the workspace declares a split,
+the renderer rejects either setup input naming its write secret. GitHub
+secret names are case-insensitive. This check detects a declaration error;
+the environment restriction protects against branch-controlled workflow edits.
 
 The generator refuses the half-declared shapes rather than rendering them: a
 `publishesToCache` job with no declared write credential, a declared write
 credential no job publishes with, read and write secrets naming one variable,
-a publishing job in a workflow with no push branches, and a gate that only a
-publishing job would satisfy (its guard means GitHub skips it on every pull
+a shared endpoint naming the write secret (including case aliases), a missing
+or nonliteral publishing repository, a publishing job in a workflow with no
+push branches, and a gate that only a publishing job would satisfy (its guard means GitHub skips it on every pull
 request, so it proves nothing).
 
 The root `PACKAGE.ts` declares `SMITHERS_CACHE_READ_TOKEN` and
 `SMITHERS_CACHE_WRITE_TOKEN`. Every target step receives the read credential.
 No job publishes today: the `cache-publish` job was removed (#2254) because no
 result is shareable while every target runs unsandboxed. To restore it, sandbox
-the CI targets, then re-add `cacheWriteTokenSecret`, `cacheWriteEnvironment:
-"cache-publish"` and a `publishesToCache` job running `//packages/...` to the
+the CI targets, verify the environment and secret placement below, then re-add
+`cacheWriteTokenSecret`, `cacheWriteEnvironment: "cache-publish"`,
+`cacheWriteRepository: "smithersai/smithers"` and a `publishesToCache` job
+running `//packages/...` to the
 `ci` declaration in `PACKAGE.ts`. The required PR jobs remain unconditional.
 Release gates receive only the read credential.
 
@@ -134,7 +167,9 @@ pnpm exec smithers-build lint '//:ci'
 Production runs the split. On 2026-09-24 the Worker was deployed to
 `https://build.smithers.sh` with a freshly minted read and write pair, and the
 repository secrets `SMITHERS_CACHE_URL`, `SMITHERS_CACHE_READ_TOKEN`, and
-`SMITHERS_CACHE_WRITE_TOKEN` were set to match. No shared credential was
+`SMITHERS_CACHE_WRITE_TOKEN` were set to match. That historical receipt does
+not verify present secret placement; the writer must be environment-only
+before publication is enabled. No shared credential was
 carried over: the only deployment that held one, the legacy
 `tsflows.smithers.sh` Worker, served no build (its store held two deploy
 verification rows and none was ever read back) and was deleted with its D1
@@ -161,6 +196,39 @@ See the [remote-cache guide](https://smithers.sh/docs/guides/remote-cache/)
 for declaration and publication/reuse verification. `SMITHERS_CACHE_URL`
 overrides the endpoint without changing the declared credential names.
 
+## Verify before enabling a publisher
+
+A workflow naming an environment does not prove the environment is protected.
+Before adding a publisher, read the repository and environment configuration
+through GitHub's API. Verify the exact repository/default branch, selected
+branch policy with exactly that branch and no tag or PR-ref rule, and that the
+write secret exists only in the environment (not at repository level or in an
+organization secret granted to this repository). Confirm the read credential
+cannot publish and the default branch contains reviewed, confined targets.
+Do not enable publication when a check is unavailable.
+
+For this repository, a read-only check on 2026-11-05 found default branch
+`main` and environment `cache-publish` with
+`custom_branch_policies: true`, `protected_branches: false`, and exactly one
+deployment policy: `{ name: "main", type: "branch" }`. Secret-name listings
+returned HTTP 403, so secret placement remains unverified. The publisher
+remains disabled. No repository-admin change has been established as needed;
+an owner must verify secret placement before enablement, and change settings
+only if that verification identifies a mismatch.
+
+Branch filters do not authorize running PR-controlled code in privileged
+default-branch contexts. Keep `pull_request_target` and other privileged
+workflows from checking out or executing PR content with environment secrets.
+See GitHub's [deployment environment rules](https://docs.github.com/en/actions/reference/workflows-and-actions/deployments-and-environments)
+and [deployment branch policy API](https://docs.github.com/en/rest/deployments/branch-policies).
+
+`targets/test/CachePublisherTrust.test.ts` evaluates generated step environments,
+action inputs and composite environments with synthetic secrets across the
+event/ref/repository matrix, including GitHub's case-insensitive comparisons. It proves the rendered boundary, not the live
+server's authorization or GitHub's secret storage configuration. Generated
+workflow output belongs to the integration owner; this fix does not enable a
+publisher or edit a deployed environment.
+
 ## Operational step, and deployment ordering
 
 Provision the split credentials in this order for any deployment that still
@@ -183,7 +251,8 @@ cache reuse and publication but must not receive the old shared credential:
    environment with a deployment branch policy that admits only `main`. Add
    `SMITHERS_CACHE_WRITE_TOKEN`, holding the current value, to that
    environment and not to the repository.
-3. **Verify the adopted declarations.** Confirm the generated CI and release
+3. **Verify before enabling.** Complete the environment and secret-placement
+   checks above. Confirm the generated CI and release
    workflows use the read secret and only the main-push `cache-publish` job
    receives the write secret. Confirm `.smithers/WORKSPACE.ts` declares the
    same split.
