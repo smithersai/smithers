@@ -3,8 +3,10 @@
  */
 
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import { Effect, FileSystem, Layer, Path } from "effect"
-import type { SqlClient } from "effect/sql/SqlClient"
+import { NodeRuntime } from "@smthrs/platform-node"
+import { Context, Effect, FileSystem, Layer, Path } from "effect"
+import { SqlClient } from "effect/sql/SqlClient"
+import * as CliError from "../CliError.ts"
 import * as Migrations from "./ControlDatabaseMigrations.ts"
 
 /** Uses injected filesystem and path services, and opens only the supplied SQL adapter.
@@ -21,7 +23,7 @@ export const make = (database: (filename: string) => Layer.Layer<SqlClient>) => 
       const path = yield* Path.Path
       const directory = path.dirname(file)
       yield* fs.makeDirectory(directory, { recursive: true, mode: 0o700 })
-      return database(file)
+      return NodeRuntime.publishFreshDatabase(file, database, Migrations.layer)
     }))
   )
   return Layer.provideMerge(Migrations.layer, Layer.provideMerge(DurableWriter.layer(), sql)).pipe(
@@ -43,4 +45,29 @@ export const make = (database: (filename: string) => Layer.Layer<SqlClient>) => 
  * @private
  */
 export const observe = (database: (filename: string) => Layer.Layer<SqlClient>) => (file: string) =>
-  Layer.provideMerge(DurableWriter.layer(), database(file))
+  Layer.provideMerge(DurableWriter.layer(), database(file)).pipe(Layer.tap((context) =>
+    Effect.gen(function*() {
+      const sql = Context.get(context, SqlClient)
+      const tables = yield* sql.onDialectOrElse({
+        pg: () => sql<{ readonly found: boolean }>`SELECT to_regclass('flows_migrations') IS NOT NULL AS found`,
+        orElse: () =>
+          sql<
+            { readonly found: number }
+          >`SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'flows_migrations'`
+      })
+      if (!tables[0]?.found) return yield* Effect.die(new StoreInitializing())
+      const applied = yield* sql`SELECT migration_id FROM flows_migrations LIMIT 1`
+      if (applied.length === 0) return yield* Effect.die(new StoreInitializing())
+    }).pipe(Effect.orDie)
+  ))
+
+/** An interrupted or in-progress creation, not a store written by an older binary.
+ * Observing orchestration may answer empty until a creator publishes its schema.
+ * @since 1.0.0
+ * @private
+ */
+export class StoreInitializing extends CliError.Refused {
+  constructor() {
+    super({ fault: "infra", code: "store_initializing", message: "The store is still being initialized" })
+  }
+}
