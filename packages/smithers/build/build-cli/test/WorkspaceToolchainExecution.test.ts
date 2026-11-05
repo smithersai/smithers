@@ -393,7 +393,11 @@ const oneShotSpec = "@fixture/private-tool@4.5.6"
 const oneShotArgs = ["--probe", "literal spaced value"]
 
 /** Every possible launcher is private and refuses unknown argv before doing work. */
-const oneShotFixture = async (runtime: "node" | "bun", runtimeArgs: ReadonlyArray<string> = []): Promise<string> => {
+const oneShotFixture = async (
+  runtime: "node" | "bun",
+  runtimeArgs: ReadonlyArray<string> = [],
+  runEnvironment: () => Readonly<Record<string, string>> = () => ({})
+): Promise<string> => {
   const root = await nativeFixture({
     reference: "Runtime",
     runtime,
@@ -450,7 +454,7 @@ const bin = S.Runtime.npx(${JSON.stringify(oneShotSpec)})
 const args = ${JSON.stringify(oneShotArgs)}
 export const Package = S.Package({targets: {
   generate: S.Generate({bin, args, stdout: "observed.txt"}),
-  run: S.Shell.Run({bin, args, runtimeArgs: ${JSON.stringify(runtimeArgs)}})
+  run: S.Shell.Run({bin, args, runtimeArgs: ${JSON.stringify(runtimeArgs)}, env: ${JSON.stringify(runEnvironment())}})
 }})
 `
   )
@@ -508,26 +512,41 @@ describe.skipIf(process.platform === "win32")("one-shot workspace runtime refere
     }
   )
 
-  it("probes Node and its launcher independently while sharing identical probes across targets", async () => {
-    const root = await oneShotFixture("node")
-    const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)))
-    const plan = await PackageExec.plan({ index, cacheDirectory: ".flows", patterns: ["//..."], verb: "run" })
-    for (const target of ["//:generate", "//:run"]) {
-      expect(plan.nodes.get(target)?.refusal).toBeUndefined()
-      expect(plan.nodes.get(target)?.keyPreview).toBeTypeOf("string")
-    }
-    const invocations = (await Fs.readFile(Path.join(root, ".flows/one-shot-invocations.jsonl"), "utf8"))
-      .trim().split("\n").map((line) =>
-        JSON.parse(line) as { readonly tool: string; readonly args: ReadonlyArray<string> }
+  it.each([
+    { environment: "identical", probeSets: 1 },
+    { environment: "unrelated override", probeSets: 1 },
+    { environment: "lookup override", probeSets: 2 }
+  ])(
+    "probes Node and its launcher independently with $environment environments",
+    async ({ environment, probeSets }) => {
+      const root = await oneShotFixture("node", [], (): Readonly<Record<string, string>> => {
+        if (environment === "unrelated override") return { PROBE_IRRELEVANT: "declared" }
+        if (environment === "lookup override") {
+          return { PATH: [process.env["PATH"], "/private-probe-lookup"].join(Path.delimiter) }
+        }
+        return {}
+      })
+      const index = PackageIndex.make(await PackageLoader.load(await PackageDiscovery.discover(root)))
+      const plan = await PackageExec.plan({ index, cacheDirectory: ".flows", patterns: ["//..."], verb: "run" })
+      for (const target of ["//:generate", "//:run"]) {
+        expect(plan.nodes.get(target)?.refusal).toBeUndefined()
+        expect(plan.nodes.get(target)?.keyPreview).toBeTypeOf("string")
+      }
+      const invocations = (await Fs.readFile(Path.join(root, ".flows/one-shot-invocations.jsonl"), "utf8"))
+        .trim().split("\n").map((line) =>
+          JSON.parse(line) as { readonly tool: string; readonly args: ReadonlyArray<string> }
+        )
+      expect(invocations.filter((entry) => entry.tool === "runtime")).toEqual(
+        Array.from({ length: probeSets }, () => [
+          { tool: "runtime", args: ["--version"] },
+          { tool: "runtime", args: [Path.join(root, "node_modules/private-npm/bin/npx-cli.js"), "--version"] }
+        ]).flat()
       )
-    expect(invocations.filter((entry) => entry.tool === "runtime")).toEqual([
-      { tool: "runtime", args: ["--version"] },
-      { tool: "runtime", args: [Path.join(root, "node_modules/private-npm/bin/npx-cli.js"), "--version"] }
-    ])
-    expect(invocations.filter((entry) => entry.tool === "launcher")).toEqual([
-      { tool: "launcher", args: ["--version"] }
-    ])
-  })
+      expect(invocations.filter((entry) => entry.tool === "launcher")).toEqual(
+        Array.from({ length: probeSets }, () => ({ tool: "launcher", args: ["--version"] }))
+      )
+    }
+  )
 
   it("invalidates cached output when an unchanged launcher reports a changed imported implementation version", async () => {
     const root = await oneShotFixture("node")

@@ -512,20 +512,21 @@ const probeOnce = async (
   path: string,
   args: ReadonlyArray<string> = ["--version"]
 ): Promise<PackageTree.Probe> => {
-  // A selected interpreter can probe both itself and a script launcher. Their
-  // distinct argument vectors must never share a cached version observation.
-  const key = JSON.stringify([path, args])
-  const known = context.probes.get(key)
-  if (known !== undefined) return known
   // A declared executable's version probe needs lookup capabilities, never
   // the CLI's credentials. Configuration lookup starts at the workspace just
-  // as native target execution does. Target env overrides have separate maps.
+  // as native target execution does.
   const names = new Set<string>(RuntimeService.lookupEnvironmentNames)
   const environment = Object.fromEntries(
     Object.entries(context.environment).filter(([name, value]) =>
       typeof value === "string" && names.has(context.ambient.platform === "win32" ? name.toUpperCase() : name)
     )
   )
+  // A selected interpreter can probe both itself and a script launcher.
+  // Share observations only for identical argv and effective lookup env;
+  // unrelated target variables never reach the probe or affect its identity.
+  const key = JSON.stringify([path, args, Object.entries(environment).sort(([a], [b]) => a.localeCompare(b))])
+  const known = context.probes.get(key)
+  if (known !== undefined) return known
   const probe = await PackageTree.probeVersion(path, { cwd: context.root, args, environment })
   context.probes.set(key, probe)
   return probe
@@ -1496,8 +1497,7 @@ const visit = async (
     environment: typeof declaredToolEnvironment === "object" && declaredToolEnvironment !== null
       ? { ...context.environment, ...declaredToolEnvironment as Record<string, string> }
       : context.environment,
-    tools: new Map<string, ToolOutcome>(),
-    probes: new Map<string, PackageTree.Probe>()
+    tools: new Map<string, ToolOutcome>()
   }
   const toolchain: Array<unknown> = []
   const targetExecutablePaths: Array<string> = []
