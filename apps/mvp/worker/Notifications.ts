@@ -18,6 +18,7 @@ import { readBounded } from "./Body.ts"
 import { codeOf } from "./ErrorCode.ts"
 import * as FeedLocks from "./FeedLocks.ts"
 import * as SessionStore from "./SessionStore.ts"
+import * as NotificationPolicy from "./NotificationPolicy.ts"
 import * as ShapeAccess from "./ShapeAccess.ts"
 import { FRESH_SECONDS } from "./github/RoleAge.ts"
 import { TTL_MS } from "./github/Visibility.ts"
@@ -117,6 +118,7 @@ const runState = (status: Inbox.RunState, answered: boolean, answer: string | nu
 /** What the fold reads of a run: its state, who launched it, where it works, and what it is about. */
 interface RunFacts {
   readonly status: Inbox.RunState
+  readonly version: number
   readonly answered: boolean
   /** The answer's own status: `streaming`, `done` or `failed`; none for a run that isn't an answer. */
   readonly answer: string | null
@@ -225,7 +227,7 @@ export const foldRun = (runId: string, launcherLogin: string | undefined, locked
     // runs locked them all already. Someone who started watching since is left for the next fold.
     const held = locked ?? (yield* lockRuns([runId]))
     const [run] = yield* sql<RunFacts>`
-      SELECT r.status, r.answered_at IS NOT NULL AS answered, a.status AS answer, r.launched_by AS "launchedBy",
+      SELECT r.status, r.version, r.answered_at IS NOT NULL AS answered, a.status AS answer, r.launched_by AS "launchedBy",
         r.conversation_id AS "conversationId", r.branch_id AS "branchId", r.repo_id AS "repoId",
         b.name AS "branchName", r.wait->>'prompt' AS prompt, q.text AS question
       FROM runs r
@@ -248,22 +250,35 @@ export const foldRun = (runId: string, launcherLogin: string | undefined, locked
     const before = new Map(existing.map((row) => [row.recipient, row]))
     // Feed locks serialize this check with recorded denials and their deletion of private rows. A failed first
     // lookup (-infinity) is not a denial. Every recipient is checked, including muted existing recipients.
-    const policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
-    const denied = new Set((run.repoId === null ? [] : yield* sql<{ readonly personId: string }>`
+    let policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
+    const deniedOf = () => run.repoId === null ? Effect.succeed([]) : sql<{ readonly personId: string }>`
       SELECT person_id AS "personId" FROM github_repo_roles
       WHERE repo_id = ${run.repoId} AND checked_at <> '-infinity'
         AND (role IS NULL OR role NOT IN ('member', 'maintainer', 'admin'))
         AND ${sql.in("person_id", [...new Set([run.launchedBy, ...watchers.map((w) => w.principal), ...existing.map((r) => r.recipient)])])}
-    `).map((row) => row.personId))
+    `
+    let denied = new Set((yield* deniedOf()).map((row) => row.personId))
     const mayRead = (principal: string) => !denied.has(principal) && (run.branchId === null
       ? principal === run.launchedBy
       : policy !== undefined && canView(underPolicy(policy, principal, "member")))
-    const deliveries = Inbox.route({
+    const defaults = Inbox.route({
       launcher: run.launchedBy,
       state,
       watchers,
       mayRead,
     })
+    // The plugin can narrow the existing audience; access and settlement remain core responsibilities.
+    const selection = run.repoId === null ? undefined : yield* NotificationPolicy.select({
+      repoId: run.repoId, kind: state, subject, revision: String(run.version), owner: run.launchedBy,
+      candidates: defaults.map((delivery) => delivery.recipient), defaults: defaults.map((delivery) => delivery.recipient),
+    })
+    if (selection !== undefined) {
+      policy = run.branchId === null ? undefined : yield* policyOf(run.branchId)
+      denied = new Set((yield* deniedOf()).map((row) => row.personId))
+    }
+    const selected = selection === undefined ? undefined : new Set(selection.recipients)
+    const deliveries = defaults.filter((delivery) => selected === undefined || selected.has(delivery.recipient))
+      .map((delivery) => ({ ...delivery, quiet: selection?.quiet ?? delivery.quiet }))
     const routedTo = new Set(deliveries.map((delivery) => delivery.recipient))
     // A muted recipient with branch access still sees their existing row settle.
     const all = [
@@ -455,33 +470,41 @@ export const recordRepoEvent = (event: RepoEvent, localPeople: ReadonlyArray<Loc
       )
       return { readers, audience: Inbox.audience(watchers, (principal) => readers.has(principal)) }
     }
-    // Who may hear it, read without locking anything; then their feed locks, sorted, before any notification row
-    // (worker/FeedLocks.ts); then, read again after the locks, those locked who may still hear it.
+    const subject = event.kind === "main" ? `main:${event.repoId}` : `release:${event.repoId}:${event.ref}`
+    const defaults = audienceOf(yield* watchersOf()).audience
+    const selection = yield* NotificationPolicy.select({
+      repoId: event.repoId, kind: event.kind, subject, revision: `${event.ref}:${event.occurredAt.toISOString()}`,
+      candidates: defaults, defaults,
+    })
+    const selected = new Set(selection.recipients)
+    // The decision grants nothing. Lock only its eligible recipients, then re-read watches, sessions and recorded
+    // repository denials after the policy and locks, before touching any notification row (worker/FeedLocks.ts).
     const held = yield* FeedLocks.lock(
       sql,
-      audienceOf(yield* watchersOf()).audience.map((principal) => ({ repoId: event.repoId, personId: principal })),
+      defaults.filter((principal) => selected.has(principal)).map((principal) => ({ repoId: event.repoId, personId: principal })),
     )
     const watchers = yield* watchersOf()
-    const { readers, audience } = audienceOf(watchers)
-    const subject = event.kind === "main" ? `main:${event.repoId}` : `release:${event.repoId}:${event.ref}`
+    const eligible = audienceOf(watchers)
+    const readers = eligible.readers
+    const audience = eligible.audience.filter((principal) => selected.has(principal))
     let written = 0
     for (const recipient of audience.filter((principal) => FeedLocks.holds(held, { repoId: event.repoId, personId: principal }))) {
       const rows = event.kind === "main"
         ? yield* sql`
-          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
+          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at, quiet)
           VALUES (${recipient}, ${subject}, 'main', 'update', ${event.repoId}, ${event.actor}, ${event.title}, ${event.ref},
-            ${event.href}, ${event.occurredAt})
+            ${event.href}, ${event.occurredAt}, ${selection.quiet ?? false})
           ON CONFLICT (recipient, subject) DO UPDATE SET
-            actor = EXCLUDED.actor, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href,
+            actor = EXCLUDED.actor, title = EXCLUDED.title, ref = EXCLUDED.ref, href = EXCLUDED.href, quiet = EXCLUDED.quiet,
             occurred_at = EXCLUDED.occurred_at, version = n.version + 1, updated_at = now()
           WHERE EXCLUDED.occurred_at >= n.occurred_at AND EXCLUDED.ref IS DISTINCT FROM n.ref
           RETURNING 1`
         : yield* sql`
-          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at)
+          INSERT INTO notifications AS n (recipient, subject, kind, state, repo_id, actor, title, ref, href, occurred_at, quiet)
           VALUES (${recipient}, ${subject}, 'release', 'update', ${event.repoId}, ${event.actor}, ${event.title},
-            ${event.ref}, ${event.href}, ${event.occurredAt})
+            ${event.ref}, ${event.href}, ${event.occurredAt}, ${selection.quiet ?? false})
           ON CONFLICT (recipient, subject) DO UPDATE SET
-            actor = EXCLUDED.actor, title = EXCLUDED.title, href = EXCLUDED.href, occurred_at = EXCLUDED.occurred_at,
+            actor = EXCLUDED.actor, title = EXCLUDED.title, href = EXCLUDED.href, quiet = EXCLUDED.quiet, occurred_at = EXCLUDED.occurred_at,
             version = n.version + 1, updated_at = now()
           WHERE EXCLUDED.occurred_at > n.occurred_at
           RETURNING 1`
