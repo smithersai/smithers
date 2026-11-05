@@ -315,6 +315,11 @@ an absolute date and never re-renders, however many are mounted. A timestamp
 outside the range `Date` can hold still renders its label and omits `dateTime`
 and `title` rather than throwing.
 
+`useClock(running: boolean, intervalMs?: number): number`, available from
+`@smthrs/ui`, returns wall time in milliseconds. While `running` is true it
+updates on `intervalMs` (1000 ms by default); while false it keeps its sampled
+time. Its timer runs only while the hook has a subscriber and stops on unmount.
+
 ## Conversation
 
 | Export                                                                                                                                                   | Types                                                                                       | Notes                                              |
