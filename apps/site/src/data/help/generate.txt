@@ -3,7 +3,9 @@ smthrs generate — Scaffold flows, packages, and CI configuration
 Usage: smthrs generate <command>
 
 Commands:
-  flow  Create a tagged TypeScript flow without replacing an existing flow
+  ci       Generate CI files using the workspace's declared Github.CiGen target
+  flow     Create a tagged TypeScript flow without replacing an existing flow
+  package  Run the workspace's declared package scaffold with its configured defaults
 
 Custom Global Options:
   --audience <auto|human|agent>  Presentation audience; auto detects agent harnesses, CI, and terminals (default: auto)

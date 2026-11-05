@@ -431,12 +431,29 @@ export const makeCli = (
   // The backend mount retains local handlers for overlapping commands. Give
   // those retained option schemas the common flag before they are captured.
   verbose(Cli.toCommands.get(cli as never)!)
+  // Capture supported library paths before the compatibility backend adds its
+  // old doors. Scoped help may document the libraries without advertising
+  // commands for the removed backend.
+  const libraryDoors: Array<string> = []
+  const collectLibraryDoors = (
+    commands: NonNullable<ReturnType<typeof Cli.toCommands.get>>,
+    prefix: Array<string> = []
+  ) => {
+    for (const [name, entry] of commands) {
+      const path = [...prefix, name]
+      if ("_group" in entry) {
+        if (entry.root !== undefined) libraryDoors.push(path.join(" "))
+        collectLibraryDoors(entry.commands, path)
+      } else libraryDoors.push(path.join(" "))
+    }
+  }
+  collectLibraryDoors(Cli.toCommands.get(cli as never)!)
   mountBackend(cli, config)
   verbose(Cli.toCommands.get(cli as never)!)
   // Incur 0.5 intercepts `mcp` before looking up registered commands. Dispatch
   // the mounted subtree directly so registration uses Agents.addMcp as documented.
   // Incur has no hidden-group flag. A separate discovery tree removes deferred
-  // groups from help, schemas, skills and MCP without mutating the invocation tree.
+  // groups from root help, schemas, skills and MCP without mutating the invocation tree.
   const discovery = makeBuildCli({
     ...config,
     cliName: "smthrs",
@@ -450,7 +467,7 @@ export const makeCli = (
   const discoveryTree = Cli.toCommands.get(discovery as never)!
   discoveryTree.clear()
   // Appendix B.6 is an explicit discovery allowlist. Other public library
-  // commands remain callable, but do not enter install help, skills or MCP.
+  // commands remain callable, but do not enter root help, skills or MCP.
   const doors = [
     // CEO a-4mfsx0: the documented local coding path.
     "generate flow",
@@ -499,30 +516,41 @@ export const makeCli = (
   // The API playground (M-36) is the exception: it is an in-app surface, and
   // its CLI door only authorizes (#3559), so it stays invocable and out of
   // every discovery tree (#3434).
-  const humanDiscovery = makeBuildCli({
-    ...config,
-    cliName: "smthrs",
-    cliVersion: packageVersion,
-    cliDescription: "Build workspace targets and operate durable agent flows",
-    cacheSteps: createStepCacheCli(),
-    approvals: config.approvals ?? TargetApprovals.store
-  })
-  const humanTree = Cli.toCommands.get(humanDiscovery as never)!
-  humanTree.clear()
-  project(Cli.toCommands.get(cli as never)!, humanTree, [], [
+  const makeHelpCli = () =>
+    makeBuildCli({
+      ...config,
+      cliName: "smthrs",
+      cliVersion: packageVersion,
+      cliDescription: "Build workspace targets and operate durable agent flows",
+      cacheSteps: createStepCacheCli(),
+      approvals: config.approvals ?? TargetApprovals.store
+    })
+  const humanDoors = [
     ...doors,
     ...catalogCommands.filter((row) =>
       row.actors.includes("person") && row.name !== "debug-api" &&
       (row.visibility === "core" || row.visibility === "advanced")
     ).map((row) => row.cli!.join(" "))
+  ]
+  const humanDiscovery = makeHelpCli()
+  const humanTree = Cli.toCommands.get(humanDiscovery as never)!
+  humanTree.clear()
+  project(Cli.toCommands.get(cli as never)!, humanTree, [], humanDoors)
+  // Only explicitly scoped help uses this projection. Root help, manifests,
+  // skills and MCP continue to consume their reviewed discovery trees.
+  const commandHelp = makeHelpCli()
+  const commandHelpTree = Cli.toCommands.get(commandHelp as never)!
+  commandHelpTree.clear()
+  project(Cli.toCommands.get(cli as never)!, commandHelpTree, [], [
+    ...libraryDoors,
+    ...(documentation.humanHelp ? humanDoors : doors)
   ])
 
   const invoke = cli.serve.bind(cli)
   const serve: typeof cli.serve = async (argv = [], serveOptions) => {
     const parsed = Argv.parse(argv, cli)
-    // Published commands keep explicit help even when omitted from install
-    // discovery. Resolve against both existing trees; never expose them in
-    // manifests, skill generation or MCP.
+    // Resolve scoped help against the supported command projection, so a
+    // group lists its library children as well as its install doors.
     let helpOffset = 0
     while (parsed.rest[helpOffset]?.startsWith("-")) {
       const flag = parsed.rest[helpOffset]!
@@ -530,8 +558,9 @@ export const makeCli = (
       helpOffset += !flag.includes("=") && typeof value === "string" ? 2 : 1
     }
     let invocationTree = Cli.toCommands.get(cli as never)!
-    let visibleTree = discoveryTree
+    let visibleTree = commandHelpTree
     let hiddenHelp = false
+    let scopedHelp = false
     for (const word of parsed.rest.slice(helpOffset)) {
       if (word.startsWith("-")) break
       const entry = invocationTree.get(word)
@@ -541,17 +570,21 @@ export const makeCli = (
         hiddenHelp = true
         break
       }
+      scopedHelp = true
       if (!("_group" in entry) || !("_group" in visible)) break
       invocationTree = entry.commands
       visibleTree = visible.commands
     }
-    const explicitHiddenHelp = hiddenHelp && (argv.includes("--help") || argv.includes("-h")) &&
+    const explicitHelp = (argv.includes("--help") || argv.includes("-h")) &&
       !parsed.mcp && !argv.includes("--http") && !argv.includes("--schema") &&
       !argv.includes("--llms") && !argv.includes("--llms-full")
+    const explicitHiddenHelp = hiddenHelp && explicitHelp
     const rootDiscovery = parsed.rest[0] === undefined || parsed.rest[0]?.startsWith("-") ||
       parsed.rest[0] === "skills" || parsed.mcp || argv.includes("--help") || argv.includes("-h") ||
       argv.includes("--llms") || argv.includes("--llms-full")
-    const helpDiscovery = documentation.humanHelp && !parsed.mcp && parsed.rest[0] !== "skills" &&
+    const helpDiscovery = explicitHelp && scopedHelp ?
+      commandHelp :
+      documentation.humanHelp && !parsed.mcp && parsed.rest[0] !== "skills" &&
         !argv.includes("--llms") && !argv.includes("--llms-full") && (argv.includes("--help") || argv.includes("-h"))
       ? humanDiscovery :
       discovery
