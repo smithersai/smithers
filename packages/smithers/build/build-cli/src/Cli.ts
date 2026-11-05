@@ -1812,7 +1812,7 @@ const makeCommands = (config: RuntimeConfig) =>
       mcp: { annotations: { readOnlyHint: true } },
       args: patternsArgument,
       options: workspaceOption.extend({
-        policyRevision: z.string().describe("Full approved commit SHA containing the trusted review index"),
+        policyRevision: z.string().optional().describe("Full approved commit SHA containing the trusted review index"),
         revision: z.string().default("HEAD").describe("Committed source revision: HEAD or a full commit SHA"),
         plan: z.boolean().default(false).describe("Show pinned policy and source selection without inference"),
         required: z.boolean().default(false).describe(
@@ -1841,7 +1841,11 @@ const makeCommands = (config: RuntimeConfig) =>
             environment: environmentOf(config)
           })
         } catch (cause) {
-          return context.error({ code: "review_failed", exitCode: 1, message: Diagnostic.describe(cause) })
+          return context.error({
+            code: cause instanceof TrustedReview.ReviewPolicyRequired ? cause.code : "review_failed",
+            exitCode: 1,
+            message: Diagnostic.describe(cause)
+          })
         }
         if (!result.ok) return context.error({ code: "review_failed", exitCode: 1, message: JSON.stringify(result) })
         return result

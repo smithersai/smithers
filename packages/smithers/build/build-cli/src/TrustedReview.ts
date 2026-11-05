@@ -23,6 +23,18 @@ class ReviewRefused extends Data.TaggedError("smithers-build/ReviewRefused")<{
   readonly message: string
 }> {}
 
+/**
+ * A project must explicitly select approved policy before a review can run.
+ * @category errors
+ * @since 1.0.0
+ */
+export class ReviewPolicyRequired extends Data.TaggedError("smithers-build/ReviewPolicyRequired")<{}> {
+  readonly code = "review_policy_required"
+  override readonly message = "No trusted review policy was selected. Declare an LlmLint or SecurityReview target, " +
+    "generate .smithers/target-index.json, and have a person approve the policy commit. " +
+    "Run review again with --policy-revision <full approved commit SHA>."
+}
+
 const hash = /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/
 const indexLimit = 32 * 1024 * 1024
 
@@ -197,7 +209,7 @@ const gitSource = (root: string): ReviewSource => ({
  */
 export interface Options {
   readonly workspace: string
-  readonly policyRevision: string
+  readonly policyRevision?: string | undefined
   readonly revision?: string | undefined
   readonly patterns: ReadonlyArray<string>
   readonly plan?: boolean | undefined
@@ -238,6 +250,9 @@ export interface Selection {
  * @since 1.0.0
  */
 export const prepare = async (options: Options) => {
+  if (options.policyRevision === undefined || options.policyRevision.trim() === "") {
+    throw new ReviewPolicyRequired()
+  }
   if (!hash.test(options.policyRevision)) throw new Error("--policy-revision must be a full trusted commit SHA")
   const found = await PackageDiscovery.findWorkspaceRoot(options.workspace)
   if (found === undefined) throw new Error("No workspace found")
