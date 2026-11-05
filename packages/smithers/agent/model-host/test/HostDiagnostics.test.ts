@@ -4,10 +4,10 @@ import { Duration, Effect, Fiber, Stream } from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { inertCallbackTransport } from "../src/CallbackTransport.ts"
 import type { CallbackTransportObserver } from "../src/CallbackTransport.ts"
-import { DurableChatProducer, runDurableChatTurn } from "../src/DurableChatProducer.ts"
 import { HOST_DIAGNOSTIC_MARKER } from "../src/HostDiagnostics.ts"
-import { runModelTurn } from "../src/ModelTurnHost.ts"
 import { createHostDiagnostics } from "./diagnostics.ts"
+import { DurableChatProducer, runDurableChatTurn } from "./fixtures/durable.ts"
+import { runModelTurn } from "./fixtures/durable.ts"
 
 /** Collects the record lines one recorder writes. */
 const collector = () => {

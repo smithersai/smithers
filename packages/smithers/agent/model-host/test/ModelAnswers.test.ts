@@ -2,7 +2,7 @@ import { Classifier, Evaluator } from "@smthrs/model"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Exit, Schema } from "effect"
 import { describe, expect, test } from "vitest"
-import { modelAnswersOf } from "../src/ModelProbe.ts"
+import { modelAnswersOf } from "./fixtures/durable.ts"
 
 /*
  * Two decoders, one meaning. The local host decodes a composed decision

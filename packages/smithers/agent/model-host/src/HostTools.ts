@@ -17,6 +17,8 @@
  * @since 1.0.0-rc.0
  */
 
+import type { ModelStep } from "@smthrs/agent"
+
 import { type CatalogDescriptor, catalogDescriptors } from "@smthrs/cli/Catalog"
 import { type CatalogHttpRequest, catalogRequest } from "@smthrs/cli/CatalogRequest"
 import { digestSync } from "@smthrs/crypto"
@@ -1018,7 +1020,7 @@ export const runHostTurn = <E>(
   write: FrameWriter<E>,
   transport: HostTransport,
   diagnostics?: HostDiagnostics
-): Effect.Effect<void, Model.ModelFailure | ModelError.ModelError | E> =>
+): Effect.Effect<void, Model.ModelFailure | ModelError.ModelError | E, ModelStep.Requirements> =>
   Effect.gen(function*() {
     const offered = offeredCommands(grant, transport)
     /*

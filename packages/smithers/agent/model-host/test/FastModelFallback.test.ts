@@ -2,9 +2,10 @@ import { ModelError, ModelRequest } from "@smthrs/model"
 import { Deferred, Effect, Fiber, Metric, Stream } from "effect"
 import { TestClock } from "effect/testing"
 import { expect, test } from "vitest"
-import { fastModelFallback } from "../src/FastModelFallback.ts"
+import { fastModelFallback } from "./fixtures/durable.ts"
 
 const request = new ModelRequest.ModelRequest({ modelId: "gateway", system: [], messages: [], tools: [], params: {} })
+const settlement = { type: "settle", stopReason: "stop" } as const
 const answer = { type: "text-delta", id: "text", text: "answer" } as const
 
 test.each(
@@ -25,11 +26,11 @@ test.each(
     model: {
       stream: (input) => {
         seen.push(input.modelId)
-        return Stream.succeed(answer)
+        return Stream.fromIterable([answer, settlement])
       }
     }
   }])
-  expect(await Effect.runPromise(Stream.runCollect(model.stream(request)))).toEqual([answer])
+  expect(await Effect.runPromise(Stream.runCollect(model.stream(request)))).toEqual([answer, settlement])
   expect(seen).toEqual(["gateway", "team", "coding"])
 })
 test.each(["invalid_request", "context_overflow", "content_policy", "invalid_provider_output"] as const)(
@@ -42,7 +43,7 @@ test.each(["invalid_request", "context_overflow", "content_policy", "invalid_pro
       model: {
         stream: () => {
           backup = true
-          return Stream.succeed(answer)
+          return Stream.fromIterable([answer, settlement])
         }
       }
     }])
@@ -66,7 +67,7 @@ test("partial output is never replayed on another source", async () => {
     model: {
       stream: () => {
         backup = true
-        return Stream.succeed(answer)
+        return Stream.fromIterable([answer, settlement])
       }
     }
   }])
@@ -80,7 +81,7 @@ test("a primary answer does not spend fallback keys and calls reset independentl
     model: {
       stream: () => {
         count++
-        return Stream.succeed(answer)
+        return Stream.fromIterable([answer, settlement])
       }
     }
   }, {
@@ -88,12 +89,12 @@ test("a primary answer does not spend fallback keys and calls reset independentl
     model: {
       stream: () => {
         backup = true
-        return Stream.succeed(answer)
+        return Stream.fromIterable([answer, settlement])
       }
     }
   }])
   for (let i = 0; i < 2; i++) {
-    expect(await Effect.runPromise(Stream.runCollect(model.stream(request)))).toEqual([answer])
+    expect(await Effect.runPromise(Stream.runCollect(model.stream(request)))).toEqual([answer, settlement])
   }
   expect(count).toBe(2)
   expect(backup).toBe(false)
@@ -110,7 +111,7 @@ test("a ChatGPT fallback omits its unsupported output limit", async () => {
     model: {
       stream: (input) => {
         params = input.params
-        return Stream.succeed(answer)
+        return Stream.fromIterable([answer, settlement])
       }
     }
   }])
@@ -139,7 +140,7 @@ test("an unanswered fallback notification cannot hold the next model attempt", a
           modelId: "primary",
           model: { stream: () => Stream.fail(new ModelError.ModelError({ code: "rate_limited", message: "capacity" })) }
         },
-        { modelId: "backup", model: { stream: () => Stream.succeed(answer) } }
+        { modelId: "backup", model: { stream: () => Stream.fromIterable([answer, settlement]) } }
       ], () =>
         Effect.andThen(Deferred.succeed(entered, undefined), Effect.never).pipe(
           Effect.ensuring(Effect.sync(() => {
@@ -151,7 +152,7 @@ test("an unanswered fallback notification cannot hold the next model attempt", a
       yield* TestClock.adjust(1000)
       expect(cancelled).toBe(true)
       expect((yield* Metric.value(metric)).count).toBe(before.count + 1)
-      expect(yield* Fiber.join(fiber)).toEqual([answer])
+      expect(yield* Fiber.join(fiber)).toEqual([answer, settlement])
     }).pipe(Effect.provide(TestClock.layer()))
   )
 })

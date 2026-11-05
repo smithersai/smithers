@@ -24,7 +24,6 @@ Every `POST` route requires `Authorization: Bearer <authorization>` and reads at
 ```ts
 import { createModelTurnHandler, environmentModelResolver } from "@smthrs/model-host"
 import { FetchTransport } from "@smthrs/platform-node"
-import { HttpEffect } from "effect/http"
 
 // The owner's configured model binding, as the backend stores it.
 declare const configuredBinding: unknown
@@ -39,11 +38,11 @@ const app = createModelTurnHandler({
   writeDiagnostic: (line) => process.stderr.write(line)
 })
 
-// The host program is the boundary that runs it.
-const handler = HttpEffect.toWebHandler(app)
+// Register app inside the host's flow, providing the incoming HttpServerRequest.
+// The host supplies a persistent FlowRuntime and Crypto; the engine supplies FlowInstance.
 ```
 
-`createModelTurnHandler` returns an `effect/http` handler, `Effect<HttpServerResponse, never, HttpServerRequest>`: every refusal is a response, and the package runs no Effect itself. `HttpEffect.toWebHandler` turns it into a `(request: Request) => Promise<Response>` that any server speaking Fetch serves (a Node host adapts `node:http`; a Worker or `Bun.serve` passes it as `fetch`), or a host mounts it on an `HttpRouter`. It runs in the host's fiber, so the host's services, logger, tracer and metrics reach every turn.
+`createModelTurnHandler` returns an `effect/http` handler, `Effect<HttpServerResponse, never, HttpServerRequest | ModelStep.Requirements>`: every refusal is a response, and the package runs no Effect itself. Once the host binds its running flow services, `HttpEffect.toWebHandler` turns it into a `(request: Request) => Promise<Response>` that any server speaking Fetch serves (a Node host adapts `node:http`; a Worker or `Bun.serve` passes it as `fetch`), or a host mounts it on an `HttpRouter`. It runs in the host's fiber, so the host's services, logger, tracer and metrics reach every turn.
 
 A caller who goes away interrupts the body read and the model call however the handler is mounted, and the turn's outcome is still logged and counted.
 
@@ -59,7 +58,7 @@ A caller who goes away interrupts the body read and the model call however the h
 - `DurableChatProducer` and `runDurableChatTurn` commit frames to the journal callback and verify each receipt against the expected cursor.
 - `createHostDiagnostics` writes bounded, marker-tagged records to the `write` sink the host passes, and is inert without one; the package never writes to a console or stream itself. Only named measurements and approved protocol string values pass; other fields are dropped and counted. Event and phase labels use closed vocabularies. `yield* diagnostics.begin(event, fields)` starts an observation in the caller’s Effect runtime and returns its completion callback. Fast failures remain visible after the detail limit.
 - `toModel` builds the `Model` a configured-model plan names, over a transport that never follows a provider redirect (`onRedirect` is told the refused status), and the `route` it streams through. The transport's fetch (`fetch`, else the `FetchHttpClient.Fetch` present when it builds) carries every request, whatever `Fetch` the calling fiber holds. `route.prepare` gives a request's url, public headers and body exactly as the model sends them, before the key signs it. `HostModel.layer` and `HostModel.layerConfig` provide `{ modelId, model, route }` as the `HostModel` service. `HostModel.make(record)` builds the same service at run time from a configured-model record read elsewhere, such as a database row, reading its key through `Config`; a record the host cannot use, its key missing included, fails with `HostModelUnusable` and the planner's code.
-- `createModelProbe` tests a configured model and dials only its planned origin. Its `test` returns an Effect that never fails; the host runs it. `ModelCredentials.refresh` returns `Effect<void, unknown>`; refresh failures become a content-free `unreachable` result, and cancellation interrupts the refresh.
+- `createModelProbe` tests a configured model and dials only its planned origin. Its `test` requires the running flow services and returns an Effect that never fails; the host runs it. `ModelCredentials.refresh` returns `Effect<void, unknown>`; refresh failures become a content-free `unreachable` result, and cancellation interrupts the refresh.
 
 ## Failures
 
@@ -82,8 +81,27 @@ names, arguments and preflight reasons, including echoes split across chunks.
 Malformed message and tool entries are rejected with `400 request_invalid`
 before model resolution.
 
-The legacy callback host still cannot replay a completed context selection.
-Its journal frames contain selection metadata, and it has neither a persistent
-flow runtime nor a read/replay port. A proper migration must run selection as a
-registered flow step with a stable identity and record the complete selection
-answer on the host's injected persistent runtime.
+## Durable model calls
+
+Turns, context selectors, generation probes and fallback attempts use
+`ModelStep.run` from `@smthrs/agent`, the durable model-call entry in
+[the library catalog](../../../../docs/libraries.md). Their options carry the
+actual credential-free `route.prepare` alongside the matching model. The host
+must provide `Crypto` and a persistent `FlowRuntime`, and invoke them inside a
+registered flow, whose engine supplies `FlowInstance`. There is no implicit
+in-memory runtime or direct-provider fallback.
+
+The SDK records provider events and usage before replay. The host also seals
+failed attempts so resuming a fallback does not charge the failed primary
+again. Provider credential echoes are removed before recording. Decision
+probes use the evaluator protocol inside a sealed SDK action. A resumed
+execution reuses the same outcome and correlated frames without charging its
+usage again. A different execution is a separate call. Provider request bytes
+and prompt-cache keys are unchanged.
+
+Cancellation closes the provider without inventing a terminal frame. A crash
+before a call seals can require another provider attempt, as documented by
+`ModelStep`; this is at-least-once delivery. The host owns stable execution
+identities and callback-journal cursor recovery. `DurableCalls.test.ts` covers
+replay, failed-primary fallback, accounting, cancellation and reopening a real
+SQLite engine with the original cache request.

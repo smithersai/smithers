@@ -2352,12 +2352,18 @@ importers:
 
   packages/smithers/agent/model-host:
     dependencies:
+      '@smthrs/agent':
+        specifier: workspace:*
+        version: link:..
       '@smthrs/cli':
         specifier: workspace:*
         version: link:../..
       '@smthrs/crypto':
         specifier: workspace:*
         version: link:../../flows/crypto
+      '@smthrs/flow':
+        specifier: workspace:*
+        version: link:../../flows/flow
       '@smthrs/kernel':
         specifier: workspace:*
         version: link:../../flows/kernel
@@ -2383,6 +2389,15 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../flows/engine
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../flows/plan
+      '@smthrs/platform-node':
+        specifier: workspace:*
+        version: link:../../flows/platform-node
       '@types/bun':
         specifier: 1.4.4
         version: 1.4.4

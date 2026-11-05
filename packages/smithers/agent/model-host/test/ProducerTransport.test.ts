@@ -6,8 +6,8 @@ import { createServer } from "node:http"
 import type { IncomingMessage, Server, ServerResponse } from "node:http"
 import type { AddressInfo } from "node:net"
 import { afterEach, describe, expect, test } from "vitest"
-import { DurableChatProducer } from "../src/DurableChatProducer.ts"
-import { runModelTurn } from "../src/ModelTurnHost.ts"
+import { DurableChatProducer } from "./fixtures/durable.ts"
+import { runModelTurn } from "./fixtures/durable.ts"
 
 /**
  * The journal callback over real transport. The production stall is a

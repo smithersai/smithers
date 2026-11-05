@@ -4,11 +4,11 @@
  * @since 1.0.0-rc.0
  */
 
-import type { Model } from "@smthrs/model"
 import { ConfiguredModel } from "@smthrs/rpc"
 import { Effect, Redacted } from "effect"
+import type { PlannedModel } from "./ConfiguredModelRoute.ts"
 import { toModel } from "./ConfiguredModelRoute.ts"
-import { fastModelFallback } from "./FastModelFallback.ts"
+import type { ModelSource } from "./FastModelFallback.ts"
 import type { ModelTurnResolver } from "./HostServer.ts"
 import { readContextStream } from "./internal/ContextStream.ts"
 import { ResolveFailed } from "./ModelHostError.ts"
@@ -63,19 +63,21 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
   const modelOf = (plan: ConfiguredModel.ModelPlan, key: string, fast = plan.credential === "SMITHERS_FAST_PROXY") =>
     Effect.map(
       toModel(plan, Redacted.make(key), { fetch: options.fetchImpl, ...(fast ? { execution: fastExecution } : {}) }),
-      ({ model }) => model
+      (source) => source
     )
   return modelOf(planned.plan, credential).pipe(
     Effect.flatMap((model) =>
       Effect.gen(function*() {
         const withFallback = (
-          primary: Model.Model,
+          primary: PlannedModel,
           plan: ConfiguredModel.ModelPlan,
           primaryCredential: string
         ) =>
           Effect.gen(function*() {
             const additionalCredentials: Array<string> = []
-            if (plan.credential !== "SMITHERS_FAST_PROXY") return { model: primary, additionalCredentials }
+            if (plan.credential !== "SMITHERS_FAST_PROXY") {
+              return { ...primary, additionalCredentials, fallbacks: [] as Array<ModelSource>, onFallback: undefined }
+            }
             let bindings: unknown
             try {
               bindings = JSON.parse(options.env.SMITHERS_FAST_FALLBACK_MODELS ?? "[]")
@@ -85,27 +87,30 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
             if (!Array.isArray(bindings)) {
               return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
             }
-            const sources: Array<
-              { model: Model.Model; modelId: string; outputTokenLimitSupported?: boolean }
-            > = [{ model: primary, modelId: plan.modelId }]
+            const sources: Array<ModelSource> = []
             for (const binding of bindings) {
               const fallback = ConfiguredModel.planModelBinding(binding, credentials, { kind: "generation" })
               if (!fallback.ok) {
                 return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
               }
               const key = options.env[ConfiguredModel.modelCredentialEnvName(fallback.plan.credential)]?.trim()
-              if (!key) return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+              if (!key) {
+                return yield* Effect.fail(new ResolveFailed({ message: "fast-model fallback unavailable" }))
+              }
               const model = yield* modelOf(fallback.plan, key, true)
               additionalCredentials.push(key)
               sources.push({
-                model,
+                ...model,
+                credential: key,
                 modelId: fallback.plan.modelId,
                 outputTokenLimitSupported: fallback.plan.protocol !== "openai-responses-chatgpt"
               })
             }
             return {
               additionalCredentials,
-              model: fastModelFallback(sources, (index) =>
+              ...primary,
+              fallbacks: sources,
+              onFallback: (index: number) =>
                 Effect.tryPromise({
                   try: async (signal) => {
                     const endpoint = new URL(plan.baseUrl)
@@ -119,13 +124,16 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
                     await response.body?.cancel()
                   },
                   catch: () => undefined
-                }).pipe(Effect.ignore))
+                }).pipe(Effect.ignore)
             }
           })
         const routedModel = yield* withFallback(model, planned.plan, credential)
         const resolved = {
           model: routedModel.model,
           options: {
+            route: routedModel.route,
+            ...(routedModel.fallbacks.length === 0 ? {} : { fallbacks: routedModel.fallbacks }),
+            ...(routedModel.onFallback === undefined ? {} : { onFallback: routedModel.onFallback }),
             modelId: planned.plan.modelId,
             ...(planned.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
             credential,
@@ -174,6 +182,9 @@ export const environmentModelResolver = (options: EnvironmentModelResolverOption
             input,
             model: routedFast.model,
             options: {
+              route: routedFast.route,
+              ...(routedFast.fallbacks.length === 0 ? {} : { fallbacks: routedFast.fallbacks }),
+              ...(routedFast.onFallback === undefined ? {} : { onFallback: routedFast.onFallback }),
               modelId: fast.plan.modelId,
               ...(fast.plan.protocol === "openai-responses-chatgpt" ? { outputTokenLimitSupported: false } : {}),
               credential: fastCredential,

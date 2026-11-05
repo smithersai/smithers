@@ -3,7 +3,7 @@ import type { NativeAgent } from "@smthrs/rpc"
 import { Effect, Fiber, Redacted, Result, Stream } from "effect"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import { describe, expect, test } from "vitest"
-import { providerRequest, runModelTurn, StreamingCredentialCutter } from "../src/ModelTurnHost.ts"
+import { providerRequest, runModelTurn, StreamingCredentialCutter } from "./fixtures/durable.ts"
 
 const turn: NativeAgent.StartAgentTurnRequest = {
   runId: "run-1",

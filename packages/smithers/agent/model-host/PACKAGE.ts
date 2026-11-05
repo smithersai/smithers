@@ -8,12 +8,22 @@ import {
 import { Smithers } from "@smthrs/targets"
 import { Package as rpcPackage } from "../../../rpc/PACKAGE.ts"
 import { Package as cryptoPackage } from "../../flows/crypto/PACKAGE.ts"
+import { Package as flowPackage } from "../../flows/flow/PACKAGE.ts"
 import { Package as kernelPackage } from "../../flows/kernel/PACKAGE.ts"
 import { Package as cliPackage } from "../../PACKAGE.ts"
 import { Package as modelPackage } from "../model/PACKAGE.ts"
+import { Package as agentPackage } from "../PACKAGE.ts"
 
 const cwd = "packages/smithers/agent/model-host"
-const dependencies = [cliPackage.lib, cryptoPackage.lib, kernelPackage.lib, modelPackage.lib, rpcPackage.check]
+const dependencies = [
+  agentPackage.lib,
+  flowPackage.lib,
+  cliPackage.lib,
+  cryptoPackage.lib,
+  kernelPackage.lib,
+  modelPackage.lib,
+  rpcPackage.check
+]
 const standard = BuildAndCheckTypeScriptPackage({ deps: dependencies, cwd })
 
 /** The package documentation as a file group: the README, every docs page and the manifest. */

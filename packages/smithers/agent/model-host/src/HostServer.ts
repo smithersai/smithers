@@ -4,6 +4,8 @@
  * @since 1.0.0-rc.0
  */
 
+import type { ModelStep } from "@smthrs/agent"
+
 import { digestSync } from "@smthrs/crypto"
 import { type Model, ModelError } from "@smthrs/model"
 import { AgentTurnJournal, ContextPreflight, type DocsPages, type NativeAgent } from "@smthrs/rpc"
@@ -410,7 +412,11 @@ const pathOf = (url: string): string => {
  */
 export const createModelTurnHandler = (
   options: ModelTurnHandlerOptions
-): Effect.Effect<HttpServerResponse.HttpServerResponse, never, HttpServerRequest.HttpServerRequest> => {
+): Effect.Effect<
+  HttpServerResponse.HttpServerResponse,
+  never,
+  HttpServerRequest.HttpServerRequest | ModelStep.Requirements
+> => {
   if (options.authorization.trim() === "") throw new Error("model host authorization is required")
   const callbackBaseUrl = normalizedBaseUrl(options.callbackBaseUrl)
   const authorized = bearerCheck(options.authorization)
