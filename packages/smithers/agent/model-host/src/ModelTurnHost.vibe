@@ -269,7 +269,7 @@ export const runModelTurn = <E>(
   write: FrameWriter<E>,
   host?: HostLeg,
   diagnostics: HostDiagnostics = createHostDiagnostics()
-): HeldToolCalls | undefined!Model.ModelFailure | ModelError.ModelError | E => {
+): (HeldToolCalls | undefined)!(Model.ModelFailure | ModelError.ModelError | E) => {
   const text = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
   const reasoning = new StreamingCredentialCutter(options.credential, options.additionalCredentials)
   const cut = (value: string): string => {
@@ -286,7 +286,7 @@ export const runModelTurn = <E>(
   const emit = (frame: NativeAgent.AgentTurnFrame): void!E => write(frame)
   const emitDelta = (kind: "text" | "reasoning", value: string): void!E =>
     value === "" ? Effect.void : emit({ runId: turn.runId, type: "delta", kind, text: value })
-  const visit = (event: ModelEvent.ModelEvent): void!ModelError.ModelError | E => {
+  const visit = (event: ModelEvent.ModelEvent): void!(ModelError.ModelError | E) => {
     switch (event.type) {
       case "text-delta":
         return emitDelta("text", text.push(event.text))
@@ -369,7 +369,7 @@ export const runModelTurn = <E>(
   // never reached the application.
   let consumed = 0
   let characters = 0
-  const observe = (event: ModelEvent.ModelEvent): void!ModelError.ModelError | E => {
+  const observe = (event: ModelEvent.ModelEvent): void!(ModelError.ModelError | E) => {
     consumed += 1
     if (consumed === 1) diagnostics.record("model_stream", "first_event", { kind: event.type })
     if (event.type === "text-delta" || event.type === "thinking-delta") characters += event.text.length
@@ -397,7 +397,7 @@ export const runModelTurn = <E>(
   const buffered = Stream.buffer(model.stream(providerRequest(turn, options)), { capacity: "unbounded" })
   return Effect.flatMap(diagnostics.begin("model_stream"), (endStream) =>
     Stream.runForEach(buffered, observe)
-    |> Effect.flatMap(%, (): HeldToolCalls | undefined!ModelError.ModelError | E => {
+    |> Effect.flatMap(%, (): (HeldToolCalls | undefined)!(ModelError.ModelError | E) => {
       if (settled === undefined) {
         return Effect.fail(
           new ModelError.ModelError({

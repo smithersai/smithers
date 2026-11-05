@@ -320,7 +320,7 @@ export const make = <R = never>(options: MakeOptions<R>): CheckSuiteFlow<R> => {
 export const run = <I, Out, E, R>(
   input: I,
   options: RuntimeOptions<I, Out, E, R>
-): Verdict!E | PatternError!R => {
+): Verdict!(E | PatternError)!R => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the record or the option object in between must not reach it.
   const declared = Object.entries(options.checks)

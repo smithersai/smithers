@@ -695,13 +695,15 @@ const settleOrDrive = (storage, raw, options, timing) => Effect.gen(function* ()
  * finish the engine's cancellation on its next alarm. No action is started by
  * the cancellation handler and no application retry loop is needed.
  * `driveBudgetMs` bounds each drive; `afterAlarm` runs after every outcome,
- * once the active cancellation handler has been cleared.
+ * once the active cancellation handler has been cleared. Concurrent alarm/RPC drives
+ * serialize for this incarnation; a waiting caller never builds a competing runtime owner.
  *
  * @category constructors
  * @since 1.0.0
  */
 export const make = (storage, options) => {
     const gate = Semaphore.makeUnsafe(1);
+    const drives = Semaphore.makeUnsafe(1);
     let active;
     return {
         start: (value) => gate.withPermit(start(storage, value, Effect.void)),
@@ -724,7 +726,7 @@ export const make = (storage, options) => {
         // Storage and engine failures may contain content. The span exports
         // only the sanitized outcome; the caller still receives the failure.
         Effect.withSpan("cloudflare.execution.cancel"), Effect.flatMap((exit) => exit)),
-        alarm: () => Effect.flatMap(Effect.context(), (context) => alarm(storage, options).pipe(Effect.provideService(AdmissionControl, {
+        alarm: () => drives.withPermit(Effect.flatMap(Effect.context(), (context) => alarm(storage, options).pipe(Effect.provideService(AdmissionControl, {
             gate,
             activate: (cancel) => {
                 active = cancel;
@@ -734,7 +736,7 @@ export const make = (storage, options) => {
                 options.canStart(value).pipe(Effect.provide(context))
         }), Effect.ensuring(Effect.sync(() => {
             active = undefined;
-        })))).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void))
+        })))).pipe(Effect.tap(() => options.afterAlarm ?? Effect.void)))
     };
 };
 /**

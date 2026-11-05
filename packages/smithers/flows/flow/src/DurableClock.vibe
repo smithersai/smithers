@@ -123,7 +123,7 @@ export const sleep = (
      */
     readonly inMemoryThreshold?: Duration.Input | undefined
   }
-): void!never!Crypto.Crypto | FlowRuntime | FlowInstance => {
+): void!never!(Crypto.Crypto | FlowRuntime | FlowInstance) => {
   const name = options.name
   const duration = clockDuration(options.duration)
   const inMemoryThreshold = durationFromInput(

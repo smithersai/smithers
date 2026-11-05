@@ -110,7 +110,7 @@
      "relative": "packages/smithers/agent/std/src"
     },
     null,
-    "weuSLgUexjN_gf9LtuTk3dkWlHHw1D0KfLMfpc6xKvU",
+    "c88QolstANMNs8q3P6mmY-fuhYUSMA7n1Yx1t71j_BQ",
     [],
     {
      "recursive": true,
@@ -444,8 +444,8 @@
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
-    "size": 17630,
-    "hash": "28JxlA6-41z_NLPz8O0D65i2VS1vOGUaPcOvghq6BWc"
+    "size": 17798,
+    "hash": "VFgci-hEms2zkvvvv0t3_XA52s4_vu9DLChBz8vgo74"
    },
    {
     "path": {
@@ -2231,8 +2231,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/internal/Diagnostics.vibe"
     },
-    "size": 3731,
-    "hash": "nBZWlWYJhAn0eI3sbIDjGHXVN-JNWsfbSxs6tWjGDCs"
+    "size": 3735,
+    "hash": "Zn0nSJGH_J9Q8602PLcyY6gz3SYR7K31_H5QLwDTR5I"
    },
    {
     "path": {
@@ -4289,8 +4289,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -4317,8 +4317,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -4576,8 +4576,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
     },
-    "size": 14820,
-    "hash": "3_MssCulhT6JRs8AaVdGkfPVyzlGApBZgSAY0Iy7ubo"
+    "size": 15216,
+    "hash": "4pmwUEfSoBLUBBDQiK5c6jK6VfFuS6q8LH8xSCOSras"
    },
    {
     "path": {
@@ -4882,17 +4882,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/CredentialStore.ts"
+     "relative": "packages/smithers/control/src/CredentialStore.vibe"
     },
-    "size": 4923,
-    "hash": "83okyU6AnVWBzVHeGFFOrl17m0SrUrOfyZViXetwMvw"
+    "size": 4722,
+    "hash": "Sj63fjG8c1T8OIiTcv4JG_raR866aSj0p1Sd-N942Es"
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/Credential.ts"
+     "relative": "packages/smithers/control/src/Credential.vibe"
     },
-    "size": 11449,
-    "hash": "1VInZ7EOwb5mHq7FNRQyLa1kicMHKf48V4lT75hZTPw"
+    "size": 11399,
+    "hash": "FkO3acqCRu6K8DZO_hJmrICTQgDPzMUxUWvy7fZ9_ZI"
    },
    {
     "path": {
@@ -4975,8 +4975,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/SearchContract.vibe"
     },
-    "size": 19459,
-    "hash": "8laLLuJFn09AMA4F4XDVZKacM_21sAOgYNArte8kja4"
+    "size": 19463,
+    "hash": "hwHuUEaAeiTtOgDOlFeioz4jqgrgVtoyItcdP1R_JE8"
    },
    {
     "path": {
@@ -5199,8 +5199,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
     },
-    "size": 10589,
-    "hash": "nmIOmQulQbsP21_rlkDOVJBU2xXivIzquzrsxBQY7Iw"
+    "size": 10591,
+    "hash": "AuVPfp49mxp5jMb__IAfneVGHBjtHUf_qll9KENGIu0"
    },
    {
     "path": {
@@ -6999,10 +6999,10 @@
     "relative": "packages/smithers/control/src/CredentialCipher.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/CredentialStore.ts"
+    "relative": "packages/smithers/control/src/CredentialStore.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/Credential.ts"
+    "relative": "packages/smithers/control/src/Credential.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/IpAddress.ts"
@@ -7155,7 +7155,7 @@
      "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
     },
     "line": 220,
-    "column": 26,
+    "column": 27,
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
@@ -7165,7 +7165,7 @@
      "relative": "packages/smithers/agent/std/src/SearchConformance.vibe"
     },
     "line": 220,
-    "column": 44,
+    "column": 45,
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/Path#Path` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
@@ -7659,7 +7659,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {

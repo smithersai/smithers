@@ -61,8 +61,8 @@ const resolveExecutionId = (
  */
 const identityConflictAsFailure = <A, E, R>(
   effect: A!E!R
-): A!E | ExecutionIdentityConflict!R =>
-  effect |> Effect.catchCause(%, (cause): never!E | ExecutionIdentityConflict => {
+): A!(E | ExecutionIdentityConflict)!R =>
+  effect |> Effect.catchCause(%, (cause): never!(E | ExecutionIdentityConflict) => {
     const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
     return reason?.defect instanceof ExecutionIdentityConflict
       ? Effect.fail(reason.defect)

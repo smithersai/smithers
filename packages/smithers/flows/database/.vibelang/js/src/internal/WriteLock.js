@@ -18,3 +18,15 @@ import * as Context from "effect/Context";
 export const Requested = Context.Reference("@smthrs/database/WriteLock", {
     defaultValue: () => undefined
 });
+/**
+ * Whether the savepoint about to begin may be skipped because the nested write
+ * writes nothing: a failure has nothing to undo. `DurableWriter.write` sets it
+ * from `WriteOptions.readOnly` around the savepoint and clears it for the body.
+ * A driver whose savepoints cost no round trip ignores it.
+ *
+ * @category internal
+ * @since 1.0.0
+ */
+export const ReadOnlyBody = Context.Reference("@smthrs/database/WriteLock/ReadOnlyBody", {
+    defaultValue: () => false
+});

@@ -191,7 +191,7 @@ export function run<
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2> & {
     readonly onEmpty: "reduce" | "fail"
   }
-): Reduced!E | E2 | PatternError!R | R2
+): Reduced!(E | E2 | PatternError)!(R | R2)
 export function run<
   I extends { readonly shards: ReadonlyArray<unknown> },
   Mapped,
@@ -203,7 +203,7 @@ export function run<
 >(
   input: I,
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Reduced | ReadonlyArray<Mapped>!E | E2 | PatternError!R | R2
+): (Reduced | ReadonlyArray<Mapped>)!(E | E2 | PatternError)!(R | R2)
 export function run<
   I extends { readonly shards: ReadonlyArray<unknown> },
   Mapped,
@@ -215,7 +215,7 @@ export function run<
 >(
   input: I,
   options: RuntimeOptions<I, I["shards"][number], Mapped, Reduced, E, R, E2, R2>
-): Reduced | ReadonlyArray<Mapped>!E | E2 | PatternError!R | R2 {
+): (Reduced | ReadonlyArray<Mapped>)!(E | E2 | PatternError)!(R | R2) {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the shard array or the option object in between must not reach
   // it. The input itself is handed to the callbacks as the caller's object.

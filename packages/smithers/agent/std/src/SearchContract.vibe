@@ -397,7 +397,7 @@ const unsatisfiedReason = effect (
     readonly hidden: boolean
   },
   pattern: string
-): string | undefined!! => {
+): (string | undefined)!! => {
   const reasons: Array<string> = []
   for (const alternative of expandBraces(pattern)) {
     const segments = literalDirectory(alternative)
@@ -444,7 +444,7 @@ export const unsatisfiableNotice = effect (options: {
   readonly noIgnore?: boolean | undefined
   readonly ignored?: boolean | undefined
   readonly hidden: boolean
-}): string | undefined!! => {
+}): (string | undefined)!! => {
   // Globs filter a walk. A root that names one file is searched whatever the
   // globs say — `rg` always searches a path given on the command line — so
   // there is no unsatisfiable pattern to report and no directory to stat.

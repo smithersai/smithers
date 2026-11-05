@@ -163,7 +163,7 @@ const budgetRefusal = (maxRounds: number | undefined): InvalidRound | undefined 
 export const next = effect (round: Round, options: {
   readonly flowName: string
   readonly maxRounds: number | undefined
-}): { readonly round: Round; readonly executionId: string }!Flow.MaxRoundsExceeded | InvalidRound!Crypto.Crypto => {
+}): { readonly round: Round; readonly executionId: string }!(Flow.MaxRoundsExceeded | InvalidRound)!Crypto.Crypto => {
   const budget = options.maxRounds
   const refusal = validate(round) ?? budgetRefusal(budget)
   if (refusal !== undefined) throw refusal

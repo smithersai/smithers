@@ -224,7 +224,7 @@ const requireWriteId = (writeId: string): string!IntegrationError =>
     ? Effect.succeed(writeId)
     : Effect.fail(invalidWriteId(writeId))
 
-const requireSince = (since: string | undefined): string | undefined!IntegrationError =>
+const requireSince = (since: string | undefined): (string | undefined)!IntegrationError =>
   since === undefined || (typeof since === "string" && Number.isFinite(Date.parse(since)))
     ? Effect.succeed(since)
     : Effect.fail(

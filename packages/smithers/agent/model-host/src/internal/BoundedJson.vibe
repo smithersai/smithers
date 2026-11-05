@@ -18,7 +18,7 @@ const MAX_BODY_BYTES = 2 * 1024 * 1024
  */
 export const boundedJson = <E>(
   message: HttpIncomingMessage.HttpIncomingMessage<E>
-): unknown | undefined!! => {
+): (unknown | undefined)!! => {
   const length = Number(message.headers["content-length"] ?? "0")
   if (!Number.isFinite(length) || length < 0 || length > MAX_BODY_BYTES) return Effect.succeed(undefined)
   const chunks: Array<Uint8Array> = []

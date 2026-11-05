@@ -415,7 +415,7 @@ const decodeKey = Schema.decodeUnknownEffect(DerivedKey)
  */
 export const environmentIdentity = effect (
   environment?: EnvironmentIdentity
-): StoredKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+): StoredKey!(KeyMaterialError | Schema.SchemaError)!Crypto.Crypto => {
   const captured = environment === undefined ? undefined : try decodeEnvironment(environment)
   return try decodeKey({
     kind: "execution-environment/v1",
@@ -436,7 +436,7 @@ export const environmentIdentity = effect (
  */
 export const content = effect (
   identity: ContentIdentity
-): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+): StepKey!(KeyMaterialError | Schema.SchemaError)!Crypto.Crypto => {
   const environment = identity.environment === undefined ? undefined : try decodeEnvironment(identity.environment)
   return try decodeKey({
     kind: "content",
@@ -484,7 +484,7 @@ export const ordinal = (
 export const fromKeyMaterial = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+): StepKey!(KeyMaterialError | Schema.SchemaError)!Crypto.Crypto => {
   if (material.kind !== "sealed") {
     return Effect.fail(
       new KeyMaterialError({
@@ -509,7 +509,7 @@ export const fromKeyMaterial = (
 export const planIdentity = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto =>
+): StepKey!(KeyMaterialError | Schema.SchemaError)!Crypto.Crypto =>
   material.kind === "sealed" ?
     fromKeyMaterial(material, dependencyDigests) :
     (materialIdentity(material, dependencyDigests) |> Effect.flatMap(%, (identity) =>
@@ -697,7 +697,7 @@ export const dispatchIdentity = effect (options: {
   readonly environment?: EnvironmentIdentity | undefined
   /** Reuses projected-value digests while the corresponding settled values remain immutable. */
   readonly digestMemo?: DigestMemo | undefined
-}): StepKey!KeyMaterialError | Schema.SchemaError!Crypto.Crypto => {
+}): StepKey!(KeyMaterialError | Schema.SchemaError)!Crypto.Crypto => {
   const material = options.material
   if (material.kind !== "sealed") {
     throw new KeyMaterialError({

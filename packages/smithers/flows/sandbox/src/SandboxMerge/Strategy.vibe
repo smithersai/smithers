@@ -22,7 +22,7 @@ export interface Strategy<E = never, R = never> {
   readonly onConflict: (
     conflicted: Conflicted,
     repository: Repository
-  ) => Merged | Conflicted!E | MergeError!R
+  ) => (Merged | Conflicted)!(E | MergeError)!R
 }
 
 /**

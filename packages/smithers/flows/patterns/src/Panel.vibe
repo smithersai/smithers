@@ -170,14 +170,14 @@ export const make = <R = never>(options: MakeOptions<R>): PanelFlow<R> => {
 export const run = <I, A, E, R, B, E2, R2>(
   input: I,
   options: RuntimeOptions<I, A, E, R, B, E2, R2>
-): B!E | E2 | PatternError!R | R2 => {
+): B!(E | E2 | PatternError)!(R | R2) => {
   // Snapshots taken at the call, ahead of the suspend: the effect may run
   // later, and a caller's edit to the record or the option object in between
   // must not reach it.
   const panelists = Object.entries(options.panelists)
   const moderator = options.moderator
   const concurrency = options.concurrency
-  return Effect.suspend((): B!E | E2 | PatternError!R | R2 => {
+  return Effect.suspend((): B!(E | E2 | PatternError)!(R | R2) => {
     if (panelists.length === 0) {
       return Effect.fail(
         new PatternError({ code: "invalid_decorator", message: "Panel requires at least one panelist" })

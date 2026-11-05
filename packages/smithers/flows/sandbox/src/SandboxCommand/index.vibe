@@ -59,13 +59,13 @@ export interface Commands<E = never, R = never> {
   readonly start: (
     call: typeof SandboxTools.Run.Type,
     key: string
-  ) => SandboxTools.Started!SandboxTools.ToolFailure | E!R
+  ) => SandboxTools.Started!(SandboxTools.ToolFailure | E)!R
   readonly observe: (
     key: string,
     options?: { readonly waitMs?: number | undefined }
-  ) => SandboxTools.Observed!SandboxTools.ToolFailure | E!R
-  readonly collect: (key: string) => typeof SandboxTools.RunResult.Type!SandboxTools.ToolFailure | E!R
-  readonly cancel: (key: string) => void!SandboxTools.ToolFailure | E!R
+  ) => SandboxTools.Observed!(SandboxTools.ToolFailure | E)!R
+  readonly collect: (key: string) => typeof SandboxTools.RunResult.Type!(SandboxTools.ToolFailure | E)!R
+  readonly cancel: (key: string) => void!(SandboxTools.ToolFailure | E)!R
 }
 
 /**

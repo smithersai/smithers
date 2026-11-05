@@ -183,7 +183,7 @@ export const all = <const Nodes extends Readonly<Record<string, Node.Any>>>(
 export const run = <A, E, R>(
   members: Readonly<Record<string, A!E!R>>,
   options: RuntimeOptions
-): Readonly<Record<string, A>>!E | PatternError!R => {
+): Readonly<Record<string, A>>!(E | PatternError)!R => {
   // Snapshots taken at the call, ahead of the suspend: the effect may run
   // later, and a caller's edit to the record or the option object in between
   // must not reach it. Own entries only, so a prototype-shaped member name
@@ -194,7 +194,7 @@ export const run = <A, E, R>(
   const priorities = options.priorities === undefined
     ? undefined
     : Object.fromEntries(Object.entries(options.priorities))
-  return Effect.suspend((): Readonly<Record<string, A>>!E | PatternError!R => {
+  return Effect.suspend((): Readonly<Record<string, A>>!(E | PatternError)!R => {
     const refusal = widthRefusal(concurrency) ?? nonEmptyRefusal(Object.keys(declared))
     if (refusal !== undefined) return Effect.fail(refusal)
     for (const name of Object.keys(priorities ?? {})) {

@@ -201,7 +201,7 @@ export const make = <R = never>(options: MakeOptions<R>): DriftDetectorFlow<R> =
 export const run = <I, Baseline, Snapshot, Comparison, Alert, E, R, E2, R2, E3 = never, R3 = never>(
   input: I,
   options: RuntimeOptions<I, Baseline, Snapshot, Comparison, Alert, E, R, E2, R2, E3, R3>
-): Result<Snapshot, Comparison, Alert>!E | E2 | E3!R | R2 | R3 => {
+): Result<Snapshot, Comparison, Alert>!(E | E2 | E3)!(R | R2 | R3) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const { alert, alertIf, baseline, capture, compare } = options

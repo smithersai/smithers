@@ -26,7 +26,7 @@ const escapePluginIdentityPart = (value: string): string =>
 export const snapshotCacheEnvironment = <H>(
   input: unknown,
   plugins: ReadonlyArray<{ readonly plugin: FlowsPlugin<H>; readonly path: string }>
-): Action.CacheEnvironment | undefined!PluginError => {
+): (Action.CacheEnvironment | undefined)!PluginError => {
   if (input === undefined) return Effect.succeed(undefined)
   const pluginIdentities: Array<string> = []
   for (const { path, plugin } of plugins) {

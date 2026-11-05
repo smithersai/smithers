@@ -160,7 +160,7 @@ export const validateKey = (keyDigest: string): void!CacheStoreError =>
 export const validateRecordedBy = (
   recordedBy: RecordedBy | undefined,
   field = "recordedBy"
-): RecordedBy | undefined!CacheStoreError =>
+): (RecordedBy | undefined)!CacheStoreError =>
   recordedBy === undefined
     ? Effect.succeed(undefined)
     : (Schema.decodeUnknownEffect(RecordedBy)(recordedBy)
@@ -179,7 +179,7 @@ export const validateRecordedBy = (
  */
 export const validateFence = (
   fence: RecordedBy | undefined
-): RecordedBy | undefined!CacheStoreError => validateRecordedBy(fence, "eviction fence")
+): (RecordedBy | undefined)!CacheStoreError => validateRecordedBy(fence, "eviction fence")
 
 /**
  * Refuses an age bound no row could satisfy before any statement is issued.
@@ -194,7 +194,7 @@ export const validateFence = (
 export const validateAge = (
   field: string,
   value: number | undefined
-): number | undefined!CacheStoreError =>
+): (number | undefined)!CacheStoreError =>
   value === undefined || (Number.isSafeInteger(value) && value >= 0)
     ? Effect.succeed(value)
     : Effect.fail(error("invalid_cache", `${field} must be a non-negative safe integer`))

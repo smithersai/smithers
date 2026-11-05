@@ -675,7 +675,7 @@ const attemptCause = (attempts: ReadonlyArray<Attempt>): ReadonlyArray<Readonly<
 export const run = <Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>(
   prompt: string,
   caller: RuntimeOptions<Settled, E1, R1, E2, R2, E3, R3, E4, R4, E5, R5, E6, R6>
-): Settled!E1 | E2 | E3 | E5 | E6 | DelegationError | Trellis.TrellisError!R1 | R2 | R3 | R4 | R5 | R6 => {
+): Settled!(E1 | E2 | E3 | E5 | E6 | DelegationError | Trellis.TrellisError)!(R1 | R2 | R3 | R4 | R5 | R6) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const options: typeof caller = {

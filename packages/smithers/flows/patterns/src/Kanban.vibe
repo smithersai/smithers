@@ -448,7 +448,7 @@ const pass = effect <It extends Item, Out, E, R>(
 export const run = <It extends Item, Out, E = never, R = never, E2 = never, R2 = never>(
   items: ReadonlyArray<It>,
   options: RuntimeOptions<It, Out, E, R, E2, R2>
-): Board<Out, E>!PatternError | E2!R | R2 => {
+): Board<Out, E>!(PatternError | E2)!(R | R2) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the arrays or the option object in between must not reach it.
   // Each item's id is read once here; the record itself stays the caller's.

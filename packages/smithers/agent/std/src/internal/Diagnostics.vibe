@@ -76,7 +76,7 @@ export const errors = (report: unknown): ReadonlyArray<Problem> => {
  * @category internal
  * @since 1.0.0
  */
-export const sync = (path: string, text: string): LanguageServer.LanguageServer | undefined!! =>
+export const sync = (path: string, text: string): (LanguageServer.LanguageServer | undefined)!! =>
   Effect.serviceOption(LanguageServer.LanguageServer)
   |> Effect.flatMap(
     %,
@@ -131,7 +131,7 @@ export const refresh: void!! = Effect.serviceOption(LanguageServer.LanguageServe
 export const errorsOf = (
   server: LanguageServer.LanguageServer,
   path: string
-): ReadonlyArray<Problem> | undefined!! =>
+): (ReadonlyArray<Problem> | undefined)!! =>
   server.diagnostics(path)
   |> Effect.map(%, errors)
   |> Effect.orElseSucceed(%, () => undefined)

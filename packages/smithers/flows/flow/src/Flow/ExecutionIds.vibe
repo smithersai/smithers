@@ -38,7 +38,7 @@ export interface ExecutionIdSource {
   readonly mint: <W extends Any>(
     flow: W,
     payload: unknown
-  ) => string!never!Crypto.Crypto | W["payloadSchema"]["EncodingServices"]
+  ) => string!never!(Crypto.Crypto | W["payloadSchema"]["EncodingServices"])
 }
 
 /**
@@ -56,7 +56,7 @@ export interface ExecutionIdSource {
 const canonicalKey = <W extends Any>(
   flow: W,
   payload: unknown
-): string!ExecutionIdRequired!Crypto.Crypto | W["payloadSchema"]["EncodingServices"] =>
+): string!ExecutionIdRequired!(Crypto.Crypto | W["payloadSchema"]["EncodingServices"]) =>
   (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(
     payload
   ) as unknown!unknown!W["payloadSchema"]["EncodingServices"])

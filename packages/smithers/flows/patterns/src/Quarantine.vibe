@@ -223,11 +223,11 @@ export function run<A, E, R>(
 export function run<A, E, R>(
   members: Readonly<Record<string, A!E!R>>,
   options: RuntimeOptions & { readonly policy: "halt" }
-): Readonly<Record<string, A>>!E | PatternError!R
+): Readonly<Record<string, A>>!(E | PatternError)!R
 export function run<A, E, R>(
   members: Readonly<Record<string, A!E!R>>,
   options: RuntimeOptions
-): Readonly<Record<string, A | Settled<A, E>>>!E | PatternError!R {
+): Readonly<Record<string, A | Settled<A, E>>>!(E | PatternError)!R {
   // Snapshots taken at the call, ahead of the suspend: the effect may run
   // later, and a caller's edit to the record or the option object in between
   // must not reach it. Own entries only, so a prototype-shaped member name
@@ -235,7 +235,7 @@ export function run<A, E, R>(
   const declared: Readonly<Record<string, A!E!R>> = Object.fromEntries(Object.entries(members))
   const policy = options.policy
   const concurrency = options.concurrency ?? "unbounded"
-  return Effect.suspend((): Readonly<Record<string, A | Settled<A, E>>>!E | PatternError!R => {
+  return Effect.suspend((): Readonly<Record<string, A | Settled<A, E>>>!(E | PatternError)!R => {
     const names = Object.keys(declared)
     const refusal = nonEmptyRefusal(names) ?? widthRefusal(concurrency)
     if (refusal !== undefined) return Effect.fail(refusal)

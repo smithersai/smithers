@@ -311,7 +311,7 @@ interface InboundReceiptStore {
   readonly lookupMutation: (
     key: IdempotencyKey,
     fingerprint: string
-  ) => Receipt | undefined!ControlError
+  ) => (Receipt | undefined)!ControlError
   readonly recordMutation: (
     key: IdempotencyKey,
     fingerprint: string,

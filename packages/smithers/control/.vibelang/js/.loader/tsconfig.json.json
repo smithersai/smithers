@@ -124,7 +124,7 @@
      "relative": "packages/smithers/control/src"
     },
     null,
-    "es5WOM4jdSrmUCxCPCGwYoAk6k98s_rKGf77DLL7yBk",
+    "5jbma8Dc9g7VD_8kJuTaMFUpsEaV2ycZiyT3ZM9wniA",
     [],
     {
      "recursive": true,
@@ -569,8 +569,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7099,
-    "hash": "_hUBmLEtDPyXj65GEqr0h8vedJ-YXIH_c5Gu9lRiYIo"
+    "size": 7128,
+    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
    },
    {
     "path": {
@@ -3518,8 +3518,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -3546,8 +3546,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -3637,8 +3637,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
     },
-    "size": 14820,
-    "hash": "3_MssCulhT6JRs8AaVdGkfPVyzlGApBZgSAY0Iy7ubo"
+    "size": 15216,
+    "hash": "4pmwUEfSoBLUBBDQiK5c6jK6VfFuS6q8LH8xSCOSras"
    },
    {
     "path": {
@@ -4456,8 +4456,8 @@
     "path": {
      "relative": "packages/smithers/control/src/Channels.vibe"
     },
-    "size": 18909,
-    "hash": "cmpbYGcmSC2Wjm91xM8QHkSOouD7PvXxgQ5h8RQP7Qk"
+    "size": 18911,
+    "hash": "GLnXrVEiOOL0UALdNUjUtgb-NZatMsZApVZe8VzUw3Q"
    },
    {
     "path": {
@@ -5525,10 +5525,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+     "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
     },
-    "size": 881,
-    "hash": "G7louxHWm_lsKwN6BSd5VpF_9nmoMy16ufzJyz9r_bI"
+    "size": 864,
+    "hash": "D_W-_nxnXk8SHN5s8V2opTJ_w24LfvGYpiZUF5r6muk"
    },
    {
     "path": {
@@ -5548,15 +5548,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/FileSystemArtifactStore.ts"
     },
-    "size": 22837,
-    "hash": "J_ZzIMFuwXtQmkTdwIvr6_QPSL-ZtAKHhnNZTB1BN1E"
+    "size": 22839,
+    "hash": "0RWkt7rtkgK0wbaWBQpWNhD1pm1r2QJGuRRMSAXKB_c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/MemoryArtifactStore.vibe"
     },
-    "size": 3205,
-    "hash": "2FvTYZPZ7fUn57w6Y3VlYxpI1AKqzEiRyD36OvqSzQQ"
+    "size": 3207,
+    "hash": "nuHd16l_91sKtHt1r6FeA1ZhFsDop0Ff5zykt86RnGA"
    },
    {
     "path": {
@@ -5569,8 +5569,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStore.ts"
     },
-    "size": 5516,
-    "hash": "BSNCat2Z9Fqlfz33UB5QllHd2-2-rLM9dF9yIpoIluc"
+    "size": 5518,
+    "hash": "7E5nB5RuyNNVrY-FDt-cSmYzBz_QRURE88DatRYLWTU"
    },
    {
     "path": {
@@ -5660,22 +5660,22 @@
     "path": {
      "relative": "packages/smithers/control/src/CredentialCipher.vibe"
     },
-    "size": 2947,
-    "hash": "iUVCgDHBpySG_I3ULVtmEnLvK3be-rMSuJ9mPqtWwjg"
+    "size": 2949,
+    "hash": "cTQzxpbeeiSzRWJW2Jt7Ev7CrUNQ3lf6TNbfYPLJSSI"
    },
    {
     "path": {
      "relative": "packages/smithers/control/src/CredentialStore.vibe"
     },
-    "size": 4722,
-    "hash": "Sj63fjG8c1T8OIiTcv4JG_raR866aSj0p1Sd-N942Es"
+    "size": 4724,
+    "hash": "B9Q1T13RoHjge-HQ1TU2EVe46dmiXpRfZAPO0cznD-k"
    },
    {
     "path": {
      "relative": "packages/smithers/control/src/Credential.vibe"
     },
-    "size": 11399,
-    "hash": "FkO3acqCRu6K8DZO_hJmrICTQgDPzMUxUWvy7fZ9_ZI"
+    "size": 11415,
+    "hash": "UFhjLlfKIMqimk36D4WbqudG4Ar5SYPDFGe1h3OGH1E"
    },
    {
     "path": {
@@ -6227,8 +6227,8 @@
     "path": {
      "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
     },
-    "size": 4659,
-    "hash": "2BBwr6i_5I_LGgjvfprcdfcyYa2TgIWRzzZH_nj4TYU"
+    "size": 4663,
+    "hash": "KrNZmPWbloZ4o1OirE9cD2ETIAxF0bPu-FB8TqrsmL4"
    },
    {
     "path": {
@@ -6330,10 +6330,17 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/database/src/postgres/QualifiedRead.ts"
+    },
+    "size": 3893,
+    "hash": "sCZLQXPVzDBlAeXKx8zv1vw0ZcS56LPepTWLbFexDqk"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/database/src/postgres/PostgresDatabase.ts"
     },
-    "size": 22893,
-    "hash": "UHez2HBhkcidzvA7wwdLI2qGXDHHdwj30ba09FSCJKo"
+    "size": 26981,
+    "hash": "bnLOD5EtKP6dLSTzLZ1CCm-mRjUug0pU97YQpbGyjxc"
    },
    {
     "path": {
@@ -8107,7 +8114,7 @@
     "relative": "packages/smithers/flows/artifacts/src/internal/ArtifactLocks.ts"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+    "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
@@ -8399,6 +8406,9 @@
    },
    {
     "relative": "packages/smithers/flows/database/src/internal/UnsupportedDatabase.vibe"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/postgres/QualifiedRead.ts"
    },
    {
     "relative": "packages/smithers/flows/database/src/postgres/PostgresDatabase.ts"
@@ -8727,7 +8737,7 @@
      "relative": "packages/smithers/control/src/SqlCredentialStore.vibe"
     },
     "line": 64,
-    "column": 82,
+    "column": 83,
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
@@ -9311,7 +9321,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {

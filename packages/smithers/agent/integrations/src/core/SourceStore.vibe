@@ -236,7 +236,7 @@ export interface SourceStore {
     containerId?: string | undefined
   ) => boolean!IntegrationError
   /** The committed cursor of one stream, or `null` before its first page. */
-  readonly cursor: (connectionId: string, stream: string) => string | null!IntegrationError
+  readonly cursor: (connectionId: string, stream: string) => (string | null)!IntegrationError
   /** Applies one page, sweeps a completed full listing, and advances the cursor, in one transaction. */
   readonly commit: (page: Page) => CommitReport!IntegrationError
 }
@@ -362,7 +362,7 @@ interface StreamState {
 
 /** The storage port the shared rules run against, inside one transaction. */
 interface Tables {
-  readonly read: (connectionId: string, externalId: string) => Current | undefined!IntegrationError
+  readonly read: (connectionId: string, externalId: string) => (Current | undefined)!IntegrationError
   /** Writes a copy the rules decided on; a written copy is never swept. */
   readonly write: (stored: Stored) => void!IntegrationError
   readonly mark: (
@@ -774,7 +774,7 @@ const fromRow = (row: Row): Stored!IntegrationError =>
  * @category constructors
  * @since 1.0.0
  */
-export const makeSql: SourceStore!never!SqlClient.SqlClient | DurableWriter = effect {
+export const makeSql: SourceStore!never!(SqlClient.SqlClient | DurableWriter) = effect {
   const sql = try SqlClient.SqlClient
   const writer = try DurableWriter
   const cursors = try CursorStore.makeSql

@@ -217,10 +217,10 @@ export const make = (sql, options) => {
                     scope = managed && Option.isSome(transaction)
                         ? { key: sql.transactionService, transaction: transaction.value, effects, open: true }
                         : undefined;
-                    return Effect.provideService(effect, CommitScope.Current, scope).pipe(Effect.provideService(WriteLock.Requested, undefined), Effect.tap(() => Effect.sync(() => {
+                    return Effect.provideService(effect, CommitScope.Current, scope).pipe(Effect.provideService(WriteLock.Requested, undefined), Effect.provideService(WriteLock.ReadOnlyBody, false), Effect.tap(() => Effect.sync(() => {
                         bodySucceeded = true;
                     })));
-                })).pipe(Effect.provideService(WriteLock.Requested, partition), 
+                })).pipe(Effect.provideService(WriteLock.Requested, partition), Effect.provideService(WriteLock.ReadOnlyBody, writeOptions?.readOnly === true), 
                 // Effect SQL fails a rejected COMMIT with a typed `SqlError`, and
                 // with defects when the rollback that follows it fails too. Both
                 // are this write's SQL failure, so the defects return to the typed

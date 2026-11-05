@@ -67,7 +67,7 @@ const requireFilePath = (path: string): string!IntegrationError => {
     ))
 }
 
-const requireRef = (ref: string | undefined): string | undefined!IntegrationError =>
+const requireRef = (ref: string | undefined): (string | undefined)!IntegrationError =>
   ref === undefined ||
     (typeof ref === "string" && ref.length > 0 && ref.length <= MAX_REF_LENGTH && !holds(ref, " "))
     ? Effect.succeed(ref)

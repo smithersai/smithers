@@ -78,8 +78,8 @@ export interface PageOptions {
 export const forEachPage = effect <E>(
   journal: Journal.Service,
   options: PageOptions,
-  onPage: (entries: ReadonlyArray<JournalEvent.Entry>) => void | Stop!E
-): void!E | TimeTravelError => {
+  onPage: (entries: ReadonlyArray<JournalEvent.Entry>) => (void | Stop)!E
+): void!(E | TimeTravelError) => {
   let after = options.after
   while (true) {
     const page = journal.entries({

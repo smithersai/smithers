@@ -1024,7 +1024,7 @@ export const start = (
   session: Session,
   call: typeof Run.Type,
   options: CommandOptions
-): Started!ToolRefused | ToolUnavailable =>
+): Started!(ToolRefused | ToolUnavailable) =>
   commandSpan(
     "start",
     effect {
@@ -1056,7 +1056,7 @@ export const start = (
 export const observe = (
   session: Session,
   options: CommandOptions & { readonly waitMs?: number | undefined }
-): Observed!ToolRefused | ToolUnavailable =>
+): Observed!(ToolRefused | ToolUnavailable) =>
   commandSpan(
     "observe",
     effect {
@@ -1107,7 +1107,7 @@ export const collect = (
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const cancel = (session: Session, options: CommandOptions): void!ToolRefused | ToolUnavailable =>
+export const cancel = (session: Session, options: CommandOptions): void!(ToolRefused | ToolUnavailable) =>
   commandSpan(
     "cancel",
     effect {
@@ -1165,7 +1165,7 @@ if [ $((p + b)) -le "$2" ]; then cat -- "$dir/patch" "$dir/bundle"; fi`
  */
 export const checkpoint = (
   session: Session
-): Checkpoint & { readonly bundle: Uint8Array }!ToolRefused | ToolUnavailable =>
+): (Checkpoint & { readonly bundle: Uint8Array })!(ToolRefused | ToolUnavailable) =>
   (effect {
     const max = limits.checkpointBytes
     const { code, stdout } = try gather(
@@ -1222,7 +1222,7 @@ git apply --binary --whitespace=nowarn "$dir/patch" || exit 125`
  * @category operations
  * @since 1.0.0-rc.17
  */
-export const restore = (session: Session, saved: Checkpoint): void!ToolRefused | ToolUnavailable =>
+export const restore = (session: Session, saved: Checkpoint): void!(ToolRefused | ToolUnavailable) =>
   (effect {
     const bundle = saved.bundle ?? new Uint8Array()
     const input = new Uint8Array(saved.patch.byteLength + bundle.byteLength)
@@ -1369,7 +1369,7 @@ export const rebaseCall = (options: RebaseOptions): typeof Run.Type => ({
  */
 export const rebased = (
   result: typeof RunResult.Type
-): Rebased!ToolRefused | ToolUnavailable => {
+): Rebased!(ToolRefused | ToolUnavailable) => {
   if (result.timedOut) return Effect.fail(new ToolUnavailable({ code: "timeout" }))
   if (result.exitCode !== 0) return Effect.fail(failedWith(result.exitCode) as ToolRefused | ToolUnavailable)
   const [kind, tree = "", second = "", third = ""] = result.stdout.split("\n", 1)[0]!.split(" ")

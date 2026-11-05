@@ -436,7 +436,7 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
 export const run = <I, Out, E = never, R = never>(
   input: I,
   options: RuntimeOptions<I, Out, E, R>
-): Result<Out, E>!E | PatternError!R => {
+): Result<Out, E>!(E | PatternError)!R => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the array, a member record, or the option object in between must
   // not reach it.

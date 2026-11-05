@@ -44,7 +44,7 @@ import type { ParallelHook, WaterfallHook } from "./Hooks.vibe"
  * @since 1.0.0-rc.0
  */
 export interface FlowsHooks {
-  readonly config: WaterfallHook<(config: FlowsConfig) => Partial<FlowsConfig> | void!any!never>
+  readonly config: WaterfallHook<(config: FlowsConfig) => (Partial<FlowsConfig> | void)!any!never>
   readonly configResolved: ParallelHook<(config: ResolvedConfig) => void!any!never>
 }
 

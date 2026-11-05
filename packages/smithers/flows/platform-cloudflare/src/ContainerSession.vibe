@@ -71,7 +71,7 @@ export interface Process<E = never, R = never> {
  * @since 1.0.0-rc.17
  */
 export interface Container<E = never, R = never> {
-  exec(cmd: Array<string>, options: ExecOptions): Process<E, R>!E!R | Scope.Scope
+  exec(cmd: Array<string>, options: ExecOptions): Process<E, R>!E!(R | Scope.Scope)
 }
 
 /**

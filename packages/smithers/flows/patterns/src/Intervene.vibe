@@ -200,7 +200,7 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
 export const run = <I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3, E4, R4, E5 = never, R5 = never>(
   input: I,
   options: RuntimeOptions<I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3, E4, R4, E5, R5>
-): Report!E | E2 | E3 | E4 | E5 | Schema.SchemaError!R | R2 | R3 | R4 | R5 => {
+): Report!(E | E2 | E3 | E4 | E5 | Schema.SchemaError)!(R | R2 | R3 | R4 | R5) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const { apply, approval, dryRun, propose, read, report } = options

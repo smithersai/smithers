@@ -421,7 +421,7 @@ const encode = (
   })
 
 const encodeOptionalWith =
-  (method: AttemptStoreMethod) => (value: unknown | undefined, field: string): string | null!AttemptStoreError =>
+  (method: AttemptStoreMethod) => (value: unknown | undefined, field: string): (string | null)!AttemptStoreError =>
     value === undefined ? Effect.succeed(null) : encode(method, value, field)
 
 const defaultMaxCheckpointBytes = 1024 * 1024
@@ -429,7 +429,7 @@ const defaultMaxCheckpointBytes = 1024 * 1024
 const defaultInProgressStates: ReadonlyArray<string> = ["running"]
 
 const encodeCheckpointWith =
-  (method: AttemptStoreMethod, maxBytes: number) => (value: unknown | undefined): string | null!AttemptStoreError =>
+  (method: AttemptStoreMethod, maxBytes: number) => (value: unknown | undefined): (string | null)!AttemptStoreError =>
     value === undefined ? Effect.succeed(null) : encode(method, value, "checkpoint", maxBytes)
 
 const decode = (
@@ -437,7 +437,7 @@ const decode = (
   value: string | null,
   field: string,
   maxBytes?: number | undefined
-): JsonValue | undefined!AttemptStoreError =>
+): (JsonValue | undefined)!AttemptStoreError =>
   Effect.suspend(() => {
     if (value === null) return Effect.succeed(undefined)
     const admitted = Boundary.admitJsonText(value, jsonLimits(maxBytes))
@@ -810,7 +810,7 @@ const decodeRow = (method: AttemptStoreMethod, input: unknown): Attempt!AttemptS
  */
 export const makeWith = (
   options: Options = {}
-): Service!AttemptStoreError!DurableWriter | SqlClient.SqlClient =>
+): Service!AttemptStoreError!(DurableWriter | SqlClient.SqlClient) =>
   effect {
     const sql = try Effect.service(SqlClient.SqlClient)
     const writer = try DurableWriter
@@ -1168,7 +1168,7 @@ export const makeWith = (
  * @category constructors
  * @since 0.1.0
  */
-export const make: Service!never!DurableWriter | SqlClient.SqlClient = Effect.orDie(makeWith())
+export const make: Service!never!(DurableWriter | SqlClient.SqlClient) = Effect.orDie(makeWith())
 
 /**
  * Creates an attempt store from an implementation.

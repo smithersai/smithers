@@ -42,6 +42,7 @@ import * as ReadTransaction from "../internal/ReadTransaction.js";
 import { UnsupportedDatabase } from "../internal/UnsupportedDatabase.js";
 import * as WriteLock from "../internal/WriteLock.js";
 import * as WriteTally from "../internal/WriteTally.js";
+import { qualify } from "./QualifiedRead.js";
 export { isUnsupportedDatabase, UnsupportedDatabase, UnsupportedDatabaseCode } from "../internal/UnsupportedDatabase.js";
 /**
  * The longest one wait for the writer lock holds a server connection unless
@@ -172,6 +173,37 @@ export const layer = (options) => {
     // the lock outlives a rollback of that savepoint: the whole schema when it
     // names no partition, or its own partition. A transaction that holds the
     // schema, or a read transaction, which holds nothing, takes nothing.
+    // Consecutive savepoints with no statement between them mark one state, so
+    // only the first costs a round trip: the rest roll back to it. A nested write
+    // that only reads has nothing to undo and needs none (`WriteOptions.readOnly`).
+    const frames = new WeakMap();
+    const frameOf = (conn) => {
+        const found = frames.get(conn);
+        if (found !== undefined)
+            return found;
+        const frame = { clean: false, real: undefined, opened: 0, started: 0, targets: new Map() };
+        frames.set(conn, frame);
+        return frame;
+    };
+    // Marked when a statement runs, not when its effect is built: an effect can be built and run later.
+    const tracked = (conn) => {
+        const dirty = Effect.sync(() => {
+            const frame = frames.get(tracking);
+            if (frame === undefined)
+                return;
+            frame.clean = false;
+            frame.started++;
+        });
+        const tracking = {
+            execute: (sql, params, transformRows) => Effect.andThen(dirty, conn.execute(sql, params, transformRows)),
+            executeRaw: (sql, params) => Effect.andThen(dirty, conn.executeRaw(sql, params)),
+            executeValues: (sql, params) => Effect.andThen(dirty, conn.executeValues(sql, params)),
+            executeValuesUnprepared: (sql, params) => Effect.andThen(dirty, conn.executeValuesUnprepared(sql, params)),
+            executeUnprepared: (sql, params, transformRows) => Effect.andThen(dirty, conn.executeUnprepared(sql, params, transformRows)),
+            executeStream: (sql, params, transformRows) => Stream.unwrap(Effect.as(dirty, conn.executeStream(sql, params, transformRows)))
+        };
+        return tracking;
+    };
     const savepoint = (conn, id) => Effect.flatMap(requested, (partition) => {
         const state = held.get(conn);
         const widen = state !== undefined && state.schema === undefined && partition === undefined;
@@ -187,19 +219,47 @@ export const layer = (options) => {
                     state.partitions.set(partition, id - 1);
                 })))
                 : Effect.void;
-        return Effect.andThen(take, conn.executeUnprepared(`SAVEPOINT effect_sql_${id}`, [], undefined));
+        return Effect.flatMap(Effect.andThen(take, Effect.service(WriteLock.ReadOnlyBody)), (readOnlyBody) => Effect.suspend(() => {
+            const frame = frameOf(conn);
+            if (readOnlyBody) {
+                frame.targets.set(id, undefined);
+                return Effect.void;
+            }
+            if (frame.clean && frame.real !== undefined) {
+                frame.targets.set(id, frame.real);
+                return Effect.void;
+            }
+            const name = `effect_sql_${++frame.opened}`;
+            // Its own start counts once; any more means a statement started after it on this connection.
+            const expected = frame.started + 1;
+            return conn.executeUnprepared(`SAVEPOINT ${name}`, [], undefined).pipe(Effect.tap(() => Effect.sync(() => {
+                frame.targets.set(id, name);
+                frame.real = name;
+                frame.clean = frame.started === expected;
+            })));
+        }));
     });
     // Rolling back to savepoint `id` releases what was taken inside it.
-    const rollbackSavepoint = (conn, id) => conn.executeUnprepared(`ROLLBACK TO SAVEPOINT effect_sql_${id}`, [], undefined).pipe(Effect.tap(() => Effect.sync(() => {
-        const state = held.get(conn);
-        if (state === undefined)
-            return;
-        if (state.schema !== undefined && state.schema >= id)
-            state.schema = undefined;
-        for (const [partition, depth] of state.partitions)
-            if (depth >= id)
-                state.partitions.delete(partition);
-    })));
+    const rollbackSavepoint = (conn, id) => {
+        const frame = frameOf(conn);
+        // A read-only body opened none: nothing to undo, and the lock it took stays.
+        const target = frame.targets.get(id);
+        if (target === undefined)
+            return Effect.void;
+        const expected = frame.started + 1;
+        return conn.executeUnprepared(`ROLLBACK TO SAVEPOINT ${target}`, [], undefined).pipe(Effect.tap(() => Effect.sync(() => {
+            frame.real = target;
+            frame.clean = frame.started === expected;
+            const state = held.get(conn);
+            if (state === undefined)
+                return;
+            if (state.schema !== undefined && state.schema >= id)
+                state.schema = undefined;
+            for (const [partition, depth] of state.partitions)
+                if (depth >= id)
+                    state.partitions.delete(partition);
+        })));
+    };
     // PostgreSQL answers COMMIT in an aborted transaction with the tag ROLLBACK
     // and no error; that is a failed write, never a committed one.
     const commit = (conn) => conn.executeRaw("COMMIT", []).pipe(Effect.flatMap((result) => result.command === "ROLLBACK"
@@ -216,12 +276,18 @@ export const layer = (options) => {
     const alone = (conn, run) => Effect.uninterruptibleMask((restore) => Effect.flatMap(restore(scoped(conn)), () => Effect.flatMap(Effect.exit(restore(run)), (exit) => Exit.isSuccess(exit)
         ? Effect.as(commit(conn), exit.value)
         : Effect.andThen(Effect.orDie(rollback(conn)), exit))));
+    // A plain read of the engine's own tables names their schema instead: one
+    // round trip in place of four (`QualifiedRead`).
+    const lone = (conn, sql, run) => {
+        const qualified = qualify(sql, schema);
+        return qualified === undefined ? alone(conn, run(sql)) : run(qualified);
+    };
     const statements = (conn) => ({
-        execute: (sql, params, transformRows) => alone(conn, conn.execute(sql, params, transformRows)),
-        executeRaw: (sql, params) => alone(conn, conn.executeRaw(sql, params)),
-        executeValues: (sql, params) => alone(conn, conn.executeValues(sql, params)),
-        executeValuesUnprepared: (sql, params) => alone(conn, conn.executeValuesUnprepared(sql, params)),
-        executeUnprepared: (sql, params, transformRows) => alone(conn, conn.executeUnprepared(sql, params, transformRows)),
+        execute: (sql, params, transformRows) => lone(conn, sql, (text) => conn.execute(text, params, transformRows)),
+        executeRaw: (sql, params) => lone(conn, sql, (text) => conn.executeRaw(text, params)),
+        executeValues: (sql, params) => lone(conn, sql, (text) => conn.executeValues(text, params)),
+        executeValuesUnprepared: (sql, params) => lone(conn, sql, (text) => conn.executeValuesUnprepared(text, params)),
+        executeUnprepared: (sql, params, transformRows) => lone(conn, sql, (text) => conn.executeUnprepared(text, params, transformRows)),
         // A stream commits after its last row; one abandoned early, failed or
         // interrupted rolls back when its scope closes.
         executeStream: (sql, params, transformRows) => Stream.unwrap(Effect.suspend(() => {
@@ -278,7 +344,7 @@ export const layer = (options) => {
             transactionService: sql.transactionService,
             spanAttributes: [["db.system.name", "postgresql"]],
             // The transaction owns the scope its connection is reserved in.
-            acquireConnection: () => reserve,
+            acquireConnection: () => Effect.map(reserve, tracked),
             begin: (conn) => start(conn),
             savepoint,
             commit,

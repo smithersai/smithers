@@ -176,7 +176,7 @@ export const mcp = (client: McpClient.McpClient, options: ProjectionOptions = {}
  */
 export const connected = effect <O extends McpClient.ConnectOptions>(
   options: O & ProjectionOptions
-): FlowBinding.Source!McpError!McpClient.Requirements<O> | Scope.Scope => {
+): FlowBinding.Source!McpError!(McpClient.Requirements<O> | Scope.Scope) => {
   if (options.namePrefix === "") {
     throw new McpError({
       code: "protocol_error",

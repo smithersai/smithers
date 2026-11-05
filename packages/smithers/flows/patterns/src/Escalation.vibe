@@ -299,7 +299,7 @@ const escalates = <I, A, E, R, E2, R2>(
 export const run = <I, A, E, R, E2 = never, R2 = never, F = A, E3 = never, R3 = never>(
   input: I,
   options: RuntimeOptions<I, A, E, R, E2, R2, F, E3, R3>
-): Settled<A, F>!E | E2 | E3 | PatternError!R | R2 | R3 => {
+): Settled<A, F>!(E | E2 | E3 | PatternError)!(R | R2 | R3) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the array, a rung record, or the option object in between must
   // not reach it.

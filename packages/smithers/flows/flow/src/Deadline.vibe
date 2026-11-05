@@ -82,7 +82,7 @@ export const start = effect (options: {
    * Absent, the execution's first start is journaled and read back.
    */
   readonly startedAtMs?: number | undefined
-}): LineageDeadline | undefined!never!FlowRuntime | FlowInstance | Crypto.Crypto => {
+}): (LineageDeadline | undefined)!never!(FlowRuntime | FlowInstance | Crypto.Crypto) => {
   const instance = try FlowInstance
   let lineage = instance.lineageDeadline
   if (lineage === undefined) {
@@ -144,7 +144,7 @@ export const remainingMs = (deadline: LineageDeadline): number!! =>
  * @since 1.0.0
  */
 export const within =
-  (deadline: LineageDeadline | undefined, flowName: string) => <A, E, R>(body: A!E!R): A!E!R | FlowInstance =>
+  (deadline: LineageDeadline | undefined, flowName: string) => <A, E, R>(body: A!E!R): A!E!(R | FlowInstance) =>
     deadline === undefined ? body : effect {
       const instance = try FlowInstance
       const expired = new DeadlineExceeded({
@@ -196,5 +196,5 @@ export const bound = (options: {
 }) =>
 <A, E, R>(
   body: A!E!R
-): A!E!R | FlowRuntime | FlowInstance | Crypto.Crypto =>
+): A!E!(R | FlowRuntime | FlowInstance | Crypto.Crypto) =>
   Effect.flatMap(start(options), (deadline) => within(deadline, options.flowName)(body))

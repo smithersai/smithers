@@ -35,7 +35,7 @@ const writesItsOutput = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Violation | undefined!! =>
+): (Violation | undefined)!! =>
   Effect.map(
     inSession(
       provider,
@@ -55,7 +55,7 @@ const reportsANonzeroExit = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Violation | undefined!! =>
+): (Violation | undefined)!! =>
   Effect.map(
     inSession(
       provider,
@@ -76,7 +76,7 @@ const reportsANonzeroExit = (
 const answersAPing = (
   provider: Provider,
   deadline: Duration.Input
-): Violation | undefined!! =>
+): (Violation | undefined)!! =>
   Effect.map(
     inSession(provider, deadline, makeHealth(provider).check),
     (exit) =>
@@ -91,7 +91,7 @@ const signalsARunningCommand = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Violation | undefined!! =>
+): (Violation | undefined)!! =>
   Effect.map(
     inSession(
       provider,
@@ -142,7 +142,7 @@ const deliversStandardInput = (
   provider: Provider,
   commands: Commands,
   deadline: Duration.Input
-): Violation | undefined!! =>
+): (Violation | undefined)!! =>
   Effect.map(
     inSession(
       provider,

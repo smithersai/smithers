@@ -28,7 +28,7 @@ export const idempotencyKey: (
     readonly includeAttempt?: boolean | undefined
     readonly parentScope?: string | undefined
   } | undefined
-) => string!never!FlowInstance | Crypto.Crypto =
+) => string!never!(FlowInstance | Crypto.Crypto) =
   // Untraced because action-key allocation is on every action attempt.
   effect (name: string, options?: {
     readonly includeAttempt?: boolean | undefined

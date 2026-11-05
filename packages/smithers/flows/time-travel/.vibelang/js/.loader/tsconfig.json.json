@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/time-travel"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -96,7 +96,7 @@
      "relative": "packages/smithers/flows/time-travel/src"
     },
     null,
-    "lnqsH5plgY8E_3_torxG6lFfKWaPrkghEduscj9Mcgg",
+    "9tWTgJPS28t59KMQwLz-d_hBVY4iaz57rUe87NV_apQ",
     [],
     {
      "recursive": true,
@@ -265,7 +265,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -290,7 +290,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -312,14 +312,14 @@
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
     "size": 15515,
-    "hash": "iuKcgJBSKOec57LsRqZbOWZhZYYEd7wnDnyJoeyyY_o"
+    "hash": "9SIwk83tKINlZBCcjjG4ZZb0JuPSHoq7DhmSf46kVYI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
@@ -333,98 +333,98 @@
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/package.json"
     },
     "size": 8808,
-    "hash": "eCE_sx9zHiULn8bPh5Mmj9liMTMda7XZ0ahClo6YyOo"
+    "hash": "6mjN6XWIo9JHr3IBHWgVH_AejjrU54jF7xjg0LEFMZg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
+    "hash": "9GcZk3xYoB_dCBPYDNKfrJJk4OfIyFlLDn5mGcGWfok"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
     "size": 7088,
-    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
+    "hash": "q13S71scplguP_e1froPFQGBe8qAr-NpCrZZAuJJyag"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan-store/package.json"
     },
     "size": 4083,
-    "hash": "vMzRtDOlvzaKisBXUcSGorgpaWYyfeclQeZYPiZhWF8"
+    "hash": "qup3qRzCCEZgffmEMg2FYTj_EhS1IIT9wKwwYzlYASg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
     "size": 6772,
-    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
+    "hash": "Iz9hfR_2ty9UgmetwJT-434q0RYeMpr69_0-FBld8sw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
+    "hash": "9hRV6N_JW35Lw3SvPT7NdkOD2ZSzUnHKf1zoVZqe5zM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
@@ -1930,8 +1930,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -1958,8 +1958,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -2049,8 +2049,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
     },
-    "size": 14820,
-    "hash": "3_MssCulhT6JRs8AaVdGkfPVyzlGApBZgSAY0Iy7ubo"
+    "size": 15216,
+    "hash": "4pmwUEfSoBLUBBDQiK5c6jK6VfFuS6q8LH8xSCOSras"
    },
    {
     "path": {
@@ -2082,17 +2082,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
     },
-    "size": 1996,
-    "hash": "bnv3ytm7gYx9pgq9HLRopPrYRPKctQSL5q31pqiFupM"
+    "size": 1974,
+    "hash": "qXl-DYPIh9jULJFArmD-svNO-2sKLKDUEfoOcn-RPUc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
     },
-    "size": 2864,
-    "hash": "QtqvPCvQkkYx4GN2l5g-yt3DY4DvI0ZAUpOZ0pK0n4I"
+    "size": 2699,
+    "hash": "SOkLWtRPWG2unW6tY38LF_G-uYMBGh9vSsfKDZYxpVc"
    },
    {
     "path": {
@@ -2105,8 +2105,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStore.ts"
     },
-    "size": 87788,
-    "hash": "ZndaMo3_26LRSNeqG1bgkUWvcrOvYY-yyaP0uQk4OHM"
+    "size": 87792,
+    "hash": "4Jf-pv2BQYcoTjCPvuIkLTrOzg1EUkJ2Aa0SQK7rt2A"
    },
    {
     "path": {
@@ -4296,8 +4296,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
     },
-    "size": 3859,
-    "hash": "p91vkMn3zzGIacmG19Yr9wbaICfMqAeWrqyHOTEoLac"
+    "size": 3863,
+    "hash": "E1a_Vc3ebOOjEPpehu3qv4CkRqz-gr-k9PaZ4Xmgwvo"
    },
    {
     "path": {
@@ -5347,10 +5347,10 @@
     "relative": "packages/smithers/flows/run-store/src/internal/Boundary.ts"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
    },
    {
     "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
@@ -6504,7 +6504,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;;;AAIH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,KAAK,EAAwB,MAAM,uBAAyB,CAAA;AAErE;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAkB,MAAM,CAAC,GAAG,CAAC,uCAAuC,CAAC,CAAA;AAkCtF;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,0CACzB,OAAwB,EACxB,OAAoB,EACpB,MAAqE;IAErE,IAAI,KAAK,GAAG,OAAO,CAAC,KAAK,CAAA;IACzB,OAAO,IAAI,EAAE,CAAC;QACZ,MAAM,IAAI,UAKP,gBAAK,C,CAAA,EALK,EAAD,C,CAAC,MAAO,CAAC,OAAO,CAAC;YAC3B,KAAK,EAAE,OAAO,CAAC,KAA2B;YAC1C,GAAG,CAAC,KAAK,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,KAAK,EAAE,KAAyB,EAAE,CAAC;YACpE,GAAG,CAAC,OAAO,CAAC,UAAU,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,UAAU,EAAE,OAAO,CAAC,UAAU,EAAE,CAAC;YAC/E,KAAK,EAAE,OAAO,CAAC,QAAQ;SACxB,CAAC,EAAO,CAAQ,KAAK,sB,CAAA,O,CAAA,oBACd,KAAK,CAAC,SAAS,EAAE,OAAO,CAAC,WAAW,EAAE,KAAK,CAAC,KACnD,CAAA,CAAA;QACD,IAAI,QAAK,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,KAAK,IAAI;YAAE,OAAM;QAC/C,IAAI,CAAC,IAAI,CAAC,OAAO;YAAE,OAAM;QACzB,IAAI,IAAI,CAAC,OAAO,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;YAC9B,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,4CAA4C,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QACrG,CAAC;QACD,MAAM,QAAQ,GAAG,KAAK,IAAI,CAAC,CAAC,CAAA;QAC5B,MAAM,IAAI,GAAG,IAAI,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,IAAI,EAAE,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,GAAG,GAAG,IAAI,CAAC,CAAC,CAAC,KAAK,CAAC,GAAG,CAAC,CAAC,CAAC,IAAI,EAAE,QAAQ,CAAC,CAAA;QAChG,IAAI,IAAI,IAAI,QAAQ,EAAE,CAAC;YACrB,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,mCAAmC,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QAC5F,CAAC;QACD,KAAK,GAAG,IAAI,CAAA;IACd,CAAC;AACH,CAAC,CAAA,CAAA"
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;;;AAIH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,EAAE,KAAK,EAAwB,MAAM,uBAAyB,CAAA;AAErE;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAkB,MAAM,CAAC,GAAG,CAAC,uCAAuC,CAAC,CAAA;AAkCtF;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,0CACzB,OAAwB,EACxB,OAAoB,EACpB,MAAuE;IAEvE,IAAI,KAAK,GAAG,OAAO,CAAC,KAAK,CAAA;IACzB,OAAO,IAAI,EAAE,CAAC;QACZ,MAAM,IAAI,UAKP,gBAAK,C,CAAA,EALK,EAAD,C,CAAC,MAAO,CAAC,OAAO,CAAC;YAC3B,KAAK,EAAE,OAAO,CAAC,KAA2B;YAC1C,GAAG,CAAC,KAAK,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,KAAK,EAAE,KAAyB,EAAE,CAAC;YACpE,GAAG,CAAC,OAAO,CAAC,UAAU,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,UAAU,EAAE,OAAO,CAAC,UAAU,EAAE,CAAC;YAC/E,KAAK,EAAE,OAAO,CAAC,QAAQ;SACxB,CAAC,EAAO,CAAQ,KAAK,sB,CAAA,O,CAAA,oBACd,KAAK,CAAC,SAAS,EAAE,OAAO,CAAC,WAAW,EAAE,KAAK,CAAC,KACnD,CAAA,CAAA;QACD,IAAI,QAAK,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,KAAK,IAAI;YAAE,OAAM;QAC/C,IAAI,CAAC,IAAI,CAAC,OAAO;YAAE,OAAM;QACzB,IAAI,IAAI,CAAC,OAAO,CAAC,MAAM,KAAK,CAAC,EAAE,CAAC;YAC9B,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,4CAA4C,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QACrG,CAAC;QACD,MAAM,QAAQ,GAAG,KAAK,IAAI,CAAC,CAAC,CAAA;QAC5B,MAAM,IAAI,GAAG,IAAI,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,IAAI,EAAE,KAAK,EAAE,EAAE,CAAC,KAAK,CAAC,GAAG,GAAG,IAAI,CAAC,CAAC,CAAC,KAAK,CAAC,GAAG,CAAC,CAAC,CAAC,IAAI,EAAE,QAAQ,CAAC,CAAA;QAChG,IAAI,IAAI,IAAI,QAAQ,EAAE,CAAC;YACrB,4BAAM,KAAK,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,KAAK,mCAAmC,OAAO,CAAC,KAAK,EAAE,CAAC,EAAA;QAC5F,CAAC;QACD,KAAK,GAAG,IAAI,CAAA;IACd,CAAC;AACH,CAAC,CAAA,CAAA"
     }
    },
    {

@@ -231,7 +231,7 @@ export const query = <A extends object = Record<string, unknown>>(
 export const readTransaction = <A, E, R>(
   sql: SqlClient,
   effect: A!E!R
-): A!E | SqlError!R =>
+): A!(E | SqlError)!R =>
   Effect.flatMap(Effect.serviceOption(sql.transactionService), (existing) => {
     if (Option.isSome(existing)) return effect
     const open = ReadTransaction.get(sql)

@@ -39,7 +39,7 @@ export interface Active {
  * @since 1.0.0-rc.0
  */
 export interface ActiveRuns {
-  readonly get: (triggerId: string) => Active | undefined!!
+  readonly get: (triggerId: string) => (Active | undefined)!!
   readonly take: (triggerId: string, entry: Active) => void!!
   readonly update: (
     triggerId: string,

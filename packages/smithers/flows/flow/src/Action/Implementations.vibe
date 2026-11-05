@@ -62,7 +62,7 @@ export interface Implementation {
   readonly implementationVersion?: string | undefined
   readonly action: (
     payload: unknown
-  ) => unknown!unknown!Crypto.Crypto | FlowRuntime | FlowInstance
+  ) => unknown!unknown!(Crypto.Crypto | FlowRuntime | FlowInstance)
 }
 
 /**

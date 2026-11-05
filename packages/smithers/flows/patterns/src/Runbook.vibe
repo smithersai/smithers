@@ -308,7 +308,7 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
 export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
   input: I,
   options: RuntimeOptions<I, Out, E, R, E2, R2>
-): Result<Out>!E | E2 | PatternError | Schema.SchemaError!R | R2 => {
+): Result<Out>!(E | E2 | PatternError | Schema.SchemaError)!(R | R2) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the array, a step record, or the option object in between must
   // not reach it.

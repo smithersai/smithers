@@ -202,7 +202,7 @@ export const validateTime = (
 export const validateLimit = (
   value: number | undefined,
   operation: string
-): number | undefined!MemoryError =>
+): (number | undefined)!MemoryError =>
   value === undefined || (Number.isSafeInteger(value) && value >= 0)
     ? Effect.succeed(value)
     : Effect.fail(

@@ -21,7 +21,7 @@ import { IntegrationError } from "./IntegrationError.ts"
  */
 export interface CursorStore {
   /** The stored cursor for `sourceId`, or `null` when the source is new. */
-  readonly get: (sourceId: string) => string | null!IntegrationError
+  readonly get: (sourceId: string) => (string | null)!IntegrationError
   readonly set: (sourceId: string, cursor: string | null) => void!IntegrationError
 }
 

@@ -167,7 +167,7 @@ export interface Webhook {
   readonly register: void!never!ControlChannels.Channels
   readonly ingest: (
     raw: Channel.RawInbound
-  ) => Receipt!ControlError | TriggerError!ControlChannels.Channels
+  ) => Receipt!(ControlError | TriggerError)!ControlChannels.Channels
 }
 
 const invalidInput = (issue: string): InvalidInput => new InvalidInput({ issue })

@@ -12,7 +12,7 @@ import type { SqlError } from "effect/sql/SqlError"
  * @since 1.0.0
  * @private
  */
-export type Open = <A, E, R>(effect: A!E!R) => A!E | SqlError!R
+export type Open = <A, E, R>(effect: A!E!R) => A!(E | SqlError)!R
 
 const opens = new WeakMap<SqlClient, Open>()
 

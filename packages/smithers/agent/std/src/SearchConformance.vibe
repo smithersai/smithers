@@ -217,7 +217,7 @@ export const plan = (options: {
  */
 export const materialize = effect (
   target: Plan
-): void!never!FileSystem.FileSystem | Path.Path => {
+): void!never!(FileSystem.FileSystem | Path.Path) => {
   const fileSystem = try FileSystem.FileSystem
   const path = try Path.Path
   try Effect.forEach(target.files, (entry) => {

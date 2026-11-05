@@ -99,7 +99,7 @@ export class FlowRuntime extends Context.Service<
         executionId: string
       ) => Success["Type"]!Error["Type"]!R,
       options?: { readonly ifAbsent?: boolean | undefined }
-    ) => void!never!| Scope.Scope
+    ) => void!never!(| Scope.Scope
       | Exclude<
         R,
         | FlowRuntime
@@ -112,7 +112,7 @@ export class FlowRuntime extends Context.Service<
       | Success["DecodingServices"]
       | Success["EncodingServices"]
       | Error["DecodingServices"]
-      | Error["EncodingServices"]
+      | Error["EncodingServices"])
 
     /**
      * Execute a registered flow.
@@ -134,9 +134,9 @@ export class FlowRuntime extends Context.Service<
           | undefined
       }
     ) =>
-      (Discard extends true ? string : Success["Type"])!Error["Type"] | FlowCycleDetected!| Payload["EncodingServices"]
+      (Discard extends true ? string : Success["Type"])!(Error["Type"] | FlowCycleDetected)!(| Payload["EncodingServices"]
         | Success["DecodingServices"]
-        | Error["DecodingServices"]
+        | Error["DecodingServices"])
 
     /**
      * Poll the current status of a registered flow execution.
@@ -155,7 +155,7 @@ export class FlowRuntime extends Context.Service<
       flow: Flow.Flow<Name, Payload, Success, Error, any>,
       executionId: string
     ) =>
-      Option.Option<Flow.Result<Success["Type"], Error["Type"]>>!FlowExecutionNotFound!Success["DecodingServices"] | Error["DecodingServices"]
+      Option.Option<Flow.Result<Success["Type"], Error["Type"]>>!FlowExecutionNotFound!(Success["DecodingServices"] | Error["DecodingServices"])
 
     /**
      * Requests cancellation of a registered execution while preserving normal
@@ -246,11 +246,11 @@ export class FlowRuntime extends Context.Service<
     >(
       action: Action.Action<Success, Error, R>,
       attempt: number
-    ) => Flow.Result<Success["Type"], Error["Type"]>!never!| Success["DecodingServices"]
+    ) => Flow.Result<Success["Type"], Error["Type"]>!never!(| Success["DecodingServices"]
       | Error["DecodingServices"]
       | R
       | Crypto.Crypto
-      | FlowInstance
+      | FlowInstance)
 
     /**
      * Try to retrieve the result of an DurableDeferred
@@ -278,7 +278,7 @@ export class FlowRuntime extends Context.Service<
         readonly deferredName: string
         readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
       }
-    ) => void!never!Success["EncodingServices"] | Error["EncodingServices"]
+    ) => void!never!(Success["EncodingServices"] | Error["EncodingServices"])
 
     /**
      * Completes a deferred only when the addressed execution is currently
@@ -299,7 +299,7 @@ export class FlowRuntime extends Context.Service<
         readonly token: string
         readonly exit: Exit.Exit<Success["Type"], Error["Type"]>
       }
-    ) => DeferredDoneIfWaitingOutcome!never!Success["EncodingServices"] | Error["EncodingServices"]
+    ) => DeferredDoneIfWaitingOutcome!never!(Success["EncodingServices"] | Error["EncodingServices"])
 
     /**
      * Records what a driven graph is and how its nodes settled.

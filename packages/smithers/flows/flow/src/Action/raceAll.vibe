@@ -25,12 +25,12 @@ import type { Action, Any } from "./Action.ts"
 export const raceAll = <const Actions extends NonEmptyReadonlyArray<Any>>(
   name: string,
   actions: Actions
-): (Actions[number] extends Action<infer _A, infer _E, infer _R> ? _A["Type"] : never)!(Actions[number] extends Action<infer _A, infer _E, infer _R> ? _E["Type"] : never)!| Effect.Services<Actions[number]>
+): (Actions[number] extends Action<infer _A, infer _E, infer _R> ? _A["Type"] : never)!(Actions[number] extends Action<infer _A, infer _E, infer _R> ? _E["Type"] : never)!(| Effect.Services<Actions[number]>
   | (Actions[number] extends Action<infer Success, infer Error, infer _R>
     ? Success["DecodingServices"] | Success["EncodingServices"] | Error["DecodingServices"] | Error["EncodingServices"]
     : never)
   | FlowRuntime
-  | FlowInstance =>
+  | FlowInstance) =>
   DurableDeferred.raceAll({
     name: `Action/${name}`,
     success: Schema.Union(

@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/plugin"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -75,7 +75,7 @@
      "relative": "packages/smithers/agent/plugin/src"
     },
     null,
-    "78HGh4kjttUSYGR9FN8i9GkKafSCYXzwa0MmGc362ZM",
+    "pCO6PAHiJd3lUfqpUmUQw0g4wpKWyAFuxaSfOXh2hiA",
     [],
     {
      "recursive": true,
@@ -244,7 +244,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -269,7 +269,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -297,64 +297,64 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/package.json"
     },
-    "size": 10333,
-    "hash": "UGt0Jg2fkgLSer-pRP23v5mP32QVHT0MadLvrXFNWCU"
+    "size": 10281,
+    "hash": "IiFcVVtxRzqlJfCuaJeQABeGfk1RIJ6OQVcQWQ1h7UY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
+    "hash": "5fpAg2n4ffGygENUuDADtM1zzf4mesCQ4apPsCZ0Xjg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jNdvnCgiUuOZHdrFItXIA-FehSkGnK5p9AVrYdLxwuo"
    },
    {
     "path": {
@@ -535,8 +535,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "size": 7128,
+    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
    },
    {
     "path": {
@@ -3575,8 +3575,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/internal/snapshotCacheEnvironment.vibe"
     },
-    "size": 2741,
-    "hash": "4djSEtSeHmfb08fYSu-z0RAyZ47IZm6M7V922kIgaHU"
+    "size": 2743,
+    "hash": "rG44MCaOdwT3CcgJc1XJEbNgY2g1b9J6rmvh3v5H99o"
    },
    {
     "path": {
@@ -4840,10 +4840,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+     "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
     },
-    "size": 881,
-    "hash": "G7louxHWm_lsKwN6BSd5VpF_9nmoMy16ufzJyz9r_bI"
+    "size": 864,
+    "hash": "D_W-_nxnXk8SHN5s8V2opTJ_w24LfvGYpiZUF5r6muk"
    },
    {
     "path": {
@@ -4863,15 +4863,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/FileSystemArtifactStore.ts"
     },
-    "size": 22837,
-    "hash": "J_ZzIMFuwXtQmkTdwIvr6_QPSL-ZtAKHhnNZTB1BN1E"
+    "size": 22839,
+    "hash": "0RWkt7rtkgK0wbaWBQpWNhD1pm1r2QJGuRRMSAXKB_c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/MemoryArtifactStore.vibe"
     },
-    "size": 3205,
-    "hash": "2FvTYZPZ7fUn57w6Y3VlYxpI1AKqzEiRyD36OvqSzQQ"
+    "size": 3207,
+    "hash": "nuHd16l_91sKtHt1r6FeA1ZhFsDop0Ff5zykt86RnGA"
    },
    {
     "path": {
@@ -4884,8 +4884,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStore.ts"
     },
-    "size": 5516,
-    "hash": "BSNCat2Z9Fqlfz33UB5QllHd2-2-rLM9dF9yIpoIluc"
+    "size": 5518,
+    "hash": "7E5nB5RuyNNVrY-FDt-cSmYzBz_QRURE88DatRYLWTU"
    },
    {
     "path": {
@@ -4947,8 +4947,8 @@
     "path": {
      "relative": "packages/smithers/agent/plugin/src/index.vibe"
     },
-    "size": 3179,
-    "hash": "f3bra3YQGuHrWmiH24FuguTvuq_d64jzTRAT8osP444"
+    "size": 3181,
+    "hash": "7zERHq7zlJ1s1Ljvc6Pa3BRhF_cmfzViiMkxCp_IFzo"
    },
    {
     "path": {
@@ -6519,7 +6519,7 @@
     "relative": "packages/smithers/flows/artifacts/src/internal/ArtifactLocks.ts"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+    "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
@@ -6870,7 +6870,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {
