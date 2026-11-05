@@ -498,6 +498,44 @@ describe("smthrs runner serve", () => {
     expect(await host.settled(failed)).toEqual({ _tag: "Failed", reason: "agent" })
   }, 90_000)
 
+  test("stopping during prestart ends its helper processes before the runner scope closes", async () => {
+    const childFile = join(agentState, "prestart-child")
+    const hook = join(root, "prestart.mjs")
+    writeFileSync(
+      hook,
+      `
+      import { spawn } from "node:child_process";
+      import { writeFileSync } from "node:fs";
+      const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" });
+      writeFileSync(${JSON.stringify(childFile)}, String(child.pid));
+      setInterval(() => {}, 1000);
+    `
+    )
+    configure({ hooked: { prestart: [process.execPath, hook] } })
+    host.enqueue(Host.task({ profile: "hooked", base: mirror.base, prompt: "unused" }))
+    serveInProcess()
+    await until(() => existsSync(childFile))
+    const pid = Number(readFileSync(childFile, "utf8"))
+    try {
+      expect(alive(pid)).toBe(true)
+      await Effect.runPromise(Fiber.interrupt(serving!))
+      serving = undefined
+      const tree = Tree.watch(pid)
+      await Effect.runPromise(tree.observe)
+      expect(await Effect.runPromise(tree.gone)).toBe(true)
+    } finally {
+      if (alive(pid)) process.kill(pid, "SIGKILL")
+    }
+  })
+
+  test.each(["stdout", "stderr"])("prestart refuses output exceeding one MiB on %s", async (pipe) => {
+    configure({ noisy: { prestart: [process.execPath, "-e", `process.${pipe}.write('x'.repeat(1024 * 1024 + 1))`] } })
+    const row = host.enqueue(Host.task({ profile: "noisy", base: mirror.base, prompt: "unused" }))
+    serveInProcess()
+    expect(await host.settled(row)).toEqual({ _tag: "Failed", reason: "refused" })
+    expect(pids("agent-")).toEqual([])
+  })
+
   test(
     "prestart's environment reaches the agent and is scrubbed from what it says; a failing prestart refuses",
     async () => {

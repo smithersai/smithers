@@ -42,7 +42,6 @@ import * as AgentRunner from "@smthrs/agent/AgentRunner"
 import * as Transcript from "@smthrs/agent/Transcript"
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Cause, Deferred, Effect, Exit, Fiber, type Latch, Option, Queue, Schema, Stream } from "effect"
-import { execFile } from "node:child_process"
 import {
   chmodSync,
   closeSync,
@@ -242,26 +241,44 @@ const inherited = (): Record<string, string> =>
  * names, or `undefined` when it exits non-zero.
  */
 const prestart = (argv: ReadonlyArray<string>, cwd: string, env: Record<string, string>) =>
-  Effect.callback<{ readonly env: Record<string, string>; readonly account: string | undefined } | undefined>(
-    (resume, signal) => {
-      execFile(
-        argv[0]!,
-        argv.slice(1),
-        { cwd, env, signal, timeout: 60_000, maxBuffer: 1024 * 1024 },
-        (error, stdout) => {
-          if (error !== null) return resume(Effect.succeed(undefined))
-          const set: Record<string, string> = {}
-          let account: string | undefined
-          for (const line of String(stdout).split("\n")) {
-            const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim())
-            if (match === null) continue
-            if (match[1] === "account") account = match[2]
-            else set[match[1]!] = match[2]!
-          }
-          resume(Effect.succeed({ env: set, account }))
-        }
+  Effect.scoped(Effect.gen(function*() {
+    const handle = yield* ScopedProcess.spawn({ command: argv[0]!, args: argv.slice(1), cwd, env })
+    const chunks: Array<Uint8Array> = []
+    const collect = (keep: boolean) => {
+      let size = 0
+      return Stream.runForEach((chunk: Uint8Array) =>
+        Effect.gen(function*() {
+          size += chunk.byteLength
+          if (size > 1024 * 1024) return yield* Effect.fail(new Error("prestart output limit"))
+          if (keep) chunks.push(chunk)
+        })
       )
     }
+    const [code] = yield* Effect.all([
+      handle.exitCode,
+      handle.stdout.pipe(collect(true)),
+      handle.stderr.pipe(collect(false))
+    ], { concurrency: "unbounded" })
+    if (code !== 0) return undefined
+    const set: Record<string, string> = {}
+    let account: string | undefined
+    for (const line of Buffer.concat(chunks).toString().split("\n")) {
+      const match = /^([A-Za-z_][A-Za-z0-9_]*)=(.*)$/.exec(line.trim())
+      if (match === null) continue
+      if (match[1] === "account") account = match[2]
+      else set[match[1]!] = match[2]!
+    }
+    return { env: set, account }
+  })).pipe(
+    Effect.timeout("60 seconds"),
+    Effect.catch(() => Effect.succeed(undefined)),
+    Effect.tap((result) =>
+      Effect.logDebug("runner.prestart").pipe(
+        Effect.annotateLogs({ outcome: result === undefined ? "refused" : "completed" })
+      )
+    ),
+    Effect.onInterrupt(() => Effect.logDebug("runner.prestart").pipe(Effect.annotateLogs({ outcome: "cancelled" }))),
+    Effect.withSpan("runner.prestart")
   )
 
 /** The first prompt of a fresh session: the instructions, the task, and whether earlier work is in the checkout. */

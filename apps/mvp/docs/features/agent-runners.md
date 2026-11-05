@@ -120,6 +120,8 @@ the TODO to a runner:
   paths and 1 MiB added, the same limits as Smithers' own agent. `todo/Received` checks them (none is
   `empty_change`), and `todo/Publish` makes one App commit and opens the pull request, as for any TODO.
 
+The runner's `prestart` hook uses the native scoped process owner. Normal exit cleans its process group; cancellation and the 60-second deadline also stop escaped descendants observed while the hook remains live. A helper that detaches and outlives a normally exiting hook is outside that guarantee. Each output stream is capped at one MiB. The `runner.prestart` span and diagnostic record only `completed`, `refused` or `cancelled`, never hook output or environment values.
+
 Failures carry a code, never the agent's text: `agent` (it stopped short), `refused` (the profile's `prestart` hook
 refused, or the agent refused its login at the first prompt), `workspace`, `too_large`, `timeout`, `machine_lost`,
 `exhausted` and `cancelled`. Each fails the TODO `implement`.
