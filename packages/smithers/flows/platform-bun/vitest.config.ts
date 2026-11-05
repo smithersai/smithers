@@ -1,4 +1,5 @@
-import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
+import { mkdtempSync, rmSync } from "node:fs"
+import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
@@ -6,10 +7,10 @@ import { configDefaults, defineConfig } from "vitest/config"
 
 // Each Node runner owns a private report directory. Keep it until reporting has
 // finished, including failed runs, then remove it when the runner exits.
-const coverageRoot = join(import.meta.dirname, "coverage")
+// Reports stay outside the checkout so concurrent declaration discovery never
+// walks a temporary coverage tree while the reporter removes it.
 const reportsDirectory = process.versions.bun ? undefined : (() => {
-  mkdirSync(coverageRoot, { recursive: true, mode: 0o700 })
-  const directory = mkdtempSync(join(coverageRoot, "run-"))
+  const directory = mkdtempSync(join(tmpdir(), "flows-platform-bun-coverage-"))
   process.once("exit", () => rmSync(directory, { recursive: true, force: true }))
   return directory
 })()
