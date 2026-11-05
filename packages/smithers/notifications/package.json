@@ -109,7 +109,8 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/AlertPolicy.vibe"
   ],
   "publishConfig": {
     "access": "public",

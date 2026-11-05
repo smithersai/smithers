@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 
-import type { Alert } from "./AlertPolicy.ts"
+import type { Alert } from "./AlertPolicy.vibe"
 
 /**
  * Why a sink did not take an alert.

@@ -26,7 +26,7 @@ import {
   payloadRecord,
   Policy,
   recordSourceId
-} from "./AlertPolicy.ts"
+} from "./AlertPolicy.vibe"
 import { Sink } from "./AlertSink.vibe"
 import * as FoldCache from "./internal/foldCache.ts"
 import type * as NotificationModel from "./Notification.vibe"

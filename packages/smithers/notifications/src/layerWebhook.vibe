@@ -9,7 +9,7 @@
  * @since 1.0.0
  */
 
-import { alertId } from "./AlertPolicy.ts"
+import { alertId } from "./AlertPolicy.vibe"
 import { AlertError, Sink } from "./AlertSink.vibe"
 
 /**

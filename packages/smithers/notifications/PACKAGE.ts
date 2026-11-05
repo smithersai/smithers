@@ -81,7 +81,7 @@ const securityReview = Smithers.SecurityReview({
         "A duplicate admission accepted when its fingerprint differs from the committed one, or a legacy row without a fingerprint accepted for new content.",
         "drain delivering notifications whose targetLineageId differs from the drain input's lineage."
       ],
-      paths: ["src/NotificationQueue.ts", "src/NotificationState.ts", "src/AlertPolicy.ts", "src/AlertRuntime.ts"]
+      paths: ["src/NotificationQueue.ts", "src/NotificationState.ts", "src/AlertPolicy.vibe", "src/AlertRuntime.ts"]
     },
     {
       id: "notification-capacity-enforcement",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A detector field read through the prototype chain instead of Object.hasOwn.",
         "Policy decoding that admits a NaN, negative, or non-integer afterMs."
       ],
-      paths: ["src/AlertPolicy.ts", "src/AlertRuntime.ts"]
+      paths: ["src/AlertPolicy.vibe", "src/AlertRuntime.ts"]
     }
   ]
 })

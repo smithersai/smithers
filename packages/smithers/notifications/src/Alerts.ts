@@ -65,7 +65,7 @@ export {
   Policy,
   Rule,
   Severity
-} from "./AlertPolicy.ts"
+} from "./AlertPolicy.vibe"
 export { AlertRuntime, layer, type RuntimeService, type Tick } from "./AlertRuntime.ts"
 export { AlertError, FailureCode, layerNoop, Sink, type SinkService } from "./AlertSink.vibe"
 export { defaultWebhookTimeout, layerWebhook } from "./layerWebhook.vibe"
