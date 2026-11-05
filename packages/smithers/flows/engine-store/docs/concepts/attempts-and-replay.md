@@ -53,11 +53,11 @@ preserves those fields for failed-attempt replay after a crash. A secret that
 must never enter executable state belongs in a `Redacted` field of the action's
 own schema.
 
-| Column | Redacted |
-| --- | --- |
-| `flows_attempts.error_json` | Typed `Fail` values stay exact. Defect `message` and `stack` text is redacted. |
-| `flows_runs.state_json` | The inert terminal `failure` diagnostic is redacted and bounded; executable typed errors stay exact. |
-| `flows_attempts.outcome_json` | Never. It is the executable copy replay returns, byte for byte. |
+| Column                        | Redacted                                                                                             |
+| ----------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `flows_attempts.error_json`   | Typed `Fail` values stay exact. Defect `message` and `stack` text is redacted.                       |
+| `flows_runs.state_json`       | The inert terminal `failure` diagnostic is redacted and bounded; executable typed errors stay exact. |
+| `flows_attempts.outcome_json` | Never. It is the executable copy replay returns, byte for byte.                                      |
 
 Journal payloads and failure diagnostics use the journal's redaction rules.
 They are separate from the encoded errors replay returns.

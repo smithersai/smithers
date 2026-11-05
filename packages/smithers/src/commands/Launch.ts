@@ -59,8 +59,11 @@ export const resume = (planOrRunId: string, allowCodeDrift = false, quiet = fals
       const run = yield* RunReads.summary(control, planOrRunId).pipe(Effect.catch(() => Effect.succeed(undefined)))
       return {
         ...receipt,
-        cause: details.unavailable ? "failure details unavailable; retry runs show after the connection recovers"
-          : failure === undefined ? "no cause recorded in this historical run" : `${failure.tag}: ${failure.message}`,
+        cause: details.unavailable ?
+          "failure details unavailable; retry runs show after the connection recovers"
+          : failure === undefined
+          ? "no cause recorded in this historical run"
+          : `${failure.tag}: ${failure.message}`,
         ...(failure === undefined ? {} : { failure }),
         // A terminal run never resumes. A retryable fault's remedy is the same input in a fresh run once its cause
         // clears; a flow names anything more specific in its failure message, which `cause` carries.

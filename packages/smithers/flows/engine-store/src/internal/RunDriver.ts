@@ -30,8 +30,8 @@ import { type Failure, type OnParentExit, type ReleaseCause, RunState } from "..
 import * as WakeBus from "../WakeBus.ts"
 import * as ActionPersistence from "./ActionPersistence.ts"
 import * as EffectRecords from "./EffectRecords.ts"
-import * as FailureDiagnostic from "./FailureDiagnostic.ts"
 import * as ExitEncoding from "./ExitEncoding.ts"
+import * as FailureDiagnostic from "./FailureDiagnostic.ts"
 import * as JournalRecords from "./JournalRecords.ts"
 import * as RetrySource from "./RetrySource.ts"
 import * as RunCoordinator from "./RunCoordinator.ts"
@@ -3170,7 +3170,8 @@ const settleResult = (
       ? result.exit.cause.reasons.map((reason) => {
         const site = Context.getOrUndefined(Cause.reasonAnnotations(reason), FlowEngine.FailureSite)
         return FailureDiagnostic.site(site) ?? null
-      }) : undefined
+      }) :
+      undefined
     const nextState: RunState = { ...activeState, result: encodedResult.encoded }
     const status = settledStatus(encodedResult, result)
     const waiting = status === "suspended" ? yield* parkReason(driver, executionId, instance) : null
@@ -3194,7 +3195,11 @@ const settleResult = (
       driver,
       executionId,
       status,
-      FailureDiagnostic.withinState(yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }), failure, failureSites),
+      FailureDiagnostic.withinState(
+        yield* encodeState(parked === undefined ? nextState : { ...nextState, parked }),
+        failure,
+        failureSites
+      ),
       {
         decision: "transitioned",
         status,
@@ -4188,14 +4193,20 @@ const decodeSettlement = (
     Effect.orDie,
     Effect.map((result) => {
       if (result._tag !== "Complete" || Exit.isSuccess(result.exit)) return result
-      const primary = result.exit.cause.reasons.findIndex((reason) => Cause.isFailReason(reason) || Cause.isDieReason(reason))
-      return new Flow.Complete({ exit: Exit.failCause(Cause.fromReasons(result.exit.cause.reasons.map((reason, index) => {
-        // An old primary diagnostic describes only its first failure, never every reason.
-        const site = state.failureSites?.[index] ?? (state.failureSites === undefined && index === primary && state.failure !== undefined
-          ? { ...state.failure, executionId: state.failure.executionId ?? executionId } : undefined)
-        const coordinates = FailureDiagnostic.site(site)
-        return coordinates === undefined ? reason : reason.annotate(Context.make(FlowEngine.FailureSite, coordinates))
-      }))) })
+      const primary = result.exit.cause.reasons.findIndex((reason) =>
+        Cause.isFailReason(reason) || Cause.isDieReason(reason)
+      )
+      return new Flow.Complete({
+        exit: Exit.failCause(Cause.fromReasons(result.exit.cause.reasons.map((reason, index) => {
+          // An old primary diagnostic describes only its first failure, never every reason.
+          const site = state.failureSites?.[index] ??
+            (state.failureSites === undefined && index === primary && state.failure !== undefined
+              ? { ...state.failure, executionId: state.failure.executionId ?? executionId } :
+              undefined)
+          const coordinates = FailureDiagnostic.site(site)
+          return coordinates === undefined ? reason : reason.annotate(Context.make(FlowEngine.FailureSite, coordinates))
+        })))
+      })
     }),
     Effect.map(Option.some)
   ) as Effect.Effect<Option.Option<Flow.Result<unknown, unknown>>>

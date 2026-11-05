@@ -343,9 +343,8 @@ const changeIdsOf = (count: number) =>
   Array.from(
     { length: count },
     (_, index) =>
-      "k".repeat(28) + [...index.toString(16).padStart(4, "0")].map((digit) =>
-        "klmnopqrstuvwxyz"[parseInt(digit, 16)]
-      ).join("")
+      "k".repeat(28) +
+      [...index.toString(16).padStart(4, "0")].map((digit) => "klmnopqrstuvwxyz"[parseInt(digit, 16)]).join("")
   )
 
 test("a native read of more change IDs than one helper request answers every one, in order", async (t) => {
@@ -392,7 +391,9 @@ test("packaged helper reads a stack longer than one request", {
     })
   jj("git", "init")
   for (let index = 0; index < 101; index++) jj("new", "-m", `c${index}`)
-  const changeIds = jj("log", "--no-graph", "-r", "::@- ~ root()", "-T", "change_id ++ \"\\n\"").split("\n").filter(Boolean)
+  const changeIds = jj("log", "--no-graph", "-r", "::@- ~ root()", "-T", "change_id ++ \"\\n\"").split("\n").filter(
+    Boolean
+  )
   assert.equal(changeIds.length, 101)
   const read = await Effect.runPromise(
     Effect.flatMap(NativeCoding, (native) => native.read(changeIds)).pipe(

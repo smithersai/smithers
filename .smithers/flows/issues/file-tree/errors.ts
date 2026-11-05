@@ -14,7 +14,13 @@ export class FileRefused extends Schema.TaggedError<FileRefused>()("issues/file-
 Fault.register("issues/file-tree/Refused", {
   unavailable: "infra",
   unavailable_exhausted: "infra",
-  identity: "user", plan: "user", refused: "user", token: "user",
-  invalid: "user", pending: "user", scrub: "user", search: "user", failed: "bug"
+  identity: "user",
+  plan: "user",
+  refused: "user",
+  token: "user",
+  invalid: "user",
+  pending: "user",
+  scrub: "user",
+  search: "user",
+  failed: "bug"
 })
-

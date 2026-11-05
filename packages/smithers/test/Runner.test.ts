@@ -1096,36 +1096,40 @@ describe("smthrs runner, as processes", () => {
 
   // Astra's review of f7b3de5f and 281a40d4: a provisioning command runs in a process group of its own, so killing the
   // runner left it running (a stalled fetch holding its connection) with nobody to end it.
-  test("a runner killed while a fetch stalls is started again and ends the orphaned fetch before anything else", async () => {
-    configure()
-    const connections: Array<{ closed: boolean }> = []
-    const server = createServer((request) => {
-      const seen = { closed: false }
-      connections.push(seen)
-      request.socket.on("close", () => (seen.closed = true))
-    })
-    await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
-    try {
-      const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/stalled.git`
-      execFileSync("jj", ["-R", mirror.path, "git", "remote", "add", "origin", url, ...Host.jjFlags], {
-        env: { ...process.env, JJ_CONFIG: join(root, "jj-config") },
-        stdio: "ignore"
+  test(
+    "a runner killed while a fetch stalls is started again and ends the orphaned fetch before anything else",
+    async () => {
+      configure()
+      const connections: Array<{ closed: boolean }> = []
+      const server = createServer((request) => {
+        const seen = { closed: false }
+        connections.push(seen)
+        request.socket.on("close", () => (seen.closed = true))
       })
-      host.enqueue(Host.task({ base: "f".repeat(40), prompt: "refuse" }), { origin: "todo:orphan" })
-      const first = runner(["serve", "--config", configPath])
-      await until(() => connections.length > 0, 60_000)
-      // Only the runner's own process: its fetch, in a group of its own, is orphaned.
-      first.kill("SIGKILL")
-      await new Promise((done) => first.once("exit", done))
-      await new Promise((done) => setTimeout(done, 1_000))
-      expect(connections.some((each) => !each.closed)).toBe(true)
-      runner(["serve", "--config", configPath])
-      await until(() => connections.slice(0, 1).every((each) => each.closed), 30_000)
-    } finally {
-      server.closeAllConnections()
-      server.close()
-    }
-  }, 120_000)
+      await new Promise<void>((done) => server.listen(0, "127.0.0.1", done))
+      try {
+        const url = `http://127.0.0.1:${(server.address() as { port: number }).port}/stalled.git`
+        execFileSync("jj", ["-R", mirror.path, "git", "remote", "add", "origin", url, ...Host.jjFlags], {
+          env: { ...process.env, JJ_CONFIG: join(root, "jj-config") },
+          stdio: "ignore"
+        })
+        host.enqueue(Host.task({ base: "f".repeat(40), prompt: "refuse" }), { origin: "todo:orphan" })
+        const first = runner(["serve", "--config", configPath])
+        await until(() => connections.length > 0, 60_000)
+        // Only the runner's own process: its fetch, in a group of its own, is orphaned.
+        first.kill("SIGKILL")
+        await new Promise((done) => first.once("exit", done))
+        await new Promise((done) => setTimeout(done, 1_000))
+        expect(connections.some((each) => !each.closed)).toBe(true)
+        runner(["serve", "--config", configPath])
+        await until(() => connections.slice(0, 1).every((each) => each.closed), 30_000)
+      } finally {
+        server.closeAllConnections()
+        server.close()
+      }
+    },
+    120_000
+  )
 
   test("a runner killed mid-job is started again, reclaims the job and finishes it under the same claim", async () => {
     configure()

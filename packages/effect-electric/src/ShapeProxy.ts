@@ -194,8 +194,14 @@ export interface Options<R = never> extends Connection {
 }
 
 // Closed, content-free causes of a 503 response.
-type Reason = "sse_refused" | "shape_refused" | "electric_unavailable" | "electric_503"
-  | "validate_failed" | "validate_superseded" | "replay_required"
+type Reason =
+  | "sse_refused"
+  | "shape_refused"
+  | "electric_unavailable"
+  | "electric_503"
+  | "validate_failed"
+  | "validate_superseded"
+  | "replay_required"
 
 // How a request ended: complete, aborted by the browser, failed while reading, or superseded by access.
 type Outcome = "complete" | "aborted" | "failed" | "superseded"
@@ -414,7 +420,10 @@ export const make = <R = never>(
       return HttpServerResponse.empty({ status: 405, headers: { allow: "GET", ...ownHeaders } })
     }
 
-    if (options.rowAccess !== undefined && ["live_sse", "experimental_live_sse"].some((key) => incoming.get(key) === "true")) {
+    if (
+      options.rowAccess !== undefined &&
+      ["live_sse", "experimental_live_sse"].some((key) => incoming.get(key) === "true")
+    ) {
       yield* ended(503, "access", "complete", "sse_refused")
       return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, "retry-after": "5" } })
     }
@@ -430,7 +439,12 @@ export const make = <R = never>(
     }
     if (Result.isFailure(decided)) {
       const { status, retryAfter } = decided.failure
-      yield* ended(status, decided.failure.upstream ?? "access", "complete", status === 503 ? "shape_refused" : undefined)
+      yield* ended(
+        status,
+        decided.failure.upstream ?? "access",
+        "complete",
+        status === 503 ? "shape_refused" : undefined
+      )
       return HttpServerResponse.empty({
         status,
         headers: {
@@ -493,7 +507,10 @@ export const make = <R = never>(
     // browser's fetch follows it by default, to a target whose 403 would skip this. Each stays a retryable failure,
     // never cached, and its body is cancelled, so a bad deploy's retries hold no upstream connection open.
     const upstreamStatus = response.value.status
-    if (upstreamStatus === 401 || upstreamStatus === 403 || (upstreamStatus >= 300 && upstreamStatus < 400 && upstreamStatus !== 304)) {
+    if (
+      upstreamStatus === 401 || upstreamStatus === 403 ||
+      (upstreamStatus >= 300 && upstreamStatus < 400 && upstreamStatus !== 304)
+    ) {
       yield* Stream.runDrain(response.value.stream).pipe(Effect.timeout("10 millis"), Effect.ignore)
       yield* ended(503, "electric", "complete", "electric_unavailable")
       return HttpServerResponse.empty({ status: 503, headers: { "retry-after": "5", ...ownHeaders, ...noStore } })
@@ -507,15 +524,22 @@ export const make = <R = never>(
       ...ownHeaders
     }
     const validateRows = Effect.gen(function*() {
-      const valid = yield* Effect.result((options.rowAccess?.validate ?? Effect.succeed(true)).pipe(Effect.annotateLogs({ correlationId })))
+      const valid = yield* Effect.result(
+        (options.rowAccess?.validate ?? Effect.succeed(true)).pipe(Effect.annotateLogs({ correlationId }))
+      )
       if (Result.isFailure(valid) || !valid.success) {
-        yield* ended(503, "access", Result.isFailure(valid) ? "failed" : "superseded",
-          Result.isFailure(valid) ? "validate_failed" : "validate_superseded")
+        yield* ended(
+          503,
+          "access",
+          Result.isFailure(valid) ? "failed" : "superseded",
+          Result.isFailure(valid) ? "validate_failed" : "validate_superseded"
+        )
         return false
       }
       return true
     })
-    const accessRefused = () => HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
+    const accessRefused = () =>
+      HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
     // Idle polls must reconcile authority too: suppressed rows otherwise cannot generate the insert that wakes
     // this subscriber after permission renewal. Bodyless responses have nothing left to buffer.
     if ([204, 205, 304].includes(status)) {
@@ -543,20 +567,30 @@ export const make = <R = never>(
       // A cursor fence failure must withhold the entire cursor so a projection change cannot skip its deletes.
       if (!(yield* validateRows)) return accessRefused()
       let requiresReplay = false
-      const filtered = yield* Effect.try(() => (messages.value as Array<unknown>).flatMap((message: unknown) => {
-        if (typeof message !== "object" || message === null) throw new Error("invalid shape message")
-        const row = message as { readonly value?: Record<string, unknown>; readonly headers?: Record<string, unknown> }
-        if (row.value === undefined) return [message]
-        if (typeof row.value !== "object" || row.value === null || !guard.keyColumns.every((key) => Object.hasOwn(row.value!, key))) {
-          throw new Error("shape keys missing")
-        }
-        if (row.headers?.["operation"] === "delete") return [{ ...row,
-          value: Object.fromEntries(guard.keyColumns.map((key) => [key, row.value![key]])),
-        }]
-        if (guard.allows(row.value)) return [message]
-        if (guard.retryIfDenied?.(row.value) === true) requiresReplay = true
-        return []
-      })).pipe(Effect.option)
+      const filtered = yield* Effect.try(() =>
+        (messages.value as Array<unknown>).flatMap((message: unknown) => {
+          if (typeof message !== "object" || message === null) throw new Error("invalid shape message")
+          const row = message as {
+            readonly value?: Record<string, unknown>
+            readonly headers?: Record<string, unknown>
+          }
+          if (row.value === undefined) return [message]
+          if (
+            typeof row.value !== "object" || row.value === null ||
+            !guard.keyColumns.every((key) => Object.hasOwn(row.value!, key))
+          ) {
+            throw new Error("shape keys missing")
+          }
+          if (row.headers?.["operation"] === "delete") {
+            return [{ ...row, value: Object.fromEntries(guard.keyColumns.map((key) => [key, row.value![key]])) }]
+          }
+          if (guard.allows(row.value)) {
+            return [message]
+          }
+          if (guard.retryIfDenied?.(row.value) === true) requiresReplay = true
+          return []
+        })
+      ).pipe(Effect.option)
       if (Option.isNone(filtered)) {
         yield* ended(502, "electric", "failed")
         return HttpServerResponse.empty({ status: 502, headers: ownHeaders })
@@ -566,9 +600,20 @@ export const make = <R = never>(
         return HttpServerResponse.empty({ status: 503, headers: { ...ownHeaders, ...noStore, "retry-after": "1" } })
       }
       const body = new TextEncoder().encode(JSON.stringify(filtered.value))
-      const guarded = HttpServerResponse.uint8Array(body, { status, headers: { ...responseHeaders, "content-type": "application/json" } })
-      yield* record({ status, correlationId, upstream: "electric", live, phase, startedAt,
-        bytes: body.byteLength, outcome: "complete" })
+      const guarded = HttpServerResponse.uint8Array(body, {
+        status,
+        headers: { ...responseHeaders, "content-type": "application/json" }
+      })
+      yield* record({
+        status,
+        correlationId,
+        upstream: "electric",
+        live,
+        phase,
+        startedAt,
+        bytes: body.byteLength,
+        outcome: "complete"
+      })
       return guarded
     }
     // The body streams after this handler and its span end, outside its services, so the record runs with them.

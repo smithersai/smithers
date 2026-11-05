@@ -171,7 +171,19 @@ export const RunChanged = Schema.TaggedStruct("RunChanged", { executionId: Schem
  * @category protocol
  * @since 1.0.0
  */
-export const Message = Schema.Union([Start, Retry, Poll, Cancel, Signal, Inspect, List, Replied, Refused, Leader, RunChanged])
+export const Message = Schema.Union([
+  Start,
+  Retry,
+  Poll,
+  Cancel,
+  Signal,
+  Inspect,
+  List,
+  Replied,
+  Refused,
+  Leader,
+  RunChanged
+])
 
 /**
  * The value form of {@link Message}.

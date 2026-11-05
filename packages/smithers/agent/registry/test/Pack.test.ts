@@ -387,16 +387,22 @@ describe("pack discovery confinement", () => {
     mkdirSync(join(packDir, "flows", "escape"), { recursive: true })
     mkdirSync(join(packDir, "flows", "safe"))
     mkdirSync(outside)
-    writeFileSync(join(packDir, "flows", "safe", "flow.mdx"), "---\ndescription: Safe deferred prompt\ncapabilities: []\n---\nSafe body\n")
-    writeFileSync(join(outside, "flow.ts"), [
-      "import { Flow } from \"@smthrs/flow\"",
-      "import { Node } from \"@smthrs/plan\"",
-      "import { Schema } from \"effect\"",
-      "import { writeFileSync } from \"node:fs\"",
-      `writeFileSync(${JSON.stringify(marker)}, "imported")`,
-      "export default Flow.make(\"escape\", { description: \"Outside module\", capabilities: [],",
-      "payload: {}, success: Schema.String, body: () => Node.succeed(\"outside\") })"
-    ].join("\n"))
+    writeFileSync(
+      join(packDir, "flows", "safe", "flow.mdx"),
+      "---\ndescription: Safe deferred prompt\ncapabilities: []\n---\nSafe body\n"
+    )
+    writeFileSync(
+      join(outside, "flow.ts"),
+      [
+        "import { Flow } from \"@smthrs/flow\"",
+        "import { Node } from \"@smthrs/plan\"",
+        "import { Schema } from \"effect\"",
+        "import { writeFileSync } from \"node:fs\"",
+        `writeFileSync(${JSON.stringify(marker)}, "imported")`,
+        "export default Flow.make(\"escape\", { description: \"Outside module\", capabilities: [],",
+        "payload: {}, success: Schema.String, body: () => Node.succeed(\"outside\") })"
+      ].join("\n")
+    )
     symlinkSync(join(outside, "flow.ts"), escape, "file")
     const platform = Layer.merge(NodeFileSystem.layer, NodePath.layer)
     const registryLayer = Registry.layerFromPacks([

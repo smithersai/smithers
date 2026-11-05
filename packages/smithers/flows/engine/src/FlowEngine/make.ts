@@ -18,11 +18,11 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import { toJsonExit } from "../internal/JsonExit.ts"
+import { declaredHandler } from "./DeclaredHandler.ts"
 import { makeActionExecute } from "./Dispatch.ts"
 import type { Encoded } from "./Encoded.ts"
-import { declaredHandler } from "./DeclaredHandler.ts"
-import { CurrentRegistrations, makeRegistrationGate } from "./RegistrationGate.ts"
 import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.ts"
+import { CurrentRegistrations, makeRegistrationGate } from "./RegistrationGate.ts"
 import { type Declarations, makeExecute } from "./Trampoline.ts"
 
 /** The typed port this module adapts the driver into. */

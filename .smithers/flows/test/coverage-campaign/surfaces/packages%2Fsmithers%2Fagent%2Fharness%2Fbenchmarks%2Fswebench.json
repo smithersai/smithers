@@ -1,1 +1,555 @@
-{"id":"packages/smithers/agent/harness/benchmarks/swebench","name":"@smthrs/eval-swebench","owner":{"declaration":"packages/smithers/agent/harness/benchmarks/swebench/package.json","assignedLane":null},"kind":"package","scripts":{"check":"vibelang -p tsconfig.json --noEmit","lint":"eslint '*.ts' '*.mjs' 'lib/*.mjs' --max-warnings=0 && dprint check"},"exports":null,"production":["breach-scan.mjs","compare-arms.mjs","compare-codex-lanes.mjs","compare-runs.mjs","fullbench-report.mjs","jev-usage.ts","lib/check-liveness.mjs","lib/codex-backfill-queue.mjs","lib/codex-tokens.mjs","lib/excluded.mjs","lib/format-money.mjs","lib/fullbench-manifest.mjs","lib/fullbench-queue.mjs","lib/fullbench-row.mjs","lib/fullbench-state.mjs","lib/fullbench-status.mjs","lib/jev-replay.mjs","lib/journal-facts.mjs","lib/journal-rows.mjs","lib/liveness-flow.mjs","lib/make-preds.mjs","lib/manifest-append.mjs","lib/narrowing-journals.mjs","lib/program-evidence.mjs","lib/r97-narrow-only-journals.mjs","lib/repl-evidence.mjs","lib/rerun-queue.mjs","lib/round3-evidence.mjs","lib/run-cost.mjs","lib/sample.mjs","lib/strip-modes.mjs","lib/subject.mjs","lib/surgery-evidence.mjs","lib/trace-bundle.mjs","lib/validate-instance.mjs","lib/write-flow.mjs","lib/write-prompt-codex.mjs","matrix-report.mjs","n-way.mjs","prices.ts","scorecard.ts","select-candidate.mjs","three-way.mjs"],"tests":["packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-agreement.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-backfill-row.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-breach-scan.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-capture.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-cli-path.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-auth.sh","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-backfill.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-lanes.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-arms.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-codex-lanes.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-runs.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-dryrun-ownership.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-dryrun.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-env-names.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-eval-exports.py","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-excluded.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-budget.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-drain.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-status.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-hidden-vcs.sh","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-jev-replay.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-liveness-report.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-lock.sh","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-make-preds.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-matrix-report.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-matrix.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-n-way.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-offline-target.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-plue-transport.py","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-program-evidence.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-prompt-bytes.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-prompts.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-repl-evidence.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-rig.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-round3-evidence.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-run-45.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-run-paths.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-selector.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-split-journal.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-subject.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-surgery-evidence.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-testbed-network.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-three-way.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-trace-bundle.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/check.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/jev-callers-journal.json","packages/smithers/agent/harness/benchmarks/swebench/fixtures/jev-gates-journal.json","packages/smithers/agent/harness/benchmarks/swebench/fixtures/make-fixture.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/matrix-reports.json","packages/smithers/agent/harness/benchmarks/swebench/fixtures/mirror-results.json","packages/smithers/agent/harness/benchmarks/swebench/fixtures/rehydrate-journals.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/subject.json","packages/smithers/agent/harness/benchmarks/swebench/fixtures/test-test-command.py","packages/smithers/agent/harness/benchmarks/swebench/fixtures/wave11-journals.json"],"benchmarks":[],"platformPaths":["packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-trace-bundle.mjs","packages/smithers/agent/harness/benchmarks/swebench/lib/owned-processes.sh","packages/smithers/agent/harness/benchmarks/swebench/lib/trace-bundle.mjs"],"ignoredCases":[],"configurations":[{"path":"packages/smithers/agent/harness/benchmarks/swebench/eslint.config.js","sha256":"c851d5d5cb4325c19ee1b3f4bf73216aacca40731d63d39a08325f67e0c26848","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../../../eslint.invariants.js\"\n\nexport default tseslint.config(\n  {\n    // Captured evaluator output is evidence of what a wave measured.\n    ignores: [\"PACKAGE.ts\", \"archive/**\", \"baseline/**\", \"fixtures/**\", \"fullbench/**\", \"golf/**\", \"reports/**\", \"docs/**\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"*.mjs\", \"lib/*.mjs\"],\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    languageOptions: {\n      ecmaVersion: \"latest\",\n      sourceType: \"module\",\n      globals: {\n        AbortController: \"readonly\",\n        Buffer: \"readonly\",\n        URL: \"readonly\",\n        clearTimeout: \"readonly\",\n        console: \"readonly\",\n        fetch: \"readonly\",\n        process: \"readonly\",\n        setTimeout: \"readonly\"\n      }\n    }\n  },\n  {\n    files: [\"*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      // The rig is operator scripts; the terminal is their output.\n      \"no-console\": \"off\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  // The shared invariant scope names `src/`; the rig has no `src/`.\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n    .map((config) => ({ ...config, files: [\"*.ts\", \"*.mjs\", \"lib/*.mjs\"] }))\n)\n","coverageDirectives":[{"line":10,"text":"ignores: [\"PACKAGE.ts\", \"archive/**\", \"baseline/**\", \"fixtures/**\", \"fullbench/**\", \"golf/**\", \"reports/**\", \"docs/**\"]"},{"line":59,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"packages/smithers/agent/harness/benchmarks/swebench/package.json","sha256":"2b820ac7b2c36fa9111441cd2987e318e286b90c69b158d4a8ea8139a75f53f1","source":"{\n  \"name\": \"@smthrs/eval-swebench\",\n  \"private\": true,\n  \"smthrs\": {\n    \"group\": \"tooling\"\n  },\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"description\": \"SWE-bench benchmark rig: the operator-run wave scripts and the scorecard generator that grades their output\",\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"lint\": \"eslint '*.ts' '*.mjs' 'lib/*.mjs' --max-warnings=0 && dprint check\"\n  },\n  \"dependencies\": {\n    \"@smthrs/cli\": \"workspace:*\",\n    \"@smthrs/control\": \"workspace:*\",\n    \"@smthrs/harness\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/targets\": \"workspace:*\",\n    \"@types/node\": \"26.4.1\",\n    \"dprint\": \"0.57.1\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\"\n  }\n}\n","coverageDirectives":[]},{"path":"packages/smithers/agent/harness/benchmarks/swebench/PACKAGE.ts","sha256":"5c767bcf051d09a1d7c7f128dab5b2e8c5845195c55f70aa4a275a18f7626741","source":"/**\n * Targets for the SWE-bench benchmark rig.\n *\n * The offline fixtures and TypeScript check gate CI after the workspace install.\n * The subject and evaluator checks are an explicit operator target requiring\n * a built CLI and evaluator venv. Docker and funded-model benchmarks remain\n * documented operator commands.\n *\n * `lint` and `fmt` cover the rig's code only. The rest of this directory is\n * captured evaluator output (`baseline/`, `reports/`, `fullbench/`, fixture\n * data) whose bytes are evidence of what a wave measured.\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport { Package as harborPackage } from \"../harbor/PACKAGE.ts\"\n\nconst cwd = \"packages/smithers/agent/harness/benchmarks/swebench\"\n\n/**\n * Checks the scorecard generator and its price table against their tsconfig.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: [Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/*.ts\")],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/** The rig's code, as `eslint.config.js` and `dprint.json` scope it. */\nconst code = [Smithers.glob(\"*.ts\"), Smithers.glob(\"*.mjs\"), Smithers.glob(\"lib/*.mjs\")]\n\n/**\n * Lints the rig's scripts.\n *\n * @since 1.0.0\n * @category lint\n */\nconst lint = Smithers.EsLint({\n  sources: code,\n  configs: [Smithers.file(\"eslint.config.js\"), Smithers.file(\"//eslint.invariants.js\")],\n  deps: [],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\n/**\n * Checks formatting of the rig's scripts and fixture checks.\n *\n * @since 1.0.0\n * @category lint\n */\nconst fmt = Smithers.Dprint({\n  sources: [...code, Smithers.glob(\"fixtures/*.mjs\")],\n  config: Smithers.file(\"dprint.json\"),\n  deps: [],\n  fix: false,\n  cwd\n})\n\n// Declare the rig scripts, recorded fixtures and imported workspace code.\nconst fixtureInputs = [\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/*.{ts,mjs,sh,md}\"),\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/lib/**\"),\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/fixtures/**\"),\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/baseline/**\"),\n  // lib/plue.py drives Smithers Cloud through the Harbor adapter's seam.\n  harborPackage.pythonInputs,\n  Smithers.ImportClosure({\n    entries: [\n      Smithers.glob(\"*.ts\"),\n      Smithers.glob(\"*.mjs\"),\n      Smithers.glob(\"lib/*.mjs\"),\n      Smithers.glob(\"fixtures/*.mjs\")\n    ]\n  }),\n  Smithers.file(\"//packages/smithers/agent/harness/test/fixtures/wave10Journals.json\"),\n  Smithers.file(\"package.json\"),\n  Smithers.file(\"//packages/smithers/package.json\"),\n  Smithers.file(\"//packages/smithers/bin/smithers.mjs\"),\n  Smithers.file(\"//PACKAGE.ts\"),\n  Smithers.file(\"//.github/workflows/ci.yml\")\n]\n\nconst offline = Smithers.Shell.Test({\n  summary: \"Run the token-free SWE-bench fixtures serially, without Docker or a CLI build.\",\n  script: Smithers.file(\"verify.sh\"),\n  args: [\"--offline\"],\n  data: fixtureInputs,\n  timeout: \"20m\"\n})\n\nconst prerequisites = Smithers.Shell.Run({\n  summary: \"Check the subject and evaluator after preflight.sh and bootstrap.sh.\",\n  script: Smithers.file(\"verify.sh\"),\n  args: [\"--prerequisites\"],\n  data: fixtureInputs,\n  timeout: \"20m\"\n})\n\n/**\n * Security review of the rig's own scripts: the diff (`security`) and a full\n * audit (`securityAudit`). Captured evaluator output is data, not reviewed code.\n *\n * @since 1.0.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"*.ts\", \"*.mjs\", \"*.sh\", \"lib/**\", \"fixtures/*.mjs\", \"fixtures/*.sh\", \"fixtures/*.py\"],\n  checks: [\n    {\n      id: \"host-git-over-agent-checkout\",\n      title: \"Host-side git over an agent-edited checkout never loads repository config, hooks or drivers\",\n      threat:\n        \"A benchmark agent (or a hostile SWE-bench repository) plants .git/config, hooks or .gitattributes that run code on the operator's host when the rig captures the patch.\",\n      lookFor: [\n        \"A git command run with cwd or --git-dir inside $WORK that is not wrapped by capture_git (env -i, hooksPath=/dev/null, fsmonitor=false, attributesFile=/dev/null).\",\n        \"A copy or symlink of $WORK/.git/config, hooks, or info/attributes into the private capture git dir.\",\n        \"A git diff, apply, or read-tree over the checkout without --no-ext-diff and --no-textconv.\"\n      ],\n      paths: [\n        \"lib/capture-git.sh\",\n        \"lib/capture-patch.sh\",\n        \"lib/snapshot-base.sh\",\n        \"regen-patch.sh\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\"\n      ]\n    },\n    {\n      id: \"instance-id-reaches-shell\",\n      title: \"Dataset-sourced ids and run indexes are validated before reaching a path, container name, or eval\",\n      threat:\n        \"A tampered swb-verified.json or a lane argument injects shell into the eval'd run-paths output or writes artifacts outside the artifact root on the operator's host.\",\n      lookFor: [\n        \"An instance id, run index, or SWB_ARTIFACT_ROOT used in a path, docker name, or image name before lib/validate-instance.mjs or lib/run-paths.sh checked it.\",\n        \"run-paths.sh output printed without printf %q before a caller evals it.\",\n        \"A manifest field (verdict, flowsVerdict) emitted by codex-backfill-queue.mjs --row for codex-backfill.sh to eval without its shell() escaping.\",\n        \"A dataset field other than instance_id (repo, version, base_commit) interpolated into a shell string or file name unvalidated.\"\n      ],\n      paths: [\n        \"lib/run-paths.sh\",\n        \"lib/validate-instance.mjs\",\n        \"lib/codex-backfill-queue.mjs\",\n        \"run-*.sh\",\n        \"codex-backfill.sh\",\n        \"fullbench.sh\",\n        \"lib/fullbench-instance.sh\",\n        \"evaluate.sh\",\n        \"regrade.sh\"\n      ]\n    },\n    {\n      id: \"testbed-network-seal\",\n      title: \"The testbed an agent can reach has no network, and the seal is observed, not assumed\",\n      threat:\n        \"A benchmark agent fetches the upstream fix or exfiltrates host data through the testbed container, and the lane still reports a sealed run.\",\n      lookFor: [\n        \"A docker run or plue workspace create whose network is not the value lib/testbed-network.sh resolved and then asserted on the live container.\",\n        \"A network verdict in plue.py or testbed-network.sh that returns none when the probe or inspect output is missing or unparseable.\",\n        \"A breach-scan or compare-codex-lanes rule that counts an unobserved container or an unrefused in-container fetch as sealed.\"\n      ],\n      paths: [\n        \"lib/testbed-network.sh\",\n        \"lib/plue.py\",\n        \"breach-scan.mjs\",\n        \"compare-codex-lanes.mjs\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\",\n        \"preflight-network.sh\",\n        \"network-dryrun.sh\"\n      ]\n    },\n    {\n      id: \"agent-host-shell-opt-in\",\n      title: \"An agent gets an unconfined host shell only by explicit operator opt-in\",\n      threat:\n        \"A model-authored command runs on the operator's host with the docker socket, CODEX_HOME credentials and OPENAI_API_KEY in reach without the lane having chosen that condition.\",\n      lookFor: [\n        \"A path where run-instance.sh starts the agent while SWB_FLOWS_HOST_SHELL is neither allowed nor the plue sealed value.\",\n        \"codex exec invoked with --dangerously-bypass-approvals-and-sandbox for a SWB_CODEX_NETWORK value other than on or sealed.\",\n        \"A sealed lane where an inherited NO_PROXY or a proxy variable escapes shell_environment_policy.set, or web_search is left enabled.\"\n      ],\n      paths: [\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\",\n        \"lib/codex-network.sh\",\n        \"codex-backfill.sh\",\n        \"fullbench.sh\",\n        \"run-matrix.sh\",\n        \"run-sample.sh\",\n        \"run-45.sh\"\n      ]\n    },\n    {\n      id: \"grader-answer-leak\",\n      title: \"Graded test identifiers and the reference patch never reach an agent prompt\",\n      threat:\n        \"A benchmark agent reads FAIL_TO_PASS, PASS_TO_PASS, test_patch or the gold patch, inflating the published score.\",\n      lookFor: [\n        \"A prompt writer that interpolates any dataset field other than repo, base_commit, problem_statement and the resolved test command.\",\n        \"lib/test-command.py printing a spec command without the LEAKY field check.\",\n        \"Evaluator artifacts (reports/, baseline/, eval.sh) placed under $WORK or /testbed where the agent can read them.\"\n      ],\n      paths: [\n        \"lib/write-flow.mjs\",\n        \"lib/write-prompt-codex.mjs\",\n        \"lib/test-command.py\",\n        \"lib/prompt-bytes.sh\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\"\n      ]\n    },\n    {\n      id: \"codex-credential-handling\",\n      title: \"Codex and model credentials are passed by stdin or environment and never written to logs or artifacts\",\n      threat:\n        \"Anyone who reads committed fullbench logs, timings or trace bundles recovers the operator's OpenAI API key or ChatGPT session.\",\n      lookFor: [\n        \"OPENAI_API_KEY or a CODEX_HOME auth file passed on argv, echoed, or copied into LOG_ROOT, TIMINGS, journals or trace bundles.\",\n        \"An api-key lane whose CODEX_HOME resolves to the operator's signed-in ~/.codex instead of the rig's isolated home.\",\n        \"A trace-bundle or report writer that includes environment dumps or codex transcript headers holding tokens.\"\n      ],\n      paths: [\n        \"lib/codex-auth.sh\",\n        \"run-instance-codex.sh\",\n        \"codex-backfill.sh\",\n        \"lib/trace-bundle.mjs\",\n        \"fixtures/check-codex-auth.sh\"\n      ]\n    },\n    {\n      id: \"plue-guest-command-quoting\",\n      title: \"Commands sent to a plue guest quote every path and cannot touch another host's workspaces\",\n      threat:\n        \"An evaluator-supplied path or workspace label runs extra commands in the grading guest, or reap deletes workspaces owned by another process or host in the shared PLUE_REPO.\",\n      lookFor: [\n        \"An f-string shell command in lib/plue.py (evaluator_copy mkdir, _with_rig, exec) that interpolates a path without shlex.quote.\",\n        \"reap or orphaned() deleting a workspace whose name does not carry this host's tag and a dead owner pid.\",\n        \"SMITHERS_TOKEN or PLUE_REPO echoed in a PlueError message or written into the shim directory.\"\n      ],\n      paths: [\"lib/plue.py\", \"lib/transport.sh\", \"lib/grade.py\"]\n    },\n    {\n      id: \"lock-and-cleanup-ownership\",\n      title: \"Locks and rm -rf only ever remove what this run owns\",\n      threat:\n        \"A concurrent lane or a crafted lock directory makes one run delete another run's workspace, patch or lock, or an rm -rf follow a path outside the artifact root.\",\n      lookFor: [\n        \"rm -rf over a variable that is empty-able or not derived from run-paths.sh output.\",\n        \"A lock release or steal in lib/lock.sh that does not recheck owner pid and generation under the guard.\",\n        \"A cleanup trap that releases a lock or removes a container before this process acquired it.\"\n      ],\n      paths: [\n        \"lib/lock.sh\",\n        \"lib/disk-free.sh\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\",\n        \"evaluate.sh\",\n        \"regrade.sh\",\n        \"fixtures/check-lock.sh\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, lint, fmt, offline, prerequisites, ...securityReview }\n})\n","coverageDirectives":[{"line":114,"text":"include: [\"*.ts\", \"*.mjs\", \"*.sh\", \"lib/**\", \"fixtures/*.mjs\", \"fixtures/*.sh\", \"fixtures/*.py\"],"},{"line":227,"text":"\"A trace-bundle or report writer that includes environment dumps or codex transcript headers holding tokens.\""}]},{"path":"packages/smithers/agent/harness/benchmarks/swebench/tsconfig.json","sha256":"5bd76526920f5a2fae5ff50169c6cbd7ade8843fdbdb892b45c1dfcb3421b7b1","source":"{\n  \"extends\": \"../../../../../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    // The scorecard imports `@smthrs/cli`'s forensics projection, which reaches\n    // the control package's WebCrypto sources; those are typed against DOM, as\n    // the packages that own them declare.\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"noEmit\": true,\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"inlineSources\": false,\n    \"sourceMap\": false,\n    \"types\": [\"node\"]\n  },\n  \"include\": [\"*.ts\"],\n  \"exclude\": [\"PACKAGE.ts\"]\n}\n","coverageDirectives":[{"line":16,"text":"\"include\": [\"*.ts\"],"},{"line":17,"text":"\"exclude\": [\"PACKAGE.ts\"]"}]}],"targets":[{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/tsconfig.json"}],"dependencies":[]},{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/lib/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/lib/*.mjs","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/eslint.config.js"},{"kind":"file","path":"eslint.invariants.js"}],"dependencies":[]},{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:offline","rule":"Shell.Test","kinds":["test"],"inputs":[{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/verify.sh"},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.{ts,mjs,sh,md}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/lib/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/baseline/**","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/test/fixtures/wave10Journals.json"},{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/package.json"},{"kind":"file","path":"packages/smithers/package.json"},{"kind":"file","path":"packages/smithers/bin/smithers.mjs"},{"kind":"file","path":"PACKAGE.ts"},{"kind":"file","path":".github/workflows/ci.yml"}],"dependencies":["//packages/smithers/agent/harness/benchmarks/harbor:pythonInputs"]},{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:prerequisites","rule":"Shell.Run","kinds":["run"],"inputs":[{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/verify.sh"},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.{ts,mjs,sh,md}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/lib/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/baseline/**","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/test/fixtures/wave10Journals.json"},{"kind":"file","path":"packages/smithers/agent/harness/benchmarks/swebench/package.json"},{"kind":"file","path":"packages/smithers/package.json"},{"kind":"file","path":"packages/smithers/bin/smithers.mjs"},{"kind":"file","path":"PACKAGE.ts"},{"kind":"file","path":".github/workflows/ci.yml"}],"dependencies":["//packages/smithers/agent/harness/benchmarks/harbor:pythonInputs"]},{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/agent/harness/benchmarks/swebench/*.ts","packages/smithers/agent/harness/benchmarks/swebench/*.mjs","packages/smithers/agent/harness/benchmarks/swebench/*.sh","packages/smithers/agent/harness/benchmarks/swebench/lib/**","packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh","packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py"]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.sh","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/lib/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/agent/harness/benchmarks/swebench","label":"//packages/smithers/agent/harness/benchmarks/swebench:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/agent/harness/benchmarks/swebench/*.ts","packages/smithers/agent/harness/benchmarks/swebench/*.mjs","packages/smithers/agent/harness/benchmarks/swebench/*.sh","packages/smithers/agent/harness/benchmarks/swebench/lib/**","packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs","packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh","packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py"]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/*.sh","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/lib/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py","exclude":[]}],"dependencies":[]}],"areas":["breach-scan.mjs","compare-arms.mjs","compare-codex-lanes.mjs","compare-runs.mjs","fullbench-report.mjs","jev-usage.ts","lib/check-liveness.mjs","lib/codex-backfill-queue.mjs","lib/codex-tokens.mjs","lib/excluded.mjs","lib/format-money.mjs","lib/fullbench-manifest.mjs","lib/fullbench-queue.mjs","lib/fullbench-row.mjs","lib/fullbench-state.mjs","lib/fullbench-status.mjs","lib/jev-replay.mjs","lib/journal-facts.mjs","lib/journal-rows.mjs","lib/liveness-flow.mjs","lib/make-preds.mjs","lib/manifest-append.mjs","lib/narrowing-journals.mjs","lib/program-evidence.mjs","lib/r97-narrow-only-journals.mjs","lib/repl-evidence.mjs","lib/rerun-queue.mjs","lib/round3-evidence.mjs","lib/run-cost.mjs","lib/sample.mjs","lib/strip-modes.mjs","lib/subject.mjs","lib/surgery-evidence.mjs","lib/trace-bundle.mjs","lib/validate-instance.mjs","lib/write-flow.mjs","lib/write-prompt-codex.mjs","matrix-report.mjs","n-way.mjs","prices.ts","scorecard.ts","select-candidate.mjs","three-way.mjs"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/agent/harness/benchmarks/swebench",
+  "name": "@smthrs/eval-swebench",
+  "owner": {
+    "declaration": "packages/smithers/agent/harness/benchmarks/swebench/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "lint": "eslint '*.ts' '*.mjs' 'lib/*.mjs' --max-warnings=0 && dprint check"
+  },
+  "exports": null,
+  "production": [
+    "breach-scan.mjs",
+    "compare-arms.mjs",
+    "compare-codex-lanes.mjs",
+    "compare-runs.mjs",
+    "fullbench-report.mjs",
+    "jev-usage.ts",
+    "lib/check-liveness.mjs",
+    "lib/codex-backfill-queue.mjs",
+    "lib/codex-tokens.mjs",
+    "lib/excluded.mjs",
+    "lib/format-money.mjs",
+    "lib/fullbench-manifest.mjs",
+    "lib/fullbench-queue.mjs",
+    "lib/fullbench-row.mjs",
+    "lib/fullbench-state.mjs",
+    "lib/fullbench-status.mjs",
+    "lib/jev-replay.mjs",
+    "lib/journal-facts.mjs",
+    "lib/journal-rows.mjs",
+    "lib/liveness-flow.mjs",
+    "lib/make-preds.mjs",
+    "lib/manifest-append.mjs",
+    "lib/narrowing-journals.mjs",
+    "lib/program-evidence.mjs",
+    "lib/r97-narrow-only-journals.mjs",
+    "lib/repl-evidence.mjs",
+    "lib/rerun-queue.mjs",
+    "lib/round3-evidence.mjs",
+    "lib/run-cost.mjs",
+    "lib/sample.mjs",
+    "lib/strip-modes.mjs",
+    "lib/subject.mjs",
+    "lib/surgery-evidence.mjs",
+    "lib/trace-bundle.mjs",
+    "lib/validate-instance.mjs",
+    "lib/write-flow.mjs",
+    "lib/write-prompt-codex.mjs",
+    "matrix-report.mjs",
+    "n-way.mjs",
+    "prices.ts",
+    "scorecard.ts",
+    "select-candidate.mjs",
+    "three-way.mjs"
+  ],
+  "tests": [
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-agreement.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-backfill-row.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-breach-scan.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-capture.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-cli-path.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-auth.sh",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-backfill.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-codex-lanes.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-arms.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-codex-lanes.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-compare-runs.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-dryrun-ownership.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-dryrun.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-env-names.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-eval-exports.py",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-excluded.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-budget.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-drain.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench-status.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-fullbench.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-hidden-vcs.sh",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-jev-replay.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-liveness-report.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-lock.sh",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-make-preds.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-matrix-report.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-matrix.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-n-way.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-offline-target.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-plue-transport.py",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-program-evidence.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-prompt-bytes.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-prompts.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-repl-evidence.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-rig.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-round3-evidence.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-run-45.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-run-paths.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-selector.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-split-journal.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-subject.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-surgery-evidence.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-testbed-network.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-three-way.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-trace-bundle.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/jev-callers-journal.json",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/jev-gates-journal.json",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/make-fixture.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/matrix-reports.json",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/mirror-results.json",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/rehydrate-journals.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/subject.json",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/test-test-command.py",
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/wave11-journals.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/agent/harness/benchmarks/swebench/fixtures/check-trace-bundle.mjs",
+    "packages/smithers/agent/harness/benchmarks/swebench/lib/owned-processes.sh",
+    "packages/smithers/agent/harness/benchmarks/swebench/lib/trace-bundle.mjs"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/swebench/eslint.config.js",
+      "sha256": "c851d5d5cb4325c19ee1b3f4bf73216aacca40731d63d39a08325f67e0c26848",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../../../eslint.invariants.js\"\n\nexport default tseslint.config(\n  {\n    // Captured evaluator output is evidence of what a wave measured.\n    ignores: [\"PACKAGE.ts\", \"archive/**\", \"baseline/**\", \"fixtures/**\", \"fullbench/**\", \"golf/**\", \"reports/**\", \"docs/**\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"*.mjs\", \"lib/*.mjs\"],\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    languageOptions: {\n      ecmaVersion: \"latest\",\n      sourceType: \"module\",\n      globals: {\n        AbortController: \"readonly\",\n        Buffer: \"readonly\",\n        URL: \"readonly\",\n        clearTimeout: \"readonly\",\n        console: \"readonly\",\n        fetch: \"readonly\",\n        process: \"readonly\",\n        setTimeout: \"readonly\"\n      }\n    }\n  },\n  {\n    files: [\"*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      // The rig is operator scripts; the terminal is their output.\n      \"no-console\": \"off\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  // The shared invariant scope names `src/`; the rig has no `src/`.\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n    .map((config) => ({ ...config, files: [\"*.ts\", \"*.mjs\", \"lib/*.mjs\"] }))\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"PACKAGE.ts\", \"archive/**\", \"baseline/**\", \"fixtures/**\", \"fullbench/**\", \"golf/**\", \"reports/**\", \"docs/**\"]"
+        },
+        {
+          "line": 59,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json",
+      "sha256": "2b820ac7b2c36fa9111441cd2987e318e286b90c69b158d4a8ea8139a75f53f1",
+      "source": "{\n  \"name\": \"@smthrs/eval-swebench\",\n  \"private\": true,\n  \"smthrs\": {\n    \"group\": \"tooling\"\n  },\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"description\": \"SWE-bench benchmark rig: the operator-run wave scripts and the scorecard generator that grades their output\",\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"lint\": \"eslint '*.ts' '*.mjs' 'lib/*.mjs' --max-warnings=0 && dprint check\"\n  },\n  \"dependencies\": {\n    \"@smthrs/cli\": \"workspace:*\",\n    \"@smthrs/control\": \"workspace:*\",\n    \"@smthrs/harness\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/targets\": \"workspace:*\",\n    \"@types/node\": \"26.4.1\",\n    \"dprint\": \"0.57.1\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/swebench/PACKAGE.ts",
+      "sha256": "5c767bcf051d09a1d7c7f128dab5b2e8c5845195c55f70aa4a275a18f7626741",
+      "source": "/**\n * Targets for the SWE-bench benchmark rig.\n *\n * The offline fixtures and TypeScript check gate CI after the workspace install.\n * The subject and evaluator checks are an explicit operator target requiring\n * a built CLI and evaluator venv. Docker and funded-model benchmarks remain\n * documented operator commands.\n *\n * `lint` and `fmt` cover the rig's code only. The rest of this directory is\n * captured evaluator output (`baseline/`, `reports/`, `fullbench/`, fixture\n * data) whose bytes are evidence of what a wave measured.\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport { Package as harborPackage } from \"../harbor/PACKAGE.ts\"\n\nconst cwd = \"packages/smithers/agent/harness/benchmarks/swebench\"\n\n/**\n * Checks the scorecard generator and its price table against their tsconfig.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: [Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/*.ts\")],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/** The rig's code, as `eslint.config.js` and `dprint.json` scope it. */\nconst code = [Smithers.glob(\"*.ts\"), Smithers.glob(\"*.mjs\"), Smithers.glob(\"lib/*.mjs\")]\n\n/**\n * Lints the rig's scripts.\n *\n * @since 1.0.0\n * @category lint\n */\nconst lint = Smithers.EsLint({\n  sources: code,\n  configs: [Smithers.file(\"eslint.config.js\"), Smithers.file(\"//eslint.invariants.js\")],\n  deps: [],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\n/**\n * Checks formatting of the rig's scripts and fixture checks.\n *\n * @since 1.0.0\n * @category lint\n */\nconst fmt = Smithers.Dprint({\n  sources: [...code, Smithers.glob(\"fixtures/*.mjs\")],\n  config: Smithers.file(\"dprint.json\"),\n  deps: [],\n  fix: false,\n  cwd\n})\n\n// Declare the rig scripts, recorded fixtures and imported workspace code.\nconst fixtureInputs = [\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/*.{ts,mjs,sh,md}\"),\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/lib/**\"),\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/fixtures/**\"),\n  Smithers.glob(\"//packages/smithers/agent/harness/benchmarks/swebench/baseline/**\"),\n  // lib/plue.py drives Smithers Cloud through the Harbor adapter's seam.\n  harborPackage.pythonInputs,\n  Smithers.ImportClosure({\n    entries: [\n      Smithers.glob(\"*.ts\"),\n      Smithers.glob(\"*.mjs\"),\n      Smithers.glob(\"lib/*.mjs\"),\n      Smithers.glob(\"fixtures/*.mjs\")\n    ]\n  }),\n  Smithers.file(\"//packages/smithers/agent/harness/test/fixtures/wave10Journals.json\"),\n  Smithers.file(\"package.json\"),\n  Smithers.file(\"//packages/smithers/package.json\"),\n  Smithers.file(\"//packages/smithers/bin/smithers.mjs\"),\n  Smithers.file(\"//PACKAGE.ts\"),\n  Smithers.file(\"//.github/workflows/ci.yml\")\n]\n\nconst offline = Smithers.Shell.Test({\n  summary: \"Run the token-free SWE-bench fixtures serially, without Docker or a CLI build.\",\n  script: Smithers.file(\"verify.sh\"),\n  args: [\"--offline\"],\n  data: fixtureInputs,\n  timeout: \"20m\"\n})\n\nconst prerequisites = Smithers.Shell.Run({\n  summary: \"Check the subject and evaluator after preflight.sh and bootstrap.sh.\",\n  script: Smithers.file(\"verify.sh\"),\n  args: [\"--prerequisites\"],\n  data: fixtureInputs,\n  timeout: \"20m\"\n})\n\n/**\n * Security review of the rig's own scripts: the diff (`security`) and a full\n * audit (`securityAudit`). Captured evaluator output is data, not reviewed code.\n *\n * @since 1.0.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"*.ts\", \"*.mjs\", \"*.sh\", \"lib/**\", \"fixtures/*.mjs\", \"fixtures/*.sh\", \"fixtures/*.py\"],\n  checks: [\n    {\n      id: \"host-git-over-agent-checkout\",\n      title: \"Host-side git over an agent-edited checkout never loads repository config, hooks or drivers\",\n      threat:\n        \"A benchmark agent (or a hostile SWE-bench repository) plants .git/config, hooks or .gitattributes that run code on the operator's host when the rig captures the patch.\",\n      lookFor: [\n        \"A git command run with cwd or --git-dir inside $WORK that is not wrapped by capture_git (env -i, hooksPath=/dev/null, fsmonitor=false, attributesFile=/dev/null).\",\n        \"A copy or symlink of $WORK/.git/config, hooks, or info/attributes into the private capture git dir.\",\n        \"A git diff, apply, or read-tree over the checkout without --no-ext-diff and --no-textconv.\"\n      ],\n      paths: [\n        \"lib/capture-git.sh\",\n        \"lib/capture-patch.sh\",\n        \"lib/snapshot-base.sh\",\n        \"regen-patch.sh\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\"\n      ]\n    },\n    {\n      id: \"instance-id-reaches-shell\",\n      title: \"Dataset-sourced ids and run indexes are validated before reaching a path, container name, or eval\",\n      threat:\n        \"A tampered swb-verified.json or a lane argument injects shell into the eval'd run-paths output or writes artifacts outside the artifact root on the operator's host.\",\n      lookFor: [\n        \"An instance id, run index, or SWB_ARTIFACT_ROOT used in a path, docker name, or image name before lib/validate-instance.mjs or lib/run-paths.sh checked it.\",\n        \"run-paths.sh output printed without printf %q before a caller evals it.\",\n        \"A manifest field (verdict, flowsVerdict) emitted by codex-backfill-queue.mjs --row for codex-backfill.sh to eval without its shell() escaping.\",\n        \"A dataset field other than instance_id (repo, version, base_commit) interpolated into a shell string or file name unvalidated.\"\n      ],\n      paths: [\n        \"lib/run-paths.sh\",\n        \"lib/validate-instance.mjs\",\n        \"lib/codex-backfill-queue.mjs\",\n        \"run-*.sh\",\n        \"codex-backfill.sh\",\n        \"fullbench.sh\",\n        \"lib/fullbench-instance.sh\",\n        \"evaluate.sh\",\n        \"regrade.sh\"\n      ]\n    },\n    {\n      id: \"testbed-network-seal\",\n      title: \"The testbed an agent can reach has no network, and the seal is observed, not assumed\",\n      threat:\n        \"A benchmark agent fetches the upstream fix or exfiltrates host data through the testbed container, and the lane still reports a sealed run.\",\n      lookFor: [\n        \"A docker run or plue workspace create whose network is not the value lib/testbed-network.sh resolved and then asserted on the live container.\",\n        \"A network verdict in plue.py or testbed-network.sh that returns none when the probe or inspect output is missing or unparseable.\",\n        \"A breach-scan or compare-codex-lanes rule that counts an unobserved container or an unrefused in-container fetch as sealed.\"\n      ],\n      paths: [\n        \"lib/testbed-network.sh\",\n        \"lib/plue.py\",\n        \"breach-scan.mjs\",\n        \"compare-codex-lanes.mjs\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\",\n        \"preflight-network.sh\",\n        \"network-dryrun.sh\"\n      ]\n    },\n    {\n      id: \"agent-host-shell-opt-in\",\n      title: \"An agent gets an unconfined host shell only by explicit operator opt-in\",\n      threat:\n        \"A model-authored command runs on the operator's host with the docker socket, CODEX_HOME credentials and OPENAI_API_KEY in reach without the lane having chosen that condition.\",\n      lookFor: [\n        \"A path where run-instance.sh starts the agent while SWB_FLOWS_HOST_SHELL is neither allowed nor the plue sealed value.\",\n        \"codex exec invoked with --dangerously-bypass-approvals-and-sandbox for a SWB_CODEX_NETWORK value other than on or sealed.\",\n        \"A sealed lane where an inherited NO_PROXY or a proxy variable escapes shell_environment_policy.set, or web_search is left enabled.\"\n      ],\n      paths: [\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\",\n        \"lib/codex-network.sh\",\n        \"codex-backfill.sh\",\n        \"fullbench.sh\",\n        \"run-matrix.sh\",\n        \"run-sample.sh\",\n        \"run-45.sh\"\n      ]\n    },\n    {\n      id: \"grader-answer-leak\",\n      title: \"Graded test identifiers and the reference patch never reach an agent prompt\",\n      threat:\n        \"A benchmark agent reads FAIL_TO_PASS, PASS_TO_PASS, test_patch or the gold patch, inflating the published score.\",\n      lookFor: [\n        \"A prompt writer that interpolates any dataset field other than repo, base_commit, problem_statement and the resolved test command.\",\n        \"lib/test-command.py printing a spec command without the LEAKY field check.\",\n        \"Evaluator artifacts (reports/, baseline/, eval.sh) placed under $WORK or /testbed where the agent can read them.\"\n      ],\n      paths: [\n        \"lib/write-flow.mjs\",\n        \"lib/write-prompt-codex.mjs\",\n        \"lib/test-command.py\",\n        \"lib/prompt-bytes.sh\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\"\n      ]\n    },\n    {\n      id: \"codex-credential-handling\",\n      title: \"Codex and model credentials are passed by stdin or environment and never written to logs or artifacts\",\n      threat:\n        \"Anyone who reads committed fullbench logs, timings or trace bundles recovers the operator's OpenAI API key or ChatGPT session.\",\n      lookFor: [\n        \"OPENAI_API_KEY or a CODEX_HOME auth file passed on argv, echoed, or copied into LOG_ROOT, TIMINGS, journals or trace bundles.\",\n        \"An api-key lane whose CODEX_HOME resolves to the operator's signed-in ~/.codex instead of the rig's isolated home.\",\n        \"A trace-bundle or report writer that includes environment dumps or codex transcript headers holding tokens.\"\n      ],\n      paths: [\n        \"lib/codex-auth.sh\",\n        \"run-instance-codex.sh\",\n        \"codex-backfill.sh\",\n        \"lib/trace-bundle.mjs\",\n        \"fixtures/check-codex-auth.sh\"\n      ]\n    },\n    {\n      id: \"plue-guest-command-quoting\",\n      title: \"Commands sent to a plue guest quote every path and cannot touch another host's workspaces\",\n      threat:\n        \"An evaluator-supplied path or workspace label runs extra commands in the grading guest, or reap deletes workspaces owned by another process or host in the shared PLUE_REPO.\",\n      lookFor: [\n        \"An f-string shell command in lib/plue.py (evaluator_copy mkdir, _with_rig, exec) that interpolates a path without shlex.quote.\",\n        \"reap or orphaned() deleting a workspace whose name does not carry this host's tag and a dead owner pid.\",\n        \"SMITHERS_TOKEN or PLUE_REPO echoed in a PlueError message or written into the shim directory.\"\n      ],\n      paths: [\"lib/plue.py\", \"lib/transport.sh\", \"lib/grade.py\"]\n    },\n    {\n      id: \"lock-and-cleanup-ownership\",\n      title: \"Locks and rm -rf only ever remove what this run owns\",\n      threat:\n        \"A concurrent lane or a crafted lock directory makes one run delete another run's workspace, patch or lock, or an rm -rf follow a path outside the artifact root.\",\n      lookFor: [\n        \"rm -rf over a variable that is empty-able or not derived from run-paths.sh output.\",\n        \"A lock release or steal in lib/lock.sh that does not recheck owner pid and generation under the guard.\",\n        \"A cleanup trap that releases a lock or removes a container before this process acquired it.\"\n      ],\n      paths: [\n        \"lib/lock.sh\",\n        \"lib/disk-free.sh\",\n        \"run-instance.sh\",\n        \"run-instance-codex.sh\",\n        \"evaluate.sh\",\n        \"regrade.sh\",\n        \"fixtures/check-lock.sh\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, lint, fmt, offline, prerequisites, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 114,
+          "text": "include: [\"*.ts\", \"*.mjs\", \"*.sh\", \"lib/**\", \"fixtures/*.mjs\", \"fixtures/*.sh\", \"fixtures/*.py\"],"
+        },
+        {
+          "line": 227,
+          "text": "\"A trace-bundle or report writer that includes environment dumps or codex transcript headers holding tokens.\""
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/benchmarks/swebench/tsconfig.json",
+      "sha256": "5bd76526920f5a2fae5ff50169c6cbd7ade8843fdbdb892b45c1dfcb3421b7b1",
+      "source": "{\n  \"extends\": \"../../../../../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    // The scorecard imports `@smthrs/cli`'s forensics projection, which reaches\n    // the control package's WebCrypto sources; those are typed against DOM, as\n    // the packages that own them declare.\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"noEmit\": true,\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"inlineSources\": false,\n    \"sourceMap\": false,\n    \"types\": [\"node\"]\n  },\n  \"include\": [\"*.ts\"],\n  \"exclude\": [\"PACKAGE.ts\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 16,
+          "text": "\"include\": [\"*.ts\"],"
+        },
+        {
+          "line": 17,
+          "text": "\"exclude\": [\"PACKAGE.ts\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/lib/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/lib/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.invariants.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:offline",
+      "rule": "Shell.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/verify.sh"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.{ts,mjs,sh,md}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/lib/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/baseline/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/test/fixtures/wave10Journals.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/bin/smithers.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/ci.yml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/harness/benchmarks/harbor:pythonInputs"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:prerequisites",
+      "rule": "Shell.Run",
+      "kinds": [
+        "run"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/verify.sh"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.{ts,mjs,sh,md}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/lib/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/baseline/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/test/fixtures/wave10Journals.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/benchmarks/swebench/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/bin/smithers.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/ci.yml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/harness/benchmarks/harbor:pythonInputs"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+            "packages/smithers/agent/harness/benchmarks/swebench/*.mjs",
+            "packages/smithers/agent/harness/benchmarks/swebench/*.sh",
+            "packages/smithers/agent/harness/benchmarks/swebench/lib/**",
+            "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs",
+            "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh",
+            "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.sh",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/lib/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness/benchmarks/swebench",
+      "label": "//packages/smithers/agent/harness/benchmarks/swebench:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+            "packages/smithers/agent/harness/benchmarks/swebench/*.mjs",
+            "packages/smithers/agent/harness/benchmarks/swebench/*.sh",
+            "packages/smithers/agent/harness/benchmarks/swebench/lib/**",
+            "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs",
+            "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh",
+            "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/*.sh",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/lib/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.mjs",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.sh",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/benchmarks/swebench/fixtures/*.py",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "breach-scan.mjs",
+    "compare-arms.mjs",
+    "compare-codex-lanes.mjs",
+    "compare-runs.mjs",
+    "fullbench-report.mjs",
+    "jev-usage.ts",
+    "lib/check-liveness.mjs",
+    "lib/codex-backfill-queue.mjs",
+    "lib/codex-tokens.mjs",
+    "lib/excluded.mjs",
+    "lib/format-money.mjs",
+    "lib/fullbench-manifest.mjs",
+    "lib/fullbench-queue.mjs",
+    "lib/fullbench-row.mjs",
+    "lib/fullbench-state.mjs",
+    "lib/fullbench-status.mjs",
+    "lib/jev-replay.mjs",
+    "lib/journal-facts.mjs",
+    "lib/journal-rows.mjs",
+    "lib/liveness-flow.mjs",
+    "lib/make-preds.mjs",
+    "lib/manifest-append.mjs",
+    "lib/narrowing-journals.mjs",
+    "lib/program-evidence.mjs",
+    "lib/r97-narrow-only-journals.mjs",
+    "lib/repl-evidence.mjs",
+    "lib/rerun-queue.mjs",
+    "lib/round3-evidence.mjs",
+    "lib/run-cost.mjs",
+    "lib/sample.mjs",
+    "lib/strip-modes.mjs",
+    "lib/subject.mjs",
+    "lib/surgery-evidence.mjs",
+    "lib/trace-bundle.mjs",
+    "lib/validate-instance.mjs",
+    "lib/write-flow.mjs",
+    "lib/write-prompt-codex.mjs",
+    "matrix-report.mjs",
+    "n-way.mjs",
+    "prices.ts",
+    "scorecard.ts",
+    "select-candidate.mjs",
+    "three-way.mjs"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

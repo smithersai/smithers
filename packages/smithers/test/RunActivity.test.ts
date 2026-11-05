@@ -356,7 +356,15 @@ describe("RunActivity.show", () => {
   })
 
   it("uses the terminal root's causal failure when a handled child and a later child share a tag", () => {
-    const a = { tag: "same/Failure", message: "handled child A", action: "A", nodeId: "a", attempts: 1, retryable: false, executionId: "child-A" }
+    const a = {
+      tag: "same/Failure",
+      message: "handled child A",
+      action: "A",
+      nodeId: "a",
+      attempts: 1,
+      retryable: false,
+      executionId: "child-A"
+    }
     const b = { ...a, message: "terminal child B", action: "B", nodeId: "b", attempts: 3, executionId: "child-B" }
     const events = [
       engine("child-A", "flows.engine.run-decision", { decision: "transitioned", status: "failed", failure: a }),

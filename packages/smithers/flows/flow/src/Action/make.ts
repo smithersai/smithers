@@ -233,18 +233,24 @@ const makeInline = <
         if (Exit.isSuccess(exit) || !Cause.hasInterrupts(exit.cause)) return Effect.void
         const failures = exit.cause.reasons.filter(Cause.isFailReason)
         return failures.length === 0 ? Effect.void : Effect.failCause(
-          Cause.fromReasons(failures.map((reason) => Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason))))
+          Cause.fromReasons(
+            failures.map((reason) => Cause.makeDieReason(reason.error).annotate(Cause.reasonAnnotations(reason)))
+          )
         )
       }
     ).pipe(
       // Encoding changes the error value, not its originating action or other cause annotations.
-      Effect.catchCause((cause) => Effect.forEach(cause.reasons, (reason): Effect.Effect<Cause.Reason<unknown>, never, Error["EncodingServices"]> =>
-        Cause.isFailReason(reason)
-          ? Effect.orDie(Schema.encodeEffect(errorSchemaJson)(reason.error)).pipe(
-            Effect.map((encoded) => Cause.makeFailReason(encoded).annotate(Cause.reasonAnnotations(reason)))
-          )
-          : Effect.succeed(reason)
-      ).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons))))),
+      Effect.catchCause((cause) =>
+        Effect.forEach(
+          cause.reasons,
+          (reason): Effect.Effect<Cause.Reason<unknown>, never, Error["EncodingServices"]> =>
+            Cause.isFailReason(reason)
+              ? Effect.orDie(Schema.encodeEffect(errorSchemaJson)(reason.error)).pipe(
+                Effect.map((encoded) => Cause.makeFailReason(encoded).annotate(Cause.reasonAnnotations(reason)))
+              )
+              : Effect.succeed(reason)
+        ).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons))))
+      ),
       Effect.flatMap((value) => Effect.orDie(Schema.encodeEffect(successSchemaJson)(value)))
     )
   } as any

@@ -59,7 +59,8 @@ export const memoryStorage = () => {
   const lock = id("outbox-storage")
   return {
     entries,
-    withLock: <A>(name: string, action: () => Promise<A>): Promise<A> => navigator.locks.request(`${lock}:${name}`, action),
+    withLock: <A>(name: string, action: () => Promise<A>): Promise<A> =>
+      navigator.locks.request(`${lock}:${name}`, action),
     get: async (key: string) => entries.get(key) ?? null,
     set: async (key: string, value: string) => void entries.set(key, value),
     async setMany(rows: ReadonlyArray<readonly [string, string]>) {

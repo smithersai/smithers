@@ -1,5 +1,5 @@
-import { TestSchemas } from "@smthrs/database"
 import { FetchError } from "@electric-sql/client"
+import { TestSchemas } from "@smthrs/database"
 import { Collection, LiveQuery, Persistence } from "@smthrs/effect-tanstack-db"
 import {
   Context,

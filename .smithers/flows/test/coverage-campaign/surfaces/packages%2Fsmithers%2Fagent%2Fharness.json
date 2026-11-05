@@ -1,1 +1,981 @@
-{"id":"packages/smithers/agent/harness","name":"@smthrs/harness","owner":{"declaration":"packages/smithers/agent/harness/package.json","assignedLane":null},"kind":"package","scripts":{"lint":"eslint src examples --max-warnings=0 && dprint check","format":"dprint fmt","build":"node scripts/build.mjs","check":"node realm/build.mjs --check && vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit","circular":"node ../../../repo-targets/scripts/circular.mjs","test":"vitest","coverage":"vitest --coverage"},"exports":{"./package.json":"./package.json",".":"./src/index.ts","./internal/*":null,"./*/index":null,"./AgentEvent":"./src/AgentEvent.ts","./CallLedger":"./src/CallLedger.ts","./Cell":"./src/Cell.ts","./CellCalls":"./src/CellCalls.ts","./CellHistory":"./src/CellHistory.ts","./CellTurn":"./src/CellTurn.ts","./CellValidation":"./src/CellValidation.ts","./Compaction":"./src/Compaction.ts","./CompletionClaim":"./src/CompletionClaim.ts","./ContextWindow":"./src/ContextWindow.ts","./EngineLike":"./src/EngineLike.ts","./ExternalTranscript":"./src/ExternalTranscript.ts","./FlowBinding":"./src/FlowBinding.ts","./HarnessError":"./src/HarnessError.ts","./Judgement":"./src/Judgement.ts","./Monitor":"./src/Monitor.ts","./NarrowedCheck":"./src/NarrowedCheck.ts","./Notifications":"./src/Notifications.ts","./Plan":"./src/Plan.ts","./QuickJSSandbox":"./src/QuickJSSandbox.ts","./Relevance":"./src/Relevance.ts","./Sandbox":"./src/Sandbox.ts","./Steering":"./src/Steering.ts","./StructuredOutput":"./src/StructuredOutput.ts","./Sufficiency":"./src/Sufficiency.ts","./Supervisor":"./src/Supervisor.ts","./Tokens":"./src/Tokens.ts","./Transcript":"./src/Transcript.ts","./TruncatedOutput":"./src/TruncatedOutput.ts","./UnmovedTree":"./src/UnmovedTree.ts","./UnresolvedFailure":"./src/UnresolvedFailure.ts","./FailedCall":"./src/FailedCall.ts","./VacuousVerification":"./src/VacuousVerification.ts","./VariablesPanel":"./src/VariablesPanel.ts","./index":"./src/index.ts"},"production":["eslint.config.js","examples/instruction-chunks.ts","examples/steer-at-turn-boundary.ts","PACKAGE.ts","realm/build.mjs","realm/entry.ts","scripts/build.mjs","src/AgentEvent.ts","src/CallLedger.ts","src/Cell.ts","src/CellCalls.ts","src/CellHistory.ts","src/CellTurn.ts","src/CellValidation.ts","src/Compaction.ts","src/CompletionClaim.ts","src/ContextWindow.ts","src/DoneText.ts","src/EngineLike.ts","src/ExternalTranscript.ts","src/FailedCall.ts","src/FlowBinding.ts","src/HarnessError.ts","src/index.ts","src/internal/bytes.ts","src/internal/cellPrompt.ts","src/internal/compactable.ts","src/internal/compactionMarks.ts","src/internal/decidedBy.ts","src/internal/demandText.ts","src/internal/elide.ts","src/internal/fence.ts","src/internal/frame.ts","src/internal/nonNegativeSafeInt.ts","src/internal/paidUsage.ts","src/internal/printChannel.ts","src/internal/printsObservation.ts","src/internal/RealmFlowBundle.ts","src/internal/refusal.ts","src/internal/supervision.ts","src/internal/unfinishedWork.ts","src/internal/unobservedCall.ts","src/internal/untrustedData.ts","src/Judgement.ts","src/Monitor.ts","src/NarrowedCheck.ts","src/Notifications.ts","src/Plan.ts","src/QuickJSLifecycle.ts","src/QuickJSSandbox.ts","src/QuickJSVariant.ts","src/RealmFlow.ts","src/Relevance.ts","src/Sandbox.ts","src/Steering.ts","src/StructuredOutput.ts","src/Sufficiency.ts","src/Supervisor.ts","src/Tokens.ts","src/Transcript.ts","src/TruncatedOutput.ts","src/UnmovedTree.ts","src/UnresolvedFailure.ts","src/VacuousVerification.ts","src/VariablesPanel.ts","test/calibration/completionClaim.ts","test/calibration/sourceIdentity.ts","test/fixtures/batchedReplies.ts","test/fixtures/cellTurn.ts","test/fixtures/journal.ts","test/fixtures/rejectedCells.ts","test/fixtures/scriptedEngine.ts","test/fixtures/scriptedModel.ts","test/workerd/smoke.mjs","test/workerd/wasm.d.ts","test/workerd/worker.ts","vitest.config.ts"],"tests":["packages/smithers/agent/harness/test/AddressableContext.test.ts","packages/smithers/agent/harness/test/AllGatesReplay.test.ts","packages/smithers/agent/harness/test/ApiExample.test.ts","packages/smithers/agent/harness/test/BoundaryUsage.test.ts","packages/smithers/agent/harness/test/bytes.test.ts","packages/smithers/agent/harness/test/calibration/completionClaim.ts","packages/smithers/agent/harness/test/calibration/completionClaimCorpus.json","packages/smithers/agent/harness/test/calibration/completionClaimReport.json","packages/smithers/agent/harness/test/calibration/sourceIdentity.ts","packages/smithers/agent/harness/test/CallLedger.test.ts","packages/smithers/agent/harness/test/Cell.test.ts","packages/smithers/agent/harness/test/CellCalls.test.ts","packages/smithers/agent/harness/test/CellCompilerFailure.test.ts","packages/smithers/agent/harness/test/CellContracts.test.ts","packages/smithers/agent/harness/test/CellHistory.test.ts","packages/smithers/agent/harness/test/CellPrompt.test.ts","packages/smithers/agent/harness/test/CellPromptExample.test.ts","packages/smithers/agent/harness/test/CellTurn.test.ts","packages/smithers/agent/harness/test/CellTurnBoundaries.test.ts","packages/smithers/agent/harness/test/CellValidation.test.ts","packages/smithers/agent/harness/test/Checkpoints.test.ts","packages/smithers/agent/harness/test/Compaction.test.ts","packages/smithers/agent/harness/test/CompactionMarks.test.ts","packages/smithers/agent/harness/test/CompletionClaim.test.ts","packages/smithers/agent/harness/test/CompletionClaimCalibration.test.ts","packages/smithers/agent/harness/test/CompletionDemands.test.ts","packages/smithers/agent/harness/test/ContextWindow.test.ts","packages/smithers/agent/harness/test/Contracts.test.ts","packages/smithers/agent/harness/test/ConversationalTeaching.test.ts","packages/smithers/agent/harness/test/CoverageReportsDirectory.test.ts","packages/smithers/agent/harness/test/DoneText.test.ts","packages/smithers/agent/harness/test/Examples.test.ts","packages/smithers/agent/harness/test/ExternalTranscript.claude.test.ts","packages/smithers/agent/harness/test/ExternalTranscript.fixtures.test.ts","packages/smithers/agent/harness/test/ExternalTranscript.live.test.ts","packages/smithers/agent/harness/test/ExternalTranscript.test.ts","packages/smithers/agent/harness/test/FailedCall.test.ts","packages/smithers/agent/harness/test/fixtures/batched-replies/astropy-8707-seq77.md","packages/smithers/agent/harness/test/fixtures/batched-replies/django-16612-seq12.md","packages/smithers/agent/harness/test/fixtures/batchedReplies.ts","packages/smithers/agent/harness/test/fixtures/cellTurn.ts","packages/smithers/agent/harness/test/fixtures/completionJournals.json","packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/expected.json","packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/MANIFEST.md","packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/session.jsonl","packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/expected.json","packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/MANIFEST.md","packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/session.jsonl","packages/smithers/agent/harness/test/fixtures/external/codex-0.160/expected.json","packages/smithers/agent/harness/test/fixtures/external/codex-0.160/MANIFEST.md","packages/smithers/agent/harness/test/fixtures/external/codex-0.160/rollout.jsonl","packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/expected.json","packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/MANIFEST.md","packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/rollout.jsonl","packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/expected.json","packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/MANIFEST.md","packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/rollout.jsonl","packages/smithers/agent/harness/test/fixtures/external/manifest.json","packages/smithers/agent/harness/test/fixtures/journal.ts","packages/smithers/agent/harness/test/fixtures/narrowingJournals.json","packages/smithers/agent/harness/test/fixtures/r97Journals.json","packages/smithers/agent/harness/test/fixtures/rejected-cells/astropy-8707-seq82.md","packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq218.md","packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq299.md","packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq493.md","packages/smithers/agent/harness/test/fixtures/rejected-cells/sphinx-11445-seq12.md","packages/smithers/agent/harness/test/fixtures/rejectedCells.ts","packages/smithers/agent/harness/test/fixtures/scriptedEngine.ts","packages/smithers/agent/harness/test/fixtures/scriptedModel.ts","packages/smithers/agent/harness/test/fixtures/vacuousJournals.json","packages/smithers/agent/harness/test/fixtures/wave10Journals.json","packages/smithers/agent/harness/test/FlowBinding.test.ts","packages/smithers/agent/harness/test/Frame.test.ts","packages/smithers/agent/harness/test/HarnessErrorCause.test.ts","packages/smithers/agent/harness/test/Judgement.test.ts","packages/smithers/agent/harness/test/LiveTreeEpoch.test.ts","packages/smithers/agent/harness/test/Monitor.test.ts","packages/smithers/agent/harness/test/NarrowedCheck.test.ts","packages/smithers/agent/harness/test/Notifications.test.ts","packages/smithers/agent/harness/test/OutputCheck.test.ts","packages/smithers/agent/harness/test/OutsideChangesBoundary.test.ts","packages/smithers/agent/harness/test/PackageConventions.test.ts","packages/smithers/agent/harness/test/PrintChannel.test.ts","packages/smithers/agent/harness/test/PublicCellDocs.test.ts","packages/smithers/agent/harness/test/QuickJSLifecycle.test.ts","packages/smithers/agent/harness/test/QuickJSMemoryAdmission.test.ts","packages/smithers/agent/harness/test/QuickJSSandbox.test.ts","packages/smithers/agent/harness/test/QuickJSVariant.test.ts","packages/smithers/agent/harness/test/RealmFlow.test.ts","packages/smithers/agent/harness/test/Relevance.test.ts","packages/smithers/agent/harness/test/RelevanceTurn.test.ts","packages/smithers/agent/harness/test/ReplRealm.test.ts","packages/smithers/agent/harness/test/ReplTurn.test.ts","packages/smithers/agent/harness/test/Sandbox.test.ts","packages/smithers/agent/harness/test/Steering.test.ts","packages/smithers/agent/harness/test/StepRecords.test.ts","packages/smithers/agent/harness/test/StructuredOutput.test.ts","packages/smithers/agent/harness/test/Sufficiency.test.ts","packages/smithers/agent/harness/test/Supervisor.test.ts","packages/smithers/agent/harness/test/Tokens.test.ts","packages/smithers/agent/harness/test/Transcript.test.ts","packages/smithers/agent/harness/test/TruncatedOutput.test.ts","packages/smithers/agent/harness/test/TypedCompletion.test.ts","packages/smithers/agent/harness/test/UnfinishedWork.test.ts","packages/smithers/agent/harness/test/UnmovedTree.test.ts","packages/smithers/agent/harness/test/UnobservedCall.test.ts","packages/smithers/agent/harness/test/UnresolvedFailure.test.ts","packages/smithers/agent/harness/test/VacuousVerification.test.ts","packages/smithers/agent/harness/test/VariablesPanel.test.ts","packages/smithers/agent/harness/test/workerd/package-lock.json","packages/smithers/agent/harness/test/workerd/package.json","packages/smithers/agent/harness/test/workerd/smoke.mjs","packages/smithers/agent/harness/test/workerd/tsconfig.json","packages/smithers/agent/harness/test/workerd/wasm.d.ts","packages/smithers/agent/harness/test/workerd/worker.ts","packages/smithers/agent/harness/test/workerd/wrangler.jsonc","packages/smithers/agent/harness/test/WorkerdSmoke.test.ts","packages/smithers/agent/harness/tsconfig.test.json"],"benchmarks":[],"platformPaths":["packages/smithers/agent/harness/docs/guides/workerd.md","packages/smithers/agent/harness/src/internal/RealmFlowBundle.ts","packages/smithers/agent/harness/test/workerd/package-lock.json","packages/smithers/agent/harness/test/workerd/package.json","packages/smithers/agent/harness/test/workerd/smoke.mjs","packages/smithers/agent/harness/test/workerd/tsconfig.json","packages/smithers/agent/harness/test/workerd/wasm.d.ts","packages/smithers/agent/harness/test/workerd/worker.ts","packages/smithers/agent/harness/test/workerd/wrangler.jsonc","packages/smithers/agent/harness/test/WorkerdSmoke.test.ts"],"ignoredCases":[{"path":"packages/smithers/agent/harness/src/CellTurn.ts","line":1747,"text":"/* v8 ignore next -- the regex has exactly two alternatives and each binds one group, so a match always has one of them; the fallback only discharges the optional type on a capture */"},{"path":"packages/smithers/agent/harness/src/CellValidation.ts","line":73,"text":"if (Syntax.isTSModuleDeclaration(node)) return Syntax.traverseFast.skip"},{"path":"packages/smithers/agent/harness/src/CellValidation.ts","line":181,"text":"if (Syntax.isFunction(node) || Syntax.isClass(node)) return Syntax.traverseFast.skip"},{"path":"packages/smithers/agent/harness/src/CellValidation.ts","line":224,"text":"if (Syntax.isFunction(node) || Syntax.isClass(node)) return Syntax.traverseFast.skip"},{"path":"packages/smithers/agent/harness/src/internal/fence.ts","line":41,"text":"/* v8 ignore next -- `info` is a mandatory group of `fenced`, outside any alternation or quantifier, so it participates in every match; the default only discharges the optional type TypeScript gives `RegExpMatchArray.groups` */"},{"path":"packages/smithers/agent/harness/src/internal/fence.ts","line":44,"text":"/* v8 ignore next -- `body` is likewise mandatory in `fenced`; a match that reached here already produced `info`, so `groups` is present and carries both */"},{"path":"packages/smithers/agent/harness/src/QuickJSSandbox.ts","line":956,"text":"/* v8 ignore next -- `withDefaults` fills `timeMs` from `defaultLimits` whenever the `timeMs` capability is declared, and this binding declares it, so the coalesce never reaches its fallback; it only discharges the optional type on `Sandbox.Limits` */"},{"path":"packages/smithers/agent/harness/src/QuickJSSandbox.ts","line":958,"text":"/* v8 ignore next -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the coalesce only discharges the optional type */"},{"path":"packages/smithers/agent/harness/src/QuickJSSandbox.ts","line":1002,"text":"/* v8 ignore else -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the heap ceiling is always set */"},{"path":"packages/smithers/agent/harness/src/QuickJSSandbox.ts","line":1272,"text":"/* v8 ignore next -- the validated frame inherits the opening totalMs default */"},{"path":"packages/smithers/agent/harness/src/QuickJSSandbox.ts","line":1278,"text":"/* v8 ignore next -- the validated frame inherits the opening timeMs default */"},{"path":"packages/smithers/agent/harness/src/QuickJSSandbox.ts","line":1354,"text":"/* v8 ignore next -- QuickJS reports a compile failure as an Error object, so the `message` arm is what a parser disagreement takes; `String(failure)` only discharges the `unknown` `context.dump` is typed as */"},{"path":"packages/smithers/agent/harness/src/Sandbox.ts","line":805,"text":"/* v8 ignore next -- `validate` returns exactly one of the two, so the coalesce never reaches its fallback; it only discharges the optional types the interface declares */"},{"path":"packages/smithers/agent/harness/src/Transcript.ts","line":457,"text":"/* v8 ignore next -- the first pass ran `decodeCellSettled` over every `cellSettled` entry of this same `events` array and returned on failure, and `decode` is a pure function of `entry.payload`, so re-decoding an entry that survived that pass cannot fail; the branch exists because `Result` has no way to carry that proof */"},{"path":"packages/smithers/agent/harness/test/ExternalTranscript.live.test.ts","line":103,"text":"describe.skipIf(!enabled)(\"ExternalTranscript with the installed CLIs\", () => {"},{"path":"packages/smithers/agent/harness/test/WorkerdSmoke.test.ts","line":24,"text":"describe.skipIf(process.env.FLOWS_WORKERD_SMOKE !== \"1\")(\"workerd smoke\", () => {"},{"path":"packages/smithers/agent/harness/vitest.config.ts","line":33,"text":"// Every remaining unreachable site carries a `v8 ignore` comment stating"}],"configurations":[{"path":"packages/smithers/agent/harness/eslint.config.js","sha256":"5f17529c382de78de65913d3ad7ea009a2192c5c4033be13d59de5aad0015738","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":10,"text":"ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"},{"line":41,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"packages/smithers/agent/harness/package.json","sha256":"3c12428ed7469a92ea317e1260296c619e9ada405cc54426630e0c806c261036","source":"{\n  \"name\": \"@smthrs/harness\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"description\": \"The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/harness\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"agent\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"agent\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./AgentEvent\": \"./src/AgentEvent.ts\",\n    \"./CallLedger\": \"./src/CallLedger.ts\",\n    \"./Cell\": \"./src/Cell.ts\",\n    \"./CellCalls\": \"./src/CellCalls.ts\",\n    \"./CellHistory\": \"./src/CellHistory.ts\",\n    \"./CellTurn\": \"./src/CellTurn.ts\",\n    \"./CellValidation\": \"./src/CellValidation.ts\",\n    \"./Compaction\": \"./src/Compaction.ts\",\n    \"./CompletionClaim\": \"./src/CompletionClaim.ts\",\n    \"./ContextWindow\": \"./src/ContextWindow.ts\",\n    \"./EngineLike\": \"./src/EngineLike.ts\",\n    \"./ExternalTranscript\": \"./src/ExternalTranscript.ts\",\n    \"./FlowBinding\": \"./src/FlowBinding.ts\",\n    \"./HarnessError\": \"./src/HarnessError.ts\",\n    \"./Judgement\": \"./src/Judgement.ts\",\n    \"./Monitor\": \"./src/Monitor.ts\",\n    \"./NarrowedCheck\": \"./src/NarrowedCheck.ts\",\n    \"./Notifications\": \"./src/Notifications.ts\",\n    \"./Plan\": \"./src/Plan.ts\",\n    \"./QuickJSSandbox\": \"./src/QuickJSSandbox.ts\",\n    \"./Relevance\": \"./src/Relevance.ts\",\n    \"./Sandbox\": \"./src/Sandbox.ts\",\n    \"./Steering\": \"./src/Steering.ts\",\n    \"./StructuredOutput\": \"./src/StructuredOutput.ts\",\n    \"./Sufficiency\": \"./src/Sufficiency.ts\",\n    \"./Supervisor\": \"./src/Supervisor.ts\",\n    \"./Tokens\": \"./src/Tokens.ts\",\n    \"./Transcript\": \"./src/Transcript.ts\",\n    \"./TruncatedOutput\": \"./src/TruncatedOutput.ts\",\n    \"./UnmovedTree\": \"./src/UnmovedTree.ts\",\n    \"./UnresolvedFailure\": \"./src/UnresolvedFailure.ts\",\n    \"./FailedCall\": \"./src/FailedCall.ts\",\n    \"./VacuousVerification\": \"./src/VacuousVerification.ts\",\n    \"./VariablesPanel\": \"./src/VariablesPanel.ts\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./AgentEvent\": {\n        \"import\": {\n          \"types\": \"./dist/esm/AgentEvent.d.ts\",\n          \"default\": \"./dist/esm/AgentEvent.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/AgentEvent.d.ts\",\n          \"default\": \"./dist/cjs/AgentEvent.js\"\n        }\n      },\n      \"./CallLedger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CallLedger.d.ts\",\n          \"default\": \"./dist/esm/CallLedger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CallLedger.d.ts\",\n          \"default\": \"./dist/cjs/CallLedger.js\"\n        }\n      },\n      \"./Cell\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Cell.d.ts\",\n          \"default\": \"./dist/esm/Cell.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Cell.d.ts\",\n          \"default\": \"./dist/cjs/Cell.js\"\n        }\n      },\n      \"./CellCalls\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellCalls.d.ts\",\n          \"default\": \"./dist/esm/CellCalls.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellCalls.d.ts\",\n          \"default\": \"./dist/cjs/CellCalls.js\"\n        }\n      },\n      \"./CellHistory\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellHistory.d.ts\",\n          \"default\": \"./dist/esm/CellHistory.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellHistory.d.ts\",\n          \"default\": \"./dist/cjs/CellHistory.js\"\n        }\n      },\n      \"./CellTurn\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellTurn.d.ts\",\n          \"default\": \"./dist/esm/CellTurn.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellTurn.d.ts\",\n          \"default\": \"./dist/cjs/CellTurn.js\"\n        }\n      },\n      \"./CellValidation\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellValidation.d.ts\",\n          \"default\": \"./dist/esm/CellValidation.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellValidation.d.ts\",\n          \"default\": \"./dist/cjs/CellValidation.js\"\n        }\n      },\n      \"./Compaction\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Compaction.d.ts\",\n          \"default\": \"./dist/esm/Compaction.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Compaction.d.ts\",\n          \"default\": \"./dist/cjs/Compaction.js\"\n        }\n      },\n      \"./CompletionClaim\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CompletionClaim.d.ts\",\n          \"default\": \"./dist/esm/CompletionClaim.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CompletionClaim.d.ts\",\n          \"default\": \"./dist/cjs/CompletionClaim.js\"\n        }\n      },\n      \"./ContextWindow\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ContextWindow.d.ts\",\n          \"default\": \"./dist/esm/ContextWindow.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ContextWindow.d.ts\",\n          \"default\": \"./dist/cjs/ContextWindow.js\"\n        }\n      },\n      \"./EngineLike\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EngineLike.d.ts\",\n          \"default\": \"./dist/esm/EngineLike.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EngineLike.d.ts\",\n          \"default\": \"./dist/cjs/EngineLike.js\"\n        }\n      },\n      \"./ExternalTranscript\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ExternalTranscript.d.ts\",\n          \"default\": \"./dist/esm/ExternalTranscript.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ExternalTranscript.d.ts\",\n          \"default\": \"./dist/cjs/ExternalTranscript.js\"\n        }\n      },\n      \"./FlowBinding\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FlowBinding.d.ts\",\n          \"default\": \"./dist/esm/FlowBinding.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FlowBinding.d.ts\",\n          \"default\": \"./dist/cjs/FlowBinding.js\"\n        }\n      },\n      \"./HarnessError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/HarnessError.d.ts\",\n          \"default\": \"./dist/esm/HarnessError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/HarnessError.d.ts\",\n          \"default\": \"./dist/cjs/HarnessError.js\"\n        }\n      },\n      \"./Judgement\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Judgement.d.ts\",\n          \"default\": \"./dist/esm/Judgement.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Judgement.d.ts\",\n          \"default\": \"./dist/cjs/Judgement.js\"\n        }\n      },\n      \"./Monitor\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Monitor.d.ts\",\n          \"default\": \"./dist/esm/Monitor.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Monitor.d.ts\",\n          \"default\": \"./dist/cjs/Monitor.js\"\n        }\n      },\n      \"./NarrowedCheck\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NarrowedCheck.d.ts\",\n          \"default\": \"./dist/esm/NarrowedCheck.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NarrowedCheck.d.ts\",\n          \"default\": \"./dist/cjs/NarrowedCheck.js\"\n        }\n      },\n      \"./Notifications\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Notifications.d.ts\",\n          \"default\": \"./dist/esm/Notifications.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Notifications.d.ts\",\n          \"default\": \"./dist/cjs/Notifications.js\"\n        }\n      },\n      \"./Plan\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Plan.d.ts\",\n          \"default\": \"./dist/esm/Plan.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Plan.d.ts\",\n          \"default\": \"./dist/cjs/Plan.js\"\n        }\n      },\n      \"./QuickJSSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/QuickJSSandbox.d.ts\",\n          \"default\": \"./dist/esm/QuickJSSandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/QuickJSSandbox.d.ts\",\n          \"default\": \"./dist/cjs/QuickJSSandbox.js\"\n        }\n      },\n      \"./Relevance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Relevance.d.ts\",\n          \"default\": \"./dist/esm/Relevance.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Relevance.d.ts\",\n          \"default\": \"./dist/cjs/Relevance.js\"\n        }\n      },\n      \"./Sandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sandbox.d.ts\",\n          \"default\": \"./dist/esm/Sandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sandbox.d.ts\",\n          \"default\": \"./dist/cjs/Sandbox.js\"\n        }\n      },\n      \"./Steering\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Steering.d.ts\",\n          \"default\": \"./dist/esm/Steering.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Steering.d.ts\",\n          \"default\": \"./dist/cjs/Steering.js\"\n        }\n      },\n      \"./StructuredOutput\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StructuredOutput.d.ts\",\n          \"default\": \"./dist/esm/StructuredOutput.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StructuredOutput.d.ts\",\n          \"default\": \"./dist/cjs/StructuredOutput.js\"\n        }\n      },\n      \"./Sufficiency\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sufficiency.d.ts\",\n          \"default\": \"./dist/esm/Sufficiency.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sufficiency.d.ts\",\n          \"default\": \"./dist/cjs/Sufficiency.js\"\n        }\n      },\n      \"./Supervisor\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Supervisor.d.ts\",\n          \"default\": \"./dist/esm/Supervisor.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Supervisor.d.ts\",\n          \"default\": \"./dist/cjs/Supervisor.js\"\n        }\n      },\n      \"./Tokens\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Tokens.d.ts\",\n          \"default\": \"./dist/esm/Tokens.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Tokens.d.ts\",\n          \"default\": \"./dist/cjs/Tokens.js\"\n        }\n      },\n      \"./Transcript\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Transcript.d.ts\",\n          \"default\": \"./dist/esm/Transcript.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Transcript.d.ts\",\n          \"default\": \"./dist/cjs/Transcript.js\"\n        }\n      },\n      \"./TruncatedOutput\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TruncatedOutput.d.ts\",\n          \"default\": \"./dist/esm/TruncatedOutput.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TruncatedOutput.d.ts\",\n          \"default\": \"./dist/cjs/TruncatedOutput.js\"\n        }\n      },\n      \"./UnmovedTree\": {\n        \"import\": {\n          \"types\": \"./dist/esm/UnmovedTree.d.ts\",\n          \"default\": \"./dist/esm/UnmovedTree.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/UnmovedTree.d.ts\",\n          \"default\": \"./dist/cjs/UnmovedTree.js\"\n        }\n      },\n      \"./UnresolvedFailure\": {\n        \"import\": {\n          \"types\": \"./dist/esm/UnresolvedFailure.d.ts\",\n          \"default\": \"./dist/esm/UnresolvedFailure.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/UnresolvedFailure.d.ts\",\n          \"default\": \"./dist/cjs/UnresolvedFailure.js\"\n        }\n      },\n      \"./FailedCall\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FailedCall.d.ts\",\n          \"default\": \"./dist/esm/FailedCall.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FailedCall.d.ts\",\n          \"default\": \"./dist/cjs/FailedCall.js\"\n        }\n      },\n      \"./VacuousVerification\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VacuousVerification.d.ts\",\n          \"default\": \"./dist/esm/VacuousVerification.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VacuousVerification.d.ts\",\n          \"default\": \"./dist/cjs/VacuousVerification.js\"\n        }\n      },\n      \"./VariablesPanel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VariablesPanel.d.ts\",\n          \"default\": \"./dist/esm/VariablesPanel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VariablesPanel.d.ts\",\n          \"default\": \"./dist/cjs/VariablesPanel.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src examples --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"node realm/build.mjs --check && vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@babel/parser\": \"8.0.4\",\n    \"@babel/types\": \"8.0.4\",\n    \"@jitl/quickjs-singlefile-browser-release-sync\": \"0.32.0\",\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\",\n    \"@smthrs/notifications\": \"1.0.0-rc.16\",\n    \"@smthrs/registry\": \"1.0.0-rc.16\",\n    \"quickjs-emscripten-core\": \"0.32.0\",\n    \"sucrase\": \"3.35.1\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/crypto\": \"workspace:*\",\n    \"@smthrs/plan\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@jitl/quickjs-wasmfile-release-sync\": \"0.32.0\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n","coverageDirectives":[{"line":465,"text":"\"coverage\": \"vitest --coverage\""},{"line":492,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/agent/harness/PACKAGE.ts","sha256":"123e946c287e1581bab62e3ad83ecfb4b052ae63c107107c063b363f96ca43b1","source":"import {\n  BuildAndCheckTypeScriptPackage,\n  ImportRules,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode\n} from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst cwd = \"packages/smithers/agent/harness\"\n\nconst standard = BuildAndCheckTypeScriptPackage({\n  cwd,\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  testData: [\"docs/api.md\"]\n})\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard\n\nconst importRules = ImportRules({\n  cwd,\n  rules: [\n    {\n      kind: \"forbidHostModules\",\n      files: [\"src/**\"],\n      because: \"sdk.platform-neutral: the harness receives host capabilities through Effect services.\"\n    },\n    {\n      kind: \"forbidCalls\",\n      files: [\"src/**\"],\n      callees: [\"Effect.runPromise\", \"Effect.runSync\", \"Effect.runFork\", \"Effect.runCallback\"],\n      because: \"effect.boundary-only: the harness returns Effects for its host to run.\"\n    },\n    {\n      kind: \"forbidCalls\",\n      files: [\"test/**\"],\n      callees: [\"setTimeout\", \"setInterval\", \"*.waitForTimeout\"],\n      because: \"test.behavioral: synchronize tests on conditions or Effect TestClock instead of timer waits.\"\n    },\n    {\n      kind: \"forbidCalls\",\n      files: [\n        \"test/QuickJSMemoryAdmission.test.ts\",\n        \"test/QuickJSSandbox.test.ts\",\n        \"test/ReplRealm.test.ts\",\n        \"test/Frame.test.ts\",\n        \"test/UnobservedCall.test.ts\",\n        \"test/CellPromptExample.test.ts\"\n      ],\n      callees: [\"setTimeout\", \"*.sleep\", \"*.waitForTimeout\"],\n      because: \"test.behavioral: wait on execution or TestClock, never a fixed sleep.\"\n    }\n  ]\n})\n\n/**\n * Changed public APIs against the package prose. The default context reads\n * only `docs/*.md`; the guides and the site API page document the same\n * exports, so the review reads all of them (about 380 KiB, under the 2 MiB cap).\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/harness.mdx\")\n  ]\n})\n\n/** Changed exports against their own JSDoc. */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"cell-realm-escape\",\n      title: \"Agent-authored cell code reaches the host only through the four prelude bridges\",\n      threat:\n        \"A model or a prompt-injected repository file writes a cell that runs code in the host process and reads the user's credentials or files.\",\n      lookFor: [\n        \"A host function installed with context.newFunction or setProp other than __call, __checkpoint, __print and __intent, or one left on globalThis after the prelude runs.\",\n        \"A bridge callback that returns a host object, function or handle to the realm instead of JSON rebuilt by handleFromJson.\",\n        \"A cell-controlled value (flow name, input, at, print parts, intent payload) passed to host eval, dynamic import, Function or a property lookup on a host object without JSON decoding.\",\n        \"The ctx and console globals becoming writable or configurable, so a cell can replace ctx.call for later cells.\"\n      ],\n      paths: [\"src/QuickJSSandbox.ts\", \"src/Sandbox.ts\", \"src/CellValidation.ts\"]\n    },\n    {\n      id: \"realm-resource-limits\",\n      title: \"Memory, step, time and print budgets bound every cell and every bridged flow result\",\n      threat:\n        \"A looping or allocating cell exhausts the host's memory or CPU and takes down every run sharing the process.\",\n      lookFor: [\n        \"A path where runtime.setMemoryLimit or the interrupt handler is skipped, or where an explicit limit a binding cannot enforce is silently ignored instead of failing unsupported.\",\n        \"Host-side copies of print or intent payloads that are parsed before the printRetainedBytes ceiling is checked.\",\n        \"A flow result materialized into the realm without the payloadBytes estimate, or a deep JSON payload whose handle building can overflow the host stack uncaught.\",\n        \"Proxy or another getter-driven intrinsic available to cells that makes the variables-panel memory probe under-report held bytes.\"\n      ],\n      paths: [\"src/QuickJSSandbox.ts\", \"src/Sandbox.ts\", \"src/VariablesPanel.ts\"]\n    },\n    {\n      id: \"flow-call-authorization\",\n      title: \"A cell can dispatch only model-invocable flows inside the run's capability envelope\",\n      threat:\n        \"A model calls a withheld, non-model-invocable or out-of-envelope flow and writes files, runs commands or spends money the run was not granted.\",\n      lookFor: [\n        \"A dispatch path in callHandler or CellCalls.make that runs a flow before the unknown_flow, flow_withheld, modelInvocable and CapabilitySet.allows checks.\",\n        \"A capability string that Capability.parse rejects being treated as allowed rather than refused.\",\n        \"A declaration digest mismatch between the catalog the model saw and the registry entry that runs, or a binding dispatched when its digest differs from the registry descriptor.\",\n        \"A catalog refresh (openFrame nextCatalog) or discovered flow list that adds entries without the modelInvocable filter.\"\n      ],\n      paths: [\"src/CellTurn.ts\", \"src/CellCalls.ts\", \"src/FlowBinding.ts\"]\n    },\n    {\n      id: \"write-guards\",\n      title: \"Writes are refused at checkpoints and when fed truncated flow output\",\n      threat:\n        \"A model overwrites a user's file with a truncated fragment, or mutates a pinned checkpoint tree the user expected to stay read-only.\",\n      lookFor: [\n        \"mutating() missing a write declared somewhere other than descriptor.effects.writes or input.writes, so a writing call skips the truncated_write and checkpoint refusals.\",\n        \"TruncatedOutput.reuse matching that a trivial re-encoding of the fragment (whitespace, JSON escaping) evades.\",\n        \"An at option accepted by Cell.checkpointOf that does not name a checkpoint this run minted.\"\n      ],\n      paths: [\"src/CellTurn.ts\", \"src/TruncatedOutput.ts\", \"src/Cell.ts\"]\n    },\n    {\n      id: \"prompt-injection-boundary\",\n      title:\n        \"Tool output, flow descriptions, skills and compaction summaries reach the model only inside escaped untrusted-data blocks\",\n      threat:\n        \"A repository file or third-party flow description injects instructions that the model follows as if they came from the user, exfiltrating code or widening its actions.\",\n      lookFor: [\n        \"Text derived from cell prints, flow results, flow or skill descriptions, or compaction summaries inserted into a model message without untrustedData().\",\n        \"An untrustedData escape that misses a character sequence which closes the </untrusted-data> block or forges a Provenance line.\",\n        \"A steering, monitor or notification message built from external content and sent with system or user authority.\"\n      ],\n      paths: [\n        \"src/internal/untrustedData.ts\",\n        \"src/internal/cellPrompt.ts\",\n        \"src/internal/printsObservation.ts\",\n        \"src/CallLedger.ts\",\n        \"src/NarrowedCheck.ts\",\n        \"src/Compaction.ts\",\n        \"src/Relevance.ts\",\n        \"src/Supervisor.ts\",\n        \"src/Steering.ts\",\n        \"src/Monitor.ts\",\n        \"src/Notifications.ts\",\n        \"src/CellTurn.ts\"\n      ]\n    },\n    {\n      id: \"replay-key-integrity\",\n      title: \"A journaled boundary replays only for the same cell source, call input, declaration and live tree\",\n      threat:\n        \"A resumed or later run replays a stale flow or model result over a changed workspace or input, so the agent acts on data the user has since changed.\",\n      lookFor: [\n        \"A boundary or step key that omits the invocation input, the declaration digest, the frame ordinal or the live-tree digest.\",\n        \"A replayed outcome returned without re-checking the capability envelope or withheld-flow state that applied when it was recorded.\"\n      ],\n      paths: [\"src/CellTurn.ts\", \"src/Cell.ts\", \"src/internal/frame.ts\", \"src/EngineLike.ts\"]\n    },\n    {\n      id: \"completion-gate-bypass\",\n      title: \"ctx.done cannot complete a run that its completion gates refuse\",\n      threat:\n        \"A model claims success over failed calls or unverified work and the user merges or deploys a change the harness should have blocked.\",\n      lookFor: [\n        \"A path from the __intent done payload to a successful run outcome that skips the CompletionClaim, UnresolvedFailure, FailedCall, UnmovedTree or VacuousVerification demands.\",\n        \"A judgement or classifier failure that resolves as allowed rather than as a typed refusal.\"\n      ],\n      paths: [\n        \"src/CompletionClaim.ts\",\n        \"src/Judgement.ts\",\n        \"src/UnresolvedFailure.ts\",\n        \"src/FailedCall.ts\",\n        \"src/UnmovedTree.ts\",\n        \"src/VacuousVerification.ts\",\n        \"src/Sufficiency.ts\",\n        \"src/CellTurn.ts\"\n      ]\n    },\n    {\n      id: \"journal-credential-leak\",\n      title: \"Agent events and transcripts carry no provider credential or raw secret-bearing cause\",\n      threat:\n        \"Anyone who can read a run's journal or transcript recovers the user's model API key or a secret a flow handled.\",\n      lookFor: [\n        \"An AgentEvent, Transcript or EngineLike field populated from a signed request, header set or raw error cause rather than the credential-free prepared request.\",\n        \"A flow handler cause or print buffer persisted verbatim without the redaction FlowBinding documents.\"\n      ],\n      paths: [\n        \"src/AgentEvent.ts\",\n        \"src/Transcript.ts\",\n        \"src/EngineLike.ts\",\n        \"src/FlowBinding.ts\",\n        \"src/HarnessError.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    fmt,\n    importRules,\n    lib,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    test,\n    ...securityReview\n  }\n})\n","coverageDirectives":[{"line":75,"text":"include: [\"src/**\"],"},{"line":96,"text":"\"A path where runtime.setMemoryLimit or the interrupt handler is skipped, or where an explicit limit a binding cannot enforce is silently ignored instead of failing unsupported.\","},{"line":122,"text":"\"mutating() missing a write declared somewhere other than descriptor.effects.writes or input.writes, so a writing call skips the truncated_write and checkpoint refusals.\","},{"line":171,"text":"\"A path from the __intent done payload to a successful run outcome that skips the CompletionClaim, UnresolvedFailure, FailedCall, UnmovedTree or VacuousVerification demands.\","}]},{"path":"packages/smithers/agent/harness/test/workerd/package.json","sha256":"42d036a5ec217712b30f91d8dcf3c4ea72356d337adbe04f3b1d6d98597f6fbc","source":"{\n  \"name\": \"smithers-harness-workerd-smoke\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"description\": \"Runs one harness cell inside workerd, to prove the QuickJS build stays a seam a Cloudflare host can fill\",\n  \"scripts\": {\n    \"dev\": \"wrangler dev --ip 127.0.0.1 --port 8799\",\n    \"smoke\": \"node smoke.mjs\"\n  },\n  \"devDependencies\": {\n    \"wrangler\": \"4.45.0\"\n  }\n}\n","coverageDirectives":[]},{"path":"packages/smithers/agent/harness/test/workerd/tsconfig.json","sha256":"566a166fc5472e8269370d1d3dbce98acfbda07235bf49c9b35ed3fb6c2c4fa5","source":"{\n  \"extends\": \"../../tsconfig.json\",\n  \"compilerOptions\": {\n    \"rootDir\": \"../..\",\n    \"noEmit\": true,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"composite\": false,\n    // The worker runs in workerd, not in Node, and `WebAssembly` and `Response`\n    // come from the DOM lib the base config already lists.\n    \"types\": []\n  },\n  \"include\": [\"*.ts\", \"../../src/**/*\"]\n}\n","coverageDirectives":[{"line":13,"text":"\"include\": [\"*.ts\", \"../../src/**/*\"]"}]},{"path":"packages/smithers/agent/harness/tsconfig.json","sha256":"0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":17,"text":"\"skipLibCheck\": true,"},{"line":30,"text":"\"includeSuggestionsInTsc\": false,"},{"line":31,"text":"\"ignoreEffectWarningsInTscExitCode\": true,"},{"line":32,"text":"\"ignoreEffectErrorsInTscExitCode\": true,"},{"line":39,"text":"\"include\": [\"src/**/*\"]"}]},{"path":"packages/smithers/agent/harness/vitest.config.ts","sha256":"ade09d1fc493c8f5690a69ec0884971f6a3e799a593f418574ff01bdc769bf4d","source":"import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-harness-coverage-${process.pid}`),\n      // Console table only. Nothing reads a report under a directory named\n      // after a finished process, and Vitest removes the reports directory at\n      // run end only when it is empty, so the default html, clover, and json\n      // reporters left one directory per run in the temp dir.\n      reporter: [\"text\"],\n      include: [\"src/**\"],\n      // Every remaining unreachable site carries a `v8 ignore` comment stating\n      // why a test cannot reach it, so anything short of 100 is new untested\n      // code rather than a known gap.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n","coverageDirectives":[{"line":11,"text":"fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"},{"line":14,"text":"include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"},{"line":17,"text":"// wall-clock budget so correct suites survive coverage-instrumented load"},{"line":21,"text":"coverage: {"},{"line":23,"text":"provider: \"v8\","},{"line":25,"text":"// each other's coverage scratch state (issues #115/#121)."},{"line":26,"text":"reportsDirectory: join(tmpdir(), `flows-harness-coverage-${process.pid}`),"},{"line":32,"text":"include: [\"src/**\"],"},{"line":33,"text":"// Every remaining unreachable site carries a `v8 ignore` comment stating"},{"line":36,"text":"thresholds: {"}]}],"targets":[{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/{src,examples}/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.d.mts"},{"kind":"file","path":"packages/smithers/agent/harness/tsconfig.test.json"}],"dependencies":["//packages/smithers/agent/harness:lib"]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:circular","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/circular.mjs"},{"kind":"glob","pattern":"packages/smithers/agent/harness/{src,examples}/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/agent/harness/README.md"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/README.md"},{"kind":"file","path":"packages/smithers/agent/harness/package.json"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/{src,examples}/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:importRules","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"glob","pattern":"packages/smithers/agent/harness/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"file","path":"packages/repo-targets/src/ImportRulesCheck.ts"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:lib","rule":"TsBuild","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/{src,examples}/**/*.ts","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/build-library.mjs"},{"kind":"file","path":"packages/repo-targets/scripts/private-effect-adapters.mjs"},{"kind":"file","path":"packages/repo-targets/package.json"},{"kind":"file","path":"packages/smithers/scripts/compile-commonjs.mjs"},{"kind":"file","path":"packages/repo-targets/contracts/check-single-effect-version.mjs"},{"kind":"file","path":"packages/smithers/agent/harness/src/index.ts"},{"kind":"file","path":"packages/smithers/agent/harness/tsconfig.json"},{"kind":"file","path":"packages/smithers/agent/harness/scripts/build.mjs"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/{src,examples}/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:reviewDocsAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/agent/harness/src/**"]},{"kind":"glob","pattern":"packages/smithers/agent/harness/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/README.md"},{"kind":"glob","pattern":"packages/smithers/agent/harness/docs/**/*.md","exclude":[]},{"kind":"file","path":"apps/site/src/content/docs/docs/reference/api/harness.mdx"}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:reviewJsdocAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/agent/harness/src/**/*.{ts,vibe}"]},{"kind":"glob","pattern":"packages/smithers/agent/harness/src/**/*.{ts,vibe}","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/agent/harness/src/**"]},{"kind":"glob","pattern":"packages/smithers/agent/harness/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/agent/harness/src/**"]},{"kind":"glob","pattern":"packages/smithers/agent/harness/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/agent/harness","label":"//packages/smithers/agent/harness:test","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness/test/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/{src,examples}/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/coverage-teardown.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-process-environment.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"glob","pattern":"packages/smithers/agent/harness/docs/api.md","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness/vitest.config.ts"}],"dependencies":["//packages/smithers/agent/harness:lib"]}],"areas":["PACKAGE.ts","eslint.config.js","examples/instruction-chunks.ts","examples/steer-at-turn-boundary.ts","realm/build.mjs","realm/entry.ts","scripts/build.mjs","src/AgentEvent.ts","src/CallLedger.ts","src/Cell.ts","src/CellCalls.ts","src/CellHistory.ts","src/CellTurn.ts","src/CellValidation.ts","src/Compaction.ts","src/CompletionClaim.ts","src/ContextWindow.ts","src/DoneText.ts","src/EngineLike.ts","src/ExternalTranscript.ts","src/FailedCall.ts","src/FlowBinding.ts","src/HarnessError.ts","src/Judgement.ts","src/Monitor.ts","src/NarrowedCheck.ts","src/Notifications.ts","src/Plan.ts","src/QuickJSLifecycle.ts","src/QuickJSSandbox.ts","src/QuickJSVariant.ts","src/RealmFlow.ts","src/Relevance.ts","src/Sandbox.ts","src/Steering.ts","src/StructuredOutput.ts","src/Sufficiency.ts","src/Supervisor.ts","src/Tokens.ts","src/Transcript.ts","src/TruncatedOutput.ts","src/UnmovedTree.ts","src/UnresolvedFailure.ts","src/VacuousVerification.ts","src/VariablesPanel.ts","src/index.ts","src/internal","test/calibration","test/fixtures","test/workerd","vitest.config.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/agent/harness",
+  "name": "@smthrs/harness",
+  "owner": {
+    "declaration": "packages/smithers/agent/harness/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src examples --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "node realm/build.mjs --check && vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./AgentEvent": "./src/AgentEvent.ts",
+    "./CallLedger": "./src/CallLedger.ts",
+    "./Cell": "./src/Cell.ts",
+    "./CellCalls": "./src/CellCalls.ts",
+    "./CellHistory": "./src/CellHistory.ts",
+    "./CellTurn": "./src/CellTurn.ts",
+    "./CellValidation": "./src/CellValidation.ts",
+    "./Compaction": "./src/Compaction.ts",
+    "./CompletionClaim": "./src/CompletionClaim.ts",
+    "./ContextWindow": "./src/ContextWindow.ts",
+    "./EngineLike": "./src/EngineLike.ts",
+    "./ExternalTranscript": "./src/ExternalTranscript.ts",
+    "./FlowBinding": "./src/FlowBinding.ts",
+    "./HarnessError": "./src/HarnessError.ts",
+    "./Judgement": "./src/Judgement.ts",
+    "./Monitor": "./src/Monitor.ts",
+    "./NarrowedCheck": "./src/NarrowedCheck.ts",
+    "./Notifications": "./src/Notifications.ts",
+    "./Plan": "./src/Plan.ts",
+    "./QuickJSSandbox": "./src/QuickJSSandbox.ts",
+    "./Relevance": "./src/Relevance.ts",
+    "./Sandbox": "./src/Sandbox.ts",
+    "./Steering": "./src/Steering.ts",
+    "./StructuredOutput": "./src/StructuredOutput.ts",
+    "./Sufficiency": "./src/Sufficiency.ts",
+    "./Supervisor": "./src/Supervisor.ts",
+    "./Tokens": "./src/Tokens.ts",
+    "./Transcript": "./src/Transcript.ts",
+    "./TruncatedOutput": "./src/TruncatedOutput.ts",
+    "./UnmovedTree": "./src/UnmovedTree.ts",
+    "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
+    "./FailedCall": "./src/FailedCall.ts",
+    "./VacuousVerification": "./src/VacuousVerification.ts",
+    "./VariablesPanel": "./src/VariablesPanel.ts",
+    "./index": "./src/index.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/instruction-chunks.ts",
+    "examples/steer-at-turn-boundary.ts",
+    "PACKAGE.ts",
+    "realm/build.mjs",
+    "realm/entry.ts",
+    "scripts/build.mjs",
+    "src/AgentEvent.ts",
+    "src/CallLedger.ts",
+    "src/Cell.ts",
+    "src/CellCalls.ts",
+    "src/CellHistory.ts",
+    "src/CellTurn.ts",
+    "src/CellValidation.ts",
+    "src/Compaction.ts",
+    "src/CompletionClaim.ts",
+    "src/ContextWindow.ts",
+    "src/DoneText.ts",
+    "src/EngineLike.ts",
+    "src/ExternalTranscript.ts",
+    "src/FailedCall.ts",
+    "src/FlowBinding.ts",
+    "src/HarnessError.ts",
+    "src/index.ts",
+    "src/internal/bytes.ts",
+    "src/internal/cellPrompt.ts",
+    "src/internal/compactable.ts",
+    "src/internal/compactionMarks.ts",
+    "src/internal/decidedBy.ts",
+    "src/internal/demandText.ts",
+    "src/internal/elide.ts",
+    "src/internal/fence.ts",
+    "src/internal/frame.ts",
+    "src/internal/nonNegativeSafeInt.ts",
+    "src/internal/paidUsage.ts",
+    "src/internal/printChannel.ts",
+    "src/internal/printsObservation.ts",
+    "src/internal/RealmFlowBundle.ts",
+    "src/internal/refusal.ts",
+    "src/internal/supervision.ts",
+    "src/internal/unfinishedWork.ts",
+    "src/internal/unobservedCall.ts",
+    "src/internal/untrustedData.ts",
+    "src/Judgement.ts",
+    "src/Monitor.ts",
+    "src/NarrowedCheck.ts",
+    "src/Notifications.ts",
+    "src/Plan.ts",
+    "src/QuickJSLifecycle.ts",
+    "src/QuickJSSandbox.ts",
+    "src/QuickJSVariant.ts",
+    "src/RealmFlow.ts",
+    "src/Relevance.ts",
+    "src/Sandbox.ts",
+    "src/Steering.ts",
+    "src/StructuredOutput.ts",
+    "src/Sufficiency.ts",
+    "src/Supervisor.ts",
+    "src/Tokens.ts",
+    "src/Transcript.ts",
+    "src/TruncatedOutput.ts",
+    "src/UnmovedTree.ts",
+    "src/UnresolvedFailure.ts",
+    "src/VacuousVerification.ts",
+    "src/VariablesPanel.ts",
+    "test/calibration/completionClaim.ts",
+    "test/calibration/sourceIdentity.ts",
+    "test/fixtures/batchedReplies.ts",
+    "test/fixtures/cellTurn.ts",
+    "test/fixtures/journal.ts",
+    "test/fixtures/rejectedCells.ts",
+    "test/fixtures/scriptedEngine.ts",
+    "test/fixtures/scriptedModel.ts",
+    "test/workerd/smoke.mjs",
+    "test/workerd/wasm.d.ts",
+    "test/workerd/worker.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/agent/harness/test/AddressableContext.test.ts",
+    "packages/smithers/agent/harness/test/AllGatesReplay.test.ts",
+    "packages/smithers/agent/harness/test/ApiExample.test.ts",
+    "packages/smithers/agent/harness/test/BoundaryUsage.test.ts",
+    "packages/smithers/agent/harness/test/bytes.test.ts",
+    "packages/smithers/agent/harness/test/calibration/completionClaim.ts",
+    "packages/smithers/agent/harness/test/calibration/completionClaimCorpus.json",
+    "packages/smithers/agent/harness/test/calibration/completionClaimReport.json",
+    "packages/smithers/agent/harness/test/calibration/sourceIdentity.ts",
+    "packages/smithers/agent/harness/test/CallLedger.test.ts",
+    "packages/smithers/agent/harness/test/Cell.test.ts",
+    "packages/smithers/agent/harness/test/CellCalls.test.ts",
+    "packages/smithers/agent/harness/test/CellCompilerFailure.test.ts",
+    "packages/smithers/agent/harness/test/CellContracts.test.ts",
+    "packages/smithers/agent/harness/test/CellHistory.test.ts",
+    "packages/smithers/agent/harness/test/CellPrompt.test.ts",
+    "packages/smithers/agent/harness/test/CellPromptExample.test.ts",
+    "packages/smithers/agent/harness/test/CellTurn.test.ts",
+    "packages/smithers/agent/harness/test/CellTurnBoundaries.test.ts",
+    "packages/smithers/agent/harness/test/CellValidation.test.ts",
+    "packages/smithers/agent/harness/test/Checkpoints.test.ts",
+    "packages/smithers/agent/harness/test/Compaction.test.ts",
+    "packages/smithers/agent/harness/test/CompactionMarks.test.ts",
+    "packages/smithers/agent/harness/test/CompletionClaim.test.ts",
+    "packages/smithers/agent/harness/test/CompletionClaimCalibration.test.ts",
+    "packages/smithers/agent/harness/test/CompletionDemands.test.ts",
+    "packages/smithers/agent/harness/test/ContextWindow.test.ts",
+    "packages/smithers/agent/harness/test/Contracts.test.ts",
+    "packages/smithers/agent/harness/test/ConversationalTeaching.test.ts",
+    "packages/smithers/agent/harness/test/CoverageReportsDirectory.test.ts",
+    "packages/smithers/agent/harness/test/DoneText.test.ts",
+    "packages/smithers/agent/harness/test/Examples.test.ts",
+    "packages/smithers/agent/harness/test/ExternalTranscript.claude.test.ts",
+    "packages/smithers/agent/harness/test/ExternalTranscript.fixtures.test.ts",
+    "packages/smithers/agent/harness/test/ExternalTranscript.live.test.ts",
+    "packages/smithers/agent/harness/test/ExternalTranscript.test.ts",
+    "packages/smithers/agent/harness/test/FailedCall.test.ts",
+    "packages/smithers/agent/harness/test/fixtures/batched-replies/astropy-8707-seq77.md",
+    "packages/smithers/agent/harness/test/fixtures/batched-replies/django-16612-seq12.md",
+    "packages/smithers/agent/harness/test/fixtures/batchedReplies.ts",
+    "packages/smithers/agent/harness/test/fixtures/cellTurn.ts",
+    "packages/smithers/agent/harness/test/fixtures/completionJournals.json",
+    "packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/expected.json",
+    "packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/MANIFEST.md",
+    "packages/smithers/agent/harness/test/fixtures/external/claude-code-2.1/session.jsonl",
+    "packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/expected.json",
+    "packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/MANIFEST.md",
+    "packages/smithers/agent/harness/test/fixtures/external/claude-code-signed-out-2.1/session.jsonl",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-0.160/expected.json",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-0.160/MANIFEST.md",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-0.160/rollout.jsonl",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/expected.json",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/MANIFEST.md",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-machine-0.160/rollout.jsonl",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/expected.json",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/MANIFEST.md",
+    "packages/smithers/agent/harness/test/fixtures/external/codex-signed-out-0.160/rollout.jsonl",
+    "packages/smithers/agent/harness/test/fixtures/external/manifest.json",
+    "packages/smithers/agent/harness/test/fixtures/journal.ts",
+    "packages/smithers/agent/harness/test/fixtures/narrowingJournals.json",
+    "packages/smithers/agent/harness/test/fixtures/r97Journals.json",
+    "packages/smithers/agent/harness/test/fixtures/rejected-cells/astropy-8707-seq82.md",
+    "packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq218.md",
+    "packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq299.md",
+    "packages/smithers/agent/harness/test/fixtures/rejected-cells/django-16612-seq493.md",
+    "packages/smithers/agent/harness/test/fixtures/rejected-cells/sphinx-11445-seq12.md",
+    "packages/smithers/agent/harness/test/fixtures/rejectedCells.ts",
+    "packages/smithers/agent/harness/test/fixtures/scriptedEngine.ts",
+    "packages/smithers/agent/harness/test/fixtures/scriptedModel.ts",
+    "packages/smithers/agent/harness/test/fixtures/vacuousJournals.json",
+    "packages/smithers/agent/harness/test/fixtures/wave10Journals.json",
+    "packages/smithers/agent/harness/test/FlowBinding.test.ts",
+    "packages/smithers/agent/harness/test/Frame.test.ts",
+    "packages/smithers/agent/harness/test/HarnessErrorCause.test.ts",
+    "packages/smithers/agent/harness/test/Judgement.test.ts",
+    "packages/smithers/agent/harness/test/LiveTreeEpoch.test.ts",
+    "packages/smithers/agent/harness/test/Monitor.test.ts",
+    "packages/smithers/agent/harness/test/NarrowedCheck.test.ts",
+    "packages/smithers/agent/harness/test/Notifications.test.ts",
+    "packages/smithers/agent/harness/test/OutputCheck.test.ts",
+    "packages/smithers/agent/harness/test/OutsideChangesBoundary.test.ts",
+    "packages/smithers/agent/harness/test/PackageConventions.test.ts",
+    "packages/smithers/agent/harness/test/PrintChannel.test.ts",
+    "packages/smithers/agent/harness/test/PublicCellDocs.test.ts",
+    "packages/smithers/agent/harness/test/QuickJSLifecycle.test.ts",
+    "packages/smithers/agent/harness/test/QuickJSMemoryAdmission.test.ts",
+    "packages/smithers/agent/harness/test/QuickJSSandbox.test.ts",
+    "packages/smithers/agent/harness/test/QuickJSVariant.test.ts",
+    "packages/smithers/agent/harness/test/RealmFlow.test.ts",
+    "packages/smithers/agent/harness/test/Relevance.test.ts",
+    "packages/smithers/agent/harness/test/RelevanceTurn.test.ts",
+    "packages/smithers/agent/harness/test/ReplRealm.test.ts",
+    "packages/smithers/agent/harness/test/ReplTurn.test.ts",
+    "packages/smithers/agent/harness/test/Sandbox.test.ts",
+    "packages/smithers/agent/harness/test/Steering.test.ts",
+    "packages/smithers/agent/harness/test/StepRecords.test.ts",
+    "packages/smithers/agent/harness/test/StructuredOutput.test.ts",
+    "packages/smithers/agent/harness/test/Sufficiency.test.ts",
+    "packages/smithers/agent/harness/test/Supervisor.test.ts",
+    "packages/smithers/agent/harness/test/Tokens.test.ts",
+    "packages/smithers/agent/harness/test/Transcript.test.ts",
+    "packages/smithers/agent/harness/test/TruncatedOutput.test.ts",
+    "packages/smithers/agent/harness/test/TypedCompletion.test.ts",
+    "packages/smithers/agent/harness/test/UnfinishedWork.test.ts",
+    "packages/smithers/agent/harness/test/UnmovedTree.test.ts",
+    "packages/smithers/agent/harness/test/UnobservedCall.test.ts",
+    "packages/smithers/agent/harness/test/UnresolvedFailure.test.ts",
+    "packages/smithers/agent/harness/test/VacuousVerification.test.ts",
+    "packages/smithers/agent/harness/test/VariablesPanel.test.ts",
+    "packages/smithers/agent/harness/test/workerd/package-lock.json",
+    "packages/smithers/agent/harness/test/workerd/package.json",
+    "packages/smithers/agent/harness/test/workerd/smoke.mjs",
+    "packages/smithers/agent/harness/test/workerd/tsconfig.json",
+    "packages/smithers/agent/harness/test/workerd/wasm.d.ts",
+    "packages/smithers/agent/harness/test/workerd/worker.ts",
+    "packages/smithers/agent/harness/test/workerd/wrangler.jsonc",
+    "packages/smithers/agent/harness/test/WorkerdSmoke.test.ts",
+    "packages/smithers/agent/harness/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/agent/harness/docs/guides/workerd.md",
+    "packages/smithers/agent/harness/src/internal/RealmFlowBundle.ts",
+    "packages/smithers/agent/harness/test/workerd/package-lock.json",
+    "packages/smithers/agent/harness/test/workerd/package.json",
+    "packages/smithers/agent/harness/test/workerd/smoke.mjs",
+    "packages/smithers/agent/harness/test/workerd/tsconfig.json",
+    "packages/smithers/agent/harness/test/workerd/wasm.d.ts",
+    "packages/smithers/agent/harness/test/workerd/worker.ts",
+    "packages/smithers/agent/harness/test/workerd/wrangler.jsonc",
+    "packages/smithers/agent/harness/test/WorkerdSmoke.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/agent/harness/src/CellTurn.ts",
+      "line": 1747,
+      "text": "/* v8 ignore next -- the regex has exactly two alternatives and each binds one group, so a match always has one of them; the fallback only discharges the optional type on a capture */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/CellValidation.ts",
+      "line": 73,
+      "text": "if (Syntax.isTSModuleDeclaration(node)) return Syntax.traverseFast.skip"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/CellValidation.ts",
+      "line": 181,
+      "text": "if (Syntax.isFunction(node) || Syntax.isClass(node)) return Syntax.traverseFast.skip"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/CellValidation.ts",
+      "line": 224,
+      "text": "if (Syntax.isFunction(node) || Syntax.isClass(node)) return Syntax.traverseFast.skip"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/internal/fence.ts",
+      "line": 41,
+      "text": "/* v8 ignore next -- `info` is a mandatory group of `fenced`, outside any alternation or quantifier, so it participates in every match; the default only discharges the optional type TypeScript gives `RegExpMatchArray.groups` */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/internal/fence.ts",
+      "line": 44,
+      "text": "/* v8 ignore next -- `body` is likewise mandatory in `fenced`; a match that reached here already produced `info`, so `groups` is present and carries both */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+      "line": 956,
+      "text": "/* v8 ignore next -- `withDefaults` fills `timeMs` from `defaultLimits` whenever the `timeMs` capability is declared, and this binding declares it, so the coalesce never reaches its fallback; it only discharges the optional type on `Sandbox.Limits` */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+      "line": 958,
+      "text": "/* v8 ignore next -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the coalesce only discharges the optional type */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+      "line": 1002,
+      "text": "/* v8 ignore else -- `withDefaults` fills `memoryBytes` whenever the `memoryBytes` capability is declared, and this binding declares it, so the heap ceiling is always set */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+      "line": 1272,
+      "text": "/* v8 ignore next -- the validated frame inherits the opening totalMs default */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+      "line": 1278,
+      "text": "/* v8 ignore next -- the validated frame inherits the opening timeMs default */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/QuickJSSandbox.ts",
+      "line": 1354,
+      "text": "/* v8 ignore next -- QuickJS reports a compile failure as an Error object, so the `message` arm is what a parser disagreement takes; `String(failure)` only discharges the `unknown` `context.dump` is typed as */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/Sandbox.ts",
+      "line": 805,
+      "text": "/* v8 ignore next -- `validate` returns exactly one of the two, so the coalesce never reaches its fallback; it only discharges the optional types the interface declares */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/src/Transcript.ts",
+      "line": 457,
+      "text": "/* v8 ignore next -- the first pass ran `decodeCellSettled` over every `cellSettled` entry of this same `events` array and returned on failure, and `decode` is a pure function of `entry.payload`, so re-decoding an entry that survived that pass cannot fail; the branch exists because `Result` has no way to carry that proof */"
+    },
+    {
+      "path": "packages/smithers/agent/harness/test/ExternalTranscript.live.test.ts",
+      "line": 103,
+      "text": "describe.skipIf(!enabled)(\"ExternalTranscript with the installed CLIs\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/harness/test/WorkerdSmoke.test.ts",
+      "line": 24,
+      "text": "describe.skipIf(process.env.FLOWS_WORKERD_SMOKE !== \"1\")(\"workerd smoke\", () => {"
+    },
+    {
+      "path": "packages/smithers/agent/harness/vitest.config.ts",
+      "line": 33,
+      "text": "// Every remaining unreachable site carries a `v8 ignore` comment stating"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/harness/eslint.config.js",
+      "sha256": "5f17529c382de78de65913d3ad7ea009a2192c5c4033be13d59de5aad0015738",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\", \"examples/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        project: \"./tsconfig.test.json\",\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/package.json",
+      "sha256": "3c12428ed7469a92ea317e1260296c619e9ada405cc54426630e0c806c261036",
+      "source": "{\n  \"name\": \"@smthrs/harness\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"description\": \"The Smithers built-in agent loop: a cell-first controller whose model turns produce JavaScript cells that run in a persistent realm and reach the world only through durable flow calls\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/harness\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"agent\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"agent\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./AgentEvent\": \"./src/AgentEvent.ts\",\n    \"./CallLedger\": \"./src/CallLedger.ts\",\n    \"./Cell\": \"./src/Cell.ts\",\n    \"./CellCalls\": \"./src/CellCalls.ts\",\n    \"./CellHistory\": \"./src/CellHistory.ts\",\n    \"./CellTurn\": \"./src/CellTurn.ts\",\n    \"./CellValidation\": \"./src/CellValidation.ts\",\n    \"./Compaction\": \"./src/Compaction.ts\",\n    \"./CompletionClaim\": \"./src/CompletionClaim.ts\",\n    \"./ContextWindow\": \"./src/ContextWindow.ts\",\n    \"./EngineLike\": \"./src/EngineLike.ts\",\n    \"./ExternalTranscript\": \"./src/ExternalTranscript.ts\",\n    \"./FlowBinding\": \"./src/FlowBinding.ts\",\n    \"./HarnessError\": \"./src/HarnessError.ts\",\n    \"./Judgement\": \"./src/Judgement.ts\",\n    \"./Monitor\": \"./src/Monitor.ts\",\n    \"./NarrowedCheck\": \"./src/NarrowedCheck.ts\",\n    \"./Notifications\": \"./src/Notifications.ts\",\n    \"./Plan\": \"./src/Plan.ts\",\n    \"./QuickJSSandbox\": \"./src/QuickJSSandbox.ts\",\n    \"./Relevance\": \"./src/Relevance.ts\",\n    \"./Sandbox\": \"./src/Sandbox.ts\",\n    \"./Steering\": \"./src/Steering.ts\",\n    \"./StructuredOutput\": \"./src/StructuredOutput.ts\",\n    \"./Sufficiency\": \"./src/Sufficiency.ts\",\n    \"./Supervisor\": \"./src/Supervisor.ts\",\n    \"./Tokens\": \"./src/Tokens.ts\",\n    \"./Transcript\": \"./src/Transcript.ts\",\n    \"./TruncatedOutput\": \"./src/TruncatedOutput.ts\",\n    \"./UnmovedTree\": \"./src/UnmovedTree.ts\",\n    \"./UnresolvedFailure\": \"./src/UnresolvedFailure.ts\",\n    \"./FailedCall\": \"./src/FailedCall.ts\",\n    \"./VacuousVerification\": \"./src/VacuousVerification.ts\",\n    \"./VariablesPanel\": \"./src/VariablesPanel.ts\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./AgentEvent\": {\n        \"import\": {\n          \"types\": \"./dist/esm/AgentEvent.d.ts\",\n          \"default\": \"./dist/esm/AgentEvent.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/AgentEvent.d.ts\",\n          \"default\": \"./dist/cjs/AgentEvent.js\"\n        }\n      },\n      \"./CallLedger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CallLedger.d.ts\",\n          \"default\": \"./dist/esm/CallLedger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CallLedger.d.ts\",\n          \"default\": \"./dist/cjs/CallLedger.js\"\n        }\n      },\n      \"./Cell\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Cell.d.ts\",\n          \"default\": \"./dist/esm/Cell.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Cell.d.ts\",\n          \"default\": \"./dist/cjs/Cell.js\"\n        }\n      },\n      \"./CellCalls\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellCalls.d.ts\",\n          \"default\": \"./dist/esm/CellCalls.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellCalls.d.ts\",\n          \"default\": \"./dist/cjs/CellCalls.js\"\n        }\n      },\n      \"./CellHistory\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellHistory.d.ts\",\n          \"default\": \"./dist/esm/CellHistory.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellHistory.d.ts\",\n          \"default\": \"./dist/cjs/CellHistory.js\"\n        }\n      },\n      \"./CellTurn\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellTurn.d.ts\",\n          \"default\": \"./dist/esm/CellTurn.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellTurn.d.ts\",\n          \"default\": \"./dist/cjs/CellTurn.js\"\n        }\n      },\n      \"./CellValidation\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CellValidation.d.ts\",\n          \"default\": \"./dist/esm/CellValidation.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CellValidation.d.ts\",\n          \"default\": \"./dist/cjs/CellValidation.js\"\n        }\n      },\n      \"./Compaction\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Compaction.d.ts\",\n          \"default\": \"./dist/esm/Compaction.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Compaction.d.ts\",\n          \"default\": \"./dist/cjs/Compaction.js\"\n        }\n      },\n      \"./CompletionClaim\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CompletionClaim.d.ts\",\n          \"default\": \"./dist/esm/CompletionClaim.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CompletionClaim.d.ts\",\n          \"default\": \"./dist/cjs/CompletionClaim.js\"\n        }\n      },\n      \"./ContextWindow\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ContextWindow.d.ts\",\n          \"default\": \"./dist/esm/ContextWindow.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ContextWindow.d.ts\",\n          \"default\": \"./dist/cjs/ContextWindow.js\"\n        }\n      },\n      \"./EngineLike\": {\n        \"import\": {\n          \"types\": \"./dist/esm/EngineLike.d.ts\",\n          \"default\": \"./dist/esm/EngineLike.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/EngineLike.d.ts\",\n          \"default\": \"./dist/cjs/EngineLike.js\"\n        }\n      },\n      \"./ExternalTranscript\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ExternalTranscript.d.ts\",\n          \"default\": \"./dist/esm/ExternalTranscript.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ExternalTranscript.d.ts\",\n          \"default\": \"./dist/cjs/ExternalTranscript.js\"\n        }\n      },\n      \"./FlowBinding\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FlowBinding.d.ts\",\n          \"default\": \"./dist/esm/FlowBinding.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FlowBinding.d.ts\",\n          \"default\": \"./dist/cjs/FlowBinding.js\"\n        }\n      },\n      \"./HarnessError\": {\n        \"import\": {\n          \"types\": \"./dist/esm/HarnessError.d.ts\",\n          \"default\": \"./dist/esm/HarnessError.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/HarnessError.d.ts\",\n          \"default\": \"./dist/cjs/HarnessError.js\"\n        }\n      },\n      \"./Judgement\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Judgement.d.ts\",\n          \"default\": \"./dist/esm/Judgement.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Judgement.d.ts\",\n          \"default\": \"./dist/cjs/Judgement.js\"\n        }\n      },\n      \"./Monitor\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Monitor.d.ts\",\n          \"default\": \"./dist/esm/Monitor.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Monitor.d.ts\",\n          \"default\": \"./dist/cjs/Monitor.js\"\n        }\n      },\n      \"./NarrowedCheck\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NarrowedCheck.d.ts\",\n          \"default\": \"./dist/esm/NarrowedCheck.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NarrowedCheck.d.ts\",\n          \"default\": \"./dist/cjs/NarrowedCheck.js\"\n        }\n      },\n      \"./Notifications\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Notifications.d.ts\",\n          \"default\": \"./dist/esm/Notifications.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Notifications.d.ts\",\n          \"default\": \"./dist/cjs/Notifications.js\"\n        }\n      },\n      \"./Plan\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Plan.d.ts\",\n          \"default\": \"./dist/esm/Plan.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Plan.d.ts\",\n          \"default\": \"./dist/cjs/Plan.js\"\n        }\n      },\n      \"./QuickJSSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/QuickJSSandbox.d.ts\",\n          \"default\": \"./dist/esm/QuickJSSandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/QuickJSSandbox.d.ts\",\n          \"default\": \"./dist/cjs/QuickJSSandbox.js\"\n        }\n      },\n      \"./Relevance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Relevance.d.ts\",\n          \"default\": \"./dist/esm/Relevance.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Relevance.d.ts\",\n          \"default\": \"./dist/cjs/Relevance.js\"\n        }\n      },\n      \"./Sandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sandbox.d.ts\",\n          \"default\": \"./dist/esm/Sandbox.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sandbox.d.ts\",\n          \"default\": \"./dist/cjs/Sandbox.js\"\n        }\n      },\n      \"./Steering\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Steering.d.ts\",\n          \"default\": \"./dist/esm/Steering.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Steering.d.ts\",\n          \"default\": \"./dist/cjs/Steering.js\"\n        }\n      },\n      \"./StructuredOutput\": {\n        \"import\": {\n          \"types\": \"./dist/esm/StructuredOutput.d.ts\",\n          \"default\": \"./dist/esm/StructuredOutput.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/StructuredOutput.d.ts\",\n          \"default\": \"./dist/cjs/StructuredOutput.js\"\n        }\n      },\n      \"./Sufficiency\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sufficiency.d.ts\",\n          \"default\": \"./dist/esm/Sufficiency.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sufficiency.d.ts\",\n          \"default\": \"./dist/cjs/Sufficiency.js\"\n        }\n      },\n      \"./Supervisor\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Supervisor.d.ts\",\n          \"default\": \"./dist/esm/Supervisor.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Supervisor.d.ts\",\n          \"default\": \"./dist/cjs/Supervisor.js\"\n        }\n      },\n      \"./Tokens\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Tokens.d.ts\",\n          \"default\": \"./dist/esm/Tokens.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Tokens.d.ts\",\n          \"default\": \"./dist/cjs/Tokens.js\"\n        }\n      },\n      \"./Transcript\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Transcript.d.ts\",\n          \"default\": \"./dist/esm/Transcript.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Transcript.d.ts\",\n          \"default\": \"./dist/cjs/Transcript.js\"\n        }\n      },\n      \"./TruncatedOutput\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TruncatedOutput.d.ts\",\n          \"default\": \"./dist/esm/TruncatedOutput.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TruncatedOutput.d.ts\",\n          \"default\": \"./dist/cjs/TruncatedOutput.js\"\n        }\n      },\n      \"./UnmovedTree\": {\n        \"import\": {\n          \"types\": \"./dist/esm/UnmovedTree.d.ts\",\n          \"default\": \"./dist/esm/UnmovedTree.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/UnmovedTree.d.ts\",\n          \"default\": \"./dist/cjs/UnmovedTree.js\"\n        }\n      },\n      \"./UnresolvedFailure\": {\n        \"import\": {\n          \"types\": \"./dist/esm/UnresolvedFailure.d.ts\",\n          \"default\": \"./dist/esm/UnresolvedFailure.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/UnresolvedFailure.d.ts\",\n          \"default\": \"./dist/cjs/UnresolvedFailure.js\"\n        }\n      },\n      \"./FailedCall\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FailedCall.d.ts\",\n          \"default\": \"./dist/esm/FailedCall.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FailedCall.d.ts\",\n          \"default\": \"./dist/cjs/FailedCall.js\"\n        }\n      },\n      \"./VacuousVerification\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VacuousVerification.d.ts\",\n          \"default\": \"./dist/esm/VacuousVerification.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VacuousVerification.d.ts\",\n          \"default\": \"./dist/cjs/VacuousVerification.js\"\n        }\n      },\n      \"./VariablesPanel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VariablesPanel.d.ts\",\n          \"default\": \"./dist/esm/VariablesPanel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VariablesPanel.d.ts\",\n          \"default\": \"./dist/cjs/VariablesPanel.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src examples --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"node realm/build.mjs --check && vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@babel/parser\": \"8.0.4\",\n    \"@babel/types\": \"8.0.4\",\n    \"@jitl/quickjs-singlefile-browser-release-sync\": \"0.32.0\",\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\",\n    \"@smthrs/notifications\": \"1.0.0-rc.16\",\n    \"@smthrs/registry\": \"1.0.0-rc.16\",\n    \"quickjs-emscripten-core\": \"0.32.0\",\n    \"sucrase\": \"3.35.1\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/crypto\": \"workspace:*\",\n    \"@smthrs/plan\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@jitl/quickjs-wasmfile-release-sync\": \"0.32.0\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 465,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 492,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/PACKAGE.ts",
+      "sha256": "123e946c287e1581bab62e3ad83ecfb4b052ae63c107107c063b363f96ca43b1",
+      "source": "import {\n  BuildAndCheckTypeScriptPackage,\n  ImportRules,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode\n} from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\nimport * as Input from \"@smthrs/targets/Input\"\n\nconst cwd = \"packages/smithers/agent/harness\"\n\nconst standard = BuildAndCheckTypeScriptPackage({\n  cwd,\n  sources: Input.glob(\"{src,examples}/**/*.ts\"),\n  testData: [\"docs/api.md\"]\n})\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = standard\n\nconst importRules = ImportRules({\n  cwd,\n  rules: [\n    {\n      kind: \"forbidHostModules\",\n      files: [\"src/**\"],\n      because: \"sdk.platform-neutral: the harness receives host capabilities through Effect services.\"\n    },\n    {\n      kind: \"forbidCalls\",\n      files: [\"src/**\"],\n      callees: [\"Effect.runPromise\", \"Effect.runSync\", \"Effect.runFork\", \"Effect.runCallback\"],\n      because: \"effect.boundary-only: the harness returns Effects for its host to run.\"\n    },\n    {\n      kind: \"forbidCalls\",\n      files: [\"test/**\"],\n      callees: [\"setTimeout\", \"setInterval\", \"*.waitForTimeout\"],\n      because: \"test.behavioral: synchronize tests on conditions or Effect TestClock instead of timer waits.\"\n    },\n    {\n      kind: \"forbidCalls\",\n      files: [\n        \"test/QuickJSMemoryAdmission.test.ts\",\n        \"test/QuickJSSandbox.test.ts\",\n        \"test/ReplRealm.test.ts\",\n        \"test/Frame.test.ts\",\n        \"test/UnobservedCall.test.ts\",\n        \"test/CellPromptExample.test.ts\"\n      ],\n      callees: [\"setTimeout\", \"*.sleep\", \"*.waitForTimeout\"],\n      because: \"test.behavioral: wait on execution or TestClock, never a fixed sleep.\"\n    }\n  ]\n})\n\n/**\n * Changed public APIs against the package prose. The default context reads\n * only `docs/*.md`; the guides and the site API page document the same\n * exports, so the review reads all of them (about 380 KiB, under the 2 MiB cap).\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/harness.mdx\")\n  ]\n})\n\n/** Changed exports against their own JSDoc. */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"cell-realm-escape\",\n      title: \"Agent-authored cell code reaches the host only through the four prelude bridges\",\n      threat:\n        \"A model or a prompt-injected repository file writes a cell that runs code in the host process and reads the user's credentials or files.\",\n      lookFor: [\n        \"A host function installed with context.newFunction or setProp other than __call, __checkpoint, __print and __intent, or one left on globalThis after the prelude runs.\",\n        \"A bridge callback that returns a host object, function or handle to the realm instead of JSON rebuilt by handleFromJson.\",\n        \"A cell-controlled value (flow name, input, at, print parts, intent payload) passed to host eval, dynamic import, Function or a property lookup on a host object without JSON decoding.\",\n        \"The ctx and console globals becoming writable or configurable, so a cell can replace ctx.call for later cells.\"\n      ],\n      paths: [\"src/QuickJSSandbox.ts\", \"src/Sandbox.ts\", \"src/CellValidation.ts\"]\n    },\n    {\n      id: \"realm-resource-limits\",\n      title: \"Memory, step, time and print budgets bound every cell and every bridged flow result\",\n      threat:\n        \"A looping or allocating cell exhausts the host's memory or CPU and takes down every run sharing the process.\",\n      lookFor: [\n        \"A path where runtime.setMemoryLimit or the interrupt handler is skipped, or where an explicit limit a binding cannot enforce is silently ignored instead of failing unsupported.\",\n        \"Host-side copies of print or intent payloads that are parsed before the printRetainedBytes ceiling is checked.\",\n        \"A flow result materialized into the realm without the payloadBytes estimate, or a deep JSON payload whose handle building can overflow the host stack uncaught.\",\n        \"Proxy or another getter-driven intrinsic available to cells that makes the variables-panel memory probe under-report held bytes.\"\n      ],\n      paths: [\"src/QuickJSSandbox.ts\", \"src/Sandbox.ts\", \"src/VariablesPanel.ts\"]\n    },\n    {\n      id: \"flow-call-authorization\",\n      title: \"A cell can dispatch only model-invocable flows inside the run's capability envelope\",\n      threat:\n        \"A model calls a withheld, non-model-invocable or out-of-envelope flow and writes files, runs commands or spends money the run was not granted.\",\n      lookFor: [\n        \"A dispatch path in callHandler or CellCalls.make that runs a flow before the unknown_flow, flow_withheld, modelInvocable and CapabilitySet.allows checks.\",\n        \"A capability string that Capability.parse rejects being treated as allowed rather than refused.\",\n        \"A declaration digest mismatch between the catalog the model saw and the registry entry that runs, or a binding dispatched when its digest differs from the registry descriptor.\",\n        \"A catalog refresh (openFrame nextCatalog) or discovered flow list that adds entries without the modelInvocable filter.\"\n      ],\n      paths: [\"src/CellTurn.ts\", \"src/CellCalls.ts\", \"src/FlowBinding.ts\"]\n    },\n    {\n      id: \"write-guards\",\n      title: \"Writes are refused at checkpoints and when fed truncated flow output\",\n      threat:\n        \"A model overwrites a user's file with a truncated fragment, or mutates a pinned checkpoint tree the user expected to stay read-only.\",\n      lookFor: [\n        \"mutating() missing a write declared somewhere other than descriptor.effects.writes or input.writes, so a writing call skips the truncated_write and checkpoint refusals.\",\n        \"TruncatedOutput.reuse matching that a trivial re-encoding of the fragment (whitespace, JSON escaping) evades.\",\n        \"An at option accepted by Cell.checkpointOf that does not name a checkpoint this run minted.\"\n      ],\n      paths: [\"src/CellTurn.ts\", \"src/TruncatedOutput.ts\", \"src/Cell.ts\"]\n    },\n    {\n      id: \"prompt-injection-boundary\",\n      title:\n        \"Tool output, flow descriptions, skills and compaction summaries reach the model only inside escaped untrusted-data blocks\",\n      threat:\n        \"A repository file or third-party flow description injects instructions that the model follows as if they came from the user, exfiltrating code or widening its actions.\",\n      lookFor: [\n        \"Text derived from cell prints, flow results, flow or skill descriptions, or compaction summaries inserted into a model message without untrustedData().\",\n        \"An untrustedData escape that misses a character sequence which closes the </untrusted-data> block or forges a Provenance line.\",\n        \"A steering, monitor or notification message built from external content and sent with system or user authority.\"\n      ],\n      paths: [\n        \"src/internal/untrustedData.ts\",\n        \"src/internal/cellPrompt.ts\",\n        \"src/internal/printsObservation.ts\",\n        \"src/CallLedger.ts\",\n        \"src/NarrowedCheck.ts\",\n        \"src/Compaction.ts\",\n        \"src/Relevance.ts\",\n        \"src/Supervisor.ts\",\n        \"src/Steering.ts\",\n        \"src/Monitor.ts\",\n        \"src/Notifications.ts\",\n        \"src/CellTurn.ts\"\n      ]\n    },\n    {\n      id: \"replay-key-integrity\",\n      title: \"A journaled boundary replays only for the same cell source, call input, declaration and live tree\",\n      threat:\n        \"A resumed or later run replays a stale flow or model result over a changed workspace or input, so the agent acts on data the user has since changed.\",\n      lookFor: [\n        \"A boundary or step key that omits the invocation input, the declaration digest, the frame ordinal or the live-tree digest.\",\n        \"A replayed outcome returned without re-checking the capability envelope or withheld-flow state that applied when it was recorded.\"\n      ],\n      paths: [\"src/CellTurn.ts\", \"src/Cell.ts\", \"src/internal/frame.ts\", \"src/EngineLike.ts\"]\n    },\n    {\n      id: \"completion-gate-bypass\",\n      title: \"ctx.done cannot complete a run that its completion gates refuse\",\n      threat:\n        \"A model claims success over failed calls or unverified work and the user merges or deploys a change the harness should have blocked.\",\n      lookFor: [\n        \"A path from the __intent done payload to a successful run outcome that skips the CompletionClaim, UnresolvedFailure, FailedCall, UnmovedTree or VacuousVerification demands.\",\n        \"A judgement or classifier failure that resolves as allowed rather than as a typed refusal.\"\n      ],\n      paths: [\n        \"src/CompletionClaim.ts\",\n        \"src/Judgement.ts\",\n        \"src/UnresolvedFailure.ts\",\n        \"src/FailedCall.ts\",\n        \"src/UnmovedTree.ts\",\n        \"src/VacuousVerification.ts\",\n        \"src/Sufficiency.ts\",\n        \"src/CellTurn.ts\"\n      ]\n    },\n    {\n      id: \"journal-credential-leak\",\n      title: \"Agent events and transcripts carry no provider credential or raw secret-bearing cause\",\n      threat:\n        \"Anyone who can read a run's journal or transcript recovers the user's model API key or a secret a flow handled.\",\n      lookFor: [\n        \"An AgentEvent, Transcript or EngineLike field populated from a signed request, header set or raw error cause rather than the credential-free prepared request.\",\n        \"A flow handler cause or print buffer persisted verbatim without the redaction FlowBinding documents.\"\n      ],\n      paths: [\n        \"src/AgentEvent.ts\",\n        \"src/Transcript.ts\",\n        \"src/EngineLike.ts\",\n        \"src/FlowBinding.ts\",\n        \"src/HarnessError.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    fmt,\n    importRules,\n    lib,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    test,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 75,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 96,
+          "text": "\"A path where runtime.setMemoryLimit or the interrupt handler is skipped, or where an explicit limit a binding cannot enforce is silently ignored instead of failing unsupported.\","
+        },
+        {
+          "line": 122,
+          "text": "\"mutating() missing a write declared somewhere other than descriptor.effects.writes or input.writes, so a writing call skips the truncated_write and checkpoint refusals.\","
+        },
+        {
+          "line": 171,
+          "text": "\"A path from the __intent done payload to a successful run outcome that skips the CompletionClaim, UnresolvedFailure, FailedCall, UnmovedTree or VacuousVerification demands.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/test/workerd/package.json",
+      "sha256": "42d036a5ec217712b30f91d8dcf3c4ea72356d337adbe04f3b1d6d98597f6fbc",
+      "source": "{\n  \"name\": \"smithers-harness-workerd-smoke\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"description\": \"Runs one harness cell inside workerd, to prove the QuickJS build stays a seam a Cloudflare host can fill\",\n  \"scripts\": {\n    \"dev\": \"wrangler dev --ip 127.0.0.1 --port 8799\",\n    \"smoke\": \"node smoke.mjs\"\n  },\n  \"devDependencies\": {\n    \"wrangler\": \"4.45.0\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/agent/harness/test/workerd/tsconfig.json",
+      "sha256": "566a166fc5472e8269370d1d3dbce98acfbda07235bf49c9b35ed3fb6c2c4fa5",
+      "source": "{\n  \"extends\": \"../../tsconfig.json\",\n  \"compilerOptions\": {\n    \"rootDir\": \"../..\",\n    \"noEmit\": true,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"composite\": false,\n    // The worker runs in workerd, not in Node, and `WebAssembly` and `Response`\n    // come from the DOM lib the base config already lists.\n    \"types\": []\n  },\n  \"include\": [\"*.ts\", \"../../src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 13,
+          "text": "\"include\": [\"*.ts\", \"../../src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness/vitest.config.ts",
+      "sha256": "ade09d1fc493c8f5690a69ec0884971f6a3e799a593f418574ff01bdc769bf4d",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-harness-coverage-${process.pid}`),\n      // Console table only. Nothing reads a report under a directory named\n      // after a finished process, and Vitest removes the reports directory at\n      // run end only when it is empty, so the default html, clover, and json\n      // reporters left one directory per run in the temp dir.\n      reporter: [\"text\"],\n      include: [\"src/**\"],\n      // Every remaining unreachable site carries a `v8 ignore` comment stating\n      // why a test cannot reach it, so anything short of 100 is new untested\n      // code rather than a known gap.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 17,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 21,
+          "text": "coverage: {"
+        },
+        {
+          "line": 23,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 25,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 26,
+          "text": "reportsDirectory: join(tmpdir(), `flows-harness-coverage-${process.pid}`),"
+        },
+        {
+          "line": 32,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 33,
+          "text": "// Every remaining unreachable site carries a `v8 ignore` comment stating"
+        },
+        {
+          "line": 36,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/harness:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:importRules",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/harness/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/harness.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/harness/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/harness/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/harness/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness",
+      "label": "//packages/smithers/agent/harness:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/{src,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness/docs/api.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/harness:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/instruction-chunks.ts",
+    "examples/steer-at-turn-boundary.ts",
+    "realm/build.mjs",
+    "realm/entry.ts",
+    "scripts/build.mjs",
+    "src/AgentEvent.ts",
+    "src/CallLedger.ts",
+    "src/Cell.ts",
+    "src/CellCalls.ts",
+    "src/CellHistory.ts",
+    "src/CellTurn.ts",
+    "src/CellValidation.ts",
+    "src/Compaction.ts",
+    "src/CompletionClaim.ts",
+    "src/ContextWindow.ts",
+    "src/DoneText.ts",
+    "src/EngineLike.ts",
+    "src/ExternalTranscript.ts",
+    "src/FailedCall.ts",
+    "src/FlowBinding.ts",
+    "src/HarnessError.ts",
+    "src/Judgement.ts",
+    "src/Monitor.ts",
+    "src/NarrowedCheck.ts",
+    "src/Notifications.ts",
+    "src/Plan.ts",
+    "src/QuickJSLifecycle.ts",
+    "src/QuickJSSandbox.ts",
+    "src/QuickJSVariant.ts",
+    "src/RealmFlow.ts",
+    "src/Relevance.ts",
+    "src/Sandbox.ts",
+    "src/Steering.ts",
+    "src/StructuredOutput.ts",
+    "src/Sufficiency.ts",
+    "src/Supervisor.ts",
+    "src/Tokens.ts",
+    "src/Transcript.ts",
+    "src/TruncatedOutput.ts",
+    "src/UnmovedTree.ts",
+    "src/UnresolvedFailure.ts",
+    "src/VacuousVerification.ts",
+    "src/VariablesPanel.ts",
+    "src/index.ts",
+    "src/internal",
+    "test/calibration",
+    "test/fixtures",
+    "test/workerd",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

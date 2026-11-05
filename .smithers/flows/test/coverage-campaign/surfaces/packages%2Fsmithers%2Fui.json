@@ -1,1 +1,1092 @@
-{"id":"packages/smithers/ui","name":"@smthrs/ui","owner":{"declaration":"packages/smithers/ui/package.json","assignedLane":null},"kind":"package","scripts":{"check":"vibelang -p tsconfig.json --noEmit","test":"bun test tests"},"exports":{"./markdown":{"types":"./src/primitives/markdown.tsx","default":"./src/primitives/markdown.tsx"},"./button":{"types":"./src/button.tsx","default":"./src/button.tsx"},"./marker":{"types":"./src/chat/Marker.tsx","default":"./src/chat/Marker.tsx"},".":{"types":"./src/index.ts","import":"./src/index.ts","default":"./src/index.ts"},"./adapters/knowledge-graph":{"types":"./src/adapters/knowledge-graph.ts","import":"./src/adapters/knowledge-graph.ts","default":"./src/adapters/knowledge-graph.ts"},"./adapters/chart":{"types":"./src/adapters/chart.tsx","import":"./src/adapters/chart.tsx","default":"./src/adapters/chart.tsx"},"./adapters/terminal":{"types":"./src/adapters/terminal.tsx","import":"./src/adapters/terminal.tsx","default":"./src/adapters/terminal.tsx"},"./status":{"types":"./src/status.ts","import":"./src/status.ts","default":"./src/status.ts"},"./time":{"types":"./src/time/index.ts","import":"./src/time/index.ts","default":"./src/time/index.ts"},"./calendar":{"types":"./src/calendar/index.ts","import":"./src/calendar/index.ts","default":"./src/calendar/index.ts"},"./vault":{"types":"./src/vault/index.ts","import":"./src/vault/index.ts","default":"./src/vault/index.ts"},"./flow-form":{"types":"./src/flow-form.ts","import":"./src/flow-form.ts","default":"./src/flow-form.ts"},"./diff-paginate":{"types":"./src/diff-paginate.ts","import":"./src/diff-paginate.ts","default":"./src/diff-paginate.ts"},"./flow-arguments":{"types":"./src/flow-arguments.ts","import":"./src/flow-arguments.ts","default":"./src/flow-arguments.ts"},"./app-operations":{"types":"./src/app-operations/index.ts","import":"./src/app-operations/index.ts","default":"./src/app-operations/index.ts"},"./app-operations/wiki":{"types":"./src/app-operations/wiki.ts","import":"./src/app-operations/wiki.ts","default":"./src/app-operations/wiki.ts"},"./app-operations/http":{"types":"./src/app-operations/http.ts","import":"./src/app-operations/http.ts","default":"./src/app-operations/http.ts"},"./command-line":{"types":"./src/command-line.ts","import":"./src/command-line.ts","default":"./src/command-line.ts"},"./run-command":{"types":"./src/run-command.ts","import":"./src/run-command.ts","default":"./src/run-command.ts"},"./clock":{"types":"./src/clock.ts","import":"./src/clock.ts","default":"./src/clock.ts"},"./notification-policy":{"types":"./src/notification-policy.ts","import":"./src/notification-policy.ts","default":"./src/notification-policy.ts"},"./copy":{"types":"./src/copy.ts","import":"./src/copy.ts","default":"./src/copy.ts"},"./adapters/code-editor":{"types":"./src/adapters/code-editor/index.tsx","default":"./src/adapters/code-editor/index.tsx"},"./app-operations/controls":{"types":"./src/app-operations/controls.ts","default":"./src/app-operations/controls.ts"}},"production":["scripts/build-views.mjs","src/action-menu/ActionMenu.tsx","src/action-menu/actionMenuCss.ts","src/action-menu/index.ts","src/adapters/chart.tsx","src/adapters/code-editor/index.tsx","src/adapters/knowledge-graph.ts","src/adapters/terminal.tsx","src/adapters/xtermCss.ts","src/agent-status/agentStatus.ts","src/agent-status/agentStatusCss.ts","src/agent-status/AgentStatusPill.tsx","src/agent-status/index.ts","src/agent-status/NeedsYouCard.tsx","src/agent-status/notices.ts","src/agent-status/NotificationPanel.tsx","src/agent-status/roving.ts","src/agent-status/toastClearance.ts","src/agent-status/ToastStack.tsx","src/agent-status/useToastClearance.tsx","src/agentic/ActivityTimeline.tsx","src/agentic/AgentOutput.tsx","src/agentic/AgentTask.tsx","src/agentic/ChainOfThought.tsx","src/agentic/CodeBlock.ts","src/agentic/formatJsonSafe.ts","src/agentic/formatPartialJson.ts","src/agentic/InlineCitation.tsx","src/agentic/MessageResponse.tsx","src/agentic/OpenInChat.tsx","src/agentic/parseAgentOutput.ts","src/agentic/Plan.tsx","src/agentic/plansTasksQueuesCss.ts","src/agentic/Queue.tsx","src/agentic/Reasoning.tsx","src/agentic/reasoningToolsCss.ts","src/agentic/Sources.tsx","src/agentic/sourcesCitationsCss.ts","src/agentic/Suggestion.tsx","src/agentic/TaskItem.tsx","src/agentic/ToolCall.tsx","src/agents/AgentCard.tsx","src/agents/AgentDefinition.tsx","src/agents/agentsCss.ts","src/agents/badges.tsx","src/agents/ContextUsage.tsx","src/agents/ModelSelector.tsx","src/alert.tsx","src/app-operations/controls.ts","src/app-operations/http.ts","src/app-operations/index.ts","src/app-operations/wiki.ts","src/approvals/ApprovalCard.tsx","src/approvals/approvalsCss.ts","src/approvals/Checkpoint.tsx","src/approvals/Confirmation.tsx","src/artifacts/Artifact.tsx","src/artifacts/artifactsCss.ts","src/artifacts/ChangeSummary.tsx","src/artifacts/Commit.tsx","src/artifacts/EnvironmentVariables.tsx","src/artifacts/PackageInfo.tsx","src/artifacts/SchemaDisplay.tsx","src/artifacts/SecretField.tsx","src/artifacts/Snippet.tsx","src/artifacts/StackTrace.tsx","src/artifacts/TestResults.tsx","src/avatar-stack.tsx","src/badge.tsx","src/breadcrumbs.tsx","src/button.tsx","src/calendar/Calendar.tsx","src/calendar/calendarCss.ts","src/calendar/dateUtils.ts","src/calendar/index.ts","src/calendar/types.ts","src/canvas/canvasCss.ts","src/canvas/WorkflowCanvas.tsx","src/card.tsx","src/chat/Attachment.tsx","src/chat/Bubble.tsx","src/chat/ChatComposer.tsx","src/chat/ChatMessage.tsx","src/chat/ChatTimeline.tsx","src/chat/chatTimelineCss.ts","src/chat/ChatTranscript.tsx","src/chat/CompactGroup.tsx","src/chat/CompletionList.tsx","src/chat/ConversationCheckpoint.tsx","src/chat/conversationFoundationCss.ts","src/chat/Marker.tsx","src/chat/Message.tsx","src/chat/MessageBranch.tsx","src/chat/MessageScroller.tsx","src/chat/Shimmer.tsx","src/chat/timelineDriver.ts","src/chat/timelineZoom.ts","src/chat/transcriptScroll.ts","src/chat/visibilitySubscriptionRegistry.ts","src/clock.ts","src/cn.ts","src/collaborators.tsx","src/collaboratorsCss.ts","src/collapsible-panel.tsx","src/command-line.ts","src/command-palette.tsx","src/commandCss.ts","src/copy-button.tsx","src/copy.ts","src/data-attributes.ts","src/dialog.tsx","src/diff-hunks.tsx","src/diff-paginate.ts","src/diff.ts","src/directory-listing.tsx","src/docs-page/docsPageCss.ts","src/docs-page/DocsPageView.tsx","src/docs-page/index.ts","src/empty-state.tsx","src/file-tabs.tsx","src/file-tree.tsx","src/flow-arguments.ts","src/flow-draft-view/flowDraft.ts","src/flow-draft-view/FlowDraftView.tsx","src/flow-draft-view/flowDraftViewCss.ts","src/flow-draft-view/index.ts","src/flow-form-view/FlowFormView.tsx","src/flow-form-view/flowFormViewCss.ts","src/flow-form-view/index.ts","src/flow-form.ts","src/flow-graph/FlowGraph.tsx","src/flow-graph/flowGraphCss.ts","src/flow-graph/graphLayout.ts","src/flow-graph/index.ts","src/flow-graph/JournalScrubber.tsx","src/flow-graph/StepInspector.tsx","src/flow-graph/stepLogLines.ts","src/flow-graph/StepLogs.tsx","src/generated-chip.tsx","src/generated-view/frame.ts","src/generated-view/GeneratedView.tsx","src/generated-view/generatedViewCss.ts","src/generated-view/index.ts","src/generated-view/runtime.generated.ts","src/generated-view/runtime.ts","src/generated-view/sanitize.ts","src/index.ts","src/input.tsx","src/internal/composeRefs.ts","src/internal/copyToClipboard.ts","src/internal/frameMount.ts","src/internal/navigationClick.ts","src/internal/person.ts","src/internal/resolvePalette.ts","src/internal/resolveTheme.ts","src/internal/safeHref.ts","src/internal/safeImageSrc.ts","src/internal/useCopyFeedback.ts","src/internal/useDialogFocusTrap.ts","src/internal/useResolvedPalette.ts","src/internal/useResolvedTheme.ts","src/issues-view/index.ts","src/issues-view/IssuesView.tsx","src/issues-view/issuesViewCss.ts","src/issues-view/ItemLink.tsx","src/issues-view/ItemStateIcon.tsx","src/item-conversation/index.ts","src/item-conversation/IssueForm.tsx","src/item-conversation/ItemConversation.tsx","src/item-conversation/itemConversationCss.ts","src/json-value/index.ts","src/json-value/JsonValue.tsx","src/json-value/jsonValueCss.ts","src/json-value/jsonValueText.ts","src/kbd.tsx","src/kpi-stat.tsx","src/label.tsx","src/link-intent.tsx","src/link-tabs.tsx","src/loading-delay.ts","src/loading.tsx","src/not-found.tsx","src/notification-policy.ts","src/page-focus.tsx","src/page-header.tsx","src/popover.tsx","src/presentation/bundle.generated.ts","src/presentation/components.ts","src/presentation/entry.ts","src/presentation/index.ts","src/primitives/CodeBlock.tsx","src/primitives/markdown.tsx","src/primitives/markdownDocumentBody.ts","src/progress.tsx","src/prompt/promptAttachmentsCss.ts","src/prompt/PromptInput.tsx","src/ref-picker.tsx","src/repo-about.tsx","src/repository-home/highlight.ts","src/repository-home/index.ts","src/repository-home/live.ts","src/repository-home/RepositoryHome.tsx","src/repository-home/repositoryHomeCss.ts","src/repositoryCss.ts","src/row-button.tsx","src/run-command.ts","src/run-page/index.ts","src/run-page/RunDetails.tsx","src/run-page/RunHeader.tsx","src/run-page/RunJournal.tsx","src/run-page/RunList.tsx","src/run-page/runPage.ts","src/run-page/runPageCss.ts","src/run-page/RunStatusPill.tsx","src/run-page/RunWaterfall.tsx","src/run-page/SpanDetail.tsx","src/run-page/SpanTree.tsx","src/sandbox/AgentSandbox.tsx","src/sandbox/JSXPreview.tsx","src/sandbox/sandboxCss.ts","src/sandbox/WebPreview.tsx","src/section-header.tsx","src/segmented-control.tsx","src/select.tsx","src/separator.tsx","src/share-dialog.tsx","src/sharingCss.ts","src/skeleton.tsx","src/slash-commands.ts","src/stack/index.ts","src/stack/TodoDraftCard.tsx","src/stack/todoDraftCardCss.ts","src/stage-strip.tsx","src/status-pill.tsx","src/status.ts","src/styles.tsx","src/table.tsx","src/tabs.tsx","src/time/dateFromMs.ts","src/time/formatRelativeTime.ts","src/time/index.ts","src/time/RelativeTime.tsx","src/tokens.ts","src/tooltip.tsx","src/triage-control/index.ts","src/triage-control/TriageControl.tsx","src/triage-control/triageControlCss.ts","src/uiCss.ts","src/vault/autosaveMachine.ts","src/vault/BacklinksPanel.tsx","src/vault/fence.ts","src/vault/graphModel.ts","src/vault/index.ts","src/vault/KnowledgeGraph.tsx","src/vault/OutlineView.tsx","src/vault/settleSimulation.ts","src/vault/types.ts","src/vault/useAutosaveDoc.ts","src/vault/useVaultCss.ts","src/vault/vaultCss.ts","src/vault/wikilinks.ts","src/web-page/hostOrigin.ts","src/web-page/index.ts","src/web-page/PagePreview.tsx","src/web-page/WebLinkCard.tsx","src/web-page/webPageCss.ts","src/web-page/webPageUrl.ts","src/web-page/WebPageView.tsx","src/wordmark/Wordmark.tsx","src/wordmark/wordmarkCss.ts"],"tests":["packages/smithers/ui/browser/chat-message.browser.test.ts","packages/smithers/ui/browser/fixtures/chat-message.tsx","packages/smithers/ui/browser/fixtures/host.tsx","packages/smithers/ui/browser/fixtures/live-state.tsx","packages/smithers/ui/browser/fixtures/loading.tsx","packages/smithers/ui/browser/fixtures/notices.tsx","packages/smithers/ui/browser/fixtures/sharing.tsx","packages/smithers/ui/browser/generated-view.browser.test.ts","packages/smithers/ui/browser/live-state.browser.test.ts","packages/smithers/ui/browser/loading.browser.test.ts","packages/smithers/ui/browser/notices-phone.browser.test.ts","packages/smithers/ui/browser/setup-diagnostics.browser.test.ts","packages/smithers/ui/browser/sharing.browser.test.ts","packages/smithers/ui/scripts/reference-docs.test.mjs","packages/smithers/ui/tests/action-menu.test.tsx","packages/smithers/ui/tests/agent-identity-context-agent-definition.test.tsx","packages/smithers/ui/tests/agent-identity-context-context-usage.test.tsx","packages/smithers/ui/tests/agent-identity-context-css.test.ts","packages/smithers/ui/tests/agent-identity-context-model-selector.test.tsx","packages/smithers/ui/tests/agent-output.test.tsx","packages/smithers/ui/tests/agent-status-notices.test.tsx","packages/smithers/ui/tests/agent-status.test.tsx","packages/smithers/ui/tests/agentic-plan.css.test.ts","packages/smithers/ui/tests/agentic-reasoning.css.test.ts","packages/smithers/ui/tests/agentic-response.css.test.ts","packages/smithers/ui/tests/app-operations.test.ts","packages/smithers/ui/tests/approvals-checkpoints-approval-card.test.tsx","packages/smithers/ui/tests/approvals-checkpoints-checkpoint.test.tsx","packages/smithers/ui/tests/approvals-checkpoints-confirmation.test.tsx","packages/smithers/ui/tests/approvals-checkpoints-css.test.ts","packages/smithers/ui/tests/attachment.test.tsx","packages/smithers/ui/tests/avatar-stack.test.tsx","packages/smithers/ui/tests/barrel-reachability.test.ts","packages/smithers/ui/tests/barrel-weight.test.ts","packages/smithers/ui/tests/breadcrumbs.test.tsx","packages/smithers/ui/tests/bubble.test.tsx","packages/smithers/ui/tests/button-as-child.test.tsx","packages/smithers/ui/tests/button-default-contrast.test.ts","packages/smithers/ui/tests/calendar-dateUtils.test.ts","packages/smithers/ui/tests/calendar-dst.test.tsx","packages/smithers/ui/tests/calendar-month-keyboard.test.tsx","packages/smithers/ui/tests/calendar.test.tsx","packages/smithers/ui/tests/chain-of-thought.test.tsx","packages/smithers/ui/tests/chart.test.tsx","packages/smithers/ui/tests/chat-composer-completions.test.tsx","packages/smithers/ui/tests/chat-composer-keyboard.test.tsx","packages/smithers/ui/tests/chat-composer-pass-through.test.tsx","packages/smithers/ui/tests/chat-composer-submit.test.tsx","packages/smithers/ui/tests/chat-timeline.test.tsx","packages/smithers/ui/tests/chat-transcript-semantics.test.tsx","packages/smithers/ui/tests/clock.test.ts","packages/smithers/ui/tests/code-block.test.tsx","packages/smithers/ui/tests/code-editor.test.tsx","packages/smithers/ui/tests/coding-artifacts-artifact.test.tsx","packages/smithers/ui/tests/coding-artifacts-commit.test.tsx","packages/smithers/ui/tests/coding-artifacts-css.test.ts","packages/smithers/ui/tests/coding-artifacts-secrets.test.tsx","packages/smithers/ui/tests/coding-artifacts-stack-trace.test.tsx","packages/smithers/ui/tests/coding-artifacts-test-results.test.tsx","packages/smithers/ui/tests/collaborators.test.tsx","packages/smithers/ui/tests/command-line.test.ts","packages/smithers/ui/tests/command-palette.test.tsx","packages/smithers/ui/tests/components.test.tsx","packages/smithers/ui/tests/conversation-foundation-css.test.ts","packages/smithers/ui/tests/conversation-foundation-message.test.tsx","packages/smithers/ui/tests/conversation-foundation-scroller.test.tsx","packages/smithers/ui/tests/copy-affordances.test.tsx","packages/smithers/ui/tests/copy-button.test.tsx","packages/smithers/ui/tests/css-contract.test.ts","packages/smithers/ui/tests/css-injection.test.tsx","packages/smithers/ui/tests/dialog-focus-trap.test.tsx","packages/smithers/ui/tests/diff-hunks.test.tsx","packages/smithers/ui/tests/diff-paginate-domain.test.ts","packages/smithers/ui/tests/directory-listing.test.tsx","packages/smithers/ui/tests/docs-links.test.ts","packages/smithers/ui/tests/docs-page-view.test.tsx","packages/smithers/ui/tests/docs-renderer-contracts.test.ts","packages/smithers/ui/tests/file-tabs.test.tsx","packages/smithers/ui/tests/file-tree.test.tsx","packages/smithers/ui/tests/flow-arguments.test.ts","packages/smithers/ui/tests/flow-draft-view.test.tsx","packages/smithers/ui/tests/flow-form-view.test.tsx","packages/smithers/ui/tests/flow-form.test.ts","packages/smithers/ui/tests/flow-graph.test.tsx","packages/smithers/ui/tests/format-json-safe.test.ts","packages/smithers/ui/tests/generated-chip.test.tsx","packages/smithers/ui/tests/generated-view-frame.test.ts","packages/smithers/ui/tests/generated-view-sanitize.test.ts","packages/smithers/ui/tests/generated-view.test.tsx","packages/smithers/ui/tests/happy-dom-preload.ts","packages/smithers/ui/tests/host-pass-through.test.tsx","packages/smithers/ui/tests/http-operations.test.ts","packages/smithers/ui/tests/inline-citation.test.tsx","packages/smithers/ui/tests/invalid-timestamps.test.tsx","packages/smithers/ui/tests/issue-form.test.tsx","packages/smithers/ui/tests/issues-view-lists.test.tsx","packages/smithers/ui/tests/issues-view.test.tsx","packages/smithers/ui/tests/item-conversation-page.test.tsx","packages/smithers/ui/tests/item-conversation.test.tsx","packages/smithers/ui/tests/json-value.test.tsx","packages/smithers/ui/tests/jsx-pragma.test.ts","packages/smithers/ui/tests/kbd.test.tsx","packages/smithers/ui/tests/link-intent.test.tsx","packages/smithers/ui/tests/main-reset-contract.test.ts","packages/smithers/ui/tests/markdown-codeblock.test.tsx","packages/smithers/ui/tests/markdown-lists.test.tsx","packages/smithers/ui/tests/markdown-metadata.test.tsx","packages/smithers/ui/tests/markdown.test.tsx","packages/smithers/ui/tests/marker-shimmer.test.tsx","packages/smithers/ui/tests/message-response.test.tsx","packages/smithers/ui/tests/message-scroller.test.tsx","packages/smithers/ui/tests/not-found.test.tsx","packages/smithers/ui/tests/notification-panel.test.tsx","packages/smithers/ui/tests/notification-policy.test.ts","packages/smithers/ui/tests/page-focus.test.tsx","packages/smithers/ui/tests/page-header.test.tsx","packages/smithers/ui/tests/parse-agent-output-bounds.test.ts","packages/smithers/ui/tests/parse-agent-output.test.ts","packages/smithers/ui/tests/plans-tasks-queues-activity-timeline.test.tsx","packages/smithers/ui/tests/plans-tasks-queues-agent-task.test.tsx","packages/smithers/ui/tests/plans-tasks-queues-css.test.ts","packages/smithers/ui/tests/plans-tasks-queues-plan.test.tsx","packages/smithers/ui/tests/plans-tasks-queues-queue.test.tsx","packages/smithers/ui/tests/presentation-conformance.test.tsx","packages/smithers/ui/tests/prompt-attachments-css.test.ts","packages/smithers/ui/tests/prompt-attachments-prompt-input.test.tsx","packages/smithers/ui/tests/prompt-input-lifetimes.test.tsx","packages/smithers/ui/tests/provenance.test.ts","packages/smithers/ui/tests/radix-interaction.test.tsx","packages/smithers/ui/tests/reasoning-tools-agent-output.test.tsx","packages/smithers/ui/tests/reasoning-tools-chain-of-thought.test.tsx","packages/smithers/ui/tests/reasoning-tools-code-block.test.tsx","packages/smithers/ui/tests/reasoning-tools-css.test.ts","packages/smithers/ui/tests/reasoning-tools-reasoning.test.tsx","packages/smithers/ui/tests/reasoning-tools-tool-call.test.tsx","packages/smithers/ui/tests/reasoning.test.tsx","packages/smithers/ui/tests/ref-picker.test.tsx","packages/smithers/ui/tests/relative-time.test.tsx","packages/smithers/ui/tests/repo-about.test.tsx","packages/smithers/ui/tests/repository-home-feedback-navigation.test.tsx","packages/smithers/ui/tests/repository-home.test.tsx","packages/smithers/ui/tests/run-command.test.ts","packages/smithers/ui/tests/run-page.test.tsx","packages/smithers/ui/tests/sandbox-previews-agent-sandbox.test.tsx","packages/smithers/ui/tests/sandbox-previews-css.test.ts","packages/smithers/ui/tests/sandbox-previews-jsx-preview.test.tsx","packages/smithers/ui/tests/sandbox-previews-web-preview.test.tsx","packages/smithers/ui/tests/schema-display-bounds.test.tsx","packages/smithers/ui/tests/segmented-control.test.tsx","packages/smithers/ui/tests/share-dialog.test.tsx","packages/smithers/ui/tests/slash-commands.test.ts","packages/smithers/ui/tests/sources-citations-css.test.ts","packages/smithers/ui/tests/sources-citations-inline-citation.test.tsx","packages/smithers/ui/tests/sources-citations-sources.test.tsx","packages/smithers/ui/tests/sources-citations-suggestion-openinchat.test.tsx","packages/smithers/ui/tests/sources.test.tsx","packages/smithers/ui/tests/status-prototype-keys.test.ts","packages/smithers/ui/tests/status-rc0-vocabulary.test.ts","packages/smithers/ui/tests/status-vocabulary-parity.test.ts","packages/smithers/ui/tests/status.test.ts","packages/smithers/ui/tests/step-logs.test.tsx","packages/smithers/ui/tests/suggestion-group.test.tsx","packages/smithers/ui/tests/task-item.test.tsx","packages/smithers/ui/tests/terminal.test.tsx","packages/smithers/ui/tests/textarea.test.tsx","packages/smithers/ui/tests/theme-test-utils.ts","packages/smithers/ui/tests/theme.test.tsx","packages/smithers/ui/tests/timeline-coverage.test.tsx","packages/smithers/ui/tests/timeline-driver.test.ts","packages/smithers/ui/tests/timeline-entry-labels.test.tsx","packages/smithers/ui/tests/timeline-geometry.test.ts","packages/smithers/ui/tests/timeline-parity.browser.ts","packages/smithers/ui/tests/timeline-parity.client.tsx","packages/smithers/ui/tests/toast-clearance-lifecycle.test.tsx","packages/smithers/ui/tests/toast-clearance.test.ts","packages/smithers/ui/tests/todo-draft-card.test.tsx","packages/smithers/ui/tests/transcript-scroll.test.ts","packages/smithers/ui/tests/triage-control.test.tsx","packages/smithers/ui/tests/vault-autosave-conflict.test.ts","packages/smithers/ui/tests/vault-autosave-hook.test.tsx","packages/smithers/ui/tests/vault-autosave-machine.test.ts","packages/smithers/ui/tests/vault-autosave.test.ts","packages/smithers/ui/tests/vault-backlinks-panel.test.tsx","packages/smithers/ui/tests/vault-css.test.ts","packages/smithers/ui/tests/vault-graph-model.test.ts","packages/smithers/ui/tests/vault-knowledge-graph-interaction.test.tsx","packages/smithers/ui/tests/vault-knowledge-graph.test.tsx","packages/smithers/ui/tests/vault-outline.test.tsx","packages/smithers/ui/tests/vault-settle-simulation.test.ts","packages/smithers/ui/tests/vault-wikilinks-code.test.ts","packages/smithers/ui/tests/vault-wikilinks.test.ts","packages/smithers/ui/tests/views-generated.test.ts","packages/smithers/ui/tests/visibility-subscription-registry.test.ts","packages/smithers/ui/tests/web-link-card.test.tsx","packages/smithers/ui/tests/web-page-url.test.ts","packages/smithers/ui/tests/web-page-view.test.tsx","packages/smithers/ui/tests/wordmark.test.tsx","packages/smithers/ui/tests/workflow-canvas-components.test.tsx","packages/smithers/ui/tests/workflow-canvas-css.test.ts"],"benchmarks":[],"platformPaths":["packages/smithers/ui/browser/chat-message.browser.test.ts","packages/smithers/ui/browser/fixtures/chat-message.tsx","packages/smithers/ui/browser/fixtures/host.tsx","packages/smithers/ui/browser/fixtures/live-state.tsx","packages/smithers/ui/browser/fixtures/loading.tsx","packages/smithers/ui/browser/fixtures/notices.tsx","packages/smithers/ui/browser/fixtures/sharing.tsx","packages/smithers/ui/browser/generated-view.browser.test.ts","packages/smithers/ui/browser/live-state.browser.test.ts","packages/smithers/ui/browser/loading.browser.test.ts","packages/smithers/ui/browser/notices-phone.browser.test.ts","packages/smithers/ui/browser/setup-diagnostics.browser.test.ts","packages/smithers/ui/browser/sharing.browser.test.ts","packages/smithers/ui/bunfig.toml","packages/smithers/ui/provenance/node-output-agentic.json","packages/smithers/ui/src/presentation/bundle.generated.ts","packages/smithers/ui/tests/timeline-parity.browser.ts"],"ignoredCases":[{"path":"packages/smithers/ui/src/artifacts/TestResults.tsx","line":102,"text":"const countsKey = counts ? `${counts.passed}/${counts.failed}/${counts.skipped}/${counts.running}/${counts.todo}` : null;"},{"path":"packages/smithers/ui/src/artifacts/TestResults.tsx","line":109,"text":"`Test results updated: ${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped, ${counts.running} running, ${counts.todo} todo`,"},{"path":"packages/smithers/ui/src/artifacts/TestResults.tsx","line":156,"text":"{(counts?.todo ?? 0) > 0 ? ("},{"path":"packages/smithers/ui/src/artifacts/TestResults.tsx","line":157,"text":"<span className=\"sui-tests-summary-count\" data-tone=\"muted\">{counts?.todo} todo</span>"},{"path":"packages/smithers/ui/src/artifacts/TestResults.tsx","line":317,"text":"if ((counts?.todo ?? 0) > 0) parts.push(`${counts?.todo} todo`);"}],"configurations":[{"path":"packages/smithers/ui/package.json","sha256":"e7418f718f798c1f725cec02dfda0ebb9afc8e6c94fbb711f53ff17497ba3897","source":"{\n  \"name\": \"@smthrs/ui\",\n  \"version\": \"1.0.0-rc.0\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"Shared shadcn-anatomy component library for Smithers UIs. Radix primitives + CVA variant APIs styled with the ui-styleguide theme tokens, shipped as CSS-in-TS strings so components bundle through the gateway's Bun.build and follow light/dark (prefers-color-scheme and data-theme) with zero configuration.\",\n  \"type\": \"module\",\n  \"sideEffects\": false,\n  \"exports\": {\n    \"./markdown\": {\n      \"types\": \"./src/primitives/markdown.tsx\",\n      \"default\": \"./src/primitives/markdown.tsx\"\n    },\n    \"./button\": {\n      \"types\": \"./src/button.tsx\",\n      \"default\": \"./src/button.tsx\"\n    },\n    \"./marker\": {\n      \"types\": \"./src/chat/Marker.tsx\",\n      \"default\": \"./src/chat/Marker.tsx\"\n    },\n    \".\": {\n      \"types\": \"./src/index.ts\",\n      \"import\": \"./src/index.ts\",\n      \"default\": \"./src/index.ts\"\n    },\n    \"./adapters/knowledge-graph\": {\n      \"types\": \"./src/adapters/knowledge-graph.ts\",\n      \"import\": \"./src/adapters/knowledge-graph.ts\",\n      \"default\": \"./src/adapters/knowledge-graph.ts\"\n    },\n    \"./adapters/chart\": {\n      \"types\": \"./src/adapters/chart.tsx\",\n      \"import\": \"./src/adapters/chart.tsx\",\n      \"default\": \"./src/adapters/chart.tsx\"\n    },\n    \"./adapters/terminal\": {\n      \"types\": \"./src/adapters/terminal.tsx\",\n      \"import\": \"./src/adapters/terminal.tsx\",\n      \"default\": \"./src/adapters/terminal.tsx\"\n    },\n    \"./status\": {\n      \"types\": \"./src/status.ts\",\n      \"import\": \"./src/status.ts\",\n      \"default\": \"./src/status.ts\"\n    },\n    \"./time\": {\n      \"types\": \"./src/time/index.ts\",\n      \"import\": \"./src/time/index.ts\",\n      \"default\": \"./src/time/index.ts\"\n    },\n    \"./calendar\": {\n      \"types\": \"./src/calendar/index.ts\",\n      \"import\": \"./src/calendar/index.ts\",\n      \"default\": \"./src/calendar/index.ts\"\n    },\n    \"./vault\": {\n      \"types\": \"./src/vault/index.ts\",\n      \"import\": \"./src/vault/index.ts\",\n      \"default\": \"./src/vault/index.ts\"\n    },\n    \"./flow-form\": {\n      \"types\": \"./src/flow-form.ts\",\n      \"import\": \"./src/flow-form.ts\",\n      \"default\": \"./src/flow-form.ts\"\n    },\n    \"./diff-paginate\": {\n      \"types\": \"./src/diff-paginate.ts\",\n      \"import\": \"./src/diff-paginate.ts\",\n      \"default\": \"./src/diff-paginate.ts\"\n    },\n    \"./flow-arguments\": {\n      \"types\": \"./src/flow-arguments.ts\",\n      \"import\": \"./src/flow-arguments.ts\",\n      \"default\": \"./src/flow-arguments.ts\"\n    },\n    \"./app-operations\": {\n      \"types\": \"./src/app-operations/index.ts\",\n      \"import\": \"./src/app-operations/index.ts\",\n      \"default\": \"./src/app-operations/index.ts\"\n    },\n    \"./app-operations/wiki\": {\n      \"types\": \"./src/app-operations/wiki.ts\",\n      \"import\": \"./src/app-operations/wiki.ts\",\n      \"default\": \"./src/app-operations/wiki.ts\"\n    },\n    \"./app-operations/http\": {\n      \"types\": \"./src/app-operations/http.ts\",\n      \"import\": \"./src/app-operations/http.ts\",\n      \"default\": \"./src/app-operations/http.ts\"\n    },\n    \"./command-line\": {\n      \"types\": \"./src/command-line.ts\",\n      \"import\": \"./src/command-line.ts\",\n      \"default\": \"./src/command-line.ts\"\n    },\n    \"./run-command\": {\n      \"types\": \"./src/run-command.ts\",\n      \"import\": \"./src/run-command.ts\",\n      \"default\": \"./src/run-command.ts\"\n    },\n    \"./clock\": {\n      \"types\": \"./src/clock.ts\",\n      \"import\": \"./src/clock.ts\",\n      \"default\": \"./src/clock.ts\"\n    },\n    \"./notification-policy\": {\n      \"types\": \"./src/notification-policy.ts\",\n      \"import\": \"./src/notification-policy.ts\",\n      \"default\": \"./src/notification-policy.ts\"\n    },\n    \"./copy\": {\n      \"types\": \"./src/copy.ts\",\n      \"import\": \"./src/copy.ts\",\n      \"default\": \"./src/copy.ts\"\n    },\n    \"./adapters/code-editor\": {\n      \"types\": \"./src/adapters/code-editor/index.tsx\",\n      \"default\": \"./src/adapters/code-editor/index.tsx\"\n    },\n    \"./app-operations/controls\": {\n      \"types\": \"./src/app-operations/controls.ts\",\n      \"default\": \"./src/app-operations/controls.ts\"\n    }\n  },\n  \"files\": [\n    \"src/\"\n  ],\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test tests\"\n  },\n  \"dependencies\": {\n    \"@smthrs/ui-styleguide\": \"workspace:*\",\n    \"@xterm/addon-fit\": \"^0.11.0\",\n    \"@xterm/xterm\": \"^6.0.0\",\n    \"class-variance-authority\": \"^0.7.1\",\n    \"clsx\": \"^2.1.1\",\n    \"d3-force\": \"3.0.0\",\n    \"effect\": \"4.0.5\",\n    \"radix-ui\": \"^1.6.7\",\n    \"recharts\": \"^3.10.1\",\n    \"@codemirror/autocomplete\": \"6.20.3\",\n    \"@codemirror/commands\": \"6.11.0\",\n    \"@codemirror/lang-go\": \"6.0.1\",\n    \"@codemirror/lang-javascript\": \"6.2.5\",\n    \"@codemirror/lang-python\": \"6.2.1\",\n    \"@codemirror/lang-rust\": \"6.0.2\",\n    \"@codemirror/language\": \"6.12.4\",\n    \"@codemirror/lint\": \"6.9.7\",\n    \"@codemirror/state\": \"6.7.2\",\n    \"@codemirror/view\": \"6.43.11\",\n    \"y-codemirror.next\": \"0.3.6\",\n    \"yjs\": \"13.6.32\",\n    \"@lezer/highlight\": \"1.2.3\",\n    \"y-protocols\": \"1.0.6\",\n    \"@smthrs/views\": \"workspace:*\"\n  },\n  \"peerDependencies\": {\n    \"react\": \"^19.2.8\",\n    \"react-dom\": \"^19.2.8\"\n  },\n  \"devDependencies\": {\n    \"@happy-dom/global-registrator\": \"^20.13.2\",\n    \"@types/bun\": \"1.4.4\",\n    \"@types/d3-force\": \"^3.0.10\",\n    \"@types/react\": \"^19.2.18\",\n    \"@types/react-dom\": \"^19.2.7\",\n    \"react\": \"19.2.8\",\n    \"react-dom\": \"19.2.8\",\n    \"typescript\": \"~5.9.3\",\n    \"@jitl/quickjs-singlefile-browser-release-sync\": \"0.32.0\",\n    \"@smthrs/harness\": \"workspace:*\",\n    \"esbuild\": \"0.28.2\",\n    \"fast-check\": \"4.9.0\",\n    \"playwright\": \"1.62.1\",\n    \"quickjs-emscripten-core\": \"0.32.0\",\n    \"happy-dom\": \"20.13.2\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-unplugin\": \"0.0.8\"\n  }\n}\n","coverageDirectives":[]},{"path":"packages/smithers/ui/PACKAGE.ts","sha256":"6cb32781d7b208f1877b1b9e5b21924924af340e53045c56ab8f8ea13f28d2c2","source":"/**\n * Targets for the private Smithers component kit.\n *\n * `@smthrs/ui` ships its sources directly and uses Bun for its tests.\n *\n * Its presence here is what this file is for. The root `packageDefaults`\n * synthesizes `BuildAndCheckTypeScriptPackage` — a dual `dist/esm` and `dist/cjs` library\n * build, a vitest\n * suite at 100% coverage, eslint, and dprint — for every `packages/*`\n * directory that ships no `PACKAGE.ts` of its own. This package satisfies none of\n * that: it ships its sources directly, types against `@types/bun`, and tests\n * with `bun test`. Declaring the targets it can honor opts it out of the\n * synthesis (`PackageDefaults` skips a directory holding a `PACKAGE.ts`) and puts\n * its real gates in the graph instead of targets that cannot pass.\n *\n * Two of the four standard gates are honored here: the `bun test` suite and a\n * `vibelang --noEmit` typecheck over `src/`. The eslint and dprint halves are NOT\n * declared, because this package carries neither an `eslint.config.js` nor a\n * `dprint.json` and both tools are per-package devDependencies elsewhere in the\n * workspace; wiring them requires package tooling that this target does not\n * provide.\n */\nimport { SdkRules } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/ui\"\n\n/** The component sources the suite drives. */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/ui/src/**/*.ts\"),\n  Smithers.glob(\"//packages/smithers/ui/src/**/*.tsx\")\n]\n\n/**\n * What generated views are built from beyond `src/`: the script that\n * generates the presentation bundle and the frame runtime.\n */\nconst generatedViewInputs = [Smithers.file(\"//packages/smithers/ui/scripts/build-views.mjs\")]\n\n/**\n * The `@smthrs/views` sources the realm and the bridge come from, as that\n * package's `sourceFiles` label. A selector, not an import of its PACKAGE.ts:\n * that file reaches the root PACKAGE.ts.\n */\nconst viewsSources = Smithers.Target.subtree(\"//packages/smithers/ui/views/...\", \"sourceFiles\")\n\n/**\n * Checks every component source against the package tsconfig.\n *\n * The package publishes its `src/` tree directly (`files: [\"src/\"]`, every\n * export condition points at a `.ts`/`.tsx` source), so this typecheck is the\n * only thing standing between a type error and a consumer's build. Root\n * `pnpm run check` reaches it through the package's own `check` script.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The component suite: everything under `tests/`, run by Bun against a\n * happy-dom registrator, which is how this package has always tested.\n *\n * @since 0.1.0\n * @category test\n */\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"tests\"]),\n  srcs: [\n    ...sources,\n    ...generatedViewInputs,\n    Smithers.glob(\"//packages/smithers/ui/tests/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/tests/**/*.tsx\")\n  ],\n  deps: [viewsSources],\n  cwd\n})\n\n/**\n * Browser probes for generated views: real Chromium through Playwright. A\n * hostile view's HTML, a hostile frame runtime, the bridge, and the sanitizer\n * fuzzed with Chromium's parser, each checked against the parent page's DOM,\n * storage, the network, navigation and inline handlers. Needs Playwright's\n * Chromium (`pnpm exec playwright install chromium`).\n *\n * @since 1.0.0\n * @category test\n */\nconst browserProbes = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"browser\"]),\n  srcs: [\n    ...sources,\n    ...generatedViewInputs,\n    Smithers.glob(\"//packages/smithers/ui/browser/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/browser/**/*.tsx\")\n  ],\n  deps: [viewsSources],\n  cwd\n})\n\n/**\n * The package's documentation as a file group (`docs/**`, the README, and\n * package.json), matching the filegroup BuildAndCheckTypeScriptPackage emits. The docs-site\n * way an input reaches across a package boundary.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/** Every named root export needs documentation, including erased props types. */\nconst docs = Smithers.DocsParity({\n  readme: Smithers.file(\"README.md\"),\n  cwd,\n  deps: [\n    Smithers.Shell.Test({\n      shell: \"node --test packages/smithers/ui/scripts/reference-docs.test.mjs\",\n      data: [\n        Smithers.file(\"scripts/reference-docs.test.mjs\"),\n        ...sources,\n        Smithers.glob(\"src/**/*.vibe\"),\n        Smithers.glob(\"docs/**/*.md\")\n      ]\n    })\n  ]\n})\n\n/**\n * The component sources as a file group, for the packages that compose these\n * components (`@smthrs/repo-view`, `@smthrs/terminal-frame`), reached by\n * `Smithers.Target.subtree(\"//packages/smithers/ui/...\", \"sourceFiles\")`. A\n * glob in another package cannot reach them; a label can.\n */\nconst sourceFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"src/**/*.ts\"), Smithers.glob(\"src/**/*.tsx\")],\n  cwd\n})\n\n/** Complete React source input for the reproducible Solid projection. */\nconst solidCodegenInputs = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"src/**/*\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/**\n * Security review for the component kit. The kit renders model output, tool\n * results, run artifacts, and caller-supplied URLs inside the product UI, so\n * its checks target DOM sinks, link and frame sources, injected CSS, secret\n * display, and the command lines composed from forms and composer text.\n * `ui-styleguide/` is a nested package with its own review and lies outside\n * the default `src/**` include.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"href-scheme-filter\",\n      title: \"Every rendered anchor href passes safeHref before reaching the DOM\",\n      threat: \"A model, tool result, or synced calendar event plants a javascript: or data: link that runs script in the signed-in user's app session when clicked.\",\n      lookFor: [\n        \"An <a href={...}> or onNavigate/onLinkClick call fed from source.href, event.href, resource.href, registryUrl, source.url, or a markdown link without safeHref.\",\n        \"A safeHref change that stops rejecting C0 control characters or that allows a scheme beyond http, https, and mailto.\",\n        \"A target=\\\"_blank\\\" anchor without rel=\\\"noreferrer\\\" or rel=\\\"noopener\\\".\"\n      ],\n      paths: [\n        \"src/internal/safeHref.ts\",\n        \"src/primitives/markdown.tsx\",\n        \"src/agentic/Sources.tsx\",\n        \"src/agentic/InlineCitation.tsx\",\n        \"src/calendar/Calendar.tsx\",\n        \"src/approvals/ApprovalCard.tsx\",\n        \"src/artifacts/PackageInfo.tsx\",\n        \"src/vault/wikilinks.ts\"\n      ]\n    },\n    {\n      id: \"web-preview-sandbox\",\n      title: \"WebPreview frames only http(s) or same-origin paths and never grants allow-scripts with allow-same-origin\",\n      threat: \"Agent-controlled preview content escapes the iframe sandbox and reads the user's session cookies or app origin storage.\",\n      lookFor: [\n        \"sanitizePreviewSrc accepting javascript:, data:, blob:, file:, protocol-relative //host, or /\\\\host after tab/CR/LF stripping.\",\n        \"The iframe src or sandbox attribute placed before the {...props} spread so a runtime caller can override it.\",\n        \"resolveSandboxTokens returning both allow-scripts and allow-same-origin, or accepting a token outside the known set.\"\n      ],\n      paths: [\"src/sandbox/WebPreview.tsx\"]\n    },\n    {\n      id: \"no-raw-html-sinks\",\n      title: \"Untrusted text reaches the DOM only as React text children\",\n      threat: \"Model output, stack traces, diffs, terminal streams, or vault notes inject HTML or script into the user's app page.\",\n      lookFor: [\n        \"dangerouslySetInnerHTML, innerHTML, outerHTML, insertAdjacentHTML, or document.write fed from props or model data instead of a module constant.\",\n        \"The markdown primitive, CodeBlock, StackTrace, Snippet, or agent-output renderers switching to an HTML string renderer.\"\n      ],\n      paths: [\n        \"src/primitives/**\",\n        \"src/agentic/**\",\n        \"src/artifacts/**\",\n        \"src/adapters/**\",\n        \"src/vault/**\",\n        \"src/chat/**\",\n        \"src/canvas/**\"\n      ]\n    },\n    {\n      id: \"untrusted-image-src\",\n      title: \"Model- or tool-supplied image URLs never load arbitrary remote origins\",\n      threat: \"A prompt-injected model or tool result sets an image or favicon URL that makes the viewer's browser send run data or their IP to an attacker host on render, with no click.\",\n      lookFor: [\n        \"An <img src> fed from ToolCall part.src, Sources or InlineCitation faviconUrl without passing src/internal/safeImageSrc.ts.\",\n        \"Attachment thumbnailUrl/AttachmentPreview src (src/chat/Attachment.tsx) and MessageAvatar src (src/chat/Message.tsx) are still unguarded <img> sinks: accepted because the host supplies them (uploads, avatars), but a caller wiring model or tool output into them reopens the fetch-on-render leak.\",\n        \"A markdown image node rendered as <img> with the document-supplied URL.\",\n        \"An img src accepting javascript:, file:, or a remote http(s) URL where only data:, blob:, or same-origin should reach it.\"\n      ],\n      paths: [\n        \"src/agentic/ToolCall.tsx\",\n        \"src/agentic/Sources.tsx\",\n        \"src/agentic/InlineCitation.tsx\",\n        \"src/chat/Attachment.tsx\",\n        \"src/chat/Message.tsx\",\n        \"src/primitives/markdown.tsx\"\n      ]\n    },\n    {\n      id: \"chart-css-injection\",\n      title: \"Chart config keys and colors cannot break out of the generated <style> block\",\n      threat: \"A caller-supplied chart config breaks out of the injected stylesheet to restyle or overlay app UI, or loads a remote url() that tracks the viewer.\",\n      lookFor: [\n        \"ChartStyle emitting a key or id that fails CSS_IDENTIFIER, or a color that SAFE_CSS_COLOR does not admit.\",\n        \"SAFE_CSS_COLOR widening so a value such as url(https://...) or image-set(...) reaches fill/stroke.\",\n        \"Any other style injection (styles.tsx, terminal.tsx) built from props rather than static CSS.\"\n      ],\n      paths: [\"src/adapters/chart.tsx\", \"src/styles.tsx\", \"src/adapters/terminal.tsx\"]\n    },\n    {\n      id: \"secret-display\",\n      title: \"Masked secrets never appear in the DOM, labels, or logs\",\n      threat: \"A shoulder-surfer, screen recorder, or DOM-reading extension reads a user's API key or environment secret shown while masked.\",\n      lookFor: [\n        \"SecretField rendering value, a length-derived mask, or the value inside an aria-label/title/data attribute while revealed is false.\",\n        \"EnvironmentVariable rendering a credential-shaped value as plain text: a name CREDENTIAL_NAME misses (including the whole-word PW/PWD/SK/PAT/OTP/TOTP/PIN abbreviations) or a user:password@ URL value, leading whitespace included, CREDENTIAL_URL misses.\",\n        \"A write-only flow-form field that reaches assembleArgs, a draft, or a console call instead of being dropped by publicFormPayload.\"\n      ],\n      paths: [\"src/artifacts/SecretField.tsx\", \"src/artifacts/EnvironmentVariables.tsx\", \"src/flow-form.ts\", \"src/internal/useCopyFeedback.ts\"]\n    },\n    {\n      id: \"command-line-assembly\",\n      title: \"Composer text and form values cannot smuggle extra flow names, flags, or sourceCard tokens\",\n      threat: \"Prefilled or model-suggested form text runs a different flow, adds a --flag, or rebinds sourceCard so a run acts on another card than the user chose.\",\n      lookFor: [\n        \"assembleArgs joining a text value containing spaces, --name, or sourceCard= unquoted so the flow grammar reads it as a separate token.\",\n        \"assembleLine writing a value positionalRead would place in another field (a multi-word value short of the final slot, JSON with whitespace, a value behind an unset slot, an optional value a required slot would take) instead of withholding it.\",\n        \"assembleLine returning a flow args builder's line without withholding a value it writes unquoted with a --flag or sourceCard= token, or one the flow's partial does not read back.\",\n        \"A caller that re-parses an assembled line as text (search actions) offering it with a non-empty withheld, or a display echo dropping withheld fields instead of using displayLine.\",\n        \"splitRunSource or runSearchPayload trusting a sourceCard or run id taken from user-typed args instead of the recorded card.\",\n        \"parseCommand or COMMAND_NAME widening so punctuation or a typo after / executes a side-effecting flow instead of becoming a prompt.\"\n      ],\n      paths: [\"src/command-line.ts\", \"src/run-command.ts\", \"src/flow-form.ts\", \"src/flow-arguments.ts\"]\n    },\n    {\n      id: \"untrusted-parse-bounds\",\n      title: \"Parsers of agent output, schemas, diffs, and JSON stay bounded on hostile input\",\n      threat: \"A model or tool emits deeply nested, cyclic, or huge output that freezes or crashes the user's app tab.\",\n      lookFor: [\n        \"Recursion in parseAgentOutput, formatPartialJson, or SchemaDisplay without the MAX_*_DEPTH, property, or seen-set guards.\",\n        \"A regex over agent text or diffs with nested quantifiers that backtracks catastrophically.\",\n        \"diff-paginate or diff-hunks materializing an unbounded hunk or line list for one render.\"\n      ],\n      paths: [\"src/agentic/**\", \"src/artifacts/SchemaDisplay.tsx\", \"src/diff*.ts\", \"src/diff-hunks.tsx\", \"src/vault/**\"]\n    },\n    {\n      id: \"generated-view-frame\",\n      title: \"A generated view's HTML is shown only through the sandboxed frame, its pinned runtime and its sanitizer\",\n      threat:\n        \"Model-authored view HTML runs script, reads the app's DOM, storage or cookies, loads from the network, or navigates, in the signed-in user's session.\",\n      lookFor: [\n        \"GeneratedView rendering view HTML outside the iframe, or an iframe sandbox with allow-same-origin, allow-forms, allow-popups, allow-modals or allow-top-navigation, or an `allow` delegation.\",\n        \"A srcdoc not built by ViewCsp.frameDocument, a runtime other than the hashed one, or view HTML written into the srcdoc.\",\n        \"The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a later message that skips Bridge.receive.\",\n        \"sanitize keeping an element or attribute that runs, loads or navigates: script, iframe, a, meta, base, link, style, on*, href, a non-data:image src, srcset, action, formaction, xlink:href, or a style with url().\",\n        \"The frame runtime reading document.body or other document properties after view content is inserted (DOM clobbering), or sending an interaction for an untrusted event.\"\n      ],\n      paths: [\"src/generated-view/**\", \"src/presentation/**\", \"src/internal/frameMount.ts\"]\n    },\n    {\n      id: \"attachment-intake\",\n      title: \"Prompt attachments enforce accept, size, and count limits and revoke their object URLs\",\n      threat: \"A pasted or dropped file bypasses the configured type or size limit, or leaked object URLs keep file bytes readable after removal.\",\n      lookFor: [\n        \"The paste or drop path in PromptInput skipping fileMatchesAccept, maxFileSizeBytes, maxFiles, or disabled checks that the picker path applies.\",\n        \"An object URL created for a non-image type or never revoked on removal or unmount.\"\n      ],\n      paths: [\"src/prompt/PromptInput.tsx\"]\n    }\n  ]\n})\n\n/**\n * Will's SDK-wide rules (apps/mvp/docs/rules.md). The package renders React,\n * so only root imports, dead code and tests are held to them. `jevRules` is\n * manual.\n */\nconst { importRules, jevRules } = SdkRules({ cwd, role: \"components\", tests: [\"tests/**/*.test.{ts,tsx}\"] })\n\nexport const Package = Smithers.Package({\n  targets: {\n    solidCodegenInputs,\n    check,\n    docs,\n    docsFiles,\n    sourceFiles,\n    importRules,\n    jevRules,\n    unitTests,\n    browserProbes,\n    ...securityReview\n  }\n})\n","coverageDirectives":[{"line":9,"text":"* suite at 100% coverage, eslint, and dprint — for every `packages/*`"},{"line":13,"text":"* synthesis (`PackageDefaults` skips a directory holding a `PACKAGE.ts`) and puts"},{"line":160,"text":"* the default `src/**` include."},{"line":164,"text":"include: [\"src/**\"],"},{"line":251,"text":"\"EnvironmentVariable rendering a credential-shaped value as plain text: a name CREDENTIAL_NAME misses (including the whole-word PW/PWD/SK/PAT/OTP/TOTP/PIN abbreviations) or a user:password@ URL value, leading whitespace included, CREDENTIAL_URL misses.\","},{"line":289,"text":"\"The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a later message that skips Bridge.receive.\","},{"line":300,"text":"\"The paste or drop path in PromptInput skipping fileMatchesAccept, maxFileSizeBytes, maxFiles, or disabled checks that the picker path applies.\","}]},{"path":"packages/smithers/ui/tsconfig.json","sha256":"e0979fce14d6cc6baac377319f2dd2dda82dc57a26df877617a03fb6f4174234","source":"{\n  \"compilerOptions\": {\n    \"lib\": [\"ESNext\", \"DOM\", \"DOM.Iterable\"],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"moduleDetection\": \"force\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"react\",\n    \"strict\": true,\n    \"skipLibCheck\": true,\n    \"verbatimModuleSyntax\": true,\n    \"noEmit\": false,\n    \"declaration\": true,\n    \"emitDeclarationOnly\": true,\n    \"outDir\": \"dist\",\n    \"types\": [\"bun\"],\n    \"noFallthroughCasesInSwitch\": true,\n    \"noUnusedLocals\": false,\n    \"noUnusedParameters\": false,\n    \"allowImportingTsExtensions\": true,\n    \"rootDir\": \"src\"\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":11,"text":"\"skipLibCheck\": true,"},{"line":24,"text":"\"include\": [\"src/**/*\"]"}]}],"targets":[{"package":"packages/smithers/ui","label":"//packages/smithers/ui:browserProbes","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.tsx","exclude":[]},{"kind":"file","path":"packages/smithers/ui/scripts/build-views.mjs"},{"kind":"glob","pattern":"packages/smithers/ui/browser/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/browser/**/*.tsx","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.tsx","exclude":[]},{"kind":"file","path":"packages/smithers/ui/tsconfig.json"}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/ui/README.md"}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/ui/README.md"},{"kind":"file","path":"packages/smithers/ui/package.json"}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:importRules","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"glob","pattern":"packages/smithers/ui/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"file","path":"packages/repo-targets/src/ImportRulesCheck.ts"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:jevRules","rule":"JevLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/tests/**/*.test.{ts,tsx}","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/ui/src/**"]},{"kind":"glob","pattern":"packages/smithers/ui/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/ui/src/**"]},{"kind":"glob","pattern":"packages/smithers/ui/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:solidCodegenInputs","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/src/**/*","exclude":[]},{"kind":"file","path":"packages/smithers/ui/package.json"}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:sourceFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.tsx","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui","label":"//packages/smithers/ui:unitTests","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/src/**/*.tsx","exclude":[]},{"kind":"file","path":"packages/smithers/ui/scripts/build-views.mjs"},{"kind":"glob","pattern":"packages/smithers/ui/tests/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/tests/**/*.tsx","exclude":[]}],"dependencies":[]}],"areas":["scripts/build-views.mjs","src/action-menu","src/adapters","src/agent-status","src/agentic","src/agents","src/alert.tsx","src/app-operations","src/approvals","src/artifacts","src/avatar-stack.tsx","src/badge.tsx","src/breadcrumbs.tsx","src/button.tsx","src/calendar","src/canvas","src/card.tsx","src/chat","src/clock.ts","src/cn.ts","src/collaborators.tsx","src/collaboratorsCss.ts","src/collapsible-panel.tsx","src/command-line.ts","src/command-palette.tsx","src/commandCss.ts","src/copy-button.tsx","src/copy.ts","src/data-attributes.ts","src/dialog.tsx","src/diff-hunks.tsx","src/diff-paginate.ts","src/diff.ts","src/directory-listing.tsx","src/docs-page","src/empty-state.tsx","src/file-tabs.tsx","src/file-tree.tsx","src/flow-arguments.ts","src/flow-draft-view","src/flow-form-view","src/flow-form.ts","src/flow-graph","src/generated-chip.tsx","src/generated-view","src/index.ts","src/input.tsx","src/internal","src/issues-view","src/item-conversation","src/json-value","src/kbd.tsx","src/kpi-stat.tsx","src/label.tsx","src/link-intent.tsx","src/link-tabs.tsx","src/loading-delay.ts","src/loading.tsx","src/not-found.tsx","src/notification-policy.ts","src/page-focus.tsx","src/page-header.tsx","src/popover.tsx","src/presentation","src/primitives","src/progress.tsx","src/prompt","src/ref-picker.tsx","src/repo-about.tsx","src/repository-home","src/repositoryCss.ts","src/row-button.tsx","src/run-command.ts","src/run-page","src/sandbox","src/section-header.tsx","src/segmented-control.tsx","src/select.tsx","src/separator.tsx","src/share-dialog.tsx","src/sharingCss.ts","src/skeleton.tsx","src/slash-commands.ts","src/stack","src/stage-strip.tsx","src/status-pill.tsx","src/status.ts","src/styles.tsx","src/table.tsx","src/tabs.tsx","src/time","src/tokens.ts","src/tooltip.tsx","src/triage-control","src/uiCss.ts","src/vault","src/web-page","src/wordmark"],"boundaries":["browser","public-authoring"]}
+{
+  "id": "packages/smithers/ui",
+  "name": "@smthrs/ui",
+  "owner": {
+    "declaration": "packages/smithers/ui/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "test": "bun test tests"
+  },
+  "exports": {
+    "./markdown": {
+      "types": "./src/primitives/markdown.tsx",
+      "default": "./src/primitives/markdown.tsx"
+    },
+    "./button": {
+      "types": "./src/button.tsx",
+      "default": "./src/button.tsx"
+    },
+    "./marker": {
+      "types": "./src/chat/Marker.tsx",
+      "default": "./src/chat/Marker.tsx"
+    },
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    },
+    "./adapters/knowledge-graph": {
+      "types": "./src/adapters/knowledge-graph.ts",
+      "import": "./src/adapters/knowledge-graph.ts",
+      "default": "./src/adapters/knowledge-graph.ts"
+    },
+    "./adapters/chart": {
+      "types": "./src/adapters/chart.tsx",
+      "import": "./src/adapters/chart.tsx",
+      "default": "./src/adapters/chart.tsx"
+    },
+    "./adapters/terminal": {
+      "types": "./src/adapters/terminal.tsx",
+      "import": "./src/adapters/terminal.tsx",
+      "default": "./src/adapters/terminal.tsx"
+    },
+    "./status": {
+      "types": "./src/status.ts",
+      "import": "./src/status.ts",
+      "default": "./src/status.ts"
+    },
+    "./time": {
+      "types": "./src/time/index.ts",
+      "import": "./src/time/index.ts",
+      "default": "./src/time/index.ts"
+    },
+    "./calendar": {
+      "types": "./src/calendar/index.ts",
+      "import": "./src/calendar/index.ts",
+      "default": "./src/calendar/index.ts"
+    },
+    "./vault": {
+      "types": "./src/vault/index.ts",
+      "import": "./src/vault/index.ts",
+      "default": "./src/vault/index.ts"
+    },
+    "./flow-form": {
+      "types": "./src/flow-form.ts",
+      "import": "./src/flow-form.ts",
+      "default": "./src/flow-form.ts"
+    },
+    "./diff-paginate": {
+      "types": "./src/diff-paginate.ts",
+      "import": "./src/diff-paginate.ts",
+      "default": "./src/diff-paginate.ts"
+    },
+    "./flow-arguments": {
+      "types": "./src/flow-arguments.ts",
+      "import": "./src/flow-arguments.ts",
+      "default": "./src/flow-arguments.ts"
+    },
+    "./app-operations": {
+      "types": "./src/app-operations/index.ts",
+      "import": "./src/app-operations/index.ts",
+      "default": "./src/app-operations/index.ts"
+    },
+    "./app-operations/wiki": {
+      "types": "./src/app-operations/wiki.ts",
+      "import": "./src/app-operations/wiki.ts",
+      "default": "./src/app-operations/wiki.ts"
+    },
+    "./app-operations/http": {
+      "types": "./src/app-operations/http.ts",
+      "import": "./src/app-operations/http.ts",
+      "default": "./src/app-operations/http.ts"
+    },
+    "./command-line": {
+      "types": "./src/command-line.ts",
+      "import": "./src/command-line.ts",
+      "default": "./src/command-line.ts"
+    },
+    "./run-command": {
+      "types": "./src/run-command.ts",
+      "import": "./src/run-command.ts",
+      "default": "./src/run-command.ts"
+    },
+    "./clock": {
+      "types": "./src/clock.ts",
+      "import": "./src/clock.ts",
+      "default": "./src/clock.ts"
+    },
+    "./notification-policy": {
+      "types": "./src/notification-policy.ts",
+      "import": "./src/notification-policy.ts",
+      "default": "./src/notification-policy.ts"
+    },
+    "./copy": {
+      "types": "./src/copy.ts",
+      "import": "./src/copy.ts",
+      "default": "./src/copy.ts"
+    },
+    "./adapters/code-editor": {
+      "types": "./src/adapters/code-editor/index.tsx",
+      "default": "./src/adapters/code-editor/index.tsx"
+    },
+    "./app-operations/controls": {
+      "types": "./src/app-operations/controls.ts",
+      "default": "./src/app-operations/controls.ts"
+    }
+  },
+  "production": [
+    "scripts/build-views.mjs",
+    "src/action-menu/ActionMenu.tsx",
+    "src/action-menu/actionMenuCss.ts",
+    "src/action-menu/index.ts",
+    "src/adapters/chart.tsx",
+    "src/adapters/code-editor/index.tsx",
+    "src/adapters/knowledge-graph.ts",
+    "src/adapters/terminal.tsx",
+    "src/adapters/xtermCss.ts",
+    "src/agent-status/agentStatus.ts",
+    "src/agent-status/agentStatusCss.ts",
+    "src/agent-status/AgentStatusPill.tsx",
+    "src/agent-status/index.ts",
+    "src/agent-status/NeedsYouCard.tsx",
+    "src/agent-status/notices.ts",
+    "src/agent-status/NotificationPanel.tsx",
+    "src/agent-status/roving.ts",
+    "src/agent-status/toastClearance.ts",
+    "src/agent-status/ToastStack.tsx",
+    "src/agent-status/useToastClearance.tsx",
+    "src/agentic/ActivityTimeline.tsx",
+    "src/agentic/AgentOutput.tsx",
+    "src/agentic/AgentTask.tsx",
+    "src/agentic/ChainOfThought.tsx",
+    "src/agentic/CodeBlock.ts",
+    "src/agentic/formatJsonSafe.ts",
+    "src/agentic/formatPartialJson.ts",
+    "src/agentic/InlineCitation.tsx",
+    "src/agentic/MessageResponse.tsx",
+    "src/agentic/OpenInChat.tsx",
+    "src/agentic/parseAgentOutput.ts",
+    "src/agentic/Plan.tsx",
+    "src/agentic/plansTasksQueuesCss.ts",
+    "src/agentic/Queue.tsx",
+    "src/agentic/Reasoning.tsx",
+    "src/agentic/reasoningToolsCss.ts",
+    "src/agentic/Sources.tsx",
+    "src/agentic/sourcesCitationsCss.ts",
+    "src/agentic/Suggestion.tsx",
+    "src/agentic/TaskItem.tsx",
+    "src/agentic/ToolCall.tsx",
+    "src/agents/AgentCard.tsx",
+    "src/agents/AgentDefinition.tsx",
+    "src/agents/agentsCss.ts",
+    "src/agents/badges.tsx",
+    "src/agents/ContextUsage.tsx",
+    "src/agents/ModelSelector.tsx",
+    "src/alert.tsx",
+    "src/app-operations/controls.ts",
+    "src/app-operations/http.ts",
+    "src/app-operations/index.ts",
+    "src/app-operations/wiki.ts",
+    "src/approvals/ApprovalCard.tsx",
+    "src/approvals/approvalsCss.ts",
+    "src/approvals/Checkpoint.tsx",
+    "src/approvals/Confirmation.tsx",
+    "src/artifacts/Artifact.tsx",
+    "src/artifacts/artifactsCss.ts",
+    "src/artifacts/ChangeSummary.tsx",
+    "src/artifacts/Commit.tsx",
+    "src/artifacts/EnvironmentVariables.tsx",
+    "src/artifacts/PackageInfo.tsx",
+    "src/artifacts/SchemaDisplay.tsx",
+    "src/artifacts/SecretField.tsx",
+    "src/artifacts/Snippet.tsx",
+    "src/artifacts/StackTrace.tsx",
+    "src/artifacts/TestResults.tsx",
+    "src/avatar-stack.tsx",
+    "src/badge.tsx",
+    "src/breadcrumbs.tsx",
+    "src/button.tsx",
+    "src/calendar/Calendar.tsx",
+    "src/calendar/calendarCss.ts",
+    "src/calendar/dateUtils.ts",
+    "src/calendar/index.ts",
+    "src/calendar/types.ts",
+    "src/canvas/canvasCss.ts",
+    "src/canvas/WorkflowCanvas.tsx",
+    "src/card.tsx",
+    "src/chat/Attachment.tsx",
+    "src/chat/Bubble.tsx",
+    "src/chat/ChatComposer.tsx",
+    "src/chat/ChatMessage.tsx",
+    "src/chat/ChatTimeline.tsx",
+    "src/chat/chatTimelineCss.ts",
+    "src/chat/ChatTranscript.tsx",
+    "src/chat/CompactGroup.tsx",
+    "src/chat/CompletionList.tsx",
+    "src/chat/ConversationCheckpoint.tsx",
+    "src/chat/conversationFoundationCss.ts",
+    "src/chat/Marker.tsx",
+    "src/chat/Message.tsx",
+    "src/chat/MessageBranch.tsx",
+    "src/chat/MessageScroller.tsx",
+    "src/chat/Shimmer.tsx",
+    "src/chat/timelineDriver.ts",
+    "src/chat/timelineZoom.ts",
+    "src/chat/transcriptScroll.ts",
+    "src/chat/visibilitySubscriptionRegistry.ts",
+    "src/clock.ts",
+    "src/cn.ts",
+    "src/collaborators.tsx",
+    "src/collaboratorsCss.ts",
+    "src/collapsible-panel.tsx",
+    "src/command-line.ts",
+    "src/command-palette.tsx",
+    "src/commandCss.ts",
+    "src/copy-button.tsx",
+    "src/copy.ts",
+    "src/data-attributes.ts",
+    "src/dialog.tsx",
+    "src/diff-hunks.tsx",
+    "src/diff-paginate.ts",
+    "src/diff.ts",
+    "src/directory-listing.tsx",
+    "src/docs-page/docsPageCss.ts",
+    "src/docs-page/DocsPageView.tsx",
+    "src/docs-page/index.ts",
+    "src/empty-state.tsx",
+    "src/file-tabs.tsx",
+    "src/file-tree.tsx",
+    "src/flow-arguments.ts",
+    "src/flow-draft-view/flowDraft.ts",
+    "src/flow-draft-view/FlowDraftView.tsx",
+    "src/flow-draft-view/flowDraftViewCss.ts",
+    "src/flow-draft-view/index.ts",
+    "src/flow-form-view/FlowFormView.tsx",
+    "src/flow-form-view/flowFormViewCss.ts",
+    "src/flow-form-view/index.ts",
+    "src/flow-form.ts",
+    "src/flow-graph/FlowGraph.tsx",
+    "src/flow-graph/flowGraphCss.ts",
+    "src/flow-graph/graphLayout.ts",
+    "src/flow-graph/index.ts",
+    "src/flow-graph/JournalScrubber.tsx",
+    "src/flow-graph/StepInspector.tsx",
+    "src/flow-graph/stepLogLines.ts",
+    "src/flow-graph/StepLogs.tsx",
+    "src/generated-chip.tsx",
+    "src/generated-view/frame.ts",
+    "src/generated-view/GeneratedView.tsx",
+    "src/generated-view/generatedViewCss.ts",
+    "src/generated-view/index.ts",
+    "src/generated-view/runtime.generated.ts",
+    "src/generated-view/runtime.ts",
+    "src/generated-view/sanitize.ts",
+    "src/index.ts",
+    "src/input.tsx",
+    "src/internal/composeRefs.ts",
+    "src/internal/copyToClipboard.ts",
+    "src/internal/frameMount.ts",
+    "src/internal/navigationClick.ts",
+    "src/internal/person.ts",
+    "src/internal/resolvePalette.ts",
+    "src/internal/resolveTheme.ts",
+    "src/internal/safeHref.ts",
+    "src/internal/safeImageSrc.ts",
+    "src/internal/useCopyFeedback.ts",
+    "src/internal/useDialogFocusTrap.ts",
+    "src/internal/useResolvedPalette.ts",
+    "src/internal/useResolvedTheme.ts",
+    "src/issues-view/index.ts",
+    "src/issues-view/IssuesView.tsx",
+    "src/issues-view/issuesViewCss.ts",
+    "src/issues-view/ItemLink.tsx",
+    "src/issues-view/ItemStateIcon.tsx",
+    "src/item-conversation/index.ts",
+    "src/item-conversation/IssueForm.tsx",
+    "src/item-conversation/ItemConversation.tsx",
+    "src/item-conversation/itemConversationCss.ts",
+    "src/json-value/index.ts",
+    "src/json-value/JsonValue.tsx",
+    "src/json-value/jsonValueCss.ts",
+    "src/json-value/jsonValueText.ts",
+    "src/kbd.tsx",
+    "src/kpi-stat.tsx",
+    "src/label.tsx",
+    "src/link-intent.tsx",
+    "src/link-tabs.tsx",
+    "src/loading-delay.ts",
+    "src/loading.tsx",
+    "src/not-found.tsx",
+    "src/notification-policy.ts",
+    "src/page-focus.tsx",
+    "src/page-header.tsx",
+    "src/popover.tsx",
+    "src/presentation/bundle.generated.ts",
+    "src/presentation/components.ts",
+    "src/presentation/entry.ts",
+    "src/presentation/index.ts",
+    "src/primitives/CodeBlock.tsx",
+    "src/primitives/markdown.tsx",
+    "src/primitives/markdownDocumentBody.ts",
+    "src/progress.tsx",
+    "src/prompt/promptAttachmentsCss.ts",
+    "src/prompt/PromptInput.tsx",
+    "src/ref-picker.tsx",
+    "src/repo-about.tsx",
+    "src/repository-home/highlight.ts",
+    "src/repository-home/index.ts",
+    "src/repository-home/live.ts",
+    "src/repository-home/RepositoryHome.tsx",
+    "src/repository-home/repositoryHomeCss.ts",
+    "src/repositoryCss.ts",
+    "src/row-button.tsx",
+    "src/run-command.ts",
+    "src/run-page/index.ts",
+    "src/run-page/RunDetails.tsx",
+    "src/run-page/RunHeader.tsx",
+    "src/run-page/RunJournal.tsx",
+    "src/run-page/RunList.tsx",
+    "src/run-page/runPage.ts",
+    "src/run-page/runPageCss.ts",
+    "src/run-page/RunStatusPill.tsx",
+    "src/run-page/RunWaterfall.tsx",
+    "src/run-page/SpanDetail.tsx",
+    "src/run-page/SpanTree.tsx",
+    "src/sandbox/AgentSandbox.tsx",
+    "src/sandbox/JSXPreview.tsx",
+    "src/sandbox/sandboxCss.ts",
+    "src/sandbox/WebPreview.tsx",
+    "src/section-header.tsx",
+    "src/segmented-control.tsx",
+    "src/select.tsx",
+    "src/separator.tsx",
+    "src/share-dialog.tsx",
+    "src/sharingCss.ts",
+    "src/skeleton.tsx",
+    "src/slash-commands.ts",
+    "src/stack/index.ts",
+    "src/stack/TodoDraftCard.tsx",
+    "src/stack/todoDraftCardCss.ts",
+    "src/stage-strip.tsx",
+    "src/status-pill.tsx",
+    "src/status.ts",
+    "src/styles.tsx",
+    "src/table.tsx",
+    "src/tabs.tsx",
+    "src/time/dateFromMs.ts",
+    "src/time/formatRelativeTime.ts",
+    "src/time/index.ts",
+    "src/time/RelativeTime.tsx",
+    "src/tokens.ts",
+    "src/tooltip.tsx",
+    "src/triage-control/index.ts",
+    "src/triage-control/TriageControl.tsx",
+    "src/triage-control/triageControlCss.ts",
+    "src/uiCss.ts",
+    "src/vault/autosaveMachine.ts",
+    "src/vault/BacklinksPanel.tsx",
+    "src/vault/fence.ts",
+    "src/vault/graphModel.ts",
+    "src/vault/index.ts",
+    "src/vault/KnowledgeGraph.tsx",
+    "src/vault/OutlineView.tsx",
+    "src/vault/settleSimulation.ts",
+    "src/vault/types.ts",
+    "src/vault/useAutosaveDoc.ts",
+    "src/vault/useVaultCss.ts",
+    "src/vault/vaultCss.ts",
+    "src/vault/wikilinks.ts",
+    "src/web-page/hostOrigin.ts",
+    "src/web-page/index.ts",
+    "src/web-page/PagePreview.tsx",
+    "src/web-page/WebLinkCard.tsx",
+    "src/web-page/webPageCss.ts",
+    "src/web-page/webPageUrl.ts",
+    "src/web-page/WebPageView.tsx",
+    "src/wordmark/Wordmark.tsx",
+    "src/wordmark/wordmarkCss.ts"
+  ],
+  "tests": [
+    "packages/smithers/ui/browser/chat-message.browser.test.ts",
+    "packages/smithers/ui/browser/fixtures/chat-message.tsx",
+    "packages/smithers/ui/browser/fixtures/host.tsx",
+    "packages/smithers/ui/browser/fixtures/live-state.tsx",
+    "packages/smithers/ui/browser/fixtures/loading.tsx",
+    "packages/smithers/ui/browser/fixtures/notices.tsx",
+    "packages/smithers/ui/browser/fixtures/sharing.tsx",
+    "packages/smithers/ui/browser/generated-view.browser.test.ts",
+    "packages/smithers/ui/browser/live-state.browser.test.ts",
+    "packages/smithers/ui/browser/loading.browser.test.ts",
+    "packages/smithers/ui/browser/notices-phone.browser.test.ts",
+    "packages/smithers/ui/browser/setup-diagnostics.browser.test.ts",
+    "packages/smithers/ui/browser/sharing.browser.test.ts",
+    "packages/smithers/ui/scripts/reference-docs.test.mjs",
+    "packages/smithers/ui/tests/action-menu.test.tsx",
+    "packages/smithers/ui/tests/agent-identity-context-agent-definition.test.tsx",
+    "packages/smithers/ui/tests/agent-identity-context-context-usage.test.tsx",
+    "packages/smithers/ui/tests/agent-identity-context-css.test.ts",
+    "packages/smithers/ui/tests/agent-identity-context-model-selector.test.tsx",
+    "packages/smithers/ui/tests/agent-output.test.tsx",
+    "packages/smithers/ui/tests/agent-status-notices.test.tsx",
+    "packages/smithers/ui/tests/agent-status.test.tsx",
+    "packages/smithers/ui/tests/agentic-plan.css.test.ts",
+    "packages/smithers/ui/tests/agentic-reasoning.css.test.ts",
+    "packages/smithers/ui/tests/agentic-response.css.test.ts",
+    "packages/smithers/ui/tests/app-operations.test.ts",
+    "packages/smithers/ui/tests/approvals-checkpoints-approval-card.test.tsx",
+    "packages/smithers/ui/tests/approvals-checkpoints-checkpoint.test.tsx",
+    "packages/smithers/ui/tests/approvals-checkpoints-confirmation.test.tsx",
+    "packages/smithers/ui/tests/approvals-checkpoints-css.test.ts",
+    "packages/smithers/ui/tests/attachment.test.tsx",
+    "packages/smithers/ui/tests/avatar-stack.test.tsx",
+    "packages/smithers/ui/tests/barrel-reachability.test.ts",
+    "packages/smithers/ui/tests/barrel-weight.test.ts",
+    "packages/smithers/ui/tests/breadcrumbs.test.tsx",
+    "packages/smithers/ui/tests/bubble.test.tsx",
+    "packages/smithers/ui/tests/button-as-child.test.tsx",
+    "packages/smithers/ui/tests/button-default-contrast.test.ts",
+    "packages/smithers/ui/tests/calendar-dateUtils.test.ts",
+    "packages/smithers/ui/tests/calendar-dst.test.tsx",
+    "packages/smithers/ui/tests/calendar-month-keyboard.test.tsx",
+    "packages/smithers/ui/tests/calendar.test.tsx",
+    "packages/smithers/ui/tests/chain-of-thought.test.tsx",
+    "packages/smithers/ui/tests/chart.test.tsx",
+    "packages/smithers/ui/tests/chat-composer-completions.test.tsx",
+    "packages/smithers/ui/tests/chat-composer-keyboard.test.tsx",
+    "packages/smithers/ui/tests/chat-composer-pass-through.test.tsx",
+    "packages/smithers/ui/tests/chat-composer-submit.test.tsx",
+    "packages/smithers/ui/tests/chat-timeline.test.tsx",
+    "packages/smithers/ui/tests/chat-transcript-semantics.test.tsx",
+    "packages/smithers/ui/tests/clock.test.ts",
+    "packages/smithers/ui/tests/code-block.test.tsx",
+    "packages/smithers/ui/tests/code-editor.test.tsx",
+    "packages/smithers/ui/tests/coding-artifacts-artifact.test.tsx",
+    "packages/smithers/ui/tests/coding-artifacts-commit.test.tsx",
+    "packages/smithers/ui/tests/coding-artifacts-css.test.ts",
+    "packages/smithers/ui/tests/coding-artifacts-secrets.test.tsx",
+    "packages/smithers/ui/tests/coding-artifacts-stack-trace.test.tsx",
+    "packages/smithers/ui/tests/coding-artifacts-test-results.test.tsx",
+    "packages/smithers/ui/tests/collaborators.test.tsx",
+    "packages/smithers/ui/tests/command-line.test.ts",
+    "packages/smithers/ui/tests/command-palette.test.tsx",
+    "packages/smithers/ui/tests/components.test.tsx",
+    "packages/smithers/ui/tests/conversation-foundation-css.test.ts",
+    "packages/smithers/ui/tests/conversation-foundation-message.test.tsx",
+    "packages/smithers/ui/tests/conversation-foundation-scroller.test.tsx",
+    "packages/smithers/ui/tests/copy-affordances.test.tsx",
+    "packages/smithers/ui/tests/copy-button.test.tsx",
+    "packages/smithers/ui/tests/css-contract.test.ts",
+    "packages/smithers/ui/tests/css-injection.test.tsx",
+    "packages/smithers/ui/tests/dialog-focus-trap.test.tsx",
+    "packages/smithers/ui/tests/diff-hunks.test.tsx",
+    "packages/smithers/ui/tests/diff-paginate-domain.test.ts",
+    "packages/smithers/ui/tests/directory-listing.test.tsx",
+    "packages/smithers/ui/tests/docs-links.test.ts",
+    "packages/smithers/ui/tests/docs-page-view.test.tsx",
+    "packages/smithers/ui/tests/docs-renderer-contracts.test.ts",
+    "packages/smithers/ui/tests/file-tabs.test.tsx",
+    "packages/smithers/ui/tests/file-tree.test.tsx",
+    "packages/smithers/ui/tests/flow-arguments.test.ts",
+    "packages/smithers/ui/tests/flow-draft-view.test.tsx",
+    "packages/smithers/ui/tests/flow-form-view.test.tsx",
+    "packages/smithers/ui/tests/flow-form.test.ts",
+    "packages/smithers/ui/tests/flow-graph.test.tsx",
+    "packages/smithers/ui/tests/format-json-safe.test.ts",
+    "packages/smithers/ui/tests/generated-chip.test.tsx",
+    "packages/smithers/ui/tests/generated-view-frame.test.ts",
+    "packages/smithers/ui/tests/generated-view-sanitize.test.ts",
+    "packages/smithers/ui/tests/generated-view.test.tsx",
+    "packages/smithers/ui/tests/happy-dom-preload.ts",
+    "packages/smithers/ui/tests/host-pass-through.test.tsx",
+    "packages/smithers/ui/tests/http-operations.test.ts",
+    "packages/smithers/ui/tests/inline-citation.test.tsx",
+    "packages/smithers/ui/tests/invalid-timestamps.test.tsx",
+    "packages/smithers/ui/tests/issue-form.test.tsx",
+    "packages/smithers/ui/tests/issues-view-lists.test.tsx",
+    "packages/smithers/ui/tests/issues-view.test.tsx",
+    "packages/smithers/ui/tests/item-conversation-page.test.tsx",
+    "packages/smithers/ui/tests/item-conversation.test.tsx",
+    "packages/smithers/ui/tests/json-value.test.tsx",
+    "packages/smithers/ui/tests/jsx-pragma.test.ts",
+    "packages/smithers/ui/tests/kbd.test.tsx",
+    "packages/smithers/ui/tests/link-intent.test.tsx",
+    "packages/smithers/ui/tests/main-reset-contract.test.ts",
+    "packages/smithers/ui/tests/markdown-codeblock.test.tsx",
+    "packages/smithers/ui/tests/markdown-lists.test.tsx",
+    "packages/smithers/ui/tests/markdown-metadata.test.tsx",
+    "packages/smithers/ui/tests/markdown.test.tsx",
+    "packages/smithers/ui/tests/marker-shimmer.test.tsx",
+    "packages/smithers/ui/tests/message-response.test.tsx",
+    "packages/smithers/ui/tests/message-scroller.test.tsx",
+    "packages/smithers/ui/tests/not-found.test.tsx",
+    "packages/smithers/ui/tests/notification-panel.test.tsx",
+    "packages/smithers/ui/tests/notification-policy.test.ts",
+    "packages/smithers/ui/tests/page-focus.test.tsx",
+    "packages/smithers/ui/tests/page-header.test.tsx",
+    "packages/smithers/ui/tests/parse-agent-output-bounds.test.ts",
+    "packages/smithers/ui/tests/parse-agent-output.test.ts",
+    "packages/smithers/ui/tests/plans-tasks-queues-activity-timeline.test.tsx",
+    "packages/smithers/ui/tests/plans-tasks-queues-agent-task.test.tsx",
+    "packages/smithers/ui/tests/plans-tasks-queues-css.test.ts",
+    "packages/smithers/ui/tests/plans-tasks-queues-plan.test.tsx",
+    "packages/smithers/ui/tests/plans-tasks-queues-queue.test.tsx",
+    "packages/smithers/ui/tests/presentation-conformance.test.tsx",
+    "packages/smithers/ui/tests/prompt-attachments-css.test.ts",
+    "packages/smithers/ui/tests/prompt-attachments-prompt-input.test.tsx",
+    "packages/smithers/ui/tests/prompt-input-lifetimes.test.tsx",
+    "packages/smithers/ui/tests/provenance.test.ts",
+    "packages/smithers/ui/tests/radix-interaction.test.tsx",
+    "packages/smithers/ui/tests/reasoning-tools-agent-output.test.tsx",
+    "packages/smithers/ui/tests/reasoning-tools-chain-of-thought.test.tsx",
+    "packages/smithers/ui/tests/reasoning-tools-code-block.test.tsx",
+    "packages/smithers/ui/tests/reasoning-tools-css.test.ts",
+    "packages/smithers/ui/tests/reasoning-tools-reasoning.test.tsx",
+    "packages/smithers/ui/tests/reasoning-tools-tool-call.test.tsx",
+    "packages/smithers/ui/tests/reasoning.test.tsx",
+    "packages/smithers/ui/tests/ref-picker.test.tsx",
+    "packages/smithers/ui/tests/relative-time.test.tsx",
+    "packages/smithers/ui/tests/repo-about.test.tsx",
+    "packages/smithers/ui/tests/repository-home-feedback-navigation.test.tsx",
+    "packages/smithers/ui/tests/repository-home.test.tsx",
+    "packages/smithers/ui/tests/run-command.test.ts",
+    "packages/smithers/ui/tests/run-page.test.tsx",
+    "packages/smithers/ui/tests/sandbox-previews-agent-sandbox.test.tsx",
+    "packages/smithers/ui/tests/sandbox-previews-css.test.ts",
+    "packages/smithers/ui/tests/sandbox-previews-jsx-preview.test.tsx",
+    "packages/smithers/ui/tests/sandbox-previews-web-preview.test.tsx",
+    "packages/smithers/ui/tests/schema-display-bounds.test.tsx",
+    "packages/smithers/ui/tests/segmented-control.test.tsx",
+    "packages/smithers/ui/tests/share-dialog.test.tsx",
+    "packages/smithers/ui/tests/slash-commands.test.ts",
+    "packages/smithers/ui/tests/sources-citations-css.test.ts",
+    "packages/smithers/ui/tests/sources-citations-inline-citation.test.tsx",
+    "packages/smithers/ui/tests/sources-citations-sources.test.tsx",
+    "packages/smithers/ui/tests/sources-citations-suggestion-openinchat.test.tsx",
+    "packages/smithers/ui/tests/sources.test.tsx",
+    "packages/smithers/ui/tests/status-prototype-keys.test.ts",
+    "packages/smithers/ui/tests/status-rc0-vocabulary.test.ts",
+    "packages/smithers/ui/tests/status-vocabulary-parity.test.ts",
+    "packages/smithers/ui/tests/status.test.ts",
+    "packages/smithers/ui/tests/step-logs.test.tsx",
+    "packages/smithers/ui/tests/suggestion-group.test.tsx",
+    "packages/smithers/ui/tests/task-item.test.tsx",
+    "packages/smithers/ui/tests/terminal.test.tsx",
+    "packages/smithers/ui/tests/textarea.test.tsx",
+    "packages/smithers/ui/tests/theme-test-utils.ts",
+    "packages/smithers/ui/tests/theme.test.tsx",
+    "packages/smithers/ui/tests/timeline-coverage.test.tsx",
+    "packages/smithers/ui/tests/timeline-driver.test.ts",
+    "packages/smithers/ui/tests/timeline-entry-labels.test.tsx",
+    "packages/smithers/ui/tests/timeline-geometry.test.ts",
+    "packages/smithers/ui/tests/timeline-parity.browser.ts",
+    "packages/smithers/ui/tests/timeline-parity.client.tsx",
+    "packages/smithers/ui/tests/toast-clearance-lifecycle.test.tsx",
+    "packages/smithers/ui/tests/toast-clearance.test.ts",
+    "packages/smithers/ui/tests/todo-draft-card.test.tsx",
+    "packages/smithers/ui/tests/transcript-scroll.test.ts",
+    "packages/smithers/ui/tests/triage-control.test.tsx",
+    "packages/smithers/ui/tests/vault-autosave-conflict.test.ts",
+    "packages/smithers/ui/tests/vault-autosave-hook.test.tsx",
+    "packages/smithers/ui/tests/vault-autosave-machine.test.ts",
+    "packages/smithers/ui/tests/vault-autosave.test.ts",
+    "packages/smithers/ui/tests/vault-backlinks-panel.test.tsx",
+    "packages/smithers/ui/tests/vault-css.test.ts",
+    "packages/smithers/ui/tests/vault-graph-model.test.ts",
+    "packages/smithers/ui/tests/vault-knowledge-graph-interaction.test.tsx",
+    "packages/smithers/ui/tests/vault-knowledge-graph.test.tsx",
+    "packages/smithers/ui/tests/vault-outline.test.tsx",
+    "packages/smithers/ui/tests/vault-settle-simulation.test.ts",
+    "packages/smithers/ui/tests/vault-wikilinks-code.test.ts",
+    "packages/smithers/ui/tests/vault-wikilinks.test.ts",
+    "packages/smithers/ui/tests/views-generated.test.ts",
+    "packages/smithers/ui/tests/visibility-subscription-registry.test.ts",
+    "packages/smithers/ui/tests/web-link-card.test.tsx",
+    "packages/smithers/ui/tests/web-page-url.test.ts",
+    "packages/smithers/ui/tests/web-page-view.test.tsx",
+    "packages/smithers/ui/tests/wordmark.test.tsx",
+    "packages/smithers/ui/tests/workflow-canvas-components.test.tsx",
+    "packages/smithers/ui/tests/workflow-canvas-css.test.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/ui/browser/chat-message.browser.test.ts",
+    "packages/smithers/ui/browser/fixtures/chat-message.tsx",
+    "packages/smithers/ui/browser/fixtures/host.tsx",
+    "packages/smithers/ui/browser/fixtures/live-state.tsx",
+    "packages/smithers/ui/browser/fixtures/loading.tsx",
+    "packages/smithers/ui/browser/fixtures/notices.tsx",
+    "packages/smithers/ui/browser/fixtures/sharing.tsx",
+    "packages/smithers/ui/browser/generated-view.browser.test.ts",
+    "packages/smithers/ui/browser/live-state.browser.test.ts",
+    "packages/smithers/ui/browser/loading.browser.test.ts",
+    "packages/smithers/ui/browser/notices-phone.browser.test.ts",
+    "packages/smithers/ui/browser/setup-diagnostics.browser.test.ts",
+    "packages/smithers/ui/browser/sharing.browser.test.ts",
+    "packages/smithers/ui/bunfig.toml",
+    "packages/smithers/ui/provenance/node-output-agentic.json",
+    "packages/smithers/ui/src/presentation/bundle.generated.ts",
+    "packages/smithers/ui/tests/timeline-parity.browser.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/ui/src/artifacts/TestResults.tsx",
+      "line": 102,
+      "text": "const countsKey = counts ? `${counts.passed}/${counts.failed}/${counts.skipped}/${counts.running}/${counts.todo}` : null;"
+    },
+    {
+      "path": "packages/smithers/ui/src/artifacts/TestResults.tsx",
+      "line": 109,
+      "text": "`Test results updated: ${counts.passed} passed, ${counts.failed} failed, ${counts.skipped} skipped, ${counts.running} running, ${counts.todo} todo`,"
+    },
+    {
+      "path": "packages/smithers/ui/src/artifacts/TestResults.tsx",
+      "line": 156,
+      "text": "{(counts?.todo ?? 0) > 0 ? ("
+    },
+    {
+      "path": "packages/smithers/ui/src/artifacts/TestResults.tsx",
+      "line": 157,
+      "text": "<span className=\"sui-tests-summary-count\" data-tone=\"muted\">{counts?.todo} todo</span>"
+    },
+    {
+      "path": "packages/smithers/ui/src/artifacts/TestResults.tsx",
+      "line": 317,
+      "text": "if ((counts?.todo ?? 0) > 0) parts.push(`${counts?.todo} todo`);"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/ui/package.json",
+      "sha256": "e7418f718f798c1f725cec02dfda0ebb9afc8e6c94fbb711f53ff17497ba3897",
+      "source": "{\n  \"name\": \"@smthrs/ui\",\n  \"version\": \"1.0.0-rc.0\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"Shared shadcn-anatomy component library for Smithers UIs. Radix primitives + CVA variant APIs styled with the ui-styleguide theme tokens, shipped as CSS-in-TS strings so components bundle through the gateway's Bun.build and follow light/dark (prefers-color-scheme and data-theme) with zero configuration.\",\n  \"type\": \"module\",\n  \"sideEffects\": false,\n  \"exports\": {\n    \"./markdown\": {\n      \"types\": \"./src/primitives/markdown.tsx\",\n      \"default\": \"./src/primitives/markdown.tsx\"\n    },\n    \"./button\": {\n      \"types\": \"./src/button.tsx\",\n      \"default\": \"./src/button.tsx\"\n    },\n    \"./marker\": {\n      \"types\": \"./src/chat/Marker.tsx\",\n      \"default\": \"./src/chat/Marker.tsx\"\n    },\n    \".\": {\n      \"types\": \"./src/index.ts\",\n      \"import\": \"./src/index.ts\",\n      \"default\": \"./src/index.ts\"\n    },\n    \"./adapters/knowledge-graph\": {\n      \"types\": \"./src/adapters/knowledge-graph.ts\",\n      \"import\": \"./src/adapters/knowledge-graph.ts\",\n      \"default\": \"./src/adapters/knowledge-graph.ts\"\n    },\n    \"./adapters/chart\": {\n      \"types\": \"./src/adapters/chart.tsx\",\n      \"import\": \"./src/adapters/chart.tsx\",\n      \"default\": \"./src/adapters/chart.tsx\"\n    },\n    \"./adapters/terminal\": {\n      \"types\": \"./src/adapters/terminal.tsx\",\n      \"import\": \"./src/adapters/terminal.tsx\",\n      \"default\": \"./src/adapters/terminal.tsx\"\n    },\n    \"./status\": {\n      \"types\": \"./src/status.ts\",\n      \"import\": \"./src/status.ts\",\n      \"default\": \"./src/status.ts\"\n    },\n    \"./time\": {\n      \"types\": \"./src/time/index.ts\",\n      \"import\": \"./src/time/index.ts\",\n      \"default\": \"./src/time/index.ts\"\n    },\n    \"./calendar\": {\n      \"types\": \"./src/calendar/index.ts\",\n      \"import\": \"./src/calendar/index.ts\",\n      \"default\": \"./src/calendar/index.ts\"\n    },\n    \"./vault\": {\n      \"types\": \"./src/vault/index.ts\",\n      \"import\": \"./src/vault/index.ts\",\n      \"default\": \"./src/vault/index.ts\"\n    },\n    \"./flow-form\": {\n      \"types\": \"./src/flow-form.ts\",\n      \"import\": \"./src/flow-form.ts\",\n      \"default\": \"./src/flow-form.ts\"\n    },\n    \"./diff-paginate\": {\n      \"types\": \"./src/diff-paginate.ts\",\n      \"import\": \"./src/diff-paginate.ts\",\n      \"default\": \"./src/diff-paginate.ts\"\n    },\n    \"./flow-arguments\": {\n      \"types\": \"./src/flow-arguments.ts\",\n      \"import\": \"./src/flow-arguments.ts\",\n      \"default\": \"./src/flow-arguments.ts\"\n    },\n    \"./app-operations\": {\n      \"types\": \"./src/app-operations/index.ts\",\n      \"import\": \"./src/app-operations/index.ts\",\n      \"default\": \"./src/app-operations/index.ts\"\n    },\n    \"./app-operations/wiki\": {\n      \"types\": \"./src/app-operations/wiki.ts\",\n      \"import\": \"./src/app-operations/wiki.ts\",\n      \"default\": \"./src/app-operations/wiki.ts\"\n    },\n    \"./app-operations/http\": {\n      \"types\": \"./src/app-operations/http.ts\",\n      \"import\": \"./src/app-operations/http.ts\",\n      \"default\": \"./src/app-operations/http.ts\"\n    },\n    \"./command-line\": {\n      \"types\": \"./src/command-line.ts\",\n      \"import\": \"./src/command-line.ts\",\n      \"default\": \"./src/command-line.ts\"\n    },\n    \"./run-command\": {\n      \"types\": \"./src/run-command.ts\",\n      \"import\": \"./src/run-command.ts\",\n      \"default\": \"./src/run-command.ts\"\n    },\n    \"./clock\": {\n      \"types\": \"./src/clock.ts\",\n      \"import\": \"./src/clock.ts\",\n      \"default\": \"./src/clock.ts\"\n    },\n    \"./notification-policy\": {\n      \"types\": \"./src/notification-policy.ts\",\n      \"import\": \"./src/notification-policy.ts\",\n      \"default\": \"./src/notification-policy.ts\"\n    },\n    \"./copy\": {\n      \"types\": \"./src/copy.ts\",\n      \"import\": \"./src/copy.ts\",\n      \"default\": \"./src/copy.ts\"\n    },\n    \"./adapters/code-editor\": {\n      \"types\": \"./src/adapters/code-editor/index.tsx\",\n      \"default\": \"./src/adapters/code-editor/index.tsx\"\n    },\n    \"./app-operations/controls\": {\n      \"types\": \"./src/app-operations/controls.ts\",\n      \"default\": \"./src/app-operations/controls.ts\"\n    }\n  },\n  \"files\": [\n    \"src/\"\n  ],\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test tests\"\n  },\n  \"dependencies\": {\n    \"@smthrs/ui-styleguide\": \"workspace:*\",\n    \"@xterm/addon-fit\": \"^0.11.0\",\n    \"@xterm/xterm\": \"^6.0.0\",\n    \"class-variance-authority\": \"^0.7.1\",\n    \"clsx\": \"^2.1.1\",\n    \"d3-force\": \"3.0.0\",\n    \"effect\": \"4.0.5\",\n    \"radix-ui\": \"^1.6.7\",\n    \"recharts\": \"^3.10.1\",\n    \"@codemirror/autocomplete\": \"6.20.3\",\n    \"@codemirror/commands\": \"6.11.0\",\n    \"@codemirror/lang-go\": \"6.0.1\",\n    \"@codemirror/lang-javascript\": \"6.2.5\",\n    \"@codemirror/lang-python\": \"6.2.1\",\n    \"@codemirror/lang-rust\": \"6.0.2\",\n    \"@codemirror/language\": \"6.12.4\",\n    \"@codemirror/lint\": \"6.9.7\",\n    \"@codemirror/state\": \"6.7.2\",\n    \"@codemirror/view\": \"6.43.11\",\n    \"y-codemirror.next\": \"0.3.6\",\n    \"yjs\": \"13.6.32\",\n    \"@lezer/highlight\": \"1.2.3\",\n    \"y-protocols\": \"1.0.6\",\n    \"@smthrs/views\": \"workspace:*\"\n  },\n  \"peerDependencies\": {\n    \"react\": \"^19.2.8\",\n    \"react-dom\": \"^19.2.8\"\n  },\n  \"devDependencies\": {\n    \"@happy-dom/global-registrator\": \"^20.13.2\",\n    \"@types/bun\": \"1.4.4\",\n    \"@types/d3-force\": \"^3.0.10\",\n    \"@types/react\": \"^19.2.18\",\n    \"@types/react-dom\": \"^19.2.7\",\n    \"react\": \"19.2.8\",\n    \"react-dom\": \"19.2.8\",\n    \"typescript\": \"~5.9.3\",\n    \"@jitl/quickjs-singlefile-browser-release-sync\": \"0.32.0\",\n    \"@smthrs/harness\": \"workspace:*\",\n    \"esbuild\": \"0.28.2\",\n    \"fast-check\": \"4.9.0\",\n    \"playwright\": \"1.62.1\",\n    \"quickjs-emscripten-core\": \"0.32.0\",\n    \"happy-dom\": \"20.13.2\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-unplugin\": \"0.0.8\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/ui/PACKAGE.ts",
+      "sha256": "6cb32781d7b208f1877b1b9e5b21924924af340e53045c56ab8f8ea13f28d2c2",
+      "source": "/**\n * Targets for the private Smithers component kit.\n *\n * `@smthrs/ui` ships its sources directly and uses Bun for its tests.\n *\n * Its presence here is what this file is for. The root `packageDefaults`\n * synthesizes `BuildAndCheckTypeScriptPackage` — a dual `dist/esm` and `dist/cjs` library\n * build, a vitest\n * suite at 100% coverage, eslint, and dprint — for every `packages/*`\n * directory that ships no `PACKAGE.ts` of its own. This package satisfies none of\n * that: it ships its sources directly, types against `@types/bun`, and tests\n * with `bun test`. Declaring the targets it can honor opts it out of the\n * synthesis (`PackageDefaults` skips a directory holding a `PACKAGE.ts`) and puts\n * its real gates in the graph instead of targets that cannot pass.\n *\n * Two of the four standard gates are honored here: the `bun test` suite and a\n * `vibelang --noEmit` typecheck over `src/`. The eslint and dprint halves are NOT\n * declared, because this package carries neither an `eslint.config.js` nor a\n * `dprint.json` and both tools are per-package devDependencies elsewhere in the\n * workspace; wiring them requires package tooling that this target does not\n * provide.\n */\nimport { SdkRules } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/ui\"\n\n/** The component sources the suite drives. */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/ui/src/**/*.ts\"),\n  Smithers.glob(\"//packages/smithers/ui/src/**/*.tsx\")\n]\n\n/**\n * What generated views are built from beyond `src/`: the script that\n * generates the presentation bundle and the frame runtime.\n */\nconst generatedViewInputs = [Smithers.file(\"//packages/smithers/ui/scripts/build-views.mjs\")]\n\n/**\n * The `@smthrs/views` sources the realm and the bridge come from, as that\n * package's `sourceFiles` label. A selector, not an import of its PACKAGE.ts:\n * that file reaches the root PACKAGE.ts.\n */\nconst viewsSources = Smithers.Target.subtree(\"//packages/smithers/ui/views/...\", \"sourceFiles\")\n\n/**\n * Checks every component source against the package tsconfig.\n *\n * The package publishes its `src/` tree directly (`files: [\"src/\"]`, every\n * export condition points at a `.ts`/`.tsx` source), so this typecheck is the\n * only thing standing between a type error and a consumer's build. Root\n * `pnpm run check` reaches it through the package's own `check` script.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The component suite: everything under `tests/`, run by Bun against a\n * happy-dom registrator, which is how this package has always tested.\n *\n * @since 0.1.0\n * @category test\n */\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"tests\"]),\n  srcs: [\n    ...sources,\n    ...generatedViewInputs,\n    Smithers.glob(\"//packages/smithers/ui/tests/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/tests/**/*.tsx\")\n  ],\n  deps: [viewsSources],\n  cwd\n})\n\n/**\n * Browser probes for generated views: real Chromium through Playwright. A\n * hostile view's HTML, a hostile frame runtime, the bridge, and the sanitizer\n * fuzzed with Chromium's parser, each checked against the parent page's DOM,\n * storage, the network, navigation and inline handlers. Needs Playwright's\n * Chromium (`pnpm exec playwright install chromium`).\n *\n * @since 1.0.0\n * @category test\n */\nconst browserProbes = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"browser\"]),\n  srcs: [\n    ...sources,\n    ...generatedViewInputs,\n    Smithers.glob(\"//packages/smithers/ui/browser/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/browser/**/*.tsx\")\n  ],\n  deps: [viewsSources],\n  cwd\n})\n\n/**\n * The package's documentation as a file group (`docs/**`, the README, and\n * package.json), matching the filegroup BuildAndCheckTypeScriptPackage emits. The docs-site\n * way an input reaches across a package boundary.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/** Every named root export needs documentation, including erased props types. */\nconst docs = Smithers.DocsParity({\n  readme: Smithers.file(\"README.md\"),\n  cwd,\n  deps: [\n    Smithers.Shell.Test({\n      shell: \"node --test packages/smithers/ui/scripts/reference-docs.test.mjs\",\n      data: [\n        Smithers.file(\"scripts/reference-docs.test.mjs\"),\n        ...sources,\n        Smithers.glob(\"src/**/*.vibe\"),\n        Smithers.glob(\"docs/**/*.md\")\n      ]\n    })\n  ]\n})\n\n/**\n * The component sources as a file group, for the packages that compose these\n * components (`@smthrs/repo-view`, `@smthrs/terminal-frame`), reached by\n * `Smithers.Target.subtree(\"//packages/smithers/ui/...\", \"sourceFiles\")`. A\n * glob in another package cannot reach them; a label can.\n */\nconst sourceFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"src/**/*.ts\"), Smithers.glob(\"src/**/*.tsx\")],\n  cwd\n})\n\n/** Complete React source input for the reproducible Solid projection. */\nconst solidCodegenInputs = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"src/**/*\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/**\n * Security review for the component kit. The kit renders model output, tool\n * results, run artifacts, and caller-supplied URLs inside the product UI, so\n * its checks target DOM sinks, link and frame sources, injected CSS, secret\n * display, and the command lines composed from forms and composer text.\n * `ui-styleguide/` is a nested package with its own review and lies outside\n * the default `src/**` include.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"href-scheme-filter\",\n      title: \"Every rendered anchor href passes safeHref before reaching the DOM\",\n      threat: \"A model, tool result, or synced calendar event plants a javascript: or data: link that runs script in the signed-in user's app session when clicked.\",\n      lookFor: [\n        \"An <a href={...}> or onNavigate/onLinkClick call fed from source.href, event.href, resource.href, registryUrl, source.url, or a markdown link without safeHref.\",\n        \"A safeHref change that stops rejecting C0 control characters or that allows a scheme beyond http, https, and mailto.\",\n        \"A target=\\\"_blank\\\" anchor without rel=\\\"noreferrer\\\" or rel=\\\"noopener\\\".\"\n      ],\n      paths: [\n        \"src/internal/safeHref.ts\",\n        \"src/primitives/markdown.tsx\",\n        \"src/agentic/Sources.tsx\",\n        \"src/agentic/InlineCitation.tsx\",\n        \"src/calendar/Calendar.tsx\",\n        \"src/approvals/ApprovalCard.tsx\",\n        \"src/artifacts/PackageInfo.tsx\",\n        \"src/vault/wikilinks.ts\"\n      ]\n    },\n    {\n      id: \"web-preview-sandbox\",\n      title: \"WebPreview frames only http(s) or same-origin paths and never grants allow-scripts with allow-same-origin\",\n      threat: \"Agent-controlled preview content escapes the iframe sandbox and reads the user's session cookies or app origin storage.\",\n      lookFor: [\n        \"sanitizePreviewSrc accepting javascript:, data:, blob:, file:, protocol-relative //host, or /\\\\host after tab/CR/LF stripping.\",\n        \"The iframe src or sandbox attribute placed before the {...props} spread so a runtime caller can override it.\",\n        \"resolveSandboxTokens returning both allow-scripts and allow-same-origin, or accepting a token outside the known set.\"\n      ],\n      paths: [\"src/sandbox/WebPreview.tsx\"]\n    },\n    {\n      id: \"no-raw-html-sinks\",\n      title: \"Untrusted text reaches the DOM only as React text children\",\n      threat: \"Model output, stack traces, diffs, terminal streams, or vault notes inject HTML or script into the user's app page.\",\n      lookFor: [\n        \"dangerouslySetInnerHTML, innerHTML, outerHTML, insertAdjacentHTML, or document.write fed from props or model data instead of a module constant.\",\n        \"The markdown primitive, CodeBlock, StackTrace, Snippet, or agent-output renderers switching to an HTML string renderer.\"\n      ],\n      paths: [\n        \"src/primitives/**\",\n        \"src/agentic/**\",\n        \"src/artifacts/**\",\n        \"src/adapters/**\",\n        \"src/vault/**\",\n        \"src/chat/**\",\n        \"src/canvas/**\"\n      ]\n    },\n    {\n      id: \"untrusted-image-src\",\n      title: \"Model- or tool-supplied image URLs never load arbitrary remote origins\",\n      threat: \"A prompt-injected model or tool result sets an image or favicon URL that makes the viewer's browser send run data or their IP to an attacker host on render, with no click.\",\n      lookFor: [\n        \"An <img src> fed from ToolCall part.src, Sources or InlineCitation faviconUrl without passing src/internal/safeImageSrc.ts.\",\n        \"Attachment thumbnailUrl/AttachmentPreview src (src/chat/Attachment.tsx) and MessageAvatar src (src/chat/Message.tsx) are still unguarded <img> sinks: accepted because the host supplies them (uploads, avatars), but a caller wiring model or tool output into them reopens the fetch-on-render leak.\",\n        \"A markdown image node rendered as <img> with the document-supplied URL.\",\n        \"An img src accepting javascript:, file:, or a remote http(s) URL where only data:, blob:, or same-origin should reach it.\"\n      ],\n      paths: [\n        \"src/agentic/ToolCall.tsx\",\n        \"src/agentic/Sources.tsx\",\n        \"src/agentic/InlineCitation.tsx\",\n        \"src/chat/Attachment.tsx\",\n        \"src/chat/Message.tsx\",\n        \"src/primitives/markdown.tsx\"\n      ]\n    },\n    {\n      id: \"chart-css-injection\",\n      title: \"Chart config keys and colors cannot break out of the generated <style> block\",\n      threat: \"A caller-supplied chart config breaks out of the injected stylesheet to restyle or overlay app UI, or loads a remote url() that tracks the viewer.\",\n      lookFor: [\n        \"ChartStyle emitting a key or id that fails CSS_IDENTIFIER, or a color that SAFE_CSS_COLOR does not admit.\",\n        \"SAFE_CSS_COLOR widening so a value such as url(https://...) or image-set(...) reaches fill/stroke.\",\n        \"Any other style injection (styles.tsx, terminal.tsx) built from props rather than static CSS.\"\n      ],\n      paths: [\"src/adapters/chart.tsx\", \"src/styles.tsx\", \"src/adapters/terminal.tsx\"]\n    },\n    {\n      id: \"secret-display\",\n      title: \"Masked secrets never appear in the DOM, labels, or logs\",\n      threat: \"A shoulder-surfer, screen recorder, or DOM-reading extension reads a user's API key or environment secret shown while masked.\",\n      lookFor: [\n        \"SecretField rendering value, a length-derived mask, or the value inside an aria-label/title/data attribute while revealed is false.\",\n        \"EnvironmentVariable rendering a credential-shaped value as plain text: a name CREDENTIAL_NAME misses (including the whole-word PW/PWD/SK/PAT/OTP/TOTP/PIN abbreviations) or a user:password@ URL value, leading whitespace included, CREDENTIAL_URL misses.\",\n        \"A write-only flow-form field that reaches assembleArgs, a draft, or a console call instead of being dropped by publicFormPayload.\"\n      ],\n      paths: [\"src/artifacts/SecretField.tsx\", \"src/artifacts/EnvironmentVariables.tsx\", \"src/flow-form.ts\", \"src/internal/useCopyFeedback.ts\"]\n    },\n    {\n      id: \"command-line-assembly\",\n      title: \"Composer text and form values cannot smuggle extra flow names, flags, or sourceCard tokens\",\n      threat: \"Prefilled or model-suggested form text runs a different flow, adds a --flag, or rebinds sourceCard so a run acts on another card than the user chose.\",\n      lookFor: [\n        \"assembleArgs joining a text value containing spaces, --name, or sourceCard= unquoted so the flow grammar reads it as a separate token.\",\n        \"assembleLine writing a value positionalRead would place in another field (a multi-word value short of the final slot, JSON with whitespace, a value behind an unset slot, an optional value a required slot would take) instead of withholding it.\",\n        \"assembleLine returning a flow args builder's line without withholding a value it writes unquoted with a --flag or sourceCard= token, or one the flow's partial does not read back.\",\n        \"A caller that re-parses an assembled line as text (search actions) offering it with a non-empty withheld, or a display echo dropping withheld fields instead of using displayLine.\",\n        \"splitRunSource or runSearchPayload trusting a sourceCard or run id taken from user-typed args instead of the recorded card.\",\n        \"parseCommand or COMMAND_NAME widening so punctuation or a typo after / executes a side-effecting flow instead of becoming a prompt.\"\n      ],\n      paths: [\"src/command-line.ts\", \"src/run-command.ts\", \"src/flow-form.ts\", \"src/flow-arguments.ts\"]\n    },\n    {\n      id: \"untrusted-parse-bounds\",\n      title: \"Parsers of agent output, schemas, diffs, and JSON stay bounded on hostile input\",\n      threat: \"A model or tool emits deeply nested, cyclic, or huge output that freezes or crashes the user's app tab.\",\n      lookFor: [\n        \"Recursion in parseAgentOutput, formatPartialJson, or SchemaDisplay without the MAX_*_DEPTH, property, or seen-set guards.\",\n        \"A regex over agent text or diffs with nested quantifiers that backtracks catastrophically.\",\n        \"diff-paginate or diff-hunks materializing an unbounded hunk or line list for one render.\"\n      ],\n      paths: [\"src/agentic/**\", \"src/artifacts/SchemaDisplay.tsx\", \"src/diff*.ts\", \"src/diff-hunks.tsx\", \"src/vault/**\"]\n    },\n    {\n      id: \"generated-view-frame\",\n      title: \"A generated view's HTML is shown only through the sandboxed frame, its pinned runtime and its sanitizer\",\n      threat:\n        \"Model-authored view HTML runs script, reads the app's DOM, storage or cookies, loads from the network, or navigates, in the signed-in user's session.\",\n      lookFor: [\n        \"GeneratedView rendering view HTML outside the iframe, or an iframe sandbox with allow-same-origin, allow-forms, allow-popups, allow-modals or allow-top-navigation, or an `allow` delegation.\",\n        \"A srcdoc not built by ViewCsp.frameDocument, a runtime other than the hashed one, or view HTML written into the srcdoc.\",\n        \"The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a later message that skips Bridge.receive.\",\n        \"sanitize keeping an element or attribute that runs, loads or navigates: script, iframe, a, meta, base, link, style, on*, href, a non-data:image src, srcset, action, formaction, xlink:href, or a style with url().\",\n        \"The frame runtime reading document.body or other document properties after view content is inserted (DOM clobbering), or sending an interaction for an untrusted event.\"\n      ],\n      paths: [\"src/generated-view/**\", \"src/presentation/**\", \"src/internal/frameMount.ts\"]\n    },\n    {\n      id: \"attachment-intake\",\n      title: \"Prompt attachments enforce accept, size, and count limits and revoke their object URLs\",\n      threat: \"A pasted or dropped file bypasses the configured type or size limit, or leaked object URLs keep file bytes readable after removal.\",\n      lookFor: [\n        \"The paste or drop path in PromptInput skipping fileMatchesAccept, maxFileSizeBytes, maxFiles, or disabled checks that the picker path applies.\",\n        \"An object URL created for a non-image type or never revoked on removal or unmount.\"\n      ],\n      paths: [\"src/prompt/PromptInput.tsx\"]\n    }\n  ]\n})\n\n/**\n * Will's SDK-wide rules (apps/mvp/docs/rules.md). The package renders React,\n * so only root imports, dead code and tests are held to them. `jevRules` is\n * manual.\n */\nconst { importRules, jevRules } = SdkRules({ cwd, role: \"components\", tests: [\"tests/**/*.test.{ts,tsx}\"] })\n\nexport const Package = Smithers.Package({\n  targets: {\n    solidCodegenInputs,\n    check,\n    docs,\n    docsFiles,\n    sourceFiles,\n    importRules,\n    jevRules,\n    unitTests,\n    browserProbes,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "* suite at 100% coverage, eslint, and dprint — for every `packages/*`"
+        },
+        {
+          "line": 13,
+          "text": "* synthesis (`PackageDefaults` skips a directory holding a `PACKAGE.ts`) and puts"
+        },
+        {
+          "line": 160,
+          "text": "* the default `src/**` include."
+        },
+        {
+          "line": 164,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 251,
+          "text": "\"EnvironmentVariable rendering a credential-shaped value as plain text: a name CREDENTIAL_NAME misses (including the whole-word PW/PWD/SK/PAT/OTP/TOTP/PIN abbreviations) or a user:password@ URL value, leading whitespace included, CREDENTIAL_URL misses.\","
+        },
+        {
+          "line": 289,
+          "text": "\"The handshake answering a message whose source is not this mount's contentWindow or whose nonce differs, or a later message that skips Bridge.receive.\","
+        },
+        {
+          "line": 300,
+          "text": "\"The paste or drop path in PromptInput skipping fileMatchesAccept, maxFileSizeBytes, maxFiles, or disabled checks that the picker path applies.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/ui/tsconfig.json",
+      "sha256": "e0979fce14d6cc6baac377319f2dd2dda82dc57a26df877617a03fb6f4174234",
+      "source": "{\n  \"compilerOptions\": {\n    \"lib\": [\"ESNext\", \"DOM\", \"DOM.Iterable\"],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"moduleDetection\": \"force\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"react\",\n    \"strict\": true,\n    \"skipLibCheck\": true,\n    \"verbatimModuleSyntax\": true,\n    \"noEmit\": false,\n    \"declaration\": true,\n    \"emitDeclarationOnly\": true,\n    \"outDir\": \"dist\",\n    \"types\": [\"bun\"],\n    \"noFallthroughCasesInSwitch\": true,\n    \"noUnusedLocals\": false,\n    \"noUnusedParameters\": false,\n    \"allowImportingTsExtensions\": true,\n    \"rootDir\": \"src\"\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 24,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:browserProbes",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/scripts/build-views.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/browser/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/browser/**/*.tsx",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:importRules",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:jevRules",
+      "rule": "JevLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/tests/**/*.test.{ts,tsx}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/ui/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/ui/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:solidCodegenInputs",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:sourceFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.tsx",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui",
+      "label": "//packages/smithers/ui:unitTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/scripts/build-views.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/tests/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/tests/**/*.tsx",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "scripts/build-views.mjs",
+    "src/action-menu",
+    "src/adapters",
+    "src/agent-status",
+    "src/agentic",
+    "src/agents",
+    "src/alert.tsx",
+    "src/app-operations",
+    "src/approvals",
+    "src/artifacts",
+    "src/avatar-stack.tsx",
+    "src/badge.tsx",
+    "src/breadcrumbs.tsx",
+    "src/button.tsx",
+    "src/calendar",
+    "src/canvas",
+    "src/card.tsx",
+    "src/chat",
+    "src/clock.ts",
+    "src/cn.ts",
+    "src/collaborators.tsx",
+    "src/collaboratorsCss.ts",
+    "src/collapsible-panel.tsx",
+    "src/command-line.ts",
+    "src/command-palette.tsx",
+    "src/commandCss.ts",
+    "src/copy-button.tsx",
+    "src/copy.ts",
+    "src/data-attributes.ts",
+    "src/dialog.tsx",
+    "src/diff-hunks.tsx",
+    "src/diff-paginate.ts",
+    "src/diff.ts",
+    "src/directory-listing.tsx",
+    "src/docs-page",
+    "src/empty-state.tsx",
+    "src/file-tabs.tsx",
+    "src/file-tree.tsx",
+    "src/flow-arguments.ts",
+    "src/flow-draft-view",
+    "src/flow-form-view",
+    "src/flow-form.ts",
+    "src/flow-graph",
+    "src/generated-chip.tsx",
+    "src/generated-view",
+    "src/index.ts",
+    "src/input.tsx",
+    "src/internal",
+    "src/issues-view",
+    "src/item-conversation",
+    "src/json-value",
+    "src/kbd.tsx",
+    "src/kpi-stat.tsx",
+    "src/label.tsx",
+    "src/link-intent.tsx",
+    "src/link-tabs.tsx",
+    "src/loading-delay.ts",
+    "src/loading.tsx",
+    "src/not-found.tsx",
+    "src/notification-policy.ts",
+    "src/page-focus.tsx",
+    "src/page-header.tsx",
+    "src/popover.tsx",
+    "src/presentation",
+    "src/primitives",
+    "src/progress.tsx",
+    "src/prompt",
+    "src/ref-picker.tsx",
+    "src/repo-about.tsx",
+    "src/repository-home",
+    "src/repositoryCss.ts",
+    "src/row-button.tsx",
+    "src/run-command.ts",
+    "src/run-page",
+    "src/sandbox",
+    "src/section-header.tsx",
+    "src/segmented-control.tsx",
+    "src/select.tsx",
+    "src/separator.tsx",
+    "src/share-dialog.tsx",
+    "src/sharingCss.ts",
+    "src/skeleton.tsx",
+    "src/slash-commands.ts",
+    "src/stack",
+    "src/stage-strip.tsx",
+    "src/status-pill.tsx",
+    "src/status.ts",
+    "src/styles.tsx",
+    "src/table.tsx",
+    "src/tabs.tsx",
+    "src/time",
+    "src/tokens.ts",
+    "src/tooltip.tsx",
+    "src/triage-control",
+    "src/uiCss.ts",
+    "src/vault",
+    "src/web-page",
+    "src/wordmark"
+  ],
+  "boundaries": [
+    "browser",
+    "public-authoring"
+  ]
+}

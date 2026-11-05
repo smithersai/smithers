@@ -22,7 +22,10 @@ const fixture = (t: { after: (fn: () => void) => void }) => {
   t.after(() => rmSync(root, { recursive: true, force: true }))
   const previousLock = process.env.SMITHERS_LAND_LOCK
   process.env.SMITHERS_LAND_LOCK = join(root, "main-push.lock")
-  t.after(() => { if (previousLock === undefined) delete process.env.SMITHERS_LAND_LOCK; else process.env.SMITHERS_LAND_LOCK = previousLock })
+  t.after(() => {
+    if (previousLock === undefined) delete process.env.SMITHERS_LAND_LOCK
+    else process.env.SMITHERS_LAND_LOCK = previousLock
+  })
   const config = join(root, "jj.toml")
   writeFileSync(config, "[user]\nname = \"t\"\nemail = \"t@t\"\n")
   Object.assign(process.env, {
@@ -72,7 +75,8 @@ const fixture = (t: { after: (fn: () => void) => void }) => {
   const originMain = () => revision("main")
   const subjects = () => {
     cmd(origin, "jj", "git", "import", "--ignore-working-copy")
-    return cmd(origin, "jj", "log", "--no-graph", "-r", "::main ~ root()", "-T", 'description.first_line() ++ "\\n"').trim().split("\n")
+    return cmd(origin, "jj", "log", "--no-graph", "-r", "::main ~ root()", "-T", "description.first_line() ++ \"\\n\"")
+      .trim().split("\n")
   }
   return { pushElsewhere, change, originMain, subjects, revision }
 }
@@ -100,19 +104,29 @@ test("two changes validate and publish serially under the shared FIFO lease", { 
   const { change, subjects } = fixture(t)
   const one = change("one", "a/one.txt"), two = change("two", "b/two.txt")
   const stages: Array<string> = []
-  const { checks, tested } = fakeChecks((workspace) => Effect.sync(() => {
-    assert.equal(existsSync(process.env.SMITHERS_LAND_LOCK!), true)
-    stages.push(`check ${workspace}`)
-    return green
-  }))
-  const land = makeLander({ checks, beforePush: () => Effect.sync(() => {
-    assert.equal(existsSync(process.env.SMITHERS_LAND_LOCK!), true)
-    stages.push("push")
-  }) })
-  const landed = await run(Effect.all([land(one.workspace, one.id), land(two.workspace, two.id)], { concurrency: "unbounded" }))
+  const { checks, tested } = fakeChecks((workspace) =>
+    Effect.sync(() => {
+      assert.equal(existsSync(process.env.SMITHERS_LAND_LOCK!), true)
+      stages.push(`check ${workspace}`)
+      return green
+    })
+  )
+  const land = makeLander({
+    checks,
+    beforePush: () =>
+      Effect.sync(() => {
+        assert.equal(existsSync(process.env.SMITHERS_LAND_LOCK!), true)
+        stages.push("push")
+      })
+  })
+  const landed = await run(
+    Effect.all([land(one.workspace, one.id), land(two.workspace, two.id)], { concurrency: "unbounded" })
+  )
   assert.equal(landed.length, 2)
-  assert.match(stages[0]!, /^check /); assert.equal(stages[1], "push")
-  assert.match(stages[2]!, /^check /); assert.equal(stages[3], "push")
+  assert.match(stages[0]!, /^check /)
+  assert.equal(stages[1], "push")
+  assert.match(stages[2]!, /^check /)
+  assert.equal(stages[3], "push")
   assert.deepEqual(tested.sort(), ["//a:test", "//b:test"])
   assert.deepEqual(subjects().slice(0, 2).sort(), ["one", "two"])
 })
@@ -137,19 +151,27 @@ test("a change tested on an older main lands without retesting when main moved e
   assert.equal(revision(`${landed}-`), moved)
 })
 
-test("an outside push after the final fetch retries on a fresh ticket with fresh validation", { timeout: 60_000 }, async (t) => {
-  const { change, pushElsewhere, revision } = fixture(t)
-  const mine = change("retry", "a/retry.txt")
-  let moved = ""
-  const { checks, tested } = fakeChecks(() => Effect.succeed(green))
-  const land = makeLander({ checks, beforePush: () => Effect.sync(() => {
-    if (moved === "") moved = pushElsewhere("b/race.txt")
-  }) })
-  const landed = await run(land(mine.workspace, mine.id))
-  assert.deepEqual(tested, ["//a:test", "//a:test"])
-  assert.equal(revision("main"), landed)
-  assert.equal(revision(`${landed}-`), moved)
-})
+test(
+  "an outside push after the final fetch retries on a fresh ticket with fresh validation",
+  { timeout: 60_000 },
+  async (t) => {
+    const { change, pushElsewhere, revision } = fixture(t)
+    const mine = change("retry", "a/retry.txt")
+    let moved = ""
+    const { checks, tested } = fakeChecks(() => Effect.succeed(green))
+    const land = makeLander({
+      checks,
+      beforePush: () =>
+        Effect.sync(() => {
+          if (moved === "") moved = pushElsewhere("b/race.txt")
+        })
+    })
+    const landed = await run(land(mine.workspace, mine.id))
+    assert.deepEqual(tested, ["//a:test", "//a:test"])
+    assert.equal(revision("main"), landed)
+    assert.equal(revision(`${landed}-`), moved)
+  }
+)
 
 test("a change tested on an older main is retested when main touched its packages", {
   timeout: 60_000

@@ -1,1 +1,353 @@
-{"id":"packages/smithers/ui/ui-styleguide","name":"@smthrs/ui-styleguide","owner":{"declaration":"packages/smithers/ui/ui-styleguide/package.json","assignedLane":null},"kind":"package","scripts":{"check":"vibelang -p tsconfig.json --noEmit","test":"bun test tests"},"exports":{".":{"types":"./src/index.ts","import":"./src/index.ts","default":"./src/index.ts"}},"production":["scripts/generate-theme-registry.ts","scripts/paperTokens.ts","scripts/secondaryText.ts","scripts/selectionColor.ts","src/contrastRatio.ts","src/index.ts","src/mixColors.ts","src/paletteThemeCss.ts","src/rgbChannels.ts","src/serializeThemeVariant.ts","src/SmithersTheme.ts","src/standaloneThemeCss.ts","src/TerminalPalette.ts","src/themeRegistry.ts","src/themes/paper.ts","src/ThemeSyntaxId.ts","src/themeTokens.ts","src/ThemeVariantTokens.ts"],"tests":["packages/smithers/ui/ui-styleguide/tests/browserBundle.test.ts","packages/smithers/ui/ui-styleguide/tests/bunTest.d.ts","packages/smithers/ui/ui-styleguide/tests/cascade.test.ts","packages/smithers/ui/ui-styleguide/tests/colorMath.test.ts","packages/smithers/ui/ui-styleguide/tests/contrast.test.ts","packages/smithers/ui/ui-styleguide/tests/docs.test.ts","packages/smithers/ui/ui-styleguide/tests/generatedThemes.test.ts","packages/smithers/ui/ui-styleguide/tests/generatorContrast.test.ts","packages/smithers/ui/ui-styleguide/tests/generatorSelectionColor.test.ts","packages/smithers/ui/ui-styleguide/tests/index.test.ts","packages/smithers/ui/ui-styleguide/tests/nodeBinary.ts","packages/smithers/ui/ui-styleguide/tests/nodeEsmResolution.test.ts","packages/smithers/ui/ui-styleguide/tests/paintedPairs.ts","packages/smithers/ui/ui-styleguide/tests/paletteSelection.test.ts","packages/smithers/ui/ui-styleguide/tests/serializeThemeVariant.test.ts","packages/smithers/ui/ui-styleguide/tests/standaloneThemeCss.test.ts","packages/smithers/ui/ui-styleguide/tests/themeRegistry.test.ts"],"benchmarks":[],"platformPaths":["packages/smithers/ui/ui-styleguide/bunfig.toml","packages/smithers/ui/ui-styleguide/tests/browserBundle.test.ts","packages/smithers/ui/ui-styleguide/tests/bunTest.d.ts","packages/smithers/ui/ui-styleguide/tests/nodeBinary.ts","packages/smithers/ui/ui-styleguide/tests/nodeEsmResolution.test.ts"],"ignoredCases":[],"configurations":[{"path":"packages/smithers/ui/ui-styleguide/package.json","sha256":"e8c8fc4294a6229e4bbcb60935f466a58083f7a2554626eeae2bcd9409707660","source":"{\n  \"name\": \"@smthrs/ui-styleguide\",\n  \"version\": \"1.0.0-rc.0\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"Shared CSS tokens and layout primitives for Smithers browser UIs.\",\n  \"type\": \"module\",\n  \"sideEffects\": false,\n  \"exports\": {\n    \".\": {\n      \"types\": \"./src/index.ts\",\n      \"import\": \"./src/index.ts\",\n      \"default\": \"./src/index.ts\"\n    }\n  },\n  \"files\": [\n    \"src/\"\n  ],\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test tests\"\n  },\n  \"devDependencies\": {\n    \"@shikijs/themes\": \"4.4.3\"\n  }\n}\n","coverageDirectives":[]},{"path":"packages/smithers/ui/ui-styleguide/PACKAGE.ts","sha256":"7e8de97bf7a5b460df60298b095b12b00d7cd314a6f2a123fe41803304ae97b1","source":"/**\n * Targets for the private Smithers theme tokens.\n *\n * `@smthrs/ui` and `.smithers/flows/review` import this package. See\n * `packages/smithers/ui/PACKAGE.ts` for why this package declares its own targets: the\n * root `packageDefaults` would otherwise\n * synthesize a `BuildAndCheckTypeScriptPackage` library build and vitest suite for it, and\n * this package ships as source with a Bun suite instead.\n *\n * It does own a `tsconfig.json` and a `Typecheck` target, so `pnpm run check`\n * and `smithers-build ci` cover it like every other package, and `bunfig.toml`\n * puts the 1.0 baseline's 100% coverage threshold on the Bun suite. What it\n * still owes is the repository's own Vitest configuration with isolated\n * reports, which is what\n * `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` asserts and the only\n * reason the `ui-styleguide` entry stays in its `zeroXUiKits` carve-out.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/ui/ui-styleguide\"\n\n/**\n * `vibelang --noEmit` over the sources and tests.\n *\n * The suites import `bun:test`, and `tests/bunTest.d.ts` supplies the local\n * ambient declaration that stands in for `bun-types`. Runtime sources remain\n * dependency-free.\n *\n * @since 1.0.0-rc.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: [\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/src/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/tests/**/*.ts\")\n  ],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n// Shiki is pinned by this package's manifest and the workspace lockfile.\nconst shikiThemes = Smithers.Filegroup({\n  srcs: [\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"//pnpm-lock.yaml\"),\n    Smithers.file(\"node_modules/@shikijs/themes/package.json\"),\n    ...[\"index\", \"night-owl\", \"night-owl-light\"].map((id) => Smithers.file(`node_modules/@shikijs/themes/dist/${id}.mjs`))\n  ],\n  cwd\n})\n\n/**\n * The token suite: everything under `tests/`, run by Bun.\n *\n * `tests/generatedThemes.test.ts` spawns `packages/smithers/ui/ui-styleguide/scripts/generate-theme-registry.ts`\n * from the repository root and byte-compares its output against `src/themes/*`,\n * so the generator and the lockfile that pins its `@shikijs/themes` input are\n * declared inputs here. Without them the target's key would not change when the\n * generator does, and a cache hit would skip the exact drift check the test\n * exists to perform.\n *\n * `bunfig.toml` is an input for the same reason: it carries the 100% coverage\n * threshold this suite is gated on, so lowering it must re-key the target\n * rather than land behind a cache hit.\n *\n * So are `README.md` and every Markdown file under `docs/`. `tests/docs.test.ts` reads them against\n * the barrel and fails when an export goes undocumented, which is how the\n * missing `Rgb` row was found; a documentation edit that drops an export has to\n * re-key this target rather than land behind a cache hit.\n *\n * @since 0.1.0\n * @category test\n */\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"tests\"]),\n  srcs: [\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/src/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/tests/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/docs/**/*.md\"),\n    Smithers.file(\"//packages/smithers/ui/ui-styleguide/README.md\"),\n    Smithers.file(\"//packages/smithers/ui/ui-styleguide/bunfig.toml\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/scripts/**/*.ts\"),\n    Smithers.file(\"//pnpm-lock.yaml\")\n  ],\n  deps: [shikiThemes],\n  cwd\n})\n\n/**\n * The package's documentation as a file group (`docs/**`, the README, and\n * package.json), matching the filegroup BuildAndCheckTypeScriptPackage emits. The docs-site\n * label, the one way an input reaches across a package boundary.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/**\n * Security review: `security` reviews the diff against origin/main and\n * `securityAudit` audits every reviewed file. The package emits CSS that hosts\n * interpolate into `<style>` elements, so the checks focus on that sink.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"scripts/**\", \"docs/**\", \"README.md\"],\n  checks: [\n    {\n      id: \"css-token-injection\",\n      title: \"Every token interpolated into emitted CSS is validated before it reaches the stylesheet\",\n      threat: \"A caller or theme source that controls a token value injects CSS rules or closes the host's <style> element to run markup in the page of every viewer.\",\n      lookFor: [\n        \"A declaration in serializeThemeVariant, paletteThemeCss, standaloneThemeCss, or themeTokens built from a value that bypasses checkedValue.\",\n        \"A value TOKEN_GRAMMAR accepts that ends a declaration or element, such as an escaped newline, `</style`, or a non-ASCII lookalike.\",\n        \"A token value such as `url(//host/x)` or `image-set(...)` that TOKEN_GRAMMAR accepts and makes the viewer's browser fetch an attacker-chosen URL.\"\n      ],\n      paths: [\"src/serializeThemeVariant.ts\", \"src/paletteThemeCss.ts\", \"src/standaloneThemeCss.ts\", \"src/themeTokens.ts\"]\n    },\n    {\n      id: \"palette-key-selector-injection\",\n      title: \"Palette keys reach attribute selectors only after a registry own-property lookup\",\n      threat: \"A palette key read from localStorage, a query parameter, or a server response breaks out of a `[data-palette=...]` selector or resolves a prototype property.\",\n      lookFor: [\n        \"A key interpolated into `attr(\\\"palette\\\", key)` that was not checked by findTheme or taken from Object.entries(themeRegistry).\",\n        \"findTheme or themeRegistry indexed with `in` or bracket access instead of Object.hasOwn, so `__proto__` or `constructor` resolves.\"\n      ],\n      paths: [\"src/paletteThemeCss.ts\", \"src/themeRegistry.ts\"]\n    },\n    {\n      id: \"generated-theme-provenance\",\n      title: \"Generated theme files contain only validated colors from the pinned @shikijs/themes\",\n      threat: \"A compromised or unpinned @shikijs/themes release writes code or unvalidated values into src/themes/*.ts, which every Smithers UI imports.\",\n      lookFor: [\n        \"An upstream color copied into the generated record without `opaque`, `selectionColor`, or another hex check.\",\n        \"A generated string emitted without JSON.stringify, or a key emitted unquoted without the identifier regex.\",\n        \"A path in writeFileSync or import() derived from theme data instead of the fixed specs table and outputDir.\"\n      ],\n      paths: [\"scripts/generate-theme-registry.ts\", \"src/themes/*.ts\"]\n    },\n    {\n      id: \"docs-unsafe-snippets\",\n      title: \"Copyable doc snippets never interpolate untrusted input into HTML or CSS\",\n      threat: \"A developer who copies a documented snippet ships a page where a user-supplied palette key or token injects markup or CSS.\",\n      lookFor: [\n        \"A snippet that writes a localStorage, query, or server value into data-palette, innerHTML, or a style string without checking it with findTheme.\",\n        \"A snippet that interpolates caller data next to standaloneThemeCss() in a server-rendered template without escaping.\"\n      ],\n      paths: [\"docs/**/*.md\", \"README.md\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, docsFiles, shikiThemes, unitTests, ...securityReview }\n})\n","coverageDirectives":[{"line":12,"text":"* puts the 1.0 baseline's 100% coverage threshold on the Bun suite. What it"},{"line":15,"text":"* `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` asserts and the only"},{"line":62,"text":"* generator does, and a cache hit would skip the exact drift check the test"},{"line":65,"text":"* `bunfig.toml` is an input for the same reason: it carries the 100% coverage"},{"line":66,"text":"* threshold this suite is gated on, so lowering it must re-key the target"},{"line":110,"text":"include: [\"src/**\", \"scripts/**\", \"docs/**\", \"README.md\"],"}]},{"path":"packages/smithers/ui/ui-styleguide/tsconfig.json","sha256":"cfcf92868130ac389ca7640a2583c486f1feb195dd413e793103a641f5ac36e8","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"noEmit\": true,\n    \"types\": []\n  },\n  \"include\": [\"src/**/*\", \"tests/**/*\"]\n}\n","coverageDirectives":[{"line":17,"text":"\"skipLibCheck\": true,"},{"line":21,"text":"\"include\": [\"src/**/*\", \"tests/**/*\"]"}]}],"targets":[{"package":"packages/smithers/ui/ui-styleguide","label":"//packages/smithers/ui/ui-styleguide:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/tests/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/tsconfig.json"}],"dependencies":[]},{"package":"packages/smithers/ui/ui-styleguide","label":"//packages/smithers/ui/ui-styleguide:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/README.md"},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/package.json"}],"dependencies":[]},{"package":"packages/smithers/ui/ui-styleguide","label":"//packages/smithers/ui/ui-styleguide:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/ui/ui-styleguide/src/**","packages/smithers/ui/ui-styleguide/scripts/**","packages/smithers/ui/ui-styleguide/docs/**","packages/smithers/ui/ui-styleguide/README.md"]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/src/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/scripts/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/docs/**","exclude":[]},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/README.md"}],"dependencies":[]},{"package":"packages/smithers/ui/ui-styleguide","label":"//packages/smithers/ui/ui-styleguide:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/ui/ui-styleguide/src/**","packages/smithers/ui/ui-styleguide/scripts/**","packages/smithers/ui/ui-styleguide/docs/**","packages/smithers/ui/ui-styleguide/README.md"]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/src/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/scripts/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/docs/**","exclude":[]},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/README.md"}],"dependencies":[]},{"package":"packages/smithers/ui/ui-styleguide","label":"//packages/smithers/ui/ui-styleguide:shikiThemes","rule":"Filegroup","kinds":[],"inputs":[{"kind":"file","path":"packages/smithers/ui/ui-styleguide/package.json"},{"kind":"file","path":"pnpm-lock.yaml"},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/package.json"},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/index.mjs"},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/night-owl.mjs"},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/night-owl-light.mjs"}],"dependencies":[]},{"package":"packages/smithers/ui/ui-styleguide","label":"//packages/smithers/ui/ui-styleguide:unitTests","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/tests/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/README.md"},{"kind":"file","path":"packages/smithers/ui/ui-styleguide/bunfig.toml"},{"kind":"glob","pattern":"packages/smithers/ui/ui-styleguide/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"pnpm-lock.yaml"}],"dependencies":["//packages/smithers/ui/ui-styleguide:shikiThemes"]}],"areas":["scripts/generate-theme-registry.ts","scripts/paperTokens.ts","scripts/secondaryText.ts","scripts/selectionColor.ts","src/SmithersTheme.ts","src/TerminalPalette.ts","src/ThemeSyntaxId.ts","src/ThemeVariantTokens.ts","src/contrastRatio.ts","src/index.ts","src/mixColors.ts","src/paletteThemeCss.ts","src/rgbChannels.ts","src/serializeThemeVariant.ts","src/standaloneThemeCss.ts","src/themeRegistry.ts","src/themeTokens.ts","src/themes"],"boundaries":["browser","public-authoring"]}
+{
+  "id": "packages/smithers/ui/ui-styleguide",
+  "name": "@smthrs/ui-styleguide",
+  "owner": {
+    "declaration": "packages/smithers/ui/ui-styleguide/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "test": "bun test tests"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "production": [
+    "scripts/generate-theme-registry.ts",
+    "scripts/paperTokens.ts",
+    "scripts/secondaryText.ts",
+    "scripts/selectionColor.ts",
+    "src/contrastRatio.ts",
+    "src/index.ts",
+    "src/mixColors.ts",
+    "src/paletteThemeCss.ts",
+    "src/rgbChannels.ts",
+    "src/serializeThemeVariant.ts",
+    "src/SmithersTheme.ts",
+    "src/standaloneThemeCss.ts",
+    "src/TerminalPalette.ts",
+    "src/themeRegistry.ts",
+    "src/themes/paper.ts",
+    "src/ThemeSyntaxId.ts",
+    "src/themeTokens.ts",
+    "src/ThemeVariantTokens.ts"
+  ],
+  "tests": [
+    "packages/smithers/ui/ui-styleguide/tests/browserBundle.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/bunTest.d.ts",
+    "packages/smithers/ui/ui-styleguide/tests/cascade.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/colorMath.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/contrast.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/docs.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/generatedThemes.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/generatorContrast.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/generatorSelectionColor.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/index.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/nodeBinary.ts",
+    "packages/smithers/ui/ui-styleguide/tests/nodeEsmResolution.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/paintedPairs.ts",
+    "packages/smithers/ui/ui-styleguide/tests/paletteSelection.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/serializeThemeVariant.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/standaloneThemeCss.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/themeRegistry.test.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/ui/ui-styleguide/bunfig.toml",
+    "packages/smithers/ui/ui-styleguide/tests/browserBundle.test.ts",
+    "packages/smithers/ui/ui-styleguide/tests/bunTest.d.ts",
+    "packages/smithers/ui/ui-styleguide/tests/nodeBinary.ts",
+    "packages/smithers/ui/ui-styleguide/tests/nodeEsmResolution.test.ts"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/ui/ui-styleguide/package.json",
+      "sha256": "e8c8fc4294a6229e4bbcb60935f466a58083f7a2554626eeae2bcd9409707660",
+      "source": "{\n  \"name\": \"@smthrs/ui-styleguide\",\n  \"version\": \"1.0.0-rc.0\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"Shared CSS tokens and layout primitives for Smithers browser UIs.\",\n  \"type\": \"module\",\n  \"sideEffects\": false,\n  \"exports\": {\n    \".\": {\n      \"types\": \"./src/index.ts\",\n      \"import\": \"./src/index.ts\",\n      \"default\": \"./src/index.ts\"\n    }\n  },\n  \"files\": [\n    \"src/\"\n  ],\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test tests\"\n  },\n  \"devDependencies\": {\n    \"@shikijs/themes\": \"4.4.3\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/ui/ui-styleguide/PACKAGE.ts",
+      "sha256": "7e8de97bf7a5b460df60298b095b12b00d7cd314a6f2a123fe41803304ae97b1",
+      "source": "/**\n * Targets for the private Smithers theme tokens.\n *\n * `@smthrs/ui` and `.smithers/flows/review` import this package. See\n * `packages/smithers/ui/PACKAGE.ts` for why this package declares its own targets: the\n * root `packageDefaults` would otherwise\n * synthesize a `BuildAndCheckTypeScriptPackage` library build and vitest suite for it, and\n * this package ships as source with a Bun suite instead.\n *\n * It does own a `tsconfig.json` and a `Typecheck` target, so `pnpm run check`\n * and `smithers-build ci` cover it like every other package, and `bunfig.toml`\n * puts the 1.0 baseline's 100% coverage threshold on the Bun suite. What it\n * still owes is the repository's own Vitest configuration with isolated\n * reports, which is what\n * `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` asserts and the only\n * reason the `ui-styleguide` entry stays in its `zeroXUiKits` carve-out.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/ui/ui-styleguide\"\n\n/**\n * `vibelang --noEmit` over the sources and tests.\n *\n * The suites import `bun:test`, and `tests/bunTest.d.ts` supplies the local\n * ambient declaration that stands in for `bun-types`. Runtime sources remain\n * dependency-free.\n *\n * @since 1.0.0-rc.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: [\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/src/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/tests/**/*.ts\")\n  ],\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n// Shiki is pinned by this package's manifest and the workspace lockfile.\nconst shikiThemes = Smithers.Filegroup({\n  srcs: [\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"//pnpm-lock.yaml\"),\n    Smithers.file(\"node_modules/@shikijs/themes/package.json\"),\n    ...[\"index\", \"night-owl\", \"night-owl-light\"].map((id) => Smithers.file(`node_modules/@shikijs/themes/dist/${id}.mjs`))\n  ],\n  cwd\n})\n\n/**\n * The token suite: everything under `tests/`, run by Bun.\n *\n * `tests/generatedThemes.test.ts` spawns `packages/smithers/ui/ui-styleguide/scripts/generate-theme-registry.ts`\n * from the repository root and byte-compares its output against `src/themes/*`,\n * so the generator and the lockfile that pins its `@shikijs/themes` input are\n * declared inputs here. Without them the target's key would not change when the\n * generator does, and a cache hit would skip the exact drift check the test\n * exists to perform.\n *\n * `bunfig.toml` is an input for the same reason: it carries the 100% coverage\n * threshold this suite is gated on, so lowering it must re-key the target\n * rather than land behind a cache hit.\n *\n * So are `README.md` and every Markdown file under `docs/`. `tests/docs.test.ts` reads them against\n * the barrel and fails when an export goes undocumented, which is how the\n * missing `Rgb` row was found; a documentation edit that drops an export has to\n * re-key this target rather than land behind a cache hit.\n *\n * @since 0.1.0\n * @category test\n */\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"tests\"]),\n  srcs: [\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/src/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/tests/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/docs/**/*.md\"),\n    Smithers.file(\"//packages/smithers/ui/ui-styleguide/README.md\"),\n    Smithers.file(\"//packages/smithers/ui/ui-styleguide/bunfig.toml\"),\n    Smithers.glob(\"//packages/smithers/ui/ui-styleguide/scripts/**/*.ts\"),\n    Smithers.file(\"//pnpm-lock.yaml\")\n  ],\n  deps: [shikiThemes],\n  cwd\n})\n\n/**\n * The package's documentation as a file group (`docs/**`, the README, and\n * package.json), matching the filegroup BuildAndCheckTypeScriptPackage emits. The docs-site\n * label, the one way an input reaches across a package boundary.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/**\n * Security review: `security` reviews the diff against origin/main and\n * `securityAudit` audits every reviewed file. The package emits CSS that hosts\n * interpolate into `<style>` elements, so the checks focus on that sink.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"scripts/**\", \"docs/**\", \"README.md\"],\n  checks: [\n    {\n      id: \"css-token-injection\",\n      title: \"Every token interpolated into emitted CSS is validated before it reaches the stylesheet\",\n      threat: \"A caller or theme source that controls a token value injects CSS rules or closes the host's <style> element to run markup in the page of every viewer.\",\n      lookFor: [\n        \"A declaration in serializeThemeVariant, paletteThemeCss, standaloneThemeCss, or themeTokens built from a value that bypasses checkedValue.\",\n        \"A value TOKEN_GRAMMAR accepts that ends a declaration or element, such as an escaped newline, `</style`, or a non-ASCII lookalike.\",\n        \"A token value such as `url(//host/x)` or `image-set(...)` that TOKEN_GRAMMAR accepts and makes the viewer's browser fetch an attacker-chosen URL.\"\n      ],\n      paths: [\"src/serializeThemeVariant.ts\", \"src/paletteThemeCss.ts\", \"src/standaloneThemeCss.ts\", \"src/themeTokens.ts\"]\n    },\n    {\n      id: \"palette-key-selector-injection\",\n      title: \"Palette keys reach attribute selectors only after a registry own-property lookup\",\n      threat: \"A palette key read from localStorage, a query parameter, or a server response breaks out of a `[data-palette=...]` selector or resolves a prototype property.\",\n      lookFor: [\n        \"A key interpolated into `attr(\\\"palette\\\", key)` that was not checked by findTheme or taken from Object.entries(themeRegistry).\",\n        \"findTheme or themeRegistry indexed with `in` or bracket access instead of Object.hasOwn, so `__proto__` or `constructor` resolves.\"\n      ],\n      paths: [\"src/paletteThemeCss.ts\", \"src/themeRegistry.ts\"]\n    },\n    {\n      id: \"generated-theme-provenance\",\n      title: \"Generated theme files contain only validated colors from the pinned @shikijs/themes\",\n      threat: \"A compromised or unpinned @shikijs/themes release writes code or unvalidated values into src/themes/*.ts, which every Smithers UI imports.\",\n      lookFor: [\n        \"An upstream color copied into the generated record without `opaque`, `selectionColor`, or another hex check.\",\n        \"A generated string emitted without JSON.stringify, or a key emitted unquoted without the identifier regex.\",\n        \"A path in writeFileSync or import() derived from theme data instead of the fixed specs table and outputDir.\"\n      ],\n      paths: [\"scripts/generate-theme-registry.ts\", \"src/themes/*.ts\"]\n    },\n    {\n      id: \"docs-unsafe-snippets\",\n      title: \"Copyable doc snippets never interpolate untrusted input into HTML or CSS\",\n      threat: \"A developer who copies a documented snippet ships a page where a user-supplied palette key or token injects markup or CSS.\",\n      lookFor: [\n        \"A snippet that writes a localStorage, query, or server value into data-palette, innerHTML, or a style string without checking it with findTheme.\",\n        \"A snippet that interpolates caller data next to standaloneThemeCss() in a server-rendered template without escaping.\"\n      ],\n      paths: [\"docs/**/*.md\", \"README.md\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, docsFiles, shikiThemes, unitTests, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "* puts the 1.0 baseline's 100% coverage threshold on the Bun suite. What it"
+        },
+        {
+          "line": 15,
+          "text": "* `packages/smithers/flows/test/vitestCoverageIsolation.test.ts` asserts and the only"
+        },
+        {
+          "line": 62,
+          "text": "* generator does, and a cache hit would skip the exact drift check the test"
+        },
+        {
+          "line": 65,
+          "text": "* `bunfig.toml` is an input for the same reason: it carries the 100% coverage"
+        },
+        {
+          "line": 66,
+          "text": "* threshold this suite is gated on, so lowering it must re-key the target"
+        },
+        {
+          "line": 110,
+          "text": "include: [\"src/**\", \"scripts/**\", \"docs/**\", \"README.md\"],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/ui/ui-styleguide/tsconfig.json",
+      "sha256": "cfcf92868130ac389ca7640a2583c486f1feb195dd413e793103a641f5ac36e8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"noEmit\": true,\n    \"types\": []\n  },\n  \"include\": [\"src/**/*\", \"tests/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 21,
+          "text": "\"include\": [\"src/**/*\", \"tests/**/*\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/ui/ui-styleguide",
+      "label": "//packages/smithers/ui/ui-styleguide:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/tests/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/ui-styleguide",
+      "label": "//packages/smithers/ui/ui-styleguide:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/ui-styleguide",
+      "label": "//packages/smithers/ui/ui-styleguide:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/ui/ui-styleguide/src/**",
+            "packages/smithers/ui/ui-styleguide/scripts/**",
+            "packages/smithers/ui/ui-styleguide/docs/**",
+            "packages/smithers/ui/ui-styleguide/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/ui-styleguide",
+      "label": "//packages/smithers/ui/ui-styleguide:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/ui/ui-styleguide/src/**",
+            "packages/smithers/ui/ui-styleguide/scripts/**",
+            "packages/smithers/ui/ui-styleguide/docs/**",
+            "packages/smithers/ui/ui-styleguide/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/ui-styleguide",
+      "label": "//packages/smithers/ui/ui-styleguide:shikiThemes",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-lock.yaml"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/index.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/night-owl.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/node_modules/@shikijs/themes/dist/night-owl-light.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/ui-styleguide",
+      "label": "//packages/smithers/ui/ui-styleguide:unitTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/tests/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/ui-styleguide/bunfig.toml"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/ui-styleguide/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "pnpm-lock.yaml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/ui/ui-styleguide:shikiThemes"
+      ]
+    }
+  ],
+  "areas": [
+    "scripts/generate-theme-registry.ts",
+    "scripts/paperTokens.ts",
+    "scripts/secondaryText.ts",
+    "scripts/selectionColor.ts",
+    "src/SmithersTheme.ts",
+    "src/TerminalPalette.ts",
+    "src/ThemeSyntaxId.ts",
+    "src/ThemeVariantTokens.ts",
+    "src/contrastRatio.ts",
+    "src/index.ts",
+    "src/mixColors.ts",
+    "src/paletteThemeCss.ts",
+    "src/rgbChannels.ts",
+    "src/serializeThemeVariant.ts",
+    "src/standaloneThemeCss.ts",
+    "src/themeRegistry.ts",
+    "src/themeTokens.ts",
+    "src/themes"
+  ],
+  "boundaries": [
+    "browser",
+    "public-authoring"
+  ]
+}

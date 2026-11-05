@@ -1,1 +1,52 @@
-{"id":"apps/patterns-site","name":"apps/patterns-site","owner":{"declaration":"apps/patterns-site/PACKAGE.ts","assignedLane":null},"kind":"retained-tooling","scripts":{},"exports":null,"production":[],"tests":["apps/patterns-site/links.test.mjs"],"benchmarks":[],"platformPaths":[],"ignoredCases":[],"configurations":[{"path":"apps/patterns-site/PACKAGE.ts","sha256":"2601ce69133e4b72628a896a59aa3f030d191c24e867bd050c96a1115c26e242","source":"/**\n * Targets for patterns.smithers.sh, the orchestration-patterns field guide.\n *\n * The page is one static file, `site/index.html`, served by the `patterns-site`\n * Worker (`wrangler.jsonc`). Its cards link into the whole repository, so the\n * link check reads files across packages and runs uncached, like\n * `//.smithers/flows:packageDocs`.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\n/**\n * Every card's source resolves to a file, directory, or heading on main, and\n * every use-case example has a card.\n *\n * @since 1.0.0\n * @category test\n */\nconst links = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//apps/patterns-site/links.test.mjs\")]),\n  srcs: [Smithers.glob(\"//apps/patterns-site/site/**\")],\n  deps: []\n})\n\nexport const Package = Smithers.Package({ targets: { links } })\n","coverageDirectives":[]}],"targets":[{"package":"apps/patterns-site","label":"//apps/patterns-site:links","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"apps/patterns-site/links.test.mjs"},{"kind":"glob","pattern":"apps/patterns-site/site/**","exclude":[]}],"dependencies":[]}],"areas":[],"boundaries":["public-authoring"]}
+{
+  "id": "apps/patterns-site",
+  "name": "apps/patterns-site",
+  "owner": {
+    "declaration": "apps/patterns-site/PACKAGE.ts",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {},
+  "exports": null,
+  "production": [],
+  "tests": [
+    "apps/patterns-site/links.test.mjs"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "apps/patterns-site/PACKAGE.ts",
+      "sha256": "2601ce69133e4b72628a896a59aa3f030d191c24e867bd050c96a1115c26e242",
+      "source": "/**\n * Targets for patterns.smithers.sh, the orchestration-patterns field guide.\n *\n * The page is one static file, `site/index.html`, served by the `patterns-site`\n * Worker (`wrangler.jsonc`). Its cards link into the whole repository, so the\n * link check reads files across packages and runs uncached, like\n * `//.smithers/flows:packageDocs`.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\n/**\n * Every card's source resolves to a file, directory, or heading on main, and\n * every use-case example has a card.\n *\n * @since 1.0.0\n * @category test\n */\nconst links = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//apps/patterns-site/links.test.mjs\")]),\n  srcs: [Smithers.glob(\"//apps/patterns-site/site/**\")],\n  deps: []\n})\n\nexport const Package = Smithers.Package({ targets: { links } })\n",
+      "coverageDirectives": []
+    }
+  ],
+  "targets": [
+    {
+      "package": "apps/patterns-site",
+      "label": "//apps/patterns-site:links",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "apps/patterns-site/links.test.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/patterns-site/site/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

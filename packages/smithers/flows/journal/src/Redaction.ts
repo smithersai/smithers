@@ -1039,7 +1039,12 @@ export const diagnosticRules: ReadonlyArray<Rule> = [
 const privateKeyBlock = new RegExp(defaultRules[0]!.pattern.source)
 
 const ruleShape = (rule: Rule): string =>
-  JSON.stringify([rule.id, rule.pattern.source, rule.pattern.flags, rule.rewrite === undefined ? rule.replace ?? placeholder : null])
+  JSON.stringify([
+    rule.id,
+    rule.pattern.source,
+    rule.pattern.flags,
+    rule.rewrite === undefined ? rule.replace ?? placeholder : null
+  ])
 
 const smithersShapes = defaultRules
   .filter((rule) => rule.id === "smithers-machine-token" || rule.id === "smithers-scoped-token")
@@ -1049,10 +1054,25 @@ const isSmithersRule = (rule: Rule): boolean =>
   smithersShapes.some((known) => known.rewrite === rule.rewrite && known.shape === ruleShape(rule))
 
 const contextualIds = new Set([
-  "private-key-block", "git-oauth-userinfo", "url-credentials", "bearer-token",
-  "slack-webhook", "assignment", "credential-flag", "cookie-session-assignment", "authorization-header",
-  "bearer-or-basic", "password-flag", "sshpass-password", "user-flag", "header-pair", "command-password-flag",
-  "url-userinfo", "signed-query", "short-password-flag", "attached-password-flag"
+  "private-key-block",
+  "git-oauth-userinfo",
+  "url-credentials",
+  "bearer-token",
+  "slack-webhook",
+  "assignment",
+  "credential-flag",
+  "cookie-session-assignment",
+  "authorization-header",
+  "bearer-or-basic",
+  "password-flag",
+  "sshpass-password",
+  "user-flag",
+  "header-pair",
+  "command-password-flag",
+  "url-userinfo",
+  "signed-query",
+  "short-password-flag",
+  "attached-password-flag"
 ])
 const builtinShapes = [...defaultRules, ...diagnosticRules]
   .map((rule) => ({ shape: ruleShape(rule), rewrite: rule.rewrite }))
@@ -1079,15 +1099,23 @@ const hasContextBarrier = (rules: ReadonlyArray<Rule>, index: number): boolean =
 type ProtectedSmithers = (value: string, index: number, pem: boolean) => void
 
 /** Read enclosing values at the token rule's position, after preceding custom rules. */
-const redactSmithersContexts = (value: string, rule: Rule, rules: ReadonlyArray<Rule>, index: number, onProtected?: ProtectedSmithers): string => {
+const redactSmithersContexts = (
+  value: string,
+  rule: Rule,
+  rules: ReadonlyArray<Rule>,
+  index: number,
+  onProtected?: ProtectedSmithers
+): string => {
   // PEM replacements, including customized markers, must not shorten a token
   // before a selected Smithers rule can see it. A PEM-only policy stays independent.
   if (
     rule.pattern.source === defaultRules[0]!.pattern.source &&
     rule.pattern.flags === defaultRules[0]!.pattern.flags &&
     value.includes("-----BEGIN") && privateKeyBlock.test(value) &&
-    smithersShapes.some((known) => known.pattern.test(value) && rules.some((selected) =>
-      known.rewrite === selected.rewrite && known.shape === ruleShape(selected)))
+    smithersShapes.some((known) =>
+      known.pattern.test(value) &&
+      rules.some((selected) => known.rewrite === selected.rewrite && known.shape === ruleShape(selected))
+    )
   ) {
     onProtected?.(value, index, true)
     return placeholder
@@ -1318,8 +1346,10 @@ const applyRule = (text: string, rule: Rule): string => {
 const redactString = (value: string, rules: ReadonlyArray<Rule>, onProtected?: ProtectedSmithers): string => {
   let text = value
   for (let pass = 0; pass < fixedPointPasses; pass++) {
-    const next = rules.reduce((text, rule, index) =>
-      applyRule(redactSmithersContexts(text, rule, rules, index, onProtected), rule), text)
+    const next = rules.reduce(
+      (text, rule, index) => applyRule(redactSmithersContexts(text, rule, rules, index, onProtected), rule),
+      text
+    )
     if (next === text) return text
     text = next
   }

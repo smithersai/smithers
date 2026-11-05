@@ -78,7 +78,9 @@ describe("large persisted run diagnosis", processBudget, () => {
       }
       const native = new DatabaseSync(join(cwd, ".flows", "engine.db"))
       try {
-        native.prepare("INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, 'failed', 1000, ?)")
+        native.prepare(
+          "INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, 'failed', 1000, ?)"
+        )
           .run(runId, JSON.stringify({ version: 1, flowName: "failing", payload: {} }))
         native.prepare(
           "UPDATE flows_runs SET state_json = json_set(state_json, '$.payload.synthetic', ?) WHERE run_id = ?"
@@ -159,14 +161,25 @@ describe("large persisted run diagnosis", processBudget, () => {
       const projectedRun = "run-projection-\u001b]0;unsafe-title\u0007\u001b[2J"
       const projected = new DatabaseSync(join(cwd, ".flows", "control.db"))
       try {
-        projected.prepare("INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, 'suspended', 1000, ?)")
-          .run(projectedRun, JSON.stringify({
-            runId: projectedRun, flowId: "failing", status: "parked", createdAt: 1000, updatedAt: 1001
-          }))
+        projected.prepare(
+          "INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, 'suspended', 1000, ?)"
+        )
+          .run(
+            projectedRun,
+            JSON.stringify({
+              runId: projectedRun,
+              flowId: "failing",
+              status: "parked",
+              createdAt: 1000,
+              updatedAt: 1001
+            })
+          )
         projected.prepare("INSERT INTO control_runs (run_id, created_seq) VALUES (?, 0)").run(projectedRun)
         const engine = new DatabaseSync(join(cwd, ".flows", "engine.db"))
         try {
-          engine.prepare("INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, 'suspended', 1000, ?)")
+          engine.prepare(
+            "INSERT INTO flows_runs (run_id, status, created_at_ms, state_json) VALUES (?, 'suspended', 1000, ?)"
+          )
             .run(projectedRun, JSON.stringify({ version: 1, flowName: "failing", payload: {} }))
         } finally {
           engine.close()
@@ -177,16 +190,24 @@ describe("large persisted run diagnosis", processBudget, () => {
           projected.prepare(`INSERT INTO flows_journal_events
             (run_id, seq, event_id, source_id, source_seq, emitted_at_ms, event_type, payload_json, meta_json)
             VALUES (?, ?, ?, 'projection-fixture', ?, ?, ?, ?, '{}')`)
-            .run(projectedRun, projectedSequence, `projection-${projectedSequence}`, projectedSequence,
-              Date.now(), kind, JSON.stringify(payload))
+            .run(
+              projectedRun,
+              projectedSequence,
+              `projection-${projectedSequence}`,
+              projectedSequence,
+              Date.now(),
+              kind,
+              JSON.stringify(payload)
+            )
         }
-        const schedule = (generation: number, nodeId: string) => record("control.engine.event", {
-          version: 1,
-          executionId: projectedRun,
-          generation,
-          eventType: "flows.engine.node-scheduled",
-          payload: { kind: "ActionCall", nodeId, action: nodeId }
-        })
+        const schedule = (generation: number, nodeId: string) =>
+          record("control.engine.event", {
+            version: 1,
+            executionId: projectedRun,
+            generation,
+            eventType: "flows.engine.node-scheduled",
+            payload: { kind: "ActionCall", nodeId, action: nodeId }
+          })
         const observe = () => {
           const result = launch(cwd, ["runs", "show", projectedRun, "--json"])
           expect(result.status, result.stderr).toBe(0)
@@ -195,7 +216,10 @@ describe("large persisted run diagnosis", processBudget, () => {
         record("example.state", { state: { blob: "x".repeat(largeBytes), currentNode: "historical" } })
         schedule(0, "stale")
         record("control.engine.projection-gap", {
-          executionId: projectedRun, generation: 0, reason: "compacted", throughSequence: 4
+          executionId: projectedRun,
+          generation: 0,
+          reason: "compacted",
+          throughSequence: 4
         })
         const compacted = observe()
         expect(compacted.currentNode).toBeUndefined()
@@ -204,7 +228,10 @@ describe("large persisted run diagnosis", processBudget, () => {
         expect(observe().currentNode).toBe("fresh")
         record("control.run.failed", { cause: "old lifecycle" })
         record("control.engine.projection-gap", {
-          executionId: projectedRun, generation: 1, reason: "rewound", afterSequence: 0
+          executionId: projectedRun,
+          generation: 1,
+          reason: "rewound",
+          afterSequence: 0
         })
         record("control.run.resume", { runId: projectedRun })
         schedule(0, "replayed-old")

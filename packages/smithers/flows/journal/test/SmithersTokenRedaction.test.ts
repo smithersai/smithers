@@ -45,8 +45,13 @@ for (const [surface, redact] of [["journal", Redaction.redact], ["diagnostic", R
         const signature = "A".repeat(30) + "-----BEGINABQ"
         const text = `${prefix}${signature} PRIVATE KEY-----\nbody\n-----END PRIVATE KEY-----`
         expect(Redaction.redact(text, { rules })).toBe("[REDACTED]")
-        expect(Redaction.redact(text, { rules: rules.map((rule) => rule.id === "private-key-block"
-          ? { ...rule, rewrite: (value: string) => value.replace(rule.pattern, "[CUSTOM]") } : rule) }))
+        expect(Redaction.redact(text, {
+          rules: rules.map((rule) =>
+            rule.id === "private-key-block"
+              ? { ...rule, rewrite: (value: string) => value.replace(rule.pattern, "[CUSTOM]") } :
+              rule
+          )
+        }))
           .toBe("[REDACTED]")
       })
     }
@@ -77,12 +82,14 @@ for (const [surface, redact] of [["journal", Redaction.redact], ["diagnostic", R
       expect(redact(`rejected smt1.${claims}.${signature}_upstream`)).toBe("rejected [REDACTED]")
     })
 
-    for (const [kind, credential] of [
-      ["API key", `sk-proj-ABsmm_${"B".repeat(42)}Q`],
-      ["GitHub PAT", `github_pat_ABCsmm_${"B".repeat(42)}Q`],
-      ["GitLab token", `glpat-ABCsmm_${"B".repeat(42)}Q`],
-      ["JWT", `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpbnZlbnRlZCJ9.smm_${"B".repeat(38)}Q_upstream`]
-    ]) {
+    for (
+      const [kind, credential] of [
+        ["API key", `sk-proj-ABsmm_${"B".repeat(42)}Q`],
+        ["GitHub PAT", `github_pat_ABCsmm_${"B".repeat(42)}Q`],
+        ["GitLab token", `glpat-ABCsmm_${"B".repeat(42)}Q`],
+        ["JWT", `eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJpbnZlbnRlZCJ9.smm_${"B".repeat(38)}Q_upstream`]
+      ]
+    ) {
       it(`redacts an enclosing ${kind} before an interior Smithers match can fragment it`, () => {
         expect(redact(`rejected (${credential}). upstream`)).toBe("rejected ([REDACTED]). upstream")
       })
@@ -94,11 +101,13 @@ for (const [surface, redact] of [["journal", Redaction.redact], ["diagnostic", R
           surface === "diagnostic" ? "[REDACTED]" : "Authorization: Basic [REDACTED]"
         )
       })
-      for (const [context, message, expected] of [
-        ["header", `Authorization: Bearer ${token}+remainingSecret`, "[REDACTED]"],
-        ["bearer separators", `Bearer ${token}/remaining~Secret`, "[REDACTED]"],
-        ["assignment name", `${token}_password=remainingSecret`, "[REDACTED]"]
-      ]) {
+      for (
+        const [context, message, expected] of [
+          ["header", `Authorization: Bearer ${token}+remainingSecret`, "[REDACTED]"],
+          ["bearer separators", `Bearer ${token}/remaining~Secret`, "[REDACTED]"],
+          ["assignment name", `${token}_password=remainingSecret`, "[REDACTED]"]
+        ]
+      ) {
         it(`redacts contextual ${kind} ${context} before changing its token`, () => {
           expect(redact(message)).toBe(expected)
         })
@@ -162,14 +171,17 @@ for (const [kind, token] of tokens) {
   it(`holds an unfinished quoted ${kind} credential until it closes`, () => {
     const stream = Redaction.lineRedactor()
     expect(stream.line(`password="${token}`)).toEqual([])
-    expect(stream.line('remaining secret"')).toEqual(["[REDACTED]"])
+    expect(stream.line("remaining secret\"")).toEqual(["[REDACTED]"])
     expect(stream.line("ordinary progress")).toEqual(["ordinary progress"])
     expect(stream.flush()).toEqual([])
   })
   for (const custom of [false, true]) {
     it(`releases a closed overlapping ${kind} PEM block in a stream (${custom ? "custom" : "default"})`, () => {
-      const rules = Redaction.diagnosticRules.map((rule) => custom && rule.id === "private-key-block"
-        ? { ...rule, replace: "[CUSTOM]" } : rule)
+      const rules = Redaction.diagnosticRules.map((rule) =>
+        custom && rule.id === "private-key-block"
+          ? { ...rule, replace: "[CUSTOM]" } :
+          rule
+      )
       const stream = Redaction.lineRedactor(rules)
       const prefix = kind === "machine" ? "smm_" : "smt1.e30."
       expect(stream.line(`${prefix}${"A".repeat(30)}-----BEGINABQ PRIVATE KEY-----`)).toEqual([])
@@ -186,7 +198,7 @@ for (const prefix of ["smm_", "smt1.e30."]) {
     const stream = Redaction.lineRedactor()
     const token = prefix + "A".repeat(30) + "-sk-" + "B".repeat(8) + "Q"
     expect(stream.line(`${token}_password="first secret`)).toEqual([])
-    expect(stream.line('remaining secret"')).toEqual(["[REDACTED]"])
+    expect(stream.line("remaining secret\"")).toEqual(["[REDACTED]"])
     expect(stream.line("ordinary progress")).toEqual(["ordinary progress"])
     expect(stream.flush()).toEqual([])
   })
@@ -194,14 +206,16 @@ for (const prefix of ["smm_", "smt1.e30."]) {
 
 for (const prefix of ["smm_", "smt1.e30."]) {
   const token = prefix + "A".repeat(42) + "Q"
-  for (const [kind, first] of [
-    ["assignment", `Bearer ${token}_password="first secret`],
-    ["flag", `Bearer --password "${token} first secret`]
-  ]) {
+  for (
+    const [kind, first] of [
+      ["assignment", `Bearer ${token}_password="first secret`],
+      ["flag", `Bearer --password "${token} first secret`]
+    ]
+  ) {
     it(`holds a ${prefix} stream ${kind} before destructive Bearer rewriting`, () => {
       const stream = Redaction.lineRedactor()
       expect(stream.line(first!)).toEqual([])
-      expect(stream.line('remaining secret"')).toEqual(["[REDACTED]"])
+      expect(stream.line("remaining secret\"")).toEqual(["[REDACTED]"])
       expect(stream.line("ordinary progress")).toEqual(["ordinary progress"])
       expect(stream.flush()).toEqual([])
     })
@@ -227,7 +241,7 @@ for (const prefix of ["smm_", "smt1.e30."]) {
       const stream = Redaction.lineRedactor(rules)
       const first = `Bearer ${prefix}${"A".repeat(42)}Q_password="first secret`
       expect(stream.line(first)).toEqual(before ? ["[CUSTOM]"] : [])
-      if (!before) expect(stream.line('remaining secret"')).toEqual([])
+      if (!before) expect(stream.line("remaining secret\"")).toEqual([])
       expect(stream.line("ordinary progress")).toEqual(before ? ["ordinary progress"] : [])
       expect(stream.flush()).toEqual(before ? [] : ["[REDACTED]"])
     })
@@ -239,7 +253,7 @@ for (const prefix of ["%73mm_", "%73mt1.e30."]) {
     const decode = { id: "decode-prefix", pattern: /%73/g, replace: "s" }
     const stream = Redaction.lineRedactor([decode, ...Redaction.diagnosticRules])
     expect(stream.line(`Bearer ${prefix}${"A".repeat(42)}Q_password="first secret`)).toEqual([])
-    expect(stream.line('remaining secret"')).toEqual(["[REDACTED]"])
+    expect(stream.line("remaining secret\"")).toEqual(["[REDACTED]"])
     expect(stream.line("ordinary progress")).toEqual(["ordinary progress"])
     expect(stream.flush()).toEqual([])
   })
@@ -250,15 +264,23 @@ for (const prefix of ["smm_", "smt1.e30."]) {
     const decode = { id: "percent-decoder", pattern: /%[0-9a-f]{2}/gi, rewrite: decodeURIComponent }
     const stream = Redaction.lineRedactor([decode, ...Redaction.diagnosticRules])
     const encodedPrefix = prefix.replace(/^s/, "%2573")
-    expect(stream.line(`%2542earer%2520${encodedPrefix}${"A".repeat(42)}Q_password%253D%2522first%2520secret`)).toEqual([])
-    expect(stream.line('remaining secret"')).toEqual(["[REDACTED]"])
+    expect(stream.line(`%2542earer%2520${encodedPrefix}${"A".repeat(42)}Q_password%253D%2522first%2520secret`)).toEqual(
+      []
+    )
+    expect(stream.line("remaining secret\"")).toEqual(["[REDACTED]"])
     expect(stream.line("ordinary progress")).toEqual(["ordinary progress"])
     expect(stream.flush()).toEqual([])
   })
   it(`holds an unfinished overlapping ${prefix} PEM with a completed-block-only custom rewrite`, () => {
-    const rules = Redaction.diagnosticRules.map((rule) => rule.id === "private-key-block" ? {
-      ...rule, rewrite: (text: string) => text.replace(rule.pattern, (block) => block.includes("-----END") ? "[CUSTOM]" : block)
-    } : rule)
+    const rules = Redaction.diagnosticRules.map((rule) =>
+      rule.id === "private-key-block" ?
+        {
+          ...rule,
+          rewrite: (text: string) =>
+            text.replace(rule.pattern, (block) => block.includes("-----END") ? "[CUSTOM]" : block)
+        } :
+        rule
+    )
     const stream = Redaction.lineRedactor(rules)
     expect(stream.line(`${prefix}${"A".repeat(30)}-----BEGINABQ PRIVATE KEY-----`)).toEqual([])
     expect(stream.line("invented private body")).toEqual([])

@@ -206,11 +206,17 @@ describe("GitHubClient over a real HTTP server", () => {
       json(response, 403, { message: "You have exceeded a secondary rate limit" }, { "retry-after": "600" })
     )
     const error = await Effect.runPromise(Effect.flip(client().request("GET", "/repos/acme/widgets")))
-    expect(error.details).toMatchObject({ rateLimited: true, retryAfterMillis: 60_000, retryAfterUncappedMillis: 600_000 })
+    expect(error.details).toMatchObject({
+      rateLimited: true,
+      retryAfterMillis: 60_000,
+      retryAfterUncappedMillis: 600_000
+    })
   })
 
   it("keeps a bare 403's Retry-After in full, and leaves it not a rate limit", async () => {
-    fixture = await startFixture((_request, response) => json(response, 403, { message: "Forbidden" }, { "retry-after": "600" }))
+    fixture = await startFixture((_request, response) =>
+      json(response, 403, { message: "Forbidden" }, { "retry-after": "600" })
+    )
     const error = await Effect.runPromise(Effect.flip(client().request("GET", "/repos/acme/widgets")))
     expect(error.details).toMatchObject({ rateLimited: false, retryable: false, retryAfterUncappedMillis: 600_000 })
   })
@@ -1018,7 +1024,7 @@ it("returns resumable cursor URLs only when explicitly requested", async () => {
   fixture = await startFixture((request, response) => {
     const cursor = new URL(request.url, "http://x").searchParams.get("cursor")
     if (cursor === "second") json(response, 200, [2])
-    else json(response, 200, [1], { link: '<?cursor=second>; rel="next"' })
+    else json(response, 200, [1], { link: "<?cursor=second>; rel=\"next\"" })
   })
   const first = await Effect.runPromise(client().paginate("/x", { maxPages: 1, withNext: true }))
   expect(first).toEqual({ items: [1], truncated: true, next: `${fixture.origin}/x?cursor=second` })

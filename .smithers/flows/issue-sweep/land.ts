@@ -9,13 +9,13 @@
  * it exists. The checks run inside `codex sandbox`, so code the agent wrote
  * can write only its own workspace and has no network.
  */
-import { acquireLock, type LandLease } from "../land/lock.mjs"
 import { Fault, type FlowRuntime } from "@smthrs/flow"
 import { Cause, Deferred, Duration, Effect, Option, Result, Schema, Semaphore } from "effect"
 import type * as Crypto from "effect/Crypto"
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { matchesGlob } from "node:path"
+import { acquireLock, type LandLease } from "../land/lock.mjs"
 import { awaitHostDisk, workspaceBytes } from "./disk.ts"
 import { type Exited, type HostFailed, output, repository, ridingOutages, run, tail, workspaces } from "./host.ts"
 
@@ -595,9 +595,22 @@ export const makeLander = <R>(options: {
           const moved = yield* Effect.result(write(workspace, ["bookmark", "set", "main", "-r", change]))
           if (Result.isFailure(moved)) continue
           const pushed = yield* Effect.result(Effect.tryPromise({
-            try: () => options.lock !== undefined && existsSync(options.lock)
-              ? lease.push("lockf", ["-k", "-t", "900", options.lock, "jj", "-R", workspace, "git", "push", "-b", "main"], { cwd: workspace, stream: true })
-              : lease.push("jj", ["-R", workspace, "git", "push", "-b", "main"], { cwd: workspace, stream: true }),
+            try: () =>
+              options.lock !== undefined && existsSync(options.lock)
+                ? lease.push("lockf", [
+                  "-k",
+                  "-t",
+                  "900",
+                  options.lock,
+                  "jj",
+                  "-R",
+                  workspace,
+                  "git",
+                  "push",
+                  "-b",
+                  "main"
+                ], { cwd: workspace, stream: true })
+                : lease.push("jj", ["-R", workspace, "git", "push", "-b", "main"], { cwd: workspace, stream: true }),
             catch: (error) => fail(String(error))
           }))
           // A publication decision is single-use. A failed push needs a fresh
@@ -627,38 +640,46 @@ export const makeLander = <R>(options: {
       for (let attempt = 1; attempt <= checkAttempts; attempt++) {
         const pushed = yield* Effect.acquireUseRelease(
           Effect.interruptible(Effect.tryPromise({
-            try: (signal) => acquireLock(options.landingLock ?? process.env.SMITHERS_LAND_LOCK ?? `${homedir()}/smithers-builders/main-push.lock`, { signal }),
+            try: (signal) =>
+              acquireLock(
+                options.landingLock ?? process.env.SMITHERS_LAND_LOCK ??
+                  `${homedir()}/smithers-builders/main-push.lock`,
+                { signal }
+              ),
             catch: (error) => fail(String(error))
           })),
-          (lease) => Effect.gen(function*() {
-            yield* write(workspace, ["git", "fetch"])
-            const landed = yield* landedAs(workspace, change)
-            if (landed !== "") return landed
-            const main = yield* one(workspace, "main@origin", "commit_id")
-            yield* rebase(workspace, change, main)
-            const files = yield* changedFiles(workspace, change)
-            if (files.length === 0) return yield* fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
-            const hooks = files.filter((file) => installHooks.includes(file))
-            if (hooks.length > 0) {
-              return yield* fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
-            }
-            yield* checks.prepare(workspace, change, files)
-            const index = yield* checks.index(workspace)
-            const labels = testTargets(files, index)
-            if (labels.length > 0) {
-              const checked = yield* checks.test(workspace, labels)
-              if (checked._tag === "Broken") return yield* fail(`checks did not run for ${change}: ${checked.message}`)
-              if (checked._tag === "Red") {
-                const blockers = blocking(checked.labels, yield* checks.redOnMain(checked.labels, main))
-                if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
+          (lease) =>
+            Effect.gen(function*() {
+              yield* write(workspace, ["git", "fetch"])
+              const landed = yield* landedAs(workspace, change)
+              if (landed !== "") return landed
+              const main = yield* one(workspace, "main@origin", "commit_id")
+              yield* rebase(workspace, change, main)
+              const files = yield* changedFiles(workspace, change)
+              if (files.length === 0) return yield* fail(`change ${change} is empty on main ${main.slice(0, 12)}`)
+              const hooks = files.filter((file) => installHooks.includes(file))
+              if (hooks.length > 0) {
+                return yield* fail(`change ${change} edits install hooks (${hooks.join(" ")}); land it by hand`)
               }
-            }
-            return yield* push(lease, workspace, change, main, {
-              packages: [...new Set(labels.map(packageOf))],
-              all: [...new Set(index.map((target) => packageOf(target.label)))],
-              docs: files.some(isDocsSource)
-            })
-          }),
+              yield* checks.prepare(workspace, change, files)
+              const index = yield* checks.index(workspace)
+              const labels = testTargets(files, index)
+              if (labels.length > 0) {
+                const checked = yield* checks.test(workspace, labels)
+                if (checked._tag === "Broken") {
+                  return yield* fail(`checks did not run for ${change}: ${checked.message}`)
+                }
+                if (checked._tag === "Red") {
+                  const blockers = blocking(checked.labels, yield* checks.redOnMain(checked.labels, main))
+                  if (blockers.length > 0) return yield* fail(`checks red for ${change}: ${blockers.join(" ")}`)
+                }
+              }
+              return yield* push(lease, workspace, change, main, {
+                packages: [...new Set(labels.map(packageOf))],
+                all: [...new Set(index.map((target) => packageOf(target.label)))],
+                docs: files.some(isDocsSource)
+              })
+            }),
           (lease) => Effect.promise(() => lease())
         )
         if (pushed !== undefined) return pushed

@@ -48,14 +48,19 @@ export const declaredHandler = (
     Effect.suspend(() => bounded(execute(payload, executionId))).pipe(
       // Schema validation must retain cause annotations: dispatch recorded the
       // failing node, action and actual attempt before it reached this boundary.
-      Effect.catchCause((cause) => Effect.forEach(cause.reasons, (reason) =>
-        Cause.isFailReason(reason)
-          ? failDeclared(flow, reason.error).pipe(Effect.catchCause((checked) =>
-            Effect.succeed(checked.reasons.map((validated) => validated.annotate(Cause.reasonAnnotations(reason))))
-          ))
-          : Effect.succeed([reason])
-      ).pipe(Effect.flatMap((reasons) => Effect.failCause(Cause.fromReasons(reasons.flat()))))),
-      Effect.flatMap((value) => succeedDeclared(flow, value)),
+      Effect.catchCause((cause) =>
+        Effect.forEach(cause.reasons, (reason) =>
+          Cause.isFailReason(reason)
+            ? failDeclared(flow, reason.error).pipe(Effect.catchCause((checked) =>
+              Effect.succeed(checked.reasons.map((validated) => validated.annotate(Cause.reasonAnnotations(reason))))
+            ))
+            : Effect.succeed([reason])).pipe(Effect.flatMap((reasons) =>
+              Effect.failCause(Cause.fromReasons(reasons.flat()))
+            ))
+      ),
+      Effect.flatMap((value) =>
+        succeedDeclared(flow, value)
+      ),
       Flow.attenuateCapabilities(Flow.capabilityCeilings(flow.annotations)),
       Effect.updateContext((input) => {
         const caller = input.pipe(Context.omit(CurrentRegistrations))
@@ -63,4 +68,3 @@ export const declaredHandler = (
       })
     )
 }
-

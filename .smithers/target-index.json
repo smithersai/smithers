@@ -3691,6 +3691,40 @@
     }
   },
   {
+    "label": "//.smithers/flows:coverageSnapshotFormat",
+    "package": ".smithers/flows",
+    "name": "coverageSnapshotFormat",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": ".smithers/flows/test/coverage-campaign/format.test.mjs"
+      },
+      {
+        "kind": "glob",
+        "pattern": ".smithers/flows/test/coverage-campaign/*.mjs",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/dprint.json"
+      },
+      {
+        "kind": "file",
+        "path": ".smithers/flows/package.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": ".smithers/flows/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//.smithers/flows:egress",
     "package": ".smithers/flows",
     "name": "egress",

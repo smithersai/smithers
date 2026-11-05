@@ -1,1 +1,328 @@
-{"id":".smithers/flows/review/seeded-bugs","name":"@smthrs/eval-review-seeded-bugs","owner":{"declaration":".smithers/flows/review/seeded-bugs/package.json","assignedLane":null},"kind":"retained-tooling","scripts":{"check":"vibelang -p tsconfig.json --noEmit","test":"bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts","test:suite":"bun run.ts"},"exports":null,"production":["baseline.ts","corpus/clean-error-message/base/src/errors.ts","corpus/clean-error-message/head/src/errors.ts","corpus/clean-jsdoc/base/src/sku.ts","corpus/clean-jsdoc/head/src/sku.ts","corpus/clean-refactor/base/src/discount.ts","corpus/clean-refactor/head/src/discount.ts","corpus/clean-rename/base/src/invoice.ts","corpus/clean-rename/head/src/invoice.ts","corpus/cross-file-signature-mismatch/base/src/session.ts","corpus/cross-file-signature-mismatch/base/src/tokens.ts","corpus/cross-file-signature-mismatch/head/src/session.ts","corpus/cross-file-signature-mismatch/head/src/tokens.ts","corpus/deleted-null-check/base/src/profile.ts","corpus/deleted-null-check/head/src/profile.ts","corpus/missing-await-flush/base/src/logger.ts","corpus/missing-await-flush/head/src/logger.ts","corpus/missing-await/base/src/order.ts","corpus/missing-await/head/src/order.ts","corpus/off-by-one-boundary/base/src/window.ts","corpus/off-by-one-boundary/head/src/window.ts","corpus/off-by-one-slice/base/src/paginator.ts","corpus/off-by-one-slice/head/src/paginator.ts","corpus/resource-leak-timer/base/src/poller.ts","corpus/resource-leak-timer/head/src/poller.ts","corpus/resource-leak/base/src/readConfig.ts","corpus/resource-leak/head/src/readConfig.ts","corpus/sql-injection-like/base/src/search.ts","corpus/sql-injection-like/head/src/search.ts","corpus/sql-injection/base/src/users.ts","corpus/sql-injection/head/src/users.ts","corpus/tautological-test/base/src/orderAssertions.ts","corpus/tautological-test/head/src/orderAssertions.ts","deterministicReviewer.ts","fixtureRepo.ts","host.ts","labels.ts","review-seeded-bugs.eval.ts","run.ts","score.ts","scriptedSeats.ts","security-completion-score.ts","security-completion.ts"],"tests":[".smithers/flows/review/seeded-bugs/deterministicReviewer.test.ts",".smithers/flows/review/seeded-bugs/fixtureRepo.test.ts",".smithers/flows/review/seeded-bugs/score.test.ts",".smithers/flows/review/seeded-bugs/security-completion-cli.test.ts",".smithers/flows/review/seeded-bugs/security-completion-score.test.ts"],"benchmarks":[],"platformPaths":[".smithers/flows/review/seeded-bugs/bunfig.toml"],"ignoredCases":[],"configurations":[{"path":".smithers/flows/review/seeded-bugs/corpus/deleted-null-check-config/base/src/config.ts","sha256":"1e5f50ae4c0c147419f38e8997d0c90234b9117ee18248d11d1dbd2a547005b6","source":"export type Env = { LOG_LEVEL?: string };\n\nexport function readLogLevel(env: Env): string {\n  return env.LOG_LEVEL ?? \"info\";\n}\n","coverageDirectives":[]},{"path":".smithers/flows/review/seeded-bugs/corpus/deleted-null-check-config/head/src/config.ts","sha256":"cd5c173365bd433d12f27c46871927ad7255dfc9951f4ff714bc30d8de9fbc9f","source":"export type Env = { LOG_LEVEL?: string };\n\nexport function readLogLevel(env: Env): string {\n  return env.LOG_LEVEL!;\n}\n","coverageDirectives":[]},{"path":".smithers/flows/review/seeded-bugs/package.json","sha256":"7c08577bc9a52aa21d3aab2a43687bc2bd19f95a4ac3e55bcd52977da49c8742","source":"{\n  \"name\": \"@smthrs/eval-review-seeded-bugs\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"description\": \"Seeded-bug corpus for the review flow, its deterministic reviewing seat, and the scorer that grades them\",\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts\",\n    \"test:suite\": \"bun run.ts\"\n  },\n  \"dependencies\": {\n    \"@smthrs/agent\": \"workspace:*\",\n    \"@smthrs/evals\": \"workspace:*\",\n    \"@smthrs/scorers\": \"workspace:*\",\n    \"@smthrs/core\": \"workspace:*\",\n    \"@smthrs/model\": \"workspace:*\",\n    \"effect\": \"4.0.5\",\n    \"@smthrs/cli\": \"workspace:*\",\n    \"@smthrs/engine\": \"workspace:*\",\n    \"@smthrs/flow\": \"workspace:*\",\n    \"@smthrs/flows\": \"workspace:*\",\n    \"@smthrs/registry\": \"workspace:*\",\n    \"@effect/platform-node\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@smthrs/targets\": \"workspace:*\",\n    \"@types/node\": \"26.4.1\",\n    \"bun-types\": \"^1.4.0\",\n    \"typescript\": \"5.9.3\",\n    \"vibelang\": \"0.0.8\"\n  }\n}\n","coverageDirectives":[]},{"path":".smithers/flows/review/seeded-bugs/PACKAGE.ts","sha256":"e3e2d7ded3ff1aed037ee3ba5e0661bfac724d9a86879bde41546484c34bb677","source":"/**\n * Targets for the review seeded-bug suite.\n *\n * Two test targets, because the suite has two halves that fail for different\n * reasons. `test` is the corpus-integrity and scoring-math suite: pure, fast,\n * and independent of the review app. `suite` runs the real review flow over all\n * sixteen fixtures and gates the result on `baseline.json`; it is offline\n * because its reviewing seat is `deterministicReviewer.ts` rather than a model,\n * so it spends nothing and answers the same way twice. Both run from this\n * directory, which is a workspace member (`@smthrs/eval-review-seeded-bugs`),\n * so `bun` and `tsc` read the toolchain the manifest pins.\n *\n * There is no `lint` or `fmt` target. `corpus/` is the eval's input: thirty\n * base/head source files whose exact text — and therefore whose exact line\n * numbers — is what the reviewer anchors findings to and what `score.ts`\n * matches them against. A formatter would rewrite the corpus and silently move\n * the thing being measured.\n *\n * @since 1.0.0\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \".smithers/flows/review/seeded-bugs\"\n\n/** The suite's own sources, the corpus it reads, and the baseline it gates on. */\nconst sources = [\n  Smithers.glob(\"//.smithers/flows/review/seeded-bugs/*.ts\"),\n  Smithers.glob(\"//.smithers/flows/review/seeded-bugs/corpus/**/*\"),\n  Smithers.file(\"//.smithers/flows/review/seeded-bugs/baseline.json\")\n]\n\n/**\n * Runs every fixture through the real review flow and gates on the baseline.\n *\n * A red run means the pipeline moved: diff ingestion, per-file fan-out,\n * scoping, anchoring, de-duplication, or the scorer's matching. The model's own\n * score is what `run.ts --live` measures, and it is never a gate.\n *\n * @since 1.0.0\n * @category test\n */\nconst suite = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.entrypoint(Smithers.file(\"//.smithers/flows/review/seeded-bugs/run.ts\")),\n  srcs: sources,\n  deps: [],\n  cwd\n})\n\n/**\n * The corpus-integrity and scoring-math suite.\n *\n * @since 1.0.0\n * @category test\n */\nconst test = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"score.test.ts\", \"deterministicReviewer.test.ts\", \"fixtureRepo.test.ts\"]),\n  srcs: sources,\n  deps: [],\n  cwd\n})\n\n/**\n * Checks the suite's own sources, including its `bun:test` files, against\n * its tsconfig.\n *\n * @since 1.0.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * Security review of the suite's harness and corpus: `security` reviews the\n * diff against origin/main, `securityAudit` reviews every included file.\n *\n * @since 1.0.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"*.ts\", \"corpus/**\", \"baseline.json\", \".gitignore\"],\n  checks: [\n    {\n      id: \"fixture-git-isolation\",\n      title: \"Materializing a fixture never lets corpus content configure or run git\",\n      threat: \"A contributor who adds a corpus fixture runs arbitrary commands on the maintainer's or CI machine when run.ts materializes it.\",\n      lookFor: [\n        \"fixtureRepo.ts copyDirectoryContents copying a base/ or head/ entry named .git, .gitattributes, or .gitmodules, in any letter case, into the fixture repository after git init.\",\n        \"fixtureRepo.ts clearWorktree skipping .git while head/ is copied over it, so a head/.git/config (core.fsmonitor, core.hooksPath, filter drivers) is honored by later git calls in the review flow.\",\n        \"A corpus .gitattributes naming a filter, diff, or merge driver that git add or the review flow's git diff would honor.\"\n      ],\n      paths: [\"fixtureRepo.ts\", \"corpus/**\"]\n    },\n    {\n      id: \"fixture-symlink-escape\",\n      title: \"Fixture trees cannot pull files from outside the corpus into a review prompt\",\n      threat: \"A corpus fixture with a symlink makes the review flow read a maintainer's host file (SSH key, .env) and send it to a live model or write it into .report/.\",\n      lookFor: [\n        \"cpSync in fixtureRepo.ts copyDirectoryContents preserving or dereferencing a symlink under corpus/*/base or corpus/*/head, or materializeFixture following a fixture, base/, or head/ directory that is itself a symlink.\",\n        \"A committed symlink or absolute-path entry anywhere under corpus/.\"\n      ],\n      paths: [\"fixtureRepo.ts\", \"corpus/**\"]\n    },\n    {\n      id: \"scripted-cell-injection\",\n      title: \"The scripted seat emits only a JSON literal inside ctx.done, whatever the diff contains\",\n      threat: \"Diff text echoed back through existingCode breaks out of the cell fence or the ctx.done call and executes as agent cell code in the review flow.\",\n      lookFor: [\n        \"scriptedModel building the cell from anything other than JSON.stringify of the answer value.\",\n        \"existingCode or content in reviewDiff carrying a ``` sequence from the diff that terminates the cell fence early.\",\n        \"readPrompt trusting a 'Current file path:' line that diff content, not the prompt template, supplies.\"\n      ],\n      paths: [\"scriptedSeats.ts\", \"deterministicReviewer.ts\"]\n    },\n    {\n      id: \"live-report-leak\",\n      title: \"--live reports hold scores and findings only, never credentials or prompts with secrets\",\n      threat: \"A maintainer running --live writes provider keys or resolved seat routes into .report/ and later commits or shares them.\",\n      lookFor: [\n        \"report.json serializing seat, route, header, or environment values from resolveReviewSeats.\",\n        \".report/ missing from .gitignore.\",\n        \"An error path in main that prints a resolved provider credential or request header.\"\n      ],\n      paths: [\"run.ts\", \".gitignore\"]\n    },\n    {\n      id: \"live-cell-authority\",\n      title: \"Under --live, a model steered by corpus text can only answer, never act on the host\",\n      threat: \"A fixture whose diff carries prompt-injection text makes a live review seat run a cell that reads the maintainer's files, calls a tool, or dials a non-model host with the maintainer's provider keys.\",\n      lookFor: [\n        \"run.ts building the --live layer with anything other than layerMemory over reviewSeatResolver, so the tool-less agentHost (empty registry, calls limit, model-only capabilityEnvelope) is bypassed.\",\n        \"run.ts passing layerMemory an environment other than process.env's seat settings, which widens the model-host capability envelope.\",\n        \"The Review.execute payload in runFixture enabling verification or narration aliases that are not bound by the same host.\"\n      ],\n      paths: [\"run.ts\"]\n    },\n    {\n      id: \"gate-integrity\",\n      title: \"The offline gate cannot be satisfied by weakening the baseline or reading labels\",\n      threat: \"A change makes the deterministic reviewer or the baseline gate pass regardless of pipeline regressions, hiding a security-relevant review failure.\",\n      lookFor: [\n        \"deterministicReviewer.ts reading label.json or any corpus ground truth.\",\n        \"loadCorpus accepting a label whose fixture field differs from its directory or whose schema is loosened.\",\n        \"drift in baseline.ts ignoring a changed per-fixture record, or run.ts treating an unreadable baseline as a pass.\"\n      ],\n      paths: [\"deterministicReviewer.ts\", \"labels.ts\", \"baseline.ts\", \"run.ts\", \"baseline.json\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, suite, test, ...securityReview }\n})\n","coverageDirectives":[{"line":82,"text":"* diff against origin/main, `securityAudit` reviews every included file."},{"line":89,"text":"include: [\"*.ts\", \"corpus/**\", \"baseline.json\", \".gitignore\"],"},{"line":97,"text":"\"fixtureRepo.ts clearWorktree skipping .git while head/ is copied over it, so a head/.git/config (core.fsmonitor, core.hooksPath, filter drivers) is honored by later git calls in the review flow.\","},{"line":129,"text":"\".report/ missing from .gitignore.\","},{"line":132,"text":"paths: [\"run.ts\", \".gitignore\"]"}]},{"path":".smithers/flows/review/seeded-bugs/tsconfig.json","sha256":"abba307ff947315452a0c94c4b9c86c9b0c58d2f0da753d650857d3bcc9dd13b","source":"{\n  \"extends\": \"../../../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"module\": \"Node18\",\n    // The suite reaches the review flow, whose walkthrough renderer\n    // sources are typed against DOM, as the modules that own them declare.\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"noEmit\": true,\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"inlineSources\": false,\n    \"sourceMap\": false,\n    // `score.test.ts` and `deterministicReviewer.test.ts` are `bun:test`\n    // suites, so the checked set needs Bun's globals as well as Node's.\n    \"types\": [\"bun-types\", \"node\"]\n  },\n  \"include\": [\"*.ts\"],\n  \"exclude\": [\"PACKAGE.ts\"]\n}\n","coverageDirectives":[{"line":18,"text":"\"include\": [\"*.ts\"],"},{"line":19,"text":"\"exclude\": [\"PACKAGE.ts\"]"}]}],"targets":[{"package":".smithers/flows/review/seeded-bugs","label":"//.smithers/flows/review/seeded-bugs:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/*.ts","exclude":[]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/corpus/**/*","exclude":[]},{"kind":"file","path":".smithers/flows/review/seeded-bugs/baseline.json"},{"kind":"file","path":".smithers/flows/review/seeded-bugs/tsconfig.json"}],"dependencies":[]},{"package":".smithers/flows/review/seeded-bugs","label":"//.smithers/flows/review/seeded-bugs:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":[".smithers/flows/review/seeded-bugs/*.ts",".smithers/flows/review/seeded-bugs/corpus/**",".smithers/flows/review/seeded-bugs/baseline.json",".smithers/flows/review/seeded-bugs/.gitignore"]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/*.ts","exclude":[]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/corpus/**","exclude":[]},{"kind":"file","path":".smithers/flows/review/seeded-bugs/baseline.json"},{"kind":"file","path":".smithers/flows/review/seeded-bugs/.gitignore"}],"dependencies":[]},{"package":".smithers/flows/review/seeded-bugs","label":"//.smithers/flows/review/seeded-bugs:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":[".smithers/flows/review/seeded-bugs/*.ts",".smithers/flows/review/seeded-bugs/corpus/**",".smithers/flows/review/seeded-bugs/baseline.json",".smithers/flows/review/seeded-bugs/.gitignore"]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/*.ts","exclude":[]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/corpus/**","exclude":[]},{"kind":"file","path":".smithers/flows/review/seeded-bugs/baseline.json"},{"kind":"file","path":".smithers/flows/review/seeded-bugs/.gitignore"}],"dependencies":[]},{"package":".smithers/flows/review/seeded-bugs","label":"//.smithers/flows/review/seeded-bugs:suite","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":".smithers/flows/review/seeded-bugs/run.ts"},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/*.ts","exclude":[]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/corpus/**/*","exclude":[]},{"kind":"file","path":".smithers/flows/review/seeded-bugs/baseline.json"}],"dependencies":[]},{"package":".smithers/flows/review/seeded-bugs","label":"//.smithers/flows/review/seeded-bugs:test","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/*.ts","exclude":[]},{"kind":"glob","pattern":".smithers/flows/review/seeded-bugs/corpus/**/*","exclude":[]},{"kind":"file","path":".smithers/flows/review/seeded-bugs/baseline.json"}],"dependencies":[]}],"areas":["baseline.ts","corpus/clean-error-message","corpus/clean-jsdoc","corpus/clean-refactor","corpus/clean-rename","corpus/cross-file-signature-mismatch","corpus/deleted-null-check","corpus/missing-await","corpus/missing-await-flush","corpus/off-by-one-boundary","corpus/off-by-one-slice","corpus/resource-leak","corpus/resource-leak-timer","corpus/sql-injection","corpus/sql-injection-like","corpus/tautological-test","deterministicReviewer.ts","fixtureRepo.ts","host.ts","labels.ts","review-seeded-bugs.eval.ts","run.ts","score.ts","scriptedSeats.ts","security-completion-score.ts","security-completion.ts"],"boundaries":["public-authoring"]}
+{
+  "id": ".smithers/flows/review/seeded-bugs",
+  "name": "@smthrs/eval-review-seeded-bugs",
+  "owner": {
+    "declaration": ".smithers/flows/review/seeded-bugs/package.json",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "test": "bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts",
+    "test:suite": "bun run.ts"
+  },
+  "exports": null,
+  "production": [
+    "baseline.ts",
+    "corpus/clean-error-message/base/src/errors.ts",
+    "corpus/clean-error-message/head/src/errors.ts",
+    "corpus/clean-jsdoc/base/src/sku.ts",
+    "corpus/clean-jsdoc/head/src/sku.ts",
+    "corpus/clean-refactor/base/src/discount.ts",
+    "corpus/clean-refactor/head/src/discount.ts",
+    "corpus/clean-rename/base/src/invoice.ts",
+    "corpus/clean-rename/head/src/invoice.ts",
+    "corpus/cross-file-signature-mismatch/base/src/session.ts",
+    "corpus/cross-file-signature-mismatch/base/src/tokens.ts",
+    "corpus/cross-file-signature-mismatch/head/src/session.ts",
+    "corpus/cross-file-signature-mismatch/head/src/tokens.ts",
+    "corpus/deleted-null-check/base/src/profile.ts",
+    "corpus/deleted-null-check/head/src/profile.ts",
+    "corpus/missing-await-flush/base/src/logger.ts",
+    "corpus/missing-await-flush/head/src/logger.ts",
+    "corpus/missing-await/base/src/order.ts",
+    "corpus/missing-await/head/src/order.ts",
+    "corpus/off-by-one-boundary/base/src/window.ts",
+    "corpus/off-by-one-boundary/head/src/window.ts",
+    "corpus/off-by-one-slice/base/src/paginator.ts",
+    "corpus/off-by-one-slice/head/src/paginator.ts",
+    "corpus/resource-leak-timer/base/src/poller.ts",
+    "corpus/resource-leak-timer/head/src/poller.ts",
+    "corpus/resource-leak/base/src/readConfig.ts",
+    "corpus/resource-leak/head/src/readConfig.ts",
+    "corpus/sql-injection-like/base/src/search.ts",
+    "corpus/sql-injection-like/head/src/search.ts",
+    "corpus/sql-injection/base/src/users.ts",
+    "corpus/sql-injection/head/src/users.ts",
+    "corpus/tautological-test/base/src/orderAssertions.ts",
+    "corpus/tautological-test/head/src/orderAssertions.ts",
+    "deterministicReviewer.ts",
+    "fixtureRepo.ts",
+    "host.ts",
+    "labels.ts",
+    "review-seeded-bugs.eval.ts",
+    "run.ts",
+    "score.ts",
+    "scriptedSeats.ts",
+    "security-completion-score.ts",
+    "security-completion.ts"
+  ],
+  "tests": [
+    ".smithers/flows/review/seeded-bugs/deterministicReviewer.test.ts",
+    ".smithers/flows/review/seeded-bugs/fixtureRepo.test.ts",
+    ".smithers/flows/review/seeded-bugs/score.test.ts",
+    ".smithers/flows/review/seeded-bugs/security-completion-cli.test.ts",
+    ".smithers/flows/review/seeded-bugs/security-completion-score.test.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    ".smithers/flows/review/seeded-bugs/bunfig.toml"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": ".smithers/flows/review/seeded-bugs/corpus/deleted-null-check-config/base/src/config.ts",
+      "sha256": "1e5f50ae4c0c147419f38e8997d0c90234b9117ee18248d11d1dbd2a547005b6",
+      "source": "export type Env = { LOG_LEVEL?: string };\n\nexport function readLogLevel(env: Env): string {\n  return env.LOG_LEVEL ?? \"info\";\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": ".smithers/flows/review/seeded-bugs/corpus/deleted-null-check-config/head/src/config.ts",
+      "sha256": "cd5c173365bd433d12f27c46871927ad7255dfc9951f4ff714bc30d8de9fbc9f",
+      "source": "export type Env = { LOG_LEVEL?: string };\n\nexport function readLogLevel(env: Env): string {\n  return env.LOG_LEVEL!;\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": ".smithers/flows/review/seeded-bugs/package.json",
+      "sha256": "7c08577bc9a52aa21d3aab2a43687bc2bd19f95a4ac3e55bcd52977da49c8742",
+      "source": "{\n  \"name\": \"@smthrs/eval-review-seeded-bugs\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"version\": \"0.0.0\",\n  \"description\": \"Seeded-bug corpus for the review flow, its deterministic reviewing seat, and the scorer that grades them\",\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts\",\n    \"test:suite\": \"bun run.ts\"\n  },\n  \"dependencies\": {\n    \"@smthrs/agent\": \"workspace:*\",\n    \"@smthrs/evals\": \"workspace:*\",\n    \"@smthrs/scorers\": \"workspace:*\",\n    \"@smthrs/core\": \"workspace:*\",\n    \"@smthrs/model\": \"workspace:*\",\n    \"effect\": \"4.0.5\",\n    \"@smthrs/cli\": \"workspace:*\",\n    \"@smthrs/engine\": \"workspace:*\",\n    \"@smthrs/flow\": \"workspace:*\",\n    \"@smthrs/flows\": \"workspace:*\",\n    \"@smthrs/registry\": \"workspace:*\",\n    \"@effect/platform-node\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@smthrs/targets\": \"workspace:*\",\n    \"@types/node\": \"26.4.1\",\n    \"bun-types\": \"^1.4.0\",\n    \"typescript\": \"5.9.3\",\n    \"vibelang\": \"0.0.8\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": ".smithers/flows/review/seeded-bugs/PACKAGE.ts",
+      "sha256": "e3e2d7ded3ff1aed037ee3ba5e0661bfac724d9a86879bde41546484c34bb677",
+      "source": "/**\n * Targets for the review seeded-bug suite.\n *\n * Two test targets, because the suite has two halves that fail for different\n * reasons. `test` is the corpus-integrity and scoring-math suite: pure, fast,\n * and independent of the review app. `suite` runs the real review flow over all\n * sixteen fixtures and gates the result on `baseline.json`; it is offline\n * because its reviewing seat is `deterministicReviewer.ts` rather than a model,\n * so it spends nothing and answers the same way twice. Both run from this\n * directory, which is a workspace member (`@smthrs/eval-review-seeded-bugs`),\n * so `bun` and `tsc` read the toolchain the manifest pins.\n *\n * There is no `lint` or `fmt` target. `corpus/` is the eval's input: thirty\n * base/head source files whose exact text — and therefore whose exact line\n * numbers — is what the reviewer anchors findings to and what `score.ts`\n * matches them against. A formatter would rewrite the corpus and silently move\n * the thing being measured.\n *\n * @since 1.0.0\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \".smithers/flows/review/seeded-bugs\"\n\n/** The suite's own sources, the corpus it reads, and the baseline it gates on. */\nconst sources = [\n  Smithers.glob(\"//.smithers/flows/review/seeded-bugs/*.ts\"),\n  Smithers.glob(\"//.smithers/flows/review/seeded-bugs/corpus/**/*\"),\n  Smithers.file(\"//.smithers/flows/review/seeded-bugs/baseline.json\")\n]\n\n/**\n * Runs every fixture through the real review flow and gates on the baseline.\n *\n * A red run means the pipeline moved: diff ingestion, per-file fan-out,\n * scoping, anchoring, de-duplication, or the scorer's matching. The model's own\n * score is what `run.ts --live` measures, and it is never a gate.\n *\n * @since 1.0.0\n * @category test\n */\nconst suite = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.entrypoint(Smithers.file(\"//.smithers/flows/review/seeded-bugs/run.ts\")),\n  srcs: sources,\n  deps: [],\n  cwd\n})\n\n/**\n * The corpus-integrity and scoring-math suite.\n *\n * @since 1.0.0\n * @category test\n */\nconst test = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"score.test.ts\", \"deterministicReviewer.test.ts\", \"fixtureRepo.test.ts\"]),\n  srcs: sources,\n  deps: [],\n  cwd\n})\n\n/**\n * Checks the suite's own sources, including its `bun:test` files, against\n * its tsconfig.\n *\n * @since 1.0.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * Security review of the suite's harness and corpus: `security` reviews the\n * diff against origin/main, `securityAudit` reviews every included file.\n *\n * @since 1.0.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"*.ts\", \"corpus/**\", \"baseline.json\", \".gitignore\"],\n  checks: [\n    {\n      id: \"fixture-git-isolation\",\n      title: \"Materializing a fixture never lets corpus content configure or run git\",\n      threat: \"A contributor who adds a corpus fixture runs arbitrary commands on the maintainer's or CI machine when run.ts materializes it.\",\n      lookFor: [\n        \"fixtureRepo.ts copyDirectoryContents copying a base/ or head/ entry named .git, .gitattributes, or .gitmodules, in any letter case, into the fixture repository after git init.\",\n        \"fixtureRepo.ts clearWorktree skipping .git while head/ is copied over it, so a head/.git/config (core.fsmonitor, core.hooksPath, filter drivers) is honored by later git calls in the review flow.\",\n        \"A corpus .gitattributes naming a filter, diff, or merge driver that git add or the review flow's git diff would honor.\"\n      ],\n      paths: [\"fixtureRepo.ts\", \"corpus/**\"]\n    },\n    {\n      id: \"fixture-symlink-escape\",\n      title: \"Fixture trees cannot pull files from outside the corpus into a review prompt\",\n      threat: \"A corpus fixture with a symlink makes the review flow read a maintainer's host file (SSH key, .env) and send it to a live model or write it into .report/.\",\n      lookFor: [\n        \"cpSync in fixtureRepo.ts copyDirectoryContents preserving or dereferencing a symlink under corpus/*/base or corpus/*/head, or materializeFixture following a fixture, base/, or head/ directory that is itself a symlink.\",\n        \"A committed symlink or absolute-path entry anywhere under corpus/.\"\n      ],\n      paths: [\"fixtureRepo.ts\", \"corpus/**\"]\n    },\n    {\n      id: \"scripted-cell-injection\",\n      title: \"The scripted seat emits only a JSON literal inside ctx.done, whatever the diff contains\",\n      threat: \"Diff text echoed back through existingCode breaks out of the cell fence or the ctx.done call and executes as agent cell code in the review flow.\",\n      lookFor: [\n        \"scriptedModel building the cell from anything other than JSON.stringify of the answer value.\",\n        \"existingCode or content in reviewDiff carrying a ``` sequence from the diff that terminates the cell fence early.\",\n        \"readPrompt trusting a 'Current file path:' line that diff content, not the prompt template, supplies.\"\n      ],\n      paths: [\"scriptedSeats.ts\", \"deterministicReviewer.ts\"]\n    },\n    {\n      id: \"live-report-leak\",\n      title: \"--live reports hold scores and findings only, never credentials or prompts with secrets\",\n      threat: \"A maintainer running --live writes provider keys or resolved seat routes into .report/ and later commits or shares them.\",\n      lookFor: [\n        \"report.json serializing seat, route, header, or environment values from resolveReviewSeats.\",\n        \".report/ missing from .gitignore.\",\n        \"An error path in main that prints a resolved provider credential or request header.\"\n      ],\n      paths: [\"run.ts\", \".gitignore\"]\n    },\n    {\n      id: \"live-cell-authority\",\n      title: \"Under --live, a model steered by corpus text can only answer, never act on the host\",\n      threat: \"A fixture whose diff carries prompt-injection text makes a live review seat run a cell that reads the maintainer's files, calls a tool, or dials a non-model host with the maintainer's provider keys.\",\n      lookFor: [\n        \"run.ts building the --live layer with anything other than layerMemory over reviewSeatResolver, so the tool-less agentHost (empty registry, calls limit, model-only capabilityEnvelope) is bypassed.\",\n        \"run.ts passing layerMemory an environment other than process.env's seat settings, which widens the model-host capability envelope.\",\n        \"The Review.execute payload in runFixture enabling verification or narration aliases that are not bound by the same host.\"\n      ],\n      paths: [\"run.ts\"]\n    },\n    {\n      id: \"gate-integrity\",\n      title: \"The offline gate cannot be satisfied by weakening the baseline or reading labels\",\n      threat: \"A change makes the deterministic reviewer or the baseline gate pass regardless of pipeline regressions, hiding a security-relevant review failure.\",\n      lookFor: [\n        \"deterministicReviewer.ts reading label.json or any corpus ground truth.\",\n        \"loadCorpus accepting a label whose fixture field differs from its directory or whose schema is loosened.\",\n        \"drift in baseline.ts ignoring a changed per-fixture record, or run.ts treating an unreadable baseline as a pass.\"\n      ],\n      paths: [\"deterministicReviewer.ts\", \"labels.ts\", \"baseline.ts\", \"run.ts\", \"baseline.json\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, suite, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 82,
+          "text": "* diff against origin/main, `securityAudit` reviews every included file."
+        },
+        {
+          "line": 89,
+          "text": "include: [\"*.ts\", \"corpus/**\", \"baseline.json\", \".gitignore\"],"
+        },
+        {
+          "line": 97,
+          "text": "\"fixtureRepo.ts clearWorktree skipping .git while head/ is copied over it, so a head/.git/config (core.fsmonitor, core.hooksPath, filter drivers) is honored by later git calls in the review flow.\","
+        },
+        {
+          "line": 129,
+          "text": "\".report/ missing from .gitignore.\","
+        },
+        {
+          "line": 132,
+          "text": "paths: [\"run.ts\", \".gitignore\"]"
+        }
+      ]
+    },
+    {
+      "path": ".smithers/flows/review/seeded-bugs/tsconfig.json",
+      "sha256": "abba307ff947315452a0c94c4b9c86c9b0c58d2f0da753d650857d3bcc9dd13b",
+      "source": "{\n  \"extends\": \"../../../../tsconfig.base.json\",\n  \"compilerOptions\": {\n    \"module\": \"Node18\",\n    // The suite reaches the review flow, whose walkthrough renderer\n    // sources are typed against DOM, as the modules that own them declare.\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"noEmit\": true,\n    \"composite\": false,\n    \"declaration\": false,\n    \"declarationMap\": false,\n    \"inlineSources\": false,\n    \"sourceMap\": false,\n    // `score.test.ts` and `deterministicReviewer.test.ts` are `bun:test`\n    // suites, so the checked set needs Bun's globals as well as Node's.\n    \"types\": [\"bun-types\", \"node\"]\n  },\n  \"include\": [\"*.ts\"],\n  \"exclude\": [\"PACKAGE.ts\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 18,
+          "text": "\"include\": [\"*.ts\"],"
+        },
+        {
+          "line": 19,
+          "text": "\"exclude\": [\"PACKAGE.ts\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": ".smithers/flows/review/seeded-bugs",
+      "label": "//.smithers/flows/review/seeded-bugs:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/corpus/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/baseline.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review/seeded-bugs",
+      "label": "//.smithers/flows/review/seeded-bugs:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            ".smithers/flows/review/seeded-bugs/*.ts",
+            ".smithers/flows/review/seeded-bugs/corpus/**",
+            ".smithers/flows/review/seeded-bugs/baseline.json",
+            ".smithers/flows/review/seeded-bugs/.gitignore"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/corpus/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/baseline.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/.gitignore"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review/seeded-bugs",
+      "label": "//.smithers/flows/review/seeded-bugs:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            ".smithers/flows/review/seeded-bugs/*.ts",
+            ".smithers/flows/review/seeded-bugs/corpus/**",
+            ".smithers/flows/review/seeded-bugs/baseline.json",
+            ".smithers/flows/review/seeded-bugs/.gitignore"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/corpus/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/baseline.json"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/.gitignore"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review/seeded-bugs",
+      "label": "//.smithers/flows/review/seeded-bugs:suite",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/run.ts"
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/corpus/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/baseline.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": ".smithers/flows/review/seeded-bugs",
+      "label": "//.smithers/flows/review/seeded-bugs:test",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": ".smithers/flows/review/seeded-bugs/corpus/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/review/seeded-bugs/baseline.json"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "baseline.ts",
+    "corpus/clean-error-message",
+    "corpus/clean-jsdoc",
+    "corpus/clean-refactor",
+    "corpus/clean-rename",
+    "corpus/cross-file-signature-mismatch",
+    "corpus/deleted-null-check",
+    "corpus/missing-await",
+    "corpus/missing-await-flush",
+    "corpus/off-by-one-boundary",
+    "corpus/off-by-one-slice",
+    "corpus/resource-leak",
+    "corpus/resource-leak-timer",
+    "corpus/sql-injection",
+    "corpus/sql-injection-like",
+    "corpus/tautological-test",
+    "deterministicReviewer.ts",
+    "fixtureRepo.ts",
+    "host.ts",
+    "labels.ts",
+    "review-seeded-bugs.eval.ts",
+    "run.ts",
+    "score.ts",
+    "scriptedSeats.ts",
+    "security-completion-score.ts",
+    "security-completion.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

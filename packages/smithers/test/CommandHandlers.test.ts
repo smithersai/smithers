@@ -637,7 +637,9 @@ describe("lifecycle verbs", () => {
     // so a run whose resume was killed could never be resumed again (issues/file-tree's resume test, 2026-11-03).
     expect(result.first).toMatchObject({ _tag: "Accepted" })
     expect(result.second).toMatchObject({ _tag: "Accepted" })
-    expect((result.second as { receiptId: string }).receiptId).not.toBe((result.first as { receiptId: string }).receiptId)
+    expect((result.second as { receiptId: string }).receiptId).not.toBe(
+      (result.first as { receiptId: string }).receiptId
+    )
   })
 
   it("delivers a named JSON signal to a run", async () => {

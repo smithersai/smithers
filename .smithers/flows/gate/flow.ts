@@ -14,17 +14,21 @@ const install = { name: "install", run: "sh apps/mvp/ci/gate.sh install" }
 const shards = Array.from({ length: SHARDS }, (_, index) =>
   CiJob.make(`mvp-${index + 1}`, {
     machine: "gate",
-    steps: [install, { name: "suite", run: `sh apps/mvp/ci/gate.sh shard ${index + 1} ${SHARDS}`, timeoutSeconds: 600 }],
+    steps: [install, { name: "suite", run: `sh apps/mvp/ci/gate.sh shard ${index + 1} ${SHARDS}`, timeoutSeconds: 600 }]
   }))
 
 const coverage = CiJob.make("mvp-coverage", {
   machine: "gate",
   needs: shards.map((shard) => shard.job.name),
-  steps: [install, { name: "coverage", run: `sh apps/mvp/ci/gate.sh coverage ${SHARDS}`, timeoutSeconds: 600 }],
+  steps: [install, { name: "coverage", run: `sh apps/mvp/ci/gate.sh coverage ${SHARDS}`, timeoutSeconds: 600 }]
 })
 
 export default Flow.make("gate", {
   payload: { run: Schema.String, repo: Schema.String, sha: Schema.String, ref: Schema.String, event: Schema.String },
   success: Schema.Unknown,
-  body: (run) => Node.all({ ...Object.fromEntries(shards.map((shard) => [shard.job.name, shard.call(run)])), coverage: coverage.call(run) }),
+  body: (run) =>
+    Node.all({
+      ...Object.fromEntries(shards.map((shard) => [shard.job.name, shard.call(run)])),
+      coverage: coverage.call(run)
+    })
 })

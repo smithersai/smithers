@@ -12,7 +12,9 @@ afterEach(async () => {
 const client = async (origin: string, environment: Record<string, string> = {}) => {
   const home = await mkdtemp(join(tmpdir(), "cli-origin-"))
   cleanup.push(() => rm(home, { recursive: true, force: true }))
-  const c = new Client({ environment: { HOME: home, XDG_CONFIG_HOME: home, SMITHERS_DISABLE_SYSTEM_KEYRING: "1", ...environment } })
+  const c = new Client({
+    environment: { HOME: home, XDG_CONFIG_HOME: home, SMITHERS_DISABLE_SYSTEM_KEYRING: "1", ...environment }
+  })
   c.session.saveConfig({ api_origin: origin })
   return c
 }
@@ -52,57 +54,68 @@ it("names a saved unresolvable origin and its config without dumping the transpo
 })
 
 for (const override of [false, true]) {
-  it.each(["http", "dns"])(`keeps an explicit %s destination separate from config (environment override: ${override})`, async (kind) => {
-    const server = createServer((_req, res) => {
-      res.writeHead(503, { "content-type": "application/json" })
-      res.end(JSON.stringify({ message: "explicit service unavailable" }))
-    })
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    cleanup.push(async () => {
-      server.closeAllConnections()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-    })
-    const address = server.address()
-    if (!address || typeof address === "string") throw new Error("Missing address")
-    const origin = kind === "dns" ? "https://smithers-explicit-origin.invalid" : `http://127.0.0.1:${address.port}`
-    const c = await client("https://saved-origin.invalid", override ? { SMITHERS_API_ORIGIN: "https://environment-origin.invalid" } : {})
-    const failure = await c.request("GET", "/api/user", undefined, { anonymous: true, origin }).catch((error) => c.failure(error))
-    expect(failure).toMatchObject({ code: "backend_unavailable" })
-    const message = (failure as Error).message
-    expect(message).toContain(origin)
-    expect(message).toContain("Check the explicit request origin")
-    expect(message).not.toContain("api_origin")
-    expect(message).not.toContain(c.session.configPath)
-    expect(message).not.toContain("SMITHERS_API_ORIGIN")
-    if (kind === "http") expect(message).toContain("explicit service unavailable")
-  })
+  it.each(["http", "dns"])(
+    `keeps an explicit %s destination separate from config (environment override: ${override})`,
+    async (kind) => {
+      const server = createServer((_req, res) => {
+        res.writeHead(503, { "content-type": "application/json" })
+        res.end(JSON.stringify({ message: "explicit service unavailable" }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      cleanup.push(async () => {
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      })
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("Missing address")
+      const origin = kind === "dns" ? "https://smithers-explicit-origin.invalid" : `http://127.0.0.1:${address.port}`
+      const c = await client(
+        "https://saved-origin.invalid",
+        override ? { SMITHERS_API_ORIGIN: "https://environment-origin.invalid" } : {}
+      )
+      const failure = await c.request("GET", "/api/user", undefined, { anonymous: true, origin }).catch((error) =>
+        c.failure(error)
+      )
+      expect(failure).toMatchObject({ code: "backend_unavailable" })
+      const message = (failure as Error).message
+      expect(message).toContain(origin)
+      expect(message).toContain("Check the explicit request origin")
+      expect(message).not.toContain("api_origin")
+      expect(message).not.toContain(c.session.configPath)
+      expect(message).not.toContain("SMITHERS_API_ORIGIN")
+      if (kind === "http") expect(message).toContain("explicit service unavailable")
+    }
+  )
 }
 
 for (const override of [false, true]) {
-  it.each(["http", "dns"])(`retains configured %s provenance in pagination (environment override: ${override})`, async (kind) => {
-    const server = createServer((_req, res) => {
-      res.writeHead(503, { "content-type": "application/json" })
-      res.end(JSON.stringify({ message: "configured service unavailable" }))
-    })
-    await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
-    cleanup.push(async () => {
-      server.closeAllConnections()
-      await new Promise<void>((resolve) => server.close(() => resolve()))
-    })
-    const address = server.address()
-    if (!address || typeof address === "string") throw new Error("Missing address")
-    const origin = kind === "dns" ? "https://smithers-configured-origin.invalid" : `http://127.0.0.1:${address.port}`
-    const c = await client(origin, {
-      SMITHERS_TOKEN: "synthetic-test-credential",
-      ...(override ? { SMITHERS_API_ORIGIN: origin } : {})
-    })
-    const failure = await c.pages(() => "/api/user").catch((error) => c.failure(error))
-    expect(failure).toMatchObject({ code: "backend_unavailable" })
-    const message = (failure as Error).message
-    expect(message).toContain(origin)
-    expect(message).toContain(override ? "SMITHERS_API_ORIGIN" : c.session.configPath)
-    expect(message).toContain("smthrs config set api_origin <origin>")
-    expect(message).not.toContain("explicit request origin")
-    expect(message).not.toContain("synthetic-test-credential")
-  })
+  it.each(["http", "dns"])(
+    `retains configured %s provenance in pagination (environment override: ${override})`,
+    async (kind) => {
+      const server = createServer((_req, res) => {
+        res.writeHead(503, { "content-type": "application/json" })
+        res.end(JSON.stringify({ message: "configured service unavailable" }))
+      })
+      await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve))
+      cleanup.push(async () => {
+        server.closeAllConnections()
+        await new Promise<void>((resolve) => server.close(() => resolve()))
+      })
+      const address = server.address()
+      if (!address || typeof address === "string") throw new Error("Missing address")
+      const origin = kind === "dns" ? "https://smithers-configured-origin.invalid" : `http://127.0.0.1:${address.port}`
+      const c = await client(origin, {
+        SMITHERS_TOKEN: "synthetic-test-credential",
+        ...(override ? { SMITHERS_API_ORIGIN: origin } : {})
+      })
+      const failure = await c.pages(() => "/api/user").catch((error) => c.failure(error))
+      expect(failure).toMatchObject({ code: "backend_unavailable" })
+      const message = (failure as Error).message
+      expect(message).toContain(origin)
+      expect(message).toContain(override ? "SMITHERS_API_ORIGIN" : c.session.configPath)
+      expect(message).toContain("smthrs config set api_origin <origin>")
+      expect(message).not.toContain("explicit request origin")
+      expect(message).not.toContain("synthetic-test-credential")
+    }
+  )
 }

@@ -515,7 +515,16 @@ const longStack = async (t: Cleanup, length: number, merge?: number) => {
     input: (merge === undefined ? "" : side) + body
   })
   jj(root, "git", "import")
-  const listed = jj(root, "log", "--no-graph", "--reversed", "-r", "main..vibe", "-T", "change_id ++ \" \" ++ commit_id ++ \"\\n\"")
+  const listed = jj(
+    root,
+    "log",
+    "--no-graph",
+    "--reversed",
+    "-r",
+    "main..vibe",
+    "-T",
+    "change_id ++ \" \" ++ commit_id ++ \"\\n\""
+  )
     .split("\n").map((line) => line.split(" ") as [string, string])
   const trees = new Map(
     git(root, "log", "--format=%H %T", "vibe").split("\n").map((line) => line.split(" ") as [string, string])
@@ -541,8 +550,8 @@ const longStack = async (t: Cleanup, length: number, merge?: number) => {
     publishOriginalSource: () => Effect.die("a local lander never retains a source with the backend")
   })
   const lander = await Effect.runPromise(
-    Effect.flatMap(FileSystem.FileSystem, (fs) =>
-      make({ kind: "fast-forward", repositoryPath: root, fs, environment })).pipe(
+    Effect.flatMap(FileSystem.FileSystem, (fs) => make({ kind: "fast-forward", repositoryPath: root, fs, environment }))
+      .pipe(
         Effect.provide(Layer.mergeAll(NodeServices.layer, native))
       )
   )

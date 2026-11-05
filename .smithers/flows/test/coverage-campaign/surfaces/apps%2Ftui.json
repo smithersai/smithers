@@ -1,1 +1,779 @@
-{"id":"apps/tui","name":"smithers-tui","owner":{"declaration":"apps/tui/package.json","assignedLane":null},"kind":"retained-tooling","scripts":{"start":"bun src/main.tsx","ask":"bun src/ask.ts","test":"bun test ./test","typecheck":"vibelang -p tsconfig.json --noEmit","test:e2e":"bun test ./e2e","lint":"eslint src --max-warnings=0 && dprint check"},"exports":null,"production":["src/activity-view.tsx","src/activity.ts","src/agents.ts","src/app-view.tsx","src/app.tsx","src/approvals.ts","src/ask.ts","src/asks.ts","src/box.ts","src/budget.ts","src/catalog.ts","src/cell-display.ts","src/changes.ts","src/cli.ts","src/clipboard.ts","src/complete.ts","src/composer.ts","src/context.ts","src/contributions.ts","src/credit.ts","src/cursor.ts","src/deadline.ts","src/debug.ts","src/devtools.ts","src/drag-scroll.ts","src/editor.ts","src/extension.ts","src/external.ts","src/factory.ts","src/failures.ts","src/files.ts","src/flow-control.ts","src/flows.ts","src/fuzzy.ts","src/graph.ts","src/home.ts","src/host.ts","src/inbox.ts","src/issue-views.ts","src/key-dispatch.ts","src/keys.ts","src/lifecycle.ts","src/log.ts","src/main.tsx","src/models.ts","src/monitors.ts","src/native.ts","src/palette.ts","src/panel-view.tsx","src/panels.ts","src/picker.ts","src/print.ts","src/reads.ts","src/replay.ts","src/review-view.tsx","src/run-card-view.tsx","src/run-card.ts","src/run-history.ts","src/run.tsx","src/runtime-version.ts","src/runtime.ts","src/scrubber.ts","src/search.ts","src/session.ts","src/shell-output.ts","src/shell.ts","src/smithers.ts","src/spend.ts","src/steering.ts","src/subagent-view.tsx","src/subagents.ts","src/subprocess.ts","src/summary.ts","src/surfaces.ts","src/tab-error.ts","src/tabs-view.tsx","src/tabs.ts","src/target-approvals.ts","src/theme.ts","src/timeline.ts","src/toasts.ts","src/transcript-rail.tsx","src/transcript-view.ts","src/transcript.ts","src/tree.ts","src/undo.ts","src/view.tsx","src/watch.ts","src/workspace.ts","src/wrapped.ts"],"tests":["apps/tui/e2e/agent-prepare.test.ts","apps/tui/e2e/answer-frames-fixture.tsx","apps/tui/e2e/answer-frames.test.ts","apps/tui/e2e/approval-fixture.tsx","apps/tui/e2e/asks-fixture.tsx","apps/tui/e2e/asks.test.ts","apps/tui/e2e/cells-scroll-fixture.tsx","apps/tui/e2e/cells-scroll.test.ts","apps/tui/e2e/cleanup.test.ts","apps/tui/e2e/command-routes.test.ts","apps/tui/e2e/commands.test.ts","apps/tui/e2e/compiled-effect.test.ts","apps/tui/e2e/compiled-shell.test.ts","apps/tui/e2e/continue-fixture.tsx","apps/tui/e2e/continue.test.ts","apps/tui/e2e/diff-focus-fixture.tsx","apps/tui/e2e/diff-focus.test.ts","apps/tui/e2e/discovery-failure.test.ts","apps/tui/e2e/editor-unicode.test.ts","apps/tui/e2e/extensions-fixture.tsx","apps/tui/e2e/extensions-shots.ts","apps/tui/e2e/factory-todo.test.ts","apps/tui/e2e/factory.test.ts","apps/tui/e2e/flow-fallback.test.ts","apps/tui/e2e/flow-form.test.ts","apps/tui/e2e/flow-park.test.ts","apps/tui/e2e/graph.test.ts","apps/tui/e2e/help-unicode.test.ts","apps/tui/e2e/help.test.ts","apps/tui/e2e/input-ownership-preload.mjs","apps/tui/e2e/input-ownership.test.ts","apps/tui/e2e/main-view-fixture.tsx","apps/tui/e2e/main-view.test.ts","apps/tui/e2e/moments.test.ts","apps/tui/e2e/monitor-fixture.tsx","apps/tui/e2e/native-packaging.test.ts","apps/tui/e2e/packaged-runtime.test.ts","apps/tui/e2e/panel-action-fixture.tsx","apps/tui/e2e/queue-restart.test.ts","apps/tui/e2e/real-flows-fixture.tsx","apps/tui/e2e/remote-flow-failure.test.ts","apps/tui/e2e/shots.ts","apps/tui/e2e/steering-delivery.test.ts","apps/tui/e2e/subagent-fold.test.ts","apps/tui/e2e/tabs-fixture.tsx","apps/tui/e2e/takeover.test.ts","apps/tui/e2e/tmux.test.ts","apps/tui/e2e/tmux.ts","apps/tui/e2e/tui.test.ts","apps/tui/e2e/undo-hold-fixture.ts","apps/tui/e2e/undo-hold.ts","apps/tui/e2e/unicode-editor.test.ts","apps/tui/e2e/workspace-fixture.tsx","apps/tui/e2e/workspace-outcome.test.ts","apps/tui/e2e/wrapped.test.ts","apps/tui/test/activity.test.ts","apps/tui/test/agents.test.ts","apps/tui/test/answer-frames.test.tsx","apps/tui/test/app-agent-controls.test.tsx","apps/tui/test/app-approval.test.tsx","apps/tui/test/app-asks.test.tsx","apps/tui/test/app-chrome.test.tsx","apps/tui/test/app-diff-focus.test.tsx","apps/tui/test/app-flow-progress.test.tsx","apps/tui/test/app-flows.test.tsx","apps/tui/test/app-grep-display.test.tsx","apps/tui/test/app-monitor-controls.test.tsx","apps/tui/test/app-panels.test.tsx","apps/tui/test/app-paste.test.tsx","apps/tui/test/app-reference-controls.test.tsx","apps/tui/test/app-remote-flow-failure.test.tsx","apps/tui/test/app-session-controls.test.tsx","apps/tui/test/app-settings-controls.test.tsx","apps/tui/test/app-shutdown.test.tsx","apps/tui/test/app-summary-focus.test.tsx","apps/tui/test/app-target-approvals.test.tsx","apps/tui/test/app-transcript-controls.test.tsx","apps/tui/test/app-view.test.tsx","apps/tui/test/app-worker-model-switch.test.tsx","apps/tui/test/app-workers.test.tsx","apps/tui/test/app.test.tsx","apps/tui/test/approval-view.test.tsx","apps/tui/test/approvals.test.ts","apps/tui/test/ask.test.ts","apps/tui/test/asks.test.ts","apps/tui/test/box.test.ts","apps/tui/test/budget.test.ts","apps/tui/test/cap.test.ts","apps/tui/test/catalog.test.ts","apps/tui/test/changes.test.ts","apps/tui/test/cli.test.ts","apps/tui/test/clipboard.test.ts","apps/tui/test/clocks.test.tsx","apps/tui/test/color-mode.test.tsx","apps/tui/test/command-receipts.test.tsx","apps/tui/test/complete.test.ts","apps/tui/test/composer.test.ts","apps/tui/test/contributions.test.ts","apps/tui/test/coverage-roster.test.ts","apps/tui/test/credit.test.ts","apps/tui/test/cursor.test.tsx","apps/tui/test/deadline.test.ts","apps/tui/test/debug.test.ts","apps/tui/test/devtools.test.ts","apps/tui/test/diff-focus-fixture.ts","apps/tui/test/dprint-jsx.test.ts","apps/tui/test/drag-scroll.test.tsx","apps/tui/test/editor-native.test.ts","apps/tui/test/editor-selection.test.tsx","apps/tui/test/entry.test.ts","apps/tui/test/example.test.ts","apps/tui/test/extension.test.ts","apps/tui/test/external.test.ts","apps/tui/test/factory.test.ts","apps/tui/test/failed-status.test.ts","apps/tui/test/failure-card.test.tsx","apps/tui/test/failure-lines.test.tsx","apps/tui/test/failures.test.ts","apps/tui/test/files.test.ts","apps/tui/test/fixtures/fan-out.jsonl","apps/tui/test/fixtures/fix-add.jsonl","apps/tui/test/fixtures/flows-project/.smithers/flows/composed/flow.ts","apps/tui/test/fixtures/flows-project/.smithers/flows/consequential/flow.ts","apps/tui/test/fixtures/flows-project/.smithers/flows/echo/flow.ts","apps/tui/test/fixtures/flows-project/.smithers/flows/review/flow.mdx","apps/tui/test/fixtures/flows-project/.smithers/flows/scout/flow.mdx","apps/tui/test/fixtures/flows-project/.smithers/flows/wide/flow.ts","apps/tui/test/fixtures/pong.jsonl","apps/tui/test/fixtures/remote-failure-project/.smithers/flows/failure/flow.ts","apps/tui/test/fixtures/timeline-worker.jsonl","apps/tui/test/fixtures/vendor/claude","apps/tui/test/fixtures/vendor/codex","apps/tui/test/flow-control.test.ts","apps/tui/test/flows.test.ts","apps/tui/test/forest.test.ts","apps/tui/test/fork.test.ts","apps/tui/test/form.test.ts","apps/tui/test/graph-view.test.tsx","apps/tui/test/graph.test.ts","apps/tui/test/help.test.ts","apps/tui/test/home.test.ts","apps/tui/test/host.test.ts","apps/tui/test/inbox.test.ts","apps/tui/test/input-ownership.test.ts","apps/tui/test/issue-views.test.ts","apps/tui/test/key-dispatch.test.ts","apps/tui/test/keys.test.ts","apps/tui/test/lifecycle.test.ts","apps/tui/test/list-view.test.tsx","apps/tui/test/log.test.ts","apps/tui/test/models.integration.test.ts","apps/tui/test/models.test.ts","apps/tui/test/module-layer-flow.test.ts","apps/tui/test/modules.test.ts","apps/tui/test/moments.test.ts","apps/tui/test/monitor-boundaries.test.ts","apps/tui/test/monitor-judge.test.ts","apps/tui/test/monitors.test.ts","apps/tui/test/native-helper.test.ts","apps/tui/test/native-target.test.ts","apps/tui/test/palette.test.ts","apps/tui/test/panel.test.ts","apps/tui/test/park-ask.test.ts","apps/tui/test/parked-retry-controls.test.ts","apps/tui/test/picker-search.test.tsx","apps/tui/test/picker.test.ts","apps/tui/test/preload.ts","apps/tui/test/print.test.ts","apps/tui/test/queue-recovery.test.ts","apps/tui/test/raw-error-render.test.ts","apps/tui/test/react-instance.test.ts","apps/tui/test/read-cache.test.ts","apps/tui/test/reads.test.ts","apps/tui/test/recursion.test.ts","apps/tui/test/regular-file.test.ts","apps/tui/test/review-module-flow.test.ts","apps/tui/test/review-view.test.tsx","apps/tui/test/run-card-view.test.tsx","apps/tui/test/run-card.test.ts","apps/tui/test/run-history.test.ts","apps/tui/test/runtime-version.test.ts","apps/tui/test/runtime.test.ts","apps/tui/test/scratch.ts","apps/tui/test/scrubber-view.test.tsx","apps/tui/test/scrubber.test.ts","apps/tui/test/search-parse.test.ts","apps/tui/test/search.test.ts","apps/tui/test/session-listing.test.ts","apps/tui/test/session.test.ts","apps/tui/test/shell-output.test.ts","apps/tui/test/shell.test.ts","apps/tui/test/smithers.test.ts","apps/tui/test/spend.test.ts","apps/tui/test/status-glyphs.test.tsx","apps/tui/test/status-panels.test.ts","apps/tui/test/subagent-view.test.tsx","apps/tui/test/subagents.test.tsx","apps/tui/test/subprocess.test.ts","apps/tui/test/summary.test.ts","apps/tui/test/surfaces.test.ts","apps/tui/test/tabs.test.tsx","apps/tui/test/takeover.test.ts","apps/tui/test/target-approvals.test.ts","apps/tui/test/theme.test.ts","apps/tui/test/timeline.test.ts","apps/tui/test/tmux.test.ts","apps/tui/test/toast-stack-view.test.tsx","apps/tui/test/toasts.test.ts","apps/tui/test/transcript-clipping.test.tsx","apps/tui/test/transcript-view.test.tsx","apps/tui/test/transcript.test.ts","apps/tui/test/undo.test.ts","apps/tui/test/view-columns.test.tsx","apps/tui/test/watch.test.ts","apps/tui/test/worker-durability.test.ts","apps/tui/test/worker-model-switch.test.ts","apps/tui/test/worker-steer.test.ts","apps/tui/test/workspace.test.ts","apps/tui/test/wrapped.test.ts"],"benchmarks":["apps/tui/bench/activity-trace.ts","apps/tui/bench/flow-discovery.ts"],"platformPaths":["apps/tui/bunfig.toml","apps/tui/e2e/native-packaging.test.ts","apps/tui/src/native.ts","apps/tui/src/subprocess.ts","apps/tui/test/app-worker-model-switch.test.tsx","apps/tui/test/app-workers.test.tsx","apps/tui/test/editor-native.test.ts","apps/tui/test/fixtures/timeline-worker.jsonl","apps/tui/test/native-helper.test.ts","apps/tui/test/native-target.test.ts","apps/tui/test/subprocess.test.ts","apps/tui/test/worker-durability.test.ts","apps/tui/test/worker-model-switch.test.ts","apps/tui/test/worker-steer.test.ts"],"ignoredCases":[{"path":"apps/tui/e2e/tui.test.ts","line":671,"text":"it.skipIf(Bun.which(\"vim\") === null)("},{"path":"apps/tui/e2e/tui.test.ts","line":696,"text":"it.skipIf(Bun.which(\"vim\") === null)(\"cleans up a suspended external editor before restoring the draft\", async () => {"},{"path":"apps/tui/e2e/tui.test.ts","line":716,"text":"it.skipIf(Bun.which(\"vim\") === null)("},{"path":"apps/tui/src/app.tsx","line":1623,"text":"Log.write(\"factory.todo\", error)"},{"path":"apps/tui/test/log.test.ts","line":156,"text":"Log.write(\"factory.todo\", wrapped)"},{"path":"apps/tui/test/session.test.ts","line":168,"text":"it.skipIf(process.platform !== \"darwin\")("},{"path":"apps/tui/test/shell.test.ts","line":33,"text":"it.skipIf(bashExecutable === null)("},{"path":"apps/tui/test/shell.test.ts","line":54,"text":"it.skipIf(bashExecutable === null)("},{"path":"apps/tui/test/undo.test.ts","line":798,"text":"it.skipIf(Bun.which(\"jj\") === null)("},{"path":"apps/tui/test/watch.test.ts","line":294,"text":"it.skipIf(process.getuid?.() === 0)("},{"path":"apps/tui/test/watch.test.ts","line":440,"text":"it.skipIf(process.getuid?.() === 0)("}],"configurations":[{"path":"apps/tui/eslint.config.js","sha256":"8838c4a35210697b8c886e3d61aa4404671394fcef45cb54bc698d1dd557c5e8","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../eslint.invariants.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.{ts,tsx}\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  {\n    // Process entry points (main.tsx checks the runtime, run.tsx is the CLI) print to the terminal;\n    // `log.ts` wraps `console.error` for the renderer.\n    files: [\"src/main.tsx\", \"src/run.tsx\", \"src/ask.ts\", \"src/log.ts\"],\n    rules: { \"no-console\": \"off\" }\n  },\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":9,"text":"ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"},{"line":40,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"apps/tui/package.json","sha256":"fc16279ebad8a79b9b1a103f4072a52995cce26805d876dc2ba8c0b6cb6af873","source":"{\n  \"name\": \"smithers-tui\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"description\": \"A minimal terminal coding agent over the Smithers cell harness\",\n  \"type\": \"module\",\n  \"bin\": {\n    \"smithers-tui\": \"./src/main.tsx\"\n  },\n  \"scripts\": {\n    \"start\": \"bun src/main.tsx\",\n    \"ask\": \"bun src/ask.ts\",\n    \"test\": \"bun test ./test\",\n    \"typecheck\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test:e2e\": \"bun test ./e2e\",\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\"\n  },\n  \"dependencies\": {\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@opentui/core\": \"0.5.11\",\n    \"@opentui/react\": \"0.5.11\",\n    \"@smthrs/agent\": \"workspace:*\",\n    \"@smthrs/capability\": \"workspace:*\",\n    \"@smthrs/cli\": \"workspace:*\",\n    \"@smthrs/control\": \"workspace:*\",\n    \"@smthrs/engine\": \"workspace:*\",\n    \"@smthrs/flow\": \"workspace:*\",\n    \"@smthrs/gateway\": \"workspace:*\",\n    \"@smthrs/harness\": \"workspace:*\",\n    \"@smthrs/journal\": \"workspace:*\",\n    \"@smthrs/kernel\": \"workspace:*\",\n    \"@smthrs/model\": \"workspace:*\",\n    \"@smthrs/plan\": \"workspace:*\",\n    \"@smthrs/registry\": \"workspace:*\",\n    \"@smthrs/rpc\": \"workspace:*\",\n    \"@smthrs/sandbox\": \"workspace:*\",\n    \"@smthrs/std\": \"workspace:*\",\n    \"diff\": \"9.0.0\",\n    \"effect\": \"4.0.5\",\n    \"react\": \"19.2.8\",\n    \"string-width\": \"7.2.0\",\n    \"@smthrs/ui\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/react\": \"19.2.18\",\n    \"@smthrs/ui-styleguide\": \"workspace:*\",\n    \"@xterm/headless\": \"6.0.0\",\n    \"bun-types\": \"^1.4.0\",\n    \"dprint\": \"0.57.1\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"typescript\": \"~5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\"\n  }\n}\n","coverageDirectives":[]},{"path":"apps/tui/PACKAGE.ts","sha256":"525c3309e8ee8e6620cc7c1aee463aececca8ec0350c8834742ef33ef02ddb65","source":"/**\n * Targets for the terminal UI: the typecheck, lint, format check, and the\n * unit and terminal suites.\n *\n * The suite replays a recorded cell run through the transcript fold, so a\n * change to `AgentEvent` that the screen no longer understands fails here.\n * It runs under Bun because the suite is written for `bun test`.\n *\n * @since 1.0.0\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport { Package as cli } from \"../../packages/smithers/PACKAGE.ts\"\n\nconst cwd = \"apps/tui\"\n\n/** The app, its recorded fixture, and the suite beside them. */\nconst sources = [\n  Smithers.glob(\"//apps/tui/src/**/*.ts\"),\n  Smithers.glob(\"//apps/tui/src/**/*.tsx\"),\n  Smithers.glob(\"//apps/tui/test/**/*\"),\n  Smithers.glob(\"//apps/tui/e2e/**/*\"),\n  // Preloads `test/preload.ts`, which gives each run a private TMPDIR it removes.\n  Smithers.file(\"//apps/tui/bunfig.toml\")\n]\n\n/**\n * Checks the app and its suite against the package tsconfig.\n *\n * @since 1.0.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [cli.nativeSources],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The transcript suite.\n *\n * @since 1.0.0\n * @category test\n */\n// Coverage policy: assertion-only for the Bun suite until a whole-source\n// denominator is measured. See packages/repo-targets/contracts/README.md.\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"./test\"]),\n  srcs: sources,\n  deps: [cli.nativeSources],\n  cwd\n})\n\n/**\n * The production terminal, command effects, cleanup, and packaged runtimes in\n * tmux. Exclusive: wildcard `test` and `ci` selections omit it, and CI's\n * apps-e2e job names it by label.\n */\nconst e2eTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"./e2e\"]),\n  timeout: \"20m\",\n  exclusive: true,\n  srcs: sources,\n  deps: [cli.nativeSources],\n  cwd\n})\n\n/**\n * Lints the app sources against the package rule set.\n *\n * @since 1.0.0\n * @category lint\n */\nconst lint = Smithers.EsLint({\n  sources: [Smithers.glob(\"src/**/*.ts\"), Smithers.glob(\"src/**/*.tsx\")],\n  configs: [Smithers.file(\"eslint.config.js\"), Smithers.file(\"//eslint.invariants.js\")],\n  deps: [],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\n/**\n * Checks formatting across the app, its suites, and its docs.\n *\n * @since 1.0.0\n * @category lint\n */\nconst fmt = Smithers.Dprint({\n  sources: [Smithers.glob(\"**/*.{ts,tsx,json,md}\")],\n  config: Smithers.file(\"dprint.json\"),\n  deps: [],\n  fix: false,\n  cwd\n})\n\n/**\n * Security review of the terminal host: the approval gate, the person's own\n * shell, credential redaction on every sink, owner-only session files, undo\n * writes, contributed UI actions, and child-process argv.\n *\n * @since 1.0.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"approval-gate\",\n      title: \"Every consequential flow call and project launch waits on the grant store unless the operator chose all\",\n      threat:\n        \"A prompt-injected model or repository flow writes files, spawns processes or reaches the network on the person's machine without the y/n the person asked for with --approve ask or deny.\",\n      lookFor: [\n        \"A call path in host.ts, flow-control.ts or workspace.ts that runs a flow or worker without `Approvals.authorize` or `Approvals.check` when the mode is ask or deny.\",\n        \"`Approvals.consequential` or `requests` classifying a proc:spawn, net:* or fs:write capability as sealed, or skipping a declared capability it cannot parse.\",\n        \"A restored shell monitor in monitors.ts armed before `ports.authorize` settles, or armed after a refusal.\",\n        \"The `armMs` delay, `edited`, or `key` letting a typed y, n or a answer a row that appeared mid-draft, or `a` granting a session-wide pattern broader than the workspace for fs:write.\",\n        \"`Approvals.mode` accepting an unknown value, or print mode silently degrading ask to all.\"\n      ],\n      paths: [\n        \"src/approvals.ts\",\n        \"src/host.ts\",\n        \"src/flow-control.ts\",\n        \"src/monitors.ts\",\n        \"src/workspace.ts\",\n        \"src/run.tsx\",\n        \"src/app.tsx\"\n      ]\n    },\n    {\n      id: \"write-path-containment\",\n      title: \"An fs:write request names the path the write actually reaches after symlinks\",\n      threat:\n        \"A model writes through a workspace symlink to ~/.ssh or shell rc files while the approval row or a session grant says it stays inside the workspace.\",\n      lookFor: [\n        \"`real` in approvals.ts failing to follow a dangling last symlink, a relative link target, or `..` after a link, so `relative(root, target)` reports inside for an outside target.\",\n        \"`Changes.touched` returning fewer paths than an edit, write or apply_patch input writes, so a named path escapes the request list.\",\n        \"`project` granting a literal fs:write resource without `real`, or a glob resource narrower than `/**`.\"\n      ],\n      paths: [\"src/approvals.ts\", \"src/changes.ts\"]\n    },\n    {\n      id: \"shell-secret-redaction\",\n      title:\n        \"Credential values from the environment never reach the screen, the session file or the model through ! output\",\n      threat:\n        \"A `!printenv` or a command that echoes a token sends the person's API keys to the model provider and leaves them in session files.\",\n      lookFor: [\n        \"A path from child stdout or stderr to `onOutput`, the spill file, `Result.output` or `contextText` that bypasses `Output.redactor(env)`.\",\n        \"`redactor` releasing a prefix of a secret split across two chunks, or the name pattern missing a credential variable such as a *_KEY or *_TOKEN name.\",\n        \"Spill files written with a mode other than 0o600 or at a predictable name in a shared temp directory.\",\n        \"`persisted` keeping a `!!` command's output or `fullOutputPath` in the session record.\"\n      ],\n      paths: [\"src/shell.ts\", \"src/shell-output.ts\", \"src/context.ts\", \"src/session.ts\"]\n    },\n    {\n      id: \"session-file-privacy\",\n      title: \"Session, worker, eval and diagnostic files are owner-only and redacted before they reach disk\",\n      threat: \"Another local user reads the person's prompts, diffs, shell output and tokens from ~/.smithers/tui.\",\n      lookFor: [\n        \"A mkdir without mode 0o700 plus chmod, or a file write or append without mode 0o600, in session.ts or log.ts.\",\n        \"A `Session.Record` type written through `JSON.stringify` without `strings` redaction that can hold model or tool text rather than ids, paths or re-executed bytes.\",\n        \"`directory` or `slug` letting a crafted cwd escape `root()` with `..` or an absolute component.\",\n        \"Resume or fork reading a session file from another cwd's folder without matching its header cwd.\"\n      ],\n      paths: [\"src/session.ts\", \"src/log.ts\", \"src/workspace.ts\"]\n    },\n    {\n      id: \"undo-write-containment\",\n      title: \"Undo writes and deletes only the files the reversed calls changed, inside the workspace\",\n      threat:\n        \"A tampered or crafted patch receipt makes undo overwrite or unlink files outside the person's repository.\",\n      lookFor: [\n        \"`resolve(cwd, file.path)` in undo.ts accepting an absolute path or `..` from a patch's old or new file name without a containment check.\",\n        \"`plan` writing any file when one path conflicts, or `commit` leaving a partial restore after a write error.\",\n        \"A bash receipt, whose diff is repository-wide, being reversed and clobbering another worker's edits.\"\n      ],\n      paths: [\"src/undo.ts\", \"src/changes.ts\"]\n    },\n    {\n      id: \"contributed-action-authority\",\n      title:\n        \"Published panels, keys and status items run nothing until the person chooses them, and never a shell command\",\n      threat:\n        \"A model or repository flow publishes a panel or global key that launches flows or prompts on the person's behalf, or hijacks a built-in key.\",\n      lookFor: [\n        \"`Panels.Action` or `Extension.Contribution` gaining a variant that carries a command string or runs on publish rather than on selection.\",\n        \"`Contributions` letting a runtime or repo owner override a built-in or plugin key, or exceed `limits`.\",\n        \"`perform` in app.tsx starting a flow run that skips the approval gate the same flow gets from a model call.\"\n      ],\n      paths: [\"src/extension.ts\", \"src/panels.ts\", \"src/contributions.ts\", \"src/app.tsx\", \"src/surfaces.ts\"]\n    },\n    {\n      id: \"child-process-argv\",\n      title: \"Helper processes run with argv arrays, and only the person's own ! line and $EDITOR go through a shell\",\n      threat:\n        \"A file name, flow input or model string that reaches git, jj, rg, the clipboard or the editor runs attacker-chosen shell code.\",\n      lookFor: [\n        \"A `spawn`, `execFile` or `Subprocess.spawn` call with `shell: true` or a template string built from a path, model output or flow input.\",\n        \"The editor temp path spliced into the shell program in external.ts instead of passed as `$1`.\",\n        \"A git or jj argument taken from input that could start with `-` and be read as an option.\"\n      ],\n      paths: [\n        \"src/external.ts\",\n        \"src/clipboard.ts\",\n        \"src/files.ts\",\n        \"src/changes.ts\",\n        \"src/subprocess.ts\",\n        \"src/shell.ts\",\n        \"src/search.ts\"\n      ]\n    },\n    {\n      id: \"terminal-escape-injection\",\n      title: \"Model, tool and command text cannot write raw terminal control sequences\",\n      threat:\n        \"A file or command output the agent reads rewrites the person's terminal, sets its title or clipboard via OSC 52, or spoofs an approval row.\",\n      lookFor: [\n        \"`clean` in shell-output.ts passing C1 controls, OSC, DCS or CSI sequences split across chunks.\",\n        \"Transcript, panel or subagent views rendering model or tool text that has not passed through a sanitizer the renderer relies on.\"\n      ],\n      paths: [\n        \"src/shell-output.ts\",\n        \"src/transcript-view.ts\",\n        \"src/view.tsx\",\n        \"src/app-view.tsx\",\n        \"src/subagent-view.tsx\",\n        \"src/panels.ts\"\n      ]\n    },\n    {\n      id: \"repository-config-trust\",\n      title: \"Files a cloned repository supplies never widen authority or run code before the person acts\",\n      threat:\n        \"A malicious repository the person opens the TUI in runs code or gains unapproved capabilities through its flows/, markdown agents, .smithers/home.json or AGENTS.md.\",\n      lookFor: [\n        \"Flow discovery or `describe` importing or executing a repository flow module rather than reading registry metadata.\",\n        \"Approval rows in flow-control.ts computed from a flow's self-declared `capabilities` frontmatter that the engine does not also enforce, so an under-declared flow runs unprompted.\",\n        \"A markdown agent's `flows:` widening its capabilities to `*` without the widened set reaching the approval request.\",\n        \"`Home.read` or `Smithers` rows starting a flow on render or without the person selecting the row.\",\n        \"AGENTS.md or CLAUDE.md text from the repository placed in the system prompt with authority to change approval mode or seats.\"\n      ],\n      paths: [\n        \"src/flows.ts\",\n        \"src/flow-control.ts\",\n        \"src/home.ts\",\n        \"src/smithers.ts\",\n        \"src/context.ts\",\n        \"src/agents.ts\",\n        \"src/host.ts\"\n      ]\n    },\n    {\n      id: \"credential-routing\",\n      title: \"Detected credentials reach only the provider they belong to\",\n      threat:\n        \"A credential file or API key read at startup is sent to another provider, logged, or shown in the model picker.\",\n      lookFor: [\n        \"`Models.detect` returning credential file contents or keys in a field that is rendered, logged or persisted.\",\n        \"SMITHERS_TUI_SEAT or worker seat overrides routing an Anthropic or OpenAI key to an arbitrary endpoint.\",\n        \"`Log.write` or a toast including an Error whose message holds a request header.\"\n      ],\n      paths: [\"src/models.ts\", \"src/host.ts\", \"src/log.ts\", \"src/runtime.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, unitTests, e2eTests, lint, fmt, ...securityReview }\n})\n","coverageDirectives":[{"line":47,"text":"// Coverage policy: assertion-only for the Bun suite until a whole-source"},{"line":111,"text":"include: [\"src/**\"],"},{"line":120,"text":"\"`Approvals.consequential` or `requests` classifying a proc:spawn, net:* or fs:write capability as sealed, or skipping a declared capability it cannot parse.\","},{"line":194,"text":"\"`perform` in app.tsx starting a flow run that skips the approval gate the same flow gets from a model call.\""}]},{"path":"apps/tui/tsconfig.json","sha256":"46ac0aed629aece048748ffec84f6c21ffb006cd92798057af66c356fe7a359e","source":"{\n  \"compilerOptions\": {\n    \"lib\": [\"ESNext\", \"DOM\", \"DOM.AsyncIterable\"],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"@opentui/react\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": false,\n    \"allowImportingTsExtensions\": true,\n    \"noEmit\": true,\n    \"skipLibCheck\": true,\n    \"types\": [\"bun-types\"]\n  },\n  \"include\": [\"src\", \"test\", \"e2e\"]\n}\n","coverageDirectives":[{"line":14,"text":"\"skipLibCheck\": true,"},{"line":17,"text":"\"include\": [\"src\", \"test\", \"e2e\"]"}]}],"targets":[{"package":"apps/tui","label":"//apps/tui:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"apps/tui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"apps/tui/src/**/*.tsx","exclude":[]},{"kind":"glob","pattern":"apps/tui/test/**/*","exclude":[]},{"kind":"glob","pattern":"apps/tui/e2e/**/*","exclude":[]},{"kind":"file","path":"apps/tui/bunfig.toml"},{"kind":"file","path":"apps/tui/tsconfig.json"}],"dependencies":["//packages/smithers:nativeSources"]},{"package":"apps/tui","label":"//apps/tui:e2eTests","rule":"NodeTest","kinds":["test"],"exclusive":true,"inputs":[{"kind":"glob","pattern":"apps/tui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"apps/tui/src/**/*.tsx","exclude":[]},{"kind":"glob","pattern":"apps/tui/test/**/*","exclude":[]},{"kind":"glob","pattern":"apps/tui/e2e/**/*","exclude":[]},{"kind":"file","path":"apps/tui/bunfig.toml"}],"dependencies":["//packages/smithers:nativeSources"]},{"package":"apps/tui","label":"//apps/tui:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"apps/tui/**/*.{ts,tsx,json,md}","exclude":[]},{"kind":"file","path":"apps/tui/dprint.json"}],"dependencies":[]},{"package":"apps/tui","label":"//apps/tui:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"apps/tui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"apps/tui/src/**/*.tsx","exclude":[]},{"kind":"file","path":"apps/tui/eslint.config.js"},{"kind":"file","path":"eslint.invariants.js"}],"dependencies":[]},{"package":"apps/tui","label":"//apps/tui:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["apps/tui/src/**"]},{"kind":"glob","pattern":"apps/tui/src/**","exclude":[]}],"dependencies":[]},{"package":"apps/tui","label":"//apps/tui:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["apps/tui/src/**"]},{"kind":"glob","pattern":"apps/tui/src/**","exclude":[]}],"dependencies":[]},{"package":"apps/tui","label":"//apps/tui:unitTests","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"apps/tui/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"apps/tui/src/**/*.tsx","exclude":[]},{"kind":"glob","pattern":"apps/tui/test/**/*","exclude":[]},{"kind":"glob","pattern":"apps/tui/e2e/**/*","exclude":[]},{"kind":"file","path":"apps/tui/bunfig.toml"}],"dependencies":["//packages/smithers:nativeSources"]}],"areas":["src/activity-view.tsx","src/activity.ts","src/agents.ts","src/app-view.tsx","src/app.tsx","src/approvals.ts","src/ask.ts","src/asks.ts","src/box.ts","src/budget.ts","src/catalog.ts","src/cell-display.ts","src/changes.ts","src/cli.ts","src/clipboard.ts","src/complete.ts","src/composer.ts","src/context.ts","src/contributions.ts","src/credit.ts","src/cursor.ts","src/deadline.ts","src/debug.ts","src/devtools.ts","src/drag-scroll.ts","src/editor.ts","src/extension.ts","src/external.ts","src/factory.ts","src/failures.ts","src/files.ts","src/flow-control.ts","src/flows.ts","src/fuzzy.ts","src/graph.ts","src/home.ts","src/host.ts","src/inbox.ts","src/issue-views.ts","src/key-dispatch.ts","src/keys.ts","src/lifecycle.ts","src/log.ts","src/main.tsx","src/models.ts","src/monitors.ts","src/native.ts","src/palette.ts","src/panel-view.tsx","src/panels.ts","src/picker.ts","src/print.ts","src/reads.ts","src/replay.ts","src/review-view.tsx","src/run-card-view.tsx","src/run-card.ts","src/run-history.ts","src/run.tsx","src/runtime-version.ts","src/runtime.ts","src/scrubber.ts","src/search.ts","src/session.ts","src/shell-output.ts","src/shell.ts","src/smithers.ts","src/spend.ts","src/steering.ts","src/subagent-view.tsx","src/subagents.ts","src/subprocess.ts","src/summary.ts","src/surfaces.ts","src/tab-error.ts","src/tabs-view.tsx","src/tabs.ts","src/target-approvals.ts","src/theme.ts","src/timeline.ts","src/toasts.ts","src/transcript-rail.tsx","src/transcript-view.ts","src/transcript.ts","src/tree.ts","src/undo.ts","src/view.tsx","src/watch.ts","src/workspace.ts","src/wrapped.ts"],"boundaries":["cli","installed-consumer","terminal"]}
+{
+  "id": "apps/tui",
+  "name": "smithers-tui",
+  "owner": {
+    "declaration": "apps/tui/package.json",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {
+    "start": "bun src/main.tsx",
+    "ask": "bun src/ask.ts",
+    "test": "bun test ./test",
+    "typecheck": "vibelang -p tsconfig.json --noEmit",
+    "test:e2e": "bun test ./e2e",
+    "lint": "eslint src --max-warnings=0 && dprint check"
+  },
+  "exports": null,
+  "production": [
+    "src/activity-view.tsx",
+    "src/activity.ts",
+    "src/agents.ts",
+    "src/app-view.tsx",
+    "src/app.tsx",
+    "src/approvals.ts",
+    "src/ask.ts",
+    "src/asks.ts",
+    "src/box.ts",
+    "src/budget.ts",
+    "src/catalog.ts",
+    "src/cell-display.ts",
+    "src/changes.ts",
+    "src/cli.ts",
+    "src/clipboard.ts",
+    "src/complete.ts",
+    "src/composer.ts",
+    "src/context.ts",
+    "src/contributions.ts",
+    "src/credit.ts",
+    "src/cursor.ts",
+    "src/deadline.ts",
+    "src/debug.ts",
+    "src/devtools.ts",
+    "src/drag-scroll.ts",
+    "src/editor.ts",
+    "src/extension.ts",
+    "src/external.ts",
+    "src/factory.ts",
+    "src/failures.ts",
+    "src/files.ts",
+    "src/flow-control.ts",
+    "src/flows.ts",
+    "src/fuzzy.ts",
+    "src/graph.ts",
+    "src/home.ts",
+    "src/host.ts",
+    "src/inbox.ts",
+    "src/issue-views.ts",
+    "src/key-dispatch.ts",
+    "src/keys.ts",
+    "src/lifecycle.ts",
+    "src/log.ts",
+    "src/main.tsx",
+    "src/models.ts",
+    "src/monitors.ts",
+    "src/native.ts",
+    "src/palette.ts",
+    "src/panel-view.tsx",
+    "src/panels.ts",
+    "src/picker.ts",
+    "src/print.ts",
+    "src/reads.ts",
+    "src/replay.ts",
+    "src/review-view.tsx",
+    "src/run-card-view.tsx",
+    "src/run-card.ts",
+    "src/run-history.ts",
+    "src/run.tsx",
+    "src/runtime-version.ts",
+    "src/runtime.ts",
+    "src/scrubber.ts",
+    "src/search.ts",
+    "src/session.ts",
+    "src/shell-output.ts",
+    "src/shell.ts",
+    "src/smithers.ts",
+    "src/spend.ts",
+    "src/steering.ts",
+    "src/subagent-view.tsx",
+    "src/subagents.ts",
+    "src/subprocess.ts",
+    "src/summary.ts",
+    "src/surfaces.ts",
+    "src/tab-error.ts",
+    "src/tabs-view.tsx",
+    "src/tabs.ts",
+    "src/target-approvals.ts",
+    "src/theme.ts",
+    "src/timeline.ts",
+    "src/toasts.ts",
+    "src/transcript-rail.tsx",
+    "src/transcript-view.ts",
+    "src/transcript.ts",
+    "src/tree.ts",
+    "src/undo.ts",
+    "src/view.tsx",
+    "src/watch.ts",
+    "src/workspace.ts",
+    "src/wrapped.ts"
+  ],
+  "tests": [
+    "apps/tui/e2e/agent-prepare.test.ts",
+    "apps/tui/e2e/answer-frames-fixture.tsx",
+    "apps/tui/e2e/answer-frames.test.ts",
+    "apps/tui/e2e/approval-fixture.tsx",
+    "apps/tui/e2e/asks-fixture.tsx",
+    "apps/tui/e2e/asks.test.ts",
+    "apps/tui/e2e/cells-scroll-fixture.tsx",
+    "apps/tui/e2e/cells-scroll.test.ts",
+    "apps/tui/e2e/cleanup.test.ts",
+    "apps/tui/e2e/command-routes.test.ts",
+    "apps/tui/e2e/commands.test.ts",
+    "apps/tui/e2e/compiled-effect.test.ts",
+    "apps/tui/e2e/compiled-shell.test.ts",
+    "apps/tui/e2e/continue-fixture.tsx",
+    "apps/tui/e2e/continue.test.ts",
+    "apps/tui/e2e/diff-focus-fixture.tsx",
+    "apps/tui/e2e/diff-focus.test.ts",
+    "apps/tui/e2e/discovery-failure.test.ts",
+    "apps/tui/e2e/editor-unicode.test.ts",
+    "apps/tui/e2e/extensions-fixture.tsx",
+    "apps/tui/e2e/extensions-shots.ts",
+    "apps/tui/e2e/factory-todo.test.ts",
+    "apps/tui/e2e/factory.test.ts",
+    "apps/tui/e2e/flow-fallback.test.ts",
+    "apps/tui/e2e/flow-form.test.ts",
+    "apps/tui/e2e/flow-park.test.ts",
+    "apps/tui/e2e/graph.test.ts",
+    "apps/tui/e2e/help-unicode.test.ts",
+    "apps/tui/e2e/help.test.ts",
+    "apps/tui/e2e/input-ownership-preload.mjs",
+    "apps/tui/e2e/input-ownership.test.ts",
+    "apps/tui/e2e/main-view-fixture.tsx",
+    "apps/tui/e2e/main-view.test.ts",
+    "apps/tui/e2e/moments.test.ts",
+    "apps/tui/e2e/monitor-fixture.tsx",
+    "apps/tui/e2e/native-packaging.test.ts",
+    "apps/tui/e2e/packaged-runtime.test.ts",
+    "apps/tui/e2e/panel-action-fixture.tsx",
+    "apps/tui/e2e/queue-restart.test.ts",
+    "apps/tui/e2e/real-flows-fixture.tsx",
+    "apps/tui/e2e/remote-flow-failure.test.ts",
+    "apps/tui/e2e/shots.ts",
+    "apps/tui/e2e/steering-delivery.test.ts",
+    "apps/tui/e2e/subagent-fold.test.ts",
+    "apps/tui/e2e/tabs-fixture.tsx",
+    "apps/tui/e2e/takeover.test.ts",
+    "apps/tui/e2e/tmux.test.ts",
+    "apps/tui/e2e/tmux.ts",
+    "apps/tui/e2e/tui.test.ts",
+    "apps/tui/e2e/undo-hold-fixture.ts",
+    "apps/tui/e2e/undo-hold.ts",
+    "apps/tui/e2e/unicode-editor.test.ts",
+    "apps/tui/e2e/workspace-fixture.tsx",
+    "apps/tui/e2e/workspace-outcome.test.ts",
+    "apps/tui/e2e/wrapped.test.ts",
+    "apps/tui/test/activity.test.ts",
+    "apps/tui/test/agents.test.ts",
+    "apps/tui/test/answer-frames.test.tsx",
+    "apps/tui/test/app-agent-controls.test.tsx",
+    "apps/tui/test/app-approval.test.tsx",
+    "apps/tui/test/app-asks.test.tsx",
+    "apps/tui/test/app-chrome.test.tsx",
+    "apps/tui/test/app-diff-focus.test.tsx",
+    "apps/tui/test/app-flow-progress.test.tsx",
+    "apps/tui/test/app-flows.test.tsx",
+    "apps/tui/test/app-grep-display.test.tsx",
+    "apps/tui/test/app-monitor-controls.test.tsx",
+    "apps/tui/test/app-panels.test.tsx",
+    "apps/tui/test/app-paste.test.tsx",
+    "apps/tui/test/app-reference-controls.test.tsx",
+    "apps/tui/test/app-remote-flow-failure.test.tsx",
+    "apps/tui/test/app-session-controls.test.tsx",
+    "apps/tui/test/app-settings-controls.test.tsx",
+    "apps/tui/test/app-shutdown.test.tsx",
+    "apps/tui/test/app-summary-focus.test.tsx",
+    "apps/tui/test/app-target-approvals.test.tsx",
+    "apps/tui/test/app-transcript-controls.test.tsx",
+    "apps/tui/test/app-view.test.tsx",
+    "apps/tui/test/app-worker-model-switch.test.tsx",
+    "apps/tui/test/app-workers.test.tsx",
+    "apps/tui/test/app.test.tsx",
+    "apps/tui/test/approval-view.test.tsx",
+    "apps/tui/test/approvals.test.ts",
+    "apps/tui/test/ask.test.ts",
+    "apps/tui/test/asks.test.ts",
+    "apps/tui/test/box.test.ts",
+    "apps/tui/test/budget.test.ts",
+    "apps/tui/test/cap.test.ts",
+    "apps/tui/test/catalog.test.ts",
+    "apps/tui/test/changes.test.ts",
+    "apps/tui/test/cli.test.ts",
+    "apps/tui/test/clipboard.test.ts",
+    "apps/tui/test/clocks.test.tsx",
+    "apps/tui/test/color-mode.test.tsx",
+    "apps/tui/test/command-receipts.test.tsx",
+    "apps/tui/test/complete.test.ts",
+    "apps/tui/test/composer.test.ts",
+    "apps/tui/test/contributions.test.ts",
+    "apps/tui/test/coverage-roster.test.ts",
+    "apps/tui/test/credit.test.ts",
+    "apps/tui/test/cursor.test.tsx",
+    "apps/tui/test/deadline.test.ts",
+    "apps/tui/test/debug.test.ts",
+    "apps/tui/test/devtools.test.ts",
+    "apps/tui/test/diff-focus-fixture.ts",
+    "apps/tui/test/dprint-jsx.test.ts",
+    "apps/tui/test/drag-scroll.test.tsx",
+    "apps/tui/test/editor-native.test.ts",
+    "apps/tui/test/editor-selection.test.tsx",
+    "apps/tui/test/entry.test.ts",
+    "apps/tui/test/example.test.ts",
+    "apps/tui/test/extension.test.ts",
+    "apps/tui/test/external.test.ts",
+    "apps/tui/test/factory.test.ts",
+    "apps/tui/test/failed-status.test.ts",
+    "apps/tui/test/failure-card.test.tsx",
+    "apps/tui/test/failure-lines.test.tsx",
+    "apps/tui/test/failures.test.ts",
+    "apps/tui/test/files.test.ts",
+    "apps/tui/test/fixtures/fan-out.jsonl",
+    "apps/tui/test/fixtures/fix-add.jsonl",
+    "apps/tui/test/fixtures/flows-project/.smithers/flows/composed/flow.ts",
+    "apps/tui/test/fixtures/flows-project/.smithers/flows/consequential/flow.ts",
+    "apps/tui/test/fixtures/flows-project/.smithers/flows/echo/flow.ts",
+    "apps/tui/test/fixtures/flows-project/.smithers/flows/review/flow.mdx",
+    "apps/tui/test/fixtures/flows-project/.smithers/flows/scout/flow.mdx",
+    "apps/tui/test/fixtures/flows-project/.smithers/flows/wide/flow.ts",
+    "apps/tui/test/fixtures/pong.jsonl",
+    "apps/tui/test/fixtures/remote-failure-project/.smithers/flows/failure/flow.ts",
+    "apps/tui/test/fixtures/timeline-worker.jsonl",
+    "apps/tui/test/fixtures/vendor/claude",
+    "apps/tui/test/fixtures/vendor/codex",
+    "apps/tui/test/flow-control.test.ts",
+    "apps/tui/test/flows.test.ts",
+    "apps/tui/test/forest.test.ts",
+    "apps/tui/test/fork.test.ts",
+    "apps/tui/test/form.test.ts",
+    "apps/tui/test/graph-view.test.tsx",
+    "apps/tui/test/graph.test.ts",
+    "apps/tui/test/help.test.ts",
+    "apps/tui/test/home.test.ts",
+    "apps/tui/test/host.test.ts",
+    "apps/tui/test/inbox.test.ts",
+    "apps/tui/test/input-ownership.test.ts",
+    "apps/tui/test/issue-views.test.ts",
+    "apps/tui/test/key-dispatch.test.ts",
+    "apps/tui/test/keys.test.ts",
+    "apps/tui/test/lifecycle.test.ts",
+    "apps/tui/test/list-view.test.tsx",
+    "apps/tui/test/log.test.ts",
+    "apps/tui/test/models.integration.test.ts",
+    "apps/tui/test/models.test.ts",
+    "apps/tui/test/module-layer-flow.test.ts",
+    "apps/tui/test/modules.test.ts",
+    "apps/tui/test/moments.test.ts",
+    "apps/tui/test/monitor-boundaries.test.ts",
+    "apps/tui/test/monitor-judge.test.ts",
+    "apps/tui/test/monitors.test.ts",
+    "apps/tui/test/native-helper.test.ts",
+    "apps/tui/test/native-target.test.ts",
+    "apps/tui/test/palette.test.ts",
+    "apps/tui/test/panel.test.ts",
+    "apps/tui/test/park-ask.test.ts",
+    "apps/tui/test/parked-retry-controls.test.ts",
+    "apps/tui/test/picker-search.test.tsx",
+    "apps/tui/test/picker.test.ts",
+    "apps/tui/test/preload.ts",
+    "apps/tui/test/print.test.ts",
+    "apps/tui/test/queue-recovery.test.ts",
+    "apps/tui/test/raw-error-render.test.ts",
+    "apps/tui/test/react-instance.test.ts",
+    "apps/tui/test/read-cache.test.ts",
+    "apps/tui/test/reads.test.ts",
+    "apps/tui/test/recursion.test.ts",
+    "apps/tui/test/regular-file.test.ts",
+    "apps/tui/test/review-module-flow.test.ts",
+    "apps/tui/test/review-view.test.tsx",
+    "apps/tui/test/run-card-view.test.tsx",
+    "apps/tui/test/run-card.test.ts",
+    "apps/tui/test/run-history.test.ts",
+    "apps/tui/test/runtime-version.test.ts",
+    "apps/tui/test/runtime.test.ts",
+    "apps/tui/test/scratch.ts",
+    "apps/tui/test/scrubber-view.test.tsx",
+    "apps/tui/test/scrubber.test.ts",
+    "apps/tui/test/search-parse.test.ts",
+    "apps/tui/test/search.test.ts",
+    "apps/tui/test/session-listing.test.ts",
+    "apps/tui/test/session.test.ts",
+    "apps/tui/test/shell-output.test.ts",
+    "apps/tui/test/shell.test.ts",
+    "apps/tui/test/smithers.test.ts",
+    "apps/tui/test/spend.test.ts",
+    "apps/tui/test/status-glyphs.test.tsx",
+    "apps/tui/test/status-panels.test.ts",
+    "apps/tui/test/subagent-view.test.tsx",
+    "apps/tui/test/subagents.test.tsx",
+    "apps/tui/test/subprocess.test.ts",
+    "apps/tui/test/summary.test.ts",
+    "apps/tui/test/surfaces.test.ts",
+    "apps/tui/test/tabs.test.tsx",
+    "apps/tui/test/takeover.test.ts",
+    "apps/tui/test/target-approvals.test.ts",
+    "apps/tui/test/theme.test.ts",
+    "apps/tui/test/timeline.test.ts",
+    "apps/tui/test/tmux.test.ts",
+    "apps/tui/test/toast-stack-view.test.tsx",
+    "apps/tui/test/toasts.test.ts",
+    "apps/tui/test/transcript-clipping.test.tsx",
+    "apps/tui/test/transcript-view.test.tsx",
+    "apps/tui/test/transcript.test.ts",
+    "apps/tui/test/undo.test.ts",
+    "apps/tui/test/view-columns.test.tsx",
+    "apps/tui/test/watch.test.ts",
+    "apps/tui/test/worker-durability.test.ts",
+    "apps/tui/test/worker-model-switch.test.ts",
+    "apps/tui/test/worker-steer.test.ts",
+    "apps/tui/test/workspace.test.ts",
+    "apps/tui/test/wrapped.test.ts"
+  ],
+  "benchmarks": [
+    "apps/tui/bench/activity-trace.ts",
+    "apps/tui/bench/flow-discovery.ts"
+  ],
+  "platformPaths": [
+    "apps/tui/bunfig.toml",
+    "apps/tui/e2e/native-packaging.test.ts",
+    "apps/tui/src/native.ts",
+    "apps/tui/src/subprocess.ts",
+    "apps/tui/test/app-worker-model-switch.test.tsx",
+    "apps/tui/test/app-workers.test.tsx",
+    "apps/tui/test/editor-native.test.ts",
+    "apps/tui/test/fixtures/timeline-worker.jsonl",
+    "apps/tui/test/native-helper.test.ts",
+    "apps/tui/test/native-target.test.ts",
+    "apps/tui/test/subprocess.test.ts",
+    "apps/tui/test/worker-durability.test.ts",
+    "apps/tui/test/worker-model-switch.test.ts",
+    "apps/tui/test/worker-steer.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "apps/tui/e2e/tui.test.ts",
+      "line": 671,
+      "text": "it.skipIf(Bun.which(\"vim\") === null)("
+    },
+    {
+      "path": "apps/tui/e2e/tui.test.ts",
+      "line": 696,
+      "text": "it.skipIf(Bun.which(\"vim\") === null)(\"cleans up a suspended external editor before restoring the draft\", async () => {"
+    },
+    {
+      "path": "apps/tui/e2e/tui.test.ts",
+      "line": 716,
+      "text": "it.skipIf(Bun.which(\"vim\") === null)("
+    },
+    {
+      "path": "apps/tui/src/app.tsx",
+      "line": 1623,
+      "text": "Log.write(\"factory.todo\", error)"
+    },
+    {
+      "path": "apps/tui/test/log.test.ts",
+      "line": 156,
+      "text": "Log.write(\"factory.todo\", wrapped)"
+    },
+    {
+      "path": "apps/tui/test/session.test.ts",
+      "line": 168,
+      "text": "it.skipIf(process.platform !== \"darwin\")("
+    },
+    {
+      "path": "apps/tui/test/shell.test.ts",
+      "line": 33,
+      "text": "it.skipIf(bashExecutable === null)("
+    },
+    {
+      "path": "apps/tui/test/shell.test.ts",
+      "line": 54,
+      "text": "it.skipIf(bashExecutable === null)("
+    },
+    {
+      "path": "apps/tui/test/undo.test.ts",
+      "line": 798,
+      "text": "it.skipIf(Bun.which(\"jj\") === null)("
+    },
+    {
+      "path": "apps/tui/test/watch.test.ts",
+      "line": 294,
+      "text": "it.skipIf(process.getuid?.() === 0)("
+    },
+    {
+      "path": "apps/tui/test/watch.test.ts",
+      "line": 440,
+      "text": "it.skipIf(process.getuid?.() === 0)("
+    }
+  ],
+  "configurations": [
+    {
+      "path": "apps/tui/eslint.config.js",
+      "sha256": "8838c4a35210697b8c886e3d61aa4404671394fcef45cb54bc698d1dd557c5e8",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../eslint.invariants.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.{ts,tsx}\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  {\n    // Process entry points (main.tsx checks the runtime, run.tsx is the CLI) print to the terminal;\n    // `log.ts` wraps `console.error` for the renderer.\n    files: [\"src/main.tsx\", \"src/run.tsx\", \"src/ask.ts\", \"src/log.ts\"],\n    rules: { \"no-console\": \"off\" }\n  },\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 40,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "apps/tui/package.json",
+      "sha256": "fc16279ebad8a79b9b1a103f4072a52995cce26805d876dc2ba8c0b6cb6af873",
+      "source": "{\n  \"name\": \"smithers-tui\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"description\": \"A minimal terminal coding agent over the Smithers cell harness\",\n  \"type\": \"module\",\n  \"bin\": {\n    \"smithers-tui\": \"./src/main.tsx\"\n  },\n  \"scripts\": {\n    \"start\": \"bun src/main.tsx\",\n    \"ask\": \"bun src/ask.ts\",\n    \"test\": \"bun test ./test\",\n    \"typecheck\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test:e2e\": \"bun test ./e2e\",\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\"\n  },\n  \"dependencies\": {\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@opentui/core\": \"0.5.11\",\n    \"@opentui/react\": \"0.5.11\",\n    \"@smthrs/agent\": \"workspace:*\",\n    \"@smthrs/capability\": \"workspace:*\",\n    \"@smthrs/cli\": \"workspace:*\",\n    \"@smthrs/control\": \"workspace:*\",\n    \"@smthrs/engine\": \"workspace:*\",\n    \"@smthrs/flow\": \"workspace:*\",\n    \"@smthrs/gateway\": \"workspace:*\",\n    \"@smthrs/harness\": \"workspace:*\",\n    \"@smthrs/journal\": \"workspace:*\",\n    \"@smthrs/kernel\": \"workspace:*\",\n    \"@smthrs/model\": \"workspace:*\",\n    \"@smthrs/plan\": \"workspace:*\",\n    \"@smthrs/registry\": \"workspace:*\",\n    \"@smthrs/rpc\": \"workspace:*\",\n    \"@smthrs/sandbox\": \"workspace:*\",\n    \"@smthrs/std\": \"workspace:*\",\n    \"diff\": \"9.0.0\",\n    \"effect\": \"4.0.5\",\n    \"react\": \"19.2.8\",\n    \"string-width\": \"7.2.0\",\n    \"@smthrs/ui\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/react\": \"19.2.18\",\n    \"@smthrs/ui-styleguide\": \"workspace:*\",\n    \"@xterm/headless\": \"6.0.0\",\n    \"bun-types\": \"^1.4.0\",\n    \"dprint\": \"0.57.1\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"typescript\": \"~5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "apps/tui/PACKAGE.ts",
+      "sha256": "525c3309e8ee8e6620cc7c1aee463aececca8ec0350c8834742ef33ef02ddb65",
+      "source": "/**\n * Targets for the terminal UI: the typecheck, lint, format check, and the\n * unit and terminal suites.\n *\n * The suite replays a recorded cell run through the transcript fold, so a\n * change to `AgentEvent` that the screen no longer understands fails here.\n * It runs under Bun because the suite is written for `bun test`.\n *\n * @since 1.0.0\n */\nimport { Smithers } from \"@smthrs/targets\"\nimport { Package as cli } from \"../../packages/smithers/PACKAGE.ts\"\n\nconst cwd = \"apps/tui\"\n\n/** The app, its recorded fixture, and the suite beside them. */\nconst sources = [\n  Smithers.glob(\"//apps/tui/src/**/*.ts\"),\n  Smithers.glob(\"//apps/tui/src/**/*.tsx\"),\n  Smithers.glob(\"//apps/tui/test/**/*\"),\n  Smithers.glob(\"//apps/tui/e2e/**/*\"),\n  // Preloads `test/preload.ts`, which gives each run a private TMPDIR it removes.\n  Smithers.file(\"//apps/tui/bunfig.toml\")\n]\n\n/**\n * Checks the app and its suite against the package tsconfig.\n *\n * @since 1.0.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [cli.nativeSources],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The transcript suite.\n *\n * @since 1.0.0\n * @category test\n */\n// Coverage policy: assertion-only for the Bun suite until a whole-source\n// denominator is measured. See packages/repo-targets/contracts/README.md.\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"./test\"]),\n  srcs: sources,\n  deps: [cli.nativeSources],\n  cwd\n})\n\n/**\n * The production terminal, command effects, cleanup, and packaged runtimes in\n * tmux. Exclusive: wildcard `test` and `ci` selections omit it, and CI's\n * apps-e2e job names it by label.\n */\nconst e2eTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"./e2e\"]),\n  timeout: \"20m\",\n  exclusive: true,\n  srcs: sources,\n  deps: [cli.nativeSources],\n  cwd\n})\n\n/**\n * Lints the app sources against the package rule set.\n *\n * @since 1.0.0\n * @category lint\n */\nconst lint = Smithers.EsLint({\n  sources: [Smithers.glob(\"src/**/*.ts\"), Smithers.glob(\"src/**/*.tsx\")],\n  configs: [Smithers.file(\"eslint.config.js\"), Smithers.file(\"//eslint.invariants.js\")],\n  deps: [],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\n/**\n * Checks formatting across the app, its suites, and its docs.\n *\n * @since 1.0.0\n * @category lint\n */\nconst fmt = Smithers.Dprint({\n  sources: [Smithers.glob(\"**/*.{ts,tsx,json,md}\")],\n  config: Smithers.file(\"dprint.json\"),\n  deps: [],\n  fix: false,\n  cwd\n})\n\n/**\n * Security review of the terminal host: the approval gate, the person's own\n * shell, credential redaction on every sink, owner-only session files, undo\n * writes, contributed UI actions, and child-process argv.\n *\n * @since 1.0.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"approval-gate\",\n      title: \"Every consequential flow call and project launch waits on the grant store unless the operator chose all\",\n      threat:\n        \"A prompt-injected model or repository flow writes files, spawns processes or reaches the network on the person's machine without the y/n the person asked for with --approve ask or deny.\",\n      lookFor: [\n        \"A call path in host.ts, flow-control.ts or workspace.ts that runs a flow or worker without `Approvals.authorize` or `Approvals.check` when the mode is ask or deny.\",\n        \"`Approvals.consequential` or `requests` classifying a proc:spawn, net:* or fs:write capability as sealed, or skipping a declared capability it cannot parse.\",\n        \"A restored shell monitor in monitors.ts armed before `ports.authorize` settles, or armed after a refusal.\",\n        \"The `armMs` delay, `edited`, or `key` letting a typed y, n or a answer a row that appeared mid-draft, or `a` granting a session-wide pattern broader than the workspace for fs:write.\",\n        \"`Approvals.mode` accepting an unknown value, or print mode silently degrading ask to all.\"\n      ],\n      paths: [\n        \"src/approvals.ts\",\n        \"src/host.ts\",\n        \"src/flow-control.ts\",\n        \"src/monitors.ts\",\n        \"src/workspace.ts\",\n        \"src/run.tsx\",\n        \"src/app.tsx\"\n      ]\n    },\n    {\n      id: \"write-path-containment\",\n      title: \"An fs:write request names the path the write actually reaches after symlinks\",\n      threat:\n        \"A model writes through a workspace symlink to ~/.ssh or shell rc files while the approval row or a session grant says it stays inside the workspace.\",\n      lookFor: [\n        \"`real` in approvals.ts failing to follow a dangling last symlink, a relative link target, or `..` after a link, so `relative(root, target)` reports inside for an outside target.\",\n        \"`Changes.touched` returning fewer paths than an edit, write or apply_patch input writes, so a named path escapes the request list.\",\n        \"`project` granting a literal fs:write resource without `real`, or a glob resource narrower than `/**`.\"\n      ],\n      paths: [\"src/approvals.ts\", \"src/changes.ts\"]\n    },\n    {\n      id: \"shell-secret-redaction\",\n      title:\n        \"Credential values from the environment never reach the screen, the session file or the model through ! output\",\n      threat:\n        \"A `!printenv` or a command that echoes a token sends the person's API keys to the model provider and leaves them in session files.\",\n      lookFor: [\n        \"A path from child stdout or stderr to `onOutput`, the spill file, `Result.output` or `contextText` that bypasses `Output.redactor(env)`.\",\n        \"`redactor` releasing a prefix of a secret split across two chunks, or the name pattern missing a credential variable such as a *_KEY or *_TOKEN name.\",\n        \"Spill files written with a mode other than 0o600 or at a predictable name in a shared temp directory.\",\n        \"`persisted` keeping a `!!` command's output or `fullOutputPath` in the session record.\"\n      ],\n      paths: [\"src/shell.ts\", \"src/shell-output.ts\", \"src/context.ts\", \"src/session.ts\"]\n    },\n    {\n      id: \"session-file-privacy\",\n      title: \"Session, worker, eval and diagnostic files are owner-only and redacted before they reach disk\",\n      threat: \"Another local user reads the person's prompts, diffs, shell output and tokens from ~/.smithers/tui.\",\n      lookFor: [\n        \"A mkdir without mode 0o700 plus chmod, or a file write or append without mode 0o600, in session.ts or log.ts.\",\n        \"A `Session.Record` type written through `JSON.stringify` without `strings` redaction that can hold model or tool text rather than ids, paths or re-executed bytes.\",\n        \"`directory` or `slug` letting a crafted cwd escape `root()` with `..` or an absolute component.\",\n        \"Resume or fork reading a session file from another cwd's folder without matching its header cwd.\"\n      ],\n      paths: [\"src/session.ts\", \"src/log.ts\", \"src/workspace.ts\"]\n    },\n    {\n      id: \"undo-write-containment\",\n      title: \"Undo writes and deletes only the files the reversed calls changed, inside the workspace\",\n      threat:\n        \"A tampered or crafted patch receipt makes undo overwrite or unlink files outside the person's repository.\",\n      lookFor: [\n        \"`resolve(cwd, file.path)` in undo.ts accepting an absolute path or `..` from a patch's old or new file name without a containment check.\",\n        \"`plan` writing any file when one path conflicts, or `commit` leaving a partial restore after a write error.\",\n        \"A bash receipt, whose diff is repository-wide, being reversed and clobbering another worker's edits.\"\n      ],\n      paths: [\"src/undo.ts\", \"src/changes.ts\"]\n    },\n    {\n      id: \"contributed-action-authority\",\n      title:\n        \"Published panels, keys and status items run nothing until the person chooses them, and never a shell command\",\n      threat:\n        \"A model or repository flow publishes a panel or global key that launches flows or prompts on the person's behalf, or hijacks a built-in key.\",\n      lookFor: [\n        \"`Panels.Action` or `Extension.Contribution` gaining a variant that carries a command string or runs on publish rather than on selection.\",\n        \"`Contributions` letting a runtime or repo owner override a built-in or plugin key, or exceed `limits`.\",\n        \"`perform` in app.tsx starting a flow run that skips the approval gate the same flow gets from a model call.\"\n      ],\n      paths: [\"src/extension.ts\", \"src/panels.ts\", \"src/contributions.ts\", \"src/app.tsx\", \"src/surfaces.ts\"]\n    },\n    {\n      id: \"child-process-argv\",\n      title: \"Helper processes run with argv arrays, and only the person's own ! line and $EDITOR go through a shell\",\n      threat:\n        \"A file name, flow input or model string that reaches git, jj, rg, the clipboard or the editor runs attacker-chosen shell code.\",\n      lookFor: [\n        \"A `spawn`, `execFile` or `Subprocess.spawn` call with `shell: true` or a template string built from a path, model output or flow input.\",\n        \"The editor temp path spliced into the shell program in external.ts instead of passed as `$1`.\",\n        \"A git or jj argument taken from input that could start with `-` and be read as an option.\"\n      ],\n      paths: [\n        \"src/external.ts\",\n        \"src/clipboard.ts\",\n        \"src/files.ts\",\n        \"src/changes.ts\",\n        \"src/subprocess.ts\",\n        \"src/shell.ts\",\n        \"src/search.ts\"\n      ]\n    },\n    {\n      id: \"terminal-escape-injection\",\n      title: \"Model, tool and command text cannot write raw terminal control sequences\",\n      threat:\n        \"A file or command output the agent reads rewrites the person's terminal, sets its title or clipboard via OSC 52, or spoofs an approval row.\",\n      lookFor: [\n        \"`clean` in shell-output.ts passing C1 controls, OSC, DCS or CSI sequences split across chunks.\",\n        \"Transcript, panel or subagent views rendering model or tool text that has not passed through a sanitizer the renderer relies on.\"\n      ],\n      paths: [\n        \"src/shell-output.ts\",\n        \"src/transcript-view.ts\",\n        \"src/view.tsx\",\n        \"src/app-view.tsx\",\n        \"src/subagent-view.tsx\",\n        \"src/panels.ts\"\n      ]\n    },\n    {\n      id: \"repository-config-trust\",\n      title: \"Files a cloned repository supplies never widen authority or run code before the person acts\",\n      threat:\n        \"A malicious repository the person opens the TUI in runs code or gains unapproved capabilities through its flows/, markdown agents, .smithers/home.json or AGENTS.md.\",\n      lookFor: [\n        \"Flow discovery or `describe` importing or executing a repository flow module rather than reading registry metadata.\",\n        \"Approval rows in flow-control.ts computed from a flow's self-declared `capabilities` frontmatter that the engine does not also enforce, so an under-declared flow runs unprompted.\",\n        \"A markdown agent's `flows:` widening its capabilities to `*` without the widened set reaching the approval request.\",\n        \"`Home.read` or `Smithers` rows starting a flow on render or without the person selecting the row.\",\n        \"AGENTS.md or CLAUDE.md text from the repository placed in the system prompt with authority to change approval mode or seats.\"\n      ],\n      paths: [\n        \"src/flows.ts\",\n        \"src/flow-control.ts\",\n        \"src/home.ts\",\n        \"src/smithers.ts\",\n        \"src/context.ts\",\n        \"src/agents.ts\",\n        \"src/host.ts\"\n      ]\n    },\n    {\n      id: \"credential-routing\",\n      title: \"Detected credentials reach only the provider they belong to\",\n      threat:\n        \"A credential file or API key read at startup is sent to another provider, logged, or shown in the model picker.\",\n      lookFor: [\n        \"`Models.detect` returning credential file contents or keys in a field that is rendered, logged or persisted.\",\n        \"SMITHERS_TUI_SEAT or worker seat overrides routing an Anthropic or OpenAI key to an arbitrary endpoint.\",\n        \"`Log.write` or a toast including an Error whose message holds a request header.\"\n      ],\n      paths: [\"src/models.ts\", \"src/host.ts\", \"src/log.ts\", \"src/runtime.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, unitTests, e2eTests, lint, fmt, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 47,
+          "text": "// Coverage policy: assertion-only for the Bun suite until a whole-source"
+        },
+        {
+          "line": 111,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 120,
+          "text": "\"`Approvals.consequential` or `requests` classifying a proc:spawn, net:* or fs:write capability as sealed, or skipping a declared capability it cannot parse.\","
+        },
+        {
+          "line": 194,
+          "text": "\"`perform` in app.tsx starting a flow run that skips the approval gate the same flow gets from a model call.\""
+        }
+      ]
+    },
+    {
+      "path": "apps/tui/tsconfig.json",
+      "sha256": "46ac0aed629aece048748ffec84f6c21ffb006cd92798057af66c356fe7a359e",
+      "source": "{\n  \"compilerOptions\": {\n    \"lib\": [\"ESNext\", \"DOM\", \"DOM.AsyncIterable\"],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"@opentui/react\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": false,\n    \"allowImportingTsExtensions\": true,\n    \"noEmit\": true,\n    \"skipLibCheck\": true,\n    \"types\": [\"bun-types\"]\n  },\n  \"include\": [\"src\", \"test\", \"e2e\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 14,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 17,
+          "text": "\"include\": [\"src\", \"test\", \"e2e\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/test/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/e2e/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/bunfig.toml"
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/tsconfig.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers:nativeSources"
+      ]
+    },
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:e2eTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "exclusive": true,
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/test/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/e2e/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/bunfig.toml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers:nativeSources"
+      ]
+    },
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/**/*.{ts,tsx,json,md}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.invariants.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "apps/tui/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "apps/tui/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "apps/tui",
+      "label": "//apps/tui:unitTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/test/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "apps/tui/e2e/**/*",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/tui/bunfig.toml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers:nativeSources"
+      ]
+    }
+  ],
+  "areas": [
+    "src/activity-view.tsx",
+    "src/activity.ts",
+    "src/agents.ts",
+    "src/app-view.tsx",
+    "src/app.tsx",
+    "src/approvals.ts",
+    "src/ask.ts",
+    "src/asks.ts",
+    "src/box.ts",
+    "src/budget.ts",
+    "src/catalog.ts",
+    "src/cell-display.ts",
+    "src/changes.ts",
+    "src/cli.ts",
+    "src/clipboard.ts",
+    "src/complete.ts",
+    "src/composer.ts",
+    "src/context.ts",
+    "src/contributions.ts",
+    "src/credit.ts",
+    "src/cursor.ts",
+    "src/deadline.ts",
+    "src/debug.ts",
+    "src/devtools.ts",
+    "src/drag-scroll.ts",
+    "src/editor.ts",
+    "src/extension.ts",
+    "src/external.ts",
+    "src/factory.ts",
+    "src/failures.ts",
+    "src/files.ts",
+    "src/flow-control.ts",
+    "src/flows.ts",
+    "src/fuzzy.ts",
+    "src/graph.ts",
+    "src/home.ts",
+    "src/host.ts",
+    "src/inbox.ts",
+    "src/issue-views.ts",
+    "src/key-dispatch.ts",
+    "src/keys.ts",
+    "src/lifecycle.ts",
+    "src/log.ts",
+    "src/main.tsx",
+    "src/models.ts",
+    "src/monitors.ts",
+    "src/native.ts",
+    "src/palette.ts",
+    "src/panel-view.tsx",
+    "src/panels.ts",
+    "src/picker.ts",
+    "src/print.ts",
+    "src/reads.ts",
+    "src/replay.ts",
+    "src/review-view.tsx",
+    "src/run-card-view.tsx",
+    "src/run-card.ts",
+    "src/run-history.ts",
+    "src/run.tsx",
+    "src/runtime-version.ts",
+    "src/runtime.ts",
+    "src/scrubber.ts",
+    "src/search.ts",
+    "src/session.ts",
+    "src/shell-output.ts",
+    "src/shell.ts",
+    "src/smithers.ts",
+    "src/spend.ts",
+    "src/steering.ts",
+    "src/subagent-view.tsx",
+    "src/subagents.ts",
+    "src/subprocess.ts",
+    "src/summary.ts",
+    "src/surfaces.ts",
+    "src/tab-error.ts",
+    "src/tabs-view.tsx",
+    "src/tabs.ts",
+    "src/target-approvals.ts",
+    "src/theme.ts",
+    "src/timeline.ts",
+    "src/toasts.ts",
+    "src/transcript-rail.tsx",
+    "src/transcript-view.ts",
+    "src/transcript.ts",
+    "src/tree.ts",
+    "src/undo.ts",
+    "src/view.tsx",
+    "src/watch.ts",
+    "src/workspace.ts",
+    "src/wrapped.ts"
+  ],
+  "boundaries": [
+    "cli",
+    "installed-consumer",
+    "terminal"
+  ]
+}

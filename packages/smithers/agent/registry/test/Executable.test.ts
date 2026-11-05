@@ -982,7 +982,9 @@ export default ({
         )
       }
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => { if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message)) })
+      const capture = Logger.make((entry) => {
+        if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
+      })
       const built = yield* Executable.catalog(options({ loadTimeoutMs: 500 })).pipe(
         Effect.provide(Registry.layerProject({ root })),
         Effect.provide(Logger.layer([capture])),
@@ -1796,7 +1798,9 @@ describe("the host's catalog", () => {
       // warning per prompt flow on every launch is noise no operator can act on;
       // a flow that names a delegate nobody registered still warns.
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => { if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message)) })
+      const capture = Logger.make((entry) => {
+        if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
+      })
       const built = yield* Executable.catalog(options({ delegates: [Echo, Other] })).pipe(
         Effect.provide(Logger.layer([capture]))
       )
@@ -2262,7 +2266,9 @@ describe("registration", () => {
   it.effect("retains refreshed prompt-agent refusals without warning and still warns for named missing delegates", () =>
     Effect.gen(function*() {
       const logs: Array<string> = []
-      const capture = Logger.make((entry) => { if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message)) })
+      const capture = Logger.make((entry) => {
+        if (entry.logLevel === "Warn") logs.push(JSON.stringify(entry.message))
+      })
       const runtime = Layer.succeed(FlowRuntime.FlowRuntime, { register: () => Effect.void } as never)
       yield* Effect.gen(function*() {
         const catalog = yield* Executable.Catalog

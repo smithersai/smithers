@@ -560,7 +560,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       const ownKeys = async (migrated = true) => {
         // Replay must wait for the same recovery barrier as admission after a leadership transfer.
         await sequenceReady
-        const keys = (await options.storage.keys()).filter((key) => !key.startsWith("outbox:") && (!migrated || sequenceKnown || !key.startsWith(KEY_PREFIX)))
+        const keys = (await options.storage.keys()).filter((key) =>
+          !key.startsWith("outbox:") && (!migrated || sequenceKnown || !key.startsWith(KEY_PREFIX))
+        )
         if (options.principal === undefined) return keys
         const own: Array<string> = []
         for (const key of keys) {
@@ -606,16 +608,22 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         setStatus({ held: ownedHeld.size > 0 })
       }
       const statusError = (error: unknown, stage: "read" | "write" = "read") => {
-        run(Effect.logWarning(stage === "write" ? "outbox couldn't write held index" : "outbox couldn't read held status").pipe(
-          Effect.annotateLogs({ stage, error: errorName(error) })
-        ))
+        run(
+          Effect.logWarning(stage === "write" ? "outbox couldn't write held index" : "outbox couldn't read held status")
+            .pipe(
+              Effect.annotateLogs({ stage, error: errorName(error) })
+            )
+        )
       }
       const persistIndex = async () => {
         // A failed publication stays dirty until an existing storage or retry step can repair it.
         indexDirty = true
         return options.storage.withLock(HELD_INDEX, async () => {
           // A failed publication can overlap another tab's settlement or hold. Recheck every affected row before repair.
-          const keys = new Set<string>([...JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"), ...heldKeys.keys()])
+          const keys = new Set<string>([
+            ...JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"),
+            ...heldKeys.keys()
+          ])
           const rows = await Promise.all([...keys].map(async (key) => [key, await options.storage.get(key)] as const))
           for (const [, value] of rows) if (value !== null) JSON.parse(value)
           for (const [key, value] of rows) readStatus(key, value)
@@ -634,7 +642,10 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             await options.storage.withLock(item.key, async () => {
               const value = await options.storage.get(item.key)
               if (value === null) return
-              if (sealed(item.key, value)) { pending.push(item); return }
+              if (sealed(item.key, value)) {
+                pending.push(item)
+                return
+              }
               const row = JSON.parse(value)
               row.metadata = { ...row.metadata, admissionSequence: item.sequence }
               await options.storage.set(item.key, JSON.stringify(row))
@@ -651,9 +662,13 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           if (key.startsWith(KEY_PREFIX)) rows.push([key, await options.storage.get(key)])
         }
         // Only owned rows are migrated. No upgrade or mutation callback sees another person's payload.
-        const owned = rows.filter(([key, value]) => value !== null && !sealed(key, value)).map(([key, value]) => ({ key, row: JSON.parse(value!) }))
+        const owned = rows.filter(([key, value]) => value !== null && !sealed(key, value)).map(([key, value]) => ({
+          key,
+          row: JSON.parse(value!)
+        }))
         const sequences = owned.map(({ row }) => row.metadata?.admissionSequence)
-        const ambiguous = sequences.some((sequence) => !Number.isFinite(sequence)) || new Set(sequences).size !== sequences.length
+        const ambiguous = sequences.some((sequence) => !Number.isFinite(sequence)) ||
+          new Set(sequences).size !== sequences.length
         if (!readOnly && ambiguous) {
           const order = (row: any): number => row.metadata?.admissionSequence ?? new Date(row.createdAt).getTime()
           const held = (row: any): number => Number(row.metadata?.held === true || row.lastError?.name === HELD)
@@ -667,7 +682,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             const [key, row] = rows[index]!
             if (row !== null && !sealed(key, row)) rows[index] = [key, await options.storage.get(key)]
           }
-          run(Effect.logInfo("outbox admission order migrated").pipe(Effect.annotateLogs({ writes: assignments.length })))
+          run(
+            Effect.logInfo("outbox admission order migrated").pipe(Effect.annotateLogs({ writes: assignments.length }))
+          )
         }
         // Do not discard the last known status if storage cannot complete its snapshot.
         for (const [, value] of rows) if (value !== null) JSON.parse(value)
@@ -698,7 +715,10 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         return refreshing ??= serialize(async () => {
           invalidated = false
           // An incomplete index cannot revoke unpublished local membership. Rows decide whether each hold survives.
-          const keys = new Set<string>([...JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"), ...heldKeys.keys()])
+          const keys = new Set<string>([
+            ...JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"),
+            ...heldKeys.keys()
+          ])
           const rows = await Promise.all([...keys].map(async (key) => [key, await options.storage.get(key)] as const))
           for (const [, value] of rows) if (value !== null) JSON.parse(value)
           const indexed = new Set<string>(JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"))
@@ -714,11 +734,19 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       }
       const changed = () => {
         publishing = true
-        try { options.changes?.publish() } catch (error) {
+        try {
+          options.changes?.publish()
+        } catch (error) {
           indexDirty = true
           // Notifications are hints and cannot revoke a successful durable admission.
-          run(Effect.logWarning("outbox couldn't publish its change").pipe(Effect.annotateLogs({ error: errorName(error) })))
-        } finally { publishing = false }
+          run(
+            Effect.logWarning("outbox couldn't publish its change").pipe(
+              Effect.annotateLogs({ error: errorName(error) })
+            )
+          )
+        } finally {
+          publishing = false
+        }
       }
       const updateHeld = async (key: string, value: string | null) => {
         const before = heldKeys.has(key)
@@ -726,7 +754,12 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
         reportHeld()
         if (before !== heldKeys.has(key)) indexDirty = true
         if (indexDirty) {
-          try { await persistIndex(); changed() } catch (error) { statusError(error, "write") }
+          try {
+            await persistIndex()
+            changed()
+          } catch (error) {
+            statusError(error, "write")
+          }
         }
       }
       const storage: StorageAdapter = {
@@ -735,82 +768,114 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           return sealed(key, stored) ? null : stored
         },
         keys: ownKeys,
-        delete: (key) => serialize(async () => {
-          const removed = await options.storage.withLock(key, async () => {
-            if (options.principal !== undefined && sealed(key, await options.storage.get(key))) return false
-            await options.storage.delete(key)
-            return true
-          })
-          if (removed) await updateHeld(key, null)
-        }),
-        clear: () => serialize(async () => {
-          for (const key of await options.storage.keys()) {
-            await options.storage.withLock(key, () => options.storage.delete(key))
-          }
-          indexDirty = false
-          heldKeys.clear()
-          ownedHeld.clear()
-          reportHeld()
-          changed()
-        }),
-        set: (key, value) => serialize(() => {
-          const id = key.slice(KEY_PREFIX.length)
-          const admission = admissions.get(id)
-          const persist = async () => {
-            let persisted: string | null = value
-            try {
-              await options.storage.withLock(key, async () => {
-                if (key.startsWith(KEY_PREFIX)) {
-                  const write = JSON.parse(value)
-                  if (admission !== undefined && admissionMetadata.has(id)) {
-                    open()
-                    if (options.leader !== undefined && !options.leader.isLeader()) throw thrown("OutboxNotLeader", "Leadership ended before admission.")
-                    // The shared counter also fences queued callbacks from an earlier leadership term.
-                    const maximum = Number(await options.storage.get(ADMISSION_COUNTER) ?? 0)
-                    if (!Number.isSafeInteger(maximum) || maximum < 0) throw new Error("Invalid admission counter")
-                    const sequence = Math.max(maximum + 1, write.metadata?.queuedAt ?? 0)
-                    write.metadata = { ...write.metadata, admissionSequence: sequence }
-                    Object.assign(admissionMetadata.get(id)!, { admissionSequence: sequence })
-                    admissionMetadata.delete(id)
-                    persisted = JSON.stringify(write)
-                    await options.storage.setMany([[ADMISSION_COUNTER, String(sequence)], [key, persisted]])
-                    return
-                  }
-                  // A predecessor's retry snapshot cannot revoke a successor's hold, ordering repair or settlement.
-                  // Read and merge under the same cross-context lock as row replacement and deletion.
-                  const current = await options.storage.get(key)
-                  if (current === null) { persisted = null; return }
-                  const prior = JSON.parse(current)
-                  if (prior.outboxPhase !== undefined) { persisted = current; return }
-                  write.metadata = {
-                    ...write.metadata,
-                    ...(prior.metadata?.admissionSequence === undefined ? {} : { admissionSequence: prior.metadata.admissionSequence })
-                  }
-                  if (write.lastError?.name === HELD || write.metadata?.held === true ||
-                    prior.lastError?.name === HELD || prior.metadata?.held === true) {
-                    write.metadata.held = true
-                  }
-                  value = JSON.stringify(write)
-                }
-                persisted = value
-                await options.storage.set(key, value)
-              })
-            } catch (error) {
-              if (admission) run(Deferred.fail(admission, new NotAdmitted({ reason: closing || options.leader !== undefined && !options.leader.isLeader() ? "follower" : "storage" })))
-              throw error
+        delete: (key) =>
+          serialize(async () => {
+            const removed = await options.storage.withLock(key, async () => {
+              if (options.principal !== undefined && sealed(key, await options.storage.get(key))) return false
+              await options.storage.delete(key)
+              return true
+            })
+            if (removed) await updateHeld(key, null)
+          }),
+        clear: () =>
+          serialize(async () => {
+            for (const key of await options.storage.keys()) {
+              await options.storage.withLock(key, () => options.storage.delete(key))
             }
-            if (inFlight?.retry === true && inFlight.id === id) inFlight = undefined
-            if (admission) run(Deferred.succeed(admission, undefined))
-            // Index publication has its own lock; never wait for it while holding the row lock.
-            await updateHeld(key, persisted)
-          }
-          // Parking and retry metadata allocate no sequence and must remain available to followers.
-          return key.startsWith(KEY_PREFIX) && admissionMetadata.has(id) ? withAdmission(persist) : persist()
-        })
+            indexDirty = false
+            heldKeys.clear()
+            ownedHeld.clear()
+            reportHeld()
+            changed()
+          }),
+        set: (key, value) =>
+          serialize(() => {
+            const id = key.slice(KEY_PREFIX.length)
+            const admission = admissions.get(id)
+            const persist = async () => {
+              let persisted: string | null = value
+              try {
+                await options.storage.withLock(key, async () => {
+                  if (key.startsWith(KEY_PREFIX)) {
+                    const write = JSON.parse(value)
+                    if (admission !== undefined && admissionMetadata.has(id)) {
+                      open()
+                      if (options.leader !== undefined && !options.leader.isLeader()) {
+                        throw thrown("OutboxNotLeader", "Leadership ended before admission.")
+                      }
+                      // The shared counter also fences queued callbacks from an earlier leadership term.
+                      const maximum = Number(await options.storage.get(ADMISSION_COUNTER) ?? 0)
+                      if (!Number.isSafeInteger(maximum) || maximum < 0) {
+                        throw new Error("Invalid admission counter")
+                      }
+                      const sequence = Math.max(maximum + 1, write.metadata?.queuedAt ?? 0)
+                      write.metadata = { ...write.metadata, admissionSequence: sequence }
+                      Object.assign(admissionMetadata.get(id)!, { admissionSequence: sequence })
+                      admissionMetadata.delete(id)
+                      persisted = JSON.stringify(write)
+                      await options.storage.setMany([[ADMISSION_COUNTER, String(sequence)], [key, persisted]])
+                      return
+                    }
+                    // A predecessor's retry snapshot cannot revoke a successor's hold, ordering repair or settlement.
+                    // Read and merge under the same cross-context lock as row replacement and deletion.
+                    const current = await options.storage.get(key)
+                    if (current === null) {
+                      persisted = null
+                      return
+                    }
+                    const prior = JSON.parse(current)
+                    if (prior.outboxPhase !== undefined) {
+                      persisted = current
+                      return
+                    }
+                    write.metadata = {
+                      ...write.metadata,
+                      ...(prior.metadata?.admissionSequence === undefined
+                        ? {}
+                        : { admissionSequence: prior.metadata.admissionSequence })
+                    }
+                    if (
+                      write.lastError?.name === HELD || write.metadata?.held === true ||
+                      prior.lastError?.name === HELD || prior.metadata?.held === true
+                    ) {
+                      write.metadata.held = true
+                    }
+                    value = JSON.stringify(write)
+                  }
+                  persisted = value
+                  await options.storage.set(key, value)
+                })
+              } catch (error) {
+                if (admission) {
+                  run(
+                    Deferred.fail(
+                      admission,
+                      new NotAdmitted({
+                        reason: closing || options.leader !== undefined && !options.leader.isLeader()
+                          ? "follower"
+                          : "storage"
+                      })
+                    )
+                  )
+                }
+                throw error
+              }
+              if (inFlight?.retry === true && inFlight.id === id) inFlight = undefined
+              if (admission) run(Deferred.succeed(admission, undefined))
+              // Index publication has its own lock; never wait for it while holding the row lock.
+              await updateHeld(key, persisted)
+            }
+            // Parking and retry metadata allocate no sequence and must remain available to followers.
+            return key.startsWith(KEY_PREFIX) && admissionMetadata.has(id) ? withAdmission(persist) : persist()
+          })
       }
 
       yield* Effect.acquireRelease(
-        Effect.sync(() => options.changes?.subscribe(() => { if (!publishing) void refreshHeld() })),
+        Effect.sync(() =>
+          options.changes?.subscribe(() => {
+            if (!publishing) void refreshHeld()
+          })
+        ),
         (unsubscribe) => Effect.sync(() => unsubscribe?.())
       )
       let sequenceReady = Promise.resolve()
@@ -916,7 +981,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           const error = Cause.findErrorOption(exit.cause)
           if (Option.isSome(error) && error.value._tag === "Retry") {
             // Free to withdraw again once the library has stored its next attempt.
-            if (error.value.held) Object.assign(metadata, { held: true })
+            if (error.value.held) {
+              Object.assign(metadata, { held: true })
+            }
             inFlight = { id, retry: true }
             setStatus({ failing: error.value.held ? null : error.value.status === undefined ? "network" : "server" })
             throw thrown(error.value.held ? HELD : RETRY, "The write didn't get through; it is sent again.")
@@ -934,12 +1001,20 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
       // The writes an older build stored are brought forward, or parked, before the library loads any.
       if (options.upgrade !== undefined) {
         // Payload recovery must be able to park unreadable rows before ordering recovery gates replay.
-        yield* carry({ ...storage, keys: () => ownKeys(false) }, options.upgrade)
+        yield* carry({
+          ...storage,
+          keys: () =>
+            ownKeys(false)
+        }, options.upgrade)
       }
       // A follower can open while another context's admission is paused. Only the leader mutates ordering.
-      sequenceReady = serialize(() => options.leader?.isLeader()
-        ? withAdmission(() => reconcile())
-        : reconcile(true)).catch(statusError)
+      sequenceReady = serialize(() =>
+        options.leader?.isLeader()
+          ? withAdmission(() =>
+            reconcile()
+          )
+          : reconcile(true)
+      ).catch(statusError)
       yield* Effect.promise(() => sequenceReady)
 
       const executor = yield* Effect.acquireRelease(
@@ -956,25 +1031,34 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             ),
             // Only a mutation's `Retry` is sent again: the library's own rules (an `AbortError`, a message with "400")
             // never see another error.
-            shouldRetry: (error) =>
-              error.name === RETRY || error.name === HELD,
+            shouldRetry: (error) => error.name === RETRY || error.name === HELD,
             retryScheduling: {
               // Earlier builds did not stamp dependency keys. Their persisted payload still defines the dependency.
               compare: (left, right) =>
                 (left.metadata?.admissionSequence ?? left.createdAt.getTime()) -
                 (right.metadata?.admissionSequence ?? right.createdAt.getTime()),
-              keys: (transaction) => transaction.metadata?.orderingKeys ??
-                options.orderingKeys?.[transaction.mutationFnName]?.(transaction.mutations.map((change) => change.modified)),
+              keys: (transaction) =>
+                transaction.metadata?.orderingKeys ??
+                  options.orderingKeys?.[transaction.mutationFnName]?.(
+                    transaction.mutations.map((change) => change.modified)
+                  ),
               bypass: (transaction) => transaction.metadata?.held === true || transaction.lastError?.name === HELD
             },
             onLeadershipChange: (leader) => {
               if (leader && !closing) {
                 sequenceKnown = false
                 // A follower may have waited while newer writes were admitted. Reconcile before its first admission.
-                sequenceReady = serialize(() => withAdmission(async () => {
-                  await reconcile()
-                  try { await persistIndex(); changed() } catch (error) { statusError(error, "write") }
-                })).catch(statusError)
+                sequenceReady = serialize(() =>
+                  withAdmission(async () => {
+                    await reconcile()
+                    try {
+                      await persistIndex()
+                      changed()
+                    } catch (error) {
+                      statusError(error, "write")
+                    }
+                  })
+                ).catch(statusError)
               }
               // Subscribers can admit immediately. Publish only after their recovery barrier names this leadership.
               setStatus({ leader })
@@ -982,16 +1066,17 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
             }
           })
         ),
-        (executor) => Effect.gen(function*() {
-          // Without a separate admission fence, keep the election through persistence already running; a new
-          // executor cannot allocate from a counter this one might still overwrite. A fenced custom election can
-          // close immediately: its admission lock survives independently until persistence actually completes.
-          // Later admissions refuse before touching the counter. Settlement remains available: the executor
-          // deliberately persists a successful response that outlives disposal, preventing a later replay.
-          closing = true
-          if (options.leader?.withAdmission === undefined) yield* Effect.promise(() => updating)
-          executor.dispose()
-        })
+        (executor) =>
+          Effect.gen(function*() {
+            // Without a separate admission fence, keep the election through persistence already running; a new
+            // executor cannot allocate from a counter this one might still overwrite. A fenced custom election can
+            // close immediately: its admission lock survives independently until persistence actually completes.
+            // Later admissions refuse before touching the counter. Settlement remains available: the executor
+            // deliberately persists a successful response that outlives disposal, preventing a later replay.
+            closing = true
+            if (options.leader?.withAdmission === undefined) yield* Effect.promise(() => updating)
+            executor.dispose()
+          })
       )
       yield* Effect.tryPromise(() => executor.waitForInit()).pipe(
         Effect.catch((error) =>
@@ -1043,7 +1128,9 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           try {
             const ordering = options.orderingKeys?.[name]
             if (ordering !== undefined) {
-              Object.assign(metadata, { orderingKeys: ordering(transaction.mutations.map((change) => change.modified)) })
+              Object.assign(metadata, {
+                orderingKeys: ordering(transaction.mutations.map((change) => change.modified))
+              })
             }
           } catch (error) {
             // A selector defect cannot leave optimistic rows for a write that was never committed.
@@ -1167,7 +1254,12 @@ export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
           // The public retry signal stays synchronous for input handlers; storage maintenance joins its existing chain.
           void serialize(async () => {
             if (!indexDirty) return
-            try { await persistIndex(); changed() } catch (error) { statusError(error, "write") }
+            try {
+              await persistIndex()
+              changed()
+            } catch (error) {
+              statusError(error, "write")
+            }
           }).then(refreshHeld).catch(statusError)
           executor.getOnlineDetector().notifyOnline()
         }),
@@ -1331,12 +1423,13 @@ export const lockLeader = (options: {
     yield* Effect.addFinalizer(() => Effect.sync(release))
     return {
       // This lock is never stolen. A successor drains its predecessor's admission before recovery or allocation.
-      withAdmission: <A>(action: () => Promise<A>): Promise<A> => Effect.runPromiseWith(context)(
-        Effect.scoped(Effect.gen(function*() {
-          yield* options.lock.hold(`${options.name}:admission`)
-          return yield* Effect.promise(action)
-        })).pipe(Effect.uninterruptible)
-      ),
+      withAdmission: <A>(action: () => Promise<A>): Promise<A> =>
+        Effect.runPromiseWith(context)(
+          Effect.scoped(Effect.gen(function*() {
+            yield* options.lock.hold(`${options.name}:admission`)
+            return yield* Effect.promise(action)
+          })).pipe(Effect.uninterruptible)
+        ),
       requestLeadership: () =>
         new Promise<boolean>((answer) => {
           if (leader) return answer(true)

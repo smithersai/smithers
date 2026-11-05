@@ -1,1 +1,492 @@
-{"id":"packages/smithers/agent/harness-detect","name":"@smthrs/harness-detect","owner":{"declaration":"packages/smithers/agent/harness-detect/package.json","assignedLane":null},"kind":"package","scripts":{"lint":"eslint src --max-warnings=0 && dprint check","format":"dprint fmt","build":"node scripts/build.mjs","check":"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit","circular":"node ../../../repo-targets/scripts/circular.mjs","test":"vitest","coverage":"vitest --coverage"},"exports":{"./package.json":"./package.json",".":"./src/index.ts","./*":"./src/*.ts","./internal/*":null,"./*/index":null},"production":["eslint.config.js","PACKAGE.ts","scripts/build.mjs","src/Detect.ts","src/Detectors.ts","src/HarnessHost.ts","src/index.ts","src/internal/Read.ts","src/Probe.ts","vitest.config.ts"],"tests":["packages/smithers/agent/harness-detect/test/Detect.test.ts","packages/smithers/agent/harness-detect/tsconfig.test.json"],"benchmarks":[],"platformPaths":[],"ignoredCases":[],"configurations":[{"path":"packages/smithers/agent/harness-detect/eslint.config.js","sha256":"b9056e86c56d923ffe686cca4890f4d89ef90e1f101122fab92d296092eb6ee2","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":10,"text":"ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"},{"line":41,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"packages/smithers/agent/harness-detect/package.json","sha256":"b1b84a743a8558d80d7ffe7cd4cd4e5e61164c0e1dc25e5b08c7eb6cc16af286","source":"{\n  \"name\": \"@smthrs/harness-detect\",\n  \"type\": \"module\",\n  \"version\": \"0.1.0\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"Host-injected detection of installed coding-agent CLIs: which harness binaries exist, which account each is signed into, and how each takes a model\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/harness-detect\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"harness\",\n    \"detection\",\n    \"cli\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"harness\",\n    \"detection\",\n    \"cli\"\n  ],\n  \"engines\": {\n    \"node\": \">=26.4.0\"\n  },\n  \"sideEffects\": false,\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./*\": \"./src/*.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"types\": \"./dist/esm/index.d.ts\",\n        \"import\": \"./dist/esm/index.js\",\n        \"require\": \"./dist/cjs/index.js\"\n      },\n      \"./*\": {\n        \"types\": \"./dist/esm/*.d.ts\",\n        \"import\": \"./dist/esm/*.js\",\n        \"require\": \"./dist/cjs/*.js\"\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/rpc\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  }\n}\n","coverageDirectives":[{"line":80,"text":"\"coverage\": \"vitest --coverage\""},{"line":88,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/agent/harness-detect/PACKAGE.ts","sha256":"b93fae0227ea4da86f910e8ef508e49d75679219056c18a7a4fac17bc00ed247","source":"import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/** Standard package targets. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/agent/harness-detect\"\n\nconst { check, circular, docs, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd\n})\n\n/**\n * The package documentation as a file group. This package keeps no `docs/`\n * directory, so the group is the README and the manifest, not the shared\n * `docs/**\\/*.md` glob, which names nothing here.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"credential-values-never-surface\",\n      title: \"Detection reports credential presence and names, never secret values\",\n      threat: \"Any UI, log, or wire consumer of the Harness table reads this user's API keys or OAuth tokens.\",\n      lookFor: [\n        \"An `account` label, email, or version field built from an env var's value instead of its name (firstEnv must return the name).\",\n        \"A value from auth.json, .credentials.json, oauth_creds.json, secrets.json, or opencode auth.json copied into the returned Harness row.\",\n        \"decodeJwtClaims returning or logging the raw token, or a claim other than email copied into the row.\"\n      ],\n      paths: [\"src/Detectors.ts\", \"src/Detect.ts\", \"src/internal/Read.ts\"]\n    },\n    {\n      id: \"probe-env-allowlist\",\n      title: \"Version probes see only PROBE_ENV_KEYS plus NO_COLOR; model-list probes add only their listCredentials\",\n      threat:\n        \"A harness CLI spawned only for --version or model listing receives Smithers Cloud, GitHub, or other session tokens from the caller's environment.\",\n      lookFor: [\n        \"probeEnv copying keys outside PROBE_ENV_KEYS, or spreading the source env.\",\n        \"A token-bearing key (SMITHERS_CLOUD_TOKEN, GITHUB_TOKEN, AWS_*, *_SESSION) added to PROBE_ENV_KEYS.\",\n        \"A provider API key in PROBE_ENV_KEYS, or a listCredentials key that the harness's model listing does not read.\",\n        \"A relative PATH entry left in the probe env.\"\n      ],\n      paths: [\"src/Probe.ts\", \"src/Detectors.ts\"]\n    },\n    {\n      id: \"binary-resolution-hijack\",\n      title: \"findBinary resolves only absolute, user- or system-owned directories\",\n      threat:\n        \"A malicious repository or writable directory plants a fake `claude`/`codex` that the app then launches with the user's credentials.\",\n      lookFor: [\n        \"A relative PATH entry (for example `.` or `node_modules/.bin`) joined without rejecting non-absolute dirs, so resolution depends on the process cwd.\",\n        \"A candidate dir derived from an env var or repository content rather than host.home or a fixed system prefix.\",\n        \"The nvm directory listing trusting an entry name that contains path separators or `..`.\",\n        \"On win32, a `.cmd`/`.bat` shim returned as the binary so a later argv (model id) passes through cmd.exe metacharacter parsing.\"\n      ],\n      paths: [\"src/HarnessHost.ts\"]\n    },\n    {\n      id: \"env-dir-override-scope\",\n      title: \"Env-overridden config dirs are read-only lookups of fixed credential file names\",\n      threat:\n        \"A caller-supplied CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_DIR, KIMI_SHARE_DIR, or XDG_CONFIG_HOME makes detection read an arbitrary file and surface its strings as an account label.\",\n      lookFor: [\n        \"envDir output joined with anything other than a fixed credential file name.\",\n        \"Content of a file read via an env-overridden dir returned beyond a boolean, an email, or an organization label.\",\n        \"An account label taken from file content (emailAddress, organizationName, google_accounts.json `active`) without a length or shape bound.\"\n      ],\n      paths: [\"src/Detectors.ts\", \"src/internal/Read.ts\"]\n    },\n    {\n      id: \"untrusted-json-parse\",\n      title: \"Hostile credential or config JSON cannot crash detection or mutate shared objects\",\n      threat:\n        \"A crafted auth.json, providers.json, or JWT payload on this machine throws out of detectHarnessesWith or pollutes Object.prototype in the host app.\",\n      lookFor: [\n        \"Parsed objects merged, spread, or Object.assign-ed into a shared object where a `__proto__` key could mutate prototypes.\",\n        \"hasNonEmptyStringDeep or another walker over parsed JSON losing its depth bound.\",\n        \"JSON.parse or base64url decode outside a try/catch, or a signal that dereferences a parsed field without a type guard.\"\n      ],\n      paths: [\"src/internal/Read.ts\", \"src/Detectors.ts\"]\n    },\n    {\n      id: \"launch-argv-fixed\",\n      title: \"Launch and model-list argv are fixed literals, never built from host data\",\n      threat:\n        \"A value from env or a config file injects extra flags or a different binary into the argv the app spawns.\",\n      lookFor: [\n        \"A `launch`, `models.list`, or `models.flag` entry derived from host.env, file content, or a parsed model id.\",\n        \"harnessModelSpec returning a binary other than the detector's literal `binary`.\"\n      ],\n      paths: [\"src/Detectors.ts\", \"src/Detect.ts\"]\n    },\n    {\n      id: \"probe-output-bounded\",\n      title: \"A probed binary's output reaches the Harness row only as a bounded, control-free version string\",\n      threat:\n        \"A planted or compromised CLI prints ANSI escapes or megabytes on --version, and the app's TUI or UI renders it as the version field.\",\n      lookFor: [\n        \"parseVersionLine returning the raw first line (no version match) without stripping control characters or capping its length.\",\n        \"Detect.ts copying host.version output into the row without passing it through parseVersionLine.\"\n      ],\n      paths: [\"src/Probe.ts\", \"src/Detect.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n","coverageDirectives":[{"line":24,"text":"include: [\"src/**\"],"}]},{"path":"packages/smithers/agent/harness-detect/tsconfig.json","sha256":"41d813f1d88dd5913182a30ed1b2b36cc74489d029cbc186987ce36fd5134a0d","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"ES2024.String\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":17,"text":"\"skipLibCheck\": true,"},{"line":30,"text":"\"includeSuggestionsInTsc\": false,"},{"line":31,"text":"\"ignoreEffectWarningsInTscExitCode\": true,"},{"line":32,"text":"\"ignoreEffectErrorsInTscExitCode\": true,"},{"line":39,"text":"\"include\": [\"src/**/*\"]"}]},{"path":"packages/smithers/agent/harness-detect/vitest.config.ts","sha256":"61b6605c7aeec695f44df7a59eb0b1e5825d66e06fc45a01717e279dda006c04","source":"import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-harness-detect-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // Every line here is pure and host-injected, so there is no branch a\n      // test cannot enter: the release policy's 100 holds without a ratchet.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n","coverageDirectives":[{"line":11,"text":"fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"},{"line":14,"text":"include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"},{"line":17,"text":"// wall-clock budget so correct suites survive coverage-instrumented load"},{"line":21,"text":"coverage: {"},{"line":23,"text":"provider: \"v8\","},{"line":25,"text":"// each other's coverage scratch state (issues #115/#121)."},{"line":26,"text":"reportsDirectory: join(tmpdir(), `flows-harness-detect-coverage-${process.pid}`),"},{"line":27,"text":"include: [\"src/**\"],"},{"line":30,"text":"thresholds: {"}]}],"targets":[{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness-detect/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.d.mts"},{"kind":"file","path":"packages/smithers/agent/harness-detect/tsconfig.test.json"}],"dependencies":["//packages/smithers/agent/harness-detect:lib"]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:circular","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/circular.mjs"},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness-detect/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/agent/harness-detect/README.md"}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"file","path":"packages/smithers/agent/harness-detect/README.md"},{"kind":"file","path":"packages/smithers/agent/harness-detect/package.json"}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness-detect/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:lib","rule":"TsBuild","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/build-library.mjs"},{"kind":"file","path":"packages/repo-targets/scripts/private-effect-adapters.mjs"},{"kind":"file","path":"packages/repo-targets/package.json"},{"kind":"file","path":"packages/smithers/scripts/compile-commonjs.mjs"},{"kind":"file","path":"packages/repo-targets/contracts/check-single-effect-version.mjs"},{"kind":"file","path":"packages/smithers/agent/harness-detect/src/index.ts"},{"kind":"file","path":"packages/smithers/agent/harness-detect/tsconfig.json"},{"kind":"file","path":"packages/smithers/agent/harness-detect/scripts/build.mjs"}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/agent/harness-detect/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/agent/harness-detect/src/**"]},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/agent/harness-detect/src/**"]},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/agent/harness-detect","label":"//packages/smithers/agent/harness-detect:test","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/test/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/agent/harness-detect/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/coverage-teardown.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-process-environment.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/smithers/agent/harness-detect/vitest.config.ts"}],"dependencies":["//packages/smithers/agent/harness-detect:lib"]}],"areas":["PACKAGE.ts","eslint.config.js","scripts/build.mjs","src/Detect.ts","src/Detectors.ts","src/HarnessHost.ts","src/Probe.ts","src/index.ts","src/internal","vitest.config.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/agent/harness-detect",
+  "name": "@smthrs/harness-detect",
+  "owner": {
+    "declaration": "packages/smithers/agent/harness-detect/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts",
+    "./internal/*": null,
+    "./*/index": null
+  },
+  "production": [
+    "eslint.config.js",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/Detect.ts",
+    "src/Detectors.ts",
+    "src/HarnessHost.ts",
+    "src/index.ts",
+    "src/internal/Read.ts",
+    "src/Probe.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/agent/harness-detect/test/Detect.test.ts",
+    "packages/smithers/agent/harness-detect/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/agent/harness-detect/eslint.config.js",
+      "sha256": "b9056e86c56d923ffe686cca4890f4d89ef90e1f101122fab92d296092eb6ee2",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness-detect/package.json",
+      "sha256": "b1b84a743a8558d80d7ffe7cd4cd4e5e61164c0e1dc25e5b08c7eb6cc16af286",
+      "source": "{\n  \"name\": \"@smthrs/harness-detect\",\n  \"type\": \"module\",\n  \"version\": \"0.1.0\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"Host-injected detection of installed coding-agent CLIs: which harness binaries exist, which account each is signed into, and how each takes a model\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/agent/harness-detect\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"harness\",\n    \"detection\",\n    \"cli\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"harness\",\n    \"detection\",\n    \"cli\"\n  ],\n  \"engines\": {\n    \"node\": \">=26.4.0\"\n  },\n  \"sideEffects\": false,\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./*\": \"./src/*.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"types\": \"./dist/esm/index.d.ts\",\n        \"import\": \"./dist/esm/index.js\",\n        \"require\": \"./dist/cjs/index.js\"\n      },\n      \"./*\": {\n        \"types\": \"./dist/esm/*.d.ts\",\n        \"import\": \"./dist/esm/*.js\",\n        \"require\": \"./dist/cjs/*.js\"\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/rpc\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 80,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 88,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness-detect/PACKAGE.ts",
+      "sha256": "b93fae0227ea4da86f910e8ef508e49d75679219056c18a7a4fac17bc00ed247",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/** Standard package targets. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/agent/harness-detect\"\n\nconst { check, circular, docs, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd\n})\n\n/**\n * The package documentation as a file group. This package keeps no `docs/`\n * directory, so the group is the README and the manifest, not the shared\n * `docs/**\\/*.md` glob, which names nothing here.\n */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"credential-values-never-surface\",\n      title: \"Detection reports credential presence and names, never secret values\",\n      threat: \"Any UI, log, or wire consumer of the Harness table reads this user's API keys or OAuth tokens.\",\n      lookFor: [\n        \"An `account` label, email, or version field built from an env var's value instead of its name (firstEnv must return the name).\",\n        \"A value from auth.json, .credentials.json, oauth_creds.json, secrets.json, or opencode auth.json copied into the returned Harness row.\",\n        \"decodeJwtClaims returning or logging the raw token, or a claim other than email copied into the row.\"\n      ],\n      paths: [\"src/Detectors.ts\", \"src/Detect.ts\", \"src/internal/Read.ts\"]\n    },\n    {\n      id: \"probe-env-allowlist\",\n      title: \"Version probes see only PROBE_ENV_KEYS plus NO_COLOR; model-list probes add only their listCredentials\",\n      threat:\n        \"A harness CLI spawned only for --version or model listing receives Smithers Cloud, GitHub, or other session tokens from the caller's environment.\",\n      lookFor: [\n        \"probeEnv copying keys outside PROBE_ENV_KEYS, or spreading the source env.\",\n        \"A token-bearing key (SMITHERS_CLOUD_TOKEN, GITHUB_TOKEN, AWS_*, *_SESSION) added to PROBE_ENV_KEYS.\",\n        \"A provider API key in PROBE_ENV_KEYS, or a listCredentials key that the harness's model listing does not read.\",\n        \"A relative PATH entry left in the probe env.\"\n      ],\n      paths: [\"src/Probe.ts\", \"src/Detectors.ts\"]\n    },\n    {\n      id: \"binary-resolution-hijack\",\n      title: \"findBinary resolves only absolute, user- or system-owned directories\",\n      threat:\n        \"A malicious repository or writable directory plants a fake `claude`/`codex` that the app then launches with the user's credentials.\",\n      lookFor: [\n        \"A relative PATH entry (for example `.` or `node_modules/.bin`) joined without rejecting non-absolute dirs, so resolution depends on the process cwd.\",\n        \"A candidate dir derived from an env var or repository content rather than host.home or a fixed system prefix.\",\n        \"The nvm directory listing trusting an entry name that contains path separators or `..`.\",\n        \"On win32, a `.cmd`/`.bat` shim returned as the binary so a later argv (model id) passes through cmd.exe metacharacter parsing.\"\n      ],\n      paths: [\"src/HarnessHost.ts\"]\n    },\n    {\n      id: \"env-dir-override-scope\",\n      title: \"Env-overridden config dirs are read-only lookups of fixed credential file names\",\n      threat:\n        \"A caller-supplied CLAUDE_CONFIG_DIR, CODEX_HOME, GEMINI_DIR, KIMI_SHARE_DIR, or XDG_CONFIG_HOME makes detection read an arbitrary file and surface its strings as an account label.\",\n      lookFor: [\n        \"envDir output joined with anything other than a fixed credential file name.\",\n        \"Content of a file read via an env-overridden dir returned beyond a boolean, an email, or an organization label.\",\n        \"An account label taken from file content (emailAddress, organizationName, google_accounts.json `active`) without a length or shape bound.\"\n      ],\n      paths: [\"src/Detectors.ts\", \"src/internal/Read.ts\"]\n    },\n    {\n      id: \"untrusted-json-parse\",\n      title: \"Hostile credential or config JSON cannot crash detection or mutate shared objects\",\n      threat:\n        \"A crafted auth.json, providers.json, or JWT payload on this machine throws out of detectHarnessesWith or pollutes Object.prototype in the host app.\",\n      lookFor: [\n        \"Parsed objects merged, spread, or Object.assign-ed into a shared object where a `__proto__` key could mutate prototypes.\",\n        \"hasNonEmptyStringDeep or another walker over parsed JSON losing its depth bound.\",\n        \"JSON.parse or base64url decode outside a try/catch, or a signal that dereferences a parsed field without a type guard.\"\n      ],\n      paths: [\"src/internal/Read.ts\", \"src/Detectors.ts\"]\n    },\n    {\n      id: \"launch-argv-fixed\",\n      title: \"Launch and model-list argv are fixed literals, never built from host data\",\n      threat:\n        \"A value from env or a config file injects extra flags or a different binary into the argv the app spawns.\",\n      lookFor: [\n        \"A `launch`, `models.list`, or `models.flag` entry derived from host.env, file content, or a parsed model id.\",\n        \"harnessModelSpec returning a binary other than the detector's literal `binary`.\"\n      ],\n      paths: [\"src/Detectors.ts\", \"src/Detect.ts\"]\n    },\n    {\n      id: \"probe-output-bounded\",\n      title: \"A probed binary's output reaches the Harness row only as a bounded, control-free version string\",\n      threat:\n        \"A planted or compromised CLI prints ANSI escapes or megabytes on --version, and the app's TUI or UI renders it as the version field.\",\n      lookFor: [\n        \"parseVersionLine returning the raw first line (no version match) without stripping control characters or capping its length.\",\n        \"Detect.ts copying host.version output into the row without passing it through parseVersionLine.\"\n      ],\n      paths: [\"src/Probe.ts\", \"src/Detect.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 24,
+          "text": "include: [\"src/**\"],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness-detect/tsconfig.json",
+      "sha256": "41d813f1d88dd5913182a30ed1b2b36cc74489d029cbc186987ce36fd5134a0d",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"ES2024.String\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/agent/harness-detect/vitest.config.ts",
+      "sha256": "61b6605c7aeec695f44df7a59eb0b1e5825d66e06fc45a01717e279dda006c04",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    // House convention (see packages/smithers/flows/journal/vitest.config.ts): a finite 30 s\n    // wall-clock budget so correct suites survive coverage-instrumented load\n    // while a genuine hang still fails the run.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Per-process report directory so concurrent vitest runs do not destroy\n      // each other's coverage scratch state (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-harness-detect-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // Every line here is pure and host-injected, so there is no branch a\n      // test cannot enter: the release policy's 100 holds without a ratchet.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 17,
+          "text": "// wall-clock budget so correct suites survive coverage-instrumented load"
+        },
+        {
+          "line": 21,
+          "text": "coverage: {"
+        },
+        {
+          "line": 23,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 25,
+          "text": "// each other's coverage scratch state (issues #115/#121)."
+        },
+        {
+          "line": 26,
+          "text": "reportsDirectory: join(tmpdir(), `flows-harness-detect-coverage-${process.pid}`),"
+        },
+        {
+          "line": 27,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 30,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/harness-detect:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/agent/harness-detect/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/agent/harness-detect/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/agent/harness-detect",
+      "label": "//packages/smithers/agent/harness-detect:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/agent/harness-detect/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/agent/harness-detect/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/agent/harness-detect:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "scripts/build.mjs",
+    "src/Detect.ts",
+    "src/Detectors.ts",
+    "src/HarnessHost.ts",
+    "src/Probe.ts",
+    "src/index.ts",
+    "src/internal",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

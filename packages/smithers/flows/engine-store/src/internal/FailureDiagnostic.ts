@@ -1,6 +1,6 @@
 /** Bounded, redacted coordinates shared by storage and inspection. @private */
-import { Redaction } from "@smthrs/journal"
 import { BoundedJson } from "@smthrs/canonical"
+import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import type { Failure, FailureCoordinates } from "../RunState.ts"
 import * as HostReflection from "./HostReflection.ts"
@@ -8,7 +8,10 @@ import * as HostReflection from "./HostReflection.ts"
 const utf8 = new TextEncoder()
 // Count JSON bytes, including escapes, so the whole diagnostic fits under 16 KiB.
 const text = (value: string, maximum = 512): string => {
-  const safe = String(Redaction.redactDiagnostic(value)).replace(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g, "\uFFFD")
+  const safe = String(Redaction.redactDiagnostic(value)).replace(
+    /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/g,
+    "\uFFFD"
+  )
   const bytes = (value: string) => utf8.encode(JSON.stringify(value)).length
   if (bytes(safe) <= maximum) return safe
   let low = 0, high = safe.length

@@ -728,7 +728,9 @@ const persistCause = (cause: Cause.Cause<unknown>): typeof CauseJson.Type => {
   // Optional diagnostics cannot consume the budget needed to replay typed errors.
   // Project the allowlist before charging it, then admit only what still fits.
   for (let index = 0; index < reasons.length; index++) {
-    const site = FailureDiagnostic.site(Context.getOrUndefined(Cause.reasonAnnotations(cause.reasons[index]!), FlowEngine.FailureSite))
+    const site = FailureDiagnostic.site(
+      Context.getOrUndefined(Cause.reasonAnnotations(cause.reasons[index]!), FlowEngine.FailureSite)
+    )
     if (site === undefined) continue
     const candidate = { ...budget }
     if (!spendNodes(candidate, 1)) continue
@@ -773,10 +775,14 @@ const rehydrateCause = (error: unknown): Cause.Cause<unknown> => {
   const decoded = Schema.decodeUnknownResult(CauseJson)(error)
   if (decoded._tag === "Success" && decoded.success.reasons.length > 0) {
     return Cause.fromReasons(decoded.success.reasons.map((reason) => {
-      const rebuilt = reason._tag === "Fail" ? Cause.makeFailReason(reason.error)
-        : reason._tag === "Die" ? Cause.makeDieReason(reason.defect)
+      const rebuilt = reason._tag === "Fail" ?
+        Cause.makeFailReason(reason.error)
+        : reason._tag === "Die" ?
+        Cause.makeDieReason(reason.defect)
         : Cause.makeInterruptReason(reason.fiberId ?? undefined)
-      return reason.failureSite === undefined ? rebuilt : rebuilt.annotate(Context.make(FlowEngine.FailureSite, reason.failureSite))
+      return reason.failureSite === undefined
+        ? rebuilt
+        : rebuilt.annotate(Context.make(FlowEngine.FailureSite, reason.failureSite))
     }))
   }
   return Cause.die(error)

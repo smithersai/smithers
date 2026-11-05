@@ -1,1 +1,1009 @@
-{"id":"packages/smithers/flows/jj","name":"@smthrs/jj","owner":{"declaration":"packages/smithers/flows/jj/package.json","assignedLane":null},"kind":"package","scripts":{"lint":"eslint src --max-warnings=0 && dprint check","format":"dprint fmt","build":"node scripts/build.mjs","build:wasm":"node ../../../../packages/smithers/flows/jj-wasm/build-wasm.mjs","check":"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit","circular":"node ../../../repo-targets/scripts/circular.mjs","test":"vitest","coverage":"vitest --coverage"},"exports":{"./package.json":"./package.json",".":"./src/index.ts","./wasm/flows_jj.wasm":"./wasm/flows_jj.wasm","./internal/*":null,"./*/index":null,"./Jj":"./src/Jj.ts","./browser/BrowserJj":"./src/browser/BrowserJj.ts","./browser/WasiFs":"./src/browser/WasiFs.ts","./browser/WasiPreview1":"./src/browser/WasiPreview1.ts","./bun/BunJj":"./src/bun/BunJj.ts","./index":"./src/index.ts","./node/NodeJj":"./src/node/NodeJj.ts","./node/resolveJjBinary":"./src/node/resolveJjBinary.ts"},"production":["eslint.config.js","PACKAGE.ts","scripts/build.mjs","scripts/generate-third-party-notices.mjs","src/browser/BrowserJj.ts","src/browser/WasiFs.ts","src/browser/WasiPreview1.ts","src/bun/BunJj.ts","src/index.ts","src/internal/gitPatchPaths.ts","src/internal/JjInternalFault.ts","src/Jj.ts","src/node/NodeJj.ts","src/node/resolveJjBinary.ts","test/budgeted.ts","test/FakeFlowsJjWasm.ts","test/RequireWasm.ts","test/RootedSyncFs.ts","vitest.config.ts","vitest.faults.config.ts"],"tests":["packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs","packages/smithers/flows/jj/test/AbiGenerated.test.ts","packages/smithers/flows/jj/test/BrowserJj.test.ts","packages/smithers/flows/jj/test/BrowserJjContract.test.ts","packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts","packages/smithers/flows/jj/test/budgeted.ts","packages/smithers/flows/jj/test/Docs.test.ts","packages/smithers/flows/jj/test/FakeFlowsJjWasm.ts","packages/smithers/flows/jj/test/faults/case21-jj-pointer-integrity.test.ts","packages/smithers/flows/jj/test/GitLockContention.test.ts","packages/smithers/flows/jj/test/GitPatchPaths.test.ts","packages/smithers/flows/jj/test/index.test.ts","packages/smithers/flows/jj/test/Jj.test.ts","packages/smithers/flows/jj/test/LayerParity.test.ts","packages/smithers/flows/jj/test/NodeJj.test.ts","packages/smithers/flows/jj/test/NodeJjClassification.test.ts","packages/smithers/flows/jj/test/NodeJjLifetime.test.ts","packages/smithers/flows/jj/test/NodeJjLock.test.ts","packages/smithers/flows/jj/test/NodeJjPatchFailure.test.ts","packages/smithers/flows/jj/test/NodeJjPatchPaths.test.ts","packages/smithers/flows/jj/test/NodeJjPatchRace.test.ts","packages/smithers/flows/jj/test/NodeJjRegistrationFence.test.ts","packages/smithers/flows/jj/test/NodeJjRepositoryTrust.test.ts","packages/smithers/flows/jj/test/NodeJjSpawner.test.ts","packages/smithers/flows/jj/test/NodeJjStale.test.ts","packages/smithers/flows/jj/test/NodeJjUserConfig.test.ts","packages/smithers/flows/jj/test/NodeJjVersion.test.ts","packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts","packages/smithers/flows/jj/test/RequiredWasmArtifact.test.ts","packages/smithers/flows/jj/test/RequireWasm.ts","packages/smithers/flows/jj/test/ResolveJjBinary.test.ts","packages/smithers/flows/jj/test/ReviewMarkers.test.ts","packages/smithers/flows/jj/test/RootedSyncFs.ts","packages/smithers/flows/jj/test/WasiFs.test.ts","packages/smithers/flows/jj/test/WasiPreview1.test.ts","packages/smithers/flows/jj/tsconfig.test.json"],"benchmarks":[],"platformPaths":["packages/smithers/flows/jj/docs/guides/run-jj-in-a-browser.md","packages/smithers/flows/jj/src/browser/BrowserJj.ts","packages/smithers/flows/jj/src/browser/WasiFs.ts","packages/smithers/flows/jj/src/browser/WasiPreview1.ts","packages/smithers/flows/jj/src/bun/BunJj.ts","packages/smithers/flows/jj/src/node/NodeJj.ts","packages/smithers/flows/jj/src/node/resolveJjBinary.ts","packages/smithers/flows/jj/test/BrowserJj.test.ts","packages/smithers/flows/jj/test/BrowserJjContract.test.ts","packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts","packages/smithers/flows/jj/test/FakeFlowsJjWasm.ts","packages/smithers/flows/jj/test/NodeJj.test.ts","packages/smithers/flows/jj/test/NodeJjClassification.test.ts","packages/smithers/flows/jj/test/NodeJjLifetime.test.ts","packages/smithers/flows/jj/test/NodeJjLock.test.ts","packages/smithers/flows/jj/test/NodeJjPatchFailure.test.ts","packages/smithers/flows/jj/test/NodeJjPatchPaths.test.ts","packages/smithers/flows/jj/test/NodeJjPatchRace.test.ts","packages/smithers/flows/jj/test/NodeJjRegistrationFence.test.ts","packages/smithers/flows/jj/test/NodeJjRepositoryTrust.test.ts","packages/smithers/flows/jj/test/NodeJjSpawner.test.ts","packages/smithers/flows/jj/test/NodeJjStale.test.ts","packages/smithers/flows/jj/test/NodeJjUserConfig.test.ts","packages/smithers/flows/jj/test/NodeJjVersion.test.ts","packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts","packages/smithers/flows/jj/test/RequiredWasmArtifact.test.ts","packages/smithers/flows/jj/test/RequireWasm.ts","packages/smithers/flows/jj/wasm/flows_jj.wasm"],"ignoredCases":[{"path":"packages/smithers/flows/jj/test/BrowserJjContract.test.ts","line":38,"text":"describe.skipIf(wasmBytes === undefined)(\"BrowserJj over flows_jj.wasm\", () => {"},{"path":"packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts","line":54,"text":"describe.skipIf(wasmBytes === undefined)(\"BrowserJj edge cases over flows_jj.wasm\", () => {"},{"path":"packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts","line":251,"text":"it.effect.skipIf(process.platform === \"win32\")("},{"path":"packages/smithers/flows/jj/test/faults/case21-jj-pointer-integrity.test.ts","line":44,"text":"describe.skipIf(!jjInstalled)(\"case21 jj pointer integrity\", () => {"},{"path":"packages/smithers/flows/jj/test/LayerParity.test.ts","line":57,"text":"describe.skipIf(!jjInstalled || wasmBytes === undefined)(\"Jj layer parity\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJj.test.ts","line":45,"text":"describe.skipIf(!jjInstalled)(\"NodeJj\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjClassification.test.ts","line":101,"text":"describe.skipIf(process.platform === \"win32\")(\"NodeJj failure classification\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjClassification.test.ts","line":451,"text":"describe.skipIf(process.platform === \"win32\")(\"NodeJj spawn errors\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjLifetime.test.ts","line":86,"text":"describe.skipIf(process.platform === \"win32\")(\"NodeJj.layer\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjPatchFailure.test.ts","line":20,"text":"describe.skipIf(!installed())(\"NodeJj real-host patch normalization failure\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjPatchPaths.test.ts","line":126,"text":"describe.skipIf(!installed(\"jj\") || (host === \"Bun\" && !installed(\"bun\")))(`${host}Jj real-host patch paths`, () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjPatchRace.test.ts","line":23,"text":"describe.skipIf(!realJj.executable)(\"NodeJj real-host patch race\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjRegistrationFence.test.ts","line":34,"text":"describe.skipIf(realJj === undefined || process.platform === \"win32\")(\"NodeJj workspace registration fence\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjRepositoryTrust.test.ts","line":26,"text":"describe.skipIf(!jjInstalled)(\"NodeJj against a repository its occupant controls\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjSpawner.test.ts","line":239,"text":"describe.skipIf(process.platform === \"win32\")(\"NodeJj.layerSpawner\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjSpawner.test.ts","line":398,"text":"it.effect.skipIf(!jjInstalled)("},{"path":"packages/smithers/flows/jj/test/NodeJjSpawner.test.ts","line":552,"text":"describe.skipIf(process.platform === \"win32\")(\"NodeJj startup probe on a busy machine\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjSpawner.test.ts","line":642,"text":"describe.skipIf(process.platform === \"win32\")(\"jj stale workspace refusal\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjUserConfig.test.ts","line":23,"text":"describe.skipIf(!jjInstalled)(\"NodeJj under a user config\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts","line":41,"text":"describe.skipIf(!jjInstalled)(\"NodeJj workspaces and restore\", () => {"},{"path":"packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts","line":47,"text":"const shellEffect = it.effect.skipIf(process.platform === \"win32\")"},{"path":"packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts","line":48,"text":"const shellLive = it.live.skipIf(process.platform === \"win32\")"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":263,"text":"it.skipIf(!supportsNativeSymlinks).each([\"file\", \"ancestor\"] as const)("},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":597,"text":"it.skipIf(!supportsNativeSymlinks)(\"validates expanded link ancestors before consuming '..'\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":922,"text":"it.skipIf(!supportsNativeSymlinks)(\"refuses symlinks when lookupflags say nofollow, follows them otherwise\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":936,"text":"it.skipIf(!supportsNativeSymlinks)(\"creates the target of a dangling symlink with O_CREAT, like open(2)\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":952,"text":"it.skipIf(!supportsNativeSymlinks)(\"answers EEXIST for O_CREAT|O_EXCL on a symlink even without follow\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":964,"text":"it.skipIf(!supportsNativeSymlinks)(\"creates through a chain of dangling links and reports cycles as ELOOP\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":978,"text":"it.skipIf(!supportsNativeSymlinks)(\"creates through a dangling link with an absolute target\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":988,"text":"it.skipIf(!supportsNativeSymlinks)(\"re-roots namespace-absolute link targets inside the preopen\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1004,"text":"it.skipIf(!supportsNativeSymlinks)(\"clamps parent traversal in relative link targets\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1016,"text":"it.skipIf(!supportsNativeSymlinks)(\"refuses to open an existing file outside the preopen through a link\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1027,"text":"it.skipIf(!supportsNativeSymlinks)(\"re-roots an INTERMEDIATE absolute link component inside the preopen\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1047,"text":"it.skipIf(!supportsNativeSymlinks)(\"clamps a relative intermediate link that climbs past the root\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1061,"text":"it.skipIf(!supportsNativeSymlinks)(\"reports a cycle among intermediate link components as ELOOP\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1070,"text":"it.skipIf(!supportsNativeSymlinks)("},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1459,"text":"it.skipIf(!supportsNativeSymlinks)(\"lists directories with d_type, index cookies, and spec truncation\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1685,"text":"it.skipIf(!supportsNativeSymlinks)(\"distinguishes lstat and stat through lookupflags\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1697,"text":"it.skipIf(!supportsNativeSymlinks)(\"refuses to stat outside the preopen through a followed link\", () => {"},{"path":"packages/smithers/flows/jj/test/WasiPreview1.test.ts","line":1775,"text":"it.skipIf(!supportsNativeSymlinks)(\"creates and reads links, truncating into small buffers\", () => {"}],"configurations":[{"path":"packages/smithers/flows/jj/eslint.config.js","sha256":"dbad3d51b9846d92e0c287734163e2a4cee1f04f9f94124d12c9e1656aaebe49","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":9,"text":"{ ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },"},{"line":26,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"packages/smithers/flows/jj/package.json","sha256":"bb2c1dcefadeef1a2b8f308f306dbbfd5298c95b5f8b640c65cf0b2412e3295a","source":"{\n  \"name\": \"@smthrs/jj\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Jujutsu version control as a portable Effect host service\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/jj\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"jj\",\n    \"jujutsu\",\n    \"vcs\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"jj\",\n    \"jujutsu\",\n    \"vcs\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./wasm/flows_jj.wasm\": \"./wasm/flows_jj.wasm\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./Jj\": \"./src/Jj.ts\",\n    \"./browser/BrowserJj\": \"./src/browser/BrowserJj.ts\",\n    \"./browser/WasiFs\": \"./src/browser/WasiFs.ts\",\n    \"./browser/WasiPreview1\": \"./src/browser/WasiPreview1.ts\",\n    \"./bun/BunJj\": \"./src/bun/BunJj.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./node/NodeJj\": \"./src/node/NodeJj.ts\",\n    \"./node/resolveJjBinary\": \"./src/node/resolveJjBinary.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"wasm/*.wasm\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"THIRD_PARTY_NOTICES.md\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./wasm/flows_jj.wasm\": \"./wasm/flows_jj.wasm\",\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./Jj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Jj.d.ts\",\n          \"default\": \"./dist/esm/Jj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Jj.d.ts\",\n          \"default\": \"./dist/cjs/Jj.js\"\n        }\n      },\n      \"./browser/BrowserJj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/browser/BrowserJj.d.ts\",\n          \"default\": \"./dist/esm/browser/BrowserJj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/browser/BrowserJj.d.ts\",\n          \"default\": \"./dist/cjs/browser/BrowserJj.js\"\n        }\n      },\n      \"./browser/WasiFs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/browser/WasiFs.d.ts\",\n          \"default\": \"./dist/esm/browser/WasiFs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/browser/WasiFs.d.ts\",\n          \"default\": \"./dist/cjs/browser/WasiFs.js\"\n        }\n      },\n      \"./browser/WasiPreview1\": {\n        \"import\": {\n          \"types\": \"./dist/esm/browser/WasiPreview1.d.ts\",\n          \"default\": \"./dist/esm/browser/WasiPreview1.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/browser/WasiPreview1.d.ts\",\n          \"default\": \"./dist/cjs/browser/WasiPreview1.js\"\n        }\n      },\n      \"./bun/BunJj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/bun/BunJj.d.ts\",\n          \"default\": \"./dist/esm/bun/BunJj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/bun/BunJj.d.ts\",\n          \"default\": \"./dist/cjs/bun/BunJj.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./node/NodeJj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/node/NodeJj.d.ts\",\n          \"default\": \"./dist/esm/node/NodeJj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/node/NodeJj.d.ts\",\n          \"default\": \"./dist/cjs/node/NodeJj.js\"\n        }\n      },\n      \"./node/resolveJjBinary\": {\n        \"import\": {\n          \"types\": \"./dist/esm/node/resolveJjBinary.d.ts\",\n          \"default\": \"./dist/esm/node/resolveJjBinary.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/node/resolveJjBinary.d.ts\",\n          \"default\": \"./dist/cjs/node/resolveJjBinary.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"build:wasm\": \"node ../../../../packages/smithers/flows/jj-wasm/build-wasm.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n","coverageDirectives":[{"line":175,"text":"\"coverage\": \"vitest --coverage\""},{"line":186,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/flows/jj/PACKAGE.ts","sha256":"37e10fd403d00fdd158d711f8f5b9bb2960c6e69c2260352639ea5df88195f66","source":"import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd: \"packages/smithers/flows/jj\",\n  tests: Smithers.glob(\"test/**/*.test.ts\", { exclude: [\"test/faults/**\"] })\n})\n\n/**\n * The package's fault-injection cases.\n *\n * A package opts into the matrix by declaring this key, so\n * `//packages/...:faults` is the whole matrix and nothing central lists which\n * packages are in it. The tier is separate from `test` because its cases are\n * machine-global — they kill process groups, bind ephemeral ports, and read\n * the process table — so they run serially, without coverage, from\n * `vitest.faults.config.ts`.\n */\nconst faults = Smithers.FaultSuite({\n  cwd: \"packages/smithers/flows/jj\",\n  fixtures: Smithers.glob(\"vitest.faults.config.ts\")\n})\n\n/**\n * Changed public exports against README.md, docs/*.md, and the site's jj API\n * reference page.\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/flows/jj\",\n  // The site page is named as a file, not left to the macro's default glob:\n  // the index refuses a declared glob whose only matches live in another\n  // package, and every sibling package names its own page the same way.\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/jj.mdx\")\n  ]\n})\n\n/** Changed public exports against their own JSDoc. */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/flows/jj\" })\n\n/**\n * Keeps the attribution inventory in the published wasm package current.\n *\n * @since 1.0.0\n * @category test\n */\nconst thirdPartyNotices = Smithers.NodeTest({\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs\"), [\n    \"--check\"\n  ]),\n  srcs: [\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs\"),\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/third-party-notices.template.md\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//Cargo.toml\"),\n    Smithers.file(\"//Cargo.lock\"),\n    Smithers.file(\"//packages/smithers/flows/jj-wasm/Cargo.toml\"),\n    Smithers.file(\"//rust-toolchain.toml\"),\n    Smithers.file(\"//packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md\")\n  ],\n  deps: []\n})\n\n/**\n * Exercises generation and drift detection against a real Cargo workspace.\n *\n * @since 1.0.0\n * @category test\n */\nconst thirdPartyNoticesUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs\")\n  ]),\n  srcs: [\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs\"),\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/third-party-notices.template.md\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//.smithers/flows/release/release-rehearsal.mjs\"),\n    Smithers.file(\"//.github/workflows/ci.yml\")\n  ],\n  deps: []\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/jj\",\n  include: [\"src/**\", \"scripts/generate-third-party-notices.mjs\"],\n  checks: [\n    {\n      id: \"jj-argv-option-injection\",\n      title: \"Caller-supplied names, paths, revisions, and operation ids never parse as jj options\",\n      threat:\n        \"An agent or journal row that controls a lane name, lane path, or revision makes the host jj read a --config/--config-file or --repository it chose, running with attacker config against the operator's repositories.\",\n      lookFor: [\n        \"An argv array in operations() where a caller value is a bare positional without a preceding \\\"--\\\" or a --flag=value form (workspaceAdd, workspaceForget, opRestore).\",\n        \"inRepository inserting --color/--config after the \\\"--\\\" delimiter, so a global option lands among positionals or a positional lands among options.\",\n        \"A revision passed to restore/diff/revert as a separate argv item after --from/-r that jj could accept when it begins with \\\"-\\\".\",\n        \"opRestore reaching jj with an operationId that is not matched by the /^[0-9a-f]+$/ guard.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\"]\n    },\n    {\n      id: \"jj-revset-injection\",\n      title: \"A revision value names one commit and cannot widen into an arbitrary revset\",\n      threat:\n        \"A caller that controls a journaled revision string restores, diffs, or pins a lane to commits other than the recorded snapshot, overwriting the user's working copy with another change's tree.\",\n      lookFor: [\n        \"String interpolation of a revision into a revset expression such as `--revision=parents(${pinned})` without validating it as a hex commit id or reverse-hex change id.\",\n        \"requireRevision accepting anything beyond non-empty, so `x) | all() | (x` or `root()` reaches jj restore --from.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\", \"src/browser/BrowserJj.ts\"]\n    },\n    {\n      id: \"jj-binary-resolution\",\n      title: \"The spawned jj is the binary the operator chose, at an absolute path\",\n      threat:\n        \"Someone who can write a directory on PATH or the process cwd makes Smithers execute their own jj with the user's privileges and credentials.\",\n      lookFor: [\n        \"resolveJjBinary returning a relative path, or a PATH entry that is empty or \\\".\\\" resolving against the working directory instead of being skipped.\",\n        \"NodeJj spawning binary.path when it is not absolute, or spawning the bare name \\\"jj\\\" through PATH lookup.\",\n        \"The version-probe cache keyed so a probe under one spawner or path authorizes a different binary.\",\n        \"permissionHint or describe emitting an override path into shell remediation text without shellQuote.\"\n      ],\n      paths: [\"src/node/resolveJjBinary.ts\", \"src/node/NodeJj.ts\"]\n    },\n    {\n      id: \"jj-config-program-exec\",\n      title: \"Repository or workspace jj config cannot make the host jj run a program the operator did not choose\",\n      threat:\n        \"An agent that can write a lane's .jj directory or the repo config sets signing, fsmonitor, or tool keys so the next host-side jj snapshot, revert, or workspace add executes its program with the operator's privileges and inherited environment.\",\n      lookFor: [\n        \"inRepository and the pinned-restore run in workspaceAdd pinning only color and snapshot.max-new-file-size, leaving signing.behavior, signing.backends.*.program, fsmonitor.backend, and ui.diff-formatter to repo or JJ_CONFIG values.\",\n        \"A jj child spawned with the full process.env (secrets, JJ_CONFIG) instead of a minimal environment.\",\n        \"A workspace cwd from a caller path whose .jj config the host jj loads before any argv override applies.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\"]\n    },\n    {\n      id: \"wasi-preopen-escape\",\n      title: \"The WASI guest cannot read, write, or link outside the preopened root\",\n      threat:\n        \"A malicious or buggy wasm guest reads or overwrites host files outside the mounted repository root in the browser mount or the Node test backend.\",\n      lookFor: [\n        \"A path_* syscall that hands fs a host path not produced by resolvePath/walk, or skips notRoot on a mutation.\",\n        \"walk or resolveLinkTarget letting \\\"..\\\" or an absolute symlink target climb past the namespace root, or not re-rooting each symlink hop.\",\n        \"path_symlink writing a guest-controlled absolute target that the backend later follows outside the root when the shim itself does not walk it.\",\n        \"fd-addressed operations resolved through a path captured at open time, so a rename plus symlink redirects a later mutation.\"\n      ],\n      paths: [\"src/browser/WasiPreview1.ts\", \"src/browser/WasiFs.ts\"]\n    },\n    {\n      id: \"wasi-memory-bounds\",\n      title: \"Guest pointers and lengths never read or write outside wasm linear memory or exhaust the host\",\n      threat:\n        \"A wasm guest passes crafted iovec pointers or lengths that crash the page, corrupt shim state, or force unbounded host allocation.\",\n      lookFor: [\n        \"A DataView or Uint8Array over memory.buffer built from guest ptr/len without the bounds-checking constructor path, or with ptr+len overflow before >>> 0.\",\n        \"A RangeError path not mapped to Errno.fault, letting an exception unwind through the wasm stack.\",\n        \"fd_read/fd_readdir/path_readlink sizing a host buffer from a guest-supplied length without a cap.\"\n      ],\n      paths: [\"src/browser/WasiPreview1.ts\"]\n    },\n    {\n      id: \"jj-abi-response-trust\",\n      title: \"Output from the jj child or the wasm ABI is parsed as untrusted data\",\n      threat:\n        \"A hostile repository or guest crafts jj output that makes the host journal a wrong commit id, misclassify a failure as success, or exhaust memory.\",\n      lookFor: [\n        \"decodeResponse or the initialize response accepting fields without type checks before use as commit ids or paths.\",\n        \"A child stdout/stderr buffer that grows past outputLimit before the check fires.\",\n        \"settle treating exit code 0 as success while stderr reports refused snapshot files.\",\n        \"snapshot using an empty commitId from a malformed jj log line as a restore target.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\", \"src/browser/BrowserJj.ts\"]\n    },\n    {\n      id: \"jj-error-leakage\",\n      title: \"Journaled JjError fields stay bounded and carry no secrets\",\n      threat:\n        \"A failing jj invocation writes environment secrets, full file contents, or long user paths into the durable journal that other tenants or UIs read.\",\n      lookFor: [\n        \"A JjError constructed with an unbounded message or command instead of commandOf/jjErrorCause truncation.\",\n        \"A cause projection that copies an Error's stack, env, or spawnargs into the journal.\"\n      ],\n      paths: [\"src/Jj.ts\", \"src/node/NodeJj.ts\", \"src/browser/BrowserJj.ts\"]\n    },\n    {\n      id: \"jj-lock-and-restore-safety\",\n      title: \"Repository locks and destructive restores cannot be stolen or aimed at another workspace\",\n      threat:\n        \"A concurrent process or crafted lock entry makes two jj operations mutate one workspace at once, or opRestore discards another agent's workspace changes.\",\n      lookFor: [\n        \"reclaimDeadLock removing an owner entry whose hostname differs or whose pid is alive, or following a symlink planted at .jj/<lock>.\",\n        \"workspaceAdd's pinned restore running in a directory resolved from a caller path outside the bound repository root.\",\n        \"opRestore running jj op restore without the workspace-list equality check, or with --what broader than repo.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    faults,\n    fmt,\n    lib,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    test,\n    thirdPartyNotices,\n    thirdPartyNoticesUnit,\n    ...securityReview\n  }\n})\n","coverageDirectives":[{"line":8,"text":"tests: Smithers.glob(\"test/**/*.test.ts\", { exclude: [\"test/faults/**\"] })"},{"line":18,"text":"* the process table — so they run serially, without coverage, from"},{"line":90,"text":"include: [\"src/**\", \"scripts/generate-third-party-notices.mjs\"],"},{"line":122,"text":"\"resolveJjBinary returning a relative path, or a PATH entry that is empty or \\\".\\\" resolving against the working directory instead of being skipped.\","},{"line":147,"text":"\"A path_* syscall that hands fs a host path not produced by resolvePath/walk, or skips notRoot on a mutation.\","}]},{"path":"packages/smithers/flows/jj/tsconfig.json","sha256":"bceba129ef0350a4a2726e756840042e5b866875f033becfd5637d36c06f1597","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true,\n      \"diagnosticSeverity\": { \"globalErrorInEffectFailure\": \"off\" }\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":17,"text":"\"skipLibCheck\": true,"},{"line":29,"text":"\"includeSuggestionsInTsc\": false,"},{"line":30,"text":"\"ignoreEffectWarningsInTscExitCode\": true,"},{"line":31,"text":"\"ignoreEffectErrorsInTscExitCode\": true,"},{"line":35,"text":"\"include\": [\"src/**/*\"]"}]},{"path":"packages/smithers/flows/jj/vitest.config.ts","sha256":"49894271129ad93f999a278b7e16426873d5f4098c58dde4df1d6737fc78d4f2","source":"import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"./test/RequireWasm.ts\", import.meta.url))\n    ],\n    // The fault tier lives under `test/faults` and runs from\n    // `vitest.faults.config.ts` instead, serially and without coverage: its\n    // cases kill process groups and bind ports, which no unit suite sharing\n    // this machine can survive beside them.\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude, \"test/faults/**\"],\n    environment: \"node\",\n    // Keep package workers serial: child startup and WASM conformance tests\n    // must not compete with every other file in the recursive workspace gate.\n    // The existing finite watchdog remains a hang guard, not a performance test.\n    fileParallelism: false,\n    testTimeout: 60_000,\n    hookTimeout: 60_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-jj-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n","coverageDirectives":[{"line":11,"text":"fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"},{"line":16,"text":"// `vitest.faults.config.ts` instead, serially and without coverage: its"},{"line":19,"text":"include: [\"test/**/*.test.{ts,vibe}\"],"},{"line":20,"text":"exclude: [...configDefaults.exclude, \"test/faults/**\"],"},{"line":28,"text":"coverage: {"},{"line":30,"text":"provider: \"v8\","},{"line":31,"text":"reportsDirectory: join(tmpdir(), `flows-jj-coverage-${process.pid}`),"},{"line":32,"text":"include: [\"src/**/*.{ts,vibe}\"],"},{"line":33,"text":"thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"}]},{"path":"packages/smithers/flows/jj/vitest.faults.config.ts","sha256":"d397cbfd019ae0f8f7cf98272dd0910a55e5f347e9e07f9df6148e7f68d6bee4","source":"/**\n * The fault tier: the Jujutsu pointer cases.\n *\n * The case here runs the real `jj` binary against a throwaway repository and\n * restores by change id. `jj` takes a workspace lock, so the tier runs\n * serially.\n *\n * Coverage is off. The work these cases do happens in child processes this one\n * never instruments, and `vitest.config.ts` beside this file stays the coverage\n * gate for `src`.\n */\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    environment: \"node\",\n    include: [\"test/faults/**/*.test.{ts,vibe}\"],\n    // A fault case drives real processes, real SQLite files, and real sockets.\n    // The budget stays finite so a wedged case still fails instead of sitting\n    // until the CI job timeout.\n    testTimeout: 180_000,\n    hookTimeout: 180_000,\n    // A suite that spawns and kills processes cannot share a worker with\n    // another suite doing the same: pids, ports, and process groups are\n    // process-global.\n    fileParallelism: false,\n    coverage: { enabled: false }\n  }\n})\n","coverageDirectives":[{"line":8,"text":"* Coverage is off. The work these cases do happens in child processes this one"},{"line":9,"text":"* never instruments, and `vitest.config.ts` beside this file stays the coverage"},{"line":19,"text":"include: [\"test/faults/**/*.test.{ts,vibe}\"],"},{"line":29,"text":"coverage: { enabled: false }"}]}],"targets":[{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/jj/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.d.mts"},{"kind":"file","path":"packages/smithers/flows/jj/tsconfig.test.json"}],"dependencies":["//packages/smithers/flows/jj:lib"]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:circular","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/circular.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/flows/jj/README.md"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/README.md"},{"kind":"file","path":"packages/smithers/flows/jj/package.json"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:faults","rule":"Vitest","kinds":["test"],"exclusive":true,"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/test/faults/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/jj/vitest.faults.config.ts","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/vitest.faults.config.ts"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/jj/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:lib","rule":"TsBuild","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/build-library.mjs"},{"kind":"file","path":"packages/repo-targets/scripts/private-effect-adapters.mjs"},{"kind":"file","path":"packages/repo-targets/package.json"},{"kind":"file","path":"packages/smithers/scripts/compile-commonjs.mjs"},{"kind":"file","path":"packages/repo-targets/contracts/check-single-effect-version.mjs"},{"kind":"file","path":"packages/smithers/flows/jj/src/index.ts"},{"kind":"file","path":"packages/smithers/flows/jj/tsconfig.json"},{"kind":"file","path":"packages/smithers/flows/jj/scripts/build.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:reviewDocsAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/jj/src/**"]},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/README.md"},{"kind":"glob","pattern":"packages/smithers/flows/jj/docs/*.md","exclude":[]},{"kind":"file","path":"apps/site/src/content/docs/docs/reference/api/jj.mdx"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:reviewJsdocAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/jj/src/**/*.{ts,vibe}"]},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/jj/src/**","packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"]},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/flows/jj/src/**","packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"]},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:test","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj/test/**/*.test.ts","exclude":["packages/smithers/flows/jj/test/faults/**"]},{"kind":"glob","pattern":"packages/smithers/flows/jj/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/jj/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/coverage-teardown.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-process-environment.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/smithers/flows/jj/vitest.config.ts"}],"dependencies":["//packages/smithers/flows/jj:lib"]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:thirdPartyNotices","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"},{"kind":"file","path":"packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"},{"kind":"file","path":"packages/smithers/flows/jj/scripts/third-party-notices.template.md"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"},{"kind":"file","path":"Cargo.toml"},{"kind":"file","path":"Cargo.lock"},{"kind":"file","path":"packages/smithers/flows/jj-wasm/Cargo.toml"},{"kind":"file","path":"rust-toolchain.toml"},{"kind":"file","path":"packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md"}],"dependencies":[]},{"package":"packages/smithers/flows/jj","label":"//packages/smithers/flows/jj:thirdPartyNoticesUnit","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs"},{"kind":"file","path":"packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"},{"kind":"file","path":"packages/smithers/flows/jj/scripts/third-party-notices.template.md"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"},{"kind":"file","path":".smithers/flows/release/release-rehearsal.mjs"},{"kind":"file","path":".github/workflows/ci.yml"}],"dependencies":[]}],"areas":["PACKAGE.ts","eslint.config.js","scripts/build.mjs","scripts/generate-third-party-notices.mjs","src/Jj.ts","src/browser","src/bun","src/index.ts","src/internal","src/node","test/FakeFlowsJjWasm.ts","test/RequireWasm.ts","test/RootedSyncFs.ts","test/budgeted.ts","vitest.config.ts","vitest.faults.config.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/flows/jj",
+  "name": "@smthrs/jj",
+  "owner": {
+    "declaration": "packages/smithers/flows/jj/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "build:wasm": "node ../../../../packages/smithers/flows/jj-wasm/build-wasm.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./wasm/flows_jj.wasm": "./wasm/flows_jj.wasm",
+    "./internal/*": null,
+    "./*/index": null,
+    "./Jj": "./src/Jj.ts",
+    "./browser/BrowserJj": "./src/browser/BrowserJj.ts",
+    "./browser/WasiFs": "./src/browser/WasiFs.ts",
+    "./browser/WasiPreview1": "./src/browser/WasiPreview1.ts",
+    "./bun/BunJj": "./src/bun/BunJj.ts",
+    "./index": "./src/index.ts",
+    "./node/NodeJj": "./src/node/NodeJj.ts",
+    "./node/resolveJjBinary": "./src/node/resolveJjBinary.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "scripts/generate-third-party-notices.mjs",
+    "src/browser/BrowserJj.ts",
+    "src/browser/WasiFs.ts",
+    "src/browser/WasiPreview1.ts",
+    "src/bun/BunJj.ts",
+    "src/index.ts",
+    "src/internal/gitPatchPaths.ts",
+    "src/internal/JjInternalFault.ts",
+    "src/Jj.ts",
+    "src/node/NodeJj.ts",
+    "src/node/resolveJjBinary.ts",
+    "test/budgeted.ts",
+    "test/FakeFlowsJjWasm.ts",
+    "test/RequireWasm.ts",
+    "test/RootedSyncFs.ts",
+    "vitest.config.ts",
+    "vitest.faults.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs",
+    "packages/smithers/flows/jj/test/AbiGenerated.test.ts",
+    "packages/smithers/flows/jj/test/BrowserJj.test.ts",
+    "packages/smithers/flows/jj/test/BrowserJjContract.test.ts",
+    "packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts",
+    "packages/smithers/flows/jj/test/budgeted.ts",
+    "packages/smithers/flows/jj/test/Docs.test.ts",
+    "packages/smithers/flows/jj/test/FakeFlowsJjWasm.ts",
+    "packages/smithers/flows/jj/test/faults/case21-jj-pointer-integrity.test.ts",
+    "packages/smithers/flows/jj/test/GitLockContention.test.ts",
+    "packages/smithers/flows/jj/test/GitPatchPaths.test.ts",
+    "packages/smithers/flows/jj/test/index.test.ts",
+    "packages/smithers/flows/jj/test/Jj.test.ts",
+    "packages/smithers/flows/jj/test/LayerParity.test.ts",
+    "packages/smithers/flows/jj/test/NodeJj.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjClassification.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjLifetime.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjLock.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjPatchFailure.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjPatchPaths.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjPatchRace.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjRegistrationFence.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjRepositoryTrust.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjSpawner.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjStale.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjUserConfig.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjVersion.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts",
+    "packages/smithers/flows/jj/test/RequiredWasmArtifact.test.ts",
+    "packages/smithers/flows/jj/test/RequireWasm.ts",
+    "packages/smithers/flows/jj/test/ResolveJjBinary.test.ts",
+    "packages/smithers/flows/jj/test/ReviewMarkers.test.ts",
+    "packages/smithers/flows/jj/test/RootedSyncFs.ts",
+    "packages/smithers/flows/jj/test/WasiFs.test.ts",
+    "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+    "packages/smithers/flows/jj/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/jj/docs/guides/run-jj-in-a-browser.md",
+    "packages/smithers/flows/jj/src/browser/BrowserJj.ts",
+    "packages/smithers/flows/jj/src/browser/WasiFs.ts",
+    "packages/smithers/flows/jj/src/browser/WasiPreview1.ts",
+    "packages/smithers/flows/jj/src/bun/BunJj.ts",
+    "packages/smithers/flows/jj/src/node/NodeJj.ts",
+    "packages/smithers/flows/jj/src/node/resolveJjBinary.ts",
+    "packages/smithers/flows/jj/test/BrowserJj.test.ts",
+    "packages/smithers/flows/jj/test/BrowserJjContract.test.ts",
+    "packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts",
+    "packages/smithers/flows/jj/test/FakeFlowsJjWasm.ts",
+    "packages/smithers/flows/jj/test/NodeJj.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjClassification.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjLifetime.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjLock.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjPatchFailure.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjPatchPaths.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjPatchRace.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjRegistrationFence.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjRepositoryTrust.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjSpawner.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjStale.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjUserConfig.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjVersion.test.ts",
+    "packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts",
+    "packages/smithers/flows/jj/test/RequiredWasmArtifact.test.ts",
+    "packages/smithers/flows/jj/test/RequireWasm.ts",
+    "packages/smithers/flows/jj/wasm/flows_jj.wasm"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/flows/jj/test/BrowserJjContract.test.ts",
+      "line": 38,
+      "text": "describe.skipIf(wasmBytes === undefined)(\"BrowserJj over flows_jj.wasm\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts",
+      "line": 54,
+      "text": "describe.skipIf(wasmBytes === undefined)(\"BrowserJj edge cases over flows_jj.wasm\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/BrowserJjWasmEdgeCases.test.ts",
+      "line": 251,
+      "text": "it.effect.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/faults/case21-jj-pointer-integrity.test.ts",
+      "line": 44,
+      "text": "describe.skipIf(!jjInstalled)(\"case21 jj pointer integrity\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/LayerParity.test.ts",
+      "line": 57,
+      "text": "describe.skipIf(!jjInstalled || wasmBytes === undefined)(\"Jj layer parity\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJj.test.ts",
+      "line": 45,
+      "text": "describe.skipIf(!jjInstalled)(\"NodeJj\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjClassification.test.ts",
+      "line": 101,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"NodeJj failure classification\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjClassification.test.ts",
+      "line": 451,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"NodeJj spawn errors\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjLifetime.test.ts",
+      "line": 86,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"NodeJj.layer\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjPatchFailure.test.ts",
+      "line": 20,
+      "text": "describe.skipIf(!installed())(\"NodeJj real-host patch normalization failure\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjPatchPaths.test.ts",
+      "line": 126,
+      "text": "describe.skipIf(!installed(\"jj\") || (host === \"Bun\" && !installed(\"bun\")))(`${host}Jj real-host patch paths`, () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjPatchRace.test.ts",
+      "line": 23,
+      "text": "describe.skipIf(!realJj.executable)(\"NodeJj real-host patch race\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjRegistrationFence.test.ts",
+      "line": 34,
+      "text": "describe.skipIf(realJj === undefined || process.platform === \"win32\")(\"NodeJj workspace registration fence\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjRepositoryTrust.test.ts",
+      "line": 26,
+      "text": "describe.skipIf(!jjInstalled)(\"NodeJj against a repository its occupant controls\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjSpawner.test.ts",
+      "line": 239,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"NodeJj.layerSpawner\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjSpawner.test.ts",
+      "line": 398,
+      "text": "it.effect.skipIf(!jjInstalled)("
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjSpawner.test.ts",
+      "line": 552,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"NodeJj startup probe on a busy machine\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjSpawner.test.ts",
+      "line": 642,
+      "text": "describe.skipIf(process.platform === \"win32\")(\"jj stale workspace refusal\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjUserConfig.test.ts",
+      "line": 23,
+      "text": "describe.skipIf(!jjInstalled)(\"NodeJj under a user config\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts",
+      "line": 41,
+      "text": "describe.skipIf(!jjInstalled)(\"NodeJj workspaces and restore\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts",
+      "line": 47,
+      "text": "const shellEffect = it.effect.skipIf(process.platform === \"win32\")"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/NodeJjWorkspace.test.ts",
+      "line": 48,
+      "text": "const shellLive = it.live.skipIf(process.platform === \"win32\")"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 263,
+      "text": "it.skipIf(!supportsNativeSymlinks).each([\"file\", \"ancestor\"] as const)("
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 597,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"validates expanded link ancestors before consuming '..'\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 922,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"refuses symlinks when lookupflags say nofollow, follows them otherwise\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 936,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"creates the target of a dangling symlink with O_CREAT, like open(2)\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 952,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"answers EEXIST for O_CREAT|O_EXCL on a symlink even without follow\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 964,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"creates through a chain of dangling links and reports cycles as ELOOP\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 978,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"creates through a dangling link with an absolute target\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 988,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"re-roots namespace-absolute link targets inside the preopen\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1004,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"clamps parent traversal in relative link targets\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1016,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"refuses to open an existing file outside the preopen through a link\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1027,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"re-roots an INTERMEDIATE absolute link component inside the preopen\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1047,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"clamps a relative intermediate link that climbs past the root\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1061,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"reports a cycle among intermediate link components as ELOOP\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1070,
+      "text": "it.skipIf(!supportsNativeSymlinks)("
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1459,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"lists directories with d_type, index cookies, and spec truncation\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1685,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"distinguishes lstat and stat through lookupflags\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1697,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"refuses to stat outside the preopen through a followed link\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/jj/test/WasiPreview1.test.ts",
+      "line": 1775,
+      "text": "it.skipIf(!supportsNativeSymlinks)(\"creates and reads links, truncating into small buffers\", () => {"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/jj/eslint.config.js",
+      "sha256": "dbad3d51b9846d92e0c287734163e2a4cee1f04f9f94124d12c9e1656aaebe49",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "{ ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },"
+        },
+        {
+          "line": 26,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/jj/package.json",
+      "sha256": "bb2c1dcefadeef1a2b8f308f306dbbfd5298c95b5f8b640c65cf0b2412e3295a",
+      "source": "{\n  \"name\": \"@smthrs/jj\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Jujutsu version control as a portable Effect host service\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/jj\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"jj\",\n    \"jujutsu\",\n    \"vcs\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"jj\",\n    \"jujutsu\",\n    \"vcs\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./wasm/flows_jj.wasm\": \"./wasm/flows_jj.wasm\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./Jj\": \"./src/Jj.ts\",\n    \"./browser/BrowserJj\": \"./src/browser/BrowserJj.ts\",\n    \"./browser/WasiFs\": \"./src/browser/WasiFs.ts\",\n    \"./browser/WasiPreview1\": \"./src/browser/WasiPreview1.ts\",\n    \"./bun/BunJj\": \"./src/bun/BunJj.ts\",\n    \"./index\": \"./src/index.ts\",\n    \"./node/NodeJj\": \"./src/node/NodeJj.ts\",\n    \"./node/resolveJjBinary\": \"./src/node/resolveJjBinary.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"wasm/*.wasm\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"THIRD_PARTY_NOTICES.md\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./wasm/flows_jj.wasm\": \"./wasm/flows_jj.wasm\",\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./Jj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Jj.d.ts\",\n          \"default\": \"./dist/esm/Jj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Jj.d.ts\",\n          \"default\": \"./dist/cjs/Jj.js\"\n        }\n      },\n      \"./browser/BrowserJj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/browser/BrowserJj.d.ts\",\n          \"default\": \"./dist/esm/browser/BrowserJj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/browser/BrowserJj.d.ts\",\n          \"default\": \"./dist/cjs/browser/BrowserJj.js\"\n        }\n      },\n      \"./browser/WasiFs\": {\n        \"import\": {\n          \"types\": \"./dist/esm/browser/WasiFs.d.ts\",\n          \"default\": \"./dist/esm/browser/WasiFs.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/browser/WasiFs.d.ts\",\n          \"default\": \"./dist/cjs/browser/WasiFs.js\"\n        }\n      },\n      \"./browser/WasiPreview1\": {\n        \"import\": {\n          \"types\": \"./dist/esm/browser/WasiPreview1.d.ts\",\n          \"default\": \"./dist/esm/browser/WasiPreview1.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/browser/WasiPreview1.d.ts\",\n          \"default\": \"./dist/cjs/browser/WasiPreview1.js\"\n        }\n      },\n      \"./bun/BunJj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/bun/BunJj.d.ts\",\n          \"default\": \"./dist/esm/bun/BunJj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/bun/BunJj.d.ts\",\n          \"default\": \"./dist/cjs/bun/BunJj.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./node/NodeJj\": {\n        \"import\": {\n          \"types\": \"./dist/esm/node/NodeJj.d.ts\",\n          \"default\": \"./dist/esm/node/NodeJj.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/node/NodeJj.d.ts\",\n          \"default\": \"./dist/cjs/node/NodeJj.js\"\n        }\n      },\n      \"./node/resolveJjBinary\": {\n        \"import\": {\n          \"types\": \"./dist/esm/node/resolveJjBinary.d.ts\",\n          \"default\": \"./dist/esm/node/resolveJjBinary.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/node/resolveJjBinary.d.ts\",\n          \"default\": \"./dist/cjs/node/resolveJjBinary.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"build:wasm\": \"node ../../../../packages/smithers/flows/jj-wasm/build-wasm.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 175,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 186,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/jj/PACKAGE.ts",
+      "sha256": "37e10fd403d00fdd158d711f8f5b9bb2960c6e69c2260352639ea5df88195f66",
+      "source": "import { BuildAndCheckTypeScriptPackage, ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd: \"packages/smithers/flows/jj\",\n  tests: Smithers.glob(\"test/**/*.test.ts\", { exclude: [\"test/faults/**\"] })\n})\n\n/**\n * The package's fault-injection cases.\n *\n * A package opts into the matrix by declaring this key, so\n * `//packages/...:faults` is the whole matrix and nothing central lists which\n * packages are in it. The tier is separate from `test` because its cases are\n * machine-global — they kill process groups, bind ephemeral ports, and read\n * the process table — so they run serially, without coverage, from\n * `vitest.faults.config.ts`.\n */\nconst faults = Smithers.FaultSuite({\n  cwd: \"packages/smithers/flows/jj\",\n  fixtures: Smithers.glob(\"vitest.faults.config.ts\")\n})\n\n/**\n * Changed public exports against README.md, docs/*.md, and the site's jj API\n * reference page.\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd: \"packages/smithers/flows/jj\",\n  // The site page is named as a file, not left to the macro's default glob:\n  // the index refuses a declared glob whose only matches live in another\n  // package, and every sibling package names its own page the same way.\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/jj.mdx\")\n  ]\n})\n\n/** Changed public exports against their own JSDoc. */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd: \"packages/smithers/flows/jj\" })\n\n/**\n * Keeps the attribution inventory in the published wasm package current.\n *\n * @since 1.0.0\n * @category test\n */\nconst thirdPartyNotices = Smithers.NodeTest({\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs\"), [\n    \"--check\"\n  ]),\n  srcs: [\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs\"),\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/third-party-notices.template.md\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//Cargo.toml\"),\n    Smithers.file(\"//Cargo.lock\"),\n    Smithers.file(\"//packages/smithers/flows/jj-wasm/Cargo.toml\"),\n    Smithers.file(\"//rust-toolchain.toml\"),\n    Smithers.file(\"//packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md\")\n  ],\n  deps: []\n})\n\n/**\n * Exercises generation and drift detection against a real Cargo workspace.\n *\n * @since 1.0.0\n * @category test\n */\nconst thirdPartyNoticesUnit = Smithers.NodeTest({\n  runner: Smithers.testRunner([\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs\")\n  ]),\n  srcs: [\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs\"),\n    Smithers.file(\"//packages/smithers/flows/jj/scripts/third-party-notices.template.md\"),\n    Smithers.file(\"//packages/repo-targets/scripts/workspace-packages.mjs\"),\n    Smithers.file(\"//.smithers/flows/release/release-rehearsal.mjs\"),\n    Smithers.file(\"//.github/workflows/ci.yml\")\n  ],\n  deps: []\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/jj\",\n  include: [\"src/**\", \"scripts/generate-third-party-notices.mjs\"],\n  checks: [\n    {\n      id: \"jj-argv-option-injection\",\n      title: \"Caller-supplied names, paths, revisions, and operation ids never parse as jj options\",\n      threat:\n        \"An agent or journal row that controls a lane name, lane path, or revision makes the host jj read a --config/--config-file or --repository it chose, running with attacker config against the operator's repositories.\",\n      lookFor: [\n        \"An argv array in operations() where a caller value is a bare positional without a preceding \\\"--\\\" or a --flag=value form (workspaceAdd, workspaceForget, opRestore).\",\n        \"inRepository inserting --color/--config after the \\\"--\\\" delimiter, so a global option lands among positionals or a positional lands among options.\",\n        \"A revision passed to restore/diff/revert as a separate argv item after --from/-r that jj could accept when it begins with \\\"-\\\".\",\n        \"opRestore reaching jj with an operationId that is not matched by the /^[0-9a-f]+$/ guard.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\"]\n    },\n    {\n      id: \"jj-revset-injection\",\n      title: \"A revision value names one commit and cannot widen into an arbitrary revset\",\n      threat:\n        \"A caller that controls a journaled revision string restores, diffs, or pins a lane to commits other than the recorded snapshot, overwriting the user's working copy with another change's tree.\",\n      lookFor: [\n        \"String interpolation of a revision into a revset expression such as `--revision=parents(${pinned})` without validating it as a hex commit id or reverse-hex change id.\",\n        \"requireRevision accepting anything beyond non-empty, so `x) | all() | (x` or `root()` reaches jj restore --from.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\", \"src/browser/BrowserJj.ts\"]\n    },\n    {\n      id: \"jj-binary-resolution\",\n      title: \"The spawned jj is the binary the operator chose, at an absolute path\",\n      threat:\n        \"Someone who can write a directory on PATH or the process cwd makes Smithers execute their own jj with the user's privileges and credentials.\",\n      lookFor: [\n        \"resolveJjBinary returning a relative path, or a PATH entry that is empty or \\\".\\\" resolving against the working directory instead of being skipped.\",\n        \"NodeJj spawning binary.path when it is not absolute, or spawning the bare name \\\"jj\\\" through PATH lookup.\",\n        \"The version-probe cache keyed so a probe under one spawner or path authorizes a different binary.\",\n        \"permissionHint or describe emitting an override path into shell remediation text without shellQuote.\"\n      ],\n      paths: [\"src/node/resolveJjBinary.ts\", \"src/node/NodeJj.ts\"]\n    },\n    {\n      id: \"jj-config-program-exec\",\n      title: \"Repository or workspace jj config cannot make the host jj run a program the operator did not choose\",\n      threat:\n        \"An agent that can write a lane's .jj directory or the repo config sets signing, fsmonitor, or tool keys so the next host-side jj snapshot, revert, or workspace add executes its program with the operator's privileges and inherited environment.\",\n      lookFor: [\n        \"inRepository and the pinned-restore run in workspaceAdd pinning only color and snapshot.max-new-file-size, leaving signing.behavior, signing.backends.*.program, fsmonitor.backend, and ui.diff-formatter to repo or JJ_CONFIG values.\",\n        \"A jj child spawned with the full process.env (secrets, JJ_CONFIG) instead of a minimal environment.\",\n        \"A workspace cwd from a caller path whose .jj config the host jj loads before any argv override applies.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\"]\n    },\n    {\n      id: \"wasi-preopen-escape\",\n      title: \"The WASI guest cannot read, write, or link outside the preopened root\",\n      threat:\n        \"A malicious or buggy wasm guest reads or overwrites host files outside the mounted repository root in the browser mount or the Node test backend.\",\n      lookFor: [\n        \"A path_* syscall that hands fs a host path not produced by resolvePath/walk, or skips notRoot on a mutation.\",\n        \"walk or resolveLinkTarget letting \\\"..\\\" or an absolute symlink target climb past the namespace root, or not re-rooting each symlink hop.\",\n        \"path_symlink writing a guest-controlled absolute target that the backend later follows outside the root when the shim itself does not walk it.\",\n        \"fd-addressed operations resolved through a path captured at open time, so a rename plus symlink redirects a later mutation.\"\n      ],\n      paths: [\"src/browser/WasiPreview1.ts\", \"src/browser/WasiFs.ts\"]\n    },\n    {\n      id: \"wasi-memory-bounds\",\n      title: \"Guest pointers and lengths never read or write outside wasm linear memory or exhaust the host\",\n      threat:\n        \"A wasm guest passes crafted iovec pointers or lengths that crash the page, corrupt shim state, or force unbounded host allocation.\",\n      lookFor: [\n        \"A DataView or Uint8Array over memory.buffer built from guest ptr/len without the bounds-checking constructor path, or with ptr+len overflow before >>> 0.\",\n        \"A RangeError path not mapped to Errno.fault, letting an exception unwind through the wasm stack.\",\n        \"fd_read/fd_readdir/path_readlink sizing a host buffer from a guest-supplied length without a cap.\"\n      ],\n      paths: [\"src/browser/WasiPreview1.ts\"]\n    },\n    {\n      id: \"jj-abi-response-trust\",\n      title: \"Output from the jj child or the wasm ABI is parsed as untrusted data\",\n      threat:\n        \"A hostile repository or guest crafts jj output that makes the host journal a wrong commit id, misclassify a failure as success, or exhaust memory.\",\n      lookFor: [\n        \"decodeResponse or the initialize response accepting fields without type checks before use as commit ids or paths.\",\n        \"A child stdout/stderr buffer that grows past outputLimit before the check fires.\",\n        \"settle treating exit code 0 as success while stderr reports refused snapshot files.\",\n        \"snapshot using an empty commitId from a malformed jj log line as a restore target.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\", \"src/browser/BrowserJj.ts\"]\n    },\n    {\n      id: \"jj-error-leakage\",\n      title: \"Journaled JjError fields stay bounded and carry no secrets\",\n      threat:\n        \"A failing jj invocation writes environment secrets, full file contents, or long user paths into the durable journal that other tenants or UIs read.\",\n      lookFor: [\n        \"A JjError constructed with an unbounded message or command instead of commandOf/jjErrorCause truncation.\",\n        \"A cause projection that copies an Error's stack, env, or spawnargs into the journal.\"\n      ],\n      paths: [\"src/Jj.ts\", \"src/node/NodeJj.ts\", \"src/browser/BrowserJj.ts\"]\n    },\n    {\n      id: \"jj-lock-and-restore-safety\",\n      title: \"Repository locks and destructive restores cannot be stolen or aimed at another workspace\",\n      threat:\n        \"A concurrent process or crafted lock entry makes two jj operations mutate one workspace at once, or opRestore discards another agent's workspace changes.\",\n      lookFor: [\n        \"reclaimDeadLock removing an owner entry whose hostname differs or whose pid is alive, or following a symlink planted at .jj/<lock>.\",\n        \"workspaceAdd's pinned restore running in a directory resolved from a caller path outside the bound repository root.\",\n        \"opRestore running jj op restore without the workspace-list equality check, or with --what broader than repo.\"\n      ],\n      paths: [\"src/node/NodeJj.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    faults,\n    fmt,\n    lib,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    test,\n    thirdPartyNotices,\n    thirdPartyNoticesUnit,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 8,
+          "text": "tests: Smithers.glob(\"test/**/*.test.ts\", { exclude: [\"test/faults/**\"] })"
+        },
+        {
+          "line": 18,
+          "text": "* the process table — so they run serially, without coverage, from"
+        },
+        {
+          "line": 90,
+          "text": "include: [\"src/**\", \"scripts/generate-third-party-notices.mjs\"],"
+        },
+        {
+          "line": 122,
+          "text": "\"resolveJjBinary returning a relative path, or a PATH entry that is empty or \\\".\\\" resolving against the working directory instead of being skipped.\","
+        },
+        {
+          "line": 147,
+          "text": "\"A path_* syscall that hands fs a host path not produced by resolvePath/walk, or skips notRoot on a mutation.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/jj/tsconfig.json",
+      "sha256": "bceba129ef0350a4a2726e756840042e5b866875f033becfd5637d36c06f1597",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true,\n      \"diagnosticSeverity\": { \"globalErrorInEffectFailure\": \"off\" }\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 29,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 30,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 35,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/jj/vitest.config.ts",
+      "sha256": "49894271129ad93f999a278b7e16426873d5f4098c58dde4df1d6737fc78d4f2",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"./test/RequireWasm.ts\", import.meta.url))\n    ],\n    // The fault tier lives under `test/faults` and runs from\n    // `vitest.faults.config.ts` instead, serially and without coverage: its\n    // cases kill process groups and bind ports, which no unit suite sharing\n    // this machine can survive beside them.\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude, \"test/faults/**\"],\n    environment: \"node\",\n    // Keep package workers serial: child startup and WASM conformance tests\n    // must not compete with every other file in the recursive workspace gate.\n    // The existing finite watchdog remains a hang guard, not a performance test.\n    fileParallelism: false,\n    testTimeout: 60_000,\n    hookTimeout: 60_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-jj-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 16,
+          "text": "// `vitest.faults.config.ts` instead, serially and without coverage: its"
+        },
+        {
+          "line": 19,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 20,
+          "text": "exclude: [...configDefaults.exclude, \"test/faults/**\"],"
+        },
+        {
+          "line": 28,
+          "text": "coverage: {"
+        },
+        {
+          "line": 30,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 31,
+          "text": "reportsDirectory: join(tmpdir(), `flows-jj-coverage-${process.pid}`),"
+        },
+        {
+          "line": 32,
+          "text": "include: [\"src/**/*.{ts,vibe}\"],"
+        },
+        {
+          "line": 33,
+          "text": "thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/jj/vitest.faults.config.ts",
+      "sha256": "d397cbfd019ae0f8f7cf98272dd0910a55e5f347e9e07f9df6148e7f68d6bee4",
+      "source": "/**\n * The fault tier: the Jujutsu pointer cases.\n *\n * The case here runs the real `jj` binary against a throwaway repository and\n * restores by change id. `jj` takes a workspace lock, so the tier runs\n * serially.\n *\n * Coverage is off. The work these cases do happens in child processes this one\n * never instruments, and `vitest.config.ts` beside this file stays the coverage\n * gate for `src`.\n */\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    environment: \"node\",\n    include: [\"test/faults/**/*.test.{ts,vibe}\"],\n    // A fault case drives real processes, real SQLite files, and real sockets.\n    // The budget stays finite so a wedged case still fails instead of sitting\n    // until the CI job timeout.\n    testTimeout: 180_000,\n    hookTimeout: 180_000,\n    // A suite that spawns and kills processes cannot share a worker with\n    // another suite doing the same: pids, ports, and process groups are\n    // process-global.\n    fileParallelism: false,\n    coverage: { enabled: false }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 8,
+          "text": "* Coverage is off. The work these cases do happens in child processes this one"
+        },
+        {
+          "line": 9,
+          "text": "* never instruments, and `vitest.config.ts` beside this file stays the coverage"
+        },
+        {
+          "line": 19,
+          "text": "include: [\"test/faults/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 29,
+          "text": "coverage: { enabled: false }"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/jj:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:faults",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "exclusive": true,
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/test/faults/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/vitest.faults.config.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/vitest.faults.config.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/jj/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/docs/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/jj.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/jj/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/jj/src/**",
+            "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/jj/src/**",
+            "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/test/**/*.test.ts",
+          "exclude": [
+            "packages/smithers/flows/jj/test/faults/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/jj:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:thirdPartyNotices",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/third-party-notices.template.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.lock"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "rust-toolchain.toml"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/THIRD_PARTY_NOTICES.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj",
+      "label": "//packages/smithers/flows/jj:thirdPartyNoticesUnit",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/generate-third-party-notices.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/generate-third-party-notices.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/scripts/third-party-notices.template.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".smithers/flows/release/release-rehearsal.mjs"
+        },
+        {
+          "kind": "file",
+          "path": ".github/workflows/ci.yml"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "scripts/build.mjs",
+    "scripts/generate-third-party-notices.mjs",
+    "src/Jj.ts",
+    "src/browser",
+    "src/bun",
+    "src/index.ts",
+    "src/internal",
+    "src/node",
+    "test/FakeFlowsJjWasm.ts",
+    "test/RequireWasm.ts",
+    "test/RootedSyncFs.ts",
+    "test/budgeted.ts",
+    "vitest.config.ts",
+    "vitest.faults.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

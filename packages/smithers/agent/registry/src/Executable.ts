@@ -1916,7 +1916,9 @@ export const catalog = (
         )
       )
       yield* Effect.logDebug("Flow body load finished", {
-        flow: descriptor.name, outcome: result._tag, elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
+        flow: descriptor.name,
+        outcome: result._tag,
+        elapsedMs: (yield* Clock.currentTimeMillis) - startedAt
       })
       if (result._tag === "Success") {
         executables.push(result.success)
@@ -1938,7 +1940,11 @@ export const catalog = (
         cause: causeLine(failure.cause)
       })
     }
-    yield* Effect.logDebug("Flow catalog ready", { loaded: executables.length, refused: refused.length, deferred: deferred.length })
+    yield* Effect.logDebug("Flow catalog ready", {
+      loaded: executables.length,
+      refused: refused.length,
+      deferred: deferred.length
+    })
     // Preserve the eager catalog's public shape for callers that did not opt into deferral.
     return eager === undefined ? { executables, refused } : { executables, refused, deferred }
   }).pipe(Effect.withSpan("smithers.registry.catalog"))
@@ -2156,8 +2162,11 @@ const makeRefresh = (
         ? current.executables.map((entry) => entry.descriptor.name === name ? executable : entry)
         : [...current.executables, executable]
       const without = current.refused.filter((entry) => entry.flow !== name)
-      swap({ executables, refused: failure === undefined ? without : [...without, failure],
-        deferred: current.deferred?.filter((entry) => entry.name !== name) })
+      swap({
+        executables,
+        refused: failure === undefined ? without : [...without, failure],
+        deferred: current.deferred?.filter((entry) => entry.name !== name)
+      })
     }
     const register = (descriptor: Descriptor.FlowDescriptor) => {
       const name = descriptor.name

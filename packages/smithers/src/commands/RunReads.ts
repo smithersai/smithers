@@ -34,13 +34,15 @@ export const events = (control: ControlService.Service, runId: string) =>
  * @since 1.0.0
  */
 export const terminalFailure = <E, R>(events: Stream.Stream<ControlSchema.ControlEvent, E, R>, runId: string) =>
-  Stream.runFold(events, () => undefined as Failure | undefined,
-    (latest, event) => failureOf([event], runId) ?? latest).pipe(
-    Effect.map((failure) => ({ failure, unavailable: false })),
-    Effect.catch(() => Effect.logWarning("Terminal failure details are unavailable").pipe(
-      Effect.as({ failure: undefined, unavailable: true })
-    ))
-  )
+  Stream.runFold(events, () => undefined as Failure | undefined, (latest, event) => failureOf([event], runId) ?? latest)
+    .pipe(
+      Effect.map((failure) => ({ failure, unavailable: false })),
+      Effect.catch(() =>
+        Effect.logWarning("Terminal failure details are unavailable").pipe(
+          Effect.as({ failure: undefined, unavailable: true })
+        )
+      )
+    )
 
 /**
  * One run's summary, or undefined when the control plane has no such run.

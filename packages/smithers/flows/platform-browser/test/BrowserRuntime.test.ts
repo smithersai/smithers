@@ -377,7 +377,10 @@ describe("BrowserRuntime.serve", () => {
       expect(steps.ran.filter((step) => step === "p:three")).toHaveLength(2)
       expect(steps.ran.filter((step) => step === "p:one")).toHaveLength(1)
       const refused = yield* Effect.flip(engine.inspect("nobody"))
-      expect(refused).toMatchObject({ _tag: "@smthrs/platform-browser/RequestRefused", error: "@smthrs/engine-store/RunNotFound" })
+      expect(refused).toMatchObject({
+        _tag: "@smthrs/platform-browser/RequestRefused",
+        error: "@smthrs/engine-store/RunNotFound"
+      })
     }).pipe(Effect.scoped))
 
   it.live("wakes each unfinished run once, counts the outcome, and carries no content", () => {

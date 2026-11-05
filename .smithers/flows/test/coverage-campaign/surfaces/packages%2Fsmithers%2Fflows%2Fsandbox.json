@@ -1,1 +1,1165 @@
-{"id":"packages/smithers/flows/sandbox","name":"@smthrs/sandbox","owner":{"declaration":"packages/smithers/flows/sandbox/package.json","assignedLane":null},"kind":"package","scripts":{"lint":"eslint src --max-warnings=0 && dprint check","format":"dprint fmt","build":"node scripts/build.mjs","check":"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit","circular":"node ../../../repo-targets/scripts/circular.mjs","test":"vitest","coverage":"vitest --coverage"},"exports":{"./package.json":"./package.json",".":"./src/index.ts","./CommandSandbox":"./src/CommandSandbox/index.ts","./CommandSandbox/*":null,"./ContainerSandbox":"./src/ContainerSandbox/index.ts","./ContainerSandbox/*":null,"./DirectorySandbox":"./src/DirectorySandbox/index.ts","./DirectorySandbox/*":null,"./ProviderConformance":"./src/ProviderConformance/index.ts","./ProviderConformance/*":null,"./RemoteChildProcessSpawner":"./src/RemoteChildProcessSpawner/index.ts","./RemoteChildProcessSpawner/*":null,"./TerminalProtocol":"./src/TerminalProtocol/index.ts","./TerminalProtocol/*":null,"./Sandbox":"./src/Sandbox/index.ts","./Sandbox/*":null,"./SandboxConformance":"./src/SandboxConformance/index.ts","./SandboxConformance/*":null,"./SandboxMerge":"./src/SandboxMerge/index.ts","./SandboxMerge/*":null,"./SandboxHealth":"./src/SandboxHealth/index.ts","./SandboxHealth/*":null,"./SandboxSupervision":"./src/SandboxSupervision/index.ts","./SandboxSupervision/*":null,"./SandboxTools":"./src/SandboxTools/index.ts","./SandboxTools/*":null,"./SandboxCommand":"./src/SandboxCommand/index.ts","./SandboxCommand/*":null,"./CiJob":"./src/CiJob/index.ts","./CiJob/*":null,"./AwsSandbox":"./src/AwsSandbox/index.ts","./AwsSandbox/*":null,"./CloudflareSandbox":"./src/CloudflareSandbox/index.ts","./CloudflareSandbox/*":null,"./DaytonaSandbox":"./src/DaytonaSandbox/index.ts","./DaytonaSandbox/*":null,"./JustBashSandbox":"./src/JustBashSandbox/index.ts","./JustBashSandbox/*":null,"./KubernetesSandbox":"./src/KubernetesSandbox/index.ts","./KubernetesSandbox/*":null,"./MicrosandboxSandbox":"./src/MicrosandboxSandbox/index.ts","./MicrosandboxSandbox/*":null,"./VercelSandbox":"./src/VercelSandbox/index.ts","./VercelSandbox/*":null,"./internal/*":null,"./*/index":null,"./index":"./src/index.ts"},"production":["eslint.config.js","PACKAGE.ts","scripts/build.mjs","src/AwsSandbox/ExecTransport.ts","src/AwsSandbox/index.ts","src/AwsSandbox/make.ts","src/AwsSandbox/Sdk.ts","src/CiJob/index.ts","src/CloudflareSandbox/index.ts","src/CloudflareSandbox/make.ts","src/CloudflareSandbox/Sdk.ts","src/CommandSandbox/index.ts","src/CommandSandbox/make.ts","src/ContainerSandbox/existing.ts","src/ContainerSandbox/index.ts","src/ContainerSandbox/make.ts","src/DaytonaSandbox/index.ts","src/DaytonaSandbox/make.ts","src/DaytonaSandbox/Sdk.ts","src/DirectorySandbox/index.ts","src/DirectorySandbox/make.ts","src/index.ts","src/internal/attempt.ts","src/internal/base64.ts","src/internal/boundedCheck.ts","src/internal/boundedMessage.ts","src/internal/checkedExit.ts","src/internal/concat.ts","src/internal/configurationFingerprint.ts","src/internal/deadline.ts","src/internal/describeExit.ts","src/internal/environmentCommand.ts","src/internal/environmentInput.ts","src/internal/environmentNames.ts","src/internal/envPrefix.ts","src/internal/execHandles.ts","src/internal/execSession.ts","src/internal/finalizeWithin.ts","src/internal/guestPath.ts","src/internal/killScript.ts","src/internal/linuxFileSystem.ts","src/internal/linuxSignals.ts","src/internal/localProcess.ts","src/internal/machineName.ts","src/internal/microsandboxNetwork.ts","src/internal/microsandboxProcess.ts","src/internal/MicrosandboxReattachRefusal.ts","src/internal/microsandboxRemove.ts","src/internal/pidDirectory.ts","src/internal/platformReason.ts","src/internal/rootedPath.ts","src/internal/sessionSlug.ts","src/internal/stdinRedirect.ts","src/internal/teardownWarning.ts","src/JustBashSandbox/index.ts","src/JustBashSandbox/JustBashLike.ts","src/JustBashSandbox/make.ts","src/KubernetesSandbox/index.ts","src/KubernetesSandbox/make.ts","src/MicrosandboxSandbox/GarbageCollector.ts","src/MicrosandboxSandbox/index.ts","src/MicrosandboxSandbox/labels.ts","src/MicrosandboxSandbox/make.ts","src/MicrosandboxSandbox/reap.ts","src/MicrosandboxSandbox/Sdk.ts","src/MicrosandboxSandbox/snapshots.ts","src/ProviderConformance/check.ts","src/ProviderConformance/Commands.ts","src/ProviderConformance/index.ts","src/ProviderConformance/Violation.ts","src/RemoteChildProcessSpawner/index.ts","src/RemoteChildProcessSpawner/layer.ts","src/RemoteChildProcessSpawner/Provider.ts","src/RemoteChildProcessSpawner/ProviderError.ts","src/RemoteChildProcessSpawner/TestRemote.ts","src/RemoteChildProcessSpawner/TestRemoteProvider.ts","src/RemoteChildProcessSpawner/TestRemoteState.ts","src/RemoteChildProcessSpawner/TestScript.ts","src/Sandbox/commandProvider.ts","src/Sandbox/fanOut.ts","src/Sandbox/fileSystem.ts","src/Sandbox/index.ts","src/Sandbox/job.ts","src/Sandbox/layerHost.ts","src/Sandbox/NetworkPolicy.ts","src/Sandbox/Provider.ts","src/Sandbox/ResourceLimits.ts","src/Sandbox/run.ts","src/Sandbox/Session.ts","src/Sandbox/TestSession.ts","src/Sandbox/TestSessionProvider.ts","src/Sandbox/TestSessionState.ts","src/Sandbox/Work.ts","src/SandboxCommand/index.ts","src/SandboxConformance/check.ts","src/SandboxConformance/index.ts","src/SandboxConformance/posixCommands.ts","src/SandboxConformance/workSeed.ts","src/SandboxHealth/HealthState.ts","src/SandboxHealth/Healthy.ts","src/SandboxHealth/index.ts","src/SandboxHealth/layer.ts","src/SandboxHealth/layerNoop.ts","src/SandboxHealth/make.ts","src/SandboxHealth/makeNoop.ts","src/SandboxHealth/PingProvider.ts","src/SandboxHealth/probe.ts","src/SandboxHealth/ProbeOptions.ts","src/SandboxHealth/SandboxHealth.ts","src/SandboxHealth/Service.ts","src/SandboxHealth/Unhealthy.ts","src/SandboxHealth/UnhealthyReason.ts","src/SandboxMerge/apply.ts","src/SandboxMerge/ApplyAction.ts","src/SandboxMerge/index.ts","src/SandboxMerge/Outcome.ts","src/SandboxMerge/Repository.ts","src/SandboxMerge/Strategy.ts","src/SandboxSupervision/index.ts","src/SandboxSupervision/layer.ts","src/SandboxSupervision/make.ts","src/SandboxSupervision/Options.ts","src/SandboxSupervision/Reporter.ts","src/SandboxSupervision/SandboxUnhealthy.ts","src/SandboxTools/index.ts","src/TerminalProtocol/index.ts","src/VercelSandbox/Credentials.ts","src/VercelSandbox/index.ts","src/VercelSandbox/make.ts","src/VercelSandbox/Sdk.ts","test/fixtures/retained-job-child.mjs","test/helpers/containedPlatform.ts","test/helpers/discover.ts","test/helpers/hostCollector.ts","test/helpers/sandboxRepos.ts","test/helpers/untouchable.ts","test/helpers/workSeed.ts","test/stalledFinalizer.ts","vitest.config.ts"],"tests":["packages/smithers/flows/sandbox/test/AwsSandbox.test.ts","packages/smithers/flows/sandbox/test/Base64.test.ts","packages/smithers/flows/sandbox/test/CiJob.test.ts","packages/smithers/flows/sandbox/test/CloudflareSandbox.test.ts","packages/smithers/flows/sandbox/test/CommandSandbox.test.ts","packages/smithers/flows/sandbox/test/CommandSandboxHeartbeatLocal.test.ts","packages/smithers/flows/sandbox/test/CommandSandboxTransport.test.ts","packages/smithers/flows/sandbox/test/ConfigurationFingerprint.test.ts","packages/smithers/flows/sandbox/test/ContainerFileSystem.test.ts","packages/smithers/flows/sandbox/test/ContainerSandbox.test.ts","packages/smithers/flows/sandbox/test/CoverageConfig.test.ts","packages/smithers/flows/sandbox/test/DaytonaSandbox.test.ts","packages/smithers/flows/sandbox/test/Deadline.test.ts","packages/smithers/flows/sandbox/test/DirectorySandbox.test.ts","packages/smithers/flows/sandbox/test/Discovery.test.ts","packages/smithers/flows/sandbox/test/Documentation.test.ts","packages/smithers/flows/sandbox/test/ExecHandles.test.ts","packages/smithers/flows/sandbox/test/ExecSession.test.ts","packages/smithers/flows/sandbox/test/ExistingContainer.test.ts","packages/smithers/flows/sandbox/test/FanOut.test.ts","packages/smithers/flows/sandbox/test/finalizeWithin.test.ts","packages/smithers/flows/sandbox/test/fixtures/job-survival-spike.py","packages/smithers/flows/sandbox/test/fixtures/retained-job-child.mjs","packages/smithers/flows/sandbox/test/GuestPath.test.ts","packages/smithers/flows/sandbox/test/helpers/containedPlatform.ts","packages/smithers/flows/sandbox/test/helpers/discover.ts","packages/smithers/flows/sandbox/test/helpers/hostCollector.ts","packages/smithers/flows/sandbox/test/helpers/sandboxRepos.ts","packages/smithers/flows/sandbox/test/helpers/untouchable.ts","packages/smithers/flows/sandbox/test/helpers/workSeed.ts","packages/smithers/flows/sandbox/test/index.test.ts","packages/smithers/flows/sandbox/test/JustBashSandbox.test.ts","packages/smithers/flows/sandbox/test/KillScript.test.ts","packages/smithers/flows/sandbox/test/KubernetesSandbox.test.ts","packages/smithers/flows/sandbox/test/MicrosandboxSandbox.test.ts","packages/smithers/flows/sandbox/test/Options.types.test.ts","packages/smithers/flows/sandbox/test/ProviderConformance.test.ts","packages/smithers/flows/sandbox/test/ProviderErrorFault.test.ts","packages/smithers/flows/sandbox/test/RealContainerSandbox.integration.test.ts","packages/smithers/flows/sandbox/test/RealExistingContainer.integration.test.ts","packages/smithers/flows/sandbox/test/RealKubernetesSandbox.integration.test.ts","packages/smithers/flows/sandbox/test/RealMicrosandbox.integration.test.ts","packages/smithers/flows/sandbox/test/RealProcessProvider.integration.test.ts","packages/smithers/flows/sandbox/test/RealSandboxJob.integration.test.ts","packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.browser.test.ts","packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.test.ts","packages/smithers/flows/sandbox/test/RemoteKill.test.ts","packages/smithers/flows/sandbox/test/RemovalCli.test.ts","packages/smithers/flows/sandbox/test/RepositoryContention.test.ts","packages/smithers/flows/sandbox/test/ResourceLimits.test.ts","packages/smithers/flows/sandbox/test/RootedPath.test.ts","packages/smithers/flows/sandbox/test/Sandbox.test.ts","packages/smithers/flows/sandbox/test/SandboxCommand.container.test.ts","packages/smithers/flows/sandbox/test/SandboxCommand.test.ts","packages/smithers/flows/sandbox/test/SandboxConformance.test.ts","packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","packages/smithers/flows/sandbox/test/SandboxHealth.test.ts","packages/smithers/flows/sandbox/test/SandboxHealthSchema.test.ts","packages/smithers/flows/sandbox/test/SandboxJob.test.ts","packages/smithers/flows/sandbox/test/SandboxMerge.browser.test.ts","packages/smithers/flows/sandbox/test/SandboxMerge.test.ts","packages/smithers/flows/sandbox/test/SandboxSupervision.test.ts","packages/smithers/flows/sandbox/test/SandboxTools.test.ts","packages/smithers/flows/sandbox/test/SandboxWork.test.ts","packages/smithers/flows/sandbox/test/SessionSlug.test.ts","packages/smithers/flows/sandbox/test/stalledFinalizer.ts","packages/smithers/flows/sandbox/test/StdinRedirect.test.ts","packages/smithers/flows/sandbox/test/TerminalProtocol.test.ts","packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","packages/smithers/flows/sandbox/test/VercelSandbox.test.ts","packages/smithers/flows/sandbox/tsconfig.test.json"],"benchmarks":[],"platformPaths":["packages/smithers/flows/sandbox/src/internal/linuxFileSystem.ts","packages/smithers/flows/sandbox/src/internal/linuxSignals.ts","packages/smithers/flows/sandbox/src/internal/localProcess.ts","packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/index.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/layer.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/Provider.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/ProviderError.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemoteProvider.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemoteState.ts","packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestScript.ts","packages/smithers/flows/sandbox/test/RealProcessProvider.integration.test.ts","packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.browser.test.ts","packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.test.ts","packages/smithers/flows/sandbox/test/SandboxMerge.browser.test.ts"],"ignoredCases":[{"path":"packages/smithers/flows/sandbox/src/AwsSandbox/make.ts","line":897,"text":"/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"},{"path":"packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts","line":199,"text":"/* v8 ignore next 3 -- session paths are absolute under an absolute root, so only a write to the filesystem root itself could skip parent creation */"},{"path":"packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts","line":208,"text":"/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"},{"path":"packages/smithers/flows/sandbox/src/internal/execSession.ts","line":196,"text":"/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"},{"path":"packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts","line":189,"text":"/* v8 ignore next 3 -- session paths are absolute under an absolute root, so only a write to the filesystem root itself could skip parent creation */"},{"path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts","line":795,"text":"/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"},{"path":"packages/smithers/flows/sandbox/src/ProviderConformance/check.ts","line":70,"text":"(spawner) => spawner.exitCode(ChildProcess.make(commands.fails, { shell: commands.shell ?? false }))"},{"path":"packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts","line":117,"text":"/* v8 ignore next -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the fallback only discharges the optional a map read carries */"},{"path":"packages/smithers/flows/sandbox/src/Sandbox/fileSystem.ts","line":310,"text":"/* v8 ignore next -- `split` always yields a first field, so the `type` nullish arm only discharges the indexed-access optional */"},{"path":"packages/smithers/flows/sandbox/src/SandboxConformance/posixCommands.ts","line":57,"text":"/* v8 ignore next -- every runtime this package supports has Web Crypto; the fallback is for a host that does not */"},{"path":"packages/smithers/flows/sandbox/test/ExistingContainer.test.ts","line":107,"text":"it.effect.skipIf(isRoot)("},{"path":"packages/smithers/flows/sandbox/test/RealContainerSandbox.integration.test.ts","line":66,"text":"describe.skipIf(engineAvailable)(\"ContainerSandbox against a real engine\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealContainerSandbox.integration.test.ts","line":72,"text":"describe.skipIf(!engineAvailable)(\"ContainerSandbox against a real engine\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealExistingContainer.integration.test.ts","line":80,"text":"describe.skipIf(engineAvailable)(\"ContainerSandbox.existing against a real engine\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealExistingContainer.integration.test.ts","line":86,"text":"describe.skipIf(!engineAvailable)(\"ContainerSandbox.existing against a real engine\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealKubernetesSandbox.integration.test.ts","line":40,"text":"describe.skipIf(clusterAvailable)(\"KubernetesSandbox against OrbStack\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealKubernetesSandbox.integration.test.ts","line":46,"text":"describe.skipIf(!clusterAvailable)(\"KubernetesSandbox against OrbStack\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealMicrosandbox.integration.test.ts","line":118,"text":"describe.skipIf(available)(\"MicrosandboxSandbox against a real microVM\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealMicrosandbox.integration.test.ts","line":141,"text":"describe.skipIf(!available)(\"MicrosandboxSandbox against a real microVM\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealSandboxJob.integration.test.ts","line":32,"text":"describe.skipIf(!available)(\"retained Sandbox.job real microVM\", () => {"},{"path":"packages/smithers/flows/sandbox/test/RealSandboxJob.integration.test.ts","line":106,"text":"describe.skipIf(available)(\"retained Sandbox.job capability guard\", () => {"},{"path":"packages/smithers/flows/sandbox/test/SandboxCommand.container.test.ts","line":97,"text":"describe.skipIf(cli === undefined)(\"SandboxTools' command scripts in a real container\", () => {"},{"path":"packages/smithers/flows/sandbox/test/SandboxCommand.test.ts","line":797,"text":"time.skip(76_000)"},{"path":"packages/smithers/flows/sandbox/test/SandboxConformance.test.ts","line":309,"text":": command === SandboxConformance.posixCommands.fails"},{"path":"packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","line":208,"text":"it.effect.skipIf(isRoot)("},{"path":"packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","line":238,"text":"it.effect.skipIf(isRoot)("},{"path":"packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","line":273,"text":"it.effect.skipIf(!mvReplacesDirectories)("},{"path":"packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","line":297,"text":"it.effect.skipIf(mvReplacesDirectories)("},{"path":"packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","line":382,"text":"it.effect.skipIf(isRoot)("},{"path":"packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts","line":561,"text":"it.effect.skipIf(isRoot)("},{"path":"packages/smithers/flows/sandbox/test/StdinRedirect.test.ts","line":58,"text":"it.effect.skipIf(!existsSync(\"/bin/sh\"))("},{"path":"packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","line":169,"text":"describe.skipIf(dockerAvailable)(\"standard tool placement on ContainerSandbox\", () => {"},{"path":"packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","line":175,"text":"describe.skipIf(!dockerAvailable)(\"standard tool placement on ContainerSandbox\", () => {"},{"path":"packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","line":202,"text":"describe.skipIf(linuxHost)(\"standard tool placement on CommandSandbox\", () => {"},{"path":"packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","line":207,"text":"describe.skipIf(!linuxHost)(\"standard tool placement on CommandSandbox\", () => {"},{"path":"packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","line":232,"text":"describe.skipIf(sshReachable)(\"standard tool placement on CommandSandbox over ssh\", () => {"},{"path":"packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts","line":237,"text":"describe.skipIf(!sshReachable)(\"standard tool placement on CommandSandbox over ssh\", () => {"}],"configurations":[{"path":"packages/smithers/flows/sandbox/eslint.config.js","sha256":"dbad3d51b9846d92e0c287734163e2a4cee1f04f9f94124d12c9e1656aaebe49","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":9,"text":"{ ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },"},{"line":26,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"packages/smithers/flows/sandbox/package.json","sha256":"dfb226b5fef0765bd290f8cecac58b47c56a366d185c95d1c7cf9634bfc7d938","source":"{\n  \"name\": \"@smthrs/sandbox\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/sandbox\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"sandbox\",\n    \"remote\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"sandbox\",\n    \"remote\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./CommandSandbox\": \"./src/CommandSandbox/index.ts\",\n    \"./CommandSandbox/*\": null,\n    \"./ContainerSandbox\": \"./src/ContainerSandbox/index.ts\",\n    \"./ContainerSandbox/*\": null,\n    \"./DirectorySandbox\": \"./src/DirectorySandbox/index.ts\",\n    \"./DirectorySandbox/*\": null,\n    \"./ProviderConformance\": \"./src/ProviderConformance/index.ts\",\n    \"./ProviderConformance/*\": null,\n    \"./RemoteChildProcessSpawner\": \"./src/RemoteChildProcessSpawner/index.ts\",\n    \"./RemoteChildProcessSpawner/*\": null,\n    \"./TerminalProtocol\": \"./src/TerminalProtocol/index.ts\",\n    \"./TerminalProtocol/*\": null,\n    \"./Sandbox\": \"./src/Sandbox/index.ts\",\n    \"./Sandbox/*\": null,\n    \"./SandboxConformance\": \"./src/SandboxConformance/index.ts\",\n    \"./SandboxConformance/*\": null,\n    \"./SandboxMerge\": \"./src/SandboxMerge/index.ts\",\n    \"./SandboxMerge/*\": null,\n    \"./SandboxHealth\": \"./src/SandboxHealth/index.ts\",\n    \"./SandboxHealth/*\": null,\n    \"./SandboxSupervision\": \"./src/SandboxSupervision/index.ts\",\n    \"./SandboxSupervision/*\": null,\n    \"./SandboxTools\": \"./src/SandboxTools/index.ts\",\n    \"./SandboxTools/*\": null,\n    \"./SandboxCommand\": \"./src/SandboxCommand/index.ts\",\n    \"./SandboxCommand/*\": null,\n    \"./CiJob\": \"./src/CiJob/index.ts\",\n    \"./CiJob/*\": null,\n    \"./AwsSandbox\": \"./src/AwsSandbox/index.ts\",\n    \"./AwsSandbox/*\": null,\n    \"./CloudflareSandbox\": \"./src/CloudflareSandbox/index.ts\",\n    \"./CloudflareSandbox/*\": null,\n    \"./DaytonaSandbox\": \"./src/DaytonaSandbox/index.ts\",\n    \"./DaytonaSandbox/*\": null,\n    \"./JustBashSandbox\": \"./src/JustBashSandbox/index.ts\",\n    \"./JustBashSandbox/*\": null,\n    \"./KubernetesSandbox\": \"./src/KubernetesSandbox/index.ts\",\n    \"./KubernetesSandbox/*\": null,\n    \"./MicrosandboxSandbox\": \"./src/MicrosandboxSandbox/index.ts\",\n    \"./MicrosandboxSandbox/*\": null,\n    \"./VercelSandbox\": \"./src/VercelSandbox/index.ts\",\n    \"./VercelSandbox/*\": null,\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./CommandSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CommandSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/CommandSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CommandSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/CommandSandbox/index.js\"\n        }\n      },\n      \"./CommandSandbox/*\": null,\n      \"./ContainerSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ContainerSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/ContainerSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ContainerSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/ContainerSandbox/index.js\"\n        }\n      },\n      \"./ContainerSandbox/*\": null,\n      \"./DirectorySandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DirectorySandbox/index.d.ts\",\n          \"default\": \"./dist/esm/DirectorySandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DirectorySandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/DirectorySandbox/index.js\"\n        }\n      },\n      \"./DirectorySandbox/*\": null,\n      \"./ProviderConformance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ProviderConformance/index.d.ts\",\n          \"default\": \"./dist/esm/ProviderConformance/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ProviderConformance/index.d.ts\",\n          \"default\": \"./dist/cjs/ProviderConformance/index.js\"\n        }\n      },\n      \"./ProviderConformance/*\": null,\n      \"./RemoteChildProcessSpawner\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RemoteChildProcessSpawner/index.d.ts\",\n          \"default\": \"./dist/esm/RemoteChildProcessSpawner/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RemoteChildProcessSpawner/index.d.ts\",\n          \"default\": \"./dist/cjs/RemoteChildProcessSpawner/index.js\"\n        }\n      },\n      \"./RemoteChildProcessSpawner/*\": null,\n      \"./TerminalProtocol\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TerminalProtocol/index.d.ts\",\n          \"default\": \"./dist/esm/TerminalProtocol/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TerminalProtocol/index.d.ts\",\n          \"default\": \"./dist/cjs/TerminalProtocol/index.js\"\n        }\n      },\n      \"./TerminalProtocol/*\": null,\n      \"./Sandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sandbox/index.d.ts\",\n          \"default\": \"./dist/esm/Sandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/Sandbox/index.js\"\n        }\n      },\n      \"./Sandbox/*\": null,\n      \"./SandboxConformance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxConformance/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxConformance/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxConformance/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxConformance/index.js\"\n        }\n      },\n      \"./SandboxConformance/*\": null,\n      \"./SandboxMerge\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxMerge/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxMerge/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxMerge/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxMerge/index.js\"\n        }\n      },\n      \"./SandboxMerge/*\": null,\n      \"./SandboxHealth\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxHealth/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxHealth/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxHealth/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxHealth/index.js\"\n        }\n      },\n      \"./SandboxHealth/*\": null,\n      \"./SandboxSupervision\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxSupervision/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxSupervision/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxSupervision/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxSupervision/index.js\"\n        }\n      },\n      \"./SandboxSupervision/*\": null,\n      \"./SandboxTools\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxTools/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxTools/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxTools/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxTools/index.js\"\n        }\n      },\n      \"./SandboxTools/*\": null,\n      \"./SandboxCommand\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxCommand/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxCommand/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxCommand/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxCommand/index.js\"\n        }\n      },\n      \"./SandboxCommand/*\": null,\n      \"./CiJob\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CiJob/index.d.ts\",\n          \"default\": \"./dist/esm/CiJob/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CiJob/index.d.ts\",\n          \"default\": \"./dist/cjs/CiJob/index.js\"\n        }\n      },\n      \"./CiJob/*\": null,\n      \"./AwsSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/AwsSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/AwsSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/AwsSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/AwsSandbox/index.js\"\n        }\n      },\n      \"./AwsSandbox/*\": null,\n      \"./CloudflareSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CloudflareSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/CloudflareSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CloudflareSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/CloudflareSandbox/index.js\"\n        }\n      },\n      \"./CloudflareSandbox/*\": null,\n      \"./DaytonaSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DaytonaSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/DaytonaSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DaytonaSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/DaytonaSandbox/index.js\"\n        }\n      },\n      \"./DaytonaSandbox/*\": null,\n      \"./JustBashSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JustBashSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/JustBashSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JustBashSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/JustBashSandbox/index.js\"\n        }\n      },\n      \"./JustBashSandbox/*\": null,\n      \"./KubernetesSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/KubernetesSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/KubernetesSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/KubernetesSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/KubernetesSandbox/index.js\"\n        }\n      },\n      \"./KubernetesSandbox/*\": null,\n      \"./MicrosandboxSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/MicrosandboxSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/MicrosandboxSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/MicrosandboxSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/MicrosandboxSandbox/index.js\"\n        }\n      },\n      \"./MicrosandboxSandbox/*\": null,\n      \"./VercelSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VercelSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/VercelSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VercelSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/VercelSandbox/index.js\"\n        }\n      },\n      \"./VercelSandbox/*\": null,\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/jj\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@smthrs/engine\": \"1.0.0-rc.16\",\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/std\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"microsandbox\": \"0.6.16\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-bun\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n","coverageDirectives":[{"line":364,"text":"\"coverage\": \"vitest --coverage\""},{"line":380,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/flows/sandbox/PACKAGE.ts","sha256":"24614b530fa4db613201b3fd16860711b96baf8f5e3d51df7e3030805ac4b325","source":"import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * A package that declares a `PACKAGE.ts` opts out of the workspace's default\n * target synthesis, so the standard targets are declared here explicitly:\n * without them the package has no `lib`, and the release pack, which depends\n * on every package `lib`, ships a stale `dist/cjs`. `cwd` anchors every\n * emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd: \"packages/smithers/flows/sandbox\"\n})\n\n/**\n * The package's own suite, re-run under Bun.\n *\n * A package opts into the runtime-compatibility matrix by declaring this key,\n * so `//packages/...:bunTest` is the whole matrix and nothing central lists\n * which packages are in it.\n */\nconst bunTest = Smithers.BunSuite({ cwd: \"packages/smithers/flows/sandbox\" })\n\n/**\n * Security review of the sandbox providers: guest command construction, host\n * CLI argv, isolation defaults, credential flow, and snapshot scrubbing.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/sandbox\",\n  include: [\"src/**\"],\n  boundaries: [{\n    id: \"flow-microvm-execution\",\n    actors: [\"Flow author\", \"Trusted engine host\", \"Untrusted guest process\"],\n    assets: [\"Host filesystem\", \"Guest workspace\", \"Provider credentials\", \"Guest environment\"],\n    entryPoints: [\"SandboxedFlow execution and sandbox session acquisition\"],\n    identityTransformations: [\n      \"Host-selected provider acquires an owned guest session; execution nonce binds guest results to the caller\"\n    ],\n    enforcementPoints: [\n      \"Provider network and resource policy; rooted guest paths; environment validation; result nonce and schema checks\"\n    ],\n    deploymentAssumptions: [\n      \"The operator supplies a trusted Microsandbox SDK and isolated microVM service; hosted credentials and service transport need private composition review\"\n    ],\n    path: {\n      caller: [\"//packages/smithers/flows/platform-node/src/SandboxedFlow.ts\"],\n      authorization: [\n        \"src/Sandbox/NetworkPolicy.ts\",\n        \"src/Sandbox/ResourceLimits.ts\",\n        \"src/internal/rootedPath.ts\",\n        \"src/internal/environmentNames.ts\"\n      ],\n      service: [\"src/MicrosandboxSandbox/make.ts\", \"src/Sandbox/layerHost.ts\"],\n      storageOrEgress: [\n        \"src/internal/microsandboxProcess.ts\",\n        \"src/MicrosandboxSandbox/Sdk.ts\",\n        \"//packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts\"\n      ]\n    }\n  }],\n  checks: [\n    {\n      id: \"guest-shell-quoting\",\n      title: \"Every caller-supplied path, env entry, and command crosses into a guest shell script quoted exactly once\",\n      threat:\n        \"A flow body or model-chosen file path injects shell into provider plumbing (read, write, kill, prepare) and runs commands the caller never asked for on the machine.\",\n      lookFor: [\n        \"A path, cwd, workdir, env name, or env value interpolated into a script string without CommandLine.quote.\",\n        \"A value quoted and then re-embedded inside another quoted script so the outer quote breaks or double-evaluates it.\",\n        \"environmentInput's eval of decoded operands running anything other than a `set --` of already-quoted words.\",\n        \"An env name that bypasses checkEnvironmentNames before reaching env(1), `-u`, or an SDK env field.\",\n        \"RemoteChildProcessSpawner rendering an Effect ChildProcess argv into one shell string where an argument, cwd, or pipeline segment is not quoted as a single word.\"\n      ],\n      paths: [\n        \"src/RemoteChildProcessSpawner/layer.ts\",\n        \"src/internal/execSession.ts\",\n        \"src/internal/envPrefix.ts\",\n        \"src/internal/environmentCommand.ts\",\n        \"src/internal/environmentInput.ts\",\n        \"src/internal/environmentNames.ts\",\n        \"src/internal/killScript.ts\",\n        \"src/internal/stdinRedirect.ts\",\n        \"src/internal/linuxFileSystem.ts\",\n        \"src/Sandbox/fileSystem.ts\",\n        \"src/AwsSandbox/make.ts\",\n        \"src/CloudflareSandbox/make.ts\",\n        \"src/DaytonaSandbox/make.ts\",\n        \"src/MicrosandboxSandbox/make.ts\",\n        \"src/MicrosandboxSandbox/snapshots.ts\"\n      ]\n    },\n    {\n      id: \"host-cli-argv-options\",\n      title: \"Session keys, names, cwds, images, and namespaces cannot become flags of docker, kubectl, or aws\",\n      threat:\n        \"A caller controlling a session key or cwd smuggles an option such as --privileged or --volume into the host container CLI and escapes the machine onto the host.\",\n      lookFor: [\n        \"A container, pod, or task name derived from sessionSlug or machineName that can begin with `-` and sits in a positional argv slot.\",\n        \"A `--workdir` or `--command` value that is not rooted to an absolute guest path before it reaches the CLI.\",\n        \"createArgs or globalArgs merged after caller-derived positional values so they change how those values parse.\",\n        \"Environment values placed on host argv instead of the stdin env-file or manifest, where `ps` on the host shows them.\"\n      ],\n      paths: [\n        \"src/CommandSandbox/make.ts\",\n        \"src/ContainerSandbox/make.ts\",\n        \"src/KubernetesSandbox/make.ts\",\n        \"src/AwsSandbox/make.ts\",\n        \"src/internal/sessionSlug.ts\",\n        \"src/internal/machineName.ts\"\n      ]\n    },\n    {\n      id: \"isolation-defaults-and-reattach\",\n      title:\n        \"Providers default to no network and no host access, and reattach only to a machine whose configuration matches\",\n      threat:\n        \"An attacker who pre-creates a privileged or host-mounted machine under a predictable name gets a flow's commands and secrets run inside it on reattach.\",\n      lookFor: [\n        \"A default network mode other than `none`, or an AWS default that assigns a public IP.\",\n        \"A reattach path that accepts a container or Pod without comparing the fingerprint label, image, workdir, network, privileged, binds, and hostNetwork.\",\n        \"A fingerprint that omits a security-relevant option (env, createArgs, serviceAccount, networkPolicy).\",\n        \"Microsandbox booting with the vendor's default egress when neither networkDisabled nor networkPolicy was set, without the docs saying so.\"\n      ],\n      paths: [\n        \"src/ContainerSandbox/make.ts\",\n        \"src/KubernetesSandbox/make.ts\",\n        \"src/AwsSandbox/make.ts\",\n        \"src/MicrosandboxSandbox/make.ts\",\n        \"src/internal/configurationFingerprint.ts\"\n      ]\n    },\n    {\n      id: \"host-secret-leak-to-guest\",\n      title: \"Host environment and vendor credentials never reach guest code or vendor logs unasked\",\n      threat:\n        \"Untrusted code in a sandbox reads the host's API keys or the provider's vendor token from its environment or files.\",\n      lookFor: [\n        \"globalThis.process.env passed to a guest or a vendor SDK instead of the caller's explicit env.\",\n        \"guestEnvironment forwarding a host-only value, or a credential copied into Session env, labels, or the fingerprint.\",\n        \"Vercel, Daytona, Cloudflare, or AWS credentials resolved from ambient process state rather than options.\",\n        \"DirectorySandbox handing the child more than ChildProcessEnvironment's narrow bootstrap set plus caller env.\"\n      ],\n      paths: [\n        \"src/RemoteChildProcessSpawner/layer.ts\",\n        \"src/DirectorySandbox/make.ts\",\n        \"src/VercelSandbox/**\",\n        \"src/DaytonaSandbox/**\",\n        \"src/CloudflareSandbox/**\",\n        \"src/AwsSandbox/**\",\n        \"src/MicrosandboxSandbox/make.ts\"\n      ]\n    },\n    {\n      id: \"snapshot-secret-scrub\",\n      title: \"A captured Microsandbox snapshot holds no credential the preparation machine was given\",\n      threat: \"Every later session restored from a snapshot reads a token or sign-in file left on the prepared disk.\",\n      lookFor: [\n        \"A credential file an agent CLI or package manager writes that is missing from credentialFiles.\",\n        \"A grep exit code or partial-read case treated as clean, or a capture that proceeds after scrubbed fails.\",\n        \"A secret stored transformed (base64, URL-encoded, split) that the fixed-string longest-line search cannot find.\",\n        \"A failed capture path that leaves the stopped machine or a partial snapshot undestroyed.\"\n      ],\n      paths: [\"src/MicrosandboxSandbox/snapshots.ts\"]\n    },\n    {\n      id: \"signal-and-reap-targeting\",\n      title: \"Kill and reap reach only the session's own processes and machines\",\n      threat:\n        \"A stale pidfile, a forged label, or a guest-written pid makes kill or reap stop another tenant's machine or a host process.\",\n      lookFor: [\n        \"A pidfile directory not wiped on acquire, or a pid read from the guest used in a host-side kill.\",\n        \"hostKillScript or killScript receiving a non-numeric or caller-controlled pid string.\",\n        \"reap removing a machine without filtering on both providerLabel and the caller's ownerLabel and re-reading the holder.\",\n        \"DirectorySandbox signalling by raw pid instead of through the contained handle's lifecycle.\"\n      ],\n      paths: [\n        \"src/internal/killScript.ts\",\n        \"src/internal/pidDirectory.ts\",\n        \"src/internal/execSession.ts\",\n        \"src/internal/microsandboxProcess.ts\",\n        \"src/MicrosandboxSandbox/reap.ts\",\n        \"src/DirectorySandbox/make.ts\",\n        \"src/AwsSandbox/make.ts\"\n      ]\n    },\n    {\n      id: \"in-band-status-forgery\",\n      title: \"A guest command cannot forge the exit status or output framing of provider plumbing\",\n      threat:\n        \"Code inside an ECS task prints a fake sentinel so a failed write, read, or preparation step is reported as success to the host.\",\n      lookFor: [\n        \"A sentinel nonce that is a predictable counter rather than unguessable random bytes.\",\n        \"unframe taking the last sentinel match when a detached guest child can still write to the session after the wrapper.\",\n        \"readFile or writeFile trusting stdout framing without a separate integrity signal.\"\n      ],\n      paths: [\"src/AwsSandbox/make.ts\"]\n    },\n    {\n      id: \"directory-sandbox-not-a-boundary\",\n      title: \"Nothing treats DirectorySandbox, JustBashSandbox, or rootedAt as a confinement boundary\",\n      threat:\n        \"A composition picks DirectorySandbox or JustBashSandbox for untrusted code and a model-chosen absolute or `..` path reads or overwrites host files or another session's workspace.\",\n      lookFor: [\n        \"rootedAt passing absolute and `..` paths through unchanged, relied on by a caller as containment.\",\n        \"DirectorySandbox or JustBashSandbox readFile, writeFile, or files overrides operating on paths outside workdir with no refusal.\",\n        \"JustBashSandbox sessions sharing one interpreter filesystem so one session key can read or delete a sibling session's workspace under root.\",\n        \"The scratch directory removed recursively on release after a symlink inside it points outside the root.\"\n      ],\n      paths: [\n        \"src/DirectorySandbox/make.ts\",\n        \"src/JustBashSandbox/make.ts\",\n        \"src/internal/rootedPath.ts\",\n        \"src/Sandbox/fileSystem.ts\"\n      ]\n    },\n    {\n      id: \"staged-stdin-and-error-text\",\n      title: \"Staged stdin files and provider error messages do not expose caller secrets\",\n      threat:\n        \"Another process on the machine or a log reader recovers a credential blob fed as stdin or quoted in a vendor error.\",\n      lookFor: [\n        \"A stdin staging file with a predictable name, world-readable mode, or no removal on every scope exit.\",\n        \"A ProviderError or health verdict quoting a vendor error or stderr that may contain request headers or tokens without boundedMessage.\",\n        \"Captured secret values printed in a snapshot refusal instead of only the file paths.\"\n      ],\n      paths: [\n        \"src/internal/stdinRedirect.ts\",\n        \"src/internal/boundedMessage.ts\",\n        \"src/SandboxHealth/**\",\n        \"src/SandboxSupervision/**\",\n        \"src/RemoteChildProcessSpawner/ProviderError.ts\",\n        \"src/MicrosandboxSandbox/snapshots.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n","coverageDirectives":[{"line":33,"text":"include: [\"src/**\"],"}]},{"path":"packages/smithers/flows/sandbox/tsconfig.json","sha256":"bceba129ef0350a4a2726e756840042e5b866875f033becfd5637d36c06f1597","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true,\n      \"diagnosticSeverity\": { \"globalErrorInEffectFailure\": \"off\" }\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":17,"text":"\"skipLibCheck\": true,"},{"line":29,"text":"\"includeSuggestionsInTsc\": false,"},{"line":30,"text":"\"ignoreEffectWarningsInTscExitCode\": true,"},{"line":31,"text":"\"ignoreEffectErrorsInTscExitCode\": true,"},{"line":35,"text":"\"include\": [\"src/**/*\"]"}]},{"path":"packages/smithers/flows/sandbox/vitest.config.ts","sha256":"ff3c9304bd731e53a09382ba347074542a2a378f5c889ee2d8d5903942ea7391","source":"import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude],\n    environment: \"node\",\n    // Suites here spawn processes and wait on the 5 s platform teardown\n    // timer, so Vitest's 5 s default fails them on a loaded host. Assertions\n    // are causal or count-based, never wall-clock; keep the budget finite so\n    // a real hang still fails.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Isolate both reports and V8's .tmp scratch files by coordinator PID,\n      // as plan and control do, so another run cannot clean this run's files.\n      reportsDirectory: join(tmpdir(), `flows-sandbox-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n","coverageDirectives":[{"line":11,"text":"fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"},{"line":14,"text":"include: [\"test/**/*.test.{ts,vibe}\"],"},{"line":15,"text":"exclude: [...configDefaults.exclude],"},{"line":23,"text":"coverage: {"},{"line":25,"text":"provider: \"v8\","},{"line":26,"text":"// Isolate both reports and V8's .tmp scratch files by coordinator PID,"},{"line":28,"text":"reportsDirectory: join(tmpdir(), `flows-sandbox-coverage-${process.pid}`),"},{"line":29,"text":"include: [\"src/**/*.{ts,vibe}\"],"},{"line":30,"text":"thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"}]}],"targets":[{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:bunTest","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/test/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/sandbox/vitest.config.ts"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/sandbox/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.d.mts"},{"kind":"file","path":"packages/smithers/flows/sandbox/tsconfig.test.json"}],"dependencies":["//packages/smithers/flows/sandbox:lib"]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:circular","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/circular.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/sandbox/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/flows/sandbox/README.md"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/flows/sandbox/README.md"},{"kind":"file","path":"packages/smithers/flows/sandbox/package.json"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/sandbox/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:lib","rule":"TsBuild","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/build-library.mjs"},{"kind":"file","path":"packages/repo-targets/scripts/private-effect-adapters.mjs"},{"kind":"file","path":"packages/repo-targets/package.json"},{"kind":"file","path":"packages/smithers/scripts/compile-commonjs.mjs"},{"kind":"file","path":"packages/repo-targets/contracts/check-single-effect-version.mjs"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/index.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/tsconfig.json"},{"kind":"file","path":"packages/smithers/flows/sandbox/scripts/build.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/sandbox/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/sandbox/src/**","packages/smithers/flows/platform-node/src/SandboxedFlow.ts","packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts","packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts","packages/smithers/flows/sandbox/src/internal/rootedPath.ts","packages/smithers/flows/sandbox/src/internal/environmentNames.ts","packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts","packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts","packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts","packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts","packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/platform-node/src/SandboxedFlow.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/rootedPath.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/environmentNames.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"},{"kind":"file","path":"packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"},{"kind":"file","path":"packages/smithers/flows/platform-node/src/SandboxedFlow.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/rootedPath.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/environmentNames.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"},{"kind":"file","path":"packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/flows/sandbox/src/**","packages/smithers/flows/platform-node/src/SandboxedFlow.ts","packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts","packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts","packages/smithers/flows/sandbox/src/internal/rootedPath.ts","packages/smithers/flows/sandbox/src/internal/environmentNames.ts","packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts","packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts","packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts","packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts","packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/platform-node/src/SandboxedFlow.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/rootedPath.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/environmentNames.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"},{"kind":"file","path":"packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"},{"kind":"file","path":"packages/smithers/flows/platform-node/src/SandboxedFlow.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/rootedPath.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/environmentNames.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"},{"kind":"file","path":"packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"},{"kind":"file","path":"packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"}],"dependencies":[]},{"package":"packages/smithers/flows/sandbox","label":"//packages/smithers/flows/sandbox:test","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/sandbox/test/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/sandbox/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/coverage-teardown.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-process-environment.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/smithers/flows/sandbox/vitest.config.ts"}],"dependencies":["//packages/smithers/flows/sandbox:lib"]}],"areas":["PACKAGE.ts","eslint.config.js","scripts/build.mjs","src/AwsSandbox","src/CiJob","src/CloudflareSandbox","src/CommandSandbox","src/ContainerSandbox","src/DaytonaSandbox","src/DirectorySandbox","src/JustBashSandbox","src/KubernetesSandbox","src/MicrosandboxSandbox","src/ProviderConformance","src/RemoteChildProcessSpawner","src/Sandbox","src/SandboxCommand","src/SandboxConformance","src/SandboxHealth","src/SandboxMerge","src/SandboxSupervision","src/SandboxTools","src/TerminalProtocol","src/VercelSandbox","src/index.ts","src/internal","test/fixtures","test/helpers","test/stalledFinalizer.ts","vitest.config.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/flows/sandbox",
+  "name": "@smthrs/sandbox",
+  "owner": {
+    "declaration": "packages/smithers/flows/sandbox/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./CommandSandbox": "./src/CommandSandbox/index.ts",
+    "./CommandSandbox/*": null,
+    "./ContainerSandbox": "./src/ContainerSandbox/index.ts",
+    "./ContainerSandbox/*": null,
+    "./DirectorySandbox": "./src/DirectorySandbox/index.ts",
+    "./DirectorySandbox/*": null,
+    "./ProviderConformance": "./src/ProviderConformance/index.ts",
+    "./ProviderConformance/*": null,
+    "./RemoteChildProcessSpawner": "./src/RemoteChildProcessSpawner/index.ts",
+    "./RemoteChildProcessSpawner/*": null,
+    "./TerminalProtocol": "./src/TerminalProtocol/index.ts",
+    "./TerminalProtocol/*": null,
+    "./Sandbox": "./src/Sandbox/index.ts",
+    "./Sandbox/*": null,
+    "./SandboxConformance": "./src/SandboxConformance/index.ts",
+    "./SandboxConformance/*": null,
+    "./SandboxMerge": "./src/SandboxMerge/index.ts",
+    "./SandboxMerge/*": null,
+    "./SandboxHealth": "./src/SandboxHealth/index.ts",
+    "./SandboxHealth/*": null,
+    "./SandboxSupervision": "./src/SandboxSupervision/index.ts",
+    "./SandboxSupervision/*": null,
+    "./SandboxTools": "./src/SandboxTools/index.ts",
+    "./SandboxTools/*": null,
+    "./SandboxCommand": "./src/SandboxCommand/index.ts",
+    "./SandboxCommand/*": null,
+    "./CiJob": "./src/CiJob/index.ts",
+    "./CiJob/*": null,
+    "./AwsSandbox": "./src/AwsSandbox/index.ts",
+    "./AwsSandbox/*": null,
+    "./CloudflareSandbox": "./src/CloudflareSandbox/index.ts",
+    "./CloudflareSandbox/*": null,
+    "./DaytonaSandbox": "./src/DaytonaSandbox/index.ts",
+    "./DaytonaSandbox/*": null,
+    "./JustBashSandbox": "./src/JustBashSandbox/index.ts",
+    "./JustBashSandbox/*": null,
+    "./KubernetesSandbox": "./src/KubernetesSandbox/index.ts",
+    "./KubernetesSandbox/*": null,
+    "./MicrosandboxSandbox": "./src/MicrosandboxSandbox/index.ts",
+    "./MicrosandboxSandbox/*": null,
+    "./VercelSandbox": "./src/VercelSandbox/index.ts",
+    "./VercelSandbox/*": null,
+    "./internal/*": null,
+    "./*/index": null,
+    "./index": "./src/index.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/AwsSandbox/ExecTransport.ts",
+    "src/AwsSandbox/index.ts",
+    "src/AwsSandbox/make.ts",
+    "src/AwsSandbox/Sdk.ts",
+    "src/CiJob/index.ts",
+    "src/CloudflareSandbox/index.ts",
+    "src/CloudflareSandbox/make.ts",
+    "src/CloudflareSandbox/Sdk.ts",
+    "src/CommandSandbox/index.ts",
+    "src/CommandSandbox/make.ts",
+    "src/ContainerSandbox/existing.ts",
+    "src/ContainerSandbox/index.ts",
+    "src/ContainerSandbox/make.ts",
+    "src/DaytonaSandbox/index.ts",
+    "src/DaytonaSandbox/make.ts",
+    "src/DaytonaSandbox/Sdk.ts",
+    "src/DirectorySandbox/index.ts",
+    "src/DirectorySandbox/make.ts",
+    "src/index.ts",
+    "src/internal/attempt.ts",
+    "src/internal/base64.ts",
+    "src/internal/boundedCheck.ts",
+    "src/internal/boundedMessage.ts",
+    "src/internal/checkedExit.ts",
+    "src/internal/concat.ts",
+    "src/internal/configurationFingerprint.ts",
+    "src/internal/deadline.ts",
+    "src/internal/describeExit.ts",
+    "src/internal/environmentCommand.ts",
+    "src/internal/environmentInput.ts",
+    "src/internal/environmentNames.ts",
+    "src/internal/envPrefix.ts",
+    "src/internal/execHandles.ts",
+    "src/internal/execSession.ts",
+    "src/internal/finalizeWithin.ts",
+    "src/internal/guestPath.ts",
+    "src/internal/killScript.ts",
+    "src/internal/linuxFileSystem.ts",
+    "src/internal/linuxSignals.ts",
+    "src/internal/localProcess.ts",
+    "src/internal/machineName.ts",
+    "src/internal/microsandboxNetwork.ts",
+    "src/internal/microsandboxProcess.ts",
+    "src/internal/MicrosandboxReattachRefusal.ts",
+    "src/internal/microsandboxRemove.ts",
+    "src/internal/pidDirectory.ts",
+    "src/internal/platformReason.ts",
+    "src/internal/rootedPath.ts",
+    "src/internal/sessionSlug.ts",
+    "src/internal/stdinRedirect.ts",
+    "src/internal/teardownWarning.ts",
+    "src/JustBashSandbox/index.ts",
+    "src/JustBashSandbox/JustBashLike.ts",
+    "src/JustBashSandbox/make.ts",
+    "src/KubernetesSandbox/index.ts",
+    "src/KubernetesSandbox/make.ts",
+    "src/MicrosandboxSandbox/GarbageCollector.ts",
+    "src/MicrosandboxSandbox/index.ts",
+    "src/MicrosandboxSandbox/labels.ts",
+    "src/MicrosandboxSandbox/make.ts",
+    "src/MicrosandboxSandbox/reap.ts",
+    "src/MicrosandboxSandbox/Sdk.ts",
+    "src/MicrosandboxSandbox/snapshots.ts",
+    "src/ProviderConformance/check.ts",
+    "src/ProviderConformance/Commands.ts",
+    "src/ProviderConformance/index.ts",
+    "src/ProviderConformance/Violation.ts",
+    "src/RemoteChildProcessSpawner/index.ts",
+    "src/RemoteChildProcessSpawner/layer.ts",
+    "src/RemoteChildProcessSpawner/Provider.ts",
+    "src/RemoteChildProcessSpawner/ProviderError.ts",
+    "src/RemoteChildProcessSpawner/TestRemote.ts",
+    "src/RemoteChildProcessSpawner/TestRemoteProvider.ts",
+    "src/RemoteChildProcessSpawner/TestRemoteState.ts",
+    "src/RemoteChildProcessSpawner/TestScript.ts",
+    "src/Sandbox/commandProvider.ts",
+    "src/Sandbox/fanOut.ts",
+    "src/Sandbox/fileSystem.ts",
+    "src/Sandbox/index.ts",
+    "src/Sandbox/job.ts",
+    "src/Sandbox/layerHost.ts",
+    "src/Sandbox/NetworkPolicy.ts",
+    "src/Sandbox/Provider.ts",
+    "src/Sandbox/ResourceLimits.ts",
+    "src/Sandbox/run.ts",
+    "src/Sandbox/Session.ts",
+    "src/Sandbox/TestSession.ts",
+    "src/Sandbox/TestSessionProvider.ts",
+    "src/Sandbox/TestSessionState.ts",
+    "src/Sandbox/Work.ts",
+    "src/SandboxCommand/index.ts",
+    "src/SandboxConformance/check.ts",
+    "src/SandboxConformance/index.ts",
+    "src/SandboxConformance/posixCommands.ts",
+    "src/SandboxConformance/workSeed.ts",
+    "src/SandboxHealth/HealthState.ts",
+    "src/SandboxHealth/Healthy.ts",
+    "src/SandboxHealth/index.ts",
+    "src/SandboxHealth/layer.ts",
+    "src/SandboxHealth/layerNoop.ts",
+    "src/SandboxHealth/make.ts",
+    "src/SandboxHealth/makeNoop.ts",
+    "src/SandboxHealth/PingProvider.ts",
+    "src/SandboxHealth/probe.ts",
+    "src/SandboxHealth/ProbeOptions.ts",
+    "src/SandboxHealth/SandboxHealth.ts",
+    "src/SandboxHealth/Service.ts",
+    "src/SandboxHealth/Unhealthy.ts",
+    "src/SandboxHealth/UnhealthyReason.ts",
+    "src/SandboxMerge/apply.ts",
+    "src/SandboxMerge/ApplyAction.ts",
+    "src/SandboxMerge/index.ts",
+    "src/SandboxMerge/Outcome.ts",
+    "src/SandboxMerge/Repository.ts",
+    "src/SandboxMerge/Strategy.ts",
+    "src/SandboxSupervision/index.ts",
+    "src/SandboxSupervision/layer.ts",
+    "src/SandboxSupervision/make.ts",
+    "src/SandboxSupervision/Options.ts",
+    "src/SandboxSupervision/Reporter.ts",
+    "src/SandboxSupervision/SandboxUnhealthy.ts",
+    "src/SandboxTools/index.ts",
+    "src/TerminalProtocol/index.ts",
+    "src/VercelSandbox/Credentials.ts",
+    "src/VercelSandbox/index.ts",
+    "src/VercelSandbox/make.ts",
+    "src/VercelSandbox/Sdk.ts",
+    "test/fixtures/retained-job-child.mjs",
+    "test/helpers/containedPlatform.ts",
+    "test/helpers/discover.ts",
+    "test/helpers/hostCollector.ts",
+    "test/helpers/sandboxRepos.ts",
+    "test/helpers/untouchable.ts",
+    "test/helpers/workSeed.ts",
+    "test/stalledFinalizer.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/sandbox/test/AwsSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/Base64.test.ts",
+    "packages/smithers/flows/sandbox/test/CiJob.test.ts",
+    "packages/smithers/flows/sandbox/test/CloudflareSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/CommandSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/CommandSandboxHeartbeatLocal.test.ts",
+    "packages/smithers/flows/sandbox/test/CommandSandboxTransport.test.ts",
+    "packages/smithers/flows/sandbox/test/ConfigurationFingerprint.test.ts",
+    "packages/smithers/flows/sandbox/test/ContainerFileSystem.test.ts",
+    "packages/smithers/flows/sandbox/test/ContainerSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/CoverageConfig.test.ts",
+    "packages/smithers/flows/sandbox/test/DaytonaSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/Deadline.test.ts",
+    "packages/smithers/flows/sandbox/test/DirectorySandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/Discovery.test.ts",
+    "packages/smithers/flows/sandbox/test/Documentation.test.ts",
+    "packages/smithers/flows/sandbox/test/ExecHandles.test.ts",
+    "packages/smithers/flows/sandbox/test/ExecSession.test.ts",
+    "packages/smithers/flows/sandbox/test/ExistingContainer.test.ts",
+    "packages/smithers/flows/sandbox/test/FanOut.test.ts",
+    "packages/smithers/flows/sandbox/test/finalizeWithin.test.ts",
+    "packages/smithers/flows/sandbox/test/fixtures/job-survival-spike.py",
+    "packages/smithers/flows/sandbox/test/fixtures/retained-job-child.mjs",
+    "packages/smithers/flows/sandbox/test/GuestPath.test.ts",
+    "packages/smithers/flows/sandbox/test/helpers/containedPlatform.ts",
+    "packages/smithers/flows/sandbox/test/helpers/discover.ts",
+    "packages/smithers/flows/sandbox/test/helpers/hostCollector.ts",
+    "packages/smithers/flows/sandbox/test/helpers/sandboxRepos.ts",
+    "packages/smithers/flows/sandbox/test/helpers/untouchable.ts",
+    "packages/smithers/flows/sandbox/test/helpers/workSeed.ts",
+    "packages/smithers/flows/sandbox/test/index.test.ts",
+    "packages/smithers/flows/sandbox/test/JustBashSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/KillScript.test.ts",
+    "packages/smithers/flows/sandbox/test/KubernetesSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/MicrosandboxSandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/Options.types.test.ts",
+    "packages/smithers/flows/sandbox/test/ProviderConformance.test.ts",
+    "packages/smithers/flows/sandbox/test/ProviderErrorFault.test.ts",
+    "packages/smithers/flows/sandbox/test/RealContainerSandbox.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RealExistingContainer.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RealKubernetesSandbox.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RealMicrosandbox.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RealProcessProvider.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RealSandboxJob.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.browser.test.ts",
+    "packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.test.ts",
+    "packages/smithers/flows/sandbox/test/RemoteKill.test.ts",
+    "packages/smithers/flows/sandbox/test/RemovalCli.test.ts",
+    "packages/smithers/flows/sandbox/test/RepositoryContention.test.ts",
+    "packages/smithers/flows/sandbox/test/ResourceLimits.test.ts",
+    "packages/smithers/flows/sandbox/test/RootedPath.test.ts",
+    "packages/smithers/flows/sandbox/test/Sandbox.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxCommand.container.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxCommand.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxConformance.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxHealth.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxHealthSchema.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxJob.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxMerge.browser.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxMerge.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxSupervision.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxTools.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxWork.test.ts",
+    "packages/smithers/flows/sandbox/test/SessionSlug.test.ts",
+    "packages/smithers/flows/sandbox/test/stalledFinalizer.ts",
+    "packages/smithers/flows/sandbox/test/StdinRedirect.test.ts",
+    "packages/smithers/flows/sandbox/test/TerminalProtocol.test.ts",
+    "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/VercelSandbox.test.ts",
+    "packages/smithers/flows/sandbox/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/sandbox/src/internal/linuxFileSystem.ts",
+    "packages/smithers/flows/sandbox/src/internal/linuxSignals.ts",
+    "packages/smithers/flows/sandbox/src/internal/localProcess.ts",
+    "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/index.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/layer.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/Provider.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/ProviderError.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemoteProvider.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemoteState.ts",
+    "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestScript.ts",
+    "packages/smithers/flows/sandbox/test/RealProcessProvider.integration.test.ts",
+    "packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.browser.test.ts",
+    "packages/smithers/flows/sandbox/test/RemoteChildProcessSpawner.test.ts",
+    "packages/smithers/flows/sandbox/test/SandboxMerge.browser.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/flows/sandbox/src/AwsSandbox/make.ts",
+      "line": 897,
+      "text": "/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts",
+      "line": 199,
+      "text": "/* v8 ignore next 3 -- session paths are absolute under an absolute root, so only a write to the filesystem root itself could skip parent creation */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts",
+      "line": 208,
+      "text": "/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/internal/execSession.ts",
+      "line": 196,
+      "text": "/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts",
+      "line": 189,
+      "text": "/* v8 ignore next 3 -- session paths are absolute under an absolute root, so only a write to the filesystem root itself could skip parent creation */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts",
+      "line": 795,
+      "text": "/* v8 ignore next 3 -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the guard only discharges the optional a map read carries */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts",
+      "line": 70,
+      "text": "(spawner) => spawner.exitCode(ChildProcess.make(commands.fails, { shell: commands.shell ?? false }))"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/RemoteChildProcessSpawner/TestRemote.ts",
+      "line": 117,
+      "text": "/* v8 ignore next -- `spawn` records every process it returns and a `RemoteProcess` has no other source, so the fallback only discharges the optional a map read carries */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/Sandbox/fileSystem.ts",
+      "line": 310,
+      "text": "/* v8 ignore next -- `split` always yields a first field, so the `type` nullish arm only discharges the indexed-access optional */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/src/SandboxConformance/posixCommands.ts",
+      "line": 57,
+      "text": "/* v8 ignore next -- every runtime this package supports has Web Crypto; the fallback is for a host that does not */"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ExistingContainer.test.ts",
+      "line": 107,
+      "text": "it.effect.skipIf(isRoot)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealContainerSandbox.integration.test.ts",
+      "line": 66,
+      "text": "describe.skipIf(engineAvailable)(\"ContainerSandbox against a real engine\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealContainerSandbox.integration.test.ts",
+      "line": 72,
+      "text": "describe.skipIf(!engineAvailable)(\"ContainerSandbox against a real engine\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealExistingContainer.integration.test.ts",
+      "line": 80,
+      "text": "describe.skipIf(engineAvailable)(\"ContainerSandbox.existing against a real engine\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealExistingContainer.integration.test.ts",
+      "line": 86,
+      "text": "describe.skipIf(!engineAvailable)(\"ContainerSandbox.existing against a real engine\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealKubernetesSandbox.integration.test.ts",
+      "line": 40,
+      "text": "describe.skipIf(clusterAvailable)(\"KubernetesSandbox against OrbStack\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealKubernetesSandbox.integration.test.ts",
+      "line": 46,
+      "text": "describe.skipIf(!clusterAvailable)(\"KubernetesSandbox against OrbStack\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealMicrosandbox.integration.test.ts",
+      "line": 118,
+      "text": "describe.skipIf(available)(\"MicrosandboxSandbox against a real microVM\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealMicrosandbox.integration.test.ts",
+      "line": 141,
+      "text": "describe.skipIf(!available)(\"MicrosandboxSandbox against a real microVM\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealSandboxJob.integration.test.ts",
+      "line": 32,
+      "text": "describe.skipIf(!available)(\"retained Sandbox.job real microVM\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/RealSandboxJob.integration.test.ts",
+      "line": 106,
+      "text": "describe.skipIf(available)(\"retained Sandbox.job capability guard\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxCommand.container.test.ts",
+      "line": 97,
+      "text": "describe.skipIf(cli === undefined)(\"SandboxTools' command scripts in a real container\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxCommand.test.ts",
+      "line": 797,
+      "text": "time.skip(76_000)"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxConformance.test.ts",
+      "line": 309,
+      "text": ": command === SandboxConformance.posixCommands.fails"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+      "line": 208,
+      "text": "it.effect.skipIf(isRoot)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+      "line": 238,
+      "text": "it.effect.skipIf(isRoot)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+      "line": 273,
+      "text": "it.effect.skipIf(!mvReplacesDirectories)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+      "line": 297,
+      "text": "it.effect.skipIf(mvReplacesDirectories)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+      "line": 382,
+      "text": "it.effect.skipIf(isRoot)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/SandboxFileSystemProbes.test.ts",
+      "line": 561,
+      "text": "it.effect.skipIf(isRoot)("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/StdinRedirect.test.ts",
+      "line": 58,
+      "text": "it.effect.skipIf(!existsSync(\"/bin/sh\"))("
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+      "line": 169,
+      "text": "describe.skipIf(dockerAvailable)(\"standard tool placement on ContainerSandbox\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+      "line": 175,
+      "text": "describe.skipIf(!dockerAvailable)(\"standard tool placement on ContainerSandbox\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+      "line": 202,
+      "text": "describe.skipIf(linuxHost)(\"standard tool placement on CommandSandbox\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+      "line": 207,
+      "text": "describe.skipIf(!linuxHost)(\"standard tool placement on CommandSandbox\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+      "line": 232,
+      "text": "describe.skipIf(sshReachable)(\"standard tool placement on CommandSandbox over ssh\", () => {"
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/test/ToolPlacement.integration.test.ts",
+      "line": 237,
+      "text": "describe.skipIf(!sshReachable)(\"standard tool placement on CommandSandbox over ssh\", () => {"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/sandbox/eslint.config.js",
+      "sha256": "dbad3d51b9846d92e0c287734163e2a4cee1f04f9f94124d12c9e1656aaebe49",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "{ ignores: [\"**/dist\", \"**/build\", \"**/coverage\"] },"
+        },
+        {
+          "line": 26,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/package.json",
+      "sha256": "dfb226b5fef0765bd290f8cecac58b47c56a366d185c95d1c7cf9634bfc7d938",
+      "source": "{\n  \"name\": \"@smthrs/sandbox\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Provisioned machines, provider-neutral remote process execution, conformance, and sandbox liveness for flows\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/sandbox\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"sandbox\",\n    \"remote\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"sandbox\",\n    \"remote\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./CommandSandbox\": \"./src/CommandSandbox/index.ts\",\n    \"./CommandSandbox/*\": null,\n    \"./ContainerSandbox\": \"./src/ContainerSandbox/index.ts\",\n    \"./ContainerSandbox/*\": null,\n    \"./DirectorySandbox\": \"./src/DirectorySandbox/index.ts\",\n    \"./DirectorySandbox/*\": null,\n    \"./ProviderConformance\": \"./src/ProviderConformance/index.ts\",\n    \"./ProviderConformance/*\": null,\n    \"./RemoteChildProcessSpawner\": \"./src/RemoteChildProcessSpawner/index.ts\",\n    \"./RemoteChildProcessSpawner/*\": null,\n    \"./TerminalProtocol\": \"./src/TerminalProtocol/index.ts\",\n    \"./TerminalProtocol/*\": null,\n    \"./Sandbox\": \"./src/Sandbox/index.ts\",\n    \"./Sandbox/*\": null,\n    \"./SandboxConformance\": \"./src/SandboxConformance/index.ts\",\n    \"./SandboxConformance/*\": null,\n    \"./SandboxMerge\": \"./src/SandboxMerge/index.ts\",\n    \"./SandboxMerge/*\": null,\n    \"./SandboxHealth\": \"./src/SandboxHealth/index.ts\",\n    \"./SandboxHealth/*\": null,\n    \"./SandboxSupervision\": \"./src/SandboxSupervision/index.ts\",\n    \"./SandboxSupervision/*\": null,\n    \"./SandboxTools\": \"./src/SandboxTools/index.ts\",\n    \"./SandboxTools/*\": null,\n    \"./SandboxCommand\": \"./src/SandboxCommand/index.ts\",\n    \"./SandboxCommand/*\": null,\n    \"./CiJob\": \"./src/CiJob/index.ts\",\n    \"./CiJob/*\": null,\n    \"./AwsSandbox\": \"./src/AwsSandbox/index.ts\",\n    \"./AwsSandbox/*\": null,\n    \"./CloudflareSandbox\": \"./src/CloudflareSandbox/index.ts\",\n    \"./CloudflareSandbox/*\": null,\n    \"./DaytonaSandbox\": \"./src/DaytonaSandbox/index.ts\",\n    \"./DaytonaSandbox/*\": null,\n    \"./JustBashSandbox\": \"./src/JustBashSandbox/index.ts\",\n    \"./JustBashSandbox/*\": null,\n    \"./KubernetesSandbox\": \"./src/KubernetesSandbox/index.ts\",\n    \"./KubernetesSandbox/*\": null,\n    \"./MicrosandboxSandbox\": \"./src/MicrosandboxSandbox/index.ts\",\n    \"./MicrosandboxSandbox/*\": null,\n    \"./VercelSandbox\": \"./src/VercelSandbox/index.ts\",\n    \"./VercelSandbox/*\": null,\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./CommandSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CommandSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/CommandSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CommandSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/CommandSandbox/index.js\"\n        }\n      },\n      \"./CommandSandbox/*\": null,\n      \"./ContainerSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ContainerSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/ContainerSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ContainerSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/ContainerSandbox/index.js\"\n        }\n      },\n      \"./ContainerSandbox/*\": null,\n      \"./DirectorySandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DirectorySandbox/index.d.ts\",\n          \"default\": \"./dist/esm/DirectorySandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DirectorySandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/DirectorySandbox/index.js\"\n        }\n      },\n      \"./DirectorySandbox/*\": null,\n      \"./ProviderConformance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/ProviderConformance/index.d.ts\",\n          \"default\": \"./dist/esm/ProviderConformance/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/ProviderConformance/index.d.ts\",\n          \"default\": \"./dist/cjs/ProviderConformance/index.js\"\n        }\n      },\n      \"./ProviderConformance/*\": null,\n      \"./RemoteChildProcessSpawner\": {\n        \"import\": {\n          \"types\": \"./dist/esm/RemoteChildProcessSpawner/index.d.ts\",\n          \"default\": \"./dist/esm/RemoteChildProcessSpawner/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/RemoteChildProcessSpawner/index.d.ts\",\n          \"default\": \"./dist/cjs/RemoteChildProcessSpawner/index.js\"\n        }\n      },\n      \"./RemoteChildProcessSpawner/*\": null,\n      \"./TerminalProtocol\": {\n        \"import\": {\n          \"types\": \"./dist/esm/TerminalProtocol/index.d.ts\",\n          \"default\": \"./dist/esm/TerminalProtocol/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/TerminalProtocol/index.d.ts\",\n          \"default\": \"./dist/cjs/TerminalProtocol/index.js\"\n        }\n      },\n      \"./TerminalProtocol/*\": null,\n      \"./Sandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Sandbox/index.d.ts\",\n          \"default\": \"./dist/esm/Sandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Sandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/Sandbox/index.js\"\n        }\n      },\n      \"./Sandbox/*\": null,\n      \"./SandboxConformance\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxConformance/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxConformance/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxConformance/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxConformance/index.js\"\n        }\n      },\n      \"./SandboxConformance/*\": null,\n      \"./SandboxMerge\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxMerge/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxMerge/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxMerge/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxMerge/index.js\"\n        }\n      },\n      \"./SandboxMerge/*\": null,\n      \"./SandboxHealth\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxHealth/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxHealth/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxHealth/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxHealth/index.js\"\n        }\n      },\n      \"./SandboxHealth/*\": null,\n      \"./SandboxSupervision\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxSupervision/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxSupervision/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxSupervision/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxSupervision/index.js\"\n        }\n      },\n      \"./SandboxSupervision/*\": null,\n      \"./SandboxTools\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxTools/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxTools/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxTools/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxTools/index.js\"\n        }\n      },\n      \"./SandboxTools/*\": null,\n      \"./SandboxCommand\": {\n        \"import\": {\n          \"types\": \"./dist/esm/SandboxCommand/index.d.ts\",\n          \"default\": \"./dist/esm/SandboxCommand/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/SandboxCommand/index.d.ts\",\n          \"default\": \"./dist/cjs/SandboxCommand/index.js\"\n        }\n      },\n      \"./SandboxCommand/*\": null,\n      \"./CiJob\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CiJob/index.d.ts\",\n          \"default\": \"./dist/esm/CiJob/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CiJob/index.d.ts\",\n          \"default\": \"./dist/cjs/CiJob/index.js\"\n        }\n      },\n      \"./CiJob/*\": null,\n      \"./AwsSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/AwsSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/AwsSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/AwsSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/AwsSandbox/index.js\"\n        }\n      },\n      \"./AwsSandbox/*\": null,\n      \"./CloudflareSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/CloudflareSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/CloudflareSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/CloudflareSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/CloudflareSandbox/index.js\"\n        }\n      },\n      \"./CloudflareSandbox/*\": null,\n      \"./DaytonaSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/DaytonaSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/DaytonaSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/DaytonaSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/DaytonaSandbox/index.js\"\n        }\n      },\n      \"./DaytonaSandbox/*\": null,\n      \"./JustBashSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JustBashSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/JustBashSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JustBashSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/JustBashSandbox/index.js\"\n        }\n      },\n      \"./JustBashSandbox/*\": null,\n      \"./KubernetesSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/KubernetesSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/KubernetesSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/KubernetesSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/KubernetesSandbox/index.js\"\n        }\n      },\n      \"./KubernetesSandbox/*\": null,\n      \"./MicrosandboxSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/MicrosandboxSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/MicrosandboxSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/MicrosandboxSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/MicrosandboxSandbox/index.js\"\n        }\n      },\n      \"./MicrosandboxSandbox/*\": null,\n      \"./VercelSandbox\": {\n        \"import\": {\n          \"types\": \"./dist/esm/VercelSandbox/index.d.ts\",\n          \"default\": \"./dist/esm/VercelSandbox/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/VercelSandbox/index.d.ts\",\n          \"default\": \"./dist/cjs/VercelSandbox/index.js\"\n        }\n      },\n      \"./VercelSandbox/*\": null,\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/jj\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"workspace:*\"\n  },\n  \"devDependencies\": {\n    \"@smthrs/engine\": \"1.0.0-rc.16\",\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/std\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"microsandbox\": \"0.6.16\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\",\n    \"@smthrs/platform-bun\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 364,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 380,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/PACKAGE.ts",
+      "sha256": "24614b530fa4db613201b3fd16860711b96baf8f5e3d51df7e3030805ac4b325",
+      "source": "import { BuildAndCheckTypeScriptPackage } from \"@smthrs/repo-targets\"\n/**\n * Standard package targets.\n *\n * A package that declares a `PACKAGE.ts` opts out of the workspace's default\n * target synthesis, so the standard targets are declared here explicitly:\n * without them the package has no `lib`, and the release pack, which depends\n * on every package `lib`, ships a stale `dist/cjs`. `cwd` anchors every\n * emitted tool run in this package directory.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd: \"packages/smithers/flows/sandbox\"\n})\n\n/**\n * The package's own suite, re-run under Bun.\n *\n * A package opts into the runtime-compatibility matrix by declaring this key,\n * so `//packages/...:bunTest` is the whole matrix and nothing central lists\n * which packages are in it.\n */\nconst bunTest = Smithers.BunSuite({ cwd: \"packages/smithers/flows/sandbox\" })\n\n/**\n * Security review of the sandbox providers: guest command construction, host\n * CLI argv, isolation defaults, credential flow, and snapshot scrubbing.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/sandbox\",\n  include: [\"src/**\"],\n  boundaries: [{\n    id: \"flow-microvm-execution\",\n    actors: [\"Flow author\", \"Trusted engine host\", \"Untrusted guest process\"],\n    assets: [\"Host filesystem\", \"Guest workspace\", \"Provider credentials\", \"Guest environment\"],\n    entryPoints: [\"SandboxedFlow execution and sandbox session acquisition\"],\n    identityTransformations: [\n      \"Host-selected provider acquires an owned guest session; execution nonce binds guest results to the caller\"\n    ],\n    enforcementPoints: [\n      \"Provider network and resource policy; rooted guest paths; environment validation; result nonce and schema checks\"\n    ],\n    deploymentAssumptions: [\n      \"The operator supplies a trusted Microsandbox SDK and isolated microVM service; hosted credentials and service transport need private composition review\"\n    ],\n    path: {\n      caller: [\"//packages/smithers/flows/platform-node/src/SandboxedFlow.ts\"],\n      authorization: [\n        \"src/Sandbox/NetworkPolicy.ts\",\n        \"src/Sandbox/ResourceLimits.ts\",\n        \"src/internal/rootedPath.ts\",\n        \"src/internal/environmentNames.ts\"\n      ],\n      service: [\"src/MicrosandboxSandbox/make.ts\", \"src/Sandbox/layerHost.ts\"],\n      storageOrEgress: [\n        \"src/internal/microsandboxProcess.ts\",\n        \"src/MicrosandboxSandbox/Sdk.ts\",\n        \"//packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts\"\n      ]\n    }\n  }],\n  checks: [\n    {\n      id: \"guest-shell-quoting\",\n      title: \"Every caller-supplied path, env entry, and command crosses into a guest shell script quoted exactly once\",\n      threat:\n        \"A flow body or model-chosen file path injects shell into provider plumbing (read, write, kill, prepare) and runs commands the caller never asked for on the machine.\",\n      lookFor: [\n        \"A path, cwd, workdir, env name, or env value interpolated into a script string without CommandLine.quote.\",\n        \"A value quoted and then re-embedded inside another quoted script so the outer quote breaks or double-evaluates it.\",\n        \"environmentInput's eval of decoded operands running anything other than a `set --` of already-quoted words.\",\n        \"An env name that bypasses checkEnvironmentNames before reaching env(1), `-u`, or an SDK env field.\",\n        \"RemoteChildProcessSpawner rendering an Effect ChildProcess argv into one shell string where an argument, cwd, or pipeline segment is not quoted as a single word.\"\n      ],\n      paths: [\n        \"src/RemoteChildProcessSpawner/layer.ts\",\n        \"src/internal/execSession.ts\",\n        \"src/internal/envPrefix.ts\",\n        \"src/internal/environmentCommand.ts\",\n        \"src/internal/environmentInput.ts\",\n        \"src/internal/environmentNames.ts\",\n        \"src/internal/killScript.ts\",\n        \"src/internal/stdinRedirect.ts\",\n        \"src/internal/linuxFileSystem.ts\",\n        \"src/Sandbox/fileSystem.ts\",\n        \"src/AwsSandbox/make.ts\",\n        \"src/CloudflareSandbox/make.ts\",\n        \"src/DaytonaSandbox/make.ts\",\n        \"src/MicrosandboxSandbox/make.ts\",\n        \"src/MicrosandboxSandbox/snapshots.ts\"\n      ]\n    },\n    {\n      id: \"host-cli-argv-options\",\n      title: \"Session keys, names, cwds, images, and namespaces cannot become flags of docker, kubectl, or aws\",\n      threat:\n        \"A caller controlling a session key or cwd smuggles an option such as --privileged or --volume into the host container CLI and escapes the machine onto the host.\",\n      lookFor: [\n        \"A container, pod, or task name derived from sessionSlug or machineName that can begin with `-` and sits in a positional argv slot.\",\n        \"A `--workdir` or `--command` value that is not rooted to an absolute guest path before it reaches the CLI.\",\n        \"createArgs or globalArgs merged after caller-derived positional values so they change how those values parse.\",\n        \"Environment values placed on host argv instead of the stdin env-file or manifest, where `ps` on the host shows them.\"\n      ],\n      paths: [\n        \"src/CommandSandbox/make.ts\",\n        \"src/ContainerSandbox/make.ts\",\n        \"src/KubernetesSandbox/make.ts\",\n        \"src/AwsSandbox/make.ts\",\n        \"src/internal/sessionSlug.ts\",\n        \"src/internal/machineName.ts\"\n      ]\n    },\n    {\n      id: \"isolation-defaults-and-reattach\",\n      title:\n        \"Providers default to no network and no host access, and reattach only to a machine whose configuration matches\",\n      threat:\n        \"An attacker who pre-creates a privileged or host-mounted machine under a predictable name gets a flow's commands and secrets run inside it on reattach.\",\n      lookFor: [\n        \"A default network mode other than `none`, or an AWS default that assigns a public IP.\",\n        \"A reattach path that accepts a container or Pod without comparing the fingerprint label, image, workdir, network, privileged, binds, and hostNetwork.\",\n        \"A fingerprint that omits a security-relevant option (env, createArgs, serviceAccount, networkPolicy).\",\n        \"Microsandbox booting with the vendor's default egress when neither networkDisabled nor networkPolicy was set, without the docs saying so.\"\n      ],\n      paths: [\n        \"src/ContainerSandbox/make.ts\",\n        \"src/KubernetesSandbox/make.ts\",\n        \"src/AwsSandbox/make.ts\",\n        \"src/MicrosandboxSandbox/make.ts\",\n        \"src/internal/configurationFingerprint.ts\"\n      ]\n    },\n    {\n      id: \"host-secret-leak-to-guest\",\n      title: \"Host environment and vendor credentials never reach guest code or vendor logs unasked\",\n      threat:\n        \"Untrusted code in a sandbox reads the host's API keys or the provider's vendor token from its environment or files.\",\n      lookFor: [\n        \"globalThis.process.env passed to a guest or a vendor SDK instead of the caller's explicit env.\",\n        \"guestEnvironment forwarding a host-only value, or a credential copied into Session env, labels, or the fingerprint.\",\n        \"Vercel, Daytona, Cloudflare, or AWS credentials resolved from ambient process state rather than options.\",\n        \"DirectorySandbox handing the child more than ChildProcessEnvironment's narrow bootstrap set plus caller env.\"\n      ],\n      paths: [\n        \"src/RemoteChildProcessSpawner/layer.ts\",\n        \"src/DirectorySandbox/make.ts\",\n        \"src/VercelSandbox/**\",\n        \"src/DaytonaSandbox/**\",\n        \"src/CloudflareSandbox/**\",\n        \"src/AwsSandbox/**\",\n        \"src/MicrosandboxSandbox/make.ts\"\n      ]\n    },\n    {\n      id: \"snapshot-secret-scrub\",\n      title: \"A captured Microsandbox snapshot holds no credential the preparation machine was given\",\n      threat: \"Every later session restored from a snapshot reads a token or sign-in file left on the prepared disk.\",\n      lookFor: [\n        \"A credential file an agent CLI or package manager writes that is missing from credentialFiles.\",\n        \"A grep exit code or partial-read case treated as clean, or a capture that proceeds after scrubbed fails.\",\n        \"A secret stored transformed (base64, URL-encoded, split) that the fixed-string longest-line search cannot find.\",\n        \"A failed capture path that leaves the stopped machine or a partial snapshot undestroyed.\"\n      ],\n      paths: [\"src/MicrosandboxSandbox/snapshots.ts\"]\n    },\n    {\n      id: \"signal-and-reap-targeting\",\n      title: \"Kill and reap reach only the session's own processes and machines\",\n      threat:\n        \"A stale pidfile, a forged label, or a guest-written pid makes kill or reap stop another tenant's machine or a host process.\",\n      lookFor: [\n        \"A pidfile directory not wiped on acquire, or a pid read from the guest used in a host-side kill.\",\n        \"hostKillScript or killScript receiving a non-numeric or caller-controlled pid string.\",\n        \"reap removing a machine without filtering on both providerLabel and the caller's ownerLabel and re-reading the holder.\",\n        \"DirectorySandbox signalling by raw pid instead of through the contained handle's lifecycle.\"\n      ],\n      paths: [\n        \"src/internal/killScript.ts\",\n        \"src/internal/pidDirectory.ts\",\n        \"src/internal/execSession.ts\",\n        \"src/internal/microsandboxProcess.ts\",\n        \"src/MicrosandboxSandbox/reap.ts\",\n        \"src/DirectorySandbox/make.ts\",\n        \"src/AwsSandbox/make.ts\"\n      ]\n    },\n    {\n      id: \"in-band-status-forgery\",\n      title: \"A guest command cannot forge the exit status or output framing of provider plumbing\",\n      threat:\n        \"Code inside an ECS task prints a fake sentinel so a failed write, read, or preparation step is reported as success to the host.\",\n      lookFor: [\n        \"A sentinel nonce that is a predictable counter rather than unguessable random bytes.\",\n        \"unframe taking the last sentinel match when a detached guest child can still write to the session after the wrapper.\",\n        \"readFile or writeFile trusting stdout framing without a separate integrity signal.\"\n      ],\n      paths: [\"src/AwsSandbox/make.ts\"]\n    },\n    {\n      id: \"directory-sandbox-not-a-boundary\",\n      title: \"Nothing treats DirectorySandbox, JustBashSandbox, or rootedAt as a confinement boundary\",\n      threat:\n        \"A composition picks DirectorySandbox or JustBashSandbox for untrusted code and a model-chosen absolute or `..` path reads or overwrites host files or another session's workspace.\",\n      lookFor: [\n        \"rootedAt passing absolute and `..` paths through unchanged, relied on by a caller as containment.\",\n        \"DirectorySandbox or JustBashSandbox readFile, writeFile, or files overrides operating on paths outside workdir with no refusal.\",\n        \"JustBashSandbox sessions sharing one interpreter filesystem so one session key can read or delete a sibling session's workspace under root.\",\n        \"The scratch directory removed recursively on release after a symlink inside it points outside the root.\"\n      ],\n      paths: [\n        \"src/DirectorySandbox/make.ts\",\n        \"src/JustBashSandbox/make.ts\",\n        \"src/internal/rootedPath.ts\",\n        \"src/Sandbox/fileSystem.ts\"\n      ]\n    },\n    {\n      id: \"staged-stdin-and-error-text\",\n      title: \"Staged stdin files and provider error messages do not expose caller secrets\",\n      threat:\n        \"Another process on the machine or a log reader recovers a credential blob fed as stdin or quoted in a vendor error.\",\n      lookFor: [\n        \"A stdin staging file with a predictable name, world-readable mode, or no removal on every scope exit.\",\n        \"A ProviderError or health verdict quoting a vendor error or stderr that may contain request headers or tokens without boundedMessage.\",\n        \"Captured secret values printed in a snapshot refusal instead of only the file paths.\"\n      ],\n      paths: [\n        \"src/internal/stdinRedirect.ts\",\n        \"src/internal/boundedMessage.ts\",\n        \"src/SandboxHealth/**\",\n        \"src/SandboxSupervision/**\",\n        \"src/RemoteChildProcessSpawner/ProviderError.ts\",\n        \"src/MicrosandboxSandbox/snapshots.ts\"\n      ]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { bunTest, check, circular, docs, docsFiles, fmt, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 33,
+          "text": "include: [\"src/**\"],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/tsconfig.json",
+      "sha256": "bceba129ef0350a4a2726e756840042e5b866875f033becfd5637d36c06f1597",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true,\n      \"diagnosticSeverity\": { \"globalErrorInEffectFailure\": \"off\" }\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 29,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 30,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 35,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/sandbox/vitest.config.ts",
+      "sha256": "ff3c9304bd731e53a09382ba347074542a2a378f5c889ee2d8d5903942ea7391",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude],\n    environment: \"node\",\n    // Suites here spawn processes and wait on the 5 s platform teardown\n    // timer, so Vitest's 5 s default fails them on a loaded host. Assertions\n    // are causal or count-based, never wall-clock; keep the budget finite so\n    // a real hang still fails.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      // Isolate both reports and V8's .tmp scratch files by coordinator PID,\n      // as plan and control do, so another run cannot clean this run's files.\n      reportsDirectory: join(tmpdir(), `flows-sandbox-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 15,
+          "text": "exclude: [...configDefaults.exclude],"
+        },
+        {
+          "line": 23,
+          "text": "coverage: {"
+        },
+        {
+          "line": 25,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 26,
+          "text": "// Isolate both reports and V8's .tmp scratch files by coordinator PID,"
+        },
+        {
+          "line": 28,
+          "text": "reportsDirectory: join(tmpdir(), `flows-sandbox-coverage-${process.pid}`),"
+        },
+        {
+          "line": 29,
+          "text": "include: [\"src/**/*.{ts,vibe}\"],"
+        },
+        {
+          "line": 30,
+          "text": "thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:bunTest",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/vitest.config.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/sandbox:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/sandbox/src/**",
+            "packages/smithers/flows/platform-node/src/SandboxedFlow.ts",
+            "packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts",
+            "packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts",
+            "packages/smithers/flows/sandbox/src/internal/rootedPath.ts",
+            "packages/smithers/flows/sandbox/src/internal/environmentNames.ts",
+            "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts",
+            "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts",
+            "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts",
+            "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts",
+            "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/SandboxedFlow.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/rootedPath.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/SandboxedFlow.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/rootedPath.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/sandbox/src/**",
+            "packages/smithers/flows/platform-node/src/SandboxedFlow.ts",
+            "packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts",
+            "packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts",
+            "packages/smithers/flows/sandbox/src/internal/rootedPath.ts",
+            "packages/smithers/flows/sandbox/src/internal/environmentNames.ts",
+            "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts",
+            "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts",
+            "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts",
+            "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts",
+            "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/SandboxedFlow.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/rootedPath.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/SandboxedFlow.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/NetworkPolicy.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/ResourceLimits.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/rootedPath.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/environmentNames.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/internal/microsandboxProcess.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/Sdk.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/platform-node/src/internal/SandboxedFlowGuest.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/sandbox",
+      "label": "//packages/smithers/flows/sandbox:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/sandbox/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/sandbox/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/sandbox:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "scripts/build.mjs",
+    "src/AwsSandbox",
+    "src/CiJob",
+    "src/CloudflareSandbox",
+    "src/CommandSandbox",
+    "src/ContainerSandbox",
+    "src/DaytonaSandbox",
+    "src/DirectorySandbox",
+    "src/JustBashSandbox",
+    "src/KubernetesSandbox",
+    "src/MicrosandboxSandbox",
+    "src/ProviderConformance",
+    "src/RemoteChildProcessSpawner",
+    "src/Sandbox",
+    "src/SandboxCommand",
+    "src/SandboxConformance",
+    "src/SandboxHealth",
+    "src/SandboxMerge",
+    "src/SandboxSupervision",
+    "src/SandboxTools",
+    "src/TerminalProtocol",
+    "src/VercelSandbox",
+    "src/index.ts",
+    "src/internal",
+    "test/fixtures",
+    "test/helpers",
+    "test/stalledFinalizer.ts",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

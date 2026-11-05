@@ -226,7 +226,11 @@ export interface GitHubClient {
    */
   readonly paginate: (
     path: string,
-    options?: { readonly perPage?: number | undefined; readonly maxPages?: number | undefined; readonly withNext?: boolean | undefined }
+    options?: {
+      readonly perPage?: number | undefined
+      readonly maxPages?: number | undefined
+      readonly withNext?: boolean | undefined
+    }
   ) => Effect.Effect<Page, IntegrationError>
   /**
    * How many items a list resource holds, and its first item, in one request.
@@ -310,7 +314,9 @@ export const retryAfterMs = (headers: Headers, nowMs: number = Date.now()): numb
  */
 const retryAfterUncapped = (headers: Headers): { readonly retryAfterUncappedMillis?: number } => {
   const retryAfter = headers.get("retry-after")?.trim()
-  return retryAfter !== undefined && /^\d+$/.test(retryAfter) ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 } : {}
+  return retryAfter !== undefined && /^\d+$/.test(retryAfter)
+    ? { retryAfterUncappedMillis: Number(retryAfter) * 1000 }
+    : {}
 }
 
 /**

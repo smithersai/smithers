@@ -1,1 +1,797 @@
-{"id":"packages/smithers/build/infra","name":"@smthrs/build-infra","owner":{"declaration":"packages/smithers/build/infra/package.json","assignedLane":null},"kind":"package","scripts":{"check":"vibelang -b tsconfig.json --force","deploy":"node scripts/deploy.ts --stage prod","deploy:dev":"node scripts/deploy.ts","plan":"node scripts/deploy.ts --stage prod --dry-run","test":"vitest run","lint":"eslint worker scripts deployment.ts alchemy.run.ts --max-warnings=0 && dprint check"},"exports":null,"production":["alchemy.run.ts","deployment.ts","scripts/deploy.ts","scripts/failure-message.ts","scripts/redact-state.ts","scripts/remote-state.ts","scripts/state-ownership.ts","worker/cache-failure.ts","worker/CacheWorker.ts","worker/constantTimeEquals.ts","worker/D1ActionCache.ts","worker/digestBytes.ts","worker/discardBody.ts","worker/jsonTextFault.ts","worker/protocol.ts","worker/R2ContentStore.ts","worker/RateLimitCredentialBudget.ts","worker/RetentionSweep.ts"],"tests":["packages/smithers/build/infra/scripts/deploy.test.ts","packages/smithers/build/infra/scripts/failure-message.test.ts","packages/smithers/build/infra/scripts/redact-state.flags.test.ts","packages/smithers/build/infra/scripts/redact-state.identity.test.ts","packages/smithers/build/infra/scripts/redact-state.test.ts","packages/smithers/build/infra/scripts/remote-state.test.ts","packages/smithers/build/infra/scripts/remote-state.topology.test.ts","packages/smithers/build/infra/scripts/state-ownership.test.ts","packages/smithers/build/infra/tsconfig.test.json","packages/smithers/build/infra/worker/test/action-cache.test.ts","packages/smithers/build/infra/worker/test/admission-slots.test.ts","packages/smithers/build/infra/worker/test/build-inputs.test.ts","packages/smithers/build/infra/worker/test/cli-contract.test.ts","packages/smithers/build/infra/worker/test/content-store.test.ts","packages/smithers/build/infra/worker/test/credential-budget.test.ts","packages/smithers/build/infra/worker/test/credential-split.test.ts","packages/smithers/build/infra/worker/test/d1.ts","packages/smithers/build/infra/worker/test/deployment-config.test.ts","packages/smithers/build/infra/worker/test/jsonTextFault.test.ts","packages/smithers/build/infra/worker/test/MemoryStores.ts","packages/smithers/build/infra/worker/test/migrations.test.ts","packages/smithers/build/infra/worker/test/operator-docs.test.ts","packages/smithers/build/infra/worker/test/protocol-hardening.test.ts","packages/smithers/build/infra/worker/test/protocol.test.ts","packages/smithers/build/infra/worker/test/worker-entry.test.ts"],"benchmarks":[],"platformPaths":["packages/smithers/build/infra/tsconfig.node.json","packages/smithers/build/infra/tsconfig.worker.json","packages/smithers/build/infra/worker/cache-failure.ts","packages/smithers/build/infra/worker/CacheWorker.ts","packages/smithers/build/infra/worker/constantTimeEquals.ts","packages/smithers/build/infra/worker/D1ActionCache.ts","packages/smithers/build/infra/worker/digestBytes.ts","packages/smithers/build/infra/worker/discardBody.ts","packages/smithers/build/infra/worker/jsonTextFault.ts","packages/smithers/build/infra/worker/migrations/0001_initial.sql","packages/smithers/build/infra/worker/migrations/0002_bound_cache_rows.sql","packages/smithers/build/infra/worker/protocol.ts","packages/smithers/build/infra/worker/R2ContentStore.ts","packages/smithers/build/infra/worker/RateLimitCredentialBudget.ts","packages/smithers/build/infra/worker/RetentionSweep.ts","packages/smithers/build/infra/worker/test/action-cache.test.ts","packages/smithers/build/infra/worker/test/admission-slots.test.ts","packages/smithers/build/infra/worker/test/build-inputs.test.ts","packages/smithers/build/infra/worker/test/cli-contract.test.ts","packages/smithers/build/infra/worker/test/content-store.test.ts","packages/smithers/build/infra/worker/test/credential-budget.test.ts","packages/smithers/build/infra/worker/test/credential-split.test.ts","packages/smithers/build/infra/worker/test/d1.ts","packages/smithers/build/infra/worker/test/deployment-config.test.ts","packages/smithers/build/infra/worker/test/jsonTextFault.test.ts","packages/smithers/build/infra/worker/test/MemoryStores.ts","packages/smithers/build/infra/worker/test/migrations.test.ts","packages/smithers/build/infra/worker/test/operator-docs.test.ts","packages/smithers/build/infra/worker/test/protocol-hardening.test.ts","packages/smithers/build/infra/worker/test/protocol.test.ts","packages/smithers/build/infra/worker/test/worker-entry.test.ts"],"ignoredCases":[{"path":"packages/smithers/build/infra/scripts/deploy.test.ts","line":174,"text":"it.skipIf(process.platform === \"win32\").each([\"deadline\", \"second-signal\", \"denied-probe\"])("},{"path":"packages/smithers/build/infra/scripts/deploy.test.ts","line":368,"text":"it.skipIf(process.platform === \"win32\")(\"reports a command that ended on a signal of its own\", async () => {"},{"path":"packages/smithers/build/infra/scripts/deploy.test.ts","line":406,"text":"it.skipIf(process.platform === \"win32\")(\"kills the command outright when a second termination signal arrives\", async () => {"},{"path":"packages/smithers/build/infra/scripts/deploy.test.ts","line":597,"text":"it.skipIf(process.platform === \"win32\")("},{"path":"packages/smithers/build/infra/scripts/deploy.ts","line":174,"text":"/* v8 ignore next -- Node reports a code or a signal on close, never neither, so the fallback is unreachable */"},{"path":"packages/smithers/build/infra/scripts/deploy.ts","line":365,"text":"/* v8 ignore next 3 -- the process entry runs the pinned Alchemy CLI against the operator's own state; the suite drives every wrapper path through `deploy` with substitutes instead */"},{"path":"packages/smithers/build/infra/scripts/redact-state.identity.test.ts","line":366,"text":"it.skipIf(process.platform === \"win32\")(\"tolerates filesystems without directory sync\", async () => {"},{"path":"packages/smithers/build/infra/scripts/redact-state.identity.test.ts","line":378,"text":"it.skipIf(process.platform === \"win32\").each("},{"path":"packages/smithers/build/infra/scripts/redact-state.test.ts","line":687,"text":"it.skipIf(process.platform === \"win32\")(\"refuses symbolic links without touching their target\", async () => {"},{"path":"packages/smithers/build/infra/scripts/redact-state.test.ts","line":935,"text":"it.skipIf(process.platform === \"win32\")(\"reports a state directory it cannot publish into\", async (context) => {"},{"path":"packages/smithers/build/infra/scripts/redact-state.test.ts","line":951,"text":"if (!denied) context.skip(\"this process creates files in a directory without write permission\")"}],"configurations":[{"path":"packages/smithers/build/infra/eslint.config.js","sha256":"50036a09ad3aed4fb03b34ed71f18c36fd2b1529a2a516e338c2bec39fb00f1c","source":"import { parser } from \"typescript-eslint\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nconst files = [\"worker/**/*.ts\", \"scripts/**/*.ts\", \"deployment.ts\", \"alchemy.run.ts\"]\nexport default [\n  { ignores: [\"**/node_modules/**\", \"**/dist/**\", \"worker/test/**\", \"**/*.test.ts\"] },\n  { files, languageOptions: { parser } },\n  ...jsdocConvention.map((config) => ({ ...config, files }))\n]\n","coverageDirectives":[{"line":6,"text":"{ ignores: [\"**/node_modules/**\", \"**/dist/**\", \"worker/test/**\", \"**/*.test.ts\"] },"}]},{"path":"packages/smithers/build/infra/package.json","sha256":"690c16d85c16f02343557f661e8cbb19e193f80d0c0c81b40593a3d004f716e9","source":"{\n  \"name\": \"@smthrs/build-infra\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"description\": \"Cloudflare deployment of the hosted smithers build remote cache\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"tooling\"\n  },\n  \"type\": \"module\",\n  \"sideEffects\": [],\n  \"engines\": {\n    \"node\": \">=26.4.0\"\n  },\n  \"scripts\": {\n    \"check\": \"vibelang -b tsconfig.json --force\",\n    \"deploy\": \"node scripts/deploy.ts --stage prod\",\n    \"deploy:dev\": \"node scripts/deploy.ts\",\n    \"plan\": \"node scripts/deploy.ts --stage prod --dry-run\",\n    \"test\": \"vitest run\",\n    \"lint\": \"eslint worker scripts deployment.ts alchemy.run.ts --max-warnings=0 && dprint check\"\n  },\n  \"devDependencies\": {\n    \"@cloudflare/workers-types\": \"5.20261019.1\",\n    \"@smthrs/build-cli\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"alchemy\": \"2.0.0-beta.82\",\n    \"effect\": \"4.0.5\",\n    \"typescript\": \"5.9.3\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"eslint\": \"9.39.1\",\n    \"typescript-eslint\": \"8.65.0\",\n    \"dprint\": \"0.55.2\",\n    \"aws4fetch\": \"1.0.20\"\n  },\n  \"dependencies\": {\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/targets\": \"1.0.0-rc.16\"\n  }\n}\n","coverageDirectives":[{"line":27,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/build/infra/PACKAGE.ts","sha256":"f4b29896cbe5010666bb7bae062eb207132a92ceda59a59142bbec809c3c82f1","source":"/**\n * Targets for the remote-cache infrastructure workspace.\n *\n * This directory is a workspace package (`packages/smithers/build/infra` in\n * `pnpm-workspace.yaml`) but not a `packages/*` directory, so the standard\n * package defaults never match it and `//packages/...` planned nothing here.\n * `pnpm run check` and `pnpm test` used to reach it only through the recursive\n * root scripts; these targets are the same gates as declarations.\n */\nimport { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/build/infra\"\n\n/** Infrastructure Markdown read by the umbrella documentation suite. */\nconst docsFiles = Smithers.Filegroup({ cwd, srcs: [Smithers.glob(\"**/*.md\")] })\n\n/**\n * The worker, its migrations, and the operator scripts the gates read.\n *\n * The migrations are declared inputs because they are the production D1\n * schema and `worker/test/migrations.test.ts` executes them: without them a\n * schema change leaves the target key unchanged and the suite reports green\n * on a stale remote-cache hit. `PACKAGE.ts` and `vitest.config.ts` are declared\n * for the same reason, since `tsconfig.node.json` typechecks both.\n */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/build/infra/worker/**/*.ts\"),\n  Smithers.glob(\"//packages/smithers/build/infra/worker/migrations/**/*.sql\"),\n  Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.ts\"),\n  Smithers.file(\"alchemy.run.ts\"),\n  Smithers.file(\"deployment.ts\"),\n  Smithers.file(\"PACKAGE.ts\"),\n  Smithers.file(\"vitest.config.ts\"),\n  Smithers.file(\"tsconfig.worker.json\"),\n  Smithers.file(\"tsconfig.node.json\"),\n  Smithers.file(\"tsconfig.test.json\"),\n  Smithers.file(\"tsconfig.contract.json\"),\n  // `worker/test/cli-contract.test.ts` drives the real CLI client against the\n  // handler, so a client change must re-run the suite.\n  Smithers.file(\"//packages/smithers/build/build-cli/src/Cache.ts\"),\n  Smithers.file(\"//packages/smithers/build/build-cli/src/internal/Fs.ts\")\n]\n\n/**\n * Checks the workspace against its own tsconfig.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: true,\n  incremental: false,\n  cwd\n})\n\n/**\n * Runs the worker protocol, migration, and redaction suites.\n *\n * @since 0.1.0\n * @category test\n */\nconst suite = Smithers.Vitest({\n  tests: [\n    Smithers.glob(\"//packages/smithers/build/infra/worker/test/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.test.ts\")\n  ],\n  sources,\n  deps: [],\n  config: Smithers.file(\"vitest.config.ts\"),\n  environment: \"node\",\n  passWithNoTests: false,\n  cwd\n})\n\n/**\n * Lints the worker and the operator scripts.\n *\n * Shares the infra-local JSDoc policy and file scope with `pnpm run lint`.\n * Workspace-rooted declarations resolve identically for planning and ESLint.\n *\n * @since 0.1.0\n * @category lint\n */\nconst lint = Smithers.EsLint({\n  sources: [\n    Smithers.glob(\"//packages/smithers/build/infra/worker/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.ts\"),\n    Smithers.file(\"//packages/smithers/build/infra/deployment.ts\"),\n    Smithers.file(\"//packages/smithers/build/infra/alchemy.run.ts\")\n  ],\n  deps: [],\n  configs: [\n    Smithers.file(\"//packages/smithers/build/infra/eslint.config.js\"),\n    Smithers.file(\"//eslint.jsdoc.js\")\n  ],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\n/**\n * Checks the same formatting policy as `pnpm run lint`.\n *\n * @since 0.1.0\n * @category lint\n */\nconst fmt = Smithers.Dprint({\n  sources: [\n    Smithers.glob(\"//packages/smithers/build/infra/worker/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.ts\"),\n    Smithers.file(\"deployment.ts\"),\n    Smithers.file(\"alchemy.run.ts\"),\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"eslint.config.js\"),\n    Smithers.file(\"dprint.json\")\n  ],\n  deps: [],\n  config: Smithers.file(\"dprint.json\"),\n  fix: false,\n  cwd\n})\n\n/**\n * Checks that the deployment documents itself beside its code.\n *\n * @since 0.1.0\n * @category docs\n */\nconst docs = Smithers.DocsParity({\n  readme: Smithers.file(\"README.md\"),\n  deps: [],\n  cwd\n})\n\n/** The public code of the worker and the operator scripts; tests are out of scope. */\nconst reviewedSources = [\n  Smithers.glob(\"worker/*.ts\"),\n  Smithers.file(\"scripts/deploy.ts\"),\n  Smithers.file(\"scripts/failure-message.ts\"),\n  Smithers.file(\"scripts/redact-state.ts\"),\n  Smithers.file(\"scripts/remote-state.ts\"),\n  Smithers.file(\"scripts/state-ownership.ts\"),\n  Smithers.file(\"deployment.ts\"),\n  Smithers.file(\"alchemy.run.ts\")\n]\n\n/**\n * Changed worker and deployment code against the operator prose that\n * documents it. The package has no site API page, so the context is its own\n * README and the cache trust model.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  include: reviewedSources,\n  context: [Smithers.file(\"README.md\"), Smithers.file(\"CACHE-TRUST.md\")]\n})\n\n/**\n * Changed worker and deployment exports against their own JSDoc.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd, include: reviewedSources })\n\n/**\n * Security review of the hosted remote cache and its deployment tooling.\n *\n * The Worker is a public endpoint whose answers restore build outputs, and\n * the deploy scripts hold Cloudflare credentials and cache bearer tokens.\n *\n * @since 0.1.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\n    \"worker/**/*.ts\",\n    \"worker/migrations/**/*.sql\",\n    \"scripts/**/*.ts\",\n    \"alchemy.run.ts\",\n    \"deployment.ts\",\n    \"CACHE-TRUST.md\",\n    \"README.md\"\n  ],\n  checks: [\n    {\n      id: \"cache-credential-classification\",\n      title: \"Only the write credential can publish, and no credential classifies as both\",\n      threat: \"A CI job holding only the read token, or no token, publishes poisoned action results every other build restores.\",\n      lookFor: [\n        \"A PUT or DELETE route reachable when presentedCredential returns kind read or none.\",\n        \"A token comparison that short circuits, skips constantTimeEquals, or compares the raw bearer instead of its SHA-256.\",\n        \"createHandler or CacheWorker handlerFor accepting equal or non-hex readTokenHash and writeTokenHash, or reusing a handler after a token binding rotated.\",\n        \"A non-Bearer authorization header or an empty token classified as read or write.\"\n      ],\n      paths: [\"worker/protocol.ts\", \"worker/CacheWorker.ts\", \"worker/constantTimeEquals.ts\", \"worker/digestBytes.ts\"]\n    },\n    {\n      id: \"read-namespace-scope\",\n      title: \"A namespaced read credential reads only action keys under its prefix\",\n      threat: \"An untrusted fork job holding a namespaced read token reads trusted namespace results or probes the CAS.\",\n      lookFor: [\n        \"An /ac/ key compared against readNamespacePrefix before decodeURIComponent, or a prefix check that encoded slashes or dot segments bypass.\",\n        \"A /cas/ route, findMissing included, reachable by a read credential when readNamespacePrefix is set.\",\n        \"A readNamespacePrefix accepted without the single-segment ending-in-slash validation.\"\n      ],\n      paths: [\"worker/protocol.ts\"]\n    },\n    {\n      id: \"cas-content-integrity\",\n      title: \"Stored artifacts and action results match the digests they are served under\",\n      threat: \"A write-token holder or a corrupted store makes the cache serve bytes whose SHA-256 differs from the requested digest, poisoning builds.\",\n      lookFor: [\n        \"A CAS PUT stored without sha256Hex of the full buffered body equalling the path digest.\",\n        \"A CAS GET or findMissing answer that trusts R2 metadata or a store-returned digest outside the request.\",\n        \"An action-cache PUT whose declared output digests are not 64 lowercase hex, or whose stored text is re-served without validation.\",\n        \"An R2 object key derived from a digest that was not validated against the hex pattern first.\"\n      ],\n      paths: [\"worker/protocol.ts\", \"worker/R2ContentStore.ts\", \"worker/D1ActionCache.ts\"]\n    },\n    {\n      id: \"d1-parameterized-sql\",\n      title: \"Every D1 statement binds request data as parameters\",\n      threat: \"A cache client injects SQL through a key digest or fence field and reads, rewrites, or deletes other cache rows.\",\n      lookFor: [\n        \"A prepare() call whose SQL string is built with template interpolation or concatenation of request-derived values.\",\n        \"A migration or retention query whose bounds let one scheduled run delete rows newer than the retention cutoff.\"\n      ],\n      paths: [\"worker/D1ActionCache.ts\", \"worker/RetentionSweep.ts\", \"worker/migrations/**\"]\n    },\n    {\n      id: \"admission-and-budget-bounds\",\n      title: \"Every request is bounded in bytes, concurrency, and per-credential budget\",\n      threat: \"Any token holder exhausts isolate memory, R2 operations, or D1 capacity and takes the cache down for every build.\",\n      lookFor: [\n        \"A body read that buffers past its limit or trusts content-length without enforcing the streamed length.\",\n        \"An admission counter incremented on a path whose error or cancelled stream never decrements it.\",\n        \"A findMissing request above maxFindMissingDigests, or a budget charge after the store is touched, or a budget outcome other than success=true treated as admitted.\",\n        \"An action-cache JSON body parsed or passed to canonicalJson without the nesting-depth and output-size budget.\",\n        \"The unauthenticated /healthz route reaching D1 or R2 without its single-slot bound, or returning failure detail in its body.\"\n      ],\n      paths: [\"worker/protocol.ts\", \"worker/RateLimitCredentialBudget.ts\", \"worker/discardBody.ts\", \"worker/jsonTextFault.ts\"]\n    },\n    {\n      id: \"state-redaction-before-publish\",\n      title: \"Deployment state never persists or publishes a cache bearer token\",\n      threat: \"Anyone with read access to the R2 state bucket or the local .alchemy directory recovers the write token and poisons the cache.\",\n      lookFor: [\n        \"A deploy path that publishes the state snapshot when redaction failed or was skipped.\",\n        \"A credential binding or SMITHERS_CACHE_* value missing from the redaction set, or a JSON shape the walker does not descend into.\",\n        \"A Worker binding that carries the bearer value instead of cacheTokenDigest's SHA-256 verifier.\"\n      ],\n      paths: [\"scripts/redact-state.ts\", \"scripts/deploy.ts\", \"deployment.ts\", \"alchemy.run.ts\"]\n    },\n    {\n      id: \"remote-state-path-safety\",\n      title: \"Pulled state snapshots write only inside the stack state directory\",\n      threat: \"Whoever can write the R2 state object overwrites arbitrary files on the deploying operator's machine.\",\n      lookFor: [\n        \"A snapshot file name with .., an absolute path, a backslash, or a control character accepted by parseSnapshot.\",\n        \"A symlink inside the state directory followed by writeStateSnapshot, redaction, or ownership locking.\",\n        \"A lock or snapshot PUT not conditioned on the pulled ETag, letting two deploys interleave state.\"\n      ],\n      paths: [\"scripts/remote-state.ts\", \"scripts/state-ownership.ts\", \"scripts/redact-state.ts\"]\n    },\n    {\n      id: \"operator-credential-leaks\",\n      title: \"Cloudflare and cache credentials never reach logs, errors, or metrics\",\n      threat: \"A CI log reader or Analytics Engine viewer learns the Cloudflare API token, derived R2 secret, or a cache bearer token.\",\n      lookFor: [\n        \"An error message, console line, or describeFailure output that includes a token, Authorization header, or signed URL.\",\n        \"A metrics datapoint whose blobs or indexes carry a key digest, credential digest, or request path.\",\n        \"The Alchemy child spawned with arguments or env that echo secrets beyond the inherited process env.\"\n      ],\n      paths: [\"scripts/remote-state.ts\", \"scripts/deploy.ts\", \"scripts/failure-message.ts\", \"worker/CacheWorker.ts\", \"worker/cache-failure.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    docs,\n    docsFiles,\n    fmt,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    suite,\n    ...securityReview\n  }\n})\n","coverageDirectives":[{"line":161,"text":"include: reviewedSources,"},{"line":171,"text":"const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd, include: reviewedSources })"},{"line":184,"text":"include: ["},{"line":200,"text":"\"A token comparison that short circuits, skips constantTimeEquals, or compares the raw bearer instead of its SHA-256.\","},{"line":212,"text":"\"A /cas/ route, findMissing included, reachable by a read credential when readNamespacePrefix is set.\","},{"line":257,"text":"\"A deploy path that publishes the state snapshot when redaction failed or was skipped.\","},{"line":279,"text":"\"An error message, console line, or describeFailure output that includes a token, Authorization header, or signed URL.\","}]},{"path":"packages/smithers/build/infra/tsconfig.json","sha256":"49f07c06c7d4d81365bb1c3d3dba68d81c6ca8c8609823f8c2f687845c3b425d","source":"{\n  \"compilerOptions\": {\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"lib\": [\n      \"ESNext\"\n    ],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"noEmit\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"noImplicitOverride\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"skipLibCheck\": true,\n    \"strict\": true,\n    \"target\": \"ES2023\",\n    \"types\": [],\n    \"verbatimModuleSyntax\": true\n  },\n  \"files\": [],\n  \"references\": [\n    {\n      \"path\": \"./tsconfig.worker.json\"\n    },\n    {\n      \"path\": \"./tsconfig.node.json\"\n    },\n    {\n      \"path\": \"./tsconfig.test.json\"\n    },\n    {\n      \"path\": \"./tsconfig.contract.json\"\n    }\n  ]\n}\n","coverageDirectives":[{"line":15,"text":"\"skipLibCheck\": true,"}]},{"path":"packages/smithers/build/infra/vitest.config.ts","sha256":"0869f0a23f09c2e31dfcce956d0e53dc236fd5b72af4f1f31b2ddd3ef0f333a1","source":"import { fileURLToPath } from \"node:url\"\nimport { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)), fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))],\n    environment: \"node\",\n    include: [\"worker/test/**/*.test.{ts,vibe}\", \"scripts/**/*.test.{ts,vibe}\"],\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      // Enabled so the thresholds below are computed rather than declared:\n      // `Smithers.Vitest` only declines to pass `--coverage.enabled=false`,\n      // and vitest's own default is off, so nothing measured this package\n      // until this block existed. The thresholds are the workspace contract\n      // (the release policy): 100% on every default run.\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-build-infra-coverage-${process.pid}`),\n      // `alchemy.run.ts` only names the Cloudflare resources; every option\n      // object and the stack program come from `deployment.ts`, so importing\n      // the graph executes all of it and the suite can hold it to 100% too.\n      include: [\"worker/**/*.{ts,vibe}\", \"scripts/**/*.{ts,vibe}\", \"deployment.ts\", \"alchemy.run.ts\"],\n      exclude: [\"worker/test/**\", \"scripts/**/*.test.{ts,vibe}\"],\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n","coverageDirectives":[{"line":10,"text":"globalSetup: [fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)), fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))],"},{"line":12,"text":"include: [\"worker/test/**/*.test.{ts,vibe}\", \"scripts/**/*.test.{ts,vibe}\"],"},{"line":15,"text":"coverage: {"},{"line":16,"text":"// Enabled so the thresholds below are computed rather than declared:"},{"line":17,"text":"// `Smithers.Vitest` only declines to pass `--coverage.enabled=false`,"},{"line":19,"text":"// until this block existed. The thresholds are the workspace contract"},{"line":22,"text":"provider: \"v8\","},{"line":23,"text":"reportsDirectory: join(tmpdir(), `flows-build-infra-coverage-${process.pid}`),"},{"line":27,"text":"include: [\"worker/**/*.{ts,vibe}\", \"scripts/**/*.{ts,vibe}\", \"deployment.ts\", \"alchemy.run.ts\"],"},{"line":28,"text":"exclude: [\"worker/test/**\", \"scripts/**/*.test.{ts,vibe}\"],"},{"line":29,"text":"thresholds: {"}]}],"targets":[{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/build/infra/worker/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/migrations/**/*.sql","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/PACKAGE.ts"},{"kind":"file","path":"packages/smithers/build/infra/vitest.config.ts"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.worker.json"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.node.json"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.test.json"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.contract.json"},{"kind":"file","path":"packages/smithers/build/build-cli/src/Cache.ts"},{"kind":"file","path":"packages/smithers/build/build-cli/src/internal/Fs.ts"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.json"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/build/infra/README.md"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/build/infra/**/*.md","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/build/infra/worker/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/package.json"},{"kind":"file","path":"packages/smithers/build/infra/eslint.config.js"},{"kind":"file","path":"packages/smithers/build/infra/dprint.json"},{"kind":"file","path":"packages/smithers/build/infra/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/build/infra/worker/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:reviewDocsAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/build/infra/worker/*.ts","packages/smithers/build/infra/scripts/deploy.ts","packages/smithers/build/infra/scripts/failure-message.ts","packages/smithers/build/infra/scripts/redact-state.ts","packages/smithers/build/infra/scripts/remote-state.ts","packages/smithers/build/infra/scripts/state-ownership.ts","packages/smithers/build/infra/deployment.ts","packages/smithers/build/infra/alchemy.run.ts"]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/scripts/deploy.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/failure-message.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/redact-state.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/remote-state.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/state-ownership.ts"},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/README.md"},{"kind":"file","path":"packages/smithers/build/infra/CACHE-TRUST.md"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:reviewJsdocAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/build/infra/worker/*.ts","packages/smithers/build/infra/scripts/deploy.ts","packages/smithers/build/infra/scripts/failure-message.ts","packages/smithers/build/infra/scripts/redact-state.ts","packages/smithers/build/infra/scripts/remote-state.ts","packages/smithers/build/infra/scripts/state-ownership.ts","packages/smithers/build/infra/deployment.ts","packages/smithers/build/infra/alchemy.run.ts"]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/scripts/deploy.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/failure-message.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/redact-state.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/remote-state.ts"},{"kind":"file","path":"packages/smithers/build/infra/scripts/state-ownership.ts"},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/build/infra/worker/**/*.ts","packages/smithers/build/infra/worker/migrations/**/*.sql","packages/smithers/build/infra/scripts/**/*.ts","packages/smithers/build/infra/alchemy.run.ts","packages/smithers/build/infra/deployment.ts","packages/smithers/build/infra/CACHE-TRUST.md","packages/smithers/build/infra/README.md"]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/migrations/**/*.sql","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/CACHE-TRUST.md"},{"kind":"file","path":"packages/smithers/build/infra/README.md"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/build/infra/worker/**/*.ts","packages/smithers/build/infra/worker/migrations/**/*.sql","packages/smithers/build/infra/scripts/**/*.ts","packages/smithers/build/infra/alchemy.run.ts","packages/smithers/build/infra/deployment.ts","packages/smithers/build/infra/CACHE-TRUST.md","packages/smithers/build/infra/README.md"]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/migrations/**/*.sql","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/CACHE-TRUST.md"},{"kind":"file","path":"packages/smithers/build/infra/README.md"}],"dependencies":[]},{"package":"packages/smithers/build/infra","label":"//packages/smithers/build/infra:suite","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/build/infra/worker/test/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.test.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/worker/migrations/**/*.sql","exclude":[]},{"kind":"glob","pattern":"packages/smithers/build/infra/scripts/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/build/infra/alchemy.run.ts"},{"kind":"file","path":"packages/smithers/build/infra/deployment.ts"},{"kind":"file","path":"packages/smithers/build/infra/PACKAGE.ts"},{"kind":"file","path":"packages/smithers/build/infra/vitest.config.ts"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.worker.json"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.node.json"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.test.json"},{"kind":"file","path":"packages/smithers/build/infra/tsconfig.contract.json"},{"kind":"file","path":"packages/smithers/build/build-cli/src/Cache.ts"},{"kind":"file","path":"packages/smithers/build/build-cli/src/internal/Fs.ts"},{"kind":"file","path":"packages/smithers/build/infra/vitest.config.ts"}],"dependencies":[]}],"areas":["alchemy.run.ts","deployment.ts","scripts/deploy.ts","scripts/failure-message.ts","scripts/redact-state.ts","scripts/remote-state.ts","scripts/state-ownership.ts","worker/CacheWorker.ts","worker/D1ActionCache.ts","worker/R2ContentStore.ts","worker/RateLimitCredentialBudget.ts","worker/RetentionSweep.ts","worker/cache-failure.ts","worker/constantTimeEquals.ts","worker/digestBytes.ts","worker/discardBody.ts","worker/jsonTextFault.ts","worker/protocol.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/build/infra",
+  "name": "@smthrs/build-infra",
+  "owner": {
+    "declaration": "packages/smithers/build/infra/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "check": "vibelang -b tsconfig.json --force",
+    "deploy": "node scripts/deploy.ts --stage prod",
+    "deploy:dev": "node scripts/deploy.ts",
+    "plan": "node scripts/deploy.ts --stage prod --dry-run",
+    "test": "vitest run",
+    "lint": "eslint worker scripts deployment.ts alchemy.run.ts --max-warnings=0 && dprint check"
+  },
+  "exports": null,
+  "production": [
+    "alchemy.run.ts",
+    "deployment.ts",
+    "scripts/deploy.ts",
+    "scripts/failure-message.ts",
+    "scripts/redact-state.ts",
+    "scripts/remote-state.ts",
+    "scripts/state-ownership.ts",
+    "worker/cache-failure.ts",
+    "worker/CacheWorker.ts",
+    "worker/constantTimeEquals.ts",
+    "worker/D1ActionCache.ts",
+    "worker/digestBytes.ts",
+    "worker/discardBody.ts",
+    "worker/jsonTextFault.ts",
+    "worker/protocol.ts",
+    "worker/R2ContentStore.ts",
+    "worker/RateLimitCredentialBudget.ts",
+    "worker/RetentionSweep.ts"
+  ],
+  "tests": [
+    "packages/smithers/build/infra/scripts/deploy.test.ts",
+    "packages/smithers/build/infra/scripts/failure-message.test.ts",
+    "packages/smithers/build/infra/scripts/redact-state.flags.test.ts",
+    "packages/smithers/build/infra/scripts/redact-state.identity.test.ts",
+    "packages/smithers/build/infra/scripts/redact-state.test.ts",
+    "packages/smithers/build/infra/scripts/remote-state.test.ts",
+    "packages/smithers/build/infra/scripts/remote-state.topology.test.ts",
+    "packages/smithers/build/infra/scripts/state-ownership.test.ts",
+    "packages/smithers/build/infra/tsconfig.test.json",
+    "packages/smithers/build/infra/worker/test/action-cache.test.ts",
+    "packages/smithers/build/infra/worker/test/admission-slots.test.ts",
+    "packages/smithers/build/infra/worker/test/build-inputs.test.ts",
+    "packages/smithers/build/infra/worker/test/cli-contract.test.ts",
+    "packages/smithers/build/infra/worker/test/content-store.test.ts",
+    "packages/smithers/build/infra/worker/test/credential-budget.test.ts",
+    "packages/smithers/build/infra/worker/test/credential-split.test.ts",
+    "packages/smithers/build/infra/worker/test/d1.ts",
+    "packages/smithers/build/infra/worker/test/deployment-config.test.ts",
+    "packages/smithers/build/infra/worker/test/jsonTextFault.test.ts",
+    "packages/smithers/build/infra/worker/test/MemoryStores.ts",
+    "packages/smithers/build/infra/worker/test/migrations.test.ts",
+    "packages/smithers/build/infra/worker/test/operator-docs.test.ts",
+    "packages/smithers/build/infra/worker/test/protocol-hardening.test.ts",
+    "packages/smithers/build/infra/worker/test/protocol.test.ts",
+    "packages/smithers/build/infra/worker/test/worker-entry.test.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/build/infra/tsconfig.node.json",
+    "packages/smithers/build/infra/tsconfig.worker.json",
+    "packages/smithers/build/infra/worker/cache-failure.ts",
+    "packages/smithers/build/infra/worker/CacheWorker.ts",
+    "packages/smithers/build/infra/worker/constantTimeEquals.ts",
+    "packages/smithers/build/infra/worker/D1ActionCache.ts",
+    "packages/smithers/build/infra/worker/digestBytes.ts",
+    "packages/smithers/build/infra/worker/discardBody.ts",
+    "packages/smithers/build/infra/worker/jsonTextFault.ts",
+    "packages/smithers/build/infra/worker/migrations/0001_initial.sql",
+    "packages/smithers/build/infra/worker/migrations/0002_bound_cache_rows.sql",
+    "packages/smithers/build/infra/worker/protocol.ts",
+    "packages/smithers/build/infra/worker/R2ContentStore.ts",
+    "packages/smithers/build/infra/worker/RateLimitCredentialBudget.ts",
+    "packages/smithers/build/infra/worker/RetentionSweep.ts",
+    "packages/smithers/build/infra/worker/test/action-cache.test.ts",
+    "packages/smithers/build/infra/worker/test/admission-slots.test.ts",
+    "packages/smithers/build/infra/worker/test/build-inputs.test.ts",
+    "packages/smithers/build/infra/worker/test/cli-contract.test.ts",
+    "packages/smithers/build/infra/worker/test/content-store.test.ts",
+    "packages/smithers/build/infra/worker/test/credential-budget.test.ts",
+    "packages/smithers/build/infra/worker/test/credential-split.test.ts",
+    "packages/smithers/build/infra/worker/test/d1.ts",
+    "packages/smithers/build/infra/worker/test/deployment-config.test.ts",
+    "packages/smithers/build/infra/worker/test/jsonTextFault.test.ts",
+    "packages/smithers/build/infra/worker/test/MemoryStores.ts",
+    "packages/smithers/build/infra/worker/test/migrations.test.ts",
+    "packages/smithers/build/infra/worker/test/operator-docs.test.ts",
+    "packages/smithers/build/infra/worker/test/protocol-hardening.test.ts",
+    "packages/smithers/build/infra/worker/test/protocol.test.ts",
+    "packages/smithers/build/infra/worker/test/worker-entry.test.ts"
+  ],
+  "ignoredCases": [
+    {
+      "path": "packages/smithers/build/infra/scripts/deploy.test.ts",
+      "line": 174,
+      "text": "it.skipIf(process.platform === \"win32\").each([\"deadline\", \"second-signal\", \"denied-probe\"])("
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/deploy.test.ts",
+      "line": 368,
+      "text": "it.skipIf(process.platform === \"win32\")(\"reports a command that ended on a signal of its own\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/deploy.test.ts",
+      "line": 406,
+      "text": "it.skipIf(process.platform === \"win32\")(\"kills the command outright when a second termination signal arrives\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/deploy.test.ts",
+      "line": 597,
+      "text": "it.skipIf(process.platform === \"win32\")("
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/deploy.ts",
+      "line": 174,
+      "text": "/* v8 ignore next -- Node reports a code or a signal on close, never neither, so the fallback is unreachable */"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/deploy.ts",
+      "line": 365,
+      "text": "/* v8 ignore next 3 -- the process entry runs the pinned Alchemy CLI against the operator's own state; the suite drives every wrapper path through `deploy` with substitutes instead */"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/redact-state.identity.test.ts",
+      "line": 366,
+      "text": "it.skipIf(process.platform === \"win32\")(\"tolerates filesystems without directory sync\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/redact-state.identity.test.ts",
+      "line": 378,
+      "text": "it.skipIf(process.platform === \"win32\").each("
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/redact-state.test.ts",
+      "line": 687,
+      "text": "it.skipIf(process.platform === \"win32\")(\"refuses symbolic links without touching their target\", async () => {"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/redact-state.test.ts",
+      "line": 935,
+      "text": "it.skipIf(process.platform === \"win32\")(\"reports a state directory it cannot publish into\", async (context) => {"
+    },
+    {
+      "path": "packages/smithers/build/infra/scripts/redact-state.test.ts",
+      "line": 951,
+      "text": "if (!denied) context.skip(\"this process creates files in a directory without write permission\")"
+    }
+  ],
+  "configurations": [
+    {
+      "path": "packages/smithers/build/infra/eslint.config.js",
+      "sha256": "50036a09ad3aed4fb03b34ed71f18c36fd2b1529a2a516e338c2bec39fb00f1c",
+      "source": "import { parser } from \"typescript-eslint\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nconst files = [\"worker/**/*.ts\", \"scripts/**/*.ts\", \"deployment.ts\", \"alchemy.run.ts\"]\nexport default [\n  { ignores: [\"**/node_modules/**\", \"**/dist/**\", \"worker/test/**\", \"**/*.test.ts\"] },\n  { files, languageOptions: { parser } },\n  ...jsdocConvention.map((config) => ({ ...config, files }))\n]\n",
+      "coverageDirectives": [
+        {
+          "line": 6,
+          "text": "{ ignores: [\"**/node_modules/**\", \"**/dist/**\", \"worker/test/**\", \"**/*.test.ts\"] },"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/infra/package.json",
+      "sha256": "690c16d85c16f02343557f661e8cbb19e193f80d0c0c81b40593a3d004f716e9",
+      "source": "{\n  \"name\": \"@smthrs/build-infra\",\n  \"version\": \"0.1.0\",\n  \"private\": true,\n  \"description\": \"Cloudflare deployment of the hosted smithers build remote cache\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"tooling\"\n  },\n  \"type\": \"module\",\n  \"sideEffects\": [],\n  \"engines\": {\n    \"node\": \">=26.4.0\"\n  },\n  \"scripts\": {\n    \"check\": \"vibelang -b tsconfig.json --force\",\n    \"deploy\": \"node scripts/deploy.ts --stage prod\",\n    \"deploy:dev\": \"node scripts/deploy.ts\",\n    \"plan\": \"node scripts/deploy.ts --stage prod --dry-run\",\n    \"test\": \"vitest run\",\n    \"lint\": \"eslint worker scripts deployment.ts alchemy.run.ts --max-warnings=0 && dprint check\"\n  },\n  \"devDependencies\": {\n    \"@cloudflare/workers-types\": \"5.20261019.1\",\n    \"@smthrs/build-cli\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"alchemy\": \"2.0.0-beta.82\",\n    \"effect\": \"4.0.5\",\n    \"typescript\": \"5.9.3\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"eslint\": \"9.39.1\",\n    \"typescript-eslint\": \"8.65.0\",\n    \"dprint\": \"0.55.2\",\n    \"aws4fetch\": \"1.0.20\"\n  },\n  \"dependencies\": {\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/targets\": \"1.0.0-rc.16\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 27,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/infra/PACKAGE.ts",
+      "sha256": "f4b29896cbe5010666bb7bae062eb207132a92ceda59a59142bbec809c3c82f1",
+      "source": "/**\n * Targets for the remote-cache infrastructure workspace.\n *\n * This directory is a workspace package (`packages/smithers/build/infra` in\n * `pnpm-workspace.yaml`) but not a `packages/*` directory, so the standard\n * package defaults never match it and `//packages/...` planned nothing here.\n * `pnpm run check` and `pnpm test` used to reach it only through the recursive\n * root scripts; these targets are the same gates as declarations.\n */\nimport { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/build/infra\"\n\n/** Infrastructure Markdown read by the umbrella documentation suite. */\nconst docsFiles = Smithers.Filegroup({ cwd, srcs: [Smithers.glob(\"**/*.md\")] })\n\n/**\n * The worker, its migrations, and the operator scripts the gates read.\n *\n * The migrations are declared inputs because they are the production D1\n * schema and `worker/test/migrations.test.ts` executes them: without them a\n * schema change leaves the target key unchanged and the suite reports green\n * on a stale remote-cache hit. `PACKAGE.ts` and `vitest.config.ts` are declared\n * for the same reason, since `tsconfig.node.json` typechecks both.\n */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/build/infra/worker/**/*.ts\"),\n  Smithers.glob(\"//packages/smithers/build/infra/worker/migrations/**/*.sql\"),\n  Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.ts\"),\n  Smithers.file(\"alchemy.run.ts\"),\n  Smithers.file(\"deployment.ts\"),\n  Smithers.file(\"PACKAGE.ts\"),\n  Smithers.file(\"vitest.config.ts\"),\n  Smithers.file(\"tsconfig.worker.json\"),\n  Smithers.file(\"tsconfig.node.json\"),\n  Smithers.file(\"tsconfig.test.json\"),\n  Smithers.file(\"tsconfig.contract.json\"),\n  // `worker/test/cli-contract.test.ts` drives the real CLI client against the\n  // handler, so a client change must re-run the suite.\n  Smithers.file(\"//packages/smithers/build/build-cli/src/Cache.ts\"),\n  Smithers.file(\"//packages/smithers/build/build-cli/src/internal/Fs.ts\")\n]\n\n/**\n * Checks the workspace against its own tsconfig.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: true,\n  incremental: false,\n  cwd\n})\n\n/**\n * Runs the worker protocol, migration, and redaction suites.\n *\n * @since 0.1.0\n * @category test\n */\nconst suite = Smithers.Vitest({\n  tests: [\n    Smithers.glob(\"//packages/smithers/build/infra/worker/test/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.test.ts\")\n  ],\n  sources,\n  deps: [],\n  config: Smithers.file(\"vitest.config.ts\"),\n  environment: \"node\",\n  passWithNoTests: false,\n  cwd\n})\n\n/**\n * Lints the worker and the operator scripts.\n *\n * Shares the infra-local JSDoc policy and file scope with `pnpm run lint`.\n * Workspace-rooted declarations resolve identically for planning and ESLint.\n *\n * @since 0.1.0\n * @category lint\n */\nconst lint = Smithers.EsLint({\n  sources: [\n    Smithers.glob(\"//packages/smithers/build/infra/worker/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.ts\"),\n    Smithers.file(\"//packages/smithers/build/infra/deployment.ts\"),\n    Smithers.file(\"//packages/smithers/build/infra/alchemy.run.ts\")\n  ],\n  deps: [],\n  configs: [\n    Smithers.file(\"//packages/smithers/build/infra/eslint.config.js\"),\n    Smithers.file(\"//eslint.jsdoc.js\")\n  ],\n  maxWarnings: 0,\n  fix: false,\n  cwd\n})\n\n/**\n * Checks the same formatting policy as `pnpm run lint`.\n *\n * @since 0.1.0\n * @category lint\n */\nconst fmt = Smithers.Dprint({\n  sources: [\n    Smithers.glob(\"//packages/smithers/build/infra/worker/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/build/infra/scripts/**/*.ts\"),\n    Smithers.file(\"deployment.ts\"),\n    Smithers.file(\"alchemy.run.ts\"),\n    Smithers.file(\"package.json\"),\n    Smithers.file(\"eslint.config.js\"),\n    Smithers.file(\"dprint.json\")\n  ],\n  deps: [],\n  config: Smithers.file(\"dprint.json\"),\n  fix: false,\n  cwd\n})\n\n/**\n * Checks that the deployment documents itself beside its code.\n *\n * @since 0.1.0\n * @category docs\n */\nconst docs = Smithers.DocsParity({\n  readme: Smithers.file(\"README.md\"),\n  deps: [],\n  cwd\n})\n\n/** The public code of the worker and the operator scripts; tests are out of scope. */\nconst reviewedSources = [\n  Smithers.glob(\"worker/*.ts\"),\n  Smithers.file(\"scripts/deploy.ts\"),\n  Smithers.file(\"scripts/failure-message.ts\"),\n  Smithers.file(\"scripts/redact-state.ts\"),\n  Smithers.file(\"scripts/remote-state.ts\"),\n  Smithers.file(\"scripts/state-ownership.ts\"),\n  Smithers.file(\"deployment.ts\"),\n  Smithers.file(\"alchemy.run.ts\")\n]\n\n/**\n * Changed worker and deployment code against the operator prose that\n * documents it. The package has no site API page, so the context is its own\n * README and the cache trust model.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  include: reviewedSources,\n  context: [Smithers.file(\"README.md\"), Smithers.file(\"CACHE-TRUST.md\")]\n})\n\n/**\n * Changed worker and deployment exports against their own JSDoc.\n *\n * @since 0.1.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd, include: reviewedSources })\n\n/**\n * Security review of the hosted remote cache and its deployment tooling.\n *\n * The Worker is a public endpoint whose answers restore build outputs, and\n * the deploy scripts hold Cloudflare credentials and cache bearer tokens.\n *\n * @since 0.1.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\n    \"worker/**/*.ts\",\n    \"worker/migrations/**/*.sql\",\n    \"scripts/**/*.ts\",\n    \"alchemy.run.ts\",\n    \"deployment.ts\",\n    \"CACHE-TRUST.md\",\n    \"README.md\"\n  ],\n  checks: [\n    {\n      id: \"cache-credential-classification\",\n      title: \"Only the write credential can publish, and no credential classifies as both\",\n      threat: \"A CI job holding only the read token, or no token, publishes poisoned action results every other build restores.\",\n      lookFor: [\n        \"A PUT or DELETE route reachable when presentedCredential returns kind read or none.\",\n        \"A token comparison that short circuits, skips constantTimeEquals, or compares the raw bearer instead of its SHA-256.\",\n        \"createHandler or CacheWorker handlerFor accepting equal or non-hex readTokenHash and writeTokenHash, or reusing a handler after a token binding rotated.\",\n        \"A non-Bearer authorization header or an empty token classified as read or write.\"\n      ],\n      paths: [\"worker/protocol.ts\", \"worker/CacheWorker.ts\", \"worker/constantTimeEquals.ts\", \"worker/digestBytes.ts\"]\n    },\n    {\n      id: \"read-namespace-scope\",\n      title: \"A namespaced read credential reads only action keys under its prefix\",\n      threat: \"An untrusted fork job holding a namespaced read token reads trusted namespace results or probes the CAS.\",\n      lookFor: [\n        \"An /ac/ key compared against readNamespacePrefix before decodeURIComponent, or a prefix check that encoded slashes or dot segments bypass.\",\n        \"A /cas/ route, findMissing included, reachable by a read credential when readNamespacePrefix is set.\",\n        \"A readNamespacePrefix accepted without the single-segment ending-in-slash validation.\"\n      ],\n      paths: [\"worker/protocol.ts\"]\n    },\n    {\n      id: \"cas-content-integrity\",\n      title: \"Stored artifacts and action results match the digests they are served under\",\n      threat: \"A write-token holder or a corrupted store makes the cache serve bytes whose SHA-256 differs from the requested digest, poisoning builds.\",\n      lookFor: [\n        \"A CAS PUT stored without sha256Hex of the full buffered body equalling the path digest.\",\n        \"A CAS GET or findMissing answer that trusts R2 metadata or a store-returned digest outside the request.\",\n        \"An action-cache PUT whose declared output digests are not 64 lowercase hex, or whose stored text is re-served without validation.\",\n        \"An R2 object key derived from a digest that was not validated against the hex pattern first.\"\n      ],\n      paths: [\"worker/protocol.ts\", \"worker/R2ContentStore.ts\", \"worker/D1ActionCache.ts\"]\n    },\n    {\n      id: \"d1-parameterized-sql\",\n      title: \"Every D1 statement binds request data as parameters\",\n      threat: \"A cache client injects SQL through a key digest or fence field and reads, rewrites, or deletes other cache rows.\",\n      lookFor: [\n        \"A prepare() call whose SQL string is built with template interpolation or concatenation of request-derived values.\",\n        \"A migration or retention query whose bounds let one scheduled run delete rows newer than the retention cutoff.\"\n      ],\n      paths: [\"worker/D1ActionCache.ts\", \"worker/RetentionSweep.ts\", \"worker/migrations/**\"]\n    },\n    {\n      id: \"admission-and-budget-bounds\",\n      title: \"Every request is bounded in bytes, concurrency, and per-credential budget\",\n      threat: \"Any token holder exhausts isolate memory, R2 operations, or D1 capacity and takes the cache down for every build.\",\n      lookFor: [\n        \"A body read that buffers past its limit or trusts content-length without enforcing the streamed length.\",\n        \"An admission counter incremented on a path whose error or cancelled stream never decrements it.\",\n        \"A findMissing request above maxFindMissingDigests, or a budget charge after the store is touched, or a budget outcome other than success=true treated as admitted.\",\n        \"An action-cache JSON body parsed or passed to canonicalJson without the nesting-depth and output-size budget.\",\n        \"The unauthenticated /healthz route reaching D1 or R2 without its single-slot bound, or returning failure detail in its body.\"\n      ],\n      paths: [\"worker/protocol.ts\", \"worker/RateLimitCredentialBudget.ts\", \"worker/discardBody.ts\", \"worker/jsonTextFault.ts\"]\n    },\n    {\n      id: \"state-redaction-before-publish\",\n      title: \"Deployment state never persists or publishes a cache bearer token\",\n      threat: \"Anyone with read access to the R2 state bucket or the local .alchemy directory recovers the write token and poisons the cache.\",\n      lookFor: [\n        \"A deploy path that publishes the state snapshot when redaction failed or was skipped.\",\n        \"A credential binding or SMITHERS_CACHE_* value missing from the redaction set, or a JSON shape the walker does not descend into.\",\n        \"A Worker binding that carries the bearer value instead of cacheTokenDigest's SHA-256 verifier.\"\n      ],\n      paths: [\"scripts/redact-state.ts\", \"scripts/deploy.ts\", \"deployment.ts\", \"alchemy.run.ts\"]\n    },\n    {\n      id: \"remote-state-path-safety\",\n      title: \"Pulled state snapshots write only inside the stack state directory\",\n      threat: \"Whoever can write the R2 state object overwrites arbitrary files on the deploying operator's machine.\",\n      lookFor: [\n        \"A snapshot file name with .., an absolute path, a backslash, or a control character accepted by parseSnapshot.\",\n        \"A symlink inside the state directory followed by writeStateSnapshot, redaction, or ownership locking.\",\n        \"A lock or snapshot PUT not conditioned on the pulled ETag, letting two deploys interleave state.\"\n      ],\n      paths: [\"scripts/remote-state.ts\", \"scripts/state-ownership.ts\", \"scripts/redact-state.ts\"]\n    },\n    {\n      id: \"operator-credential-leaks\",\n      title: \"Cloudflare and cache credentials never reach logs, errors, or metrics\",\n      threat: \"A CI log reader or Analytics Engine viewer learns the Cloudflare API token, derived R2 secret, or a cache bearer token.\",\n      lookFor: [\n        \"An error message, console line, or describeFailure output that includes a token, Authorization header, or signed URL.\",\n        \"A metrics datapoint whose blobs or indexes carry a key digest, credential digest, or request path.\",\n        \"The Alchemy child spawned with arguments or env that echo secrets beyond the inherited process env.\"\n      ],\n      paths: [\"scripts/remote-state.ts\", \"scripts/deploy.ts\", \"scripts/failure-message.ts\", \"worker/CacheWorker.ts\", \"worker/cache-failure.ts\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    docs,\n    docsFiles,\n    fmt,\n    lint,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    suite,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 161,
+          "text": "include: reviewedSources,"
+        },
+        {
+          "line": 171,
+          "text": "const reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd, include: reviewedSources })"
+        },
+        {
+          "line": 184,
+          "text": "include: ["
+        },
+        {
+          "line": 200,
+          "text": "\"A token comparison that short circuits, skips constantTimeEquals, or compares the raw bearer instead of its SHA-256.\","
+        },
+        {
+          "line": 212,
+          "text": "\"A /cas/ route, findMissing included, reachable by a read credential when readNamespacePrefix is set.\","
+        },
+        {
+          "line": 257,
+          "text": "\"A deploy path that publishes the state snapshot when redaction failed or was skipped.\","
+        },
+        {
+          "line": 279,
+          "text": "\"An error message, console line, or describeFailure output that includes a token, Authorization header, or signed URL.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/infra/tsconfig.json",
+      "sha256": "49f07c06c7d4d81365bb1c3d3dba68d81c6ca8c8609823f8c2f687845c3b425d",
+      "source": "{\n  \"compilerOptions\": {\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"lib\": [\n      \"ESNext\"\n    ],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"noEmit\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"noImplicitOverride\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"skipLibCheck\": true,\n    \"strict\": true,\n    \"target\": \"ES2023\",\n    \"types\": [],\n    \"verbatimModuleSyntax\": true\n  },\n  \"files\": [],\n  \"references\": [\n    {\n      \"path\": \"./tsconfig.worker.json\"\n    },\n    {\n      \"path\": \"./tsconfig.node.json\"\n    },\n    {\n      \"path\": \"./tsconfig.test.json\"\n    },\n    {\n      \"path\": \"./tsconfig.contract.json\"\n    }\n  ]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 15,
+          "text": "\"skipLibCheck\": true,"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/build/infra/vitest.config.ts",
+      "sha256": "0869f0a23f09c2e31dfcce956d0e53dc236fd5b72af4f1f31b2ddd3ef0f333a1",
+      "source": "import { fileURLToPath } from \"node:url\"\nimport { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport vibelang from \"vibelang-vite\"\nimport { defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)), fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))],\n    environment: \"node\",\n    include: [\"worker/test/**/*.test.{ts,vibe}\", \"scripts/**/*.test.{ts,vibe}\"],\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      // Enabled so the thresholds below are computed rather than declared:\n      // `Smithers.Vitest` only declines to pass `--coverage.enabled=false`,\n      // and vitest's own default is off, so nothing measured this package\n      // until this block existed. The thresholds are the workspace contract\n      // (the release policy): 100% on every default run.\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-build-infra-coverage-${process.pid}`),\n      // `alchemy.run.ts` only names the Cloudflare resources; every option\n      // object and the stack program come from `deployment.ts`, so importing\n      // the graph executes all of it and the suite can hold it to 100% too.\n      include: [\"worker/**/*.{ts,vibe}\", \"scripts/**/*.{ts,vibe}\", \"deployment.ts\", \"alchemy.run.ts\"],\n      exclude: [\"worker/test/**\", \"scripts/**/*.test.{ts,vibe}\"],\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "globalSetup: [fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)), fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))],"
+        },
+        {
+          "line": 12,
+          "text": "include: [\"worker/test/**/*.test.{ts,vibe}\", \"scripts/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 15,
+          "text": "coverage: {"
+        },
+        {
+          "line": 16,
+          "text": "// Enabled so the thresholds below are computed rather than declared:"
+        },
+        {
+          "line": 17,
+          "text": "// `Smithers.Vitest` only declines to pass `--coverage.enabled=false`,"
+        },
+        {
+          "line": 19,
+          "text": "// until this block existed. The thresholds are the workspace contract"
+        },
+        {
+          "line": 22,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 23,
+          "text": "reportsDirectory: join(tmpdir(), `flows-build-infra-coverage-${process.pid}`),"
+        },
+        {
+          "line": 27,
+          "text": "include: [\"worker/**/*.{ts,vibe}\", \"scripts/**/*.{ts,vibe}\", \"deployment.ts\", \"alchemy.run.ts\"],"
+        },
+        {
+          "line": 28,
+          "text": "exclude: [\"worker/test/**\", \"scripts/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 29,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/migrations/**/*.sql",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/vitest.config.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.worker.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.node.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.test.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.contract.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/src/Cache.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/src/internal/Fs.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/**/*.md",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/dprint.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/build/infra/worker/*.ts",
+            "packages/smithers/build/infra/scripts/deploy.ts",
+            "packages/smithers/build/infra/scripts/failure-message.ts",
+            "packages/smithers/build/infra/scripts/redact-state.ts",
+            "packages/smithers/build/infra/scripts/remote-state.ts",
+            "packages/smithers/build/infra/scripts/state-ownership.ts",
+            "packages/smithers/build/infra/deployment.ts",
+            "packages/smithers/build/infra/alchemy.run.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/deploy.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/failure-message.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/redact-state.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/remote-state.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/state-ownership.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/CACHE-TRUST.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/build/infra/worker/*.ts",
+            "packages/smithers/build/infra/scripts/deploy.ts",
+            "packages/smithers/build/infra/scripts/failure-message.ts",
+            "packages/smithers/build/infra/scripts/redact-state.ts",
+            "packages/smithers/build/infra/scripts/remote-state.ts",
+            "packages/smithers/build/infra/scripts/state-ownership.ts",
+            "packages/smithers/build/infra/deployment.ts",
+            "packages/smithers/build/infra/alchemy.run.ts"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/deploy.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/failure-message.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/redact-state.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/remote-state.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/scripts/state-ownership.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/build/infra/worker/**/*.ts",
+            "packages/smithers/build/infra/worker/migrations/**/*.sql",
+            "packages/smithers/build/infra/scripts/**/*.ts",
+            "packages/smithers/build/infra/alchemy.run.ts",
+            "packages/smithers/build/infra/deployment.ts",
+            "packages/smithers/build/infra/CACHE-TRUST.md",
+            "packages/smithers/build/infra/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/migrations/**/*.sql",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/CACHE-TRUST.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/build/infra/worker/**/*.ts",
+            "packages/smithers/build/infra/worker/migrations/**/*.sql",
+            "packages/smithers/build/infra/scripts/**/*.ts",
+            "packages/smithers/build/infra/alchemy.run.ts",
+            "packages/smithers/build/infra/deployment.ts",
+            "packages/smithers/build/infra/CACHE-TRUST.md",
+            "packages/smithers/build/infra/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/migrations/**/*.sql",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/CACHE-TRUST.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/build/infra",
+      "label": "//packages/smithers/build/infra:suite",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.test.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/worker/migrations/**/*.sql",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/build/infra/scripts/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/alchemy.run.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/deployment.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/PACKAGE.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/vitest.config.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.worker.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.node.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.test.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/tsconfig.contract.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/src/Cache.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/build-cli/src/internal/Fs.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/build/infra/vitest.config.ts"
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "alchemy.run.ts",
+    "deployment.ts",
+    "scripts/deploy.ts",
+    "scripts/failure-message.ts",
+    "scripts/redact-state.ts",
+    "scripts/remote-state.ts",
+    "scripts/state-ownership.ts",
+    "worker/CacheWorker.ts",
+    "worker/D1ActionCache.ts",
+    "worker/R2ContentStore.ts",
+    "worker/RateLimitCredentialBudget.ts",
+    "worker/RetentionSweep.ts",
+    "worker/cache-failure.ts",
+    "worker/constantTimeEquals.ts",
+    "worker/digestBytes.ts",
+    "worker/discardBody.ts",
+    "worker/jsonTextFault.ts",
+    "worker/protocol.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

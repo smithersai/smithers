@@ -169,7 +169,6 @@ describe("the lock", () => {
   })
 })
 
-
 describe("persisted snapshots", () => {
   test("omits the derived epoch, sorts stores and mutations, and keeps all historical versions", () => {
     const legacy: Migrations.Lock = {

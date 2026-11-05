@@ -496,9 +496,10 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     // A program that watches has no sync metadata (internal/oneWriter.ts): its truncate would be dropped.
     const watches = (sync: SyncControls) => options.persist !== undefined && sync.metadata === undefined
     const service = yield* Effect.serviceOption(Persistence.Persistence)
-    const coordinator = options.persist !== undefined && Option.isSome(service) && Option.isSome(service.value.persistence)
-      ? service.value.persistence.value.coordinator
-      : undefined
+    const coordinator =
+      options.persist !== undefined && Option.isSome(service) && Option.isSome(service.value.persistence)
+        ? service.value.persistence.value.coordinator
+        : undefined
     const askWriterToEvict = () =>
       coordinator?.publish(options.id, {
         v: 1,
@@ -598,7 +599,9 @@ export function make<A extends Row<unknown>, E = never, R = never>(
     if (coordinator !== undefined) {
       const off = coordinator.subscribe(options.id, (message) => {
         const payload = message.payload as { readonly type?: unknown } | undefined
-        if (payload?.type === EVICT_MESSAGE && controls !== undefined && !watches(controls)) void run(evict, closing.signal)
+        if (payload?.type === EVICT_MESSAGE && controls !== undefined && !watches(controls)) {
+          void run(evict, closing.signal)
+        }
       })
       yield* Effect.addFinalizer(() => Effect.sync(off))
     }

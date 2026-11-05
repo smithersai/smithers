@@ -177,7 +177,13 @@ describe("backend HTTP failures become refusals", () => {
     const { c } = await fixture()
     const failure = c.failure(apiError(status, "Repository owner/repo is archived"))
     expect(failure).toBeInstanceOf(Refused)
-    expect(failure).toMatchObject({ fault, code, message: status >= 500 ? expect.stringContaining("Repository owner/repo is archived") : "Repository owner/repo is archived" })
+    expect(failure).toMatchObject({
+      fault,
+      code,
+      message: status >= 500
+        ? expect.stringContaining("Repository owner/repo is archived")
+        : "Repository owner/repo is archived"
+    })
     // The method, path, status, and request id are detail, never the sentence.
     expect(Failure.operatorSentence(failure)).not.toMatch(/GET|\/api\/repos|-> |req-7/)
   })

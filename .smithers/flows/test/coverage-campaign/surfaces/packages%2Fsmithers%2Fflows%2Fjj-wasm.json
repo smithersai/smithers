@@ -1,1 +1,339 @@
-{"id":"packages/smithers/flows/jj-wasm","name":"packages/smithers/flows/jj-wasm","owner":{"declaration":"packages/smithers/flows/jj-wasm/Cargo.toml","assignedLane":null},"kind":"package","scripts":{},"exports":null,"production":["build-wasm.mjs","examples/snapshot_restore.rs","src/abi.rs","src/diff_render.rs","src/error.rs","src/lib.rs","src/ops.rs","src/protocol.rs","src/status_render.rs"],"tests":["packages/smithers/flows/jj-wasm/build-wasm.test.mjs","packages/smithers/flows/jj-wasm/tests/support/parser_corpus.rs","packages/smithers/flows/jj-wasm/tests/test_abi_generated.rs","packages/smithers/flows/jj-wasm/tests/test_abi_parser.rs","packages/smithers/flows/jj-wasm/tests/test_abi.rs","packages/smithers/flows/jj-wasm/tests/test_examples.rs","packages/smithers/flows/jj-wasm/tests/test_ops.rs"],"benchmarks":[],"platformPaths":["packages/smithers/flows/jj-wasm/ABI_CAMPAIGN.md","packages/smithers/flows/jj-wasm/AGENTS.md","packages/smithers/flows/jj-wasm/build-wasm.mjs","packages/smithers/flows/jj-wasm/build-wasm.test.mjs","packages/smithers/flows/jj-wasm/Cargo.toml","packages/smithers/flows/jj-wasm/examples/snapshot_restore.rs","packages/smithers/flows/jj-wasm/PACKAGE.ts","packages/smithers/flows/jj-wasm/src/abi.rs","packages/smithers/flows/jj-wasm/src/diff_render.rs","packages/smithers/flows/jj-wasm/src/error.rs","packages/smithers/flows/jj-wasm/src/lib.rs","packages/smithers/flows/jj-wasm/src/ops.rs","packages/smithers/flows/jj-wasm/src/protocol.rs","packages/smithers/flows/jj-wasm/src/status_render.rs","packages/smithers/flows/jj-wasm/tests/support/parser_corpus.rs","packages/smithers/flows/jj-wasm/tests/test_abi_generated.rs","packages/smithers/flows/jj-wasm/tests/test_abi_parser.rs","packages/smithers/flows/jj-wasm/tests/test_abi.rs","packages/smithers/flows/jj-wasm/tests/test_examples.rs","packages/smithers/flows/jj-wasm/tests/test_ops.rs"],"ignoredCases":[],"configurations":[{"path":"packages/smithers/flows/jj-wasm/Cargo.toml","sha256":"6413a0b35d1851f122a380a0308b964f7c13f2723dc87bd81d8e6a305cbee8b7","source":"[package]\nname = \"flows-jj\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.89\"\nlicense = \"MIT\"\npublish = false\ndescription = \"The flows `Jj` contract ops over jj-lib, exported as a wasm32-wasip1 reactor ABI\"\n\n[lib]\n# `cdylib` produces the wasm32-wasip1 reactor module (`flows_jj.wasm`);\n# `rlib` keeps the crate linkable for native `cargo test`.\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nbstr = { version = \"1.12.1\", default-features = false, features = [\"std\"] }\nfutures = \"0.3.32\"\njj-lib = { workspace = true }\npollster = \"1.0.1\"\nserde = { version = \"1.0\", features = [\"derive\"] }\nserde_json = \"1.0.150\"\nthiserror = \"2.0.17\"\n\n[dev-dependencies]\ntempfile = \"3.27.0\"\n","coverageDirectives":[]},{"path":"packages/smithers/flows/jj-wasm/PACKAGE.ts","sha256":"aac3a6ad04618ec33ece97bbc6f08a06178cc8c5051315aa084b58e6100af9b2","source":"/**\n * Targets for the `flows-jj` crate and the WebAssembly artifact it produces.\n *\n * The Rust gates and the wasm reproducibility gate are declared here, beside the\n * crate that owns them, so `smithers-build lint '//packages/smithers/flows/jj-wasm:cargoClippy'` is the\n * same command a pipeline runs. The cargo flags that make a check a gate live in\n * the target implementations, not here.\n *\n * The two lanes are addressed by exact label rather than by a recursive pattern\n * on purpose. The cargo gates need only a Rust toolchain; the wasm rebuild needs\n * an uncached one and takes minutes, so it is a separate CI job and a bare\n * `//packages/smithers/flows/jj-wasm` under the test verb would pull it into both.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\n/**\n * The crate's Rust sources plus the workspace manifest and lockfile, consumed\n * by every native and WASM gate. jj-lib is a git dependency on one\n * smithersai/jj commit; `//Cargo.toml` and `//Cargo.lock` name that commit, so\n * they carry the jj source identity into each consumer's key.\n */\nconst nativeSources = Smithers.Filegroup({\n  cwd: \"packages/smithers/flows/jj-wasm\",\n  srcs: [Smithers.glob(\"src/**/*.rs\"), Smithers.file(\"//Cargo.toml\"), Smithers.file(\"//Cargo.lock\")]\n})\n\n/**\n * The crate sources, the workspace manifest, and the lockfile.\n *\n * jj-lib is a cargo git dependency on the smithersai/jj fork pinned to one\n * commit, so the manifest and lockfile are the whole of its declaration here\n * and a fresh checkout needs nothing beyond `cargo fetch`.\n */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/flows/jj-wasm/**/*.rs\"),\n  Smithers.file(\"//Cargo.toml\"),\n  Smithers.file(\"//Cargo.lock\"),\n  Smithers.file(\"//rust-toolchain.toml\")\n]\n\n/**\n * The crates.io index and download hosts (with the CDN names they resolve\n * through) and the GitHub hosts the jj fork's git dependency is fetched from.\n */\nconst destinations = [\n  \"index.crates.io\",\n  \"fastly-index.crates.io\",\n  \"static.crates.io\",\n  \"fastly-static.crates.io\",\n  \"dualstack.k.sni.global.fastly.net\",\n  \"crates.io\",\n  \"github.com\",\n  \"codeload.github.com\"\n]\n\n/**\n * Refuses any crate source `rustfmt` would rewrite.\n *\n * @since 0.1.0\n * @category lint\n */\nconst cargoFmt = Smithers.Cargo.Fmt({\n  workspace: true,\n  data: [...sources, nativeSources],\n  changes: [\"packages/smithers/flows/jj-wasm/**/*.rs\"]\n})\n\n/**\n * Runs clippy over every target with warnings promoted to errors.\n *\n * @since 0.1.0\n * @category lint\n */\nconst cargoClippy = Smithers.Cargo.Clippy({\n  package: \"flows-jj\",\n  allTargets: true,\n  locked: true,\n  denyWarnings: true,\n  data: [...sources, nativeSources],\n  destinations\n})\n\n/**\n * Runs the crate's native test suite against the pinned jj-lib.\n *\n * @since 0.1.0\n * @category test\n */\nconst cargoTest = Smithers.Cargo.Test({\n  package: \"flows-jj\",\n  locked: true,\n  data: [...sources, nativeSources],\n  destinations\n})\n\n/**\n * Checks the build script's own helpers: path remapping, the host guard, and\n * the reproducibility comparison.\n *\n * @since 0.1.0\n * @category test\n */\nconst buildScript = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/smithers/flows/jj-wasm/build-wasm.test.mjs\")]),\n  srcs: [Smithers.file(\"//packages/smithers/flows/jj-wasm/build-wasm.mjs\")],\n  deps: []\n})\n\n/**\n * Rebuilds `flows_jj.wasm` from source and byte-compares it against the\n * committed artifact.\n *\n * The committed module is a reproducibility contract: rebuilding it from source\n * with the pinned toolchain must give the same bytes. `--verify` is what makes\n * that one target — the script rebuilds into a scratch directory, compares, and\n * never overwrites the committed bytes. A scratch `CARGO_TARGET_DIR` keeps the\n * rebuild clean-room and exercises the script's own handling of it.\n *\n * This runner's host triple is part of the contract, so the script refuses to\n * run anywhere but the canonical host rather than report a byte diff.\n *\n * @since 0.1.0\n * @category test\n */\nconst wasmReproducibility = Smithers.NodeTest({\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/smithers/flows/jj-wasm/build-wasm.mjs\"), [\"--verify\"]),\n  srcs: [...sources, Smithers.file(\"//packages/smithers/flows/jj/wasm/flows_jj.wasm\")],\n  deps: [nativeSources],\n  env: { CARGO_TARGET_DIR: \"target/wasm-reproducibility\" },\n  cwd: \".\"\n})\n\n/**\n * Security review of the wasm ABI, the jj ops it dispatches, and the build\n * script that produces the committed artifact.\n *\n * @since 0.1.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/jj-wasm\",\n  include: [\"src/**\", \"build-wasm.mjs\", \"Cargo.toml\", \"//Cargo.toml\"],\n  checks: [\n    {\n      id: \"abi-memory-safety\",\n      title: \"The wasm exports never read or write outside a live allocation\",\n      threat: \"A host bridge bug or a hostile page script corrupts the module heap and turns one jj request into silent corruption of the user's repository.\",\n      lookFor: [\n        \"flows_jj_call building a slice from req_ptr/req_len with no check that the range lies inside linear memory.\",\n        \"flows_jj_free deallocating with a size that differs from the allocation, or the bridge freeing the same pointer twice.\",\n        \"A response pointer or length packed into the u64 return that does not match the buffer copied by copy_nonoverlapping.\"\n      ],\n      paths: [\"src/abi.rs\"]\n    },\n    {\n      id: \"abi-no-panic-escape\",\n      title: \"Every request, however malformed, returns a JSON err instead of aborting the instance\",\n      threat: \"A flow sends a crafted request that panics the reactor, which aborts on wasm32-wasip1 and kills the browser Jj instance mid-operation.\",\n      lookFor: [\n        \"An unwrap, expect, slice index or arithmetic overflow reachable from dispatch, since catch_unwind cannot catch it on wasm32-wasip1.\",\n        \"A jj-lib call in ops.rs whose documented panics are reachable from request fields (empty names, malformed hex, huge prefixes).\"\n      ],\n      paths: [\"src/abi.rs\", \"src/ops.rs\", \"src/protocol.rs\"]\n    },\n    {\n      id: \"workspace-path-containment\",\n      title: \"Request-supplied root and workspaceAdd path stay inside the intended repository slice\",\n      threat: \"A flow or model-chosen request creates or checks out a workspace at an arbitrary path, bounded only by the WASI preopen, overwriting unrelated state in the slice.\",\n      lookFor: [\n        \"workspace_add passing `path` to create_dir_all and init_workspace_with_existing_repo with no normalization or prefix check against root.\",\n        \"`root` or `path` accepted when relative or containing `..` components.\",\n        \"workspace_add accepting a path inside root/.jj, which nests a working copy inside the repository store.\"\n      ],\n      paths: [\"src/ops.rs\", \"src/protocol.rs\"]\n    },\n    {\n      id: \"checkout-symlink-escape\",\n      title: \"Snapshot, restore and checkout never follow a symlink out of the working copy\",\n      threat: \"A snapshot containing a symlink plus a file beneath it makes restore write outside the workspace root, since the crate relies on BrowserJj's assertNoSymlinks for this.\",\n      lookFor: [\n        \"restore or snapshot checking out a tree without jj-lib's symlink/parent-directory guard.\",\n        \"Symlink tree entries accepted by the crate itself rather than refused before check_out.\"\n      ],\n      paths: [\"src/ops.rs\"]\n    },\n    {\n      id: \"revision-resolution-scope\",\n      title: \"Revision strings resolve only to `@`, change id prefixes, or commit id prefixes\",\n      threat: \"A model-supplied revision string resolves to an unintended commit and restore overwrites the user's working copy with its content.\",\n      lookFor: [\n        \"resolve_revision accepting anything beyond `@`, reverse-hex change ids and hex commit ids.\",\n        \"A string that is both a valid reverse-hex change id prefix and a hex commit id prefix resolving to a different commit than the caller meant.\",\n        \"The commit-id branch resolving hidden (abandoned) commits while the change-id branch refuses them.\"\n      ],\n      paths: [\"src/ops.rs\"]\n    },\n    {\n      id: \"snapshot-secret-capture\",\n      title: \"Snapshots do not silently track and emit secret files\",\n      threat: \"A credential file dropped in the working copy is tracked by snapshot and returned in diff output to a model or log.\",\n      lookFor: [\n        \"snapshot_options using an empty base_ignores and EverythingMatcher, so files such as .env are tracked unless a .gitignore excludes them.\",\n        \"git_diff or status returning full contents of newly added files with no size or name filter.\"\n      ],\n      paths: [\"src/ops.rs\", \"src/diff_render.rs\", \"src/status_render.rs\"]\n    },\n    {\n      id: \"diff-output-forgery\",\n      title: \"Rendered diff and status text cannot forge headers from file names or contents\",\n      threat: \"A repository file whose name contains a newline or terminal escape forges `diff --git` headers or status lines that a reviewer, agent or patch applier trusts.\",\n      lookFor: [\n        \"as_internal_file_string interpolated into `diff --git`, `---`, `+++`, rename/copy or A/M/D lines without quoting control characters.\",\n        \"Raw ANSI escape bytes from file content passed through String::from_utf8_lossy into output shown in a terminal or TUI.\"\n      ],\n      paths: [\"src/diff_render.rs\", \"src/status_render.rs\"]\n    },\n    {\n      id: \"snapshot-resource-bounds\",\n      title: \"Snapshot and diff cannot exhaust wasm memory on large or numerous files\",\n      threat: \"A flow drops a huge file in the working copy and the snapshot or diff materializes it into memory, crashing the browser tab.\",\n      lookFor: [\n        \"snapshot_options setting max_new_file_size to u64::MAX with no other ceiling.\",\n        \"git_diff accumulating every materialized file into one String with no size cap.\"\n      ],\n      paths: [\"src/ops.rs\", \"src/diff_render.rs\"]\n    },\n    {\n      id: \"wasm-build-integrity\",\n      title: \"The committed wasm is built only from locked, pinned inputs\",\n      threat: \"A tampered dependency or ambient build environment injects code into flows_jj.wasm that every browser user then runs.\",\n      lookFor: [\n        \"cargo invoked without --locked, or the jj-lib git dependency in //Cargo.toml not pinned to a full rev.\",\n        \"buildEnvironment inheriting RUSTC_WRAPPER, RUSTC, CARGO_BUILD_RUSTC_WRAPPER or CARGO_TARGET_*_LINKER from the ambient env.\",\n        \"The --verify path writing over the committed artifact instead of comparing.\"\n      ],\n      paths: [\"build-wasm.mjs\", \"Cargo.toml\", \"//Cargo.toml\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { nativeSources, buildScript, cargoClippy, cargoFmt, cargoTest, wasmReproducibility, ...securityReview }\n})\n","coverageDirectives":[{"line":142,"text":"include: [\"src/**\", \"build-wasm.mjs\", \"Cargo.toml\", \"//Cargo.toml\"],"},{"line":202,"text":"\"snapshot_options using an empty base_ignores and EverythingMatcher, so files such as .env are tracked unless a .gitignore excludes them.\","}]}],"targets":[{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:buildScript","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/smithers/flows/jj-wasm/build-wasm.test.mjs"},{"kind":"file","path":"packages/smithers/flows/jj-wasm/build-wasm.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:cargoClippy","rule":"Cargo.Clippy","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/**/*.rs","exclude":[]},{"kind":"file","path":"Cargo.toml"},{"kind":"file","path":"Cargo.lock"},{"kind":"file","path":"rust-toolchain.toml"}],"dependencies":["//packages/smithers/flows/jj-wasm:nativeSources"]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:cargoFmt","rule":"Cargo.Fmt","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/**/*.rs","exclude":[]},{"kind":"file","path":"Cargo.toml"},{"kind":"file","path":"Cargo.lock"},{"kind":"file","path":"rust-toolchain.toml"}],"dependencies":["//packages/smithers/flows/jj-wasm:nativeSources"]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:cargoTest","rule":"Cargo.Test","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/**/*.rs","exclude":[]},{"kind":"file","path":"Cargo.toml"},{"kind":"file","path":"Cargo.lock"},{"kind":"file","path":"rust-toolchain.toml"}],"dependencies":["//packages/smithers/flows/jj-wasm:nativeSources"]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:nativeSources","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/src/**/*.rs","exclude":[]},{"kind":"file","path":"Cargo.toml"},{"kind":"file","path":"Cargo.lock"}],"dependencies":[]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/jj-wasm/src/**","packages/smithers/flows/jj-wasm/build-wasm.mjs","packages/smithers/flows/jj-wasm/Cargo.toml","Cargo.toml"]},{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj-wasm/build-wasm.mjs"},{"kind":"file","path":"packages/smithers/flows/jj-wasm/Cargo.toml"},{"kind":"file","path":"Cargo.toml"}],"dependencies":[]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/flows/jj-wasm/src/**","packages/smithers/flows/jj-wasm/build-wasm.mjs","packages/smithers/flows/jj-wasm/Cargo.toml","Cargo.toml"]},{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/jj-wasm/build-wasm.mjs"},{"kind":"file","path":"packages/smithers/flows/jj-wasm/Cargo.toml"},{"kind":"file","path":"Cargo.toml"}],"dependencies":[]},{"package":"packages/smithers/flows/jj-wasm","label":"//packages/smithers/flows/jj-wasm:wasmReproducibility","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/smithers/flows/jj-wasm/build-wasm.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/jj-wasm/**/*.rs","exclude":[]},{"kind":"file","path":"Cargo.toml"},{"kind":"file","path":"Cargo.lock"},{"kind":"file","path":"rust-toolchain.toml"},{"kind":"file","path":"packages/smithers/flows/jj/wasm/flows_jj.wasm"}],"dependencies":["//packages/smithers/flows/jj-wasm:nativeSources"]}],"areas":["build-wasm.mjs","examples/snapshot_restore.rs","src/abi.rs","src/diff_render.rs","src/error.rs","src/lib.rs","src/ops.rs","src/protocol.rs","src/status_render.rs"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/flows/jj-wasm",
+  "name": "packages/smithers/flows/jj-wasm",
+  "owner": {
+    "declaration": "packages/smithers/flows/jj-wasm/Cargo.toml",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {},
+  "exports": null,
+  "production": [
+    "build-wasm.mjs",
+    "examples/snapshot_restore.rs",
+    "src/abi.rs",
+    "src/diff_render.rs",
+    "src/error.rs",
+    "src/lib.rs",
+    "src/ops.rs",
+    "src/protocol.rs",
+    "src/status_render.rs"
+  ],
+  "tests": [
+    "packages/smithers/flows/jj-wasm/build-wasm.test.mjs",
+    "packages/smithers/flows/jj-wasm/tests/support/parser_corpus.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_abi_generated.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_abi_parser.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_abi.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_examples.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_ops.rs"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/jj-wasm/ABI_CAMPAIGN.md",
+    "packages/smithers/flows/jj-wasm/AGENTS.md",
+    "packages/smithers/flows/jj-wasm/build-wasm.mjs",
+    "packages/smithers/flows/jj-wasm/build-wasm.test.mjs",
+    "packages/smithers/flows/jj-wasm/Cargo.toml",
+    "packages/smithers/flows/jj-wasm/examples/snapshot_restore.rs",
+    "packages/smithers/flows/jj-wasm/PACKAGE.ts",
+    "packages/smithers/flows/jj-wasm/src/abi.rs",
+    "packages/smithers/flows/jj-wasm/src/diff_render.rs",
+    "packages/smithers/flows/jj-wasm/src/error.rs",
+    "packages/smithers/flows/jj-wasm/src/lib.rs",
+    "packages/smithers/flows/jj-wasm/src/ops.rs",
+    "packages/smithers/flows/jj-wasm/src/protocol.rs",
+    "packages/smithers/flows/jj-wasm/src/status_render.rs",
+    "packages/smithers/flows/jj-wasm/tests/support/parser_corpus.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_abi_generated.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_abi_parser.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_abi.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_examples.rs",
+    "packages/smithers/flows/jj-wasm/tests/test_ops.rs"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/jj-wasm/Cargo.toml",
+      "sha256": "6413a0b35d1851f122a380a0308b964f7c13f2723dc87bd81d8e6a305cbee8b7",
+      "source": "[package]\nname = \"flows-jj\"\nversion = \"0.1.0\"\nedition = \"2024\"\nrust-version = \"1.89\"\nlicense = \"MIT\"\npublish = false\ndescription = \"The flows `Jj` contract ops over jj-lib, exported as a wasm32-wasip1 reactor ABI\"\n\n[lib]\n# `cdylib` produces the wasm32-wasip1 reactor module (`flows_jj.wasm`);\n# `rlib` keeps the crate linkable for native `cargo test`.\ncrate-type = [\"cdylib\", \"rlib\"]\n\n[dependencies]\nbstr = { version = \"1.12.1\", default-features = false, features = [\"std\"] }\nfutures = \"0.3.32\"\njj-lib = { workspace = true }\npollster = \"1.0.1\"\nserde = { version = \"1.0\", features = [\"derive\"] }\nserde_json = \"1.0.150\"\nthiserror = \"2.0.17\"\n\n[dev-dependencies]\ntempfile = \"3.27.0\"\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/flows/jj-wasm/PACKAGE.ts",
+      "sha256": "aac3a6ad04618ec33ece97bbc6f08a06178cc8c5051315aa084b58e6100af9b2",
+      "source": "/**\n * Targets for the `flows-jj` crate and the WebAssembly artifact it produces.\n *\n * The Rust gates and the wasm reproducibility gate are declared here, beside the\n * crate that owns them, so `smithers-build lint '//packages/smithers/flows/jj-wasm:cargoClippy'` is the\n * same command a pipeline runs. The cargo flags that make a check a gate live in\n * the target implementations, not here.\n *\n * The two lanes are addressed by exact label rather than by a recursive pattern\n * on purpose. The cargo gates need only a Rust toolchain; the wasm rebuild needs\n * an uncached one and takes minutes, so it is a separate CI job and a bare\n * `//packages/smithers/flows/jj-wasm` under the test verb would pull it into both.\n */\nimport { Smithers } from \"@smthrs/targets\"\n\n/**\n * The crate's Rust sources plus the workspace manifest and lockfile, consumed\n * by every native and WASM gate. jj-lib is a git dependency on one\n * smithersai/jj commit; `//Cargo.toml` and `//Cargo.lock` name that commit, so\n * they carry the jj source identity into each consumer's key.\n */\nconst nativeSources = Smithers.Filegroup({\n  cwd: \"packages/smithers/flows/jj-wasm\",\n  srcs: [Smithers.glob(\"src/**/*.rs\"), Smithers.file(\"//Cargo.toml\"), Smithers.file(\"//Cargo.lock\")]\n})\n\n/**\n * The crate sources, the workspace manifest, and the lockfile.\n *\n * jj-lib is a cargo git dependency on the smithersai/jj fork pinned to one\n * commit, so the manifest and lockfile are the whole of its declaration here\n * and a fresh checkout needs nothing beyond `cargo fetch`.\n */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/flows/jj-wasm/**/*.rs\"),\n  Smithers.file(\"//Cargo.toml\"),\n  Smithers.file(\"//Cargo.lock\"),\n  Smithers.file(\"//rust-toolchain.toml\")\n]\n\n/**\n * The crates.io index and download hosts (with the CDN names they resolve\n * through) and the GitHub hosts the jj fork's git dependency is fetched from.\n */\nconst destinations = [\n  \"index.crates.io\",\n  \"fastly-index.crates.io\",\n  \"static.crates.io\",\n  \"fastly-static.crates.io\",\n  \"dualstack.k.sni.global.fastly.net\",\n  \"crates.io\",\n  \"github.com\",\n  \"codeload.github.com\"\n]\n\n/**\n * Refuses any crate source `rustfmt` would rewrite.\n *\n * @since 0.1.0\n * @category lint\n */\nconst cargoFmt = Smithers.Cargo.Fmt({\n  workspace: true,\n  data: [...sources, nativeSources],\n  changes: [\"packages/smithers/flows/jj-wasm/**/*.rs\"]\n})\n\n/**\n * Runs clippy over every target with warnings promoted to errors.\n *\n * @since 0.1.0\n * @category lint\n */\nconst cargoClippy = Smithers.Cargo.Clippy({\n  package: \"flows-jj\",\n  allTargets: true,\n  locked: true,\n  denyWarnings: true,\n  data: [...sources, nativeSources],\n  destinations\n})\n\n/**\n * Runs the crate's native test suite against the pinned jj-lib.\n *\n * @since 0.1.0\n * @category test\n */\nconst cargoTest = Smithers.Cargo.Test({\n  package: \"flows-jj\",\n  locked: true,\n  data: [...sources, nativeSources],\n  destinations\n})\n\n/**\n * Checks the build script's own helpers: path remapping, the host guard, and\n * the reproducibility comparison.\n *\n * @since 0.1.0\n * @category test\n */\nconst buildScript = Smithers.NodeTest({\n  runner: Smithers.testRunner([Smithers.file(\"//packages/smithers/flows/jj-wasm/build-wasm.test.mjs\")]),\n  srcs: [Smithers.file(\"//packages/smithers/flows/jj-wasm/build-wasm.mjs\")],\n  deps: []\n})\n\n/**\n * Rebuilds `flows_jj.wasm` from source and byte-compares it against the\n * committed artifact.\n *\n * The committed module is a reproducibility contract: rebuilding it from source\n * with the pinned toolchain must give the same bytes. `--verify` is what makes\n * that one target — the script rebuilds into a scratch directory, compares, and\n * never overwrites the committed bytes. A scratch `CARGO_TARGET_DIR` keeps the\n * rebuild clean-room and exercises the script's own handling of it.\n *\n * This runner's host triple is part of the contract, so the script refuses to\n * run anywhere but the canonical host rather than report a byte diff.\n *\n * @since 0.1.0\n * @category test\n */\nconst wasmReproducibility = Smithers.NodeTest({\n  runner: Smithers.entrypoint(Smithers.file(\"//packages/smithers/flows/jj-wasm/build-wasm.mjs\"), [\"--verify\"]),\n  srcs: [...sources, Smithers.file(\"//packages/smithers/flows/jj/wasm/flows_jj.wasm\")],\n  deps: [nativeSources],\n  env: { CARGO_TARGET_DIR: \"target/wasm-reproducibility\" },\n  cwd: \".\"\n})\n\n/**\n * Security review of the wasm ABI, the jj ops it dispatches, and the build\n * script that produces the committed artifact.\n *\n * @since 0.1.0\n * @category security\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd: \"packages/smithers/flows/jj-wasm\",\n  include: [\"src/**\", \"build-wasm.mjs\", \"Cargo.toml\", \"//Cargo.toml\"],\n  checks: [\n    {\n      id: \"abi-memory-safety\",\n      title: \"The wasm exports never read or write outside a live allocation\",\n      threat: \"A host bridge bug or a hostile page script corrupts the module heap and turns one jj request into silent corruption of the user's repository.\",\n      lookFor: [\n        \"flows_jj_call building a slice from req_ptr/req_len with no check that the range lies inside linear memory.\",\n        \"flows_jj_free deallocating with a size that differs from the allocation, or the bridge freeing the same pointer twice.\",\n        \"A response pointer or length packed into the u64 return that does not match the buffer copied by copy_nonoverlapping.\"\n      ],\n      paths: [\"src/abi.rs\"]\n    },\n    {\n      id: \"abi-no-panic-escape\",\n      title: \"Every request, however malformed, returns a JSON err instead of aborting the instance\",\n      threat: \"A flow sends a crafted request that panics the reactor, which aborts on wasm32-wasip1 and kills the browser Jj instance mid-operation.\",\n      lookFor: [\n        \"An unwrap, expect, slice index or arithmetic overflow reachable from dispatch, since catch_unwind cannot catch it on wasm32-wasip1.\",\n        \"A jj-lib call in ops.rs whose documented panics are reachable from request fields (empty names, malformed hex, huge prefixes).\"\n      ],\n      paths: [\"src/abi.rs\", \"src/ops.rs\", \"src/protocol.rs\"]\n    },\n    {\n      id: \"workspace-path-containment\",\n      title: \"Request-supplied root and workspaceAdd path stay inside the intended repository slice\",\n      threat: \"A flow or model-chosen request creates or checks out a workspace at an arbitrary path, bounded only by the WASI preopen, overwriting unrelated state in the slice.\",\n      lookFor: [\n        \"workspace_add passing `path` to create_dir_all and init_workspace_with_existing_repo with no normalization or prefix check against root.\",\n        \"`root` or `path` accepted when relative or containing `..` components.\",\n        \"workspace_add accepting a path inside root/.jj, which nests a working copy inside the repository store.\"\n      ],\n      paths: [\"src/ops.rs\", \"src/protocol.rs\"]\n    },\n    {\n      id: \"checkout-symlink-escape\",\n      title: \"Snapshot, restore and checkout never follow a symlink out of the working copy\",\n      threat: \"A snapshot containing a symlink plus a file beneath it makes restore write outside the workspace root, since the crate relies on BrowserJj's assertNoSymlinks for this.\",\n      lookFor: [\n        \"restore or snapshot checking out a tree without jj-lib's symlink/parent-directory guard.\",\n        \"Symlink tree entries accepted by the crate itself rather than refused before check_out.\"\n      ],\n      paths: [\"src/ops.rs\"]\n    },\n    {\n      id: \"revision-resolution-scope\",\n      title: \"Revision strings resolve only to `@`, change id prefixes, or commit id prefixes\",\n      threat: \"A model-supplied revision string resolves to an unintended commit and restore overwrites the user's working copy with its content.\",\n      lookFor: [\n        \"resolve_revision accepting anything beyond `@`, reverse-hex change ids and hex commit ids.\",\n        \"A string that is both a valid reverse-hex change id prefix and a hex commit id prefix resolving to a different commit than the caller meant.\",\n        \"The commit-id branch resolving hidden (abandoned) commits while the change-id branch refuses them.\"\n      ],\n      paths: [\"src/ops.rs\"]\n    },\n    {\n      id: \"snapshot-secret-capture\",\n      title: \"Snapshots do not silently track and emit secret files\",\n      threat: \"A credential file dropped in the working copy is tracked by snapshot and returned in diff output to a model or log.\",\n      lookFor: [\n        \"snapshot_options using an empty base_ignores and EverythingMatcher, so files such as .env are tracked unless a .gitignore excludes them.\",\n        \"git_diff or status returning full contents of newly added files with no size or name filter.\"\n      ],\n      paths: [\"src/ops.rs\", \"src/diff_render.rs\", \"src/status_render.rs\"]\n    },\n    {\n      id: \"diff-output-forgery\",\n      title: \"Rendered diff and status text cannot forge headers from file names or contents\",\n      threat: \"A repository file whose name contains a newline or terminal escape forges `diff --git` headers or status lines that a reviewer, agent or patch applier trusts.\",\n      lookFor: [\n        \"as_internal_file_string interpolated into `diff --git`, `---`, `+++`, rename/copy or A/M/D lines without quoting control characters.\",\n        \"Raw ANSI escape bytes from file content passed through String::from_utf8_lossy into output shown in a terminal or TUI.\"\n      ],\n      paths: [\"src/diff_render.rs\", \"src/status_render.rs\"]\n    },\n    {\n      id: \"snapshot-resource-bounds\",\n      title: \"Snapshot and diff cannot exhaust wasm memory on large or numerous files\",\n      threat: \"A flow drops a huge file in the working copy and the snapshot or diff materializes it into memory, crashing the browser tab.\",\n      lookFor: [\n        \"snapshot_options setting max_new_file_size to u64::MAX with no other ceiling.\",\n        \"git_diff accumulating every materialized file into one String with no size cap.\"\n      ],\n      paths: [\"src/ops.rs\", \"src/diff_render.rs\"]\n    },\n    {\n      id: \"wasm-build-integrity\",\n      title: \"The committed wasm is built only from locked, pinned inputs\",\n      threat: \"A tampered dependency or ambient build environment injects code into flows_jj.wasm that every browser user then runs.\",\n      lookFor: [\n        \"cargo invoked without --locked, or the jj-lib git dependency in //Cargo.toml not pinned to a full rev.\",\n        \"buildEnvironment inheriting RUSTC_WRAPPER, RUSTC, CARGO_BUILD_RUSTC_WRAPPER or CARGO_TARGET_*_LINKER from the ambient env.\",\n        \"The --verify path writing over the committed artifact instead of comparing.\"\n      ],\n      paths: [\"build-wasm.mjs\", \"Cargo.toml\", \"//Cargo.toml\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: { nativeSources, buildScript, cargoClippy, cargoFmt, cargoTest, wasmReproducibility, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 142,
+          "text": "include: [\"src/**\", \"build-wasm.mjs\", \"Cargo.toml\", \"//Cargo.toml\"],"
+        },
+        {
+          "line": 202,
+          "text": "\"snapshot_options using an empty base_ignores and EverythingMatcher, so files such as .env are tracked unless a .gitignore excludes them.\","
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:buildScript",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/build-wasm.test.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/build-wasm.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:cargoClippy",
+      "rule": "Cargo.Clippy",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/**/*.rs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.lock"
+        },
+        {
+          "kind": "file",
+          "path": "rust-toolchain.toml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/jj-wasm:nativeSources"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:cargoFmt",
+      "rule": "Cargo.Fmt",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/**/*.rs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.lock"
+        },
+        {
+          "kind": "file",
+          "path": "rust-toolchain.toml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/jj-wasm:nativeSources"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:cargoTest",
+      "rule": "Cargo.Test",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/**/*.rs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.lock"
+        },
+        {
+          "kind": "file",
+          "path": "rust-toolchain.toml"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/jj-wasm:nativeSources"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:nativeSources",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/src/**/*.rs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.lock"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/jj-wasm/src/**",
+            "packages/smithers/flows/jj-wasm/build-wasm.mjs",
+            "packages/smithers/flows/jj-wasm/Cargo.toml",
+            "Cargo.toml"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/build-wasm.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/jj-wasm/src/**",
+            "packages/smithers/flows/jj-wasm/build-wasm.mjs",
+            "packages/smithers/flows/jj-wasm/Cargo.toml",
+            "Cargo.toml"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/build-wasm.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/jj-wasm",
+      "label": "//packages/smithers/flows/jj-wasm:wasmReproducibility",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj-wasm/build-wasm.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/jj-wasm/**/*.rs",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.toml"
+        },
+        {
+          "kind": "file",
+          "path": "Cargo.lock"
+        },
+        {
+          "kind": "file",
+          "path": "rust-toolchain.toml"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/jj/wasm/flows_jj.wasm"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/jj-wasm:nativeSources"
+      ]
+    }
+  ],
+  "areas": [
+    "build-wasm.mjs",
+    "examples/snapshot_restore.rs",
+    "src/abi.rs",
+    "src/diff_render.rs",
+    "src/error.rs",
+    "src/lib.rs",
+    "src/ops.rs",
+    "src/protocol.rs",
+    "src/status_render.rs"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

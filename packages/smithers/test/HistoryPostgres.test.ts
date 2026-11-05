@@ -1,5 +1,5 @@
-import { TestSchemas } from "@smthrs/database"
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
+import { TestSchemas } from "@smthrs/database"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import { NodeRuntime } from "@smthrs/platform-node"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"

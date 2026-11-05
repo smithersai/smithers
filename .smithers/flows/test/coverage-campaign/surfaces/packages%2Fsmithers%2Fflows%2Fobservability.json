@@ -1,1 +1,722 @@
-{"id":"packages/smithers/flows/observability","name":"@smthrs/observability","owner":{"declaration":"packages/smithers/flows/observability/package.json","assignedLane":null},"kind":"package","scripts":{"lint":"eslint src --max-warnings=0 && dprint check","format":"dprint fmt","build":"node scripts/build.mjs","check":"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit","circular":"node ../../../repo-targets/scripts/circular.mjs","test":"vitest","coverage":"vitest --coverage"},"exports":{"./package.json":"./package.json",".":"./src/index.ts","./BrowserOtel":"./src/BrowserOtel.ts","./Endpoint":"./src/Endpoint.ts","./FetchFailures":"./src/FetchFailures.ts","./JournalLogger":"./src/JournalLogger.ts","./LogFailures":"./src/LogFailures.ts","./Logger":"./src/Logger.ts","./Metric":"./src/Metric.ts","./NodeOtel":"./src/NodeOtel.ts","./Otel":"./src/Otel.ts","./Otlp":"./src/Otlp.ts","./Resource":"./src/Resource.ts","./index":"./src/index.ts"},"production":["eslint.config.js","PACKAGE.ts","scripts/build.mjs","src/BrowserOtel.ts","src/Endpoint.ts","src/FetchFailures.ts","src/index.ts","src/internal/exportRedaction.ts","src/internal/schemaIssuePath.ts","src/internal/split.ts","src/JournalLogger.ts","src/LogFailures.ts","src/Logger.ts","src/Metric.ts","src/NodeOtel.ts","src/Otel.ts","src/Otlp.ts","src/OtlpRelay.ts","src/Resource.ts","test/fixtures/artifact-cjs.cjs","test/fixtures/artifact-esm.mjs","test/fixtures/effectVersion.ts","test/fixtures/resources.ts","vitest.config.ts"],"tests":["packages/smithers/flows/observability/test/Artifacts.test.ts","packages/smithers/flows/observability/test/BrowserBundle.test.ts","packages/smithers/flows/observability/test/Endpoint.test.ts","packages/smithers/flows/observability/test/ExportRedaction.test.ts","packages/smithers/flows/observability/test/FetchFailures.test.ts","packages/smithers/flows/observability/test/fixtures/artifact-cjs.cjs","packages/smithers/flows/observability/test/fixtures/artifact-esm.mjs","packages/smithers/flows/observability/test/fixtures/effectVersion.ts","packages/smithers/flows/observability/test/fixtures/resources.ts","packages/smithers/flows/observability/test/HostOtel.test.ts","packages/smithers/flows/observability/test/JournalLogger.test.ts","packages/smithers/flows/observability/test/LogFailures.test.ts","packages/smithers/flows/observability/test/Logger.test.ts","packages/smithers/flows/observability/test/Metric.test.ts","packages/smithers/flows/observability/test/NoConsole.test.ts","packages/smithers/flows/observability/test/NodeOtelBudget.test.ts","packages/smithers/flows/observability/test/Otel.test.ts","packages/smithers/flows/observability/test/OtelInjected.test.ts","packages/smithers/flows/observability/test/Otlp.test.ts","packages/smithers/flows/observability/test/OtlpBudget.test.ts","packages/smithers/flows/observability/test/OtlpPrivacy.test.ts","packages/smithers/flows/observability/test/OtlpRelay.test.ts","packages/smithers/flows/observability/test/Redirect.test.ts","packages/smithers/flows/observability/test/Resource.test.ts","packages/smithers/flows/observability/test/ResourceBudget.test.ts","packages/smithers/flows/observability/test/SchemaIssuePath.test.ts","packages/smithers/flows/observability/test/Split.test.ts","packages/smithers/flows/observability/tsconfig.test.json"],"benchmarks":[],"platformPaths":["packages/smithers/flows/observability/docs/guides/relay-browser-telemetry.md","packages/smithers/flows/observability/src/BrowserOtel.ts","packages/smithers/flows/observability/src/NodeOtel.ts","packages/smithers/flows/observability/test/BrowserBundle.test.ts","packages/smithers/flows/observability/test/NodeOtelBudget.test.ts"],"ignoredCases":[],"configurations":[{"path":"packages/smithers/flows/observability/eslint.config.js","sha256":"d2be6edd0d1d3959497a75d1c686e822615a403d09d481490fef1bc1ee66446c","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/consistent-type-imports\": \"error\",\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"import/no-duplicates\": \"error\",\n      \"no-console\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":9,"text":"{ ignores: [\"**/dist\", \"**/coverage\"] },"}]},{"path":"packages/smithers/flows/observability/package.json","sha256":"afd10d83bff95e054d69ddf9fbe936caef1d1a6c079f55e3cf442fc23e715c47","source":"{\n  \"name\": \"@smthrs/observability\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/observability\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"observability\",\n    \"opentelemetry\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"observability\",\n    \"opentelemetry\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./BrowserOtel\": \"./src/BrowserOtel.ts\",\n    \"./Endpoint\": \"./src/Endpoint.ts\",\n    \"./FetchFailures\": \"./src/FetchFailures.ts\",\n    \"./JournalLogger\": \"./src/JournalLogger.ts\",\n    \"./LogFailures\": \"./src/LogFailures.ts\",\n    \"./Logger\": \"./src/Logger.ts\",\n    \"./Metric\": \"./src/Metric.ts\",\n    \"./NodeOtel\": \"./src/NodeOtel.ts\",\n    \"./Otel\": \"./src/Otel.ts\",\n    \"./Otlp\": \"./src/Otlp.ts\",\n    \"./Resource\": \"./src/Resource.ts\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./BrowserOtel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BrowserOtel.d.ts\",\n          \"default\": \"./dist/esm/BrowserOtel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BrowserOtel.d.ts\",\n          \"default\": \"./dist/cjs/BrowserOtel.js\"\n        }\n      },\n      \"./Endpoint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Endpoint.d.ts\",\n          \"default\": \"./dist/esm/Endpoint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Endpoint.d.ts\",\n          \"default\": \"./dist/cjs/Endpoint.js\"\n        }\n      },\n      \"./FetchFailures\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FetchFailures.d.ts\",\n          \"default\": \"./dist/esm/FetchFailures.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FetchFailures.d.ts\",\n          \"default\": \"./dist/cjs/FetchFailures.js\"\n        }\n      },\n      \"./JournalLogger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JournalLogger.d.ts\",\n          \"default\": \"./dist/esm/JournalLogger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JournalLogger.d.ts\",\n          \"default\": \"./dist/cjs/JournalLogger.js\"\n        }\n      },\n      \"./LogFailures\": {\n        \"import\": {\n          \"types\": \"./dist/esm/LogFailures.d.ts\",\n          \"default\": \"./dist/esm/LogFailures.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/LogFailures.d.ts\",\n          \"default\": \"./dist/cjs/LogFailures.js\"\n        }\n      },\n      \"./Logger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Logger.d.ts\",\n          \"default\": \"./dist/esm/Logger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Logger.d.ts\",\n          \"default\": \"./dist/cjs/Logger.js\"\n        }\n      },\n      \"./Metric\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Metric.d.ts\",\n          \"default\": \"./dist/esm/Metric.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Metric.d.ts\",\n          \"default\": \"./dist/cjs/Metric.js\"\n        }\n      },\n      \"./NodeOtel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NodeOtel.d.ts\",\n          \"default\": \"./dist/esm/NodeOtel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NodeOtel.d.ts\",\n          \"default\": \"./dist/cjs/NodeOtel.js\"\n        }\n      },\n      \"./Otel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Otel.d.ts\",\n          \"default\": \"./dist/esm/Otel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Otel.d.ts\",\n          \"default\": \"./dist/cjs/Otel.js\"\n        }\n      },\n      \"./Otlp\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Otlp.d.ts\",\n          \"default\": \"./dist/esm/Otlp.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Otlp.d.ts\",\n          \"default\": \"./dist/cjs/Otlp.js\"\n        }\n      },\n      \"./Resource\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Resource.d.ts\",\n          \"default\": \"./dist/esm/Resource.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Resource.d.ts\",\n          \"default\": \"./dist/cjs/Resource.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@opentelemetry/sdk-logs\": \"0.222.0\",\n    \"@opentelemetry/sdk-metrics\": \"2.11.0\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@effect/opentelemetry\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/opentelemetry\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@opentelemetry/api\": \"1.9.1\",\n    \"@opentelemetry/exporter-logs-otlp-http\": \"0.222.0\",\n    \"@opentelemetry/exporter-metrics-otlp-http\": \"0.222.0\",\n    \"@opentelemetry/exporter-trace-otlp-http\": \"0.222.0\",\n    \"@opentelemetry/sdk-trace-base\": \"2.11.0\",\n    \"@opentelemetry/sdk-trace-node\": \"2.11.0\",\n    \"@opentelemetry/sdk-trace-web\": \"2.11.0\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"@opentelemetry/api\": \">=1.9.1 <1.10.0\",\n    \"@opentelemetry/exporter-logs-otlp-http\": \">=0.222.0 <0.300.0\",\n    \"@opentelemetry/exporter-metrics-otlp-http\": \">=0.222.0 <0.300.0\",\n    \"@opentelemetry/exporter-trace-otlp-http\": \">=0.222.0 <0.300.0\",\n    \"@opentelemetry/sdk-trace-base\": \">=2.11.0 <3.0.0\",\n    \"@opentelemetry/sdk-trace-node\": \">=2.11.0 <3.0.0\",\n    \"@opentelemetry/sdk-trace-web\": \">=2.11.0 <3.0.0\",\n    \"effect\": \"4.0.5\"\n  },\n  \"peerDependenciesMeta\": {\n    \"@opentelemetry/exporter-logs-otlp-http\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/exporter-metrics-otlp-http\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/exporter-trace-otlp-http\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/sdk-trace-base\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/sdk-trace-node\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/sdk-trace-web\": {\n      \"optional\": true\n    }\n  }\n}\n","coverageDirectives":[{"line":208,"text":"\"coverage\": \"vitest --coverage\""},{"line":229,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/flows/observability/PACKAGE.ts","sha256":"b6018a53f5ff3023685aa2afc67b0037bfc2aabd351ddc49200c47626a7556a7","source":"import { BuildAndCheckTypeScriptPackage, SdkRules } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/flows/observability\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"docs/**\", \"README.md\"],\n  checks: [\n    {\n      id: \"collector-endpoint-validation\",\n      title: \"Every exporter endpoint is decoded by Endpoint.decode before any request is built\",\n      threat:\n        \"A misconfigured or attacker-influenced endpoint sends traces, logs, and exporter auth headers to a host the operator never named.\",\n      lookFor: [\n        \"An exporter URL built from options.baseUrl or options.endpoint without passing through Endpoint.decode first.\",\n        \"isAbsoluteHttpUrl accepting a value with userinfo, query, fragment, backslash, or a code unit at or below 0x20 that new URL repairs.\",\n        \"signalUrl or normalize producing a URL whose host differs from the decoded endpoint's host.\"\n      ],\n      paths: [\"src/Endpoint.ts\", \"src/Otlp.ts\", \"src/NodeOtel.ts\"]\n    },\n    {\n      id: \"exporter-header-secrecy\",\n      title: \"Exporter auth headers never reach logs, metrics, errors, or the journal\",\n      threat:\n        \"Anyone who can read ambient logs, the journal, or collector data obtains the vendor token passed in Otlp headers.\",\n      lookFor: [\n        \"The otlp_export_discarded warning or any refusal message including request headers, the request URL, or options.headers.\",\n        \"InvalidExporterEndpoint or InvalidResourceConfiguration messages that embed the rejected raw value instead of only its path.\"\n      ],\n      paths: [\"src/Otlp.ts\", \"src/Endpoint.ts\", \"src/Resource.ts\", \"src/internal/schemaIssuePath.ts\"]\n    },\n    {\n      id: \"ambient-env-isolation\",\n      title: \"Exported resources carry only validated explicit attributes, never ambient OTEL_* environment\",\n      threat:\n        \"A process environment variable such as OTEL_RESOURCE_ATTRIBUTES leaks host secrets or unbounded metadata into every export request.\",\n      lookFor: [\n        \"An Otlp.layerJson or NodeSdk.layer call not wrapped with ConfigProvider.layer(ConfigProvider.fromUnknown({})).\",\n        \"A new code path that reads process.env or Resource.layerFromEnv.\",\n        \"NodeOtel's OTLP*Exporter constructors, which read OTEL_EXPORTER_OTLP_*_HEADERS, TIMEOUT, and CLIENT_CERTIFICATE/KEY straight from process.env and bypass the ConfigProvider isolation, left undocumented or without explicit overrides.\"\n      ],\n      paths: [\"src/Otlp.ts\", \"src/NodeOtel.ts\", \"src/BrowserOtel.ts\", \"src/Otel.ts\", \"src/Resource.ts\"]\n    },\n    {\n      id: \"journal-log-redaction\",\n      title: \"Every record forwarded to the durable journal is snapshotted and passed through Redaction.redact\",\n      threat:\n        \"Secrets in log messages, annotations, or error causes of one run persist in the journal where other readers of that run can read them.\",\n      lookFor: [\n        \"makeLog or snapshotLog emitting a payload that skipped Redaction.redact, including the fallback records in the catch branch.\",\n        \"snapshotValue copying accessor (getter) properties or invoking user toString/toJSON instead of reading data descriptors only.\",\n        \"Error stack or cause fields projected without going through the redacted candidate.\"\n      ],\n      paths: [\"src/JournalLogger.ts\"]\n    },\n    {\n      id: \"journal-logger-resource-bounds\",\n      title: \"A hostile logged value cannot exhaust memory, CPU, or the forwarding queue\",\n      threat:\n        \"Code that logs attacker-controlled data (huge strings, deep or cyclic objects, throwing proxies) stalls or crashes the run's host process.\",\n      lookFor: [\n        \"A snapshot path that allocates before checking maximumSnapshotBytes, maximumSnapshotMembers, or maximumSnapshotDepth.\",\n        \"A Proxy trap or throwing getter escaping snapshotValue's try/catch into the logger callback.\",\n        \"The logger callback blocking or awaiting instead of refusing on a full queue.\",\n        \"Key truncation via boundedText letting two keys collide or a record written on a non-null prototype.\"\n      ],\n      paths: [\"src/JournalLogger.ts\"]\n    },\n    {\n      id: \"export-request-bounds\",\n      title: \"Resource and transport limits keep every export request bounded\",\n      threat:\n        \"A caller-supplied resource or a stalled collector makes every export oversized or pins unbounded in-flight requests, denying telemetry and memory to the host.\",\n      lookFor: [\n        \"encodedResourceBytes under-counting a value shape so a resource over maximumResourceBytes decodes.\",\n        \"boundedClient forwarding a request over maxRequestBytes or queueing past maxInFlight instead of discarding.\",\n        \"A request body type for which contentLength is undefined so the size check is skipped.\"\n      ],\n      paths: [\"src/Otlp.ts\", \"src/Resource.ts\"]\n    },\n    {\n      id: \"docs-copyable-secrets\",\n      title: \"Docs examples carry placeholder credentials and send tokens only over https\",\n      threat:\n        \"A user copying a docs snippet commits a real token or sends a bearer token to a plaintext http collector.\",\n      lookFor: [\n        \"A literal token, key, or password in docs other than a YOUR_TOKEN style placeholder.\",\n        \"An example pairing an authorization header with an http:// baseUrl.\"\n      ],\n      paths: [\"docs/**\", \"README.md\"]\n    }\n  ]\n})\n\n/** Will's SDK-wide rules (apps/mvp/docs/rules.md): `importRules` runs with `test`; `jevRules` is manual. */\nconst { importRules, jevRules } = SdkRules({ cwd, role: \"library\" })\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, importRules, jevRules, lib, lint, test, ...securityReview }\n})\n","coverageDirectives":[{"line":14,"text":"include: [\"src/**\", \"docs/**\", \"README.md\"],"},{"line":57,"text":"\"makeLog or snapshotLog emitting a payload that skipped Redaction.redact, including the fallback records in the catch branch.\","},{"line":84,"text":"\"A request body type for which contentLength is undefined so the size check is skipped.\""}]},{"path":"packages/smithers/flows/observability/tsconfig.json","sha256":"aeeaa8d00a8e3fe0fe8ea401839da10828bb502e81413835e76383cee35351fb","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":15,"text":"\"skipLibCheck\": true,"},{"line":26,"text":"\"includeSuggestionsInTsc\": false,"},{"line":27,"text":"\"ignoreEffectWarningsInTscExitCode\": true,"},{"line":28,"text":"\"ignoreEffectErrorsInTscExitCode\": true"},{"line":31,"text":"\"include\": [\"src/**/*\"]"}]},{"path":"packages/smithers/flows/observability/vitest.config.ts","sha256":"844a14ace04488eb8329fcb693cab974041769ebcd2f2522496b4ec751b1fb9b","source":"import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-observability-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n","coverageDirectives":[{"line":11,"text":"fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"},{"line":14,"text":"include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"},{"line":18,"text":"coverage: {"},{"line":20,"text":"provider: \"v8\","},{"line":21,"text":"reportsDirectory: join(tmpdir(), `flows-observability-coverage-${process.pid}`),"},{"line":22,"text":"include: [\"src/**/*.{ts,vibe}\"],"},{"line":23,"text":"thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"}]}],"targets":[{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.d.mts"},{"kind":"file","path":"packages/smithers/flows/observability/tsconfig.test.json"}],"dependencies":["//packages/smithers/flows/observability:lib"]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:circular","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/circular.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/flows/observability/README.md"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/README.md"},{"kind":"file","path":"packages/smithers/flows/observability/package.json"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:importRules","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/observability/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"file","path":"packages/repo-targets/src/ImportRulesCheck.ts"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:jevRules","rule":"JevLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/test/**/*.test.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/test/**/*.test.vibe","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:lib","rule":"TsBuild","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/build-library.mjs"},{"kind":"file","path":"packages/repo-targets/scripts/private-effect-adapters.mjs"},{"kind":"file","path":"packages/repo-targets/package.json"},{"kind":"file","path":"packages/smithers/scripts/compile-commonjs.mjs"},{"kind":"file","path":"packages/repo-targets/contracts/check-single-effect-version.mjs"},{"kind":"file","path":"packages/smithers/flows/observability/src/index.ts"},{"kind":"file","path":"packages/smithers/flows/observability/tsconfig.json"},{"kind":"file","path":"packages/smithers/flows/observability/scripts/build.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/observability/src/**","packages/smithers/flows/observability/docs/**","packages/smithers/flows/observability/README.md"]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/docs/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/README.md"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/flows/observability/src/**","packages/smithers/flows/observability/docs/**","packages/smithers/flows/observability/README.md"]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/docs/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/observability/README.md"}],"dependencies":[]},{"package":"packages/smithers/flows/observability","label":"//packages/smithers/flows/observability:test","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/observability/test/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/observability/test/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/coverage-teardown.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-process-environment.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/smithers/flows/observability/vitest.config.ts"}],"dependencies":["//packages/smithers/flows/observability:lib"]}],"areas":["PACKAGE.ts","eslint.config.js","scripts/build.mjs","src/BrowserOtel.ts","src/Endpoint.ts","src/FetchFailures.ts","src/JournalLogger.ts","src/LogFailures.ts","src/Logger.ts","src/Metric.ts","src/NodeOtel.ts","src/Otel.ts","src/Otlp.ts","src/OtlpRelay.ts","src/Resource.ts","src/index.ts","src/internal","test/fixtures","vitest.config.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/flows/observability",
+  "name": "@smthrs/observability",
+  "owner": {
+    "declaration": "packages/smithers/flows/observability/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./BrowserOtel": "./src/BrowserOtel.ts",
+    "./Endpoint": "./src/Endpoint.ts",
+    "./FetchFailures": "./src/FetchFailures.ts",
+    "./JournalLogger": "./src/JournalLogger.ts",
+    "./LogFailures": "./src/LogFailures.ts",
+    "./Logger": "./src/Logger.ts",
+    "./Metric": "./src/Metric.ts",
+    "./NodeOtel": "./src/NodeOtel.ts",
+    "./Otel": "./src/Otel.ts",
+    "./Otlp": "./src/Otlp.ts",
+    "./Resource": "./src/Resource.ts",
+    "./index": "./src/index.ts"
+  },
+  "production": [
+    "eslint.config.js",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/BrowserOtel.ts",
+    "src/Endpoint.ts",
+    "src/FetchFailures.ts",
+    "src/index.ts",
+    "src/internal/exportRedaction.ts",
+    "src/internal/schemaIssuePath.ts",
+    "src/internal/split.ts",
+    "src/JournalLogger.ts",
+    "src/LogFailures.ts",
+    "src/Logger.ts",
+    "src/Metric.ts",
+    "src/NodeOtel.ts",
+    "src/Otel.ts",
+    "src/Otlp.ts",
+    "src/OtlpRelay.ts",
+    "src/Resource.ts",
+    "test/fixtures/artifact-cjs.cjs",
+    "test/fixtures/artifact-esm.mjs",
+    "test/fixtures/effectVersion.ts",
+    "test/fixtures/resources.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/observability/test/Artifacts.test.ts",
+    "packages/smithers/flows/observability/test/BrowserBundle.test.ts",
+    "packages/smithers/flows/observability/test/Endpoint.test.ts",
+    "packages/smithers/flows/observability/test/ExportRedaction.test.ts",
+    "packages/smithers/flows/observability/test/FetchFailures.test.ts",
+    "packages/smithers/flows/observability/test/fixtures/artifact-cjs.cjs",
+    "packages/smithers/flows/observability/test/fixtures/artifact-esm.mjs",
+    "packages/smithers/flows/observability/test/fixtures/effectVersion.ts",
+    "packages/smithers/flows/observability/test/fixtures/resources.ts",
+    "packages/smithers/flows/observability/test/HostOtel.test.ts",
+    "packages/smithers/flows/observability/test/JournalLogger.test.ts",
+    "packages/smithers/flows/observability/test/LogFailures.test.ts",
+    "packages/smithers/flows/observability/test/Logger.test.ts",
+    "packages/smithers/flows/observability/test/Metric.test.ts",
+    "packages/smithers/flows/observability/test/NoConsole.test.ts",
+    "packages/smithers/flows/observability/test/NodeOtelBudget.test.ts",
+    "packages/smithers/flows/observability/test/Otel.test.ts",
+    "packages/smithers/flows/observability/test/OtelInjected.test.ts",
+    "packages/smithers/flows/observability/test/Otlp.test.ts",
+    "packages/smithers/flows/observability/test/OtlpBudget.test.ts",
+    "packages/smithers/flows/observability/test/OtlpPrivacy.test.ts",
+    "packages/smithers/flows/observability/test/OtlpRelay.test.ts",
+    "packages/smithers/flows/observability/test/Redirect.test.ts",
+    "packages/smithers/flows/observability/test/Resource.test.ts",
+    "packages/smithers/flows/observability/test/ResourceBudget.test.ts",
+    "packages/smithers/flows/observability/test/SchemaIssuePath.test.ts",
+    "packages/smithers/flows/observability/test/Split.test.ts",
+    "packages/smithers/flows/observability/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/observability/docs/guides/relay-browser-telemetry.md",
+    "packages/smithers/flows/observability/src/BrowserOtel.ts",
+    "packages/smithers/flows/observability/src/NodeOtel.ts",
+    "packages/smithers/flows/observability/test/BrowserBundle.test.ts",
+    "packages/smithers/flows/observability/test/NodeOtelBudget.test.ts"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/observability/eslint.config.js",
+      "sha256": "d2be6edd0d1d3959497a75d1c686e822615a403d09d481490fef1bc1ee66446c",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  { ignores: [\"**/dist\", \"**/coverage\"] },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: { parserOptions: { projectService: true, tsconfigRootDir: import.meta.dirname } },\n    settings: { \"import/resolver\": { typescript: { project: [\"./tsconfig.json\"] } } },\n    plugins: { unicorn },\n    rules: {\n      \"@typescript-eslint/consistent-type-imports\": \"error\",\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"import/no-duplicates\": \"error\",\n      \"no-console\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 9,
+          "text": "{ ignores: [\"**/dist\", \"**/coverage\"] },"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/observability/package.json",
+      "sha256": "afd10d83bff95e054d69ddf9fbe936caef1d1a6c079f55e3cf442fc23e715c47",
+      "source": "{\n  \"name\": \"@smthrs/observability\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Observability for flows: default OTLP export wiring plus Effect-native logger, metric, and OpenTelemetry SDK layers\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows/observability\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"observability\",\n    \"opentelemetry\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"observability\",\n    \"opentelemetry\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./BrowserOtel\": \"./src/BrowserOtel.ts\",\n    \"./Endpoint\": \"./src/Endpoint.ts\",\n    \"./FetchFailures\": \"./src/FetchFailures.ts\",\n    \"./JournalLogger\": \"./src/JournalLogger.ts\",\n    \"./LogFailures\": \"./src/LogFailures.ts\",\n    \"./Logger\": \"./src/Logger.ts\",\n    \"./Metric\": \"./src/Metric.ts\",\n    \"./NodeOtel\": \"./src/NodeOtel.ts\",\n    \"./Otel\": \"./src/Otel.ts\",\n    \"./Otlp\": \"./src/Otlp.ts\",\n    \"./Resource\": \"./src/Resource.ts\",\n    \"./index\": \"./src/index.ts\"\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./BrowserOtel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/BrowserOtel.d.ts\",\n          \"default\": \"./dist/esm/BrowserOtel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/BrowserOtel.d.ts\",\n          \"default\": \"./dist/cjs/BrowserOtel.js\"\n        }\n      },\n      \"./Endpoint\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Endpoint.d.ts\",\n          \"default\": \"./dist/esm/Endpoint.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Endpoint.d.ts\",\n          \"default\": \"./dist/cjs/Endpoint.js\"\n        }\n      },\n      \"./FetchFailures\": {\n        \"import\": {\n          \"types\": \"./dist/esm/FetchFailures.d.ts\",\n          \"default\": \"./dist/esm/FetchFailures.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/FetchFailures.d.ts\",\n          \"default\": \"./dist/cjs/FetchFailures.js\"\n        }\n      },\n      \"./JournalLogger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/JournalLogger.d.ts\",\n          \"default\": \"./dist/esm/JournalLogger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/JournalLogger.d.ts\",\n          \"default\": \"./dist/cjs/JournalLogger.js\"\n        }\n      },\n      \"./LogFailures\": {\n        \"import\": {\n          \"types\": \"./dist/esm/LogFailures.d.ts\",\n          \"default\": \"./dist/esm/LogFailures.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/LogFailures.d.ts\",\n          \"default\": \"./dist/cjs/LogFailures.js\"\n        }\n      },\n      \"./Logger\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Logger.d.ts\",\n          \"default\": \"./dist/esm/Logger.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Logger.d.ts\",\n          \"default\": \"./dist/cjs/Logger.js\"\n        }\n      },\n      \"./Metric\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Metric.d.ts\",\n          \"default\": \"./dist/esm/Metric.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Metric.d.ts\",\n          \"default\": \"./dist/cjs/Metric.js\"\n        }\n      },\n      \"./NodeOtel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/NodeOtel.d.ts\",\n          \"default\": \"./dist/esm/NodeOtel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/NodeOtel.d.ts\",\n          \"default\": \"./dist/cjs/NodeOtel.js\"\n        }\n      },\n      \"./Otel\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Otel.d.ts\",\n          \"default\": \"./dist/esm/Otel.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Otel.d.ts\",\n          \"default\": \"./dist/cjs/Otel.js\"\n        }\n      },\n      \"./Otlp\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Otlp.d.ts\",\n          \"default\": \"./dist/esm/Otlp.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Otlp.d.ts\",\n          \"default\": \"./dist/cjs/Otlp.js\"\n        }\n      },\n      \"./Resource\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Resource.d.ts\",\n          \"default\": \"./dist/esm/Resource.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Resource.d.ts\",\n          \"default\": \"./dist/cjs/Resource.js\"\n        }\n      },\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      }\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@opentelemetry/sdk-logs\": \"0.222.0\",\n    \"@opentelemetry/sdk-metrics\": \"2.11.0\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@effect/opentelemetry\": \"4.0.5\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/opentelemetry\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@opentelemetry/api\": \"1.9.1\",\n    \"@opentelemetry/exporter-logs-otlp-http\": \"0.222.0\",\n    \"@opentelemetry/exporter-metrics-otlp-http\": \"0.222.0\",\n    \"@opentelemetry/exporter-trace-otlp-http\": \"0.222.0\",\n    \"@opentelemetry/sdk-trace-base\": \"2.11.0\",\n    \"@opentelemetry/sdk-trace-node\": \"2.11.0\",\n    \"@opentelemetry/sdk-trace-web\": \"2.11.0\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"esbuild\": \"0.28.2\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\"\n  },\n  \"peerDependencies\": {\n    \"@opentelemetry/api\": \">=1.9.1 <1.10.0\",\n    \"@opentelemetry/exporter-logs-otlp-http\": \">=0.222.0 <0.300.0\",\n    \"@opentelemetry/exporter-metrics-otlp-http\": \">=0.222.0 <0.300.0\",\n    \"@opentelemetry/exporter-trace-otlp-http\": \">=0.222.0 <0.300.0\",\n    \"@opentelemetry/sdk-trace-base\": \">=2.11.0 <3.0.0\",\n    \"@opentelemetry/sdk-trace-node\": \">=2.11.0 <3.0.0\",\n    \"@opentelemetry/sdk-trace-web\": \">=2.11.0 <3.0.0\",\n    \"effect\": \"4.0.5\"\n  },\n  \"peerDependenciesMeta\": {\n    \"@opentelemetry/exporter-logs-otlp-http\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/exporter-metrics-otlp-http\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/exporter-trace-otlp-http\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/sdk-trace-base\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/sdk-trace-node\": {\n      \"optional\": true\n    },\n    \"@opentelemetry/sdk-trace-web\": {\n      \"optional\": true\n    }\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 208,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 229,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/observability/PACKAGE.ts",
+      "sha256": "b6018a53f5ff3023685aa2afc67b0037bfc2aabd351ddc49200c47626a7556a7",
+      "source": "import { BuildAndCheckTypeScriptPackage, SdkRules } from \"@smthrs/repo-targets\"\n/** Standard package targets plus package-owned documentation generation. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/flows/observability\"\n\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd\n})\n\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"docs/**\", \"README.md\"],\n  checks: [\n    {\n      id: \"collector-endpoint-validation\",\n      title: \"Every exporter endpoint is decoded by Endpoint.decode before any request is built\",\n      threat:\n        \"A misconfigured or attacker-influenced endpoint sends traces, logs, and exporter auth headers to a host the operator never named.\",\n      lookFor: [\n        \"An exporter URL built from options.baseUrl or options.endpoint without passing through Endpoint.decode first.\",\n        \"isAbsoluteHttpUrl accepting a value with userinfo, query, fragment, backslash, or a code unit at or below 0x20 that new URL repairs.\",\n        \"signalUrl or normalize producing a URL whose host differs from the decoded endpoint's host.\"\n      ],\n      paths: [\"src/Endpoint.ts\", \"src/Otlp.ts\", \"src/NodeOtel.ts\"]\n    },\n    {\n      id: \"exporter-header-secrecy\",\n      title: \"Exporter auth headers never reach logs, metrics, errors, or the journal\",\n      threat:\n        \"Anyone who can read ambient logs, the journal, or collector data obtains the vendor token passed in Otlp headers.\",\n      lookFor: [\n        \"The otlp_export_discarded warning or any refusal message including request headers, the request URL, or options.headers.\",\n        \"InvalidExporterEndpoint or InvalidResourceConfiguration messages that embed the rejected raw value instead of only its path.\"\n      ],\n      paths: [\"src/Otlp.ts\", \"src/Endpoint.ts\", \"src/Resource.ts\", \"src/internal/schemaIssuePath.ts\"]\n    },\n    {\n      id: \"ambient-env-isolation\",\n      title: \"Exported resources carry only validated explicit attributes, never ambient OTEL_* environment\",\n      threat:\n        \"A process environment variable such as OTEL_RESOURCE_ATTRIBUTES leaks host secrets or unbounded metadata into every export request.\",\n      lookFor: [\n        \"An Otlp.layerJson or NodeSdk.layer call not wrapped with ConfigProvider.layer(ConfigProvider.fromUnknown({})).\",\n        \"A new code path that reads process.env or Resource.layerFromEnv.\",\n        \"NodeOtel's OTLP*Exporter constructors, which read OTEL_EXPORTER_OTLP_*_HEADERS, TIMEOUT, and CLIENT_CERTIFICATE/KEY straight from process.env and bypass the ConfigProvider isolation, left undocumented or without explicit overrides.\"\n      ],\n      paths: [\"src/Otlp.ts\", \"src/NodeOtel.ts\", \"src/BrowserOtel.ts\", \"src/Otel.ts\", \"src/Resource.ts\"]\n    },\n    {\n      id: \"journal-log-redaction\",\n      title: \"Every record forwarded to the durable journal is snapshotted and passed through Redaction.redact\",\n      threat:\n        \"Secrets in log messages, annotations, or error causes of one run persist in the journal where other readers of that run can read them.\",\n      lookFor: [\n        \"makeLog or snapshotLog emitting a payload that skipped Redaction.redact, including the fallback records in the catch branch.\",\n        \"snapshotValue copying accessor (getter) properties or invoking user toString/toJSON instead of reading data descriptors only.\",\n        \"Error stack or cause fields projected without going through the redacted candidate.\"\n      ],\n      paths: [\"src/JournalLogger.ts\"]\n    },\n    {\n      id: \"journal-logger-resource-bounds\",\n      title: \"A hostile logged value cannot exhaust memory, CPU, or the forwarding queue\",\n      threat:\n        \"Code that logs attacker-controlled data (huge strings, deep or cyclic objects, throwing proxies) stalls or crashes the run's host process.\",\n      lookFor: [\n        \"A snapshot path that allocates before checking maximumSnapshotBytes, maximumSnapshotMembers, or maximumSnapshotDepth.\",\n        \"A Proxy trap or throwing getter escaping snapshotValue's try/catch into the logger callback.\",\n        \"The logger callback blocking or awaiting instead of refusing on a full queue.\",\n        \"Key truncation via boundedText letting two keys collide or a record written on a non-null prototype.\"\n      ],\n      paths: [\"src/JournalLogger.ts\"]\n    },\n    {\n      id: \"export-request-bounds\",\n      title: \"Resource and transport limits keep every export request bounded\",\n      threat:\n        \"A caller-supplied resource or a stalled collector makes every export oversized or pins unbounded in-flight requests, denying telemetry and memory to the host.\",\n      lookFor: [\n        \"encodedResourceBytes under-counting a value shape so a resource over maximumResourceBytes decodes.\",\n        \"boundedClient forwarding a request over maxRequestBytes or queueing past maxInFlight instead of discarding.\",\n        \"A request body type for which contentLength is undefined so the size check is skipped.\"\n      ],\n      paths: [\"src/Otlp.ts\", \"src/Resource.ts\"]\n    },\n    {\n      id: \"docs-copyable-secrets\",\n      title: \"Docs examples carry placeholder credentials and send tokens only over https\",\n      threat:\n        \"A user copying a docs snippet commits a real token or sends a bearer token to a plaintext http collector.\",\n      lookFor: [\n        \"A literal token, key, or password in docs other than a YOUR_TOKEN style placeholder.\",\n        \"An example pairing an authorization header with an http:// baseUrl.\"\n      ],\n      paths: [\"docs/**\", \"README.md\"]\n    }\n  ]\n})\n\n/** Will's SDK-wide rules (apps/mvp/docs/rules.md): `importRules` runs with `test`; `jevRules` is manual. */\nconst { importRules, jevRules } = SdkRules({ cwd, role: \"library\" })\n\nexport const Package = Smithers.Package({\n  targets: { check, circular, docs, docsFiles, fmt, importRules, jevRules, lib, lint, test, ...securityReview }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 14,
+          "text": "include: [\"src/**\", \"docs/**\", \"README.md\"],"
+        },
+        {
+          "line": 57,
+          "text": "\"makeLog or snapshotLog emitting a payload that skipped Redaction.redact, including the fallback records in the catch branch.\","
+        },
+        {
+          "line": 84,
+          "text": "\"A request body type for which contentLength is undefined so the size check is skipped.\""
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/observability/tsconfig.json",
+      "sha256": "aeeaa8d00a8e3fe0fe8ea401839da10828bb502e81413835e76383cee35351fb",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [{\n      \"name\": \"@effect/language-service\",\n      \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n      \"includeSuggestionsInTsc\": false,\n      \"ignoreEffectWarningsInTscExitCode\": true,\n      \"ignoreEffectErrorsInTscExitCode\": true\n    }]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 15,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 26,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 27,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 28,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true"
+        },
+        {
+          "line": 31,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/observability/vitest.config.ts",
+      "sha256": "844a14ace04488eb8329fcb693cab974041769ebcd2f2522496b4ec751b1fb9b",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],\n    environment: \"node\",\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      enabled: true,\n      provider: \"v8\",\n      reportsDirectory: join(tmpdir(), `flows-observability-coverage-${process.pid}`),\n      include: [\"src/**/*.{ts,vibe}\"],\n      thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "fileURLToPath(new URL(\"../../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 14,
+          "text": "include: [...configDefaults.include, \"**/*.{test,spec}.vibe\"],"
+        },
+        {
+          "line": 18,
+          "text": "coverage: {"
+        },
+        {
+          "line": 20,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 21,
+          "text": "reportsDirectory: join(tmpdir(), `flows-observability-coverage-${process.pid}`),"
+        },
+        {
+          "line": 22,
+          "text": "include: [\"src/**/*.{ts,vibe}\"],"
+        },
+        {
+          "line": 23,
+          "text": "thresholds: { branches: 100, functions: 100, lines: 100, statements: 100 }"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/observability:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:importRules",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:jevRules",
+      "rule": "JevLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/test/**/*.test.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/test/**/*.test.vibe",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/observability/src/**",
+            "packages/smithers/flows/observability/docs/**",
+            "packages/smithers/flows/observability/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/observability/src/**",
+            "packages/smithers/flows/observability/docs/**",
+            "packages/smithers/flows/observability/README.md"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows/observability",
+      "label": "//packages/smithers/flows/observability:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/observability/test/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/observability/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows/observability:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "scripts/build.mjs",
+    "src/BrowserOtel.ts",
+    "src/Endpoint.ts",
+    "src/FetchFailures.ts",
+    "src/JournalLogger.ts",
+    "src/LogFailures.ts",
+    "src/Logger.ts",
+    "src/Metric.ts",
+    "src/NodeOtel.ts",
+    "src/Otel.ts",
+    "src/Otlp.ts",
+    "src/OtlpRelay.ts",
+    "src/Resource.ts",
+    "src/index.ts",
+    "src/internal",
+    "test/fixtures",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

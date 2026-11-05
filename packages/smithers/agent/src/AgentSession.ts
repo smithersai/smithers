@@ -4898,11 +4898,13 @@ export const make = (
           // Pre-body reads and control claims fail through this same boundary.
           // Preserve their typed fields in the engine's JSON settlement too.
           // `settle` still observes the body's original failure before conversion.
-          Effect.catchCause((cause) => Effect.failCause(Cause.fromReasons(cause.reasons.map((reason) =>
-            Cause.isFailReason(reason)
-              ? Cause.makeFailReason(settlementFailure(reason.error)).annotate(Cause.reasonAnnotations(reason))
-              : reason
-          ))))
+          Effect.catchCause((cause) =>
+            Effect.failCause(Cause.fromReasons(cause.reasons.map((reason) =>
+              Cause.isFailReason(reason)
+                ? Cause.makeFailReason(settlementFailure(reason.error)).annotate(Cause.reasonAnnotations(reason))
+                : reason
+            )))
+          )
         )
       })).pipe(Scope.provide(scope))
 

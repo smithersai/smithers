@@ -1,1 +1,78 @@
-{"id":"apps/maintainer-site","name":"@smthrs/maintainer-site","owner":{"declaration":"apps/maintainer-site/package.json","assignedLane":null},"kind":"retained-tooling","scripts":{"build":"node build.mjs","serve":"node serve.mjs","test":"node --test markdown.test.mjs test/serve.test.mjs test/outline.test.mjs test/revision.test.mjs","test:queue":"node test/queue.e2e.mjs","test:code":"node test/code-tools.e2e.mjs","screenshots":"node screenshots.mjs"},"exports":null,"production":["build.mjs","client/queue.js","client/site.js","markdown.mjs","outline.mjs","queue/before/048f4496e186/registry.ts","queue/before/cc8671ae70c6/make.ts","queue/before/d3d8a7189344/Dispatch.ts","screenshots.mjs","serve.mjs"],"tests":["apps/maintainer-site/markdown.test.mjs","apps/maintainer-site/test/code-tools.e2e.mjs","apps/maintainer-site/test/fixtures/answers.jsonl","apps/maintainer-site/test/fixtures/before/chat-shortcut-old.chapters.json","apps/maintainer-site/test/fixtures/before/chat-shortcut-old.mp4","apps/maintainer-site/test/fixtures/before/shape-stream.old.ts","apps/maintainer-site/test/fixtures/before/status-old.html","apps/maintainer-site/test/fixtures/queue.json","apps/maintainer-site/test/fixtures/repo/design/status.css","apps/maintainer-site/test/fixtures/repo/design/status.html","apps/maintainer-site/test/fixtures/repo/design/status.svg","apps/maintainer-site/test/fixtures/repo/docs/README.md","apps/maintainer-site/test/fixtures/repo/gifs/flow.gif","apps/maintainer-site/test/fixtures/repo/src/shape-stream.css","apps/maintainer-site/test/fixtures/repo/src/shape-stream.ts","apps/maintainer-site/test/fixtures/repo/videos/chat-shortcut.chapters.json","apps/maintainer-site/test/fixtures/repo/videos/chat-shortcut.mp4","apps/maintainer-site/test/outline.test.mjs","apps/maintainer-site/test/queue.e2e.mjs","apps/maintainer-site/test/revision.test.mjs","apps/maintainer-site/test/serve.test.mjs"],"benchmarks":[],"platformPaths":[],"ignoredCases":[],"configurations":[{"path":"apps/maintainer-site/package.json","sha256":"bdc9c78c5c1ec80163038a5d3fcee0fdecbc970225a87ecfc4fc635050af1094","source":"{\n  \"name\": \"@smthrs/maintainer-site\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"description\": \"A local site for maintainers: Will's decision queue, every e2e flow GIF and a linked knowledge base of the repository's docs.\",\n  \"scripts\": {\n    \"build\": \"node build.mjs\",\n    \"serve\": \"node serve.mjs\",\n    \"test\": \"node --test markdown.test.mjs test/serve.test.mjs test/outline.test.mjs test/revision.test.mjs\",\n    \"test:queue\": \"node test/queue.e2e.mjs\",\n    \"test:code\": \"node test/code-tools.e2e.mjs\",\n    \"screenshots\": \"node screenshots.mjs\"\n  },\n  \"dependencies\": {\n    \"typescript\": \"5.9.3\"\n  }\n}\n","coverageDirectives":[]}],"targets":[],"areas":["build.mjs","client/queue.js","client/site.js","markdown.mjs","outline.mjs","queue/before","screenshots.mjs","serve.mjs"],"boundaries":["public-authoring"]}
+{
+  "id": "apps/maintainer-site",
+  "name": "@smthrs/maintainer-site",
+  "owner": {
+    "declaration": "apps/maintainer-site/package.json",
+    "assignedLane": null
+  },
+  "kind": "retained-tooling",
+  "scripts": {
+    "build": "node build.mjs",
+    "serve": "node serve.mjs",
+    "test": "node --test markdown.test.mjs test/serve.test.mjs test/outline.test.mjs test/revision.test.mjs",
+    "test:queue": "node test/queue.e2e.mjs",
+    "test:code": "node test/code-tools.e2e.mjs",
+    "screenshots": "node screenshots.mjs"
+  },
+  "exports": null,
+  "production": [
+    "build.mjs",
+    "client/queue.js",
+    "client/site.js",
+    "markdown.mjs",
+    "outline.mjs",
+    "queue/before/048f4496e186/registry.ts",
+    "queue/before/cc8671ae70c6/make.ts",
+    "queue/before/d3d8a7189344/Dispatch.ts",
+    "screenshots.mjs",
+    "serve.mjs"
+  ],
+  "tests": [
+    "apps/maintainer-site/markdown.test.mjs",
+    "apps/maintainer-site/test/code-tools.e2e.mjs",
+    "apps/maintainer-site/test/fixtures/answers.jsonl",
+    "apps/maintainer-site/test/fixtures/before/chat-shortcut-old.chapters.json",
+    "apps/maintainer-site/test/fixtures/before/chat-shortcut-old.mp4",
+    "apps/maintainer-site/test/fixtures/before/shape-stream.old.ts",
+    "apps/maintainer-site/test/fixtures/before/status-old.html",
+    "apps/maintainer-site/test/fixtures/queue.json",
+    "apps/maintainer-site/test/fixtures/repo/design/status.css",
+    "apps/maintainer-site/test/fixtures/repo/design/status.html",
+    "apps/maintainer-site/test/fixtures/repo/design/status.svg",
+    "apps/maintainer-site/test/fixtures/repo/docs/README.md",
+    "apps/maintainer-site/test/fixtures/repo/gifs/flow.gif",
+    "apps/maintainer-site/test/fixtures/repo/src/shape-stream.css",
+    "apps/maintainer-site/test/fixtures/repo/src/shape-stream.ts",
+    "apps/maintainer-site/test/fixtures/repo/videos/chat-shortcut.chapters.json",
+    "apps/maintainer-site/test/fixtures/repo/videos/chat-shortcut.mp4",
+    "apps/maintainer-site/test/outline.test.mjs",
+    "apps/maintainer-site/test/queue.e2e.mjs",
+    "apps/maintainer-site/test/revision.test.mjs",
+    "apps/maintainer-site/test/serve.test.mjs"
+  ],
+  "benchmarks": [],
+  "platformPaths": [],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "apps/maintainer-site/package.json",
+      "sha256": "bdc9c78c5c1ec80163038a5d3fcee0fdecbc970225a87ecfc4fc635050af1094",
+      "source": "{\n  \"name\": \"@smthrs/maintainer-site\",\n  \"version\": \"0.0.0\",\n  \"private\": true,\n  \"type\": \"module\",\n  \"description\": \"A local site for maintainers: Will's decision queue, every e2e flow GIF and a linked knowledge base of the repository's docs.\",\n  \"scripts\": {\n    \"build\": \"node build.mjs\",\n    \"serve\": \"node serve.mjs\",\n    \"test\": \"node --test markdown.test.mjs test/serve.test.mjs test/outline.test.mjs test/revision.test.mjs\",\n    \"test:queue\": \"node test/queue.e2e.mjs\",\n    \"test:code\": \"node test/code-tools.e2e.mjs\",\n    \"screenshots\": \"node screenshots.mjs\"\n  },\n  \"dependencies\": {\n    \"typescript\": \"5.9.3\"\n  }\n}\n",
+      "coverageDirectives": []
+    }
+  ],
+  "targets": [],
+  "areas": [
+    "build.mjs",
+    "client/queue.js",
+    "client/site.js",
+    "markdown.mjs",
+    "outline.mjs",
+    "queue/before",
+    "screenshots.mjs",
+    "serve.mjs"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

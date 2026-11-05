@@ -22,14 +22,22 @@ export default Flow.make(${JSON.stringify(name)}, {
   payload: {}, success: Schema.String, body: () => Node.succeed(${JSON.stringify(name)})
 })
 `
-const project = (use: (root: string, marker: string) => Effect.Effect<unknown, unknown, Executable.Catalog | Registry.Registry | FileSystem.FileSystem>) =>
+const project = (
+  use: (
+    root: string,
+    marker: string
+  ) => Effect.Effect<unknown, unknown, Executable.Catalog | Registry.Registry | FileSystem.FileSystem>
+) =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const root = yield* fs.makeTempDirectoryScoped({ directory: modules, prefix: ".deferred-" })
     const marker = `${root}/loaded.txt`
     for (const name of ["first", "later", "sibling"]) {
       yield* fs.makeDirectory(`${root}/.smithers/flows/${name}`, { recursive: true })
-      yield* fs.writeFileString(`${root}/.smithers/flows/${name}/flow.ts`, declaration(name, marker, name === "first" ? ["sibling"] : name === "sibling" ? ["first"] : []))
+      yield* fs.writeFileString(
+        `${root}/.smithers/flows/${name}/flow.ts`,
+        declaration(name, marker, name === "first" ? ["sibling"] : name === "sibling" ? ["first"] : [])
+      )
     }
     return yield* use(root, marker).pipe(Effect.provide(
       Executable.layer({ delegates: [], initialFlows: ["first"] }).pipe(
@@ -39,29 +47,35 @@ const project = (use: (root: string, marker: string) => Effect.Effect<unknown, u
     ))
   }).pipe(Effect.scoped, Effect.provide(platform))
 
-it.effect("loads selected bodies and cyclic collaborators, then loads a measured deferred body once", () => project((_root, marker) => Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem
-  const catalog = yield* Executable.Catalog
-  expect(catalog.executables.map((entry) => entry.descriptor.name).sort()).toEqual(["first", "sibling"])
-  expect(catalog.deferred?.map((entry) => entry.name)).toEqual(["later"])
-  expect(awaitedLines(yield* fs.readFileString(marker))).toEqual(["first", "sibling"])
-  const later = yield* catalog.load!("later")
-  expect(yield* catalog.load!("later")).toBe(later)
-  expect(catalog.deferred).toEqual([])
-  expect(awaitedLines(yield* fs.readFileString(marker))).toEqual(["first", "later", "sibling"])
-})))
+it.effect("loads selected bodies and cyclic collaborators, then loads a measured deferred body once", () =>
+  project((_root, marker) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const catalog = yield* Executable.Catalog
+      expect(catalog.executables.map((entry) => entry.descriptor.name).sort()).toEqual(["first", "sibling"])
+      expect(catalog.deferred?.map((entry) => entry.name)).toEqual(["later"])
+      expect(awaitedLines(yield* fs.readFileString(marker))).toEqual(["first", "sibling"])
+      const later = yield* catalog.load!("later")
+      expect(yield* catalog.load!("later")).toBe(later)
+      expect(catalog.deferred).toEqual([])
+      expect(awaitedLines(yield* fs.readFileString(marker))).toEqual(["first", "later", "sibling"])
+    })
+  ))
 
-it.effect("refuses changed deferred bytes and does not implicitly adopt a newly discovered body", () => project((root) => Effect.gen(function*() {
-  const fs = yield* FileSystem.FileSystem
-  const catalog = yield* Executable.Catalog
-  const registry = yield* Registry.Registry
-  yield* fs.writeFileString(`${root}/.smithers/flows/later/flow.ts`, declaration("later", `${root}/changed.txt`))
-  yield* fs.makeDirectory(`${root}/.smithers/flows/new`, { recursive: true })
-  yield* fs.writeFileString(`${root}/.smithers/flows/new/flow.ts`, declaration("new", `${root}/new.txt`))
-  yield* registry.refresh()
-  expect(yield* Effect.flip(catalog.load!("later"))).toMatchObject({ code: "body_unavailable" })
-  expect(yield* Effect.flip(catalog.load!("new"))).toMatchObject({ code: "body_unavailable" })
-  expect(yield* fs.exists(`${root}/changed.txt`)).toBe(false)
-  expect(yield* fs.exists(`${root}/new.txt`)).toBe(false)
-})))
+it.effect("refuses changed deferred bytes and does not implicitly adopt a newly discovered body", () =>
+  project((root) =>
+    Effect.gen(function*() {
+      const fs = yield* FileSystem.FileSystem
+      const catalog = yield* Executable.Catalog
+      const registry = yield* Registry.Registry
+      yield* fs.writeFileString(`${root}/.smithers/flows/later/flow.ts`, declaration("later", `${root}/changed.txt`))
+      yield* fs.makeDirectory(`${root}/.smithers/flows/new`, { recursive: true })
+      yield* fs.writeFileString(`${root}/.smithers/flows/new/flow.ts`, declaration("new", `${root}/new.txt`))
+      yield* registry.refresh()
+      expect(yield* Effect.flip(catalog.load!("later"))).toMatchObject({ code: "body_unavailable" })
+      expect(yield* Effect.flip(catalog.load!("new"))).toMatchObject({ code: "body_unavailable" })
+      expect(yield* fs.exists(`${root}/changed.txt`)).toBe(false)
+      expect(yield* fs.exists(`${root}/new.txt`)).toBe(false)
+    })
+  ))
 const awaitedLines = (text: string) => text.trim().split("\n").sort()

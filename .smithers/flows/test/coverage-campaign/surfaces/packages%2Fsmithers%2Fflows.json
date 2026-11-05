@@ -1,1 +1,753 @@
-{"id":"packages/smithers/flows","name":"@smthrs/flows","owner":{"declaration":"packages/smithers/flows/package.json","assignedLane":null},"kind":"package","scripts":{"lint":"eslint src --max-warnings=0 && dprint check","format":"dprint fmt","build":"node scripts/build.mjs","check":"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit","circular":"node ../../repo-targets/scripts/circular.mjs","test":"vitest","coverage":"vitest --coverage"},"exports":{"./package.json":"./package.json",".":"./src/index.ts","./internal/*":null,"./*/index":null,"./index":"./src/index.ts","./Runtime":"./src/Runtime.ts","./NodeRuntime":null,"./SandboxedFlow":null},"production":["eslint.config.js","examples/02-run-durably.ts","examples/03-crash-and-resume.ts","examples/04-retry-policy.ts","examples/05-time-travel-fork.ts","examples/06-time-travel-rewind.ts","examples/10-telemetry-export.ts","examples/16-fan-out-fan-in.ts","examples/16-gate-topology.ts","examples/16-project/.smithers/flows/gate/flow.ts","examples/17-review-loop.ts","examples/18-approval-and-signal.ts","examples/19-cancel-and-child-cleanup.ts","examples/21-cache-and-compensation.ts","examples/24-control-plane-and-gateway.ts","examples/33-delegation-trellis.ts","examples/34-human-task.ts","examples/34-poll.ts","examples/35-remote-cache.ts","examples/37-host-containment-host.ts","examples/37-host-containment.ts","examples/38-monitor-and-alert.ts","examples/40-sandbox-placement.ts","examples/41-sandboxed-flow.ts","examples/42-placed-deploy.ts","examples/park-run.ts","examples/sandboxed-child.ts","PACKAGE.ts","scripts/build.mjs","src/index.ts","src/internal/RegistryArgs.ts","src/internal/RuntimeOptions.ts","src/Runtime.ts","test/SpawnSpecifiers.ts","vitest.config.ts"],"tests":["packages/smithers/flows/test/AuthoringErrors.test.ts","packages/smithers/flows/test/e2e-authoring.test.ts","packages/smithers/flows/test/examples/02-run-durably.test.ts","packages/smithers/flows/test/examples/03-crash-and-resume.test.ts","packages/smithers/flows/test/examples/04-retry-policy.test.ts","packages/smithers/flows/test/examples/05-time-travel-fork.test.ts","packages/smithers/flows/test/examples/06-time-travel-rewind.test.ts","packages/smithers/flows/test/examples/10-telemetry-export.test.ts","packages/smithers/flows/test/examples/16-fan-out-fan-in.test.ts","packages/smithers/flows/test/examples/17-review-loop.test.ts","packages/smithers/flows/test/examples/18-approval-and-signal.test.ts","packages/smithers/flows/test/examples/19-cancel-and-child-cleanup.test.ts","packages/smithers/flows/test/examples/21-cache-and-compensation.test.ts","packages/smithers/flows/test/examples/24-control-plane-and-gateway.test.ts","packages/smithers/flows/test/examples/33-delegation-trellis.test.ts","packages/smithers/flows/test/examples/34-human-task.test.ts","packages/smithers/flows/test/examples/34-poll.test.ts","packages/smithers/flows/test/examples/35-remote-cache.test.ts","packages/smithers/flows/test/examples/37-host-containment.test.ts","packages/smithers/flows/test/examples/38-monitor-and-alert.test.ts","packages/smithers/flows/test/examples/40-sandbox-placement.test.ts","packages/smithers/flows/test/examples/41-sandboxed-flow.test.ts","packages/smithers/flows/test/examples/42-placed-deploy.test.ts","packages/smithers/flows/test/examples/park-run.test.ts","packages/smithers/flows/test/index.test.ts","packages/smithers/flows/test/RawErrorSites.test.ts","packages/smithers/flows/test/Runtime.test.ts","packages/smithers/flows/test/SandboxRetry.test.ts","packages/smithers/flows/test/SpawnSpecifiers.test.ts","packages/smithers/flows/test/SpawnSpecifiers.ts","packages/smithers/flows/test/vitestCoveragePaths.test.ts","packages/smithers/flows/tsconfig.test.json"],"benchmarks":[],"platformPaths":["packages/smithers/flows/docs/guides/stand-up-a-node-runtime.md"],"ignoredCases":[],"configurations":[{"path":"packages/smithers/flows/eslint.config.js","sha256":"876fbacb2be2f5db92d214f3271d5443d6481b1455e74d3684973d0e883ff56e","source":"import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n","coverageDirectives":[{"line":10,"text":"ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"},{"line":41,"text":"\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"}]},{"path":"packages/smithers/flows/package.json","sha256":"acc620dd671834d7e41ea2682cd2b24056df8113ebd49a3c09280bfa9234613f","source":"{\n  \"name\": \"@smthrs/flows\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Barrel package re-exporting the whole @smthrs durable flow engine and its platform-neutral Runtime\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"durable-execution\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"durable-execution\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./index\": \"./src/index.ts\",\n    \"./Runtime\": \"./src/Runtime.ts\",\n    \"./NodeRuntime\": null,\n    \"./SandboxedFlow\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"dist/vendor/**\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./Runtime\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Runtime.d.ts\",\n          \"default\": \"./dist/esm/Runtime.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Runtime.d.ts\",\n          \"default\": \"./dist/cjs/Runtime.js\"\n        }\n      },\n      \"./NodeRuntime\": null,\n      \"./SandboxedFlow\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/artifacts\": \"1.0.0-rc.16\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/crypto\": \"1.0.0-rc.16\",\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@smthrs/engine\": \"1.0.0-rc.16\",\n    \"@smthrs/engine-store\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/jj\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/keys\": \"1.0.0-rc.16\",\n    \"@smthrs/observability\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"1.0.0-rc.16\",\n    \"@smthrs/plan-store\": \"1.0.0-rc.16\",\n    \"@smthrs/run-store\": \"1.0.0-rc.16\",\n    \"@smthrs/sandbox\": \"1.0.0-rc.16\",\n    \"@smthrs/step-cache\": \"1.0.0-rc.16\",\n    \"@smthrs/sync\": \"1.0.0-rc.16\",\n    \"@smthrs/time-travel\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/platform-node-shared\": \"4.0.5\",\n    \"@effect/sql-pg\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/control\": \"1.0.0-rc.16\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\",\n    \"@smthrs/notifications\": \"1.0.0-rc.16\",\n    \"@smthrs/patterns\": \"1.0.0-rc.16\",\n    \"@smthrs/registry\": \"1.0.0-rc.16\",\n    \"@smthrs/targets\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"microsandbox\": \"0.6.16\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n","coverageDirectives":[{"line":107,"text":"\"coverage\": \"vitest --coverage\""},{"line":146,"text":"\"@vitest/coverage-v8\": \"5.0.0\","}]},{"path":"packages/smithers/flows/PACKAGE.ts","sha256":"43b391aa464c5d1eff5603b2c8fb87a8cd87a8942fac6cd2ffad8cf2d511e617","source":"import {\n  BuildAndCheckTypeScriptPackage,\n  ImportRules,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode\n} from \"@smthrs/repo-targets\"\n/** Standard package targets. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/flows\"\n\n// examples/ is type-checked and formatted with the tests, and run by\n// test/examples/; each example is documentation users copy, so it is not held\n// to the library lint rules.\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd,\n  testSources: Smithers.glob(\"{test,examples}/**/*.ts\"),\n  // The example projects examples 16 and 24 discover flows in read their\n  // markdown descriptors off disk at run time.\n  testData: [\"examples/**/*.mdx\"]\n})\n\nconst importRules = ImportRules({\n  cwd: \"packages/smithers/flows\",\n  rules: [{\n    kind: \"forbidCalls\",\n    files: [\"test/examples/24-control-plane-and-gateway.test.ts\"],\n    callees: [\"setTimeout\", \"*.sleep\", \"*.waitForTimeout\", \"vi.mock\", \"vi.doMock\", \"jest.mock\"],\n    because: \"test.behavioral: control HTTP host tests use real services and completion signals.\"\n  }]\n})\n\n/**\n * Changed public APIs against the package README, every docs page (concepts\n * and guides included), and the site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/flows.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })\n\n// Nested packages (engine, kernel, sandbox, ...) own their own reviews; these\n// globs reach only this barrel's src/, docs/, scripts/ and examples. Users copy\n// the examples, so a leak or an unguarded listener in one becomes one in every\n// project built from it.\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"docs/**\", \"scripts/**\", \"examples/**\", \"test/examples/**\"],\n  checks: [\n    {\n      id: \"control-server-auth\",\n      title: \"The example control server authenticates every HTTP and WebSocket call\",\n      threat:\n        \"A local process or a web page in the user's browser plans, approves, or launches flows on the example control plane.\",\n      lookFor: [\n        \"The bearer credential in serve() not drawn from randomBytes(32), or reused, logged, or returned in Summary.\",\n        \"The Host/Origin middleware running after routing or the WebSocket upgrade, or accepting a mismatched Origin.\",\n        \"NodeHttpServer.layer bound to anything other than 127.0.0.1, or a route mounted outside ControlRpcs.layerBearerAuth.\"\n      ],\n      paths: [\"examples/24-control-plane-and-gateway.ts\", \"examples/24-project/**\", \"test/examples/24-*.test.ts\"]\n    },\n    {\n      id: \"example-process-containment-scope\",\n      title: \"Example processes run with the narrowest capability and are reaped\",\n      threat:\n        \"A copied example grants flows unrestricted process spawn on the host or leaves orphaned process groups running after a crash.\",\n      lookFor: [\n        \"A Capability.Permission.Rule allowing proc:spawn with resource '*' in an engine that registers flows other than the fixed sleep/containment demos of examples 19 and 37.\",\n        \"A child spawned with a shell string built from payload or argv values.\",\n        \"A sandbox session root or captureWork result applied to the host workspace without the caller deciding.\",\n        \"A spawned child with no acquireRelease finalizer or ProcessLedger record.\"\n      ],\n      paths: [\n        \"examples/19-cancel-and-child-cleanup.ts\",\n        \"examples/37-host-containment.ts\",\n        \"examples/37-host-containment-host.ts\",\n        \"examples/40-sandbox-placement.ts\",\n        \"examples/41-sandboxed-flow.ts\",\n        \"examples/sandboxed-child.ts\"\n      ]\n    },\n    {\n      id: \"example-fixture-servers-loopback\",\n      title: \"Example fixture servers bind loopback and survive malformed input\",\n      threat:\n        \"A host on the network reads or poisons the example action cache, or one malformed request crashes the fixture mid-run.\",\n      lookFor: [\n        \"server.listen or a telemetry baseUrl bound to a non-loopback address.\",\n        \"decodeURIComponent or JSON.parse on request input with no try/catch in a request or line handler.\",\n        \"A PUT /ac/{key} accepted without a body size limit.\"\n      ],\n      paths: [\"examples/35-remote-cache.ts\", \"examples/10-telemetry-export.ts\"]\n    },\n    {\n      id: \"example-agent-prompt-payload\",\n      title: \"Payload text in a model-authored plan cannot widen the work a round may run\",\n      threat:\n        \"A flow caller injects instructions through a prompt-interpolated payload field and makes the plan author schedule work beyond its declared envelope.\",\n      lookFor: [\n        \"A scripted model that splices prompt text into plan code without JSON.stringify.\",\n        \"Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider.\"\n      ],\n      paths: [\"examples/33-delegation-trellis.ts\"]\n    },\n    {\n      id: \"runtime-guarded-layering\",\n      title: \"The injected Runtime keeps the engine's privileged jj apart from what flow bodies resolve\",\n      threat:\n        \"A host composing Runtime.layer hands flow bodies the unguarded repository the engine snapshots with, so an action bypasses its capability ceiling.\",\n      lookFor: [\n        \"privilegedJj provided beside the engine instead of only to EngineStore.layerWithPrivilegedJj.\",\n        \"Caller-supplied options read after validate returns, so a caller can change them after construction.\"\n      ],\n      paths: [\"src/Runtime.ts\", \"src/internal/RuntimeOptions.ts\"]\n    },\n    {\n      id: \"docs-copyable-snippets\",\n      title: \"Copyable docs snippets do not teach unsafe sandbox or runtime configuration\",\n      threat:\n        \"A user copying a guide ships shared session keys, applies an unreviewed guest diff to the host, or hardcodes a credential.\",\n      lookFor: [\n        \"A snippet that applies Result.diff to the host workspace without a review or path check.\",\n        \"A snippet with a literal API key, DSN password, or token, or a session key constant across executions.\"\n      ],\n      paths: [\"docs/**\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    fmt,\n    lib,\n    lint,\n    importRules,\n    test,\n    ...securityReview\n  }\n})\n","coverageDirectives":[{"line":36,"text":"* and guides included), and the site API reference page."},{"line":64,"text":"include: [\"src/**\", \"docs/**\", \"scripts/**\", \"examples/**\", \"test/examples/**\"],"}]},{"path":"packages/smithers/flows/tsconfig.json","sha256":"0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8","source":"{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":17,"text":"\"skipLibCheck\": true,"},{"line":30,"text":"\"includeSuggestionsInTsc\": false,"},{"line":31,"text":"\"ignoreEffectWarningsInTscExitCode\": true,"},{"line":32,"text":"\"ignoreEffectErrorsInTscExitCode\": true,"},{"line":39,"text":"\"include\": [\"src/**/*\"]"}]},{"path":"packages/smithers/flows/vitest.config.ts","sha256":"7cc2f0d598ac7ae593ab35c3528a4024b74094622447524e55035c3001666c8a","source":"import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude],\n    environment: \"node\",\n    // These files launch process trees, guest runtimes, and containers. Keep\n    // their host resources serial under coverage as well as ordinary tests;\n    // core-count worker fanout made startup exceed otherwise sufficient bounds.\n    fileParallelism: false,\n    // Retain a finite wall-clock guard for hangs. Individual integration\n    // journeys declare their own process/container bounds.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      // `enabled: true` makes every `vitest` run compute and ENFORCE these\n      // thresholds: a red gate fails the run (issues #20/#32).\n      enabled: true,\n      provider: \"v8\",\n      // Scope the report directory and the `.tmp` scratch dir the v8\n      // provider clears at run start and reads at run end to this process.\n      // The default `./coverage` is shared, so two concurrent `vitest run`\n      // invocations destroy each other: one aborts with a removed-coverage-\n      // directory error and the other enforces 100% against a partial\n      // profile with every test passing (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-flows-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // Nested packages have their own coverage gates. Absolute patterns keep\n      // checkout ancestors such as `review-harness` out of exclusion matching.\n      exclude: [\n        \"artifacts/**\",\n        \"canonical/**\",\n        \"capability/**\",\n        \"core/**\",\n        \"crypto/**\",\n        \"database/**\",\n        \"engine/**\",\n        \"engine-store/**\",\n        \"flow/**\",\n        \"jj/**\",\n        \"journal/**\",\n        \"kernel/**\",\n        \"keys/**\",\n        \"observability/**\",\n        \"patterns/**\",\n        \"plan/**\",\n        \"platform-browser/**\",\n        \"platform-bun/**\",\n        \"platform-node/**\",\n        \"run-store/**\",\n        \"sandbox/**\",\n        \"step-cache/**\",\n        \"sync/**\",\n        \"time-travel/**\"\n      ],\n      // Accurate, enforceable floors measured against the committed suite.\n      // Ratchet upward as tests land; never lower without a written\n      // justification.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n","coverageDirectives":[{"line":12,"text":"fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"},{"line":15,"text":"include: [\"test/**/*.test.{ts,vibe}\"],"},{"line":16,"text":"exclude: [...configDefaults.exclude],"},{"line":19,"text":"// their host resources serial under coverage as well as ordinary tests;"},{"line":26,"text":"coverage: {"},{"line":28,"text":"// thresholds: a red gate fails the run (issues #20/#32)."},{"line":30,"text":"provider: \"v8\","},{"line":31,"text":"// Scope the report directory and the `.tmp` scratch dir the v8"},{"line":33,"text":"// The default `./coverage` is shared, so two concurrent `vitest run`"},{"line":34,"text":"// invocations destroy each other: one aborts with a removed-coverage-"},{"line":37,"text":"reportsDirectory: join(tmpdir(), `flows-flows-coverage-${process.pid}`),"},{"line":38,"text":"include: [\"src/**\"],"},{"line":39,"text":"// Nested packages have their own coverage gates. Absolute patterns keep"},{"line":41,"text":"exclude: ["},{"line":70,"text":"thresholds: {"}]}],"targets":[{"package":"packages/smithers/flows","label":"//packages/smithers/flows:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/{test,examples}/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/flows/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.d.mts"},{"kind":"file","path":"packages/smithers/flows/tsconfig.test.json"}],"dependencies":["//packages/smithers/flows:lib"]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:circular","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/circular.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/tsconfig.json"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"},{"kind":"file","path":"packages/repo-targets/scripts/workspace-packages.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:docs","rule":"DocsParity","kinds":["docs"],"inputs":[{"kind":"file","path":"packages/smithers/flows/README.md"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/flows/README.md"},{"kind":"file","path":"packages/smithers/flows/package.json"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:fmt","rule":"Dprint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/{test,examples}/**/*.ts","exclude":[]},{"kind":"file","path":"packages/smithers/flows/dprint.json"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:importRules","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"glob","pattern":"packages/smithers/flows/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"file","path":"packages/repo-targets/src/ImportRulesCheck.ts"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:lib","rule":"TsBuild","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/build-library.mjs"},{"kind":"file","path":"packages/repo-targets/scripts/private-effect-adapters.mjs"},{"kind":"file","path":"packages/repo-targets/package.json"},{"kind":"file","path":"packages/smithers/scripts/compile-commonjs.mjs"},{"kind":"file","path":"packages/repo-targets/contracts/check-single-effect-version.mjs"},{"kind":"file","path":"packages/smithers/flows/src/index.ts"},{"kind":"file","path":"packages/smithers/flows/tsconfig.json"},{"kind":"file","path":"packages/smithers/flows/scripts/build.mjs"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:lint","rule":"EsLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]},{"kind":"file","path":"packages/smithers/flows/eslint.config.js"},{"kind":"file","path":"eslint.jsdoc.js"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:reviewDocsAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/src/**"]},{"kind":"glob","pattern":"packages/smithers/flows/src/**","exclude":[]},{"kind":"file","path":"packages/smithers/flows/README.md"},{"kind":"glob","pattern":"packages/smithers/flows/docs/**/*.md","exclude":[]},{"kind":"file","path":"apps/site/src/content/docs/docs/reference/api/flows.mdx"}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:reviewJsdocAgainstCode","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/src/**/*.{ts,vibe}"]},{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/flows/src/**","packages/smithers/flows/docs/**","packages/smithers/flows/scripts/**","packages/smithers/flows/examples/**","packages/smithers/flows/test/examples/**"]},{"kind":"glob","pattern":"packages/smithers/flows/src/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/docs/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/scripts/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/examples/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/test/examples/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/flows/src/**","packages/smithers/flows/docs/**","packages/smithers/flows/scripts/**","packages/smithers/flows/examples/**","packages/smithers/flows/test/examples/**"]},{"kind":"glob","pattern":"packages/smithers/flows/src/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/docs/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/scripts/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/examples/**","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/test/examples/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/flows","label":"//packages/smithers/flows:test","rule":"Vitest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/flows/test/**/*.test.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/src/**/*.{ts,vibe}","exclude":[]},{"kind":"glob","pattern":"packages/smithers/flows/{test,examples}/**/*.ts","exclude":[]},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/coverage-teardown.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-process-environment.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/test-schemas.ts"},{"kind":"file","path":"packages/smithers/flows/database/src/TestSchemas.ts"},{"kind":"file","path":"packages/repo-targets/test-utils/vitest-root-temp.mjs"},{"kind":"file","path":"packages/repo-targets/test-utils/effect-property.d.mts"},{"kind":"glob","pattern":"packages/smithers/flows/examples/**/*.mdx","exclude":[]},{"kind":"file","path":"packages/smithers/flows/vitest.config.ts"}],"dependencies":["//packages/smithers/flows:lib"]}],"areas":["PACKAGE.ts","eslint.config.js","examples/02-run-durably.ts","examples/03-crash-and-resume.ts","examples/04-retry-policy.ts","examples/05-time-travel-fork.ts","examples/06-time-travel-rewind.ts","examples/10-telemetry-export.ts","examples/16-fan-out-fan-in.ts","examples/16-gate-topology.ts","examples/16-project","examples/17-review-loop.ts","examples/18-approval-and-signal.ts","examples/19-cancel-and-child-cleanup.ts","examples/21-cache-and-compensation.ts","examples/24-control-plane-and-gateway.ts","examples/33-delegation-trellis.ts","examples/34-human-task.ts","examples/34-poll.ts","examples/35-remote-cache.ts","examples/37-host-containment-host.ts","examples/37-host-containment.ts","examples/38-monitor-and-alert.ts","examples/40-sandbox-placement.ts","examples/41-sandboxed-flow.ts","examples/42-placed-deploy.ts","examples/park-run.ts","examples/sandboxed-child.ts","scripts/build.mjs","src/Runtime.ts","src/index.ts","src/internal","test/SpawnSpecifiers.ts","vitest.config.ts"],"boundaries":["public-authoring"]}
+{
+  "id": "packages/smithers/flows",
+  "name": "@smthrs/flows",
+  "owner": {
+    "declaration": "packages/smithers/flows/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "lint": "eslint src --max-warnings=0 && dprint check",
+    "format": "dprint fmt",
+    "build": "node scripts/build.mjs",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "circular": "node ../../repo-targets/scripts/circular.mjs",
+    "test": "vitest",
+    "coverage": "vitest --coverage"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": "./src/index.ts",
+    "./internal/*": null,
+    "./*/index": null,
+    "./index": "./src/index.ts",
+    "./Runtime": "./src/Runtime.ts",
+    "./NodeRuntime": null,
+    "./SandboxedFlow": null
+  },
+  "production": [
+    "eslint.config.js",
+    "examples/02-run-durably.ts",
+    "examples/03-crash-and-resume.ts",
+    "examples/04-retry-policy.ts",
+    "examples/05-time-travel-fork.ts",
+    "examples/06-time-travel-rewind.ts",
+    "examples/10-telemetry-export.ts",
+    "examples/16-fan-out-fan-in.ts",
+    "examples/16-gate-topology.ts",
+    "examples/16-project/.smithers/flows/gate/flow.ts",
+    "examples/17-review-loop.ts",
+    "examples/18-approval-and-signal.ts",
+    "examples/19-cancel-and-child-cleanup.ts",
+    "examples/21-cache-and-compensation.ts",
+    "examples/24-control-plane-and-gateway.ts",
+    "examples/33-delegation-trellis.ts",
+    "examples/34-human-task.ts",
+    "examples/34-poll.ts",
+    "examples/35-remote-cache.ts",
+    "examples/37-host-containment-host.ts",
+    "examples/37-host-containment.ts",
+    "examples/38-monitor-and-alert.ts",
+    "examples/40-sandbox-placement.ts",
+    "examples/41-sandboxed-flow.ts",
+    "examples/42-placed-deploy.ts",
+    "examples/park-run.ts",
+    "examples/sandboxed-child.ts",
+    "PACKAGE.ts",
+    "scripts/build.mjs",
+    "src/index.ts",
+    "src/internal/RegistryArgs.ts",
+    "src/internal/RuntimeOptions.ts",
+    "src/Runtime.ts",
+    "test/SpawnSpecifiers.ts",
+    "vitest.config.ts"
+  ],
+  "tests": [
+    "packages/smithers/flows/test/AuthoringErrors.test.ts",
+    "packages/smithers/flows/test/e2e-authoring.test.ts",
+    "packages/smithers/flows/test/examples/02-run-durably.test.ts",
+    "packages/smithers/flows/test/examples/03-crash-and-resume.test.ts",
+    "packages/smithers/flows/test/examples/04-retry-policy.test.ts",
+    "packages/smithers/flows/test/examples/05-time-travel-fork.test.ts",
+    "packages/smithers/flows/test/examples/06-time-travel-rewind.test.ts",
+    "packages/smithers/flows/test/examples/10-telemetry-export.test.ts",
+    "packages/smithers/flows/test/examples/16-fan-out-fan-in.test.ts",
+    "packages/smithers/flows/test/examples/17-review-loop.test.ts",
+    "packages/smithers/flows/test/examples/18-approval-and-signal.test.ts",
+    "packages/smithers/flows/test/examples/19-cancel-and-child-cleanup.test.ts",
+    "packages/smithers/flows/test/examples/21-cache-and-compensation.test.ts",
+    "packages/smithers/flows/test/examples/24-control-plane-and-gateway.test.ts",
+    "packages/smithers/flows/test/examples/33-delegation-trellis.test.ts",
+    "packages/smithers/flows/test/examples/34-human-task.test.ts",
+    "packages/smithers/flows/test/examples/34-poll.test.ts",
+    "packages/smithers/flows/test/examples/35-remote-cache.test.ts",
+    "packages/smithers/flows/test/examples/37-host-containment.test.ts",
+    "packages/smithers/flows/test/examples/38-monitor-and-alert.test.ts",
+    "packages/smithers/flows/test/examples/40-sandbox-placement.test.ts",
+    "packages/smithers/flows/test/examples/41-sandboxed-flow.test.ts",
+    "packages/smithers/flows/test/examples/42-placed-deploy.test.ts",
+    "packages/smithers/flows/test/examples/park-run.test.ts",
+    "packages/smithers/flows/test/index.test.ts",
+    "packages/smithers/flows/test/RawErrorSites.test.ts",
+    "packages/smithers/flows/test/Runtime.test.ts",
+    "packages/smithers/flows/test/SandboxRetry.test.ts",
+    "packages/smithers/flows/test/SpawnSpecifiers.test.ts",
+    "packages/smithers/flows/test/SpawnSpecifiers.ts",
+    "packages/smithers/flows/test/vitestCoveragePaths.test.ts",
+    "packages/smithers/flows/tsconfig.test.json"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/flows/docs/guides/stand-up-a-node-runtime.md"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/flows/eslint.config.js",
+      "sha256": "876fbacb2be2f5db92d214f3271d5443d6481b1455e74d3684973d0e883ff56e",
+      "source": "import js from \"@eslint/js\"\nimport importPlugin from \"eslint-plugin-import\"\nimport unicorn from \"eslint-plugin-unicorn\"\nimport tseslint from \"typescript-eslint\"\nimport { ambientAuthority, invariants, swallowedCause, uninstalledSafety } from \"../../../eslint.invariants.js\"\nimport { jsdocConvention } from \"../../../eslint.jsdoc.js\"\n\nexport default tseslint.config(\n  {\n    ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]\n  },\n  js.configs.recommended,\n  importPlugin.flatConfigs.recommended,\n  importPlugin.flatConfigs.typescript,\n  {\n    files: [\"src/**/*.ts\"],\n    extends: [tseslint.configs.recommended],\n    languageOptions: {\n      parserOptions: {\n        projectService: true,\n        tsconfigRootDir: import.meta.dirname\n      }\n    },\n    settings: {\n      \"import/resolver\": {\n        typescript: {\n          project: [\"./tsconfig.json\"]\n        }\n      }\n    },\n    plugins: {\n      unicorn\n    },\n    rules: {\n      \"@typescript-eslint/array-type\": [\"error\", { default: \"generic\", readonly: \"generic\" }],\n      \"@typescript-eslint/consistent-type-imports\": [\"error\", { fixStyle: \"inline-type-imports\" }],\n      \"@typescript-eslint/no-explicit-any\": \"off\",\n      \"@typescript-eslint/no-import-type-side-effects\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-assertion\": \"error\",\n      \"@typescript-eslint/no-unnecessary-type-constraint\": \"error\",\n      \"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],\n      \"@typescript-eslint/no-useless-empty-export\": \"error\",\n      \"import/no-duplicates\": \"error\",\n      \"import/no-empty-named-blocks\": \"error\",\n      \"import/no-self-import\": \"error\",\n      \"no-await-in-loop\": \"off\",\n      \"no-console\": \"error\",\n      \"no-fallthrough\": \"off\",\n      \"no-shadow\": \"off\",\n      \"no-unneeded-ternary\": \"error\",\n      \"no-unused-vars\": \"off\",\n      \"no-useless-concat\": \"error\",\n      \"no-useless-constructor\": \"error\",\n      \"no-var\": \"error\",\n      \"object-shorthand\": \"off\",\n      \"require-yield\": \"off\",\n      \"unicorn/no-abusive-eslint-disable\": \"error\",\n      \"unicorn/no-accessor-recursion\": \"error\",\n      \"unicorn/prefer-array-flat-map\": \"error\"\n    }\n  },\n  ...jsdocConvention,\n  ...invariants(uninstalledSafety, swallowedCause, ambientAuthority)\n)\n",
+      "coverageDirectives": [
+        {
+          "line": 10,
+          "text": "ignores: [\"**/dist\", \"**/build\", \"**/coverage\"]"
+        },
+        {
+          "line": 41,
+          "text": "\"@typescript-eslint/no-unused-vars\": [\"error\", { argsIgnorePattern: \"^_\", varsIgnorePattern: \"^_\" }],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/package.json",
+      "sha256": "acc620dd671834d7e41ea2682cd2b24056df8113ebd49a3c09280bfa9234613f",
+      "source": "{\n  \"name\": \"@smthrs/flows\",\n  \"type\": \"module\",\n  \"version\": \"1.0.0-rc.16\",\n  \"license\": \"MIT\",\n  \"smthrs\": {\n    \"group\": \"engine\"\n  },\n  \"description\": \"Barrel package re-exporting the whole @smthrs durable flow engine and its platform-neutral Runtime\",\n  \"homepage\": \"https://github.com/smithersai/smithers\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/flows\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"tags\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"durable-execution\"\n  ],\n  \"keywords\": [\n    \"typescript\",\n    \"effect\",\n    \"flow\",\n    \"durable-execution\"\n  ],\n  \"engines\": {\n    \"node\": \">=22.19.0\"\n  },\n  \"sideEffects\": [],\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": \"./src/index.ts\",\n    \"./internal/*\": null,\n    \"./*/index\": null,\n    \"./index\": \"./src/index.ts\",\n    \"./Runtime\": \"./src/Runtime.ts\",\n    \"./NodeRuntime\": null,\n    \"./SandboxedFlow\": null\n  },\n  \"files\": [\n    \"src/**/*.ts\",\n    \"dist/**/*.js\",\n    \"dist/**/*.js.map\",\n    \"dist/**/*.d.ts\",\n    \"dist/**/*.d.ts.map\",\n    \"dist/**/package.json\",\n    \"LICENSE\",\n    \"README.md\",\n    \"CHANGELOG.md\",\n    \"dist/vendor/**\",\n    \"docs/\"\n  ],\n  \"publishConfig\": {\n    \"access\": \"public\",\n    \"provenance\": true,\n    \"tag\": \"next\",\n    \"exports\": {\n      \"./package.json\": \"./package.json\",\n      \".\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./internal/*\": null,\n      \"./*/index\": null,\n      \"./index\": {\n        \"import\": {\n          \"types\": \"./dist/esm/index.d.ts\",\n          \"default\": \"./dist/esm/index.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/index.d.ts\",\n          \"default\": \"./dist/cjs/index.js\"\n        }\n      },\n      \"./Runtime\": {\n        \"import\": {\n          \"types\": \"./dist/esm/Runtime.d.ts\",\n          \"default\": \"./dist/esm/Runtime.js\"\n        },\n        \"require\": {\n          \"types\": \"./dist/cjs/Runtime.d.ts\",\n          \"default\": \"./dist/cjs/Runtime.js\"\n        }\n      },\n      \"./NodeRuntime\": null,\n      \"./SandboxedFlow\": null\n    }\n  },\n  \"scripts\": {\n    \"lint\": \"eslint src --max-warnings=0 && dprint check\",\n    \"format\": \"dprint fmt\",\n    \"build\": \"node scripts/build.mjs\",\n    \"check\": \"vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit\",\n    \"circular\": \"node ../../repo-targets/scripts/circular.mjs\",\n    \"test\": \"vitest\",\n    \"coverage\": \"vitest --coverage\"\n  },\n  \"dependencies\": {\n    \"@smthrs/artifacts\": \"1.0.0-rc.16\",\n    \"@smthrs/canonical\": \"1.0.0-rc.16\",\n    \"@smthrs/capability\": \"1.0.0-rc.16\",\n    \"@smthrs/crypto\": \"1.0.0-rc.16\",\n    \"@smthrs/database\": \"1.0.0-rc.16\",\n    \"@smthrs/engine\": \"1.0.0-rc.16\",\n    \"@smthrs/engine-store\": \"1.0.0-rc.16\",\n    \"@smthrs/flow\": \"1.0.0-rc.16\",\n    \"@smthrs/jj\": \"1.0.0-rc.16\",\n    \"@smthrs/journal\": \"1.0.0-rc.16\",\n    \"@smthrs/kernel\": \"1.0.0-rc.16\",\n    \"@smthrs/keys\": \"1.0.0-rc.16\",\n    \"@smthrs/observability\": \"1.0.0-rc.16\",\n    \"@smthrs/plan\": \"1.0.0-rc.16\",\n    \"@smthrs/plan-store\": \"1.0.0-rc.16\",\n    \"@smthrs/run-store\": \"1.0.0-rc.16\",\n    \"@smthrs/sandbox\": \"1.0.0-rc.16\",\n    \"@smthrs/step-cache\": \"1.0.0-rc.16\",\n    \"@smthrs/sync\": \"1.0.0-rc.16\",\n    \"@smthrs/time-travel\": \"1.0.0-rc.16\"\n  },\n  \"devDependencies\": {\n    \"@effect/language-service\": \"0.87.2\",\n    \"@effect/platform-node\": \"4.0.5\",\n    \"@effect/platform-node-shared\": \"4.0.5\",\n    \"@effect/sql-pg\": \"4.0.5\",\n    \"@effect/vitest\": \"4.0.5\",\n    \"@eslint/js\": \"9.39.5\",\n    \"@smthrs/control\": \"1.0.0-rc.16\",\n    \"@smthrs/core\": \"1.0.0-rc.16\",\n    \"@smthrs/model\": \"1.0.0-rc.16\",\n    \"@smthrs/notifications\": \"1.0.0-rc.16\",\n    \"@smthrs/patterns\": \"1.0.0-rc.16\",\n    \"@smthrs/registry\": \"1.0.0-rc.16\",\n    \"@smthrs/targets\": \"1.0.0-rc.16\",\n    \"@types/node\": \"26.4.1\",\n    \"@vitest/coverage-v8\": \"5.0.0\",\n    \"dprint\": \"0.57.1\",\n    \"effect\": \"4.0.5\",\n    \"eslint\": \"9.39.5\",\n    \"eslint-import-resolver-typescript\": \"4.4.5\",\n    \"eslint-plugin-import\": \"2.32.0\",\n    \"eslint-plugin-jsdoc\": \"64.3.4\",\n    \"eslint-plugin-unicorn\": \"65.0.0\",\n    \"madge\": \"8.0.0\",\n    \"microsandbox\": \"0.6.16\",\n    \"typescript\": \"5.9.3\",\n    \"typescript-eslint\": \"8.69.0\",\n    \"vibelang\": \"0.0.8\",\n    \"vibelang-vite\": \"0.0.8\",\n    \"vitest\": \"5.0.0\",\n    \"@smthrs/platform-node\": \"1.0.0-rc.16\"\n  },\n  \"peerDependencies\": {\n    \"effect\": \"4.0.5\"\n  }\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 107,
+          "text": "\"coverage\": \"vitest --coverage\""
+        },
+        {
+          "line": 146,
+          "text": "\"@vitest/coverage-v8\": \"5.0.0\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/PACKAGE.ts",
+      "sha256": "43b391aa464c5d1eff5603b2c8fb87a8cd87a8942fac6cd2ffad8cf2d511e617",
+      "source": "import {\n  BuildAndCheckTypeScriptPackage,\n  ImportRules,\n  ReviewDocsAgainstCode,\n  ReviewJsdocAgainstCode\n} from \"@smthrs/repo-targets\"\n/** Standard package targets. */\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/flows\"\n\n// examples/ is type-checked and formatted with the tests, and run by\n// test/examples/; each example is documentation users copy, so it is not held\n// to the library lint rules.\nconst { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({\n  deps: [],\n  cwd,\n  testSources: Smithers.glob(\"{test,examples}/**/*.ts\"),\n  // The example projects examples 16 and 24 discover flows in read their\n  // markdown descriptors off disk at run time.\n  testData: [\"examples/**/*.mdx\"]\n})\n\nconst importRules = ImportRules({\n  cwd: \"packages/smithers/flows\",\n  rules: [{\n    kind: \"forbidCalls\",\n    files: [\"test/examples/24-control-plane-and-gateway.test.ts\"],\n    callees: [\"setTimeout\", \"*.sleep\", \"*.waitForTimeout\", \"vi.mock\", \"vi.doMock\", \"jest.mock\"],\n    because: \"test.behavioral: control HTTP host tests use real services and completion signals.\"\n  }]\n})\n\n/**\n * Changed public APIs against the package README, every docs page (concepts\n * and guides included), and the site API reference page.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewDocsAgainstCode = ReviewDocsAgainstCode({\n  cwd,\n  context: [\n    Smithers.file(\"README.md\"),\n    Smithers.glob(\"docs/**/*.md\"),\n    Smithers.file(\"//apps/site/src/content/docs/docs/reference/api/flows.mdx\")\n  ]\n})\n\n/**\n * Changed exports against their own JSDoc.\n *\n * @since 1.0.0\n * @category lint\n */\nconst reviewJsdocAgainstCode = ReviewJsdocAgainstCode({ cwd })\n\n// Nested packages (engine, kernel, sandbox, ...) own their own reviews; these\n// globs reach only this barrel's src/, docs/, scripts/ and examples. Users copy\n// the examples, so a leak or an unguarded listener in one becomes one in every\n// project built from it.\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\", \"docs/**\", \"scripts/**\", \"examples/**\", \"test/examples/**\"],\n  checks: [\n    {\n      id: \"control-server-auth\",\n      title: \"The example control server authenticates every HTTP and WebSocket call\",\n      threat:\n        \"A local process or a web page in the user's browser plans, approves, or launches flows on the example control plane.\",\n      lookFor: [\n        \"The bearer credential in serve() not drawn from randomBytes(32), or reused, logged, or returned in Summary.\",\n        \"The Host/Origin middleware running after routing or the WebSocket upgrade, or accepting a mismatched Origin.\",\n        \"NodeHttpServer.layer bound to anything other than 127.0.0.1, or a route mounted outside ControlRpcs.layerBearerAuth.\"\n      ],\n      paths: [\"examples/24-control-plane-and-gateway.ts\", \"examples/24-project/**\", \"test/examples/24-*.test.ts\"]\n    },\n    {\n      id: \"example-process-containment-scope\",\n      title: \"Example processes run with the narrowest capability and are reaped\",\n      threat:\n        \"A copied example grants flows unrestricted process spawn on the host or leaves orphaned process groups running after a crash.\",\n      lookFor: [\n        \"A Capability.Permission.Rule allowing proc:spawn with resource '*' in an engine that registers flows other than the fixed sleep/containment demos of examples 19 and 37.\",\n        \"A child spawned with a shell string built from payload or argv values.\",\n        \"A sandbox session root or captureWork result applied to the host workspace without the caller deciding.\",\n        \"A spawned child with no acquireRelease finalizer or ProcessLedger record.\"\n      ],\n      paths: [\n        \"examples/19-cancel-and-child-cleanup.ts\",\n        \"examples/37-host-containment.ts\",\n        \"examples/37-host-containment-host.ts\",\n        \"examples/40-sandbox-placement.ts\",\n        \"examples/41-sandboxed-flow.ts\",\n        \"examples/sandboxed-child.ts\"\n      ]\n    },\n    {\n      id: \"example-fixture-servers-loopback\",\n      title: \"Example fixture servers bind loopback and survive malformed input\",\n      threat:\n        \"A host on the network reads or poisons the example action cache, or one malformed request crashes the fixture mid-run.\",\n      lookFor: [\n        \"server.listen or a telemetry baseUrl bound to a non-loopback address.\",\n        \"decodeURIComponent or JSON.parse on request input with no try/catch in a request or line handler.\",\n        \"A PUT /ac/{key} accepted without a body size limit.\"\n      ],\n      paths: [\"examples/35-remote-cache.ts\", \"examples/10-telemetry-export.ts\"]\n    },\n    {\n      id: \"example-agent-prompt-payload\",\n      title: \"Payload text in a model-authored plan cannot widen the work a round may run\",\n      threat:\n        \"A flow caller injects instructions through a prompt-interpolated payload field and makes the plan author schedule work beyond its declared envelope.\",\n      lookFor: [\n        \"A scripted model that splices prompt text into plan code without JSON.stringify.\",\n        \"Budget.layerUnbounded or QuotaPolicy.layerUnclassified used in an example that reaches a real provider.\"\n      ],\n      paths: [\"examples/33-delegation-trellis.ts\"]\n    },\n    {\n      id: \"runtime-guarded-layering\",\n      title: \"The injected Runtime keeps the engine's privileged jj apart from what flow bodies resolve\",\n      threat:\n        \"A host composing Runtime.layer hands flow bodies the unguarded repository the engine snapshots with, so an action bypasses its capability ceiling.\",\n      lookFor: [\n        \"privilegedJj provided beside the engine instead of only to EngineStore.layerWithPrivilegedJj.\",\n        \"Caller-supplied options read after validate returns, so a caller can change them after construction.\"\n      ],\n      paths: [\"src/Runtime.ts\", \"src/internal/RuntimeOptions.ts\"]\n    },\n    {\n      id: \"docs-copyable-snippets\",\n      title: \"Copyable docs snippets do not teach unsafe sandbox or runtime configuration\",\n      threat:\n        \"A user copying a guide ships shared session keys, applies an unreviewed guest diff to the host, or hardcodes a credential.\",\n      lookFor: [\n        \"A snippet that applies Result.diff to the host workspace without a review or path check.\",\n        \"A snippet with a literal API key, DSN password, or token, or a session key constant across executions.\"\n      ],\n      paths: [\"docs/**\"]\n    }\n  ]\n})\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    circular,\n    docs,\n    docsFiles,\n    reviewDocsAgainstCode,\n    reviewJsdocAgainstCode,\n    fmt,\n    lib,\n    lint,\n    importRules,\n    test,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 36,
+          "text": "* and guides included), and the site API reference page."
+        },
+        {
+          "line": 64,
+          "text": "include: [\"src/**\", \"docs/**\", \"scripts/**\", \"examples/**\", \"test/examples/**\"],"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/tsconfig.json",
+      "sha256": "0064dce36d22143039105eb068be99456971e6caf6e7cebac24633514a2009b8",
+      "source": "{\n  \"compilerOptions\": {\n    \"target\": \"ES2022\",\n    \"lib\": [\"ES2022\", \"DOM\", \"DOM.Iterable\"],\n    \"module\": \"NodeNext\",\n    \"moduleResolution\": \"NodeNext\",\n    \"moduleDetection\": \"force\",\n    \"strict\": true,\n    \"noUncheckedIndexedAccess\": true,\n    \"exactOptionalPropertyTypes\": true,\n    \"noImplicitOverride\": true,\n    \"noFallthroughCasesInSwitch\": true,\n    \"verbatimModuleSyntax\": true,\n    \"allowImportingTsExtensions\": true,\n    \"erasableSyntaxOnly\": true,\n    \"isolatedModules\": true,\n    \"skipLibCheck\": true,\n    \"rootDir\": \"src\",\n    \"outDir\": \"dist/esm\",\n    \"declaration\": true,\n    \"declarationMap\": true,\n    \"sourceMap\": true,\n    \"inlineSources\": true,\n    \"rewriteRelativeImportExtensions\": true,\n    \"types\": [\"node\"],\n    \"plugins\": [\n      {\n        \"name\": \"@effect/language-service\",\n        \"namespaceImportPackages\": [\"effect\", \"@effect/*\"],\n        \"includeSuggestionsInTsc\": false,\n        \"ignoreEffectWarningsInTscExitCode\": true,\n        \"ignoreEffectErrorsInTscExitCode\": true,\n        \"diagnosticSeverity\": {\n          \"globalErrorInEffectFailure\": \"off\"\n        }\n      }\n    ]\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 17,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 30,
+          "text": "\"includeSuggestionsInTsc\": false,"
+        },
+        {
+          "line": 31,
+          "text": "\"ignoreEffectWarningsInTscExitCode\": true,"
+        },
+        {
+          "line": 32,
+          "text": "\"ignoreEffectErrorsInTscExitCode\": true,"
+        },
+        {
+          "line": 39,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/flows/vitest.config.ts",
+      "sha256": "7cc2f0d598ac7ae593ab35c3528a4024b74094622447524e55035c3001666c8a",
+      "source": "import { tmpdir } from \"node:os\"\nimport { join } from \"node:path\"\nimport { fileURLToPath } from \"node:url\"\nimport vibelang from \"vibelang-vite\"\nimport { configDefaults, defineConfig } from \"vitest/config\"\n\nexport default defineConfig({\n  plugins: [vibelang({ project: \"tsconfig.test.json\" })],\n  test: {\n    globalSetup: [\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/test-schemas.ts\", import.meta.url)),\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),\n      fileURLToPath(new URL(\"../../repo-targets/test-utils/test-process-environment.mjs\", import.meta.url))\n    ],\n    include: [\"test/**/*.test.{ts,vibe}\"],\n    exclude: [...configDefaults.exclude],\n    environment: \"node\",\n    // These files launch process trees, guest runtimes, and containers. Keep\n    // their host resources serial under coverage as well as ordinary tests;\n    // core-count worker fanout made startup exceed otherwise sufficient bounds.\n    fileParallelism: false,\n    // Retain a finite wall-clock guard for hangs. Individual integration\n    // journeys declare their own process/container bounds.\n    testTimeout: 30_000,\n    hookTimeout: 30_000,\n    coverage: {\n      // `enabled: true` makes every `vitest` run compute and ENFORCE these\n      // thresholds: a red gate fails the run (issues #20/#32).\n      enabled: true,\n      provider: \"v8\",\n      // Scope the report directory and the `.tmp` scratch dir the v8\n      // provider clears at run start and reads at run end to this process.\n      // The default `./coverage` is shared, so two concurrent `vitest run`\n      // invocations destroy each other: one aborts with a removed-coverage-\n      // directory error and the other enforces 100% against a partial\n      // profile with every test passing (issues #115/#121).\n      reportsDirectory: join(tmpdir(), `flows-flows-coverage-${process.pid}`),\n      include: [\"src/**\"],\n      // Nested packages have their own coverage gates. Absolute patterns keep\n      // checkout ancestors such as `review-harness` out of exclusion matching.\n      exclude: [\n        \"artifacts/**\",\n        \"canonical/**\",\n        \"capability/**\",\n        \"core/**\",\n        \"crypto/**\",\n        \"database/**\",\n        \"engine/**\",\n        \"engine-store/**\",\n        \"flow/**\",\n        \"jj/**\",\n        \"journal/**\",\n        \"kernel/**\",\n        \"keys/**\",\n        \"observability/**\",\n        \"patterns/**\",\n        \"plan/**\",\n        \"platform-browser/**\",\n        \"platform-bun/**\",\n        \"platform-node/**\",\n        \"run-store/**\",\n        \"sandbox/**\",\n        \"step-cache/**\",\n        \"sync/**\",\n        \"time-travel/**\"\n      ],\n      // Accurate, enforceable floors measured against the committed suite.\n      // Ratchet upward as tests land; never lower without a written\n      // justification.\n      thresholds: {\n        branches: 100,\n        functions: 100,\n        lines: 100,\n        statements: 100\n      }\n    }\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 12,
+          "text": "fileURLToPath(new URL(\"../../repo-targets/test-utils/coverage-teardown.mjs\", import.meta.url)),"
+        },
+        {
+          "line": 15,
+          "text": "include: [\"test/**/*.test.{ts,vibe}\"],"
+        },
+        {
+          "line": 16,
+          "text": "exclude: [...configDefaults.exclude],"
+        },
+        {
+          "line": 19,
+          "text": "// their host resources serial under coverage as well as ordinary tests;"
+        },
+        {
+          "line": 26,
+          "text": "coverage: {"
+        },
+        {
+          "line": 28,
+          "text": "// thresholds: a red gate fails the run (issues #20/#32)."
+        },
+        {
+          "line": 30,
+          "text": "provider: \"v8\","
+        },
+        {
+          "line": 31,
+          "text": "// Scope the report directory and the `.tmp` scratch dir the v8"
+        },
+        {
+          "line": 33,
+          "text": "// The default `./coverage` is shared, so two concurrent `vitest run`"
+        },
+        {
+          "line": 34,
+          "text": "// invocations destroy each other: one aborts with a removed-coverage-"
+        },
+        {
+          "line": 37,
+          "text": "reportsDirectory: join(tmpdir(), `flows-flows-coverage-${process.pid}`),"
+        },
+        {
+          "line": 38,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 39,
+          "text": "// Nested packages have their own coverage gates. Absolute patterns keep"
+        },
+        {
+          "line": 41,
+          "text": "exclude: ["
+        },
+        {
+          "line": 70,
+          "text": "thresholds: {"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.d.mts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/tsconfig.test.json"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows:lib"
+      ]
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:circular",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/circular.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/workspace-packages.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:docs",
+      "rule": "DocsParity",
+      "kinds": [
+        "docs"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/README.md"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:fmt",
+      "rule": "Dprint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/dprint.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:importRules",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:lib",
+      "rule": "TsBuild",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/build-library.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/package.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/scripts/compile-commonjs.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/contracts/check-single-effect-version.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/src/index.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/tsconfig.json"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/scripts/build.mjs"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:lint",
+      "rule": "EsLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/eslint.config.js"
+        },
+        {
+          "kind": "file",
+          "path": "eslint.jsdoc.js"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:reviewDocsAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/README.md"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "apps/site/src/content/docs/docs/reference/api/flows.mdx"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:reviewJsdocAgainstCode",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/src/**/*.{ts,vibe}"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/flows/src/**",
+            "packages/smithers/flows/docs/**",
+            "packages/smithers/flows/scripts/**",
+            "packages/smithers/flows/examples/**",
+            "packages/smithers/flows/test/examples/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/examples/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/test/examples/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/flows/src/**",
+            "packages/smithers/flows/docs/**",
+            "packages/smithers/flows/scripts/**",
+            "packages/smithers/flows/examples/**",
+            "packages/smithers/flows/test/examples/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/docs/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/scripts/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/examples/**",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/test/examples/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/flows",
+      "label": "//packages/smithers/flows:test",
+      "rule": "Vitest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/test/**/*.test.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/src/**/*.{ts,vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/{test,examples}/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/coverage-teardown.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-process-environment.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/test-schemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/database/src/TestSchemas.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/vitest-root-temp.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/test-utils/effect-property.d.mts"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/flows/examples/**/*.mdx",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/flows/vitest.config.ts"
+        }
+      ],
+      "dependencies": [
+        "//packages/smithers/flows:lib"
+      ]
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "eslint.config.js",
+    "examples/02-run-durably.ts",
+    "examples/03-crash-and-resume.ts",
+    "examples/04-retry-policy.ts",
+    "examples/05-time-travel-fork.ts",
+    "examples/06-time-travel-rewind.ts",
+    "examples/10-telemetry-export.ts",
+    "examples/16-fan-out-fan-in.ts",
+    "examples/16-gate-topology.ts",
+    "examples/16-project",
+    "examples/17-review-loop.ts",
+    "examples/18-approval-and-signal.ts",
+    "examples/19-cancel-and-child-cleanup.ts",
+    "examples/21-cache-and-compensation.ts",
+    "examples/24-control-plane-and-gateway.ts",
+    "examples/33-delegation-trellis.ts",
+    "examples/34-human-task.ts",
+    "examples/34-poll.ts",
+    "examples/35-remote-cache.ts",
+    "examples/37-host-containment-host.ts",
+    "examples/37-host-containment.ts",
+    "examples/38-monitor-and-alert.ts",
+    "examples/40-sandbox-placement.ts",
+    "examples/41-sandboxed-flow.ts",
+    "examples/42-placed-deploy.ts",
+    "examples/park-run.ts",
+    "examples/sandboxed-child.ts",
+    "scripts/build.mjs",
+    "src/Runtime.ts",
+    "src/index.ts",
+    "src/internal",
+    "test/SpawnSpecifiers.ts",
+    "vitest.config.ts"
+  ],
+  "boundaries": [
+    "public-authoring"
+  ]
+}

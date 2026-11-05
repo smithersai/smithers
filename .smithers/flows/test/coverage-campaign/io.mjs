@@ -72,13 +72,13 @@ export const writeSnapshot = (directory, snapshot) => Effect.gen(function*() {
   const surfaces = []
   for (const surface of snapshot.inventory.surfaces) {
     const artifact = 'surfaces/' + encodeURIComponent(surface.id) + '.json'
-    yield* fs.writeFileString(join(directory, artifact), JSON.stringify(surface) + '\n')
+    yield* fs.writeFileString(join(directory, artifact), JSON.stringify(surface, null, 2) + '\n')
     surfaces.push({ id: surface.id, name: surface.name, artifact })
   }
   const inputFiles = []
   for (let index = 0; index < snapshot.inventory.inputFiles.length; index += 1000) {
     const artifact = 'inputs/' + index + '.json'
-    yield* fs.writeFileString(join(directory, artifact), JSON.stringify(snapshot.inventory.inputFiles.slice(index, index + 1000)) + '\n')
+    yield* fs.writeFileString(join(directory, artifact), JSON.stringify(snapshot.inventory.inputFiles.slice(index, index + 1000), null, 2) + '\n')
     inputFiles.push({ artifact })
   }
   yield* fs.writeFileString(join(directory, 'report.html'), renderReport(snapshot.inventory))

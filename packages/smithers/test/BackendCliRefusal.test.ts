@@ -82,7 +82,9 @@ describe("backend command refusals", () => {
     const asked: Array<string> = []
     const run = await fixture((req, res) => {
       asked.push(req.url ?? "")
-      const next = req.url?.includes("cursor=") ? {} : { link: '</api/repos/owner/repo/issues?limit=1&state=open&cursor=c2>; rel="next"' }
+      const next = req.url?.includes("cursor=")
+        ? {}
+        : { link: "</api/repos/owner/repo/issues?limit=1&state=open&cursor=c2>; rel=\"next\"" }
       res.writeHead(200, { "content-type": "application/json", ...next })
       res.end(JSON.stringify([{ number: req.url?.includes("cursor=") ? 1 : 2, title: "An issue" }]))
     })
@@ -90,7 +92,10 @@ describe("backend command refusals", () => {
     expect(help.output).toMatch(/\blist\b/)
     const listed = await run(["issue", "list", "--repo", "owner/repo", "--limit", "1", "--all"])
     expect(listed.code).toBe(0)
-    expect(asked).toEqual(["/api/repos/owner/repo/issues?limit=1&state=open", "/api/repos/owner/repo/issues?limit=1&state=open&cursor=c2"])
+    expect(asked).toEqual([
+      "/api/repos/owner/repo/issues?limit=1&state=open",
+      "/api/repos/owner/repo/issues?limit=1&state=open&cursor=c2"
+    ])
     expect(JSON.parse(listed.output)).toEqual([{ number: 2, title: "An issue" }, { number: 1, title: "An issue" }])
     await run(["issue", "list", "--repo", "owner/repo", "--state", "all", "--search", "#12"])
     expect(asked.at(-1)).toBe("/api/repos/owner/repo/issues?limit=30&state=all&q=%2312")

@@ -329,13 +329,15 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
       sql<{ count: number }>`SELECT
         (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "engine_db"))}.flows_journal_events)
         + (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "engine_db"))}.flows_attempts)
-        + (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "control_db"))}.flows_journal_events) AS count`)).then(([row]) =>
-        Number(row!.count)
-      )
+        + (SELECT count(*) FROM ${sql(TestSchemas.forStore(prefix, "control_db"))}.flows_journal_events) AS count`))
+      .then(([row]) => Number(row!.count))
   try {
     const { root, runId } = await parkedProject(1, 0, true)
     expect(existsSync(join(root, ".flows", "engine.db"))).toBe(false)
-    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "control_db"), TestSchemas.forStore(prefix, "engine_db")])
+    expect(await schemas()).toEqual([
+      TestSchemas.forStore(prefix, "control_db"),
+      TestSchemas.forStore(prefix, "engine_db")
+    ])
     const before = await rows()
     const consistent = await Verify.verify(root, runId)
     expect(consistent.verdict).toBe("consistent")
@@ -353,7 +355,10 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
     vi.stubEnv("SMITHERS_POSTGRES_SCHEMA", prefix)
     // The originals are untouched and every scratch schema is gone.
     expect(await rows()).toBe(before)
-    expect(await schemas()).toEqual([TestSchemas.forStore(prefix, "control_db"), TestSchemas.forStore(prefix, "engine_db")])
+    expect(await schemas()).toEqual([
+      TestSchemas.forStore(prefix, "control_db"),
+      TestSchemas.forStore(prefix, "engine_db")
+    ])
     expect(recordedActions(root)).toEqual(["verify/first", "verify/second"])
     // An unsafe store copy leaves the whole verification unverified, including at the CLI boundary.
     const external = TestSchemas.forStore(prefix, "external")
@@ -361,7 +366,11 @@ it("verifies a PostgreSQL-backed project on a schema copy it drops afterwards", 
       const sql = yield* SqlClient
       yield* sql`CREATE SCHEMA ${sql(external)}`
       yield* sql`CREATE SEQUENCE ${sql(external)}.counter`
-      yield* sql.unsafe(`CREATE TABLE "${TestSchemas.forStore(prefix, "engine_db")}".counted (n BIGINT DEFAULT nextval('${external}.counter'))`)
+      yield* sql.unsafe(
+        `CREATE TABLE "${
+          TestSchemas.forStore(prefix, "engine_db")
+        }".counted (n BIGINT DEFAULT nextval('${external}.counter'))`
+      )
     }))
     const summary = await Verify.verifyAll(root)
     expect(summary.verdict).toBe("unverified")

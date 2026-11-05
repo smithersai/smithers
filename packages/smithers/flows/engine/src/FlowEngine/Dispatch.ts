@@ -371,7 +371,9 @@ const encodeEngineFailures = (options: Encoded, exit: Exit.Exit<unknown, unknown
   return Exit.failCause(Cause.fromReasons(exit.cause.reasons.map((reason) => {
     if (!Cause.isFailReason(reason)) return reason
     const encoded = encode(reason.error)
-    return Option.isSome(encoded) ? Cause.makeDieReason(encoded.value).annotate(Cause.reasonAnnotations(reason)) : reason
+    return Option.isSome(encoded)
+      ? Cause.makeDieReason(encoded.value).annotate(Cause.reasonAnnotations(reason))
+      : reason
   })))
 }
 
@@ -383,12 +385,14 @@ const decodeOutcome = <Success extends Schema.Constraint, Error extends Schema.C
 ) =>
   Effect.orDie(
     Schema.decodeEffect(action.exitSchemaPartial)(toJsonExit(encodeEngineFailures(options, recorded))).pipe(
-      Effect.map((decoded) => Exit.isFailure(recorded) && Exit.isFailure(decoded)
-        ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {
-          // Exit encoding preserves one reason for each original reason.
-          return reason.annotate(Cause.reasonAnnotations(recorded.cause.reasons[index]!))
-        })))
-        : decoded),
+      Effect.map((decoded) =>
+        Exit.isFailure(recorded) && Exit.isFailure(decoded)
+          ? Exit.failCause(Cause.fromReasons(decoded.cause.reasons.map((reason, index) => {
+            // Exit encoding preserves one reason for each original reason.
+            return reason.annotate(Cause.reasonAnnotations(recorded.cause.reasons[index]!))
+          })))
+          : decoded
+      ),
       // `orDie` alone reports only the schema mismatch, never the failure that
       // actually occurred. Name the action and its recorded exit.
       Effect.tapError(() =>
@@ -485,14 +489,19 @@ export const makeActionExecute = (options: Encoded) => {
     let attempt = yield* resumedAttempt(action.name, callerAttempt, latest)
     yield* refuseIrreversibleRetry(action, attempt)
     const nodeId = yield* Effect.serviceOption(StepIdentity.DispatchSite)
-    const annotateFailure = <E>(cause: Cause.Cause<E>): Cause.Cause<E> => Cause.fromReasons(cause.reasons.map((reason) =>
-      Context.getOrUndefined(Cause.reasonAnnotations(reason), FailureSite) !== undefined
-        ? reason
-        : reason.annotate(Context.make(FailureSite, {
-          executionId: instance.executionId, action: action.name, attempts: attempt,
-          ...(Option.isSome(nodeId) ? { nodeId: nodeId.value } : {})
-        }))
-    ))
+    const annotateFailure = <E>(cause: Cause.Cause<E>): Cause.Cause<E> =>
+      Cause.fromReasons(
+        cause.reasons.map((reason) =>
+          Context.getOrUndefined(Cause.reasonAnnotations(reason), FailureSite) !== undefined
+            ? reason
+            : reason.annotate(Context.make(FailureSite, {
+              executionId: instance.executionId,
+              action: action.name,
+              attempts: attempt,
+              ...(Option.isSome(nodeId) ? { nodeId: nodeId.value } : {})
+            }))
+        )
+      )
     while (true) {
       const result = yield* runAttempt(options, instance, action, key, attempt).pipe(
         Effect.catchCause((cause) => Effect.failCause(annotateFailure(cause)))
@@ -503,9 +512,11 @@ export const makeActionExecute = (options: Encoded) => {
       )
       const error = retry === undefined ? Option.none() : retryableError(options, result.exit, exit)
       const delay = yield* retryDelay(retry, attempt, retryStartMs, error)
-      if (Option.isNone(delay)) return new Flow.Complete({
-        exit: Exit.isSuccess(exit) ? exit : Exit.failCause(annotateFailure(exit.cause))
-      })
+      if (Option.isNone(delay)) {
+        return new Flow.Complete({
+          exit: Exit.isSuccess(exit) ? exit : Exit.failCause(annotateFailure(exit.cause))
+        })
+      }
       attempt++
       yield* refuseIrreversibleRetry(action, attempt)
       yield* Effect.sleep(delay.value)

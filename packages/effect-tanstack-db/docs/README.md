@@ -100,7 +100,6 @@ service.
 `@tanstack/offline-transactions` 1.1.3 is optional: the package imports only
 its types, and the host passes `startOfflineExecutor` to `Outbox.layer`.
 
-
 ## Durable holds and independent keys
 
 `new Outbox.Retry({ status: 401, held: true })` retains the write and reports `Status.held` until settlement. `held` is generic: the package does not interpret HTTP statuses. A subsequent network retry preserves the persisted hold. Owned rows alone contribute to status, and a storage read failure keeps the last known state.

@@ -415,6 +415,13 @@ const testCoverage = Smithers.NodeTest({
   deps: [],
   cwd
 })
+// Snapshot regeneration must preserve the formatting gate it feeds.
+const coverageSnapshotFormat = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//.smithers/flows/test/coverage-campaign/format.test.mjs")]),
+  srcs: [Smithers.glob("test/coverage-campaign/*.mjs"), Smithers.file("dprint.json"), Smithers.file("package.json")],
+  deps: [],
+  cwd
+})
 const codingNativeBun = Smithers.Shell.Test({
   bin: Smithers.Runtime.bin,
   runtime: bun,
@@ -1605,6 +1612,7 @@ export const Package = Smithers.Package({
     codingConfigBun,
     codingNative,
     testCoverage,
+    coverageSnapshotFormat,
     codingNativeBun,
     codingBundle,
     codingBundleBun,

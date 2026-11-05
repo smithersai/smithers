@@ -1,1 +1,381 @@
-{"id":"packages/smithers/ui/repo-view","name":"@smthrs/repo-view","owner":{"declaration":"packages/smithers/ui/repo-view/package.json","assignedLane":null},"kind":"package","scripts":{"check":"vibelang -p tsconfig.json --noEmit","test":"bun test --isolate test"},"exports":{"./package.json":"./package.json",".":{"types":"./src/index.ts","import":"./src/index.ts","default":"./src/index.ts"}},"production":["PACKAGE.ts","src/CodeEditor.tsx","src/CodeFileView.tsx","src/crepeTheme.generated.ts","src/HtmlPreview.tsx","src/index.ts","src/LiveMarkdownEditor.tsx","src/markdownAlerts.ts","src/markdownCode.ts","src/MarkdownEditor.tsx","src/markdownHtml.ts","src/markdownLinkNames.ts","src/paths.ts","src/PierreDiffView.tsx","src/replaceMarkdown.ts","src/RepoView.tsx","src/styles.tsx","src/symbols.ts","src/SymbolsPane.tsx","src/vibe.ts","src/workerPool.ts","test/fixtures/forms.vibe","test/happy-dom-preload.ts"],"tests":["packages/smithers/ui/repo-view/test/__snapshots__/code-view.test.tsx.snap","packages/smithers/ui/repo-view/test/bundle.test.ts","packages/smithers/ui/repo-view/test/code-editor.test.tsx","packages/smithers/ui/repo-view/test/code-intelligence.test.tsx","packages/smithers/ui/repo-view/test/code-view-pool-fallback.test.ts","packages/smithers/ui/repo-view/test/code-view-pool.test.ts","packages/smithers/ui/repo-view/test/code-view.test.tsx","packages/smithers/ui/repo-view/test/docs-contracts.test.ts","packages/smithers/ui/repo-view/test/fixtures/forms.vibe","packages/smithers/ui/repo-view/test/happy-dom-preload.ts","packages/smithers/ui/repo-view/test/markdown-alerts.test.ts","packages/smithers/ui/repo-view/test/markdown-code.test.ts","packages/smithers/ui/repo-view/test/markdown-editor-hydration.test.tsx","packages/smithers/ui/repo-view/test/markdown-editor-images.test.tsx","packages/smithers/ui/repo-view/test/markdown-editor-probe.test.ts","packages/smithers/ui/repo-view/test/markdown-editor-readonly.test.tsx","packages/smithers/ui/repo-view/test/markdown-editor-replacement.test.ts","packages/smithers/ui/repo-view/test/markdown-editor-wysiwyg.test.tsx","packages/smithers/ui/repo-view/test/markdown-editor.test.tsx","packages/smithers/ui/repo-view/test/markdown-html.test.ts","packages/smithers/ui/repo-view/test/markdown-layout.test.ts","packages/smithers/ui/repo-view/test/markdown-link-names.test.ts","packages/smithers/ui/repo-view/test/percent-links.test.ts","packages/smithers/ui/repo-view/test/pierre-diff-view.test.tsx","packages/smithers/ui/repo-view/test/repo-view-first-visit.test.tsx","packages/smithers/ui/repo-view/test/repo-view-paths.test.ts","packages/smithers/ui/repo-view/test/repo-view.test.tsx","packages/smithers/ui/repo-view/test/root-directory.test.ts","packages/smithers/ui/repo-view/test/styles.test.tsx","packages/smithers/ui/repo-view/test/vibe-grammar-source.test.ts"],"benchmarks":[],"platformPaths":["packages/smithers/ui/repo-view/bunfig.toml","packages/smithers/ui/repo-view/src/workerPool.ts","packages/smithers/ui/repo-view/test/bundle.test.ts"],"ignoredCases":[],"configurations":[{"path":"packages/smithers/ui/repo-view/package.json","sha256":"510b08cee2647b96cf57782efa36e51c71c2a7b7cc89327af7f742b408efe1b6","source":"{\n  \"name\": \"@smthrs/repo-view\",\n  \"version\": \"0.1.0\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"The heavy views of a repository for Smithers UIs: the repository browser, a file highlighted by Shiki, a highlighted diff and the Milkdown Markdown editor, kept out of @smthrs/ui so pages that show no code never load them.\",\n  \"homepage\": \"https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/repo-view\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/ui/repo-view\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"type\": \"module\",\n  \"sideEffects\": false,\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": {\n      \"types\": \"./src/index.ts\",\n      \"import\": \"./src/index.ts\",\n      \"default\": \"./src/index.ts\"\n    }\n  },\n  \"files\": [\n    \"src/\",\n    \"docs/\",\n    \"README.md\"\n  ],\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test --isolate test\"\n  },\n  \"dependencies\": {\n    \"@codemirror/commands\": \"6.11.0\",\n    \"@codemirror/state\": \"6.7.2\",\n    \"@codemirror/view\": \"6.43.11\",\n    \"@milkdown/crepe\": \"7.22.1\",\n    \"@milkdown/kit\": \"7.22.1\",\n    \"@pierre/diffs\": \"1.5.2\",\n    \"@smthrs/ui\": \"workspace:*\"\n  },\n  \"peerDependencies\": {\n    \"react\": \"^19.2.8\",\n    \"react-dom\": \"^19.2.8\"\n  },\n  \"devDependencies\": {\n    \"@happy-dom/global-registrator\": \"^20.13.2\",\n    \"@types/bun\": \"1.4.4\",\n    \"@types/react\": \"^19.2.18\",\n    \"@types/react-dom\": \"^19.2.7\",\n    \"happy-dom\": \"20.13.2\",\n    \"react\": \"19.2.8\",\n    \"react-dom\": \"19.2.8\",\n    \"typescript\": \"~5.9.3\"\n  }\n}\n","coverageDirectives":[]},{"path":"packages/smithers/ui/repo-view/PACKAGE.ts","sha256":"c9f23d10196dbed7208684cc46fa7a809e8a232e50adb7421410d219dfe61742","source":"/**\n * Targets for `@smthrs/repo-view`, the heavy views of a repository.\n *\n * Like `@smthrs/ui`, whose components it composes, the package ships its\n * sources directly, types against `@types/bun` and tests with `bun test`, so\n * it declares the gates it can honor instead of taking the synthesized\n * `BuildAndCheckTypeScriptPackage` (`PackageDefaults` skips a directory\n * holding a `PACKAGE.ts`): a `vibelang --noEmit` typecheck and the Bun suite, which\n * fails below 100% line and function coverage (`bunfig.toml`).\n */\nimport { SdkRules } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/ui/repo-view\"\n\n/** The view sources the suite drives, the VibeLang grammar included. */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/ui/repo-view/src/**/*.ts\"),\n  Smithers.glob(\"//packages/smithers/ui/repo-view/src/**/*.tsx\"),\n  Smithers.glob(\"//packages/smithers/ui/repo-view/src/**/*.json\")\n]\n\n/**\n * `@smthrs/ui`'s sources and the `@smthrs/views` sources it builds on, as\n * their `sourceFiles` labels: the views compose its components and read its\n * tokens, so a change there re-runs this suite. A selector, not an import of\n * ui's PACKAGE.ts; this package declares no `sourceFiles` of its own, so the\n * selector never reaches back here.\n */\nconst uiSources = Smithers.Target.subtree(\"//packages/smithers/ui/...\", \"sourceFiles\")\n\n/**\n * Checks every source against the package tsconfig. The package publishes its\n * `src/` tree directly, so this is the only gate between a type error and a\n * consumer's build.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The suite: everything under `test/`, run by Bun against happy-dom, each\n * file in a fresh module registry (`--isolate`), at 100% line and function\n * coverage of `src/`.\n *\n * @since 0.1.0\n * @category test\n */\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"test\"], { isolate: true }),\n  srcs: [\n    ...sources,\n    Smithers.file(\"bunfig.toml\"),\n    Smithers.glob(\"//packages/smithers/ui/repo-view/test/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/repo-view/test/**/*.tsx\"),\n    Smithers.glob(\"//packages/smithers/ui/repo-view/test/**/*.snap\"),\n    // test/docs-contracts.test.ts holds the docs' examples and stated contracts to the code.\n    Smithers.glob(\"//packages/smithers/ui/repo-view/docs/**/*.md\")\n  ],\n  deps: [uiSources],\n  cwd\n})\n\n/** The package's documentation as a file group: `docs/**`, the README and package.json. */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/**\n * Security review. The views render repository content, which anyone who can\n * push to a repository controls: file text, Markdown, patches and the links\n * inside them.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"repository-content-as-text\",\n      title: \"Repository content reaches the DOM only as text, highlighted tokens or Milkdown's schema nodes\",\n      threat: \"A file, a README or a patch injects HTML or script into the signed-in user's page.\",\n      lookFor: [\n        \"dangerouslySetInnerHTML, innerHTML, outerHTML, insertAdjacentHTML, or document.write fed from file contents, a patch or Markdown.\",\n        \"Milkdown Crepe, or pierre's File or CodeView, configured to render raw HTML nodes from document content.\",\n        \"The read-only Markdown view parsing an HTML node as anything but text.\"\n      ],\n      paths: [\"src/**\"]\n    },\n    {\n      id: \"repository-links\",\n      title: \"A link inside a repository document navigates within the repository or leaves it to the browser\",\n      threat: \"A README link runs script in the app's origin or sends the reader somewhere other than where it says.\",\n      lookFor: [\n        \"resolveLink turning a link with a scheme, a protocol-relative link or one that climbs above the root into in-app navigation.\",\n        \"A navigation that skips isPlainNavigationClick, so a modified click no longer opens a new tab.\",\n        \"An href built from document content without passing through the host's `href`.\"\n      ],\n      paths: [\"src/RepoView.tsx\", \"src/paths.ts\", \"src/MarkdownEditor.tsx\"]\n    },\n    {\n      id: \"static-style-injection\",\n      title: \"Injected style sheets are static strings\",\n      threat: \"A host or document value breaks out of a `<style>` element to restyle or overlay the page, or loads a remote url().\",\n      lookFor: [\n        \"repoViewCss or markdownEditorCss built from props or document content rather than module constants.\",\n        \"PierreDiffView's `unsafeCSS` or CodeFileView's pierre options fed from repository content.\"\n      ],\n      paths: [\"src/styles.tsx\", \"src/MarkdownEditor.tsx\", \"src/PierreDiffView.tsx\", \"src/CodeFileView.tsx\"]\n    }\n  ]\n})\n\n/**\n * Will's SDK-wide rules (apps/mvp/docs/rules.md). The package renders React,\n * so only root imports, dead code and tests are held to them. `jevRules` is\n * manual.\n */\nconst { importRules, jevRules } = SdkRules({ cwd, role: \"components\", tests: [\"test/**/*.test.{ts,tsx}\"] })\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    docsFiles,\n    importRules,\n    jevRules,\n    unitTests,\n    ...securityReview\n  }\n})\n","coverageDirectives":[{"line":7,"text":"* `BuildAndCheckTypeScriptPackage` (`PackageDefaults` skips a directory"},{"line":9,"text":"* fails below 100% line and function coverage (`bunfig.toml`)."},{"line":16,"text":"/** The view sources the suite drives, the VibeLang grammar included. */"},{"line":52,"text":"* coverage of `src/`."},{"line":86,"text":"include: [\"src/**\"],"},{"line":105,"text":"\"A navigation that skips isPlainNavigationClick, so a modified click no longer opens a new tab.\","}]},{"path":"packages/smithers/ui/repo-view/tsconfig.json","sha256":"e0979fce14d6cc6baac377319f2dd2dda82dc57a26df877617a03fb6f4174234","source":"{\n  \"compilerOptions\": {\n    \"lib\": [\"ESNext\", \"DOM\", \"DOM.Iterable\"],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"moduleDetection\": \"force\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"react\",\n    \"strict\": true,\n    \"skipLibCheck\": true,\n    \"verbatimModuleSyntax\": true,\n    \"noEmit\": false,\n    \"declaration\": true,\n    \"emitDeclarationOnly\": true,\n    \"outDir\": \"dist\",\n    \"types\": [\"bun\"],\n    \"noFallthroughCasesInSwitch\": true,\n    \"noUnusedLocals\": false,\n    \"noUnusedParameters\": false,\n    \"allowImportingTsExtensions\": true,\n    \"rootDir\": \"src\"\n  },\n  \"include\": [\"src/**/*\"]\n}\n","coverageDirectives":[{"line":11,"text":"\"skipLibCheck\": true,"},{"line":24,"text":"\"include\": [\"src/**/*\"]"}]}],"targets":[{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:check","rule":"Typecheck","kinds":["build"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/*.tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/*.json","exclude":[]},{"kind":"file","path":"packages/smithers/ui/repo-view/tsconfig.json"}],"dependencies":[]},{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:docsFiles","rule":"Filegroup","kinds":[],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/repo-view/docs/**/*.md","exclude":[]},{"kind":"file","path":"packages/smithers/ui/repo-view/README.md"},{"kind":"file","path":"packages/smithers/ui/repo-view/package.json"}],"dependencies":[]},{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:importRules","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}","exclude":[]},{"kind":"file","path":"packages/repo-targets/scripts/import-rules.mjs"},{"kind":"file","path":"packages/repo-targets/src/ImportRulesCheck.ts"},{"kind":"file","path":"packages/repo-targets/src/ImportAnalysis.ts"}],"dependencies":[]},{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:jevRules","rule":"JevLint","kinds":["lint"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/!(*.test).ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/!(*.test).tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/!(*.test).vibe","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/test/**/*.test.{ts,tsx}","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:security","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"origin/main","paths":["packages/smithers/ui/repo-view/src/**"]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:securityAudit","rule":"LlmLint","kinds":["review"],"inputs":[{"kind":"git-diff","base":"HEAD","paths":["packages/smithers/ui/repo-view/src/**"]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**","exclude":[]}],"dependencies":[]},{"package":"packages/smithers/ui/repo-view","label":"//packages/smithers/ui/repo-view:unitTests","rule":"NodeTest","kinds":["test"],"inputs":[{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/*.tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/src/**/*.json","exclude":[]},{"kind":"file","path":"packages/smithers/ui/repo-view/bunfig.toml"},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/test/**/*.ts","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/test/**/*.tsx","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/test/**/*.snap","exclude":[]},{"kind":"glob","pattern":"packages/smithers/ui/repo-view/docs/**/*.md","exclude":[]}],"dependencies":[]}],"areas":["PACKAGE.ts","src/CodeEditor.tsx","src/CodeFileView.tsx","src/HtmlPreview.tsx","src/LiveMarkdownEditor.tsx","src/MarkdownEditor.tsx","src/PierreDiffView.tsx","src/RepoView.tsx","src/SymbolsPane.tsx","src/crepeTheme.generated.ts","src/index.ts","src/markdownAlerts.ts","src/markdownCode.ts","src/markdownHtml.ts","src/markdownLinkNames.ts","src/paths.ts","src/replaceMarkdown.ts","src/styles.tsx","src/symbols.ts","src/vibe.ts","src/workerPool.ts","test/fixtures","test/happy-dom-preload.ts"],"boundaries":["browser","public-authoring"]}
+{
+  "id": "packages/smithers/ui/repo-view",
+  "name": "@smthrs/repo-view",
+  "owner": {
+    "declaration": "packages/smithers/ui/repo-view/package.json",
+    "assignedLane": null
+  },
+  "kind": "package",
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "test": "bun test --isolate test"
+  },
+  "exports": {
+    "./package.json": "./package.json",
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "production": [
+    "PACKAGE.ts",
+    "src/CodeEditor.tsx",
+    "src/CodeFileView.tsx",
+    "src/crepeTheme.generated.ts",
+    "src/HtmlPreview.tsx",
+    "src/index.ts",
+    "src/LiveMarkdownEditor.tsx",
+    "src/markdownAlerts.ts",
+    "src/markdownCode.ts",
+    "src/MarkdownEditor.tsx",
+    "src/markdownHtml.ts",
+    "src/markdownLinkNames.ts",
+    "src/paths.ts",
+    "src/PierreDiffView.tsx",
+    "src/replaceMarkdown.ts",
+    "src/RepoView.tsx",
+    "src/styles.tsx",
+    "src/symbols.ts",
+    "src/SymbolsPane.tsx",
+    "src/vibe.ts",
+    "src/workerPool.ts",
+    "test/fixtures/forms.vibe",
+    "test/happy-dom-preload.ts"
+  ],
+  "tests": [
+    "packages/smithers/ui/repo-view/test/__snapshots__/code-view.test.tsx.snap",
+    "packages/smithers/ui/repo-view/test/bundle.test.ts",
+    "packages/smithers/ui/repo-view/test/code-editor.test.tsx",
+    "packages/smithers/ui/repo-view/test/code-intelligence.test.tsx",
+    "packages/smithers/ui/repo-view/test/code-view-pool-fallback.test.ts",
+    "packages/smithers/ui/repo-view/test/code-view-pool.test.ts",
+    "packages/smithers/ui/repo-view/test/code-view.test.tsx",
+    "packages/smithers/ui/repo-view/test/docs-contracts.test.ts",
+    "packages/smithers/ui/repo-view/test/fixtures/forms.vibe",
+    "packages/smithers/ui/repo-view/test/happy-dom-preload.ts",
+    "packages/smithers/ui/repo-view/test/markdown-alerts.test.ts",
+    "packages/smithers/ui/repo-view/test/markdown-code.test.ts",
+    "packages/smithers/ui/repo-view/test/markdown-editor-hydration.test.tsx",
+    "packages/smithers/ui/repo-view/test/markdown-editor-images.test.tsx",
+    "packages/smithers/ui/repo-view/test/markdown-editor-probe.test.ts",
+    "packages/smithers/ui/repo-view/test/markdown-editor-readonly.test.tsx",
+    "packages/smithers/ui/repo-view/test/markdown-editor-replacement.test.ts",
+    "packages/smithers/ui/repo-view/test/markdown-editor-wysiwyg.test.tsx",
+    "packages/smithers/ui/repo-view/test/markdown-editor.test.tsx",
+    "packages/smithers/ui/repo-view/test/markdown-html.test.ts",
+    "packages/smithers/ui/repo-view/test/markdown-layout.test.ts",
+    "packages/smithers/ui/repo-view/test/markdown-link-names.test.ts",
+    "packages/smithers/ui/repo-view/test/percent-links.test.ts",
+    "packages/smithers/ui/repo-view/test/pierre-diff-view.test.tsx",
+    "packages/smithers/ui/repo-view/test/repo-view-first-visit.test.tsx",
+    "packages/smithers/ui/repo-view/test/repo-view-paths.test.ts",
+    "packages/smithers/ui/repo-view/test/repo-view.test.tsx",
+    "packages/smithers/ui/repo-view/test/root-directory.test.ts",
+    "packages/smithers/ui/repo-view/test/styles.test.tsx",
+    "packages/smithers/ui/repo-view/test/vibe-grammar-source.test.ts"
+  ],
+  "benchmarks": [],
+  "platformPaths": [
+    "packages/smithers/ui/repo-view/bunfig.toml",
+    "packages/smithers/ui/repo-view/src/workerPool.ts",
+    "packages/smithers/ui/repo-view/test/bundle.test.ts"
+  ],
+  "ignoredCases": [],
+  "configurations": [
+    {
+      "path": "packages/smithers/ui/repo-view/package.json",
+      "sha256": "510b08cee2647b96cf57782efa36e51c71c2a7b7cc89327af7f742b408efe1b6",
+      "source": "{\n  \"name\": \"@smthrs/repo-view\",\n  \"version\": \"0.1.0\",\n  \"smthrs\": {\n    \"group\": \"agent\"\n  },\n  \"private\": true,\n  \"description\": \"The heavy views of a repository for Smithers UIs: the repository browser, a file highlighted by Shiki, a highlighted diff and the Milkdown Markdown editor, kept out of @smthrs/ui so pages that show no code never load them.\",\n  \"homepage\": \"https://github.com/smithersai/smithers/tree/main/packages/smithers/ui/repo-view\",\n  \"repository\": {\n    \"type\": \"git\",\n    \"url\": \"https://github.com/smithersai/smithers.git\",\n    \"directory\": \"packages/smithers/ui/repo-view\"\n  },\n  \"bugs\": {\n    \"url\": \"https://github.com/smithersai/smithers/issues\"\n  },\n  \"type\": \"module\",\n  \"sideEffects\": false,\n  \"exports\": {\n    \"./package.json\": \"./package.json\",\n    \".\": {\n      \"types\": \"./src/index.ts\",\n      \"import\": \"./src/index.ts\",\n      \"default\": \"./src/index.ts\"\n    }\n  },\n  \"files\": [\n    \"src/\",\n    \"docs/\",\n    \"README.md\"\n  ],\n  \"scripts\": {\n    \"check\": \"vibelang -p tsconfig.json --noEmit\",\n    \"test\": \"bun test --isolate test\"\n  },\n  \"dependencies\": {\n    \"@codemirror/commands\": \"6.11.0\",\n    \"@codemirror/state\": \"6.7.2\",\n    \"@codemirror/view\": \"6.43.11\",\n    \"@milkdown/crepe\": \"7.22.1\",\n    \"@milkdown/kit\": \"7.22.1\",\n    \"@pierre/diffs\": \"1.5.2\",\n    \"@smthrs/ui\": \"workspace:*\"\n  },\n  \"peerDependencies\": {\n    \"react\": \"^19.2.8\",\n    \"react-dom\": \"^19.2.8\"\n  },\n  \"devDependencies\": {\n    \"@happy-dom/global-registrator\": \"^20.13.2\",\n    \"@types/bun\": \"1.4.4\",\n    \"@types/react\": \"^19.2.18\",\n    \"@types/react-dom\": \"^19.2.7\",\n    \"happy-dom\": \"20.13.2\",\n    \"react\": \"19.2.8\",\n    \"react-dom\": \"19.2.8\",\n    \"typescript\": \"~5.9.3\"\n  }\n}\n",
+      "coverageDirectives": []
+    },
+    {
+      "path": "packages/smithers/ui/repo-view/PACKAGE.ts",
+      "sha256": "c9f23d10196dbed7208684cc46fa7a809e8a232e50adb7421410d219dfe61742",
+      "source": "/**\n * Targets for `@smthrs/repo-view`, the heavy views of a repository.\n *\n * Like `@smthrs/ui`, whose components it composes, the package ships its\n * sources directly, types against `@types/bun` and tests with `bun test`, so\n * it declares the gates it can honor instead of taking the synthesized\n * `BuildAndCheckTypeScriptPackage` (`PackageDefaults` skips a directory\n * holding a `PACKAGE.ts`): a `vibelang --noEmit` typecheck and the Bun suite, which\n * fails below 100% line and function coverage (`bunfig.toml`).\n */\nimport { SdkRules } from \"@smthrs/repo-targets\"\nimport { Smithers } from \"@smthrs/targets\"\n\nconst cwd = \"packages/smithers/ui/repo-view\"\n\n/** The view sources the suite drives, the VibeLang grammar included. */\nconst sources = [\n  Smithers.glob(\"//packages/smithers/ui/repo-view/src/**/*.ts\"),\n  Smithers.glob(\"//packages/smithers/ui/repo-view/src/**/*.tsx\"),\n  Smithers.glob(\"//packages/smithers/ui/repo-view/src/**/*.json\")\n]\n\n/**\n * `@smthrs/ui`'s sources and the `@smthrs/views` sources it builds on, as\n * their `sourceFiles` labels: the views compose its components and read its\n * tokens, so a change there re-runs this suite. A selector, not an import of\n * ui's PACKAGE.ts; this package declares no `sourceFiles` of its own, so the\n * selector never reaches back here.\n */\nconst uiSources = Smithers.Target.subtree(\"//packages/smithers/ui/...\", \"sourceFiles\")\n\n/**\n * Checks every source against the package tsconfig. The package publishes its\n * `src/` tree directly, so this is the only gate between a type error and a\n * consumer's build.\n *\n * @since 0.1.0\n * @category build\n */\nconst check = Smithers.Typecheck({\n  srcs: sources,\n  deps: [],\n  tsconfig: Smithers.file(\"tsconfig.json\"),\n  buildMode: false,\n  incremental: false,\n  cwd\n})\n\n/**\n * The suite: everything under `test/`, run by Bun against happy-dom, each\n * file in a fresh module registry (`--isolate`), at 100% line and function\n * coverage of `src/`.\n *\n * @since 0.1.0\n * @category test\n */\nconst unitTests = Smithers.NodeTest({\n  runtime: Smithers.Runtime.Bun({ version: \">=1.4.0\" }),\n  runner: Smithers.testSuite([\"test\"], { isolate: true }),\n  srcs: [\n    ...sources,\n    Smithers.file(\"bunfig.toml\"),\n    Smithers.glob(\"//packages/smithers/ui/repo-view/test/**/*.ts\"),\n    Smithers.glob(\"//packages/smithers/ui/repo-view/test/**/*.tsx\"),\n    Smithers.glob(\"//packages/smithers/ui/repo-view/test/**/*.snap\"),\n    // test/docs-contracts.test.ts holds the docs' examples and stated contracts to the code.\n    Smithers.glob(\"//packages/smithers/ui/repo-view/docs/**/*.md\")\n  ],\n  deps: [uiSources],\n  cwd\n})\n\n/** The package's documentation as a file group: `docs/**`, the README and package.json. */\nconst docsFiles = Smithers.Filegroup({\n  srcs: [Smithers.glob(\"docs/**/*.md\"), Smithers.file(\"README.md\"), Smithers.file(\"package.json\")],\n  cwd\n})\n\n/**\n * Security review. The views render repository content, which anyone who can\n * push to a repository controls: file text, Markdown, patches and the links\n * inside them.\n */\nconst securityReview = Smithers.SecurityReview({\n  cwd,\n  include: [\"src/**\"],\n  checks: [\n    {\n      id: \"repository-content-as-text\",\n      title: \"Repository content reaches the DOM only as text, highlighted tokens or Milkdown's schema nodes\",\n      threat: \"A file, a README or a patch injects HTML or script into the signed-in user's page.\",\n      lookFor: [\n        \"dangerouslySetInnerHTML, innerHTML, outerHTML, insertAdjacentHTML, or document.write fed from file contents, a patch or Markdown.\",\n        \"Milkdown Crepe, or pierre's File or CodeView, configured to render raw HTML nodes from document content.\",\n        \"The read-only Markdown view parsing an HTML node as anything but text.\"\n      ],\n      paths: [\"src/**\"]\n    },\n    {\n      id: \"repository-links\",\n      title: \"A link inside a repository document navigates within the repository or leaves it to the browser\",\n      threat: \"A README link runs script in the app's origin or sends the reader somewhere other than where it says.\",\n      lookFor: [\n        \"resolveLink turning a link with a scheme, a protocol-relative link or one that climbs above the root into in-app navigation.\",\n        \"A navigation that skips isPlainNavigationClick, so a modified click no longer opens a new tab.\",\n        \"An href built from document content without passing through the host's `href`.\"\n      ],\n      paths: [\"src/RepoView.tsx\", \"src/paths.ts\", \"src/MarkdownEditor.tsx\"]\n    },\n    {\n      id: \"static-style-injection\",\n      title: \"Injected style sheets are static strings\",\n      threat: \"A host or document value breaks out of a `<style>` element to restyle or overlay the page, or loads a remote url().\",\n      lookFor: [\n        \"repoViewCss or markdownEditorCss built from props or document content rather than module constants.\",\n        \"PierreDiffView's `unsafeCSS` or CodeFileView's pierre options fed from repository content.\"\n      ],\n      paths: [\"src/styles.tsx\", \"src/MarkdownEditor.tsx\", \"src/PierreDiffView.tsx\", \"src/CodeFileView.tsx\"]\n    }\n  ]\n})\n\n/**\n * Will's SDK-wide rules (apps/mvp/docs/rules.md). The package renders React,\n * so only root imports, dead code and tests are held to them. `jevRules` is\n * manual.\n */\nconst { importRules, jevRules } = SdkRules({ cwd, role: \"components\", tests: [\"test/**/*.test.{ts,tsx}\"] })\n\nexport const Package = Smithers.Package({\n  targets: {\n    check,\n    docsFiles,\n    importRules,\n    jevRules,\n    unitTests,\n    ...securityReview\n  }\n})\n",
+      "coverageDirectives": [
+        {
+          "line": 7,
+          "text": "* `BuildAndCheckTypeScriptPackage` (`PackageDefaults` skips a directory"
+        },
+        {
+          "line": 9,
+          "text": "* fails below 100% line and function coverage (`bunfig.toml`)."
+        },
+        {
+          "line": 16,
+          "text": "/** The view sources the suite drives, the VibeLang grammar included. */"
+        },
+        {
+          "line": 52,
+          "text": "* coverage of `src/`."
+        },
+        {
+          "line": 86,
+          "text": "include: [\"src/**\"],"
+        },
+        {
+          "line": 105,
+          "text": "\"A navigation that skips isPlainNavigationClick, so a modified click no longer opens a new tab.\","
+        }
+      ]
+    },
+    {
+      "path": "packages/smithers/ui/repo-view/tsconfig.json",
+      "sha256": "e0979fce14d6cc6baac377319f2dd2dda82dc57a26df877617a03fb6f4174234",
+      "source": "{\n  \"compilerOptions\": {\n    \"lib\": [\"ESNext\", \"DOM\", \"DOM.Iterable\"],\n    \"target\": \"ESNext\",\n    \"module\": \"ESNext\",\n    \"moduleResolution\": \"bundler\",\n    \"moduleDetection\": \"force\",\n    \"jsx\": \"react-jsx\",\n    \"jsxImportSource\": \"react\",\n    \"strict\": true,\n    \"skipLibCheck\": true,\n    \"verbatimModuleSyntax\": true,\n    \"noEmit\": false,\n    \"declaration\": true,\n    \"emitDeclarationOnly\": true,\n    \"outDir\": \"dist\",\n    \"types\": [\"bun\"],\n    \"noFallthroughCasesInSwitch\": true,\n    \"noUnusedLocals\": false,\n    \"noUnusedParameters\": false,\n    \"allowImportingTsExtensions\": true,\n    \"rootDir\": \"src\"\n  },\n  \"include\": [\"src/**/*\"]\n}\n",
+      "coverageDirectives": [
+        {
+          "line": 11,
+          "text": "\"skipLibCheck\": true,"
+        },
+        {
+          "line": 24,
+          "text": "\"include\": [\"src/**/*\"]"
+        }
+      ]
+    }
+  ],
+  "targets": [
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:check",
+      "rule": "Typecheck",
+      "kinds": [
+        "build"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/*.json",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/tsconfig.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:docsFiles",
+      "rule": "Filegroup",
+      "kinds": [],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/docs/**/*.md",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/README.md"
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/package.json"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:importRules",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/**/*{.ts,.tsx,.mts,.cts,.js,.jsx,.mjs,.cjs,.vibe}",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/scripts/import-rules.mjs"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportRulesCheck.ts"
+        },
+        {
+          "kind": "file",
+          "path": "packages/repo-targets/src/ImportAnalysis.ts"
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:jevRules",
+      "rule": "JevLint",
+      "kinds": [
+        "lint"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/!(*.test).ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/!(*.test).tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/!(*.test).vibe",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/test/**/*.test.{ts,tsx}",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:security",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "origin/main",
+          "paths": [
+            "packages/smithers/ui/repo-view/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:securityAudit",
+      "rule": "LlmLint",
+      "kinds": [
+        "review"
+      ],
+      "inputs": [
+        {
+          "kind": "git-diff",
+          "base": "HEAD",
+          "paths": [
+            "packages/smithers/ui/repo-view/src/**"
+          ]
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    },
+    {
+      "package": "packages/smithers/ui/repo-view",
+      "label": "//packages/smithers/ui/repo-view:unitTests",
+      "rule": "NodeTest",
+      "kinds": [
+        "test"
+      ],
+      "inputs": [
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/src/**/*.json",
+          "exclude": []
+        },
+        {
+          "kind": "file",
+          "path": "packages/smithers/ui/repo-view/bunfig.toml"
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/test/**/*.ts",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/test/**/*.tsx",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/test/**/*.snap",
+          "exclude": []
+        },
+        {
+          "kind": "glob",
+          "pattern": "packages/smithers/ui/repo-view/docs/**/*.md",
+          "exclude": []
+        }
+      ],
+      "dependencies": []
+    }
+  ],
+  "areas": [
+    "PACKAGE.ts",
+    "src/CodeEditor.tsx",
+    "src/CodeFileView.tsx",
+    "src/HtmlPreview.tsx",
+    "src/LiveMarkdownEditor.tsx",
+    "src/MarkdownEditor.tsx",
+    "src/PierreDiffView.tsx",
+    "src/RepoView.tsx",
+    "src/SymbolsPane.tsx",
+    "src/crepeTheme.generated.ts",
+    "src/index.ts",
+    "src/markdownAlerts.ts",
+    "src/markdownCode.ts",
+    "src/markdownHtml.ts",
+    "src/markdownLinkNames.ts",
+    "src/paths.ts",
+    "src/replaceMarkdown.ts",
+    "src/styles.tsx",
+    "src/symbols.ts",
+    "src/vibe.ts",
+    "src/workerPool.ts",
+    "test/fixtures",
+    "test/happy-dom-preload.ts"
+  ],
+  "boundaries": [
+    "browser",
+    "public-authoring"
+  ]
+}

@@ -24,17 +24,19 @@
 import { Action, Flow, RetryPolicy, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
-import { STAGES, step, verify } from "./steps.mjs"
 import { FileRefused } from "./errors.ts"
+import { STAGES, step, verify } from "./steps.mjs"
 
 export { FileRefused } from "./errors.ts"
 
 const FileError = Schema.Union([FileRefused, Sleep.SleepRequestInvalid])
 
-
-
-
-const Counts = Schema.Struct({ created: Schema.Number, linked: Schema.Number, queueLinks: Schema.Number, exceptions: Schema.Number })
+const Counts = Schema.Struct({
+  created: Schema.Number,
+  linked: Schema.Number,
+  queueLinks: Schema.Number,
+  exceptions: Schema.Number
+})
 
 /**
  * Where a round files from. Secrets never ride in it: the identity is read from the environment.
@@ -148,7 +150,8 @@ export const Verify = Action.make("issues/file-tree/verify", {
 export const Step = Action.make("issues/file-tree/step", {
   implementationVersion,
   tier: "irreversible",
-  idempotencyKey: (cursor: typeof Cursor.Type) => `${cursor.sha}:${cursor.dryRun}:${cursor.index}:${cursor.stage}:${cursor.attempt}`,
+  idempotencyKey: (cursor: typeof Cursor.Type) =>
+    `${cursor.sha}:${cursor.dryRun}:${cursor.index}:${cursor.stage}:${cursor.attempt}`,
   payload: Cursor,
   success: Outcome,
   error: FileRefused,
@@ -166,7 +169,15 @@ const run = <A>(thunk: () => Promise<A>) => Effect.tryPromise({ try: thunk, catc
  */
 export const layer = Layer.mergeAll(
   Verify.toLayer(
-    (request) => run(() => verify({ plan: request.plan, acceptDropped: request.acceptDropped ?? 0, dryRun: request.dryRun === true, origin: request.origin ?? "https://smithers.sh" })),
+    (request) =>
+      run(() =>
+        verify({
+          plan: request.plan,
+          acceptDropped: request.acceptDropped ?? 0,
+          dryRun: request.dryRun === true,
+          origin: request.origin ?? "https://smithers.sh"
+        })
+      ),
     { implementationVersion }
   ),
   Step.toLayer((cursor) => run(() => step(cursor)), { implementationVersion }),
@@ -183,8 +194,19 @@ export const layer = Layer.mergeAll(
 export const advance = (cursor: typeof Cursor.Type, outcome: typeof Outcome.Type): typeof Cursor.Type => {
   const forgotten = new Set(outcome.forgetNodes ?? [])
   const nodes = Object.fromEntries(Object.entries(cursor.nodes).filter(([key]) => !forgotten.has(key)))
-  if (!outcome.done) return { ...cursor, nodes, submitted: outcome.submitted, attempt: cursor.attempt + 1, waitMs: outcome.waitMs, retryCount: outcome.retryCount ?? cursor.retryCount ?? 0 }
-  const exception = outcome.exception === null ? [] : [`${outcome.rowKey ?? cursor.index}:${cursor.stage}: ${outcome.exception}`]
+  if (!outcome.done) {
+    return {
+      ...cursor,
+      nodes,
+      submitted: outcome.submitted,
+      attempt: cursor.attempt + 1,
+      waitMs: outcome.waitMs,
+      retryCount: outcome.retryCount ?? cursor.retryCount ?? 0
+    }
+  }
+  const exception = outcome.exception === null
+    ? []
+    : [`${outcome.rowKey ?? cursor.index}:${cursor.stage}: ${outcome.exception}`]
   const number = cursor.stage === "create" ? outcome.number : cursor.number
   const nodeKey = outcome.nodeKey
   const counts = {
@@ -201,7 +223,9 @@ export const advance = (cursor: typeof Cursor.Type, outcome: typeof Outcome.Type
     waitMs: 0,
     counts,
     exceptions: [...cursor.exceptions, ...exception],
-    nodes: nodeKey === null || forgotten.has(nodeKey) ? nodes : { ...nodes, [nodeKey]: outcome.exception === null ? number : null }
+    nodes: nodeKey === null || forgotten.has(nodeKey)
+      ? nodes
+      : { ...nodes, [nodeKey]: outcome.exception === null ? number : null }
   }
   const nextStage = STAGES[STAGES.indexOf(cursor.stage) + 1] as typeof Cursor.Type["stage"] | undefined
   // A row with no issue has nothing to label, link or post.
@@ -242,17 +266,25 @@ export const Round: RoundFlow = Flow.make("issues/file-tree/round", {
   success: Report,
   error: FileError,
   maxRounds: 1_000_000,
-  body: Node.capture({ implementationVersion }, (cursor: typeof Cursor.Type) =>
-    Sleep.action.call({ millis: cursor.waitMs }).pipe(
-      Node.andThen(Step.call(cursor)),
-      Node.map(Node.capture({ implementationVersion }, (outcome: typeof Outcome.Type) => advance(cursor, outcome))),
-      Node.branch({
-        if: Node.capture({ implementationVersion }, (next: typeof Cursor.Type) => next.index >= cursor.total),
-        then: Node.capture({ implementationVersion }, (next) =>
-          Flow.done({ filed: cursor.total, counts: next.counts, exceptions: next.exceptions, dryRun: cursor.dryRun })),
-        else: Node.capture({ implementationVersion }, (next) => Round.to(next))
-      })
-    ))
+  body: Node.capture(
+    { implementationVersion },
+    (cursor: typeof Cursor.Type) =>
+      Sleep.action.call({ millis: cursor.waitMs }).pipe(
+        Node.andThen(Step.call(cursor)),
+        Node.map(Node.capture({ implementationVersion }, (outcome: typeof Outcome.Type) => advance(cursor, outcome))),
+        Node.branch({
+          if: Node.capture({ implementationVersion }, (next: typeof Cursor.Type) => next.index >= cursor.total),
+          then: Node.capture({ implementationVersion }, (next) =>
+            Flow.done({
+              filed: cursor.total,
+              counts: next.counts,
+              exceptions: next.exceptions,
+              dryRun: cursor.dryRun
+            })),
+          else: Node.capture({ implementationVersion }, (next) => Round.to(next))
+        })
+      )
+  )
 })
 
 export default Flow.make("issues/file-tree", {
@@ -265,7 +297,12 @@ export default Flow.make("issues/file-tree", {
   error: FileError,
   body: Node.capture({ implementationVersion }, (request: typeof Request.Type) =>
     Verify.call(request).pipe(
-      Node.map(Node.capture({ implementationVersion }, (verified: typeof Verify.successSchema.Type) => start(request, verified))),
+      Node.map(
+        Node.capture(
+          { implementationVersion },
+          (verified: typeof Verify.successSchema.Type) => start(request, verified)
+        )
+      ),
       Node.bindPlanned(Node.capture({ implementationVersion }, (cursor) => Round.child(cursor)))
     ))
 })

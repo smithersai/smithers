@@ -11,12 +11,17 @@
  * @since 1.0.0
  */
 
-import { Redaction } from "@smthrs/journal"
-import { Schema } from "effect"
 import type { ControlSchema, Health } from "@smthrs/control"
-import { Failure as FailureSchema, type Failure, type ReleaseCause, releaseCauseOf } from "@smthrs/engine-store/RunState"
+import {
+  type Failure,
+  Failure as FailureSchema,
+  type ReleaseCause,
+  releaseCauseOf
+} from "@smthrs/engine-store/RunState"
 import { clip, type Digest, firstLine, resolvedOutput } from "@smthrs/gateway/Diagnosis"
 import { statusRollup } from "@smthrs/gateway/GatewayProjection"
+import { Redaction } from "@smthrs/journal"
+import { Schema } from "effect"
 import * as Forensics from "../Forensics.ts"
 
 /** The engine flow that executes an approved plan. */

@@ -269,11 +269,19 @@ it.each([true, false])("discards old-generation activity and hints with a rewind
   const values = [
     engine(1, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "a", action: "stale" }),
     event(2, { currentNode: "prior-epoch", round: 400 }),
-    ...(receipt ? [
-      event(3, { executionId: "execution", generation: 1, reason: "rewound" }, "control.engine.projection-gap")
-    ] : []),
+    ...(receipt ?
+      [
+        event(3, { executionId: "execution", generation: 1, reason: "rewound" }, "control.engine.projection-gap")
+      ] :
+      []),
     engine(4, "checkpoint", {}, "execution", 1),
-    engine(5, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "a", action: "replayed-old" }, "execution", 0)
+    engine(
+      5,
+      "flows.engine.node-scheduled",
+      { kind: "ActionCall", nodeId: "a", action: "replayed-old" },
+      "execution",
+      0
+    )
   ]
   const limits = { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
   const read = () => Effect.runPromise(RunHistory.read(Stream.fromIterable(values), "large", limits, "execution"))
@@ -282,12 +290,22 @@ it.each([true, false])("discards old-generation activity and hints with a rewind
   expect(rewound.currentNode).toBeUndefined()
   expect(rewound.lastRecordedNode).toBeUndefined()
   expect(rewound.round).toBeUndefined()
-  values.push(engine(6, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "b", action: "fresh" }, "execution", 1))
+  values.push(
+    engine(6, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "b", action: "fresh" }, "execution", 1)
+  )
   values.push(engine(7, "flows.engine.node-settled", { nodeId: "b" }, "execution", 0))
-  values.push(engine(8, "terminal", {
-    executionFact: { observation: { executionId: "execution", status: "completed", roundOrdinal: 999 } }
-  }, "execution", 0))
-  values.push(event(9, { executionId: "execution", generation: 0, reason: "compacted" }, "control.engine.projection-gap"))
+  values.push(engine(
+    8,
+    "terminal",
+    {
+      executionFact: { observation: { executionId: "execution", status: "completed", roundOrdinal: 999 } }
+    },
+    "execution",
+    0
+  ))
+  values.push(
+    event(9, { executionId: "execution", generation: 0, reason: "compacted" }, "control.engine.projection-gap")
+  )
   const fresh = (await read()).history!
   expect(fresh.currentNode).toBe("fresh")
   expect(fresh.round).toBeUndefined()
@@ -297,46 +315,66 @@ it.each([true, false])("discards old-generation activity and hints with a rewind
   expect((await read()).history!.currentNode).toBe("new-epoch")
 })
 
-it.each(["completed", "failed", "cancelled"])("starts a fresh terminal lifecycle after %s and rewind", async (status) => {
-  const values = [
-    engine(1, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "old" }),
-    event(2, {}, `control.run.${status}`),
-    event(3, { executionId: "execution", generation: 1, reason: "rewound" }, "control.engine.projection-gap"),
-    event(4, {}, "control.run.resume"),
-    engine(5, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "delayed-old" }, "execution", 0)
-  ]
-  const read = () => Effect.runPromise(RunHistory.read(
-    Stream.fromIterable(values), "large", { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }, "execution"
-  ))
-  expect((await read()).history!.currentNodeUnavailable).toBe(true)
-  values.push(engine(6, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "fresh" }, "execution", 1))
-  values.push(engine(7, "terminal", {
-    executionFact: { observation: { executionId: "execution", status: "failed" } }
-  }, "execution", 0))
-  expect((await read()).history!.currentNode).toBe("fresh")
+it.each(["completed", "failed", "cancelled"])(
+  "starts a fresh terminal lifecycle after %s and rewind",
+  async (status) => {
+    const values = [
+      engine(1, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "old" }),
+      event(2, {}, `control.run.${status}`),
+      event(3, { executionId: "execution", generation: 1, reason: "rewound" }, "control.engine.projection-gap"),
+      event(4, {}, "control.run.resume"),
+      engine(5, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "delayed-old" }, "execution", 0)
+    ]
+    const read = () =>
+      Effect.runPromise(RunHistory.read(
+        Stream.fromIterable(values),
+        "large",
+        { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 },
+        "execution"
+      ))
+    expect((await read()).history!.currentNodeUnavailable).toBe(true)
+    values.push(engine(6, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "fresh" }, "execution", 1))
+    values.push(engine(
+      7,
+      "terminal",
+      {
+        executionFact: { observation: { executionId: "execution", status: "failed" } }
+      },
+      "execution",
+      0
+    ))
+    expect((await read()).history!.currentNode).toBe("fresh")
 
-  values.push(event(8, {}, `control.run.${status}`))
-  values.push(engine(9, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "late" }, "execution", 1))
-  expect((await read()).history!.currentNodeUnavailable).toBe(true)
-  // An observed generation advance also confirms a rewind without its gap receipt.
-  values.push(engine(10, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "next" }, "execution", 2))
-  expect((await read()).history!.currentNode).toBe("next")
-})
+    values.push(event(8, {}, `control.run.${status}`))
+    values.push(engine(9, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "late" }, "execution", 1))
+    expect((await read()).history!.currentNodeUnavailable).toBe(true)
+    // An observed generation advance also confirms a rewind without its gap receipt.
+    values.push(engine(10, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "next" }, "execution", 2))
+    expect((await read()).history!.currentNode).toBe("next")
+  }
+)
 
-it.each(["control.run.resume", "control.run.resumed"])("requires fresh evidence for a resumed lifecycle: %s", async (kind) => {
-  const values = [
-    event(1, {}, "control.run.failed"),
-    engine(2, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "delayed-old" }),
-    event(3, { currentNode: "old-hint" }),
-    event(4, {}, kind)
-  ]
-  const read = () => Effect.runPromise(RunHistory.read(
-    Stream.fromIterable(values), "large", { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }, "execution"
-  ))
-  expect((await read()).history).toMatchObject({ currentNodeUnavailable: true, lastRecordedNode: "old-hint" })
-  values.push(engine(5, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "fresh" }))
-  expect((await read()).history!.currentNode).toBe("fresh")
-})
+it.each(["control.run.resume", "control.run.resumed"])(
+  "requires fresh evidence for a resumed lifecycle: %s",
+  async (kind) => {
+    const values = [
+      event(1, {}, "control.run.failed"),
+      engine(2, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "delayed-old" }),
+      event(3, { currentNode: "old-hint" }),
+      event(4, {}, kind)
+    ]
+    const read = () =>
+      Effect.runPromise(RunHistory.read(
+        Stream.fromIterable(values),
+        "large",
+        { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 },
+        "execution"
+      ))
+    expect((await read()).history).toMatchObject({ currentNodeUnavailable: true, lastRecordedNode: "old-hint" })
+    values.push(engine(5, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "fresh" }))
+    expect((await read()).history!.currentNode).toBe("fresh")
+  }
+)
 
 it.each([
   { hint: true, rewound: false },
@@ -349,8 +387,11 @@ it.each([
       engine(1, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "root" }),
       engine(2, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "child" }, "child"),
       event(3, { round: 401, ...(hint ? { currentNode: "fresh-root" } : {}) }),
-      event(4, { executionId: "child", generation: rewound ? 1 : 0, reason: rewound ? "rewound" : "compacted" },
-        "control.engine.projection-gap"),
+      event(
+        4,
+        { executionId: "child", generation: rewound ? 1 : 0, reason: rewound ? "rewound" : "compacted" },
+        "control.engine.projection-gap"
+      ),
       { ...engine(5, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "rogue" }), runId: "other" },
       { ...event(6, {}, "control.engine.projection-gap"), runId: "other" }
     ),
@@ -372,7 +413,12 @@ it("invalidates a grandchild action when a non-selected child is rewound", async
   const values = [
     engine(1, "observed", { executionFact: { observation: { executionId: "root", parentRunId: null } } }, "root"),
     engine(2, "observed", { executionFact: { observation: { executionId: "child", parentRunId: "root" } } }, "child"),
-    engine(3, "observed", { executionFact: { observation: { executionId: "grandchild", parentRunId: "child" } } }, "grandchild"),
+    engine(
+      3,
+      "observed",
+      { executionFact: { observation: { executionId: "grandchild", parentRunId: "child" } } },
+      "grandchild"
+    ),
     engine(4, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "old-grandchild" }, "grandchild"),
     event(5, { executionId: "child", generation: 1, reason: "rewound" }, "control.engine.projection-gap")
   ]
@@ -384,20 +430,25 @@ it("invalidates a grandchild action when a non-selected child is rewound", async
   expect((await read()).history!.currentNode).toBe("fresh-child")
 })
 
-it.each([null, undefined])("invalidates an unknown generation (%s) without forgetting the last known epoch", async (generation) => {
-  const values = [
-    engine(1, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "a" }, "execution", 1),
-    event(2, {
-      executionId: "execution", ...(generation === undefined ? {} : { generation }), reason: "unavailable"
-    }, "control.engine.projection-gap"),
-    engine(3, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "old" }, "execution", 0)
-  ]
-  const limits = { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
-  const read = () => Effect.runPromise(RunHistory.read(Stream.fromIterable(values), "large", limits, "execution"))
-  expect((await read()).history!.currentNodeUnavailable).toBe(true)
-  values.push(engine(4, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "b" }, "execution", 1))
-  expect((await read()).history!.currentNode).toBe("b")
-})
+it.each([null, undefined])(
+  "invalidates an unknown generation (%s) without forgetting the last known epoch",
+  async (generation) => {
+    const values = [
+      engine(1, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "a" }, "execution", 1),
+      event(2, {
+        executionId: "execution",
+        ...(generation === undefined ? {} : { generation }),
+        reason: "unavailable"
+      }, "control.engine.projection-gap"),
+      engine(3, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "old" }, "execution", 0)
+    ]
+    const limits = { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
+    const read = () => Effect.runPromise(RunHistory.read(Stream.fromIterable(values), "large", limits, "execution"))
+    expect((await read()).history!.currentNodeUnavailable).toBe(true)
+    values.push(engine(4, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "b" }, "execution", 1))
+    expect((await read()).history!.currentNode).toBe("b")
+  }
+)
 
 it.each([null, {}, { executionId: "" }, { executionId: "x".repeat(257) }])(
   "reports unavailable activity for an unscoped or oversized projection gap: %j",
@@ -448,7 +499,9 @@ it.each([127, 128])("bounds generation tracking after %s other rewound execution
   const values = Array.from({ length: count }, (_, index) => engine(index, "checkpoint", {}, `other-${index}`, 1))
   values.push(engine(count, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "fresh" }, "execution", 1))
   const result = await Effect.runPromise(RunHistory.read(
-    Stream.fromIterable(values), "large", { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
+    Stream.fromIterable(values),
+    "large",
+    { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
   ))
   if (count === 127) expect(result.history!.currentNode).toBe("fresh")
   else expect(result.history!.currentNodeUnavailable).toBe(true)
@@ -458,7 +511,9 @@ it("keeps current evidence after thousands of ordinary executions without retain
   const values = Array.from({ length: 1000 }, (_, index) => engine(index, "checkpoint", {}, `other-${index}`))
   values.push(engine(1000, "flows.engine.node-scheduled", { kind: "ActionCall", nodeId: "fresh" }))
   const result = await Effect.runPromise(RunHistory.read(
-    Stream.fromIterable(values), "large", { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
+    Stream.fromIterable(values),
+    "large",
+    { maxEvents: 1, maxBytes: 1000, maxEventBytes: 1000 }
   ))
   expect(result.history!.currentNode).toBe("fresh")
 })
