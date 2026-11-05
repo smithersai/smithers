@@ -74,7 +74,7 @@ export type BuiltinAgentRoleId = (typeof AGENT_ROLE_IDS)[number]
  * @category schemas
  */
 export const AgentRoleModelSchema = z.object({
-  /** The provider the model belongs to, for the human ("anthropic", "openai", "kimi-for-coding"). */
+  /** The provider the model belongs to, for the human ("anthropic", "openai", "moonshot"). */
   provider: z.string(),
   /** The id the harness's model flag takes, verbatim. */
   id: ModelIdSchema,
@@ -125,6 +125,10 @@ const seeded = (
 ): AgentRole => ({ ...role, builtin: true, createdAt: 0, updatedAt: 0 })
 
 /** The built-in roles: the seed of every agents store, in menu order.
+ * Explainer and UI may run unattended, so their Kimi default uses the Moonshot
+ * API through OpenCode's `moonshotai` provider. `kimi-for-coding` and
+ * `opencode-kimi` remain valid for a person's explicitly configured interactive
+ * profile; these seed rows neither choose nor carry that person's credentials.
  * @since 1.0.0
  * @category constants
  */
@@ -141,8 +145,8 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
     id: "explainer",
     label: "Explainer",
     purpose: "Explains things very well: errors, code, runs, and decisions, in plain language.",
-    model: { provider: "kimi-for-coding", id: "kimi-for-coding/k3", label: "Kimi K3" },
-    harness: "opencode-kimi",
+    model: { provider: "moonshot", id: "moonshotai/kimi-k3", label: "Kimi K3" },
+    harness: "opencode",
     delegates: false
   }),
   /*
@@ -176,8 +180,8 @@ export const AGENT_ROLES: ReadonlyArray<AgentRole> = [
     id: "ui",
     label: "UI",
     purpose: "Builds and reviews UI and visual work.",
-    model: { provider: "kimi-for-coding", id: "kimi-for-coding/k3", label: "Kimi K3" },
-    harness: "opencode-kimi",
+    model: { provider: "moonshot", id: "moonshotai/kimi-k3", label: "Kimi K3" },
+    harness: "opencode",
     delegates: false
   }),
   seeded({

@@ -17,6 +17,7 @@ import {
   UnknownAgentRole
 } from "../src/AgentRoles.ts"
 import type { AgentRole } from "../src/AgentRoles.ts"
+import { CardSchema } from "../src/Cards.ts"
 import { HARNESS_IDS } from "../src/LocalApp.ts"
 
 const custom = {
@@ -60,12 +61,15 @@ describe("the agent role registry", () => {
       delegates: true
     })
     expect(agentRole("explainer")).toMatchObject({
-      model: { id: "kimi-for-coding/k3", provider: "kimi-for-coding" },
-      harness: "opencode-kimi"
+      model: { id: "moonshotai/kimi-k3", provider: "moonshot" },
+      harness: "opencode"
     })
     expect(agentRole("implementation")).toMatchObject({ model: { id: "gpt-6.1-sol" }, harness: "codex" })
     expect(agentRole("trivial-implementation")).toMatchObject({ model: { id: "gpt-6-luna" }, harness: "codex" })
-    expect(agentRole("ui")).toMatchObject({ harness: "opencode-kimi", model: { id: "kimi-for-coding/k3" } })
+    expect(agentRole("ui")).toMatchObject({
+      harness: "opencode",
+      model: { id: "moonshotai/kimi-k3", provider: "moonshot" }
+    })
     expect(agentRole("fast-ui")).toMatchObject({ harness: "opencode-cerebras", model: { id: "cerebras/qwen-3.8-27b" } })
     expect(AGENT_ROLES.filter((role) => role.delegates).map((role) => role.id)).toEqual(["orchestrator"])
   })
@@ -82,8 +86,71 @@ describe("the agent role registry", () => {
   })
 })
 
+describe("Moonshot defaults and interactive Kimi profiles", () => {
+  test.each(["explainer", "ui"] as const)("%s defaults to the API without overriding an interactive choice", (id) => {
+    const interactive = AgentRoleSchema.parse({
+      ...agentRole(id),
+      builtin: false,
+      harness: "opencode-kimi",
+      model: { provider: "kimi-for-coding", id: "kimi-for-coding/k3", label: "Kimi K3" }
+    })
+    const before = structuredClone(interactive)
+    expect(findAgentRole(id, [interactive])).toEqual(before)
+    expect(agentRole(id)).toMatchObject({
+      builtin: true,
+      harness: "opencode",
+      model: { provider: "moonshot", id: "moonshotai/kimi-k3", label: "Kimi K3" }
+    })
+    expect(interactive).toEqual(before)
+    expect(HARNESS_IDS).toContain("opencode-kimi")
+  })
+
+  test.each(["explainer", "ui"] as const)(
+    "saved %s built-ins get the API default; person-configured cards keep their model",
+    (id) => {
+      const saved = {
+        id,
+        label: "My Kimi",
+        purpose: "A person's interactive OpenCode session.",
+        harness: "opencode-kimi",
+        model: { provider: "kimi-for-coding", id: "kimi-for-coding/k3", label: "Kimi K3" },
+        available: false,
+        reason: "",
+        account: ""
+      }
+      const agents = [{ ...saved, builtin: true }, { ...saved, builtin: false }]
+      const before = structuredClone(agents)
+      const card = CardSchema.parse({
+        id: "kimi-roles",
+        title: "Agents",
+        kind: "agents",
+        status: "active",
+        createdAt: 0,
+        ordinal: 0,
+        payload: { native: true, agents }
+      })
+      expect(card.payload).toEqual({
+        native: true,
+        agents: [
+          {
+            ...saved,
+            builtin: true,
+            label: agentRole(id).label,
+            purpose: agentRole(id).purpose,
+            harness: "opencode",
+            model: { provider: "moonshot", id: "moonshotai/kimi-k3", label: "Kimi K3" }
+          },
+          agents[1]
+        ]
+      })
+      expect(agents).toEqual(before)
+    }
+  )
+})
+
 describe("known model names", () => {
   test("a model id a built-in or cloud role runs on has its display name; any other id has none", () => {
+    expect(knownModelLabel("moonshotai/kimi-k3")).toBe("Kimi K3")
     expect(knownModelLabel("gpt-6.1-sol")).toBe("GPT-6.1 Sol")
     expect(knownModelLabel("claude-fable-5")).toBe("Fable 5")
     expect(knownModelLabel("qwen-3.8-27b")).toBe("Cerebras Qwen 3.8 27B")
