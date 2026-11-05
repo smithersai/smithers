@@ -198,7 +198,7 @@ export const slot = Pattern.slot({ input: Input, output: Output })
  * @since 0.1.0
  */
 export interface Service {
-  readonly recall: (input: Input) => Effect.Effect<Output, MemoryError.MemoryError>
+  readonly recall: (input: Input) => Output!MemoryError.MemoryError
 }
 
 /**
@@ -207,7 +207,9 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class Recall extends Context.Service<Recall, Service>()("flows/memory/Recall") {}
+export service Recall: Service {
+  static readonly key = "flows/memory/Recall"
+}
 
 const serializedByteLength = (result: Result): number => encoder.encode(JSON.stringify(result)).byteLength
 
@@ -281,14 +283,14 @@ export const compareResults = (left: Result, right: Result): number =>
  * @since 0.1.0
  */
 export const layerFrom = (
-  run: (input: Input) => Effect.Effect<Output, MemoryError.MemoryError, MemoryStore.MemoryStore>
+  run: (input: Input) => Output!MemoryError.MemoryError!MemoryStore.MemoryStore
 ): Layer.Layer<Recall, never, MemoryStore.MemoryStore> =>
   Layer.effect(
     Recall,
-    Effect.gen(function*() {
-      const store = yield* MemoryStore.MemoryStore
-      return Recall.of({ recall: (input) => run(input).pipe(Effect.provideService(MemoryStore.MemoryStore, store)) })
-    })
+    effect {
+      const store = try MemoryStore.MemoryStore
+      return Recall.of({ recall: (input) => run(input) |> Effect.provideService(%, MemoryStore.MemoryStore, store) })
+    }
   )
 
 /**

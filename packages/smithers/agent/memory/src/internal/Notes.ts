@@ -11,7 +11,7 @@ import type { MemoryError } from "../MemoryError.vibe"
 import type { ListNotesInput, Note, Service, StatusFilter } from "../MemoryStore.ts"
 import type * as Namespace from "../Namespace.vibe"
 import { canonicalJson, compareText } from "./Canonical.ts"
-import * as Fts from "./Fts.ts"
+import * as Fts from "./Fts.vibe"
 import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   changed,

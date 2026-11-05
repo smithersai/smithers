@@ -18,10 +18,9 @@ import * as Annotations from "@smthrs/core/Annotations"
 import * as Flow from "@smthrs/core/Flow"
 import * as DurableFlow from "@smthrs/flow/Flow"
 import * as Context from "effect/Context"
-import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { MemoryError } from "./MemoryError.vibe"
-import { BankName, MaxTokens } from "./Recall.ts"
+import { BankName, MaxTokens } from "./Recall.vibe"
 
 /**
  * The memory policy a flow tree inherits: which namespace its memory lives in,
@@ -159,10 +158,12 @@ const snapshot = (input: Policy): Policy => {
   try {
     decoded = Schema.decodeUnknownSync(Policy)(input)
   } catch {
-    throw new MemoryError({
-      code: "invalid_argument",
-      message: "memory policy is invalid"
-    })
+    $raise(
+      new MemoryError({
+        code: "invalid_argument",
+        message: "memory policy is invalid"
+      })
+    )
   }
   return Object.freeze({
     ...decoded,
@@ -249,3 +250,10 @@ export function withMemory(flow: Declared, policy: Policy): Declared {
       : {})
   }
 }
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts

@@ -13,7 +13,7 @@ import type { Fact, FtsRow, ListFactsInput, ListNotesInput, Note, SearchRow, Ser
 import * as Namespace from "../Namespace.vibe"
 import { compareText } from "./Canonical.ts"
 import { retainedTags, searchableText } from "./FactProjection.ts"
-import * as Fts from "./Fts.ts"
+import * as Fts from "./Fts.vibe"
 import { ftsTerms } from "./FtsQuery.ts"
 import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {

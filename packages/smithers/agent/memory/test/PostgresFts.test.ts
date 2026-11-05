@@ -8,7 +8,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { createHash, randomBytes } from "node:crypto"
 import { expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 const url = process.env.SMITHERS_TEST_PG_URL
 

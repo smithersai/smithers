@@ -52,13 +52,13 @@
       "default": "./.vibelang/js/src/Database.js"
     },
     "./Embedding": {
-      "types": "./src/Embedding.ts",
-      "vibelang-source": "./src/Embedding.ts",
+      "types": "./.vibe/declarations/Embedding.d.vibe.ts",
+      "vibelang-source": "./src/Embedding.vibe",
       "default": "./.vibelang/js/src/Embedding.js"
     },
     "./Flows": {
-      "types": "./src/Flows.ts",
-      "vibelang-source": "./src/Flows.ts",
+      "types": "./.vibe/declarations/Flows.d.vibe.ts",
+      "vibelang-source": "./src/Flows.vibe",
       "default": "./.vibelang/js/src/Flows.js"
     },
     "./Maintenance": {
@@ -82,8 +82,8 @@
       "default": "./.vibelang/js/src/MemoryTrellis.js"
     },
     "./Migrations": {
-      "types": "./src/Migrations.ts",
-      "vibelang-source": "./src/Migrations.ts",
+      "types": "./.vibe/declarations/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./Namespace": {
@@ -97,8 +97,8 @@
       "default": "./.vibelang/js/src/Opening.js"
     },
     "./Recall": {
-      "types": "./src/Recall.ts",
-      "vibelang-source": "./src/Recall.ts",
+      "types": "./.vibe/declarations/Recall.d.vibe.ts",
+      "vibelang-source": "./src/Recall.vibe",
       "default": "./.vibelang/js/src/Recall.js"
     },
     "./RecallFts": {
@@ -107,8 +107,8 @@
       "default": "./.vibelang/js/src/RecallFts.js"
     },
     "./RecallKeyword": {
-      "types": "./src/RecallKeyword.ts",
-      "vibelang-source": "./src/RecallKeyword.ts",
+      "types": "./.vibe/declarations/RecallKeyword.d.vibe.ts",
+      "vibelang-source": "./src/RecallKeyword.vibe",
       "default": "./.vibelang/js/src/RecallKeyword.js"
     },
     "./RecallSemantic": {
@@ -127,8 +127,8 @@
       "default": "./.vibelang/js/src/Source.js"
     },
     "./WithMemory": {
-      "types": "./src/WithMemory.ts",
-      "vibelang-source": "./src/WithMemory.ts",
+      "types": "./.vibe/declarations/WithMemory.d.vibe.ts",
+      "vibelang-source": "./src/WithMemory.vibe",
       "default": "./.vibelang/js/src/WithMemory.js"
     },
     "./index": {
@@ -154,7 +154,15 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/Embedding.vibe",
+    "src/Flows.vibe",
+    "src/Migrations.vibe",
+    "src/Recall.vibe",
+    "src/RecallKeyword.vibe",
+    "src/WithMemory.vibe",
+    "src/internal/Fts.vibe",
+    "src/internal/MemoryFtsFold.vibe"
   ],
   "publishConfig": {
     "access": "public",

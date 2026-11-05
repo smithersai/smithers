@@ -1,7 +1,7 @@
 import { Effect } from "effect"
 import { expect, test } from "vitest"
 import { MemoryError } from "../src/MemoryError.vibe"
-import * as Recall from "../src/Recall.ts"
+import * as Recall from "../src/Recall.vibe"
 import { selectRecall } from "../src/Source.ts"
 
 const rows = [

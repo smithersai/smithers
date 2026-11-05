@@ -12,7 +12,7 @@ import type { Fact, ListFactsInput, Service } from "../MemoryStore.ts"
 import type * as Namespace from "../Namespace.vibe"
 import { canonicalJson } from "./Canonical.ts"
 import { searchableText } from "./FactProjection.ts"
-import * as Fts from "./Fts.ts"
+import * as Fts from "./Fts.vibe"
 import { resolveNamespace } from "./ResolveNamespace.vibe"
 import {
   changed,

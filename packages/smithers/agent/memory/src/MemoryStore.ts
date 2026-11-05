@@ -21,7 +21,7 @@ import * as Search from "./internal/Search.ts"
 import { error, storeError } from "./internal/Store.vibe"
 import * as Threads from "./internal/Threads.ts"
 import type { MemoryError } from "./MemoryError.vibe"
-import * as Migrations from "./Migrations.ts"
+import * as Migrations from "./Migrations.vibe"
 import type * as Namespace from "./Namespace.vibe"
 
 /**

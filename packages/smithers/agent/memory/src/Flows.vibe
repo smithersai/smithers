@@ -19,8 +19,8 @@ import { resolveNamespace } from "./internal/ResolveNamespace.vibe"
 import { MemoryError } from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.ts"
-import * as WithMemory from "./WithMemory.ts"
+import * as Recall from "./Recall.vibe"
+import * as WithMemory from "./WithMemory.vibe"
 
 /**
  * The registry name of the `remember` flow.
@@ -231,24 +231,23 @@ export const bindRecall = (supplied: Flow.Any | DurableFlow.Any): DurableFlow.An
  * @since 0.1.0
  */
 export const runRememberWith = (provenance: MemoryStore.Provenance) =>
-(
+effect (
   input: RememberInputType
-): Effect.Effect<typeof RememberOutput.Type, MemoryError, MemoryStore.MemoryStore> =>
-  Effect.gen(function*() {
-    const store = yield* MemoryStore.MemoryStore
-    const { namespace } = yield* resolveNamespace(input.bank)
-    const reserved = reservedTagIssue(input.tags ?? [])
-    if (reserved !== undefined) return yield* Effect.fail(new MemoryError({ code: "invalid_tag", message: reserved }))
-    yield* store.putFact({
-      namespace,
-      key: input.key,
-      value: { content: input.text },
-      tags: input.tags ?? [],
-      ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
-      provenance
-    })
-    return { key: input.key }
+): typeof RememberOutput.Type!MemoryError!MemoryStore.MemoryStore => {
+  const store = try MemoryStore.MemoryStore
+  const { namespace } = try resolveNamespace(input.bank)
+  const reserved = reservedTagIssue(input.tags ?? [])
+  if (reserved !== undefined) throw new MemoryError({ code: "invalid_tag", message: reserved })
+  try store.putFact({
+    namespace,
+    key: input.key,
+    value: { content: input.text },
+    tags: input.tags ?? [],
+    ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),
+    provenance
   })
+  return { key: input.key }
+}
 
 /**
  * Runtime binding for the remember declaration.
@@ -262,7 +261,7 @@ export const runRememberWith = (provenance: MemoryStore.Provenance) =>
  */
 export const runRemember = (
   input: RememberInputType
-): Effect.Effect<typeof RememberOutput.Type, MemoryError, MemoryStore.MemoryStore> => runRememberWith({})(input)
+): typeof RememberOutput.Type!MemoryError!MemoryStore.MemoryStore => runRememberWith({})(input)
 
 /**
  * Runtime binding for the selected recall service.
@@ -272,8 +271,7 @@ export const runRemember = (
  */
 export const runRecall = (
   input: Recall.Input
-): Effect.Effect<Recall.Output, MemoryError, Recall.Recall> =>
-  Effect.flatMap(Recall.Recall, (service) => service.recall(input))
+): Recall.Output!MemoryError!Recall.Recall => Effect.flatMap(Recall.Recall, (service) => service.recall(input))
 
 const missingPolicy = Effect.fail(
   new MemoryError({
@@ -282,19 +280,16 @@ const missingPolicy = Effect.fail(
   })
 )
 
-const validatePolicyBank = (bank: string, policy: WithMemory.Policy): Effect.Effect<void, MemoryError> =>
-  Effect.gen(function*() {
-    const { namespace } = yield* resolveNamespace(bank)
-    const allowed = yield* Effect.forEach(policy.banks, resolveNamespace)
-    if (!allowed.some((entry) => entry.namespace.kind === namespace.kind && entry.namespace.id === namespace.id)) {
-      return yield* Effect.fail(
-        new MemoryError({
-          code: "invalid_namespace",
-          message: "memory bank is outside the policy namespace"
-        })
-      )
-    }
-  })
+const validatePolicyBank = effect (bank: string, policy: WithMemory.Policy): void!MemoryError => {
+  const { namespace } = try resolveNamespace(bank)
+  const allowed = try Effect.forEach(policy.banks, resolveNamespace)
+  if (!allowed.some((entry) => entry.namespace.kind === namespace.kind && entry.namespace.id === namespace.id)) {
+    throw new MemoryError({
+      code: "invalid_namespace",
+      message: "memory bank is outside the policy namespace"
+    })
+  }
+}
 
 /**
  * Applies the memory policy a flow carries to a recall request.
@@ -312,19 +307,19 @@ const validatePolicyBank = (bank: string, policy: WithMemory.Policy): Effect.Eff
 export const runRecallFor = (
   flow: WithMemory.Declared,
   input: Recall.Input
-): Effect.Effect<Recall.Output, MemoryError, Recall.Recall> => {
+): Recall.Output!MemoryError!Recall.Recall => {
   const policy = WithMemory.policyOf(flow)
   if (policy === undefined) return missingPolicy
   if (policy.recall === "none") return Effect.succeed([])
-  return Effect.gen(function*() {
+  return effect {
     const banks = input.banks.length > 0 ? input.banks : policy.banks
-    for (const bank of banks) yield* validatePolicyBank(bank, policy)
-    return yield* runRecall({
+    for (const bank of banks) try validatePolicyBank(bank, policy)
+    return try runRecall({
       ...input,
       banks,
       maxTokens: input.maxTokens ?? policy.maxTokens
     })
-  })
+  }
 }
 
 /**
@@ -347,15 +342,15 @@ export const runRememberFor = (
   flow: WithMemory.Declared,
   input: RememberInputType,
   provenance: MemoryStore.Provenance = {}
-): Effect.Effect<typeof RememberOutput.Type, MemoryError, MemoryStore.MemoryStore> => {
+): typeof RememberOutput.Type!MemoryError!MemoryStore.MemoryStore => {
   const policy = WithMemory.policyOf(flow)
   if (policy === undefined) return missingPolicy
   if (policy.retain === "never") return Effect.succeed({ key: input.key })
-  return Effect.gen(function*() {
+  return effect {
     const bank = input.bank.length > 0 ? input.bank : policy.banks[0]!
-    yield* validatePolicyBank(bank, policy)
-    return yield* runRememberWith(provenance)({ ...input, bank })
-  })
+    try validatePolicyBank(bank, policy)
+    return try runRememberWith(provenance)({ ...input, bank })
+  }
 }
 
 /**
@@ -371,8 +366,8 @@ export const runRememberFor = (
 export interface Handlers {
   readonly remember: (
     input: RememberInputType
-  ) => Effect.Effect<typeof RememberOutput.Type, MemoryError, MemoryStore.MemoryStore>
-  readonly recall: (input: Recall.Input) => Effect.Effect<Recall.Output, MemoryError, Recall.Recall>
+  ) => typeof RememberOutput.Type!MemoryError!MemoryStore.MemoryStore
+  readonly recall: (input: Recall.Input) => Recall.Output!MemoryError!Recall.Recall
 }
 
 /**

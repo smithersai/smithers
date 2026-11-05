@@ -16,7 +16,7 @@ import { resolveBanks } from "./internal/ResolveNamespace.vibe"
 import type * as MemoryError from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.ts"
+import * as Recall from "./Recall.vibe"
 
 /**
  * Escapes a query into a quoted, implicit-AND FTS5 expression.

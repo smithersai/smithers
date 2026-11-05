@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/memory"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "WbgoxDQ_5VCktcHPI1eR5DLM8IbSSiP_Yib_BdnHE04",
   "configs": [
    {
     "path": {
@@ -75,7 +75,7 @@
      "relative": "packages/smithers/agent/memory/src"
     },
     null,
-    "QmDafn2vqkF3AXE5wn8HxGf2rjZ4wlNIDr0TRZ1wdY8",
+    "3ks98B0rcG9G_Q6tEnoCt5yKViYSStBuw5h3GcIBy0U",
     [],
     {
      "recursive": true,
@@ -297,8 +297,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/package.json"
     },
-    "size": 12559,
-    "hash": "zzGSd5Bv674CFPuEVyPEHapfnuCEGmA_G_ONvmy1AbQ"
+    "size": 12926,
+    "hash": "mnfmmhRWrI8VbD9T4C7gy9HuHgMPVQLi6YAWRBQvUec"
    },
    {
     "path": {
@@ -1942,10 +1942,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Embedding.ts"
+     "relative": "packages/smithers/agent/memory/src/Embedding.vibe"
     },
-    "size": 6097,
-    "hash": "MPUT3RkVethYC6_8JsFG1LSKzvMsGfNVNjl7FQsh1Qw"
+    "size": 6004,
+    "hash": "9o61Ga6kdsutLmFsPiIpQnIWHL7EgYFM287IH-fPKy8"
    },
    {
     "path": {
@@ -2245,8 +2245,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29125,
-    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
+    "size": 29135,
+    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
    },
    {
     "path": {
@@ -2623,15 +2623,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23051,
-    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
+    "size": 23089,
+    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5610,
-    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
+    "size": 5612,
+    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
    },
    {
     "path": {
@@ -2644,8 +2644,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6389,
-    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
+    "size": 6391,
+    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
    },
    {
     "path": {
@@ -3078,8 +3078,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14134,
-    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
+    "size": 14148,
+    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
    },
    {
     "path": {
@@ -3099,15 +3099,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4649,
-    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
+    "size": 4653,
+    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10284,
-    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
+    "size": 10288,
+    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
    },
    {
     "path": {
@@ -3232,8 +3232,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 21996,
-    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
+    "size": 22016,
+    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
    },
    {
     "path": {
@@ -3267,8 +3267,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2762,
-    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
+    "size": 2764,
+    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
    },
    {
     "path": {
@@ -3288,8 +3288,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1723,
-    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
+    "size": 1725,
+    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
    },
    {
     "path": {
@@ -3323,8 +3323,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Deadline.vibe"
     },
-    "size": 8464,
-    "hash": "FfMT9KOpLcjFMtpkYFY4t-kJwfqY0auSnn__Dmrb5WE"
+    "size": 8472,
+    "hash": "bZQWspojeuR376eyg647eW0LfGpx_U7to06jnd_mQNo"
    },
    {
     "path": {
@@ -3477,15 +3477,15 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/ReadTransaction.vibe"
     },
-    "size": 821,
-    "hash": "jsrWBpxRJQYNzMvXF9NKwgI4unUsfN9Z6qwiDZPjb7M"
+    "size": 823,
+    "hash": "51rXlYqR5wIlKgSrBN93V9fd-2kaHfBz3_tTiFYFDRA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/src/Dialect.vibe"
     },
-    "size": 10156,
-    "hash": "ZAFv7m1i-TvSbTeSl_pQH9NNOmRbCctwWwSBbIpmprw"
+    "size": 10158,
+    "hash": "2qpF8l12cct1aXQg-R00mZLeyxuRHXGu0TgIaOIdRAo"
    },
    {
     "path": {
@@ -3510,10 +3510,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/Fts.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
     },
-    "size": 9590,
-    "hash": "-983dq1cJ2j4bCxjlivCiQM4MLKws1rdbwoLfMNvjXw"
+    "size": 9341,
+    "hash": "EMDed_H1FTQFIPf9AzLspQi9o0ejb_GgpFBNGouSuAE"
    },
    {
     "path": {
@@ -3526,8 +3526,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
     },
-    "size": 10028,
-    "hash": "3m-E2DiLMX-qd0hJmtRfBa6kQqv4sV2quZ1t1EaYLHU"
+    "size": 10030,
+    "hash": "xFvt-bgOZ1xCKHkKlarxxE38ocj1NHJdEiDBs3mu5F8"
    },
    {
     "path": {
@@ -3540,15 +3540,15 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Notes.ts"
     },
-    "size": 13663,
-    "hash": "P78BMLRuiJR9uaXdOUPgj36ilF3x0nR4mHJ_ENIxB3w"
+    "size": 13665,
+    "hash": "svNNm2lkC-Rjdvt7nuDDEFA8qzscnRGss1R-dY-R3Sk"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Search.ts"
     },
-    "size": 9833,
-    "hash": "v9CMwYRKZRckvJ8CMqsUKNbbQz-WDvgtf5jAB8IU-7c"
+    "size": 9835,
+    "hash": "2zbjiLXEWCnv6vnUDRCkhMUDpbdWBzn48Ux2D8yXa3w"
    },
    {
     "path": {
@@ -3573,10 +3573,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
     },
-    "size": 1234,
-    "hash": "8AEb36zpJCH-kFlxo7edDVUaKxGsq1dulumE3-GWa5E"
+    "size": 1204,
+    "hash": "HabCPDOX0vGWf113P1MHqu4EY9NQN63e4tb20a4LIxg"
    },
    {
     "path": {
@@ -3601,38 +3601,38 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Migrations.ts"
+     "relative": "packages/smithers/agent/memory/src/Migrations.vibe"
     },
-    "size": 1405,
-    "hash": "1CMwJPP6tnIfFWf154At-3ufUYfZuLRuH0-hLlsLcOQ"
+    "size": 1407,
+    "hash": "29DXntxh-5BORku-dUJgPGSgdbc70DoOVXx6p9ApZuw"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
     },
-    "size": 15966,
-    "hash": "S0uvN7iXYxn5apIK9r2fwLQBGDPLW9iNpYIdRKllXE4"
+    "size": 15968,
+    "hash": "ijKnxMtus5xgc45lOvdiTTxJB34XqY4oB5IZqQ5cIaI"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Recall.ts"
+     "relative": "packages/smithers/agent/memory/src/Recall.vibe"
     },
-    "size": 9330,
-    "hash": "461ro3OCrCuDlja4cZVO-i_1f9wJWTyDBkzA5UP9fGo"
+    "size": 9269,
+    "hash": "OwoKmri4cdig1A1ymebBKDb-U7KHkNdsUYJPSM-AO4s"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/WithMemory.ts"
+     "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
     },
-    "size": 8970,
-    "hash": "IGyJgrG9gx2NazRfuPFpZNbWlcQ3iaV7EVqdclst00I"
+    "size": 9085,
+    "hash": "4B5RvGVVo5xmwFnsf6ebYBiRwdc9UyKVMkAIPs8JFsk"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Flows.ts"
+     "relative": "packages/smithers/agent/memory/src/Flows.vibe"
     },
-    "size": 13209,
-    "hash": "uRpRQzSbkt9Zk8RWayR2lQCIHtHnIkPEjlsevDGxN8Q"
+    "size": 12867,
+    "hash": "3hWimleFLh4J3DK59MN7eOQLVbt-MOsw2af88jhVW_8"
    },
    {
     "path": {
@@ -3673,8 +3673,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryTrellis.ts"
     },
-    "size": 3767,
-    "hash": "83XVRqtHILffZ7pTrN1ri2-CQiMN0URqAnaFNssbPus"
+    "size": 3771,
+    "hash": "UaXT5AZTgucCh6vcedaakLfio3jM9AxIuA0D3oZPenU"
    },
    {
     "path": {
@@ -3687,29 +3687,29 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/Source.ts"
     },
-    "size": 15355,
-    "hash": "y-JTt9r8JslE7tMFbYPXekpanGHfwdNTvx47zLoQ_D0"
+    "size": 15357,
+    "hash": "LuajOV1omFgDnvUl-qfH6cyiJ6QF1uYSHOPKwKphpZA"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/Opening.ts"
     },
-    "size": 6724,
-    "hash": "YykoWbnuJXgL1ipCIesHY-Xkx6NLVgOh97CNpFhyu-w"
+    "size": 6726,
+    "hash": "-4mjlJjoIAAKajHDZNN-_bmZwV3E5sAKVBFbstmJtUo"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/RecallFts.ts"
     },
-    "size": 3051,
-    "hash": "XxYa_QogBmzAcv5IvKukCgQDs2UVJoLU5Hc8hogPGr8"
+    "size": 3053,
+    "hash": "mdT38chLScXA73xooJoe4K3n06IBu1CPiOxDgvHbiCo"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/RecallKeyword.ts"
+     "relative": "packages/smithers/agent/memory/src/RecallKeyword.vibe"
     },
-    "size": 3405,
-    "hash": "QUcBTaMdCVcRTT0euCYNFoLf0aE-Qc6U22vrtVpkjqQ"
+    "size": 3302,
+    "hash": "fg8ZSlG-GgzT31Ecy2meDTeDSDhYyvBG-aE0SuYY9cg"
    },
    {
     "path": {
@@ -3729,15 +3729,15 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/RecallSemantic.ts"
     },
-    "size": 23297,
-    "hash": "i1lZsB2D4BoNSQ53aGAx9VMoa9moKM5D7pjPoRdWpBw"
+    "size": 23301,
+    "hash": "gB3YkjBom7UYODyB59q99WYww1IO8McaKy3hds8l8GU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/index.ts"
     },
-    "size": 2129,
-    "hash": "jbrrlMSRcw4QKEdzEhtRo9a4NjGz6OnTWmAVsl3PbhE"
+    "size": 2141,
+    "hash": "sImAuVF8BX7XPu5ycXJUrUn9NpzXzgg1DgzxL4LwusI"
    },
    {
     "path": {
@@ -4818,7 +4818,7 @@
     "relative": "packages/smithers/agent/memory/src/Database.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Embedding.ts"
+    "relative": "packages/smithers/agent/memory/src/Embedding.vibe"
    },
    {
     "relative": "packages/smithers/flows/plan/src/internal/effects.ts"
@@ -5397,7 +5397,7 @@
     "relative": "packages/smithers/agent/memory/src/internal/FtsQuery.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/Fts.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
@@ -5421,7 +5421,7 @@
     "relative": "packages/smithers/flows/database/src/Migrations.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/MemoryIndexes.vibe"
@@ -5433,19 +5433,19 @@
     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Migrations.ts"
+    "relative": "packages/smithers/agent/memory/src/Migrations.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Recall.ts"
+    "relative": "packages/smithers/agent/memory/src/Recall.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/WithMemory.ts"
+    "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Flows.ts"
+    "relative": "packages/smithers/agent/memory/src/Flows.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/Maintenance.ts"
@@ -5478,7 +5478,7 @@
     "relative": "packages/smithers/agent/memory/src/RecallFts.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/RecallKeyword.ts"
+    "relative": "packages/smithers/agent/memory/src/RecallKeyword.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Ranking.ts"
@@ -5539,6 +5539,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/agent/memory/src/Flows.vibe"
+    },
+    "line": 127,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "RememberOutput holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema RememberOutput { … }.\n  Its quick fix writes schema RememberOutput { key: string }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/memory/src/MemoryError.vibe"
     },
     "line": 43,
@@ -5549,6 +5559,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/agent/memory/src/Recall.vibe"
+    },
+    "line": 292,
+    "column": 59,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/memory/src/SnapshotRecorder.vibe"
     },
     "line": 86,
@@ -5556,6 +5576,146 @@
     "category": "warning",
     "code": "EK4831",
     "text": "SnapshotRecorder extends Context.Service; in VibeLang a service is a service declaration: service SnapshotRecorder { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"flows/memory/SnapshotRecorder\"."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 55,
+    "column": 39,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 55,
+    "column": 56,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/Statement#Fragment` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 55,
+    "column": 67,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/Statement#Fragment` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 66,
+    "column": 53,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 66,
+    "column": 65,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/Statement#Fragment` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 77,
+    "column": 52,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 77,
+    "column": 76,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/Statement#Statement` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 91,
+    "column": 21,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 115,
+    "column": 18,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 169,
+    "column": 18,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 192,
+    "column": 18,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 216,
+    "column": 18,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+    },
+    "line": 243,
+    "column": 37,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
+    },
+    "line": 23,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    },
    {
     "file": {
@@ -5702,6 +5862,46 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/memory/src/Embedding.vibe"
+     }
+    ],
+    "code": "/**\n * Provider-neutral embeddings used by semantic memory recall.\n *\n * No embedding provider ships with Smithers, so a host injects one through\n * {@link layer}. The built-in {@link inProcessVector} hashes characters into\n * 64 buckets: it is deterministic and lexical, not semantic, and exists for\n * tests and offline runs.\n *\n * @see https://memory.smithers.sh/reference/api/\n * @since 0.1.0\n */\nimport * as runtime from \"vibelang-runtime\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as MemoryError from \"./MemoryError.js\";\n/**\n * Context tag for embeddings.\n *\n * @category services\n * @since 0.1.0\n */\nexport class Embedding extends runtime.$service(\"flows/memory/Embedding\") {\n}\nconst unavailable = (message) => new MemoryError.MemoryError({ code: \"embedding_unavailable\", message });\nconst validate = (inputs, vectors) => {\n    const invalid = () => Effect.fail(unavailable(\"embedding provider returned an invalid batch\"));\n    const dimensions = vectors[0]?.length;\n    if (vectors.length !== inputs.length || dimensions === undefined || dimensions === 0)\n        return invalid();\n    const embeddings = [];\n    // Array iterators visit missing slots, unlike some/map. Validate the same\n    // components that are copied so a sparse provider response cannot become data.\n    for (const vector of vectors) {\n        if (vector === undefined || vector.length !== dimensions)\n            return invalid();\n        const values = [];\n        for (const value of vector) {\n            if (!Number.isFinite(value))\n                return invalid();\n            values.push(value);\n        }\n        embeddings.push({ vector: values });\n    }\n    return Effect.succeed({ embeddings });\n};\n/**\n * Builds the service from an injectable batch provider.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (embedMany) => {\n    const service = {\n        embed: (input) => Effect.flatMap(service.embedMany([input]), (response) => {\n            const embedding = response.embeddings[0];\n            return embedding === undefined\n                ? Effect.fail(unavailable(\"embedding provider returned an empty batch\"))\n                : Effect.succeed(embedding);\n        }),\n        embedMany: (inputs) => inputs.length === 0\n            ? Effect.succeed({ embeddings: [] })\n            : (Effect.flatMap(embedMany(inputs), (vectors) => validate(inputs, vectors)))\n    };\n    return Embedding.of(service);\n};\n/**\n * Provides an injectable embedding provider.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (embedMany) => Layer.succeed(Embedding)(make(embedMany));\n/**\n * Constructs a provider that reports unavailable embeddings.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeNoop = () => make(() => Effect.fail(unavailable(\"no embedding provider is configured\")));\n/**\n * Provides the unavailable embedding implementation.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerNoop = Layer.succeed(Embedding)(makeNoop());\n/**\n * Provides a deterministic embedding implementation for tests and local\n * integrations.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerFake = (vectors) => layer((inputs) => Effect.succeed(inputs.map((input, index) => typeof vectors === \"function\" ? vectors(input, index) : vectors[index] ?? [])));\n/**\n * Stable model identity for the built-in projection.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const inProcessModel = \"flows-embedding/in-process-v1\";\n/**\n * Computes the deterministic local v1 vector: a character hash, so texts\n * rank close when they share characters, not meaning.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const inProcessVector = (input) => {\n    const vector = new Array(64).fill(0);\n    const normalized = input.normalize(\"NFKC\").toLowerCase();\n    for (const [index, character] of [...normalized].entries()) {\n        const code = character.codePointAt(0) ?? 0;\n        const bucket = Math.abs(Math.imul(code + index, 16777619)) % vector.length;\n        vector[bucket] = (vector[bucket] ?? 0) + (index % 2 === 0 ? 1 : -1);\n    }\n    const magnitude = Math.sqrt(vector.reduce((sum, value) => sum + value * value, 0));\n    return magnitude === 0 ? vector : vector.map((value) => value / magnitude);\n};\n/**\n * Constructs the deterministic, in-process v1 embedding implementation.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeInProcess = () => make((inputs) => Effect.succeed(inputs.map(inProcessVector)));\n/**\n * Provides deterministic in-process embeddings with no provider dependency.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerInProcess = Layer.succeed(Embedding)(makeInProcess());\n",
+    "map": {
+     "version": 3,
+     "file": "Embedding.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/Embedding.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+     }
+    ],
+    "code": "/**\n * Lazy SQLite full-text search operations.\n *\n * @see https://memory.smithers.sh/reference/api/\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport { literalFtsQuery } from \"./FtsQuery.js\";\nconst ftsTable = (kind) => `memory_fts_${kind}`;\n// FTS5's unicode61 tokenizer splits on every non-letter, non-digit character\n// and folds diacritics, so \"cafe\" and \"café\" are one token. PostgreSQL's\n// `simple` parser under the C locale instead reads every non-ASCII character\n// as a letter, so U+FFFD or an em dash would glue words together, and it keeps\n// accents. Both the indexed text and each query term are therefore decomposed\n// (NFD), stripped of combining diacritical marks, recomposed (NFC), and\n// reduced to Unicode alphanumeric runs, with the database-independent built-in\n// `pg_c_utf8` collation classifying the characters. Every step is immutable\n// core SQL, so the generated column needs no extension such as `unaccent`.\nconst postgresWords = (sql, text) => sql `regexp_replace(\n    normalize(regexp_replace(normalize((${text}) COLLATE \"pg_c_utf8\", NFD), '[\\\\u0300-\\\\u036f]+', '', 'g'), NFC),\n    '[^[:alnum:]]+', ' ', 'g')`;\n/**\n * The PostgreSQL generated search column of a namespace-kind FTS table.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const postgresSearchColumn = (sql) => sql `search TSVECTOR GENERATED ALWAYS AS (\n    to_tsvector('simple', ${postgresWords(sql, sql `record_key || ' ' || text`)})\n  ) STORED`;\n/**\n * The PostgreSQL search index of a namespace-kind FTS table.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const postgresSearchIndex = (sql, kind) => sql `CREATE INDEX IF NOT EXISTS ${sql(`${ftsTable(kind)}_search`)} ON ${sql.literal(ftsTable(kind))} USING GIN (search)`;\n/**\n * Returns whether a namespace kind has opted into FTS5.\n *\n * @category queries\n * @since 0.1.0\n */\nexport const isFtsEnabled = (database, kind) => Effect.map(database.sql `\n    SELECT 1 AS enabled FROM memory_fts_kinds WHERE namespace_kind = ${kind}\n  `, (rows) => rows.length > 0);\n/**\n * Creates and fully backfills one namespace-kind FTS5 table.\n *\n * A kind that `memory_fts_kinds` already holds is left alone: its projection\n * has been maintained row by row since it was enabled, so a second call at\n * setup time does not rebuild it under the writer. The fact backfill is one\n * `INSERT ... SELECT` that derives the searchable text in SQL the same way\n * `searchableText` does: a string value is the string, an object with a\n * string `content` is that content, anything else is its JSON text.\n *\n * This Effect must be run inside `Database.write`.\n *\n * @category migrations\n * @since 0.1.0\n */\nexport const enableFts = (database, kind, enabledAtMs) => {\n    const { sql } = database;\n    const table = sql.literal(ftsTable(kind));\n    return Effect_1.gen(function* () {\n        if (yield* isFtsEnabled(database, kind)) {\n            return;\n        }\n        if (Dialect.isPostgres(sql)) {\n            yield* sql `CREATE TABLE IF NOT EXISTS ${table} (\n        record_id TEXT NOT NULL, record_kind TEXT NOT NULL, namespace_id TEXT NOT NULL,\n        record_key TEXT NOT NULL, text TEXT NOT NULL,\n        ${postgresSearchColumn(sql)}\n      )`;\n            yield* postgresSearchIndex(sql, kind);\n        }\n        else {\n            yield* sql `CREATE VIRTUAL TABLE IF NOT EXISTS ${table}\n        USING fts5(record_id UNINDEXED, record_kind UNINDEXED, namespace_id UNINDEXED, record_key, text)`;\n        }\n        yield* sql `INSERT INTO memory_fts_kinds (namespace_kind, enabled_at_ms)\n      VALUES (${kind}, ${enabledAtMs})`;\n        yield* sql `DELETE FROM ${table}`;\n        yield* sql `INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)\n      SELECT fact_key, 'fact', namespace_id, fact_key,\n        ${Dialect.isPostgres(sql) ?\n            sql `CASE\n          WHEN jsonb_typeof(value_json::jsonb) = 'string' THEN value_json::jsonb #>> '{}'\n          WHEN jsonb_typeof(value_json::jsonb -> 'content') = 'string' THEN value_json::jsonb ->> 'content'\n          ELSE value_json END`\n            : sql `CASE\n          WHEN json_type(value_json) = 'text' THEN json_extract(value_json, '$')\n          WHEN json_type(value_json) = 'object' AND json_type(value_json, '$.content') = 'text'\n            THEN json_extract(value_json, '$.content')\n          ELSE value_json END`}\n      FROM memory_facts WHERE namespace_kind = ${kind}`;\n        yield* sql `INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)\n      SELECT id, 'note', namespace_id, id, text\n      FROM memory_notes WHERE namespace_kind = ${kind}`;\n    });\n};\n/**\n * Deletes the FTS projections of many facts of one namespace and kind when the\n * kind is enabled, with one statement instead of one per fact.\n *\n * @category projections\n * @since 1.0.0\n */\nexport const deleteFtsFacts = Effect_1.fnUntraced(function* deleteFtsFacts(database, kind, namespaceId, factKeys) {\n    if (factKeys.length === 0 || !(yield* isFtsEnabled(database, kind)))\n        return;\n    const { sql } = database;\n    const table = sql.literal(ftsTable(kind));\n    yield* sql `DELETE FROM ${table}\n      WHERE record_kind = 'fact'\n        AND namespace_id = ${namespaceId}\n        AND ${sql.in(\"record_id\", factKeys)}`;\n});\n/**\n * Replaces one authoritative record's FTS projection when its kind is enabled.\n *\n * This Effect must be run inside the authoritative record's\n * `Database.write` transaction.\n *\n * @category projections\n * @since 0.1.0\n */\nexport const replaceFtsRecord = Effect_1.fnUntraced(function* replaceFtsRecord(database, kind, record) {\n    if (!(yield* isFtsEnabled(database, kind))) {\n        return;\n    }\n    const { sql } = database;\n    const table = sql.literal(ftsTable(kind));\n    yield* sql `DELETE FROM ${table}\n      WHERE record_id = ${record.recordId}\n        AND record_kind = ${record.recordKind}\n        AND namespace_id = ${record.namespaceId}`;\n    yield* sql `INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)\n      VALUES (${record.recordId}, ${record.recordKind}, ${record.namespaceId}, ${record.key}, ${record.text})`;\n});\n/**\n * Deletes one authoritative record's FTS projection when its kind is enabled.\n *\n * @category projections\n * @since 0.1.0\n */\nexport const deleteFtsRecord = Effect_1.fnUntraced(function* deleteFtsRecord(database, kind, record) {\n    if (!(yield* isFtsEnabled(database, kind)))\n        return;\n    const table = database.sql.literal(ftsTable(kind));\n    yield* database.sql `DELETE FROM ${table}\n      WHERE record_id = ${record.recordId}\n        AND record_kind = ${record.recordKind}\n        AND namespace_id = ${record.namespaceId}`;\n});\n/**\n * Searches one namespace-kind FTS5 table in raw BM25 rank order.\n *\n * `offset` lets a caller walk the ranked matches in pages. A match can be\n * dropped by a status, supersession, or tag filter the FTS table knows nothing\n * about, so returning the caller's page size in one shot would under-fill the\n * answer; paging is what lets the store keep asking until it has enough.\n *\n * @category queries\n * @since 0.1.0\n */\nexport const searchFts = (database, kind, namespaceId, terms, limit, offset = 0) => {\n    const { sql } = database;\n    const tableName = ftsTable(kind);\n    const table = sql.literal(tableName);\n    if (Dialect.isPostgres(sql)) {\n        // Each term is a phrase of its words, and the terms are ANDed, as FTS5\n        // reads the quoted terms of `literalFtsQuery`.\n        const query = terms\n            .map((term) => sql `phraseto_tsquery('simple', ${postgresWords(sql, sql `${term}`)})`)\n            .reduce((all, term) => sql `${all} && ${term}`);\n        return sql `SELECT record_id, record_kind, -ts_rank(search, ${query}) AS rank\n      FROM ${table} WHERE search @@ (${query}) AND namespace_id = ${namespaceId}\n      ORDER BY rank, record_id LIMIT ${limit} OFFSET ${offset}`;\n    }\n    const bm25 = sql.literal(`bm25(${tableName})`);\n    return sql `SELECT record_id, record_kind, ${bm25} AS rank\n    FROM ${table}\n    WHERE ${table} MATCH ${literalFtsQuery(terms.join(\" \"))} AND namespace_id = ${namespaceId}\n    ORDER BY rank\n    LIMIT ${limit} OFFSET ${offset}`;\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Fts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
      }
     ],
@@ -5717,6 +5917,26 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
+     }
+    ],
+    "code": "/**\n * The third memory migration: PostgreSQL FTS folds diacritics like FTS5.\n *\n * @since 1.0.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Dialect from \"@smthrs/database/Dialect\";\nimport * as Effect from \"effect/Effect\";\nimport * as SqlClient from \"effect/sql/SqlClient\";\nimport { postgresSearchColumn, postgresSearchIndex } from \"./Fts.js\";\n/**\n * Regenerates the search column of every enabled PostgreSQL FTS table with\n * the current diacritic-folding expression, so text indexed before the fold\n * still matches folded query terms. SQLite's FTS5 tables already fold, and a\n * kind enabled after this migration is created with the current column.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const ftsFold = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* ftsFold() {\n    const sql = yield* SqlClient.SqlClient;\n    if (!Dialect.isPostgres(sql))\n        return;\n    const kinds = yield* sql `SELECT namespace_kind FROM memory_fts_kinds`;\n    {\n        let pending_1 = runtime.$normal;\n        try {\n            for (const value_1 of kinds) {\n                try {\n                    const { namespace_kind: kind } = value_1;\n                    {\n                        const table = sql.literal(`memory_fts_${kind}`);\n                        yield* sql `ALTER TABLE ${table} DROP COLUMN search`;\n                        yield* sql `ALTER TABLE ${table} ADD COLUMN ${postgresSearchColumn(sql)}`;\n                        yield* postgresSearchIndex(sql, kind);\n                    }\n                }\n                catch (thrown_1) {\n                    pending_1 = thrown_1;\n                    break;\n                }\n            }\n        }\n        catch (thrown_2) {\n            throw runtime.$finallyFailure(pending_1, thrown_2);\n        }\n        if (pending_1 !== runtime.$normal)\n            throw pending_1;\n    }\n})));\n",
+    "map": {
+     "version": 3,
+     "file": "MemoryFtsFold.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;;;AAEH,OAAO,KAAK,OAAO,MAAM,0BAA0B,CAAA;AACnD,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,SAAS,MAAM,sBAAsB,CAAA;AAEjD,OAAO,EAAE,oBAAoB,EAAE,mBAAmB,EAAE,MAAM,UAAY,CAAA;AAEtE;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,yD,CAAA,S,CAAA;IACrB,MAAM,GAAG,UAAO,SAAS,CAAC,SAAS,CAAA;IACnC,IAAI,CAAC,OAAO,CAAC,UAAU,CAAC,GAAG,CAAC;QAAE,OAAM;IACpC,MAAM,KAAK,UAAO,GAAG,CAAmC,6CAA6C,CAAA;IACrG,CAAC;;;YAAD,sBAAuC,KAAK;;0BAAjC,EAAE,cAAc,EAAE,IAAI,EAAE;oBAAW,CAAC;wBAC7C,MAAM,KAAK,GAAG,GAAG,CAAC,OAAO,CAAC,cAAc,IAAI,EAAE,CAAC,CAAA;wBAC/C,OAAI,GAAG,CAAA,eAAe,KAAK,qBAAqB,CAAA;wBAChD,OAAI,GAAG,CAAA,eAAe,KAAK,eAAe,oBAAoB,CAAC,GAAG,CAAC,EAAE,CAAA;wBACrE,OAAI,mBAAmB,CAAC,GAAG,EAAE,IAAI,CAAC,CAAA;oBACpC,CAAC;;;;;;aAAA;;;;;;;KAAA;AACH,CAAC,GAAA,CAAA"
     }
    },
    {
@@ -5782,6 +6002,106 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/memory/src/Migrations.vibe"
+     }
+    ],
+    "code": "/**\n * Memory schema migrations on the shared Smithers database ladder.\n *\n * Standalone stores install only this set. Hosts sharing a file with the\n * durable engine and control plane compose those lower blocks before this\n * set, so every table and its migration identity are committed together.\n *\n * @since 1.0.0\n */\nimport * as DatabaseMigrations from \"@smthrs/database/Migrations\";\nimport * as Layer from \"effect/Layer\";\nimport { ftsFold } from \"./internal/MemoryFtsFold.js\";\nimport { indexes } from \"./internal/MemoryIndexes.js\";\nimport { initial } from \"./internal/MemorySchema.js\";\nimport { noteLifecycle } from \"./internal/NoteLifecycle.js\";\n/**\n * Memory's authoritative schema, in the block following the control plane.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const set = {\n    namespace: \"memory\",\n    idOffset: DatabaseMigrations.idBlock * 7,\n    migrations: {\n        \"0001_initial\": initial,\n        \"0002_indexes\": indexes,\n        \"0003_fts_fold\": ftsFold,\n        \"0004_note_lifecycle\": noteLifecycle\n    }\n};\n/**\n * Applies the memory schema and records it atomically in `flows_migrations`.\n *\n * @category migrations\n * @since 1.0.0\n */\nexport const run = DatabaseMigrations.run([set]);\n/**\n * Installs the memory schema before exposing the database to memory services.\n *\n * @category layers\n * @since 1.0.0\n */\nexport const layer = Layer.effectDiscard(run);\n",
+    "map": {
+     "version": 3,
+     "file": "Migrations.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/Migrations.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;GAQG;AAEH,OAAO,KAAK,kBAAkB,MAAM,6BAA6B,CAAA;AACjE,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,EAAE,OAAO,EAAE,MAAM,6BAA+B,CAAA;AACvD,OAAO,EAAE,OAAO,EAAE,MAAM,6BAA+B,CAAA;AACvD,OAAO,EAAE,OAAO,EAAE,MAAM,4BAA8B,CAAA;AACtD,OAAO,EAAE,aAAa,EAAE,MAAM,6BAA+B,CAAA;AAE7D;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAoC;IAClD,SAAS,EAAE,QAAQ;IACnB,QAAQ,EAAE,kBAAkB,CAAC,OAAO,GAAG,CAAC;IACxC,UAAU,EAAE;QACV,cAAc,EAAE,OAAO;QACvB,cAAc,EAAE,OAAO;QACvB,eAAe,EAAE,OAAO;QACxB,qBAAqB,EAAE,aAAa;KACrC;CACF,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,kBAAkB,CAAC,GAAG,CAAC,CAAC,GAAG,CAAC,CAAC,CAAA;AAEhD;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,KAAK,CAAC,aAAa,CAAC,GAAG,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/Recall.vibe"
+     }
+    ],
+    "code": "/**\n * The replaceable memory-recall seam.\n *\n * Recall is both a flow-valued injection slot and an Effect runtime service.\n *\n * @see https://memory.smithers.sh/reference/api/\n * @see https://smithers.sh/docs/reference/api/patterns\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Pattern from \"@smthrs/patterns/Pattern\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\nimport { compareText } from \"./internal/Canonical.js\";\nimport * as Bank from \"./internal/ResolveNamespace.js\";\nimport * as MemoryStore from \"./MemoryStore.js\";\nimport * as Namespace from \"./Namespace.js\";\n/**\n * Maximum banks accepted by one model-facing recall request.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_RECALL_BANKS = 16;\n/**\n * Maximum code-unit length of one recall bank name.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_RECALL_BANK_NAME_LENGTH = 128;\n/**\n * Maximum UTF-8 byte length of a recall query.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_RECALL_QUERY_BYTES = 16 * 1_024;\n/**\n * Maximum conservative byte budget accepted as `maxTokens`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_RECALL_TOKENS = 64 * 1_024;\n/**\n * Maximum tag groups accepted by one model-facing recall request.\n *\n * Every group is evaluated against every candidate row by each binding, so the\n * per-group depth and node bounds `Namespace.TagGroup` enforces only bound one\n * group. Without a cap on the array a single decoded request multiplies that\n * budget without limit, so the list is bounded here as well.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const MAX_RECALL_TAG_GROUPS = 16;\n/**\n * Byte budget applied when a recall request omits `maxTokens`.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const DEFAULT_MAX_TOKENS = 2048;\n/**\n * Rows a row-counting binding keeps for a byte budget: one per 256 bytes, at\n * least one.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const requestedRows = (maxTokens = DEFAULT_MAX_TOKENS) => Math.max(1, Math.ceil(maxTokens / 256));\nconst encoder = new TextEncoder();\n/**\n * A bank name recall accepts: non-empty and at most\n * {@link MAX_RECALL_BANK_NAME_LENGTH} code units.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const BankName = Schema.NonEmptyString.pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANK_NAME_LENGTH)));\nconst Query = Schema.String.pipe(Schema.check(Schema.makeFilter((query) => encoder.encode(query).byteLength <= MAX_RECALL_QUERY_BYTES\n    ? undefined\n    : `recall query exceeds ${MAX_RECALL_QUERY_BYTES} UTF-8 bytes`)));\n/**\n * A recall budget: an integer UTF-8 byte ceiling from 0 to\n * {@link MAX_RECALL_TOKENS}.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const MaxTokens = Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0)), Schema.check(Schema.isLessThanOrEqualTo(MAX_RECALL_TOKENS)));\n/**\n * Input to the recall slot.\n *\n * @category models\n * @since 0.1.0\n */\nexport const Input = Schema.Struct({\n    banks: Schema.Array(BankName).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_BANKS))),\n    query: Query,\n    tagGroups: Schema.optional(Schema.Array(Namespace.TagGroup).pipe(Schema.check(Schema.isMaxLength(MAX_RECALL_TAG_GROUPS)))),\n    maxTokens: Schema.optional(MaxTokens),\n    budget: Schema.optional(Schema.Literals([\"low\", \"mid\", \"high\"]))\n});\n/**\n * One recalled memory row.\n *\n * @category models\n * @since 0.1.0\n */\nexport const Result = Schema.Struct({\n    bank: Schema.String,\n    key: Schema.String,\n    text: Schema.String,\n    score: Schema.Number,\n    updatedAtMs: Schema.optional(Schema.Number)\n});\n/**\n * Output of the recall slot.\n *\n * @category models\n * @since 0.1.0\n */\nexport const Output = Schema.Array(Result);\n/**\n * Flow-valued recall injection slot.\n *\n * @category slots\n * @since 0.1.0\n */\nexport const slot = Pattern.slot({ input: Input, output: Output });\n/**\n * Context tag for the replaceable recall implementation.\n *\n * @category services\n * @since 0.1.0\n */\nexport class Recall extends runtime.$service(\"flows/memory/Recall\") {\n}\nconst serializedByteLength = (result) => encoder.encode(JSON.stringify(result)).byteLength;\n// `JSON.stringify(rows)` is `[` + rows joined by `,` + `]`, so the serialized\n// size of a selection is the two brackets plus every row's own serialization\n// plus one separator per row after the first. Tracking that sum lets the cap\n// serialize each row exactly once instead of re-serializing the selection for\n// every candidate.\nconst ARRAY_BRACKETS_BYTES = 2;\nconst SEPARATOR_BYTES = 1;\n/**\n * Applies Smithers' conservative UTF-8 byte cap: complete rows are selected\n * greedily, then only the first overflowing row is truncated by binary search.\n * `maxTokens` is treated as a byte ceiling because UTF-8 bytes conservatively\n * bound token count without selecting a model-specific tokenizer.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const capRecallResults = (results, maxTokens = DEFAULT_MAX_TOKENS) => {\n    const normalized = results.filter((result) => result.text.length > 0);\n    const byteBudget = Math.max(0, Math.floor(maxTokens));\n    const selected = [];\n    let usedBytes = ARRAY_BRACKETS_BYTES;\n    for (const result of normalized) {\n        const separatorBytes = selected.length > 0 ? SEPARATOR_BYTES : 0;\n        const rowBudget = byteBudget - usedBytes - separatorBytes;\n        const rowBytes = serializedByteLength(result);\n        if (rowBytes <= rowBudget) {\n            selected.push(result);\n            usedBytes += separatorBytes + rowBytes;\n            continue;\n        }\n        const characters = [...result.text];\n        let low = 0;\n        let high = characters.length;\n        while (low < high) {\n            const middle = Math.ceil((low + high) / 2);\n            const candidate = { ...result, text: characters.slice(0, middle).join(\"\") };\n            if (serializedByteLength(candidate) <= rowBudget) {\n                low = middle;\n            }\n            else {\n                high = middle - 1;\n            }\n        }\n        if (low > 0) {\n            selected.push({ ...result, text: characters.slice(0, low).join(\"\") });\n        }\n        break;\n    }\n    return selected;\n};\n/**\n * The ranking every binding sorts by: score descending, newest update, key,\n * then bank, so the order never depends on the request's bank order.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const compareResults = (left, right) => right.score - left.score || (right.updatedAtMs ?? 0) - (left.updatedAtMs ?? 0) ||\n    compareText(left.key, right.key) || compareText(left.bank, right.bank);\n/**\n * Provides a store-backed recall binding, capturing the MemoryStore once so\n * the service method needs no environment.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerFrom = (run) => Layer.effect(Recall, Effect_1.gen(function* () {\n    const store = yield* MemoryStore.MemoryStore;\n    return Recall.of({ recall: (input) => Effect.provideService(run(input), MemoryStore.MemoryStore, store) });\n}));\n/**\n * Provides a recall service.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = (implementation) => Layer.succeed(Recall)(Recall.of(implementation));\n/**\n * Constructs a recall service that returns no rows.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const makeNoop = () => Recall.of({ recall: () => Effect.succeed([]) });\n/**\n * Provides the empty recall implementation.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layerNoop = Layer.succeed(Recall)(makeNoop());\n/**\n * Maps a structured namespace back to the public bank name recall accepts.\n * `namespaceForBank` is its inverse for every prefixed bank.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const bankForNamespace = Bank.bankForNamespace;\n/**\n * Performs the unvalidated syntactic inverse of {@link bankForNamespace}.\n * Prefixes preserve explicit lifetimes; an unprefixed bank is flow-local.\n * The returned `id` is intentionally typed as `string`, not\n * `Namespace.NonEmptyString`. Use `Bank.parse` at every I/O boundary.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const namespaceForBank = Bank.namespaceForBank;\n",
+    "map": {
+     "version": 3,
+     "file": "Recall.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/Recall.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
+     }
+    ],
+    "code": "/**\n * One memory policy applied to a whole flow tree.\n *\n * A delegated plan generates work the author never named, so the policy that\n * work runs under cannot be an argument threaded through every call. It is a\n * flow annotation instead: {@link withMemory} attaches the policy to a flow and\n * to every flow that flow declares, and the memory bindings in\n * `./Flows.ts` read it back when they resolve a namespace, a recall budget, or\n * whether a write is retained at all.\n *\n * The annotation takes no part in flow identity, so a policy never changes the\n * graph a flow plans. See https://memory.smithers.sh/reference/api/.\n *\n * @since 0.1.0\n */\nimport * as Option from \"effect/Option\";\nimport * as Annotations from \"@smthrs/core/Annotations\";\nimport * as Flow from \"@smthrs/core/Flow\";\nimport * as DurableFlow from \"@smthrs/flow/Flow\";\nimport * as Context from \"effect/Context\";\nimport * as Schema from \"effect/Schema\";\nimport { MemoryError } from \"./MemoryError.js\";\nimport { BankName, MaxTokens } from \"./Recall.js\";\n/**\n * The memory policy a flow tree inherits: which namespace its memory lives in,\n * whether recall is refused (`recall: \"none\"`; absent, recall answers when\n * asked), the byte budget recall answers within, and whether writes are\n * dropped (`retain: \"never\"`; absent, every write is stored when it is made).\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const Policy = Schema.Struct({\n    banks: Schema.Array(BankName).check(Schema.isMinLength(1)),\n    recall: Schema.optionalKey(Schema.Literal(\"none\")),\n    maxTokens: MaxTokens,\n    retain: Schema.optionalKey(Schema.Literal(\"never\"))\n});\n/**\n * Annotation key carrying the memory policy on a flow.\n *\n * @category annotations\n * @since 0.1.0\n */\nexport const MemoryPolicy = Context.Service(\"flows/memory/Annotations/MemoryPolicy\");\nconst declaration = (flow) => flow;\n/**\n * Lists the collaborators a flow declares, callable flows and unresolved\n * registry names alike.\n *\n * It is the flow's own `flows` declaration, which is what a model filling in a\n * body is given and what a catalog lists. A flow that declares none reaches its\n * collaborators by calling them, and those calls are graph nodes rather than a\n * list, so this returns nothing for one. A `@smthrs/flow` flow declares no\n * list at all and is always that case.\n *\n * @category introspection\n * @since 0.1.0\n */\nexport const references = (flow) => \"flows\" in flow ? flow.flows ?? [] : [];\n/**\n * Lists the callable flows a flow declares. A name a registry has not resolved\n * yet is not one, so {@link references} is the wider view.\n *\n * @category introspection\n * @since 0.1.0\n */\nexport const children = (flow) => references(flow).filter((reference) => typeof reference !== \"string\");\n/**\n * Reads the memory policy a flow carries, or `undefined` when it carries none.\n *\n * @category introspection\n * @since 0.1.0\n */\nexport const policyOf = (flow) => Option.getOrUndefined(Annotations.getOption(flow.annotations ?? Context.empty(), MemoryPolicy));\nconst rebuild = (flow, policy) => {\n    const self = declaration(flow);\n    const declared = flow.flows ?? [];\n    if (declared.length === 0)\n        return self;\n    return Flow.withFlows(self, declared.map((reference) => Flow.isFlow(reference) ? attach(reference, policy) : reference));\n};\nconst attach = (flow, policy) => Flow.annotate(rebuild(flow, policy), MemoryPolicy, policy);\nconst snapshot = (input) => {\n    let decoded;\n    try {\n        decoded = Schema.decodeUnknownSync(Policy)(input);\n    }\n    catch {\n        $raise(new MemoryError({\n            code: \"invalid_argument\",\n            message: \"memory policy is invalid\"\n        }));\n    }\n    return Object.freeze({\n        ...decoded,\n        banks: Object.freeze([...decoded.banks])\n    });\n};\nexport function withMemory(flow, policy) {\n    const attached = snapshot(policy);\n    if (Flow.isFlow(flow))\n        return attach(flow, attached);\n    if (DurableFlow.isFlow(flow))\n        return flow.annotate(MemoryPolicy, attached);\n    return {\n        ...flow,\n        annotations: Context.add(flow.annotations ?? Context.empty(), MemoryPolicy, attached),\n        ...(\"flows\" in flow\n            ? {\n                flows: flow.flows?.map((child) => typeof child === \"string\" ? child : withMemory(child, attached))\n            }\n            : {})\n    };\n}\nimport { raise as $raise } from \"./WithMemory.vibe.$throw$ts.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "WithMemory.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/WithMemory.vibe.$throw$ts.js"
+     }
+    ],
+    "code": "export function raise(value) {\n    throw value;\n}\n",
+    "map": {
+     "version": 3,
+     "file": "WithMemory.vibe.$throw$ts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AA8PE,MAAM,UAAU,KAAK,CAAC,KAAc;IAClC,MAAM,KAAK,CAAA;AACb,CAAC"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/Flows.vibe"
+     }
+    ],
+    "code": "/**\n * Memory flow declarations and runtime bindings.\n *\n * The declarations describe the runtime operation but intentionally perform\n * no memory I/O while a graph is being built.\n *\n * @see https://memory.smithers.sh/reference/api/\n * @see https://smithers.sh/docs/reference/api/patterns\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effects from \"@smthrs/core/Effects\";\nimport * as Pattern from \"@smthrs/patterns/Pattern\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport { resolveNamespace } from \"./internal/ResolveNamespace.js\";\nimport { MemoryError } from \"./MemoryError.js\";\nimport * as MemoryStore from \"./MemoryStore.js\";\nimport * as Namespace from \"./Namespace.js\";\nimport * as Recall from \"./Recall.js\";\nimport * as WithMemory from \"./WithMemory.js\";\n/**\n * The registry name of the `remember` flow.\n *\n * @category identifiers\n * @since 0.1.0\n */\nexport const rememberName = \"remember\";\n/**\n * The registry name of the `recall` flow.\n *\n * @category identifiers\n * @since 0.1.0\n */\nexport const recallName = \"recall\";\n/**\n * The one-line description the model sees for the `remember` flow.\n *\n * @category descriptions\n * @since 0.1.0\n */\nexport const rememberDescription = \"Persist a memory record in a named bank.\";\n/**\n * The one-line description the model sees for the `recall` flow.\n *\n * @category descriptions\n * @since 0.1.0\n */\nexport const recallDescription = \"Recall advisory memory rows from named banks.\";\n/**\n * Maximum UTF-8 byte length of a remembered key.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_REMEMBER_KEY_BYTES = 1_024;\n/**\n * Maximum UTF-8 byte length of a remembered text: the recall query cap, so a\n * fact never outgrows what one recall budget can return.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const MAX_REMEMBER_TEXT_BYTES = Recall.MAX_RECALL_QUERY_BYTES;\nconst utf8 = new TextEncoder();\nconst maxUtf8Bytes = (max, label) => Schema.makeFilter((value) => utf8.encode(value).byteLength <= max ? undefined : `${label} exceeds ${max} UTF-8 bytes`);\n/**\n * The tag prefix a `remember` caller may not write.\n *\n * A `source:` tag claims where a record came from, and recall filters on it to\n * select trusted-source memory, so only a host writing through the store may\n * set it. A model-written fact carrying `source:eval` would otherwise pose as\n * an evaluation's finding.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const RESERVED_REMEMBER_TAG_PREFIX = \"source:\";\nconst reservedTagIssue = (tags) => tags.some((tag) => tag.startsWith(RESERVED_REMEMBER_TAG_PREFIX))\n    ? `invalid_tag: remember may not set a ${RESERVED_REMEMBER_TAG_PREFIX} tag`\n    : undefined;\n/**\n * Input schema for remember.\n *\n * Tags use `Namespace.Tags` so model decoding and durable writes enforce the\n * same vocabulary, uniqueness rule, and 16-tag cap before the handler performs\n * I/O, and refuse the reserved `source:` prefix. The bank uses `Recall.BankName`, so every remembered\n * fact is in a bank recall can name, and key and text are byte-capped. `ttlMs` is passed to the authoritative fact row.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RememberInput = Schema.Struct({\n    bank: Recall.BankName,\n    key: Schema.NonEmptyString.pipe(Schema.check(maxUtf8Bytes(MAX_REMEMBER_KEY_BYTES, \"remember key\"))),\n    text: Schema.String.pipe(Schema.check(maxUtf8Bytes(MAX_REMEMBER_TEXT_BYTES, \"remember text\"))),\n    tags: Schema.optional(Namespace.Tags.pipe(Schema.check(Schema.makeFilter(reservedTagIssue, { identifier: \"invalid_tag\" })))),\n    ttlMs: Schema.optional(Schema.Int.pipe(Schema.check(Schema.isGreaterThanOrEqualTo(0))))\n});\n/**\n * Output schema for remember.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RememberOutput = Schema.Struct({ key: Schema.String });\n/**\n * Input schema for the `recall` flow: `Recall.Input`, re-exported beside\n * `RememberInput` so a host declares both flows from this module.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RecallInput = Recall.Input;\n/**\n * Output schema for the `recall` flow: `Recall.Output`.\n *\n * @category schemas\n * @since 0.1.0\n */\nexport const RecallOutput = Recall.Output;\n/**\n * Unsealed effect declaration for durable memory writes.\n *\n * @category effects\n * @since 0.1.0\n */\nexport const rememberEffects = Effects.make({\n    reads: [\"memory/**\"],\n    writes: [\"memory/**\"],\n    mode: \"expected\",\n    onConflict: \"serialize\",\n    tier: \"irreversible\"\n});\n/**\n * Sealed effect declaration for mutable cross-run memory reads.\n *\n * The core declaration shape requires a conflict policy, so this pure read\n * uses `fail` instead of the serializing policy reserved for writes.\n *\n * @category effects\n * @since 0.1.0\n */\nexport const recallEffects = Effects.make({\n    reads: [\"memory/**\"],\n    writes: [],\n    mode: \"expected\",\n    onConflict: \"fail\",\n    tier: \"sealed\"\n});\n/**\n * Declaration for a memory write.\n *\n * @category flows\n * @since 0.1.0\n */\nexport const remember = {\n    capabilities: [],\n    name: rememberName,\n    description: rememberDescription,\n    input: RememberInput,\n    output: RememberOutput,\n    effects: rememberEffects\n};\n/**\n * Declaration for advisory memory recall.\n *\n * @category flows\n * @since 0.1.0\n */\nexport const recall = {\n    capabilities: [],\n    name: recallName,\n    description: recallDescription,\n    input: RecallInput,\n    output: RecallOutput,\n    effects: recallEffects\n};\n/**\n * Resolves the recall slot to a supplied signature.\n *\n * A slot is filled with the `@smthrs/flow` flow a signature carries, because\n * that is the value a pattern composes into a graph. The signature is what a\n * caller holds, so it is what this takes.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const bindRecall = (supplied) => Pattern.bind(Recall.slot, \"flow\" in supplied ? supplied.flow : supplied);\n/**\n * Runtime binding for the remember declaration, carrying explicit provenance.\n *\n * Provenance is bound once, when a host builds the handler, and every call the\n * returned function serves records it. Binding time is when a host knows the\n * run coordinates, and keeping the handler itself one-argument is what lets it\n * satisfy the `(input, call)` handler contract `FlowBinding.make` types: a\n * second positional argument there would receive the `Call`, not provenance,\n * and would persist the whole call payload into `provenance_json`.\n *\n * @category handlers\n * @since 0.1.0\n */\nexport const runRememberWith = (provenance) => Effect_1.fnUntraced(function* (input) {\n    const store = yield* MemoryStore.MemoryStore;\n    const { namespace } = yield* resolveNamespace(input.bank);\n    const reserved = reservedTagIssue(input.tags ?? []);\n    if (reserved !== undefined)\n        return yield* Effect_1.fail(new MemoryError({ code: \"invalid_tag\", message: reserved }));\n    yield* store.putFact({\n        namespace,\n        key: input.key,\n        value: { content: input.text },\n        tags: input.tags ?? [],\n        ...(input.ttlMs === undefined ? {} : { ttlMs: input.ttlMs }),\n        provenance\n    });\n    return { key: input.key };\n});\n/**\n * Runtime binding for the remember declaration.\n *\n * Records no provenance. It takes exactly one argument so a host can hand it\n * straight to `FlowBinding.make({ flow, handler })`. Use\n * {@link runRememberWith} to bind run coordinates.\n *\n * @category handlers\n * @since 0.1.0\n */\nexport const runRemember = (input) => runRememberWith({})(input);\n/**\n * Runtime binding for the selected recall service.\n *\n * @category handlers\n * @since 0.1.0\n */\nexport const runRecall = (input) => Effect.flatMap(Recall.Recall, (service) => service.recall(input));\nconst missingPolicy = Effect.fail(new MemoryError({\n    code: \"invalid_namespace\",\n    message: \"memory flow carries no policy; bind a WithMemory.withMemory declaration\"\n}));\nconst validatePolicyBank = Effect_1.fnUntraced(function* validatePolicyBank(bank, policy) {\n    const { namespace } = yield* resolveNamespace(bank);\n    const allowed = yield* Effect.forEach(policy.banks, resolveNamespace);\n    if (!allowed.some((entry) => entry.namespace.kind === namespace.kind && entry.namespace.id === namespace.id)) {\n        return yield* Effect_1.fail(new MemoryError({\n            code: \"invalid_namespace\",\n            message: \"memory bank is outside the policy namespace\"\n        }));\n    }\n});\n/**\n * Applies the memory policy a flow carries to a recall request.\n *\n * Empty banks use the policy namespace; every explicit bank must resolve to\n * that same namespace or the entire request fails before recall runs. The\n * policy budget is a default the caller may override. `recall: \"none\"`\n * returns no rows before bank validation or any call to the recall service.\n * A flow that carries no policy fails with `invalid_namespace` before recall\n * runs; `runRecall` is the explicitly unscoped call.\n *\n * @category handlers\n * @since 0.1.0\n */\nexport const runRecallFor = (flow, input) => {\n    const policy = WithMemory.policyOf(flow);\n    if (policy === undefined)\n        return missingPolicy;\n    if (policy.recall === \"none\")\n        return Effect.succeed([]);\n    return Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* () {\n        const banks = input.banks.length > 0 ? input.banks : policy.banks;\n        {\n            let pending_1 = runtime.$normal;\n            try {\n                for (const bank of banks) {\n                    try {\n                        yield* validatePolicyBank(bank, policy);\n                    }\n                    catch (thrown_1) {\n                        pending_1 = thrown_1;\n                        break;\n                    }\n                }\n            }\n            catch (thrown_2) {\n                throw runtime.$finallyFailure(pending_1, thrown_2);\n            }\n            if (pending_1 !== runtime.$normal)\n                throw pending_1;\n        }\n        return yield* runRecall({\n            ...input,\n            banks,\n            maxTokens: input.maxTokens ?? policy.maxTokens\n        });\n    })));\n};\n/**\n * Applies the memory policy a flow carries to a memory write.\n *\n * An unnamed bank resolves to the policy namespace. An explicit foreign bank\n * fails before the store runs. `retain: \"never\"` drops the write before bank\n * validation: the caller still receives the key it asked for, and nothing\n * reaches the store. The optional provenance argument is forwarded unchanged.\n * A flow that carries no policy fails with `invalid_namespace` before the store\n * runs; `runRememberWith` is the explicitly unscoped write.\n *\n * The flow comes first so this can never be mistaken for a `FlowBinding`\n * handler; {@link handlersFor} is the one-argument handler a host binds.\n *\n * @category handlers\n * @since 0.1.0\n */\nexport const runRememberFor = (flow, input, provenance = {}) => {\n    const policy = WithMemory.policyOf(flow);\n    if (policy === undefined)\n        return missingPolicy;\n    if (policy.retain === \"never\")\n        return Effect.succeed({ key: input.key });\n    return Effect_1.gen(function* () {\n        const bank = input.bank.length > 0 ? input.bank : policy.banks[0];\n        yield* validatePolicyBank(bank, policy);\n        return yield* runRememberWith(provenance)({ ...input, bank });\n    });\n};\n/**\n * Builds the handlers for one memory declaration, reading the memory policy\n * that declaration carries.\n *\n * A host binds the declaration a cell was given, which for delegated work is\n * the policy-carrying copy `withMemory` produced, not the bare declaration\n * exported here. Passing that copy is what makes the namespace, the recall\n * budget, and `recall: \"none\"` reach the runtime:\n *\n * ```ts\n * const bound = WithMemory.withMemory(Flows.recall, policy)\n * FlowBinding.make({ flow: bound, handler: Flows.handlersFor(bound).recall })\n * ```\n *\n * The optional `provenance` is bound here, once, and recorded on every fact the\n * returned `remember` handler writes. A host that knows its run coordinates\n * passes them at binding time; the handler stays one-argument so it remains a\n * legal `FlowBinding` handler.\n *\n * @category handlers\n * @since 0.1.0\n */\nexport const handlersFor = (flow, provenance = {}) => ({\n    remember: (input) => runRememberFor(flow, input, provenance),\n    recall: (input) => runRecallFor(flow, input)\n});\n",
+    "map": {
+     "version": 3,
+     "file": "Flows.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/Flows.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/memory/src/SnapshotRecorder.vibe"
      }
     ],
@@ -5797,6 +6117,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;;GAUG;;;;AAIH;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,MAAM,CAAC,MAAM,CAAC;IAC/B,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,CAAC,QAAQ,EAAE,QAAQ,CAAC,CAAC;IAC7C,IAAI,EAAE,MAAM,CAAC,MAAM;IACnB,GAAG,EAAE,MAAM,CAAC,MAAM;IAClB,IAAI,EAAE,MAAM,CAAC,MAAM;CACpB,CAAC,CAAA;AAUF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,KAAK,CAAC,GAAG,CAAC,EAAE,CAAC,CAAA;AAmClE;;;;;GAKG;AACH,MAAM,OAAO,gBAAiB,SAAQ,OAAO,CAAC,OAAO,EAA6B,CAChF,+BAA+B,CAChC;CAAG;AAEJ;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,cAAuB,EAA2B,EAAE,CACxE,KAAK,CAAC,OAAO,CAAC,gBAAgB,CAAC,CAAC,gBAAgB,CAAC,EAAE,CAAC,cAAc,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/memory/src/RecallKeyword.vibe"
+     }
+    ],
+    "code": "/**\n * Keyword recall with no host dependencies.\n *\n * Scores every authoritative row in each selected bank by the number of\n * normalized query terms occurring in its key and text, breaks ties by newest\n * update, then applies the shared Smithers-compatible byte cap. There is no\n * recency window: an old match ranks the same as a new one.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Effect from \"effect/Effect\";\nimport { resolveBanks } from \"./internal/ResolveNamespace.js\";\nimport * as MemoryStore from \"./MemoryStore.js\";\nimport * as Namespace from \"./Namespace.js\";\nimport * as Recall from \"./Recall.js\";\n/**\n * Splits a query into the normalized terms scoring compares against.\n *\n * @category models\n * @since 0.1.0\n */\nexport const normalizeQueryTerms = (value) => value.normalize(\"NFKC\").toLowerCase().split(/[^\\p{L}\\p{N}_-]+/u).filter(Boolean);\n/**\n * Scores one row by the number of normalized query terms occurring in its key\n * and text.\n *\n * @category models\n * @since 0.1.0\n */\nexport const scoreRow = (query, row) => {\n    const haystack = `${row.key} ${row.text}`.normalize(\"NFKC\").toLowerCase();\n    return query.reduce((total, term) => total + (haystack.includes(term) ? 1 : 0), 0);\n};\nconst matches = (row, groups) => groups === undefined || groups.every((group) => Namespace.matches(group, row.tags));\nconst authoritative = (row, groups) => matches(row, groups) && (row.status === undefined || row.status === \"accepted\");\n/**\n * Runs keyword recall against the supplied MemoryStore.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const recall = Effect_1.fnUntraced(runtime.$joinedFrame(function* recall(input) {\n    const store = yield* MemoryStore.MemoryStore;\n    const banks = yield* resolveBanks(input.banks);\n    const terms = normalizeQueryTerms(input.query);\n    if (banks.length === 0 || terms.length === 0)\n        return [];\n    const rows = yield* Effect.all(banks.map(({ namespace }) => store.searchRows({\n        namespace,\n        status: \"accepted\",\n        tagGroups: input.tagGroups\n    })), { concurrency: 4 });\n    const ranked = rows.flatMap((bankRows, index) => bankRows\n        .map((row) => ({ ...row, bank: banks[index]?.bank ?? \"\" }))\n        .filter((row) => authoritative(row, input.tagGroups))\n        .map((row) => ({\n        bank: banks[index]?.bank ?? \"\",\n        key: row.key,\n        text: row.text,\n        score: scoreRow(terms, row),\n        updatedAtMs: row.updatedAtMs\n    }))\n        .filter((row) => row.score > 0));\n    ranked.sort(Recall.compareResults);\n    return Recall.capRecallResults(ranked, input.maxTokens);\n}));\n/**\n * Provides keyword recall as the default replaceable recall slot.\n *\n * @category layers\n * @since 0.1.0\n */\nexport const layer = Recall.layerFrom(recall);\n",
+    "map": {
+     "version": 3,
+     "file": "RecallKeyword.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/memory/src/RecallKeyword.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    }
   ]

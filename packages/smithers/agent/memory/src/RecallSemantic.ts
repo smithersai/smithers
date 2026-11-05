@@ -24,7 +24,7 @@ import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import * as Stream from "effect/Stream"
 import type { DatabaseService } from "./Database.vibe"
-import * as Embedding from "./Embedding.ts"
+import * as Embedding from "./Embedding.vibe"
 import { digest } from "./internal/Digest.ts"
 import { searchableText } from "./internal/FactProjection.ts"
 import { cosine, recency } from "./internal/Ranking.ts"
@@ -33,7 +33,7 @@ import { vectorBytes } from "./internal/VectorBytes.ts"
 import * as MemoryError from "./MemoryError.vibe"
 import * as MemoryStore from "./MemoryStore.ts"
 import * as Namespace from "./Namespace.vibe"
-import * as Recall from "./Recall.ts"
+import * as Recall from "./Recall.vibe"
 
 /**
  * Durable vector projection row. `recordKind` and `recordId` name the

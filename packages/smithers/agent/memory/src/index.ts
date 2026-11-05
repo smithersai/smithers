@@ -25,12 +25,12 @@ export * as Database from "./Database.vibe"
 /**
  * @category embeddings @since 0.1.0
  */
-export * as Embedding from "./Embedding.ts"
+export * as Embedding from "./Embedding.vibe"
 
 /**
  * @category flows @since 0.1.0
  */
-export * as Flows from "./Flows.ts"
+export * as Flows from "./Flows.vibe"
 
 /**
  * @category maintenance @since 0.1.0
@@ -57,7 +57,7 @@ export * as MemoryTrellis from "./MemoryTrellis.ts"
  * @category migrations
  * @since 1.0.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"
 
 /**
  * @category models @since 0.1.0
@@ -67,7 +67,7 @@ export * as Namespace from "./Namespace.vibe"
 /**
  * @category recall @since 0.1.0
  */
-export * as Recall from "./Recall.ts"
+export * as Recall from "./Recall.vibe"
 
 /**
  * @category recall @since 0.1.0
@@ -77,7 +77,7 @@ export * as RecallFts from "./RecallFts.ts"
 /**
  * @category recall @since 0.1.0
  */
-export * as RecallKeyword from "./RecallKeyword.ts"
+export * as RecallKeyword from "./RecallKeyword.vibe"
 
 /**
  * @category recall @since 0.1.0
@@ -98,7 +98,7 @@ export * as SnapshotRecorder from "./SnapshotRecorder.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as WithMemory from "./WithMemory.ts"
+export * as WithMemory from "./WithMemory.vibe"
 
 /**
  * @category services

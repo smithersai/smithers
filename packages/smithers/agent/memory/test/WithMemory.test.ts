@@ -10,14 +10,14 @@ import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
-import * as Flows from "../src/Flows.ts"
+import * as Flows from "../src/Flows.vibe"
 import { MemoryError } from "../src/MemoryError.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as MemoryTrellis from "../src/MemoryTrellis.ts"
-import * as Recall from "../src/Recall.ts"
-import * as RecallKeyword from "../src/RecallKeyword.ts"
+import * as Recall from "../src/Recall.vibe"
+import * as RecallKeyword from "../src/RecallKeyword.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
-import * as WithMemory from "../src/WithMemory.ts"
+import * as WithMemory from "../src/WithMemory.vibe"
 
 const policy: WithMemory.Policy = {
   banks: ["flow-trellis"],

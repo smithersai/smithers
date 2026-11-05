@@ -43,7 +43,7 @@ export interface EmbedManyResponse {
  */
 export type EmbedMany = (
   inputs: ReadonlyArray<string>
-) => Effect.Effect<ReadonlyArray<ReadonlyArray<number>>, MemoryError.MemoryError>
+) => ReadonlyArray<ReadonlyArray<number>>!MemoryError.MemoryError
 
 /**
  * Embedding service shape, mirroring the unstable Effect EmbeddingModel
@@ -53,8 +53,8 @@ export type EmbedMany = (
  * @since 0.1.0
  */
 export interface Service {
-  readonly embed: (input: string) => Effect.Effect<EmbedResponse, MemoryError.MemoryError>
-  readonly embedMany: (inputs: ReadonlyArray<string>) => Effect.Effect<EmbedManyResponse, MemoryError.MemoryError>
+  readonly embed: (input: string) => EmbedResponse!MemoryError.MemoryError
+  readonly embedMany: (inputs: ReadonlyArray<string>) => EmbedManyResponse!MemoryError.MemoryError
 }
 
 /**
@@ -63,7 +63,9 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class Embedding extends Context.Service<Embedding, Service>()("flows/memory/Embedding") {}
+export service Embedding: Service {
+  static readonly key = "flows/memory/Embedding"
+}
 
 const unavailable = (message: string): MemoryError.MemoryError =>
   new MemoryError.MemoryError({ code: "embedding_unavailable", message })
@@ -71,7 +73,7 @@ const unavailable = (message: string): MemoryError.MemoryError =>
 const validate = (
   inputs: ReadonlyArray<string>,
   vectors: ReadonlyArray<ReadonlyArray<number>>
-): Effect.Effect<EmbedManyResponse, MemoryError.MemoryError> => {
+): EmbedManyResponse!MemoryError.MemoryError => {
   const invalid = () => Effect.fail(unavailable("embedding provider returned an invalid batch"))
   const dimensions = vectors[0]?.length
   if (vectors.length !== inputs.length || dimensions === undefined || dimensions === 0) return invalid()
@@ -99,18 +101,17 @@ const validate = (
 export const make = (embedMany: EmbedMany): Service => {
   const service: Service = {
     embed: (input) =>
-      service.embedMany([input]).pipe(
-        Effect.flatMap((response) => {
-          const embedding = response.embeddings[0]
-          return embedding === undefined
-            ? Effect.fail(unavailable("embedding provider returned an empty batch"))
-            : Effect.succeed(embedding)
-        })
-      ),
+      service.embedMany([input])
+      |> Effect.flatMap(%, (response) => {
+        const embedding = response.embeddings[0]
+        return embedding === undefined
+          ? Effect.fail(unavailable("embedding provider returned an empty batch"))
+          : Effect.succeed(embedding)
+      }),
     embedMany: (inputs) =>
       inputs.length === 0
         ? Effect.succeed({ embeddings: [] })
-        : embedMany(inputs).pipe(Effect.flatMap((vectors) => validate(inputs, vectors)))
+        : (embedMany(inputs) |> Effect.flatMap(%, (vectors) => validate(inputs, vectors)))
   }
   return Embedding.of(service)
 }

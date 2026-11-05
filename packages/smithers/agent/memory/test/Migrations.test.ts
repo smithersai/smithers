@@ -5,7 +5,7 @@ import { Effect, Exit, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 const testCrypto = Layer.succeed(Crypto.Crypto)(Crypto.make({

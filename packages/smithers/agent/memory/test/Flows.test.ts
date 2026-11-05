@@ -6,11 +6,11 @@ import { Effect, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
-import * as Flows from "../src/Flows.ts"
+import * as Flows from "../src/Flows.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
-import * as Recall from "../src/Recall.ts"
+import * as Recall from "../src/Recall.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
-import * as WithMemory from "../src/WithMemory.ts"
+import * as WithMemory from "../src/WithMemory.vibe"
 
 describe("Flows", () => {
   it("declares remember and recall as unsealed flows without bodies", () => {

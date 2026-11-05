@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
-import { openingContext } from "../examples/opening-context.ts"
-import { rememberAndRecall } from "../examples/remember-and-recall.ts"
-import { scopeAFlowTree } from "../examples/scope-a-flow-tree.ts"
+import { openingContext } from "../examples/opening-context.vibe"
+import { rememberAndRecall } from "../examples/remember-and-recall.vibe"
+import { scopeAFlowTree } from "../examples/scope-a-flow-tree.vibe"
 
 describe("examples", () => {
   it("remember-and-recall recalls the fact it wrote and the store lists it", async () => {

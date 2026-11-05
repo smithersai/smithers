@@ -3,7 +3,7 @@ import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
 import * as MemoryStore from "../src/MemoryStore.ts"
 import * as Fts from "../src/RecallFts.ts"
-import * as Keyword from "../src/RecallKeyword.ts"
+import * as Keyword from "../src/RecallKeyword.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
 
 describe("recall of expiring facts", () => {

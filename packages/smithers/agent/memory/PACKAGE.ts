@@ -93,7 +93,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember or runRecall bound as a model-facing handler instead of handlersFor(boundFlow), which skips the policy entirely.",
         "namespaceForBank letting a crafted bank string such as \"user-x\" or \"global-\" alias a namespace the policy did not list."
       ],
-      paths: ["src/Flows.ts", "src/WithMemory.ts", "src/internal/ResolveNamespace.vibe", "src/Bank.vibe"]
+      paths: ["src/Flows.vibe", "src/WithMemory.vibe", "src/internal/ResolveNamespace.vibe", "src/Bank.vibe"]
     },
     {
       id: "namespace-scoped-queries",
@@ -121,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
         "sql.literal or sql(...) identifier interpolation built from anything other than a Kind literal or constant column list.",
         "An FTS5 MATCH operand not produced by literalFtsQuery, or a Postgres tsquery built with to_tsquery on raw text."
       ],
-      paths: ["src/internal/**", "src/RecallFts.ts", "src/RecallKeyword.ts", "src/RecallSemantic.ts"]
+      paths: ["src/internal/**", "src/RecallFts.ts", "src/RecallKeyword.vibe", "src/RecallSemantic.ts"]
     },
     {
       id: "recalled-memory-fence",
@@ -144,8 +144,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Namespace.vibe",
-        "src/Recall.ts",
-        "src/Flows.ts",
+        "src/Recall.vibe",
+        "src/Flows.vibe",
         "src/RecallSemantic.ts",
         "src/internal/Search.ts"
       ]
@@ -159,7 +159,7 @@ const securityReview = Smithers.SecurityReview({
         "A vector with non-finite, missing, or mismatched-dimension components stored or compared without rejection.",
         "Stored vector bytes decoded without a length check in VectorBytes."
       ],
-      paths: ["src/Embedding.ts", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
+      paths: ["src/Embedding.vibe", "src/RecallSemantic.ts", "src/internal/VectorBytes.ts"]
     },
     {
       id: "model-write-provenance",
@@ -171,7 +171,7 @@ const securityReview = Smithers.SecurityReview({
         "runRemember recording empty provenance, so a model-written fact is indistinguishable from an operator-written one.",
         "putFact replacing an existing fact key written by a different source without superseding or recording the prior author."
       ],
-      paths: ["src/Flows.ts", "src/Namespace.vibe", "src/Recall.ts", "src/internal/Facts.ts", "src/internal/Store.vibe"]
+      paths: ["src/Flows.vibe", "src/Namespace.vibe", "src/Recall.vibe", "src/internal/Facts.ts", "src/internal/Store.vibe"]
     },
     {
       id: "ttl-and-retention",
@@ -186,9 +186,9 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/internal/Facts.ts",
         "src/Maintenance.ts",
-        "src/Flows.ts",
+        "src/Flows.vibe",
         "src/RecallSemantic.ts",
-        "src/internal/Fts.ts"
+        "src/internal/Fts.vibe"
       ]
     }
   ]

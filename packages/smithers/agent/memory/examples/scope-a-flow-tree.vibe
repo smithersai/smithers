@@ -3,12 +3,11 @@
  * through the policy-enforcing handlers: empty banks resolve to the policy
  * namespace, and a foreign bank is refused before the store runs.
  */
-import { Effect, Layer } from "effect"
-import * as Flows from "../src/Flows.ts"
+import * as Flows from "../src/Flows.vibe"
 import * as MemoryStore from "../src/MemoryStore.ts"
-import * as RecallKeyword from "../src/RecallKeyword.ts"
+import * as RecallKeyword from "../src/RecallKeyword.vibe"
 import * as TestMemory from "../src/test/TestMemory.ts"
-import * as WithMemory from "../src/WithMemory.ts"
+import * as WithMemory from "../src/WithMemory.vibe"
 
 const policy: WithMemory.Policy = { banks: ["flow-release-notes"], maxTokens: 2048 }
 
@@ -20,7 +19,7 @@ export const scopeAFlowTree = (): Promise<{
   readonly provenance: unknown
   readonly foreignBank: string
 }> =>
-  Effect.gen(function*() {
+  (effect {
     const remember = Flows.handlersFor(WithMemory.withMemory(Flows.remember, policy), {
       runId: "run-1",
       nodeId: "node-7",
@@ -29,19 +28,19 @@ export const scopeAFlowTree = (): Promise<{
     const recall = Flows.handlersFor(WithMemory.withMemory(Flows.recall, policy)).recall
 
     // An empty bank resolves to the policy's first bank.
-    yield* remember({ bank: "", key: "release", text: "cut 0.1.0 with the changelog" })
+    try remember({ bank: "", key: "release", text: "cut 0.1.0 with the changelog" })
     // Empty banks recall from every policy bank.
-    const rows = yield* recall({ banks: [], query: "changelog" })
+    const rows = try recall({ banks: [], query: "changelog" })
 
-    const store = yield* MemoryStore.MemoryStore
-    const fact = yield* store.getFact({ namespace: "flow-release-notes", key: "release" })
+    const store = try MemoryStore.MemoryStore
+    const fact = try store.getFact({ namespace: "flow-release-notes", key: "release" })
 
     // A bank the policy does not list fails with invalid_namespace.
-    const refused = yield* remember({ bank: "global-secrets", key: "k", text: "x" }).pipe(Effect.flip)
+    const refused = try (remember({ bank: "global-secrets", key: "k", text: "x" }) |> Effect.flip(%))
 
     return {
       recalledKeys: rows.map((row) => row.key),
       provenance: fact?.provenance,
       foreignBank: refused.code
     }
-  }).pipe(Effect.provide(memory), Effect.runPromise)
+  }) |> Effect.provide(%, memory) |> Effect.runPromise(%)

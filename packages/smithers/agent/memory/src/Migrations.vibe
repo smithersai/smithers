@@ -10,7 +10,7 @@
 
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as Layer from "effect/Layer"
-import { ftsFold } from "./internal/MemoryFtsFold.ts"
+import { ftsFold } from "./internal/MemoryFtsFold.vibe"
 import { indexes } from "./internal/MemoryIndexes.vibe"
 import { initial } from "./internal/MemorySchema.vibe"
 import { noteLifecycle } from "./internal/NoteLifecycle.vibe"

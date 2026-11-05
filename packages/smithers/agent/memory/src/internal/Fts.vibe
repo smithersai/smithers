@@ -88,10 +88,10 @@ export const postgresSearchIndex = (sql: SqlClient.SqlClient, kind: Kind): State
 export const isFtsEnabled = (
   database: DatabaseService,
   kind: Kind
-): Effect.Effect<boolean, SqlError.SqlError> =>
+): boolean!SqlError.SqlError =>
   database.sql<{ readonly enabled: number }>`
     SELECT 1 AS enabled FROM memory_fts_kinds WHERE namespace_kind = ${kind}
-  `.pipe(Effect.map((rows) => rows.length > 0))
+  ` |> Effect.map(%, (rows) => rows.length > 0)
 
 /**
  * Creates and fully backfills one namespace-kind FTS5 table.
@@ -112,28 +112,28 @@ export const enableFts = (
   database: DatabaseService,
   kind: Kind,
   enabledAtMs: number
-): Effect.Effect<void, SqlError.SqlError> => {
+): void!SqlError.SqlError => {
   const { sql } = database
   const table = sql.literal(ftsTable(kind))
-  return Effect.gen(function*() {
-    if (yield* isFtsEnabled(database, kind)) {
+  return effect {
+    if (try isFtsEnabled(database, kind)) {
       return
     }
     if (Dialect.isPostgres(sql)) {
-      yield* sql`CREATE TABLE IF NOT EXISTS ${table} (
+      try sql`CREATE TABLE IF NOT EXISTS ${table} (
         record_id TEXT NOT NULL, record_kind TEXT NOT NULL, namespace_id TEXT NOT NULL,
         record_key TEXT NOT NULL, text TEXT NOT NULL,
         ${postgresSearchColumn(sql)}
       )`
-      yield* postgresSearchIndex(sql, kind)
+      try postgresSearchIndex(sql, kind)
     } else {
-      yield* sql`CREATE VIRTUAL TABLE IF NOT EXISTS ${table}
+      try sql`CREATE VIRTUAL TABLE IF NOT EXISTS ${table}
         USING fts5(record_id UNINDEXED, record_kind UNINDEXED, namespace_id UNINDEXED, record_key, text)`
     }
-    yield* sql`INSERT INTO memory_fts_kinds (namespace_kind, enabled_at_ms)
+    try sql`INSERT INTO memory_fts_kinds (namespace_kind, enabled_at_ms)
       VALUES (${kind}, ${enabledAtMs})`
-    yield* sql`DELETE FROM ${table}`
-    yield* sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
+    try sql`DELETE FROM ${table}`
+    try sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
       SELECT fact_key, 'fact', namespace_id, fact_key,
         ${
       Dialect.isPostgres(sql) ?
@@ -148,10 +148,10 @@ export const enableFts = (
           ELSE value_json END`
     }
       FROM memory_facts WHERE namespace_kind = ${kind}`
-    yield* sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
+    try sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
       SELECT id, 'note', namespace_id, id, text
       FROM memory_notes WHERE namespace_kind = ${kind}`
-  })
+  }
 }
 
 /**
@@ -161,21 +161,20 @@ export const enableFts = (
  * @category projections
  * @since 1.0.0
  */
-export const deleteFtsFacts = (
+export const deleteFtsFacts = effect (
   database: DatabaseService,
   kind: Kind,
   namespaceId: string,
   factKeys: ReadonlyArray<string>
-): Effect.Effect<void, SqlError.SqlError> =>
-  Effect.gen(function*() {
-    if (factKeys.length === 0 || !(yield* isFtsEnabled(database, kind))) return
-    const { sql } = database
-    const table = sql.literal(ftsTable(kind))
-    yield* sql`DELETE FROM ${table}
+): void!SqlError.SqlError => {
+  if (factKeys.length === 0 || !(try isFtsEnabled(database, kind))) return
+  const { sql } = database
+  const table = sql.literal(ftsTable(kind))
+  try sql`DELETE FROM ${table}
       WHERE record_kind = 'fact'
         AND namespace_id = ${namespaceId}
         AND ${sql.in("record_id", factKeys)}`
-  })
+}
 
 /**
  * Replaces one authoritative record's FTS projection when its kind is enabled.
@@ -186,24 +185,23 @@ export const deleteFtsFacts = (
  * @category projections
  * @since 0.1.0
  */
-export const replaceFtsRecord = (
+export const replaceFtsRecord = effect (
   database: DatabaseService,
   kind: Kind,
   record: FtsRecord
-): Effect.Effect<void, SqlError.SqlError> =>
-  Effect.gen(function*() {
-    if (!(yield* isFtsEnabled(database, kind))) {
-      return
-    }
-    const { sql } = database
-    const table = sql.literal(ftsTable(kind))
-    yield* sql`DELETE FROM ${table}
+): void!SqlError.SqlError => {
+  if (!(try isFtsEnabled(database, kind))) {
+    return
+  }
+  const { sql } = database
+  const table = sql.literal(ftsTable(kind))
+  try sql`DELETE FROM ${table}
       WHERE record_id = ${record.recordId}
         AND record_kind = ${record.recordKind}
         AND namespace_id = ${record.namespaceId}`
-    yield* sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
+  try sql`INSERT INTO ${table} (record_id, record_kind, namespace_id, record_key, text)
       VALUES (${record.recordId}, ${record.recordKind}, ${record.namespaceId}, ${record.key}, ${record.text})`
-  })
+}
 
 /**
  * Deletes one authoritative record's FTS projection when its kind is enabled.
@@ -211,19 +209,18 @@ export const replaceFtsRecord = (
  * @category projections
  * @since 0.1.0
  */
-export const deleteFtsRecord = (
+export const deleteFtsRecord = effect (
   database: DatabaseService,
   kind: Kind,
   record: Pick<FtsRecord, "recordId" | "recordKind" | "namespaceId">
-): Effect.Effect<void, SqlError.SqlError> =>
-  Effect.gen(function*() {
-    if (!(yield* isFtsEnabled(database, kind))) return
-    const table = database.sql.literal(ftsTable(kind))
-    yield* database.sql`DELETE FROM ${table}
+): void!SqlError.SqlError => {
+  if (!(try isFtsEnabled(database, kind))) return
+  const table = database.sql.literal(ftsTable(kind))
+  try database.sql`DELETE FROM ${table}
       WHERE record_id = ${record.recordId}
         AND record_kind = ${record.recordKind}
         AND namespace_id = ${record.namespaceId}`
-  })
+}
 
 /**
  * Searches one namespace-kind FTS5 table in raw BM25 rank order.
@@ -243,7 +240,7 @@ export const searchFts = (
   terms: ReadonlyArray<string>,
   limit: number,
   offset = 0
-): Effect.Effect<ReadonlyArray<FtsMatch>, SqlError.SqlError> => {
+): ReadonlyArray<FtsMatch>!SqlError.SqlError => {
   const { sql } = database
   const tableName = ftsTable(kind)
   const table = sql.literal(tableName)
