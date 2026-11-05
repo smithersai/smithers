@@ -1,5 +1,6 @@
 // Static browser pages exercise the init script itself, without the app or its no-loading fixture's teardown.
-import { expect, test } from "@playwright/test"
+import { expect } from "@playwright/test"
+import { strictTest as test } from "./watch"
 import { renderToStaticMarkup } from "react-dom/server"
 import { createElement } from "react"
 import { Skeleton, smithersUiCss } from "@smthrs/ui"
