@@ -1050,6 +1050,22 @@ describe("SqlControlRuntime layers and stores", () => {
 })
 
 describe("SqlControlRuntime when the tables are gone", () => {
+  it("reads a control-only run without optional engine tables and leaves the connection usable", async () => {
+    await withRuntime((runtime, sql) =>
+      Effect.gen(function*() {
+        const { runId } = yield* start(runtime, "control-only-schema")
+        expect((yield* runtime.getRun(runId)).runId).toBe(runId)
+        expect(yield* sql`SELECT 1 AS usable`).toEqual([{ usable: 1 }])
+        // The same missing relation inside a transaction must roll back only
+        // its probe savepoint, so the enclosing read remains usable too.
+        yield* sql.withTransaction(Effect.gen(function*() {
+          expect((yield* runtime.getRun(runId)).runId).toBe(runId)
+          expect(yield* sql`SELECT 1 AS usable`).toEqual([{ usable: 1 }])
+        }))
+      })
+    )
+  })
+
   it("reports a missing relation referenced by the spawn view instead of treating the view as absent", async () => {
     const error = await withRuntime((runtime, sql) =>
       Effect.gen(function*() {

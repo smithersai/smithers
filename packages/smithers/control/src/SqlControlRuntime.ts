@@ -529,15 +529,21 @@ const makeRuntime = (
      *
      * Inside an enclosing transaction the read takes a savepoint, because a
      * failed statement aborts a PostgreSQL transaction and the catch could not
-     * recover it. Outside one it runs bare: on SQLite a top-level transaction
-     * is `BEGIN IMMEDIATE`, which takes the write lock for a read and fails a
-     * contender with `SQLITE_BUSY` while another plane holds the claim.
+     * recover it. A standalone PostgreSQL probe uses a read transaction so
+     * optional-table diagnostics remain relative to the client's search path;
+     * the lone-read optimization otherwise qualifies them with the schema.
+     * SQLite stays bare: its top-level write transaction takes a write lock
+     * and can fail a contender with SQLITE_BUSY while another plane holds it.
      */
     const probe = <A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E | SqlError.SqlError, R> =>
       Effect.flatMap(
         Effect.serviceOption(sql.transactionService),
         (enclosing): Effect.Effect<A, E | SqlError.SqlError, R> =>
-          Option.isSome(enclosing) ? sql.withTransaction(effect) : effect
+          Option.isSome(enclosing)
+            ? sql.withTransaction(effect)
+            : Dialect.isPostgres(sql)
+            ? Dialect.readTransaction(sql, effect)
+            : effect
       )
 
     /** Allocates the next value of a durable counter inside one transaction. */
@@ -771,6 +777,7 @@ const makeRuntime = (
       SELECT DISTINCT run_id AS "runId" FROM flows_journal_events
       WHERE event_type = ${Lineage.forkCreatedEventType} AND ${within("run_id", scope)}
     `.pipe(
+        probe,
         Effect.map((rows) => new Set(rows.map((row) => row.runId)) as ReadonlySet<string>),
         Effect.catchIf(
           missingTable("flows_journal_events"),
@@ -943,6 +950,7 @@ const makeRuntime = (
       WHERE event_type = ${Attribution.requestedEventType} AND ${within("run_id", scope)}
       ORDER BY run_id, seq
     `.pipe(
+        probe,
         Effect.catchIf(
           missingTable("flows_journal_events"),
           () =>
@@ -990,6 +998,7 @@ const makeRuntime = (
       FROM flows_journal_events
       WHERE event_type = ${Attribution.interruptedEventType} AND ${within("run_id", scope)}
     `.pipe(
+        probe,
         Effect.catchIf(
           missingTable("flows_journal_events"),
           () => Effect.succeed(new Array<{ readonly runId: string; readonly payloadJson: string }>())
