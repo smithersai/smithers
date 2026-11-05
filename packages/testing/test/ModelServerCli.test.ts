@@ -13,7 +13,7 @@ import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "no
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath, pathToFileURL } from "node:url"
-import * as BuiltinScript from "../src/BuiltinScript.ts"
+import * as BuiltinScript from "../src/BuiltinScript.vibe"
 import * as ModelServer from "../src/ModelServer.ts"
 import * as ModelServerCli from "../src/ModelServerCli.ts"
 

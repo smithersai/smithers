@@ -60,7 +60,7 @@ export * as TurnGate from "./TurnGate.vibe"
 export * as ScriptedModel from "./ScriptedModel.vibe"
 
 /** @since 1.0.0 @category models */
-export * as BuiltinScript from "./BuiltinScript.ts"
+export * as BuiltinScript from "./BuiltinScript.vibe"
 
 /** @since 0.0.0 @category fixtures */
 export * as Fixture from "./Fixture.vibe"

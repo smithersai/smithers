@@ -69,7 +69,11 @@
       "vibelang-source": "./src/EngineSubject.vibe",
       "default": "./.vibelang/js/src/EngineSubject.js"
     },
-    "./Faults": "./src/Faults.ts",
+    "./Faults": {
+      "types": "./src/Faults.ts",
+      "vibelang-source": "./src/Faults.ts",
+      "default": "./.vibelang/js/src/Faults.js"
+    },
     "./Fixture": {
       "types": "./.vibe/declarations/src/Fixture.d.vibe.ts",
       "vibelang-source": "./src/Fixture.vibe",
@@ -190,7 +194,11 @@
       "vibelang-source": "./src/pins/Replay.ts",
       "default": "./.vibelang/js/src/pins/Replay.js"
     },
-    "./ProcessTable": "./src/ProcessTable.ts",
+    "./ProcessTable": {
+      "types": "./src/ProcessTable.ts",
+      "vibelang-source": "./src/ProcessTable.ts",
+      "default": "./.vibelang/js/src/ProcessTable.js"
+    },
     "./TurnLog": {
       "types": "./src/TurnLog.ts",
       "vibelang-source": "./src/TurnLog.ts",
@@ -212,7 +220,8 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/BuiltinScript.vibe"
   ],
   "publishConfig": {
     "access": "public",

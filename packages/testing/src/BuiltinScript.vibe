@@ -24,7 +24,6 @@
 
 import * as Evaluator from "@smthrs/model/Evaluator"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
-import { Effect } from "effect"
 import * as ScriptedModel from "./ScriptedModel.vibe"
 
 /**
@@ -93,17 +92,19 @@ export const tag = (directives: Directives): string => {
   }
   if (directives.hold !== undefined) {
     if (!key.test(directives.hold)) {
-      throw new Error(`hold key ${JSON.stringify(directives.hold)} is not [A-Za-z0-9._-]+`)
+      $raise(new Error(`hold key ${JSON.stringify(directives.hold)} is not [A-Za-z0-9._-]+`))
     }
     tags.push(`[HOLD ${directives.hold}]`)
   }
   if (directives.file !== undefined) {
-    if (!path.test(directives.file)) throw new Error(`file ${JSON.stringify(directives.file)} is not [A-Za-z0-9._/-]+`)
+    if (!path.test(directives.file)) {
+      $raise(new Error(`file ${JSON.stringify(directives.file)} is not [A-Za-z0-9._/-]+`))
+    }
     tags.push(`[FILE ${directives.file}]`)
   }
   if (directives.observeUid !== undefined) {
     if (!Number.isInteger(directives.observeUid) || directives.observeUid < 0) {
-      throw new Error(`uid ${directives.observeUid} is not a non-negative integer`)
+      $raise(new Error(`uid ${directives.observeUid} is not a non-negative integer`))
     }
     tags.push(`[OBSERVEUID ${directives.observeUid}]`)
   }
@@ -409,12 +410,12 @@ const TODO_FLOW = ".smithers/flows/todo/flow.ts"
 
 /** The TODO flow whose request also asks for the changelog step. */
 const editedFlow = (source: string | undefined): string => {
-  if (source === undefined) throw new Error("a flowEdit TODO needs the todoFlow option")
+  if (source === undefined) $raise(new Error("a flowEdit TODO needs the todoFlow option"))
   const edited = source.replace(
     "Request.call(input)",
     `Request.call({ ...input, prompt: \`\${input.prompt}\\n\\n${CHANGELOG_STEP}\` })`
   )
-  if (edited === source) throw new Error("the TODO flow has no Request.call(input) to edit")
+  if (edited === source) $raise(new Error("the TODO flow has no Request.call(input) to edit"))
   return edited
 }
 
@@ -423,7 +424,7 @@ const editCell = (hosted: string, greeting: string, todoFlow: string | undefined
   const intent = atomIntent(hosted)
   const found = directives(intent)
   const answer = /\[ANSWER ("(?:[^"\\]|\\.)*")\]/.exec(intent)
-  const line = answer === null ? greeting : `${greeting} ${JSON.parse(answer[1]!)}`
+  const line = answer === null ? greeting : `${greeting} ${$invoke(JSON, () => (answer[1]!))}`
   const file = found.file ?? "JOURNEY.md"
   const writes: Array<string> = []
   const lines = [
@@ -790,11 +791,11 @@ export const answer = (
     case "choice": {
       const keys = Object.keys(isObject(question.criteria) ? question.criteria : {})
       const choice = (name === "support" ? ["supports"] : ["implement", "none"]).find((option) => keys.includes(option))
-      if (choice === undefined) throw new Error(`unexpected choice question: ${name}`)
+      if (choice === undefined) $raise(new Error(`unexpected choice question: ${name}`))
       return { type: "choice", choice }
     }
     default:
-      throw new Error(`unexpected evaluation type: ${String(question.type)}`)
+      $raise(new Error(`unexpected evaluation type: ${String(question.type)}`))
   }
 }
 
@@ -820,3 +821,20 @@ export const evaluator: Evaluator.Evaluator = {
       catch: (error) => new Evaluator.EvaluatorError({ code: "invalid_question", message: (error as Error).message })
     })
 }
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts
+
+module $call$ts {
+  export function invoke<T extends { "parse": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["parse"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["parse"], (...args: any[]) => any>> {
+    return target["parse"](arg0())
+  }
+}
+import { invoke as $invoke } from $call$ts
