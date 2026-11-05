@@ -79,4 +79,34 @@ describe("DepsLint", () => {
       ignoreDependencies: ["optional-package"]
     })
   })
+
+  it.each([
+    { ignoreDependencies: ["optional-package"] },
+    { ignoreBinaries: ["optional-binary"] }
+  ])("writes exactly the declared knip ignore category: %j", async (expected) => {
+    const calls = plannedCalls(DepsLint({
+      packageManager,
+      runtime,
+      packageJson: Input.file("packages/example/package.json"),
+      sources: [],
+      deps: [],
+      cwd: "packages/example",
+      tool: "knip",
+      ignoreDependencies: [],
+      ignoreBinaries: [],
+      ...expected
+    }))
+    const defaults = { env: {}, secrets: [], expectedExitCodes: [0], timeoutMs: Exec.defaultTimeoutMs }
+    const write = { ...defaults, ...calls[0]!.payload } as unknown as Exec.Payload
+    const lint = { ...defaults, ...calls[1]!.payload } as unknown as Exec.Payload
+    await Effect.runPromise(Exec.run({ workspaceRoot: root }, write))
+    const configPath = lint.argv[lint.argv.indexOf("--config") + 1]!
+    const load =
+      `import(require("node:url").pathToFileURL(require("node:path").resolve(process.argv[1])).href).then(async (m) => process.stdout.write(JSON.stringify(await m.default())))`
+    const result = await Effect.runPromise(Exec.run({ workspaceRoot: root }, {
+      ...lint,
+      argv: ["node", "-e", load, configPath]
+    }))
+    expect(JSON.parse(result.stdout)).toEqual(expected)
+  })
 })

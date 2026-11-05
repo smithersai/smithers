@@ -563,23 +563,4 @@ describe("DepsLint", () => {
     expect(plannedArgv(target)).toEqual(["pnpm", "exec", "depcheck"])
   })
 
-  it("writes exactly the declared knip ignore category", () => {
-    const target = DepsLint({
-      ...base,
-      tool: "knip",
-      ignoreDependencies: ["optional-package"],
-      ignoreBinaries: []
-    })
-    const argv = plannedCalls(target)[0]?.payload["argv"] as ReadonlyArray<string>
-    expect(JSON.parse(argv.at(-1) ?? "null")).toEqual({ ignoreDependencies: ["optional-package"] })
-
-    const binaries = DepsLint({
-      ...base,
-      tool: "knip",
-      ignoreDependencies: [],
-      ignoreBinaries: ["optional-binary"]
-    })
-    const binaryArgv = plannedCalls(binaries)[0]?.payload["argv"] as ReadonlyArray<string>
-    expect(JSON.parse(binaryArgv.at(-1) ?? "null")).toEqual({ ignoreBinaries: ["optional-binary"] })
-  })
 })
