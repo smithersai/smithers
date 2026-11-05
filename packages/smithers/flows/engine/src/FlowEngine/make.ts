@@ -10,7 +10,7 @@
  * @since 0.1.0
  */
 
-import { type DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
+import { type DurableDeferred, type Flow, FlowRuntime } from "@smthrs/flow"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

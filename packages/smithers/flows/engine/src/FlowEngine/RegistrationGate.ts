@@ -1,3 +1,8 @@
+/**
+ * Serialize registration by flow name while refusing recursive admission.
+ * @since 1.0.0-rc.17
+ */
+
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -9,7 +14,11 @@ class RegistrationFault extends Schema.TaggedError<RegistrationFault>()("@smthrs
   message: Schema.String
 }) {}
 
-/** Registration ancestry omitted when invoking a registered body. @private */
+/**
+ * Registration ancestry omitted when invoking a registered body.
+ * @private
+ * @since 1.0.0-rc.17
+ */
 export const CurrentRegistrations = Context.Reference<ReadonlyArray<{ readonly owner: object; readonly name: string }>>(
   "@smthrs/engine/CurrentRegistrations",
   { defaultValue: () => [] }
@@ -24,6 +33,7 @@ interface Gate {
  * Admits one registration per flow name at a time. A registration that
  * re-enters its own name's admission would wait on itself, so it dies.
  * @private
+ * @since 1.0.0-rc.17
  */
 export const makeRegistrationGate = () => {
   const gates = new Map<string, Gate>()

@@ -1,3 +1,8 @@
+/**
+ * Apply a registered flow's schemas, deadline and service context at dispatch.
+ * @since 1.0.0-rc.17
+ */
+
 import { Deadline, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
@@ -37,6 +42,7 @@ const succeedDeclared = (flow: Flow.Any, value: unknown) =>
  * held to its declared schemas and capability ceilings, and run with the
  * registration's services under the caller's, in a fresh dispatch context.
  * @private
+ * @since 1.0.0-rc.17
  */
 export const declaredHandler = (
   flow: Flow.Any,
