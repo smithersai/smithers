@@ -72,6 +72,10 @@ const { Jj } = Kernel
 
 const directory = mkdtempSync(join(tmpdir(), "flows-node-runtime-"))
 
+// Listener lifecycle tests need a catchable signal, including on native Windows.
+// SIGUSR2 remains the actual POSIX shutdown test's operating-system signal.
+const listenerSignal: NodeJS.Signals = process.platform === "win32" ? "SIGINT" : "SIGUSR2"
+
 afterAll(() => rmSync(directory, { recursive: true, force: true }))
 
 /**
@@ -976,7 +980,7 @@ describe("the Node host composition", () => {
     writeFileSync(note, "host note")
     const snapshotFile = join(hostRoot, "snapshot-runtime.sqlite")
     const movedFile = join(hostRoot, "moved-runtime.sqlite")
-    const signals: Array<NodeJS.Signals> = ["SIGUSR2", "SIGUSR2"]
+    const signals: Array<NodeJS.Signals> = [listenerSignal, listenerSignal]
     const rules = [
       new Permission.Rule({
         effect: "allow",
@@ -1001,12 +1005,12 @@ describe("the Node host composition", () => {
       pattern: new Capability.CapabilityPattern({ action: "fs:read", resource: "*" })
     })
 
-    const beforeUser = process.listenerCount("SIGUSR2")
+    const beforeUser = process.listenerCount(listenerSignal)
     const beforeTerm = process.listenerCount("SIGTERM")
     const observed = await Effect.runPromise(
       Effect.gen(function*() {
         return {
-          user: process.listenerCount("SIGUSR2"),
+          user: process.listenerCount(listenerSignal),
           term: process.listenerCount("SIGTERM"),
           value: yield* Host.execute({ what: "read" }, { executionId: "host-options-snapshot" })
         }
@@ -1016,11 +1020,11 @@ describe("the Node host composition", () => {
     expect(observed).toEqual({ user: beforeUser + 1, term: beforeTerm, value: "host note" })
     expect(existsSync(snapshotFile)).toBe(true)
     expect(existsSync(movedFile)).toBe(false)
-    expect(process.listenerCount("SIGUSR2")).toBe(beforeUser)
+    expect(process.listenerCount(listenerSignal)).toBe(beforeUser)
   }, 60_000)
 
   it("rejects uncatchable or unknown signals and invalid shutdown timers before installing listeners", () => {
-    const before = process.listenerCount("SIGUSR2")
+    const before = process.listenerCount(listenerSignal)
     for (const signal of ["SIGKILL", "SIGSTOP", "SIGNOTASIGNAL"] as Array<NodeJS.Signals>) {
       expect((): unknown =>
         NodeRuntime.layerHost(
@@ -1028,7 +1032,7 @@ describe("the Node host composition", () => {
             filename: hostFile,
             workspaceRoot: directory,
             owner: { hostId: "invalid-signal" },
-            signals: ["SIGUSR2", signal]
+            signals: [listenerSignal, signal]
           },
           Layer.empty
         )
@@ -1056,7 +1060,7 @@ describe("the Node host composition", () => {
         )
       ).toThrow(/shutdownTimeoutMs/)
     }
-    expect(process.listenerCount("SIGUSR2")).toBe(before)
+    expect(process.listenerCount(listenerSignal)).toBe(before)
   })
 
   it("refuses signal and rule configuration that is not the array it claims to be", () => {
@@ -1065,7 +1069,7 @@ describe("the Node host composition", () => {
     // options any shape at all, and a host that iterated a string or indexed a
     // non-array would install nonsense policy instead of refusing it. Each
     // case names the collection it got wrong.
-    const before = process.listenerCount("SIGUSR2")
+    const before = process.listenerCount(listenerSignal)
     expect((): unknown =>
       NodeRuntime.layerHost(
         {
@@ -1126,7 +1130,7 @@ describe("the Node host composition", () => {
       expect(thrown).toBeInstanceOf(Runtime.RuntimeConfigurationError)
       expect(thrown).toMatchObject({ field: "rules", message: expect.stringMatching(/rules must be capability rules/) })
     }
-    expect(process.listenerCount("SIGUSR2")).toBe(before)
+    expect(process.listenerCount(listenerSignal)).toBe(before)
   })
 
   it("snapshots containment and hands the reaper the seam the caller declared", async () => {
@@ -1436,7 +1440,7 @@ describe("the Node host composition", () => {
     expect(outcome).toMatchObject({ _tag: "Success", value: "mutated" })
   }, 60_000)
 
-  it.each([{ signals: [] }, { signals: ["SIGUSR2"] }] as Array<{ signals: Array<NodeJS.Signals> }>)(
+  it.each([{ signals: [] }, { signals: [listenerSignal] }] as Array<{ signals: Array<NodeJS.Signals> }>)(
     "kills what a run spawned when a SECOND driver over the same file interrupts it (signals=$signals)",
     async ({ signals }) => {
       // Cancellation from another process is the shape an operator's `cancel`
