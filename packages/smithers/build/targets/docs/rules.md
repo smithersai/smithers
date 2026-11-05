@@ -119,6 +119,7 @@ or pull-request operations. Use an implemented publication tool or CI job.
 | `Shell.Serve`            | Shell             | run                | no        | no               | package executor |
 | `Shell.Test`             | Shell             | test               | no        | no               | flow body        |
 | `Size.Budgets`           | NodeArtifact      | test               | yes       | no               | package executor |
+| `Skills.Install`         | Skills            | run                | no        | no               | flow body        |
 | `SortPackageJson`        | SortPackageJson   | build, lint        | no        | yes              | flow body        |
 | `Suite`                  | Compose           | test               | no        | no               | package executor |
 | `TargetIndex`            | TargetIndex       | build, lint        | by attrs  | by attrs         | flow body        |

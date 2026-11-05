@@ -405,6 +405,14 @@ export * as SecretProxy from "./SecretProxy.ts"
 export * as Shell from "./Shell.ts"
 
 /**
+ * Project skill libraries and their explicit durable agent installation.
+ *
+ * @category namespace exports
+ * @since 1.0.0-rc.17
+ */
+export * as Skills from "./Skills.ts"
+
+/**
  * mise version authority and pinned binary references.
  *
  * @category namespace exports
