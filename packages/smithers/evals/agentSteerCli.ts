@@ -40,9 +40,9 @@ const decode = (base64: string) => Buffer.from(base64, "base64").toString("utf8"
 const running = (needle: string): Array<number> =>
   execFileSync("/bin/ps", ["-A", "-o", "pid=,command="], { encoding: "utf8", maxBuffer: 64 * 1024 * 1024 })
     .split("\n").flatMap((line) => {
-    const match = /^\s*(\d+)\s+(.*)$/.exec(line)
-    return match !== null && match[2]!.includes(needle) && !match[2]!.includes("/bin/ps") ? [Number(match[1])] : []
-  })
+      const match = /^\s*(\d+)\s+(.*)$/.exec(line)
+      return match !== null && match[2]!.includes(needle) && !match[2]!.includes("/bin/ps") ? [Number(match[1])] : []
+    })
 
 /** Each process's ancestry, pid to pid 1, with its parent, group and command (the command cut to 80 characters). */
 const ancestry = (pids: ReadonlyArray<number>) => {
@@ -82,16 +82,19 @@ const trial = async (
   const host = await Host.start(readFileSync(made.file, "utf8").trim())
   const mirror = Host.mirror(root)
   const configPath = join(root, "runner.json")
-  writeFileSync(configPath, JSON.stringify({
-    origin: host.origin,
-    name: "eval-runner",
-    capacity: 1,
-    stateDir,
-    heartbeatSeconds: 2,
-    pollSeconds: 1,
-    repositories: { [REPOSITORY]: { mirror: mirror.path } },
-    profiles: { [name]: profile }
-  }))
+  writeFileSync(
+    configPath,
+    JSON.stringify({
+      origin: host.origin,
+      name: "eval-runner",
+      capacity: 1,
+      stateDir,
+      heartbeatSeconds: 2,
+      pollSeconds: 1,
+      repositories: { [REPOSITORY]: { mirror: mirror.path } },
+      profiles: { [name]: profile }
+    })
+  )
   const word = `w${Date.now().toString(36)}`
   const startedAt = Date.now()
   const serving = Effect.runFork(RunnerCmd.serve(configPath))
@@ -106,7 +109,10 @@ const trial = async (
       while (row.state === "queued") await sleep(200)
       await sleep(6_000)
       const steeredAt = Date.now()
-      row.steers = [{ id: `steer-${word}`, text: `Also add the line \`steer-${word}\` to NOTES.md, after the other line.` }]
+      row.steers = [{
+        id: `steer-${word}`,
+        text: `Also add the line \`steer-${word}\` to NOTES.md, after the other line.`
+      }]
       let deliveredMs: number | undefined
       const watch = (async () => {
         while (row.state !== "settled") {
@@ -117,7 +123,8 @@ const trial = async (
       const outcome = await host.settled(row, 20 * 60_000)
       await watch
       const notes = outcome._tag === "Done"
-        ? outcome.changes.additions.filter((file) => file.path === "NOTES.md").map((file) => decode(file.contents)).join("")
+        ? outcome.changes.additions.filter((file) => file.path === "NOTES.md").map((file) => decode(file.contents))
+          .join("")
         : ""
       const both = notes.includes(`alpha-${word}`) && notes.includes(`steer-${word}`)
       return {
@@ -172,7 +179,14 @@ const trial = async (
       }
     }
   } catch (cause) {
-    return { profile: name, kind, pass: false, outcome: "error", ms: Date.now() - startedAt, detail: { cause: String(cause) } }
+    return {
+      profile: name,
+      kind,
+      pass: false,
+      outcome: "error",
+      ms: Date.now() - startedAt,
+      detail: { cause: String(cause) }
+    }
   } finally {
     await Effect.runPromise(Fiber.interrupt(serving))
     await host.close()
