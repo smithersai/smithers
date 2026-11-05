@@ -12,7 +12,7 @@
  * fast-forwards from the expected tip to the last admitted head. See
  * outside-stack.md.
  */
-import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
+import { Action, Fault, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import type * as Planned from "@smthrs/plan/Planned"
 import { Context, Effect, FileSystem, Layer, Schema } from "effect"
@@ -76,6 +76,8 @@ export class StackRefused extends Schema.TaggedError<StackRefused>()("coding/Sta
   stack: Change.fields.id,
   ...Refusal.fields
 }) {}
+// Refused outside work needs its author to repair the stack, not an infrastructure retry.
+Fault.register("coding/StackRefused", "user")
 export const StackOutcome = Schema.Struct({
   stack: Change.fields.id,
   status: Schema.Literals(["admitted", "refused"]),
