@@ -1,5 +1,19 @@
 import { startOfflineExecutor } from "@tanstack/offline-transactions"
-import { Context, Deferred, Effect, Exit, Fiber, Layer, Metric, Option, Queue, References, Scope, Stream, Tracer } from "effect"
+import {
+  Context,
+  Deferred,
+  Effect,
+  Exit,
+  Fiber,
+  Layer,
+  Metric,
+  Option,
+  Queue,
+  References,
+  Scope,
+  Stream,
+  Tracer
+} from "effect"
 import { describe, expect, test, vi } from "vitest"
 import { Collection, Outbox } from "../src/index.ts"
 import { id, memoryStorage, Note, note, webLocks, withLogs } from "./fixtures.ts"
