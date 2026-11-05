@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/chain"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "WbgoxDQ_5VCktcHPI1eR5DLM8IbSSiP_Yib_BdnHE04",
   "configs": [
    {
     "path": {
@@ -117,7 +117,7 @@
      "relative": "packages/smithers/agent/chain/src"
     },
     null,
-    "74SQaGwgF2vMZZzpOt8DBONLJpFJq4h4zKBFqnRFa5M",
+    "ZeaMETTpU1_k3lbGXJciHw8yMD0tsos8mn8ORxJXl8U",
     [],
     {
      "recursive": true,
@@ -286,7 +286,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -311,7 +311,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -339,106 +339,106 @@
     "path": {
      "relative": "packages/smithers/agent/chain/package.json"
     },
-    "size": 8871,
-    "hash": "10MotIGEa9PdqJZds03e6r5JggT_1nFiS7Qbqw0kiQ0"
+    "size": 9027,
+    "hash": "1yMt5Ov8OsvVVMSZljuQtTt0RIa08FWyBxRUkLWafOI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
     "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/core/package.json"
     },
     "size": 7573,
-    "hash": "6qh3eqPvYd7vUEV2hI69dhHcCw4yhewev1Ap5vhooBk"
+    "hash": "jNdvnCgiUuOZHdrFItXIA-FehSkGnK5p9AVrYdLxwuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
     "size": 15173,
-    "hash": "ON8bl4VMHttJ_CfelahnwFE0Dp-2kNwkvlLdLCseONw"
+    "hash": "W4ZYTA6WZd7ZNkzvvcEyD5K4g8N7aNTt9n8GgfEDmlc"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/package.json"
     },
     "size": 12559,
-    "hash": "P3NQBbM0fEq2bZfmVrvEHhct2TFz7xf-jerU0iLAIbA"
+    "hash": "zzGSd5Bv674CFPuEVyPEHapfnuCEGmA_G_ONvmy1AbQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
     "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
+    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/model/package.json"
     },
     "size": 15090,
-    "hash": "4dQMg1MXP7jc0tXOdAezkFYAlnrUUGaBdI7m0LefTcs"
+    "hash": "5FOkC86vo7tOtcOeOCK-OP2Phqst49qpq5bwzD1uplY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
     "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
     "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
    },
    {
     "path": {
@@ -473,7 +473,7 @@
      "relative": "packages/smithers/agent/registry/package.json"
     },
     "size": 9702,
-    "hash": "5-KsGLanCNJwv_06J-pbcGy7Mra9heHMVsD9fNNA0Wg"
+    "hash": "5fpAg2n4ffGygENUuDADtM1zzf4mesCQ4apPsCZ0Xjg"
    },
    {
     "path": {
@@ -647,8 +647,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "size": 7128,
+    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
    },
    {
     "path": {
@@ -2903,8 +2903,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29125,
-    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
+    "size": 29135,
+    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
    },
    {
     "path": {
@@ -3071,15 +3071,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23051,
-    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
+    "size": 23089,
+    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5610,
-    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
+    "size": 5612,
+    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
    },
    {
     "path": {
@@ -3092,8 +3092,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6389,
-    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
+    "size": 6391,
+    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
    },
    {
     "path": {
@@ -3393,8 +3393,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14134,
-    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
+    "size": 14148,
+    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
    },
    {
     "path": {
@@ -3414,15 +3414,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4649,
-    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
+    "size": 4653,
+    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10284,
-    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
+    "size": 10288,
+    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
    },
    {
     "path": {
@@ -3547,8 +3547,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 21996,
-    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
+    "size": 22016,
+    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
    },
    {
     "path": {
@@ -3582,8 +3582,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2762,
-    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
+    "size": 2764,
+    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
    },
    {
     "path": {
@@ -3603,8 +3603,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1723,
-    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
+    "size": 1725,
+    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
    },
    {
     "path": {
@@ -3638,8 +3638,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Deadline.vibe"
     },
-    "size": 8464,
-    "hash": "FfMT9KOpLcjFMtpkYFY4t-kJwfqY0auSnn__Dmrb5WE"
+    "size": 8472,
+    "hash": "bZQWspojeuR376eyg647eW0LfGpx_U7to06jnd_mQNo"
    },
    {
     "path": {
@@ -3792,8 +3792,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -3820,8 +3820,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -3855,15 +3855,15 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/ReadTransaction.vibe"
     },
-    "size": 821,
-    "hash": "jsrWBpxRJQYNzMvXF9NKwgI4unUsfN9Z6qwiDZPjb7M"
+    "size": 823,
+    "hash": "51rXlYqR5wIlKgSrBN93V9fd-2kaHfBz3_tTiFYFDRA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/src/Dialect.vibe"
     },
-    "size": 10156,
-    "hash": "ZAFv7m1i-TvSbTeSl_pQH9NNOmRbCctwWwSBbIpmprw"
+    "size": 10158,
+    "hash": "2qpF8l12cct1aXQg-R00mZLeyxuRHXGu0TgIaOIdRAo"
    },
    {
     "path": {
@@ -3890,8 +3890,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
     },
-    "size": 11246,
-    "hash": "iIydbZ6fbwoWnq-WI5XUew74KC_YAB-TRu4GdsmXrlE"
+    "size": 11248,
+    "hash": "tXGFu4FIXd6cGrXyBvGdQts--Cuv5P6FkLLFnqbmPhU"
    },
    {
     "path": {
@@ -4135,8 +4135,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
     },
-    "size": 14820,
-    "hash": "3_MssCulhT6JRs8AaVdGkfPVyzlGApBZgSAY0Iy7ubo"
+    "size": 15216,
+    "hash": "4pmwUEfSoBLUBBDQiK5c6jK6VfFuS6q8LH8xSCOSras"
    },
    {
     "path": {
@@ -5722,10 +5722,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+     "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
     },
-    "size": 881,
-    "hash": "G7louxHWm_lsKwN6BSd5VpF_9nmoMy16ufzJyz9r_bI"
+    "size": 864,
+    "hash": "D_W-_nxnXk8SHN5s8V2opTJ_w24LfvGYpiZUF5r6muk"
    },
    {
     "path": {
@@ -5745,15 +5745,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/FileSystemArtifactStore.ts"
     },
-    "size": 22837,
-    "hash": "J_ZzIMFuwXtQmkTdwIvr6_QPSL-ZtAKHhnNZTB1BN1E"
+    "size": 22839,
+    "hash": "0RWkt7rtkgK0wbaWBQpWNhD1pm1r2QJGuRRMSAXKB_c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/MemoryArtifactStore.vibe"
     },
-    "size": 3205,
-    "hash": "2FvTYZPZ7fUn57w6Y3VlYxpI1AKqzEiRyD36OvqSzQQ"
+    "size": 3207,
+    "hash": "nuHd16l_91sKtHt1r6FeA1ZhFsDop0Ff5zykt86RnGA"
    },
    {
     "path": {
@@ -5766,8 +5766,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStore.ts"
     },
-    "size": 5516,
-    "hash": "BSNCat2Z9Fqlfz33UB5QllHd2-2-rLM9dF9yIpoIluc"
+    "size": 5518,
+    "hash": "7E5nB5RuyNNVrY-FDt-cSmYzBz_QRURE88DatRYLWTU"
    },
    {
     "path": {
@@ -5820,17 +5820,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/SubChains.ts"
+     "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
     },
-    "size": 9955,
-    "hash": "2Ci95TRDPU7TXLNcBdpzOh2nSsonR9-LmYR3F4VBfwA"
+    "size": 9826,
+    "hash": "aunntL3aKNqknOCOFNv6qqNakpIZAhXU61PCL6gZ8QU"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/chain/src/index.ts"
     },
-    "size": 3963,
-    "hash": "hs-Xka893EEq1CJakIuizOXZ-RAtLPImsQshjFL82ag"
+    "size": 3965,
+    "hash": "Toj-lscUJDntCKwhc5nGWfBt5v7MRATZwQG83gFS9W0"
    },
    {
     "path": {
@@ -7706,7 +7706,7 @@
     "relative": "packages/smithers/flows/artifacts/src/internal/ArtifactLocks.ts"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+    "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
@@ -7748,7 +7748,7 @@
     "relative": "packages/smithers/agent/chain/src/RegistryCatalog.vibe"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/SubChains.ts"
+    "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/index.ts"
@@ -7834,6 +7834,56 @@
     "category": "warning",
     "code": "EK4831",
     "text": "Steering extends Context.Service; in VibeLang a service is a service declaration: service Steering { … }.\n  No quick fix: its members come from Service; write them in the declaration. Keep its key in the declaration: static readonly key = \"/chain/Steering\"."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+    },
+    "line": 75,
+    "column": 7,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "AgentInput holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema AgentInput { … }.\n  Its quick fix writes schema AgentInput { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+    },
+    "line": 225,
+    "column": 12,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+    },
+    "line": 226,
+    "column": 12,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+    },
+    "line": 227,
+    "column": 12,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+    },
+    "line": 228,
+    "column": 12,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
    },
    {
     "file": {
@@ -8105,6 +8155,46 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+     }
+    ],
+    "code": "/**\n * Sub-agents as an ordinary catalog entry — recursion is the primitive.\n *\n * The `agent` entry runs a nested chain under a deterministic child id\n * derived from its call slot (`parent-chain/link.ordinal`), in the same\n * journal: the child's events are scoped by that id, so a re-executed\n * spawning call resumes the child from its own settled events — child\n * chains are incrementally durable for free. A child's `done` and\n * terminal parks settle as data the parent script inspects; a child\n * waiting on approval bubbles as an in-place park so a later grant\n * resumes the child through the same slot. Children run unattended —\n * the chain core never drains steering under a child scope\n * (https://chain.smithers.sh/contract/).\n *\n * Composition invariants: the catalog layer must be built over the SAME\n * journal/author/runner layers the chain runs on (the services are\n * captured at construction), root chain ids must not contain `/` or look\n * like `<digits>.<digits>`, and the reserved names (`agent`, `author`,\n * the system entries) may not appear in the host's entries. Invalid root\n * ids fail Chain.run with ChainError; reserved entries die at construction.\n *\n * @since 0.1.0\n */\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Digest from \"@smthrs/core/Digest\";\nimport * as Author from \"./Author.js\";\nimport * as AuthorDeclaration from \"./AuthorDeclaration.js\";\nimport * as Catalog from \"./Catalog.js\";\nimport * as Chain from \"./Chain.js\";\nimport { childRun } from \"./internal/childRun.js\";\nimport { ChildRunError } from \"./internal/ChildRunError.js\";\nimport * as Journal from \"./Journal.js\";\nimport * as ScriptRunner from \"./ScriptRunner.js\";\n/**\n * The catalog name a script spawns a sub-agent by.\n *\n * @category constants\n * @since 0.1.0\n * @slop\n */\nexport const agentName = \"agent\";\n/**\n * The agent entry's description, as the model reads it in the catalog block.\n *\n * @category constants\n * @since 0.1.0\n * @slop\n */\nexport const agentDescription = \"Run a sub-agent chain to completion and return its terminal outcome as data\";\n/**\n * The capability the agent entry claims: spawning a sub-agent is a\n * process-spawn-shaped authority hosts grant deliberately. The child's\n * own calls are gated individually by the same seam.\n *\n * @category constants\n * @since 0.1.0\n * @slop\n */\nexport const agentCapability = \"proc:spawn:agent\";\n/**\n * The nesting bound a catalog inherits when {@link Options.maxDepth} is\n * unset, counted in derived child segments. It is part of the agent entry's\n * contract digest, so changing it re-keys every settled spawn.\n *\n * @category constants\n * @since 0.1.0\n * @slop\n */\nexport const defaultMaxDepth = 4;\nconst AgentInput = Schema.Struct({\n    goal: Schema.String,\n    context: Schema.optional(Schema.Array(Schema.String))\n});\nconst decodeInput = Schema.decodeUnknownOption(AgentInput);\nconst reserved = [\n    agentName,\n    AuthorDeclaration.authorName,\n    ...Catalog.system.map((entry) => entry.name)\n];\nconst derivedSegment = /^\\d+\\.\\d+$/;\n/**\n * The digest of the agent entry's behavior contract: redeclaring the\n * child budgets, prefix, or depth bound re-keys every settled spawn.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const contractDigest = (options) => $invoke(Digest, () => (Digest.canonical({\n    description: agentDescription,\n    maxCallsPerLink: options.maxCallsPerLink ?? null,\n    maxDepth: options.maxDepth ?? defaultMaxDepth,\n    maxLinks: options.maxLinks ?? null,\n    name: agentName,\n    prefix: options.prefix ?? null\n})));\n/**\n * Builds the recursive catalog: the given entries plus the `agent` entry\n * (whose handler runs a nested chain against this same catalog, so\n * children recurse up to `maxDepth`) and the system entries, which\n * nothing can shadow. Dies when an entry shadows a reserved name, or when\n * `maxDepth`, `maxLinks`, or `maxCallsPerLink` is not a non-negative\n * integer.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = Effect_1.fnUntraced(runtime.$iteratorFrame(runtime.$joinedFrame(function* make(options) {\n    // The child contract is snapshotted once: the digest below and every\n    // child the handler runs describe these values, never a later edit of\n    // the caller's options object.\n    const entries = [...options.entries];\n    const maxDepth = options.maxDepth ?? defaultMaxDepth;\n    const pinned = {\n        entries,\n        maxCallsPerLink: options.maxCallsPerLink,\n        maxDepth,\n        maxLinks: options.maxLinks,\n        prefix: options.prefix\n    };\n    const shadowed = entries.filter((entry) => reserved.includes(entry.name)).map((entry) => entry.name);\n    if (shadowed.length > 0) {\n        return yield* Effect.die(new Error(`entries shadow reserved catalog names: ${shadowed.join(\", \")}`));\n    }\n    // Every bound is compared with `>` or `>=`, which NaN never satisfies:\n    // a NaN, negative, fractional, or infinite bound would remove the limit\n    // on nesting or child spend instead of enforcing one.\n    {\n        let pending_1 = runtime.$normal;\n        try {\n            for (const value_1 of [\n                [\"maxDepth\", maxDepth],\n                [\"maxLinks\", pinned.maxLinks],\n                [\"maxCallsPerLink\", pinned.maxCallsPerLink]\n            ]) {\n                try {\n                    const [bound, value] = value_1;\n                    {\n                        if (value !== undefined && (!Number.isSafeInteger(value) || value < 0)) {\n                            return yield* Effect.die(new Error(`${bound} must be a non-negative integer, got ${value}`));\n                        }\n                    }\n                }\n                catch (thrown_1) {\n                    pending_1 = thrown_1;\n                    break;\n                }\n            }\n        }\n        catch (thrown_2) {\n            throw runtime.$finallyFailure(pending_1, thrown_2);\n        }\n        if (pending_1 !== runtime.$normal)\n            throw pending_1;\n    }\n    // Captured at construction on purpose: a child must run on the very\n    // same journal/author/runner the parent chain runs on. Build the\n    // catalog layer over those same layers (see the module invariants).\n    const journal = yield* Journal.Journal;\n    const author = yield* Author.Author;\n    const runner = yield* ScriptRunner.ScriptRunner;\n    const agent = {\n        capabilities: [agentCapability],\n        description: agentDescription,\n        digest: contractDigest(pinned),\n        handler: Effect_1.fnUntraced(function* handler(payload, slot) {\n            const input = decodeInput(payload);\n            if (input._tag === \"None\") {\n                return yield* Effect_1.fail(new Catalog.CallError({\n                    message: `\"${agentName}\" takes { goal, context? }`,\n                    name: agentName\n                }));\n            }\n            if (slot === undefined) {\n                // Without a slot there is no derivable child identity: two\n                // slotless spawns would alias one scope and replay each\n                // other's outcomes.\n                return yield* Effect_1.fail(new Catalog.CallError({\n                    message: `\"${agentName}\" requires a call slot; invoke it through a running chain`,\n                    name: agentName\n                }));\n            }\n            const child = `${slot.chain === \"\" ? \"\" : `${slot.chain}/`}${slot.link}.${slot.ordinal}`;\n            if (child.split(\"/\").filter((segment) => derivedSegment.test(segment)).length > maxDepth) {\n                return yield* Effect_1.fail(new Catalog.CallError({\n                    message: `\"${agentName}\" refused: nesting deeper than ${maxDepth} chains`,\n                    name: agentName\n                }));\n            }\n            const outcome = yield* (Effect.mapError(Effect.provideService(Effect.provideService(Effect.provideService(Effect.provideService(Chain.run({\n                [childRun]: true,\n                chain: child,\n                context: input.value.context ?? [],\n                goal: input.value.goal,\n                maxCallsPerLink: pinned.maxCallsPerLink,\n                maxLinks: pinned.maxLinks,\n                prefix: pinned.prefix\n            }), Catalog.Catalog, catalog), Journal.Journal, journal), Author.Author, author), ScriptRunner.ScriptRunner, runner)\n            // Only a terminal is data. Preserve run failures as typed,\n            // un-settled failures of the parent, with their original cause.\n            , (error) => new ChildRunError(error)));\n            if (outcome._tag === \"ApprovalWait\") {\n                // A child waiting on approval must not settle as data: bubble\n                // it as the typed approval cause so the parent parks in place\n                // and a later grant resumes the child through this same slot.\n                return yield* Effect_1.fail(new Catalog.CallError({\n                    cause: \"approval_required\",\n                    message: outcome.reason.message,\n                    name: agentName\n                }));\n            }\n            return outcome;\n        }),\n        name: agentName\n    };\n    // The handler above closes over this binding, not a second state\n    // holder: `Catalog.make` only snapshots handler references, so the\n    // entry can never run before the binding is initialized.\n    const catalog = Catalog.make(Catalog.withSystem([...entries, agent]));\n    return catalog;\n})));\n/**\n * The recursive catalog layer.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layer = (options) => Layer.effect(Catalog.Catalog)(make(options));\nimport { invoke as $invoke } from \"./SubChains.vibe.$call$ts.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "SubChains.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/SubChains.vibe.$call$ts.js"
+     }
+    ],
+    "code": "export function invoke(target, arg0) {\n    return target[\"digest\"](arg0());\n}\n",
+    "map": {
+     "version": 3,
+     "file": "SubChains.vibe.$call$ts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/SubChains.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AA0QE,MAAM,UAAU,MAAM,CACpB,MAAS,EACT,IAAwE;IAExE,OAAO,MAAM,CAAC,QAAQ,CAAC,CAAC,IAAI,EAAE,CAAC,CAAA;AACjC,CAAC"
     }
    }
   ]

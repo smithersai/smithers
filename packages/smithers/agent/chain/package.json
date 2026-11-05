@@ -57,7 +57,11 @@
       "vibelang-source": "./src/internal/ChildRunError.vibe",
       "default": "./.vibelang/js/src/internal/ChildRunError.js"
     },
-    "./*": "./src/*.ts",
+    "./*": {
+      "types": "./src/*.ts",
+      "vibelang-source": "./src/*.ts",
+      "default": "./.vibelang/js/src/*.js"
+    },
     "./internal/*": null,
     "./*/index": null,
     "./Author": {
@@ -209,9 +213,9 @@
     },
     "./SubChains": {
       "types": {
-        "default": "./src/SubChains.ts"
+        "default": "./.vibe/declarations/SubChains.d.vibe.ts"
       },
-      "vibelang-source": "./src/SubChains.ts",
+      "vibelang-source": "./src/SubChains.vibe",
       "default": "./.vibelang/js/src/SubChains.js"
     },
     "./index": {
@@ -232,7 +236,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/SubChains.vibe"
   ],
   "publishConfig": {
     "access": "public",

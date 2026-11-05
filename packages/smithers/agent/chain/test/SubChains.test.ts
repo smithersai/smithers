@@ -11,7 +11,7 @@ import * as Journal from "../src/Journal.vibe"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
 import * as Steering from "../src/Steering.vibe"
-import * as SubChains from "../src/SubChains.ts"
+import * as SubChains from "../src/SubChains.vibe"
 import { countingEntry, flow, runChain, runOn } from "./harness.ts"
 
 const runners = [

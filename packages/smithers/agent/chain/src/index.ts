@@ -190,4 +190,4 @@ export * as Steering from "./Steering.vibe"
  * @since 0.1.0
  * @slop
  */
-export * as SubChains from "./SubChains.ts"
+export * as SubChains from "./SubChains.vibe"

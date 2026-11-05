@@ -14,7 +14,7 @@ import * as Prompt from "../src/Prompt.ts"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
 import * as Steering from "../src/Steering.vibe"
-import * as SubChains from "../src/SubChains.ts"
+import * as SubChains from "../src/SubChains.vibe"
 
 // The package owns its own prose (see docs/README.md). Nothing generates
 // these files, so this is the gate that keeps them honest: a namespace added

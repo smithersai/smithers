@@ -13,7 +13,7 @@ import type * as Outcome from "../src/Outcome.vibe"
 import * as QuickJsRunner from "../src/QuickJsRunner.ts"
 import * as ScriptRunner from "../src/ScriptRunner.ts"
 import * as Steering from "../src/Steering.vibe"
-import * as SubChains from "../src/SubChains.ts"
+import * as SubChains from "../src/SubChains.vibe"
 import { countingEntry, failChain, failingEntry, flow, runChain, runOn } from "./harness.ts"
 
 const grepResult = { files: ["a.ts", "b.ts", "c.ts", "d.ts"] }
