@@ -1,4 +1,9 @@
-/** Bounded, redacted coordinates shared by storage and inspection. @private */
+/**
+ * Bounded, redacted coordinates shared by storage and inspection.
+ * @private
+ * @since 1.0.0-rc.17
+ */
+
 import { BoundedJson } from "@smthrs/canonical"
 import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
@@ -24,7 +29,11 @@ const text = (value: string, maximum = 512): string => {
 }
 const attempts = (value: number | null) => value !== null && Number.isSafeInteger(value) && value > 0 ? value : null
 
-/** Only allowlisted coordinates cross a durable cause boundary. @private */
+/**
+ * Only allowlisted coordinates cross a durable cause boundary.
+ * @private
+ * @since 1.0.0-rc.17
+ */
 export const site = (value: unknown): typeof FailureCoordinates.Type | undefined => {
   if (typeof value !== "object" || value === null || HostReflection.host.isProxy(value)) return undefined
   try {
@@ -45,7 +54,11 @@ export const site = (value: unknown): typeof FailureCoordinates.Type | undefined
   }
 }
 
-/** At most 4 × 512 + 8192 JSON string bytes, plus fixed keys and scalars. @private */
+/**
+ * At most 4 × 512 + 8192 JSON string bytes, plus fixed keys and scalars.
+ * @private
+ * @since 1.0.0-rc.17
+ */
 export const bound = (value: Failure): Failure => ({
   ...(value.executionId === undefined ? {} : { executionId: text(value.executionId) }),
   tag: text(value.tag),
@@ -56,7 +69,11 @@ export const bound = (value: Failure): Failure => ({
   retryable: value.retryable
 })
 
-/** Optional facts must fit beside executable state, never displace it. @private */
+/**
+ * Optional facts must fit beside executable state, never displace it.
+ * @private
+ * @since 1.0.0-rc.17
+ */
 export const withinState = (
   encoded: string,
   failure: Failure | undefined,
