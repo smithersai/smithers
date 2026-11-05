@@ -57,7 +57,17 @@ it("runs generated Windows matrix gates and retains distinct passing and failing
   try {
     await Fs.writeFile(Path.join(root, "package.json"), JSON.stringify({ private: true, type: "module" }))
     await Fs.writeFile(Path.join(root, "yarn.lock"), "# yarn lockfile v1\n")
+    // Like the repository's gates, this fixture must use the installed tree.
+    // pnpm's default dependency check would reinstall through the shared symlink.
+    await Fs.writeFile(Path.join(root, "pnpm-workspace.yaml"), "verifyDepsBeforeRun: false\n")
     await Fs.symlink(Path.join(repository, "node_modules"), Path.join(root, "node_modules"), "junction")
+    // Generated gates invoke the repository CLI path, not the ambient pnpm bin.
+    await Fs.mkdir(Path.join(root, "packages", "smithers"), { recursive: true })
+    await Fs.symlink(
+      Path.join(repository, "packages", "smithers", "bin"),
+      Path.join(root, "packages", "smithers", "bin"),
+      "junction"
+    )
     await Fs.writeFile(
       Path.join(root, "WORKSPACE.ts"),
       `import { Smithers as S } from "@smthrs/targets"
@@ -98,7 +108,7 @@ export const Package = S.Package({ targets: {
     for (const [index, step] of gates.entries()) {
       const action = `gate_${index}`
       const result = execute(step, action)
-      expect(result.status, result.stderr).toBe(index === 0 ? 0 : 1)
+      expect(result.status, [result.stdout, result.stderr].filter(Boolean).join("\n")).toBe(index === 0 ? 0 : 1)
       const receipt = JSON.parse(await Fs.readFile(Path.join(runnerTemp, "smthrs-results", `${action}.json`), "utf8"))
       expect(receipt.results).toEqual([expect.objectContaining({
         label: index === 0 ? "//:pass" : "//:fail",
