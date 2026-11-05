@@ -29,7 +29,7 @@ Fault.register("FramesExhausted", "factory")
 export const agentOutcome = effect <E, R, E2, R2>(
   stream: Stream.Stream<AgentEvent.AgentEvent, E, R>,
   record: (event: AgentEvent.AgentEvent) => void!E2!R2
-): Outcome!E | E2!R | R2 => {
+): Outcome!(E | E2)!(R | R2) => {
   let frames = 0
   let output: string | undefined
   let value: Schema.Json | undefined

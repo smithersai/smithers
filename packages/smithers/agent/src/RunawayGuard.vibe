@@ -192,7 +192,7 @@ const limited = effect <A, E, R>(
   flowName: string,
   limitMillis: number,
   drive: A!E!R
-): A!E!R | FlowRuntime.FlowInstance => {
+): A!E!(R | FlowRuntime.FlowInstance) => {
   const parking = try Effect.serviceOption(Budget.Parking)
   if (Option.isNone(parking) || !parking.value.guardsTimeouts) return try drive
   const guard = parking.value

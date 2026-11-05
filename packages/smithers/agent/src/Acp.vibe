@@ -226,7 +226,7 @@ const chosen = (request: unknown, permission: Permission): Option.Option<string>
 export const make = effect <E, R>(
   transport: Transport<E, R>,
   options: Options
-): Client!never!R | Scope.Scope => {
+): Client!never!(R | Scope.Scope) => {
   const permission = options.permission ?? "allow"
   const pending = new Map<number, { readonly method: string; readonly deferred: Pending }>()
   const nextId = try Ref.make(0)
