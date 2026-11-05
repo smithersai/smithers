@@ -1,6 +1,6 @@
 # @smthrs/gateway
 
-The gateway requires `effect` at exactly `4.1.0` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.0; hosts need no separate adapter install.
+The gateway requires `effect` at exactly `4.1.1` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.1; hosts need no separate adapter install.
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 

@@ -21,8 +21,8 @@ pnpm add @smthrs/gateway@next effect@4.1.1
 - One copy of `effect` in the resolved tree. A second copy makes a `Layer`
   built against one fail to satisfy a requirement declared against the other.
 
-`effect` is the only peer, at exactly `4.1.0`. Node and Bun adapters
-are bundled privately, built from 4.1.0, including their shared implementation.
+`effect` is the only peer, at exactly `4.1.1`. Node and Bun adapters
+are bundled privately, built from 4.1.1, including their shared implementation.
 Hosts need no separate adapter install.
 
 Use `@smthrs/gateway/node/NodeGateway` on Node or
