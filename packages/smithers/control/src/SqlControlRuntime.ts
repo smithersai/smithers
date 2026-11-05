@@ -83,9 +83,12 @@ import type {
   RunCursor,
   RunQuery,
   Service,
+  SignalPage,
+  SignalQuery,
+  SignalReceipt,
   StoredPlan
 } from "./ControlRuntime.ts"
-import { ApprovalDecision, ControlRuntime, idPageLimit, make } from "./ControlRuntime.ts"
+import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.ts"
 import {
   ApprovalTarget,
   type Cancellation,
@@ -416,6 +419,39 @@ export const migrate: Effect.Effect<void, PersistenceError, SqlClient.SqlClient>
     Effect.forEach(Object.values(Migrations.set.migrations), (migration) => migration, { discard: true })
   )
 }).pipe(Effect.mapError(persistence("migrate")))
+
+/** Read a bounded page directly from the durable signal ledger. This is a
+ * storage port: hosts must authorize visibility of the run before calling it.
+ * No answer payload or wait token is loaded into the process.
+ * @category queries
+ * @since 1.0.0
+ */
+export const querySignalReceipts = (request: SignalQuery): Effect.Effect<
+  SignalPage,
+  InvalidInput | PersistenceError,
+  SqlClient.SqlClient
+> =>
+  Effect.gen(function*() {
+    yield* idPageLimit(request.limit)
+    if (request.after !== undefined && (!Number.isSafeInteger(request.after) || request.after < 0)) {
+      return yield* new InvalidInput({ issue: "after: must be a nonnegative safe integer" })
+    }
+    const sql = yield* SqlClient.SqlClient
+    const rows = yield* sql<Omit<SignalReceipt, "receiptId"> & { readonly rejection: "unauthorized" | null }>`
+    SELECT seq AS sequence, command_id AS "commandId", run_id AS "runId",
+      substr(${Dialect.jsonText(sql, sql`payload_json`, "$.name")}, 1, 1024) AS name, state, rejection
+    FROM control_signal_commands
+    WHERE run_id = ${request.runId} AND seq > ${request.after ?? 0}
+      AND ${request.commandId === undefined ? sql`1 = 1` : sql`command_id = ${request.commandId}`}
+    ORDER BY seq LIMIT ${request.limit + 1}
+  `.pipe(Effect.mapError(persistence("read signal receipts")))
+    const items = rows.slice(0, request.limit).map(({ rejection, ...row }) => ({
+      ...row,
+      receiptId: signalReceiptId(row.commandId),
+      ...(rejection === null ? {} : { rejection })
+    }))
+    return { items, ...(rows.length > request.limit ? { next: items.at(-1)!.sequence } : {}) }
+  })
 
 /**
  * Constructs a durable runtime over the ambient database and run store.
@@ -2049,6 +2085,11 @@ const makeRuntime = (
           return yield* new InvalidInput({ issue: "commandId: already used for a different signal request" })
         }
       }),
+      querySignals: (request) =>
+        Effect.andThen(
+          requireRow(request.runId),
+          querySignalReceipts(request).pipe(Effect.provideService(SqlClient.SqlClient, sql))
+        ),
       signalCommand: Effect.fn("SqlControlRuntime.signalCommand")(function*(commandId) {
         const rows = yield* sql<
           {

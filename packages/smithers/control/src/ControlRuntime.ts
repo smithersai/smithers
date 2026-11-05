@@ -56,6 +56,7 @@ import {
   canonical,
   codeDriftOf,
   emptyEnvelope,
+  mutationKey,
   planCard,
   planFingerprint,
   sameEnvelope,
@@ -188,6 +189,48 @@ export interface SignalCommand {
    */
   readonly principal?: Principal | undefined
 }
+
+/** Bounded signal metadata, without answer content or private wait tokens.
+ * @category models
+ * @since 1.0.0
+ */
+export interface SignalReceipt {
+  readonly sequence: number
+  readonly commandId: string
+  readonly receiptId: string
+  readonly runId: string
+  readonly name: string
+  readonly state: SignalCommand["state"]
+  readonly rejection?: "unauthorized" | undefined
+}
+/** @category models
+ * @since 1.0.0
+ */
+export interface SignalQuery {
+  readonly runId: string
+  readonly limit: number
+  readonly after?: number | undefined
+  readonly commandId?: string | undefined
+}
+/** @category models
+ * @since 1.0.0
+ */
+export interface SignalPage {
+  readonly items: ReadonlyArray<SignalReceipt>
+  readonly next?: number | undefined
+}
+/** The public receipt is the suffix of the actor-scoped durable identity.
+ * Legacy command identities are retained unchanged.
+ * @category utilities
+ * @since 1.0.0
+ */
+export const signalReceiptId = (commandId: string): string => commandId.replace(/^signal:actor:[a-f0-9]{64}:/, "")
+/** Actor-scoped lookup identity for a public signal receipt.
+ * @category utilities
+ * @since 1.0.0
+ */
+export const signalCommandId = (receiptId: string, principal: Pick<Principal, "id" | "kind">): string =>
+  mutationKey("signal", receiptId, principal)
 
 /**
  * A stored-plan page request: plans oldest first, after the insertion position
@@ -572,6 +615,9 @@ export interface Service {
     principal?: Principal | undefined
   ) => Effect.Effect<void, RunNotFound | InvalidInput | PersistenceError>
   readonly signalCommand: (commandId: string) => Effect.Effect<SignalCommand | undefined, PersistenceError>
+  readonly querySignals: (
+    request: SignalQuery
+  ) => Effect.Effect<SignalPage, RunNotFound | InvalidInput | PersistenceError>
   readonly pendingSignals: Effect.Effect<ReadonlyArray<SignalCommand>, PersistenceError>
   readonly bindSignal: (commandId: string, token: string) => Effect.Effect<string | null, PersistenceError>
   readonly settleSignal: (
@@ -1376,6 +1422,35 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
           }
         }),
         signalCommand: (commandId) => Effect.sync(() => snapshot(signalCommands.get(commandId))),
+        querySignals: (request) =>
+          Effect.gen(function*() {
+            yield* idPageLimit(request.limit)
+            if (request.after !== undefined && (!Number.isSafeInteger(request.after) || request.after < 0)) {
+              return yield* new InvalidInput({ issue: "after: must be a nonnegative safe integer" })
+            }
+            yield* requireRun(request.runId)
+            const items: Array<SignalReceipt> = []
+            let sequence = 0
+            for (const command of signalCommands.values()) {
+              sequence++
+              if (
+                sequence <= (request.after ?? 0) || command.runId !== request.runId ||
+                (request.commandId !== undefined && command.commandId !== request.commandId)
+              ) continue
+              items.push({
+                sequence,
+                commandId: command.commandId,
+                receiptId: signalReceiptId(command.commandId),
+                runId: command.runId,
+                name: command.signal.name.slice(0, 1024),
+                state: command.state,
+                ...(command.rejection === undefined ? {} : { rejection: command.rejection })
+              })
+              if (items.length > request.limit) break
+            }
+            const selected = items.slice(0, request.limit)
+            return { items: selected, ...(items.length > request.limit ? { next: selected.at(-1)!.sequence } : {}) }
+          }),
         pendingSignals: Effect.sync(() => {
           const pending = Array.from(signalCommands.values()).filter((command) => command.state === "pending")
           if (pendingSignalOffset >= pending.length) pendingSignalOffset = 0

@@ -722,18 +722,73 @@ export const createRunsCli = (runtime: Bridge.Runtime = {}) =>
       options,
       run: (c) => guard(c, () => decideIncident(c.args.run, "stop", c.options, runtime), { next: afterDecision })
     })
+    .command("signals", {
+      description: "Inspect durable signal delivery receipts",
+      mcp: { annotations: { readOnlyHint: true } },
+      args: runArgs,
+      options: options.extend({
+        limit: z.number().int().min(1).max(500).default(100),
+        after: z.number().int().nonnegative().optional().describe("Continue after a receipt sequence"),
+        receipt: z.string().optional().describe("Look up one durable command id")
+      }),
+      run: (c) =>
+        guard(c, () =>
+          Bridge.signalReceipts(
+            {
+              runId: c.args.run,
+              limit: c.options.limit,
+              after: c.options.after,
+              commandId: c.options.receipt
+            },
+            c.options,
+            runtime
+          ))
+    })
     .command("signal", {
       description: "Deliver a durable JSON signal",
       mcp: { annotations: { readOnlyHint: false } },
       args: runArgs.extend({ payload: z.string() }),
-      options,
+      options: options.extend({
+        wait: z.boolean().default(false).describe("Wait for delivery or rejection"),
+        timeout: z.number().int().nonnegative().optional().describe("Maximum delivery wait in milliseconds")
+      }),
       run: (c) =>
-        guard(c, async () =>
-          Bridge.query(
+        guard(c, async () => {
+          if (c.options.timeout !== undefined && !c.options.wait) {
+            throw new CliError.UsageError({ message: "--timeout requires --wait" })
+          }
+          if (c.options.wait && Bridge.isRemote(c.options, runtime)) {
+            throw new CliError.UnsupportedError({ message: "Signal --wait requires the run's local --root" })
+          }
+          const receipt = await Bridge.query(
             Effect.andThen(checks(c.options, runtime), RunControl.deliverSignal(c.args.run, c.args.payload)),
             c.options,
             { ...runtime, ...await prepareHistoryRun(c.args.run, c.options, runtime) }
-          ))
+          )
+          if (!c.options.wait || (receipt._tag !== "Accepted" && receipt._tag !== "AlreadyApplied")) return receipt
+          const page = await Bridge.signalReceipts({ runId: c.args.run, limit: 1 }, c.options, runtime, {
+            receiptId: receipt.receiptId,
+            timeout: c.options.timeout
+          })
+          const delivery = page.items[0]
+          if (delivery === undefined) {
+            throw new CliError.Refused({
+              fault: "dependency",
+              code: "receipt_missing",
+              message: "The admitted signal receipt is unavailable"
+            })
+          }
+          if (delivery.state !== "delivered") {
+            throw new CliError.Refused({
+              fault: delivery.state === "pending" ? "wait" : "user",
+              code: `signal_${delivery.state}`,
+              message: `Signal ${receipt.receiptId}: ${delivery.state}${
+                delivery.rejection === undefined ? "" : ` (${delivery.rejection})`
+              }`
+            })
+          }
+          return { ...receipt, delivery }
+        })
     })
     .command("steer", {
       description: "Send an attributed operator message",

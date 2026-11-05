@@ -6,6 +6,8 @@ import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
+import * as Bridge from "../src/cli/ControlBridge.ts"
+import { createRunsCli } from "../src/cli/ControlCommands.ts"
 import { targetsInstall } from "../src/internal/backend/Destination.ts"
 import * as NodeControl from "../src/NodeControl.ts"
 
@@ -49,9 +51,15 @@ const envelope = { capabilities: [], flows: [], budget: {} }
 describe("#4242 scoped human-wait authority", () => {
   it.each(["memory", "sqlite"] as const)("checks the recorded flow and exact wait in %s", async (adapter) => {
     const policy = await Effect.runPromise(ApprovalAuthority.make([
-      { principal: operator, scopes: ["once"], targets: ["Plan"] },
-      { principal: operator, scopes: ["once"], targets: ["Node"], flowId: "system/test", waitName: "question/1" }
-    ].map((delegation) => ({ ...delegation, principal: { id: operator.id, kind: operator.kind } }))))
+      { principal: { id: operator.id, kind: operator.kind }, scopes: ["once"], targets: ["Plan"] },
+      {
+        principal: { id: operator.id, kind: operator.kind },
+        scopes: ["once"],
+        targets: ["Node"],
+        flowId: "system/test",
+        waitName: "question/1"
+      }
+    ]))
     const layer = adapter === "memory"
       ? ControlRuntime.layerMemory({ approvalAuthority: policy })
       : NodeControl.engineDurable(join(home, "scoped-authority"), undefined, { approvalAuthority: policy }).runtime
@@ -109,7 +117,7 @@ it("#4242 verifies named proof on every decision and fails closed on revoked or 
   const checks: string[] = []
   const policy = await Effect.runPromise(ApprovalAuthority.make([delegation], {
     verifyProof: (name, decision) =>
-      Effect.suspend(() => {
+      Effect.suspend((): Effect.Effect<void, PersistenceError | Unauthorized> => {
         checks.push(name)
         expect(decision.target).toEqual(request.target)
         if (outcome === "unavailable") {
@@ -130,4 +138,88 @@ it("#4242 verifies named proof on every decision and fails closed on revoked or 
   )
     .toBe("/control/Unauthorized")
   expect(checks).toEqual(["person-passkey", "person-passkey", "person-passkey"])
+})
+
+it("#4247 pages signal delivery receipts across restart without reading answer payloads", async () => {
+  const root = join(home, "signal-receipts")
+  const run = <A, E>(effect: Effect.Effect<A, E, ControlRuntime.ControlRuntime>) =>
+    Effect.runPromise(effect.pipe(Effect.provide(NodeControl.engineDurable(root).runtime), Effect.scoped))
+  const runId = await run(Effect.gen(function*() {
+    const runtime = yield* ControlRuntime.ControlRuntime
+    const { card } = yield* runtime.plan({ flowId: "system/test", input: {} })
+    yield* runtime.resolveApproval(yield* runtime.lookupApproval(card.approval.target), "approved", operator, "once")
+    const launched = yield* runtime.launch(card.planId, card.digest, card.envelope)
+    if (launched._tag !== "Started") throw new Error("expected launch")
+    const id = launched.run.runId
+    yield* runtime.admitSignal("first", id, { name: "question/1", payload: "x".repeat(17 * 1024 * 1024) }, operator)
+    yield* runtime.admitSignal("second", id, { name: "question/2", payload: {} }, operator)
+    yield* runtime.admitSignal("third", id, { name: "question/3", payload: {} }, operator)
+    return id
+  }))
+  const first = await run(
+    Effect.flatMap(ControlRuntime.ControlRuntime, (runtime) => runtime.querySignals({ runId, limit: 1 }))
+  )
+  expect(first.items).toMatchObject([{ commandId: "first", name: "question/1", state: "pending" }])
+  expect(JSON.stringify(first).length).toBeLessThan(1000)
+  await run(Effect.gen(function*() {
+    const runtime = yield* ControlRuntime.ControlRuntime
+    yield* runtime.bindSignal("first", "private-wait-token")
+    yield* runtime.settleSignal("first", "delivered")
+    yield* runtime.settleSignal("second", "rejected", "unauthorized")
+    yield* runtime.settleSignal("third", "terminal")
+    yield* runtime.settleSignal("first", "rejected")
+  }))
+  const settled = await run(
+    Effect.flatMap(ControlRuntime.ControlRuntime, (runtime) => runtime.querySignals({ runId, limit: 3 }))
+  )
+  expect(settled.items.map((item) => item.state)).toEqual(["delivered", "rejected", "terminal"])
+  expect(settled.items[1]).toMatchObject({ rejection: "unauthorized" })
+  expect(JSON.stringify(settled)).not.toContain("private-wait-token")
+  const next = await run(
+    Effect.flatMap(
+      ControlRuntime.ControlRuntime,
+      (runtime) => runtime.querySignals({ runId, after: first.next, limit: 1 })
+    )
+  )
+  expect(next.items).toMatchObject([{ commandId: "second", state: "rejected" }])
+  let output = ""
+  const codes: number[] = []
+  await createRunsCli({ environment }).serve(["signals", runId, "--root", root, "--limit", "1", "--json"], {
+    stdout: (text) => {
+      output += text
+    },
+    exit: (code) => {
+      codes.push(code)
+    }
+  })
+  expect(codes.every((code) => code === 0), output).toBe(true)
+  expect(JSON.parse(output)).toMatchObject({ items: [{ commandId: "first", state: "delivered" }], next: first.next })
+  const commandId = ControlRuntime.signalCommandId("pending-receipt", operator)
+  await run(
+    Effect.flatMap(
+      ControlRuntime.ControlRuntime,
+      (runtime) => runtime.admitSignal(commandId, runId, { name: "pending", payload: {} }, operator)
+    )
+  )
+  const pending = await Bridge.signalReceipts({ runId, limit: 1 }, { root, quiet: true }, { environment }, {
+    receiptId: "pending-receipt",
+    timeout: 0
+  })
+  expect(pending.items).toMatchObject([{ receiptId: "pending-receipt", state: "pending" }])
+  await run(Effect.flatMap(ControlRuntime.ControlRuntime, (runtime) => runtime.settleSignal(commandId, "delivered")))
+  const delivered = await Bridge.signalReceipts({ runId, limit: 1 }, { root, quiet: true }, { environment }, {
+    receiptId: "pending-receipt",
+    timeout: 0
+  })
+  expect(delivered.items).toMatchObject([{ receiptId: "pending-receipt", state: "delivered" }])
+
+  expect(
+    (await run(
+      Effect.flatMap(
+        ControlRuntime.ControlRuntime,
+        (runtime) => Effect.flip(runtime.querySignals({ runId, limit: 501 }))
+      )
+    ))._tag
+  )
+    .toBe("/control/InvalidInput")
 })
