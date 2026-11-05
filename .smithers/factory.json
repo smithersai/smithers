@@ -1199,6 +1199,50 @@
       "flows": []
     },
     {
+      "id": "gate",
+      "description": "Run the apps/mvp test shards and enforce their combined coverage.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/gate/flow.ts",
+      "capabilities": [],
+      "model": null,
+      "modelInvocable": false,
+      "inputSchema": {
+        "dialect": "draft-2020-12",
+        "schema": {
+          "type": "object",
+          "properties": {
+            "run": {
+              "type": "string"
+            },
+            "repo": {
+              "type": "string"
+            },
+            "sha": {
+              "type": "string"
+            },
+            "ref": {
+              "type": "string"
+            },
+            "event": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "run",
+            "repo",
+            "sha",
+            "ref",
+            "event"
+          ],
+          "additionalProperties": true
+        },
+        "definitions": {}
+      },
+      "flows": []
+    },
+    {
       "id": "issue-claim",
       "description": "Claim, check, release or comment on an issue through the machine's GitHub proxy.",
       "summary": null,

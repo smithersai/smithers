@@ -24,6 +24,8 @@ const coverage = CiJob.make("mvp-coverage", {
 })
 
 export default Flow.make("gate", {
+  description: "Run the apps/mvp test shards and enforce their combined coverage.",
+  modelInvocable: false,
   payload: { run: Schema.String, repo: Schema.String, sha: Schema.String, ref: Schema.String, event: Schema.String },
   success: Schema.Unknown,
   body: (run) =>
