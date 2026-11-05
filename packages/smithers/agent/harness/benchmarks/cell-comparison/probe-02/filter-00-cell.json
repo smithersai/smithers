@@ -1,0 +1,55 @@
+{
+  "task": "filter-00",
+  "seed": 184600,
+  "family": "filter",
+  "arm": "cell",
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "model": "gpt-6.1-sol",
+  "cohort": "codex-proton",
+  "maxTurns": 6,
+  "executionId": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/0/cell/2026-11-05T14:18:30.258Z",
+  "startedAt": "2026-11-05T14:18:30.367Z",
+  "elapsedMs": 783,
+  "outcome": "model_failure",
+  "turns": [
+    {
+      "turn": 0,
+      "request": {
+        "modelId": "gpt-6.1-sol",
+        "system": [
+          {
+            "type": "text",
+            "text": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns."
+          }
+        ],
+        "messages": [
+          {
+            "role": "user",
+            "content": [
+              {
+                "type": "text",
+                "text": "Return {\"ids\":[...]}: ids of active records with value >= 40, sorted lexicographically."
+              }
+            ]
+          }
+        ],
+        "tools": [],
+        "params": {
+          "reasoningEffort": "low"
+        },
+        "cacheKey": "cell-comparison/9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2/0/cell/2026-11-05T14:18:30.258Z"
+      },
+      "events": [],
+      "usage": {},
+      "cost": null,
+      "elapsedMs": 748,
+      "replayed": false,
+      "error": {
+        "code": "invalid_request",
+        "message": "The 'gpt-6.1-sol' model is not supported when using Codex with a ChatGPT account.",
+        "httpStatus": 400
+      }
+    }
+  ],
+  "calls": []
+}

@@ -50777,6 +50777,7 @@
       "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e657373",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732d646574656374",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f616c65",
+      "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f63656c6c2d636f6d70617269736f6e",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f686172626f72",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f73776562656e6368",
       "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f696e746567726174696f6e73",
@@ -51339,6 +51340,26 @@
       {
         "kind": "glob",
         "pattern": "packages/smithers/agent/harness/benchmarks/ale/**/*",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/repo-targets:repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f63656c6c2d636f6d70617269736f6e",
+    "package": "packages/repo-targets",
+    "name": "repositoryInputs_7061636b616765732f736d6974686572732f6167656e742f6861726e6573732f62656e63686d61726b732f63656c6c2d636f6d70617269736f6e",
+    "rule": "Filegroup",
+    "kinds": [],
+    "cacheable": true,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/benchmarks/cell-comparison/**/*",
         "exclude": []
       }
     ],
@@ -56193,6 +56214,33 @@
     "dependencies": [],
     "source": {
       "file": "packages/smithers/agent/harness/benchmarks/ale/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//packages/smithers/agent/harness/benchmarks/cell-comparison:offline",
+    "package": "packages/smithers/agent/harness/benchmarks/cell-comparison",
+    "name": "offline",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "summary": "Validate matched benchmark receipts and all fifty task oracles in production QuickJS without model access.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/smithers/agent/harness/benchmarks/cell-comparison/verify.sh"
+      },
+      {
+        "kind": "glob",
+        "pattern": "packages/smithers/agent/harness/benchmarks/cell-comparison/*.{mjs,json,sh}",
+        "exclude": []
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "packages/smithers/agent/harness/benchmarks/cell-comparison/PACKAGE.ts"
     }
   },
   {

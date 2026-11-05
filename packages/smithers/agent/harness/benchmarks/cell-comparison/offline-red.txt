@@ -1,0 +1,5 @@
+Selected failure evidence (full local transcript retained outside publication):
+smthrs: remote cache disabled after a failure: GET returned HTTP 401
+//packages/smithers/agent/harness/benchmarks/cell-comparison:offline  failed  1.2s  command failed (exit 2): /bin/sh packages/smithers/agent/harness/benchmarks/cell-comparison/verify.sh
+packages/smithers/agent/harness/benchmarks/cell-comparison/verify.sh: 2: set: Illegal option -o pipefail
+code: targets_failed

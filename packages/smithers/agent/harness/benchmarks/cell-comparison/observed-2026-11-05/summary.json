@@ -1,0 +1,61 @@
+{
+  "cell": {
+    "attempts": 50,
+    "answered": 50,
+    "correct": 50,
+    "successInterval95": [
+      0.9286524008666414,
+      1
+    ],
+    "failures": {
+      "wrong": 0,
+      "turn_limit": 0,
+      "access_failure": 0,
+      "model_failure": 0,
+      "cell_failure": 0,
+      "tool_failure": 0,
+      "harness_failure": 0
+    },
+    "turns": 91,
+    "pricedTurns": 91,
+    "costUsd": 0.01339382,
+    "inputTokensReported": 49990,
+    "outputTokensReported": 16997,
+    "usageReportingTurns": 91,
+    "elapsedMeanMs": 18327.42
+  },
+  "tool": {
+    "attempts": 50,
+    "answered": 50,
+    "correct": 41,
+    "successInterval95": [
+      0.6920394632569922,
+      0.9022980732976582
+    ],
+    "failures": {
+      "wrong": 9,
+      "turn_limit": 0,
+      "access_failure": 0,
+      "model_failure": 0,
+      "cell_failure": 0,
+      "tool_failure": 0,
+      "harness_failure": 0
+    },
+    "turns": 104,
+    "pricedTurns": 104,
+    "costUsd": 0.006335699999999996,
+    "inputTokensReported": 49317,
+    "outputTokensReported": 2808,
+    "usageReportingTurns": 104,
+    "elapsedMeanMs": 4812.56
+  },
+  "completedPairs": 50,
+  "qualityDifference": {
+    "estimate": 0.18,
+    "low": -0.20412911652796834,
+    "high": 0.5641291165279683,
+    "confidence": 0.95,
+    "method": "paired Hoeffding bound",
+    "n": 50
+  }
+}

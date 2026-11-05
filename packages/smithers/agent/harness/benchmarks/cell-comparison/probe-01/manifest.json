@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "createdAt": "2026-11-05T14:18:01.251Z",
+  "issue": 1846,
+  "probe": true,
+  "taskHash": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2",
+  "tasks": [
+    "filter-00"
+  ],
+  "model": "gpt-6.1-sol",
+  "cohort": "codex-proton",
+  "credentialSource": "CELL_BENCH_CREDENTIAL_FILE (read at sign time; value excluded)",
+  "endpoint": "ChatGPT subscription Responses",
+  "requestedReasoning": "low",
+  "providerSeed": null,
+  "fixtureSeeds": [
+    184600
+  ],
+  "maxTurns": 6,
+  "attemptsPerCall": 1,
+  "order": "sequential tasks; alternating cell/tool first",
+  "sourceHashes": {
+    "run.mjs": "8303ad49e13c52a95d181fe44055ea43be7b0fdc2ed66c8cb64c2600ee80c974",
+    "measure.mjs": "8dc3e958c0dda54d5bcb6d8ef278fb93bd4f2497e65921e70d005ccbad4eb586",
+    "analysis.mjs": "847528d8fd7c3b7e13dc1d71e6fbe6d64d48ad15b960d3a2bfd534e5921a6874",
+    "tasks.json": "9d21e73d37dbb6f0d607b63ec6c9cc4f711e863490720ea55aaf69a97c8245a2"
+  },
+  "prompts": {
+    "cell": "Solve the task using JavaScript in a persistent QuickJS realm. Reply only with executable JavaScript, without Markdown. No filesystem, imports, Date or Math.random. Read the input with await ctx.call(\"records\", {}). It returns {records, owners}. Print intermediate data with console.log for the next turn. Submit the requested JSON object with ctx.done(object). Top-level declarations persist across turns. You have at most six turns.",
+    "tool": "Solve the task using native function tools. Read the input with records({}); it returns {records, owners}. Submit the requested JSON object with submit({answer: object}). You have at most six turns."
+  },
+  "tools": [
+    {
+      "name": "records",
+      "description": "Read the task input: {records, owners}.",
+      "parameters": {
+        "type": "object",
+        "properties": {},
+        "required": [],
+        "additionalProperties": false
+      }
+    },
+    {
+      "name": "submit",
+      "description": "Submit the requested JSON object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "answer": {
+            "type": "object",
+            "additionalProperties": true
+          }
+        },
+        "required": [
+          "answer"
+        ],
+        "additionalProperties": false
+      }
+    }
+  ],
+  "priceCard": {
+    "input": 2,
+    "output": 10,
+    "cacheRead": 0.2,
+    "cacheWrite": 2.5,
+    "cacheWrite1h": 2.5,
+    "provider": "openai",
+    "context": "tiered",
+    "longContextFrom": 272000,
+    "longContext": {
+      "input": 4,
+      "output": 15,
+      "cacheRead": 0.4,
+      "cacheWrite": 5,
+      "cacheWrite1h": 5
+    }
+  },
+  "costBasis": "SDK table estimate if available; subscription invoice unavailable",
+  "runtime": "v26.5.0",
+  "sourceRevision": "unrecorded",
+  "limitations": [
+    "fixed synthetic convenience corpus",
+    "one model/cohort",
+    "one sample per task-arm",
+    "provider sampling seed unavailable",
+    "requested model alias; immutable server snapshot not exposed"
+  ]
+}

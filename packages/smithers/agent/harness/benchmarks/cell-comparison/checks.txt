@@ -1,0 +1,41 @@
+✔ refuses incomplete, duplicate and confounded observations (2.236274ms)
+✔ access failures are attempts with unknown cost, never measured task quality (1.41455ms)
+✔ paired uncertainty uses task differences; unknown cost cannot silently become zero (1.654719ms)
+✔ HTML embeds all raw data safely and cannot execute model output (0.47044ms)
+✔ rejects malformed costs, rosters and turns at the report boundary (0.909498ms)
+✔ renders large observed separation and measured ties with explicit uncertainty (3.053678ms)
+✔ cannot publish a vacuous or duplicated task roster as completed measurements (0.290892ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 7
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 90.818595
+ℹ start of coverage report
+ℹ ----------------------------------------------------------------------
+ℹ file                  | line % | branch % | funcs % | uncovered lines
+ℹ ----------------------------------------------------------------------
+ℹ packages              |        |          |         | 
+ℹ  smithers             |        |          |         | 
+ℹ   agent               |        |          |         | 
+ℹ    harness            |        |          |         | 
+ℹ     benchmarks        |        |          |         | 
+ℹ      cell-comparison  |        |          |         | 
+ℹ       analysis.mjs    | 100.00 |   100.00 |  100.00 | 
+ℹ ----------------------------------------------------------------------
+ℹ all files             | 100.00 |   100.00 |  100.00 | 
+ℹ ----------------------------------------------------------------------
+ℹ end of coverage report
+✔ faulty Effect model records authentication and transport failures once in either arm (112.289826ms)
+✔ independent corpus answers agree with production QuickJS execution and recorded reads for all 50 tasks (286.654581ms)
+✔ canonical objects preserve array ordering; error classification distinguishes unavailable models (1.097337ms)
+ℹ tests 3
+ℹ suites 0
+ℹ pass 3
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 1937.199688
