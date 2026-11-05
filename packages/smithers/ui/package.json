@@ -195,7 +195,7 @@
       }
     },
     "./app-operations/http": {
-      "types": "./src/app-operations/http.d.vibe.ts",
+      "types": "./.vibe/declarations/src/app-operations/http.d.vibe.ts",
       "import": {
         "types": "./.vibe/declarations/src/app-operations/http.d.vibe.ts",
         "vibelang-source": "./src/app-operations/http.vibe",

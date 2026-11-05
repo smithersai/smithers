@@ -52,12 +52,12 @@
       "default": "./.vibelang/js/src/Database.js"
     },
     "./Embedding": {
-      "types": "./.vibe/declarations/Embedding.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Embedding.d.vibe.ts",
       "vibelang-source": "./src/Embedding.vibe",
       "default": "./.vibelang/js/src/Embedding.js"
     },
     "./Flows": {
-      "types": "./.vibe/declarations/Flows.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Flows.d.vibe.ts",
       "vibelang-source": "./src/Flows.vibe",
       "default": "./.vibelang/js/src/Flows.js"
     },
@@ -82,7 +82,7 @@
       "default": "./.vibelang/js/src/MemoryTrellis.js"
     },
     "./Migrations": {
-      "types": "./.vibe/declarations/Migrations.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
       "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
@@ -97,7 +97,7 @@
       "default": "./.vibelang/js/src/Opening.js"
     },
     "./Recall": {
-      "types": "./.vibe/declarations/Recall.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Recall.d.vibe.ts",
       "vibelang-source": "./src/Recall.vibe",
       "default": "./.vibelang/js/src/Recall.js"
     },
@@ -107,7 +107,7 @@
       "default": "./.vibelang/js/src/RecallFts.js"
     },
     "./RecallKeyword": {
-      "types": "./.vibe/declarations/RecallKeyword.d.vibe.ts",
+      "types": "./.vibe/declarations/src/RecallKeyword.d.vibe.ts",
       "vibelang-source": "./src/RecallKeyword.vibe",
       "default": "./.vibelang/js/src/RecallKeyword.js"
     },
@@ -127,7 +127,7 @@
       "default": "./.vibelang/js/src/Source.js"
     },
     "./WithMemory": {
-      "types": "./.vibe/declarations/WithMemory.d.vibe.ts",
+      "types": "./.vibe/declarations/src/WithMemory.d.vibe.ts",
       "vibelang-source": "./src/WithMemory.vibe",
       "default": "./.vibelang/js/src/WithMemory.js"
     },

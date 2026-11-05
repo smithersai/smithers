@@ -213,7 +213,7 @@
     },
     "./SubChains": {
       "types": {
-        "default": "./.vibe/declarations/SubChains.d.vibe.ts"
+        "default": "./.vibe/declarations/src/SubChains.d.vibe.ts"
       },
       "vibelang-source": "./src/SubChains.vibe",
       "default": "./.vibelang/js/src/SubChains.js"

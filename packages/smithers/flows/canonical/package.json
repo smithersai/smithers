@@ -27,7 +27,7 @@
     "./internal/*": null,
     "./*/index": null,
     "./Canonical": {
-      "types": "./.vibe/declarations/Canonical.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Canonical.d.vibe.ts",
       "vibelang-source": "./src/Canonical.vibe",
       "default": "./.vibelang/js/src/Canonical.js"
     },
