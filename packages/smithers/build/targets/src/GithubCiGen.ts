@@ -1762,7 +1762,18 @@ export const render = (attrs: Attrs): string => {
         ...(step.name === undefined ? {} : { name: step.name }),
         condition: independentGate,
         run: stepCommand(attrs, step, job.toolchain.nix),
-        ...(hasJobEnv ? { env: jobEnv } : {})
+        // Result paths read runner environment variables using Bash syntax.
+        // Windows otherwise selects PowerShell and expands both names to empty.
+        ...(attrs.results === true
+          ? {
+            shell: "bash",
+            // Git Bash must pass target labels literally, without treating //
+            // as a Windows path. Real result-file paths still get converted.
+            env: { ...jobEnv, MSYS2_ARG_CONV_EXCL: "//" }
+          }
+          : hasJobEnv
+          ? { env: jobEnv }
+          : {})
       })
     }
     if (job.toolchain.artifacts !== undefined) rendered.push(...artifactSteps(job.toolchain.artifacts))
