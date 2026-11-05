@@ -76,8 +76,12 @@ describe("sharing browser probes", () => {
       await focused(page, "Can edit");
       await page.keyboard.press("Enter");
       await page.getByRole("combobox", { name: "Access", exact: true }).filter({ hasText: "Can edit" }).waitFor();
+      // Radix restores focus after the selected value commits. Tab must start
+      // from that trigger, not the option that is still closing.
+      await page.waitForFunction(() => document.activeElement?.getAttribute("role") === "combobox");
       await page.keyboard.press("Tab");
       await page.keyboard.press("Enter");
+      await page.getByRole("listitem").filter({ hasText: "kim" }).waitFor();
       await expect(page.getByRole("listitem").filter({ hasText: "kim" }).count()).resolves.toBe(1);
 
       await page.keyboard.press("Escape");
