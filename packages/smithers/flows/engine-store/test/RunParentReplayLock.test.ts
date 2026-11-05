@@ -150,12 +150,7 @@ const engineOn = (schema: string) => {
   )
 }
 
-describe("a parent edge recorded again", () => {
-  if (absent !== undefined) {
-    it.skip(`skipped: ${absent}`, () => {})
-    return
-  }
-
+describe.skipIf(absent !== undefined)("a parent edge recorded again", () => {
   it(
     "is answered inside the child's partition write while another run's writer shares the schema",
     () =>
