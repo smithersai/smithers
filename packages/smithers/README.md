@@ -256,6 +256,14 @@ missing and unreadable ownership retain the committed-state wait.
 The coverage target follows `vitest.config.ts`. Process-killing cases stay in
 the serial `:faults` target, using `vitest.faults.config.ts`.
 
+Credential isolation and credential-cache integration cases use real native
+storage. Linux runners need `dbus-daemon`, `gnome-keyring-daemon`, and
+`secret-tool` (Debian packages `dbus`, `gnome-keyring`, and `libsecret-tools`).
+Each suite starts a private D-Bus session and keyring under its temporary
+home; missing prerequisites fail setup rather than skipping these cases.
+Native flow journeys also need the built `smithers-jj-export` helper on the
+host's configured helper path (`SMITHERS_WORKSPACE_JJ_EXPORT_BINARY`).
+
 History PostgreSQL cases need `SMITHERS_HISTORY_TEST_PG_URL` (or
 `SMITHERS_TEST_DATABASE_URL`) pointing to a reachable disposable test server;
 without a URL, only those cases skip with that reason. Tracked-source cases

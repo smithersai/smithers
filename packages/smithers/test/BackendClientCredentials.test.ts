@@ -1,36 +1,85 @@
+import { Effect } from "effect"
 import { chmod, mkdtemp, readFile, rename, rm, symlink, writeFile } from "node:fs/promises"
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest"
 import { Refused } from "../src/CliError.ts"
-import { Client } from "../src/internal/backend/Client.ts"
+import { Client as BackendClient } from "../src/internal/backend/Client.ts"
 import { run } from "../src/internal/backend/Process.ts"
-import { Session } from "../src/internal/backend/Session.ts"
+import { CredentialProcess, Session as BackendSession } from "../src/internal/backend/Session.ts"
 import { workspaces } from "../src/internal/backend/Workspaces.ts"
 
-vi.mock("../src/internal/backend/Process.ts", async (actual) => ({ ...await actual(), run: vi.fn() }))
-const spawn = vi.mocked(run)
-const native = new Map<string, string>()
-const platform = Object.getOwnPropertyDescriptor(process, "platform")!
-const output = (stdout = "") => ({ code: 0, stdout, stderr: "" })
-beforeEach(() => {
-  Object.defineProperty(process, "platform", { value: "darwin" })
-  native.clear()
-  native.set("127.0.0.1", "synthetic-keyring-value")
-  spawn.mockReset().mockImplementation(async (_command, args, options) => {
-    const host = options.env.SMITHERS_CRED_HOST!
-    if (args[0] === "find-generic-password") return output(native.get(host))
-    if (args[0] === "delete-generic-password") native.delete(host)
-    else native.set(host, options.env.SMITHERS_CRED_TOKEN!)
-    return output()
-  })
-})
+import { isolatedKeyring } from "./support/isolated-keyring.ts"
 
+type Command = Parameters<typeof run>
+type Fault = (...args: Command) => Effect.Effect<Awaited<ReturnType<typeof run>>, unknown>
+const output = (stdout = "") => ({ code: 0, stdout, stderr: "" })
+const faults: Fault[] = []
+let persistentFault: Fault | undefined
+const calls: Command[] = []
+// This is the loopback server's credential verifier, not a credential store.
+const issued = new Map<string, string>()
+let keyringHost: ReturnType<typeof isolatedKeyring>
+beforeAll(() => {
+  keyringHost = isolatedKeyring()
+})
+afterAll(() => keyringHost.close())
+beforeEach(() => {
+  faults.length = 0
+  calls.length = 0
+  persistentFault = undefined
+  issued.clear()
+})
+const live: Fault = (...args) =>
+  CredentialProcess.live.run(...args).pipe(Effect.tap(() =>
+    Effect.sync(() => {
+      const env = args[2].env
+      if (env.SMITHERS_CRED_TOKEN) issued.set(env.SMITHERS_CRED_HOST!, env.SMITHERS_CRED_TOKEN)
+    })
+  ))
+const commands = CredentialProcess.of({
+  run: (...args) =>
+    Effect.suspend(() => {
+      calls.push(args)
+      return (faults.shift() ?? persistentFault ?? live)(...args)
+    })
+})
+const fault = (body: (...args: Command) => ReturnType<typeof run>): Fault => (...args) =>
+  Effect.tryPromise({ try: () => body(...args), catch: (error) => error })
+const hold = (promise: ReturnType<typeof run>): Fault => fault(() => promise)
+const isGet = (args: ReadonlyArray<string>) => args[0] === "lookup" || args[0] === "find-generic-password"
+class Session extends BackendSession {
+  gets = 0
+  requires = 0
+  identityRead?: () => void
+  constructor(env: ConstructorParameters<typeof BackendSession>[0]) {
+    super(env, commands)
+  }
+  override keyring(...args: Parameters<BackendSession["keyring"]>) {
+    if (args[0] === "get") this.gets++
+    return super.keyring(...args)
+  }
+  override require(...args: Parameters<BackendSession["require"]>) {
+    this.requires++
+    return super.require(...args)
+  }
+  override credentialIdentity(origin: string) {
+    const identity = super.credentialIdentity(origin)
+    this.identityRead?.()
+    return identity
+  }
+}
+class Client extends BackendClient {
+  declare readonly session: Session
+  constructor(runtime: ConstructorParameters<typeof BackendClient>[0] = {}) {
+    super(runtime, false, new Session(runtime.environment ?? process.env))
+  }
+}
 const disposals: Array<() => Promise<void>> = []
 afterEach(async () => {
-  vi.restoreAllMocks()
-  Object.defineProperty(process, "platform", platform)
+  faults.length = 0
+  persistentFault = undefined
   for (const dispose of disposals.splice(0).reverse()) await dispose()
 })
 const deferred = <A = void>() => {
@@ -49,7 +98,7 @@ const storageFailure = () =>
     message: "Secure credential storage get failed"
   })
 
-/** Real loopback HTTP and temporary session files; native storage alone is synthetic, never the user's keyring. */
+/** Real loopback HTTP, session files, and an isolated native keyring; only faults are injected. */
 const fixture = async (signal?: AbortSignal) => {
   const home = await mkdtemp(join(tmpdir(), "smithers-client-credentials-"))
   const admitted = deferred()
@@ -57,9 +106,10 @@ const fixture = async (signal?: AbortSignal) => {
   const accepted = new Set<string>()
   const routes = new Map<string, (request: IncomingMessage, response: ServerResponse) => void>()
   let creates = 0, polls = 0
+  let account = ""
   const server: Server = createServer((request, response) => {
     const method = request.method!, path = request.url!
-    const authenticated = request.headers.authorization === `token ${native.get("127.0.0.1")}` ||
+    const authenticated = request.headers.authorization === `token ${issued.get(account)}` ||
       [...accepted].some((token) => request.headers.authorization === `token ${token}`)
     received.push({ method, path, authenticated })
     response.setHeader("content-type", "application/json")
@@ -85,7 +135,8 @@ const fixture = async (signal?: AbortSignal) => {
   const address = server.address()
   if (address === null || typeof address === "string") throw new Error("fixture did not bind a TCP port")
   const origin = `http://127.0.0.1:${address.port}`
-  const environment: Record<string, string> = {
+  const environment: Record<string, string | undefined> = {
+    ...keyringHost.environment,
     HOME: home,
     XDG_CONFIG_HOME: home,
     SMITHERS_AUTH_FILE: join(home, "auth.json"),
@@ -98,7 +149,16 @@ const fixture = async (signal?: AbortSignal) => {
     stderr: { write: () => {}, isTTY: false, columns: 80 }
   })
   client.session.saveConfig({ api_origin: origin })
-  const keyring = vi.spyOn(client.session, "keyring")
+  const seed = new BackendSession(
+    environment,
+    CredentialProcess.of({
+      run: (...args) => {
+        account = args[2].env.SMITHERS_CRED_HOST!
+        return live(...args)
+      }
+    })
+  )
+  await seed.save(origin, "synthetic-keyring-value")
   disposals.push(async () => {
     server.closeAllConnections()
     await new Promise<void>((done, failed) => server.close((error) => error ? failed(error) : done()))
@@ -106,13 +166,13 @@ const fixture = async (signal?: AbortSignal) => {
   })
   return {
     client,
-    keyring,
+    keyring: client.session,
     origin,
     environment,
     home,
     received,
     admitted: admitted.promise,
-    gets: () => keyring.mock.calls.filter(([action]) => action === "get").length,
+    gets: () => client.session.gets,
     allow: (token: string) => accepted.add(token),
     disallow: (token: string) => accepted.delete(token),
     route: (path: string, handler: (request: IncomingMessage, response: ServerResponse) => void) =>
@@ -143,7 +203,7 @@ describe("agent attribution (#3537)", () => {
     })
     await client.response("POST", "/probe", {})
     expect(f.received).toEqual([{ method: "POST", path: "/probe", authenticated: true }])
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("keeps explicit attribution and omits inferred attribution on anonymous requests", async () => {
@@ -166,14 +226,15 @@ describe("agent attribution (#3537)", () => {
         headers: { [key]: "codex" }
       })
     }
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 })
 
 describe("per-command authenticated credential reuse (#3396)", () => {
   it("keeps an admitted workspace identity through readiness polls without reopening secure storage", async () => {
     const t = await fixture()
-    t.keyring.mockResolvedValueOnce("synthetic-keyring-value").mockRejectedValue(storageFailure())
+    faults.push(live)
+    persistentFault = () => Effect.fail(storageFailure())
     const waiting = workspaces["workspace create"]!(t.client, {}, {
       repo: "acme/app",
       name: "owned",
@@ -186,27 +247,26 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     const outcome = await waiting
     expect(outcome).toMatchObject({ id: "owned-workspace", status: "running" })
     expect(t.counts()).toEqual({ creates: 1, polls: 3 })
-    expect(t.keyring).toHaveBeenCalledTimes(1)
+    expect(t.gets()).toBe(1)
     expect(t.received.every((request) => request.authenticated)).toBe(true)
   })
 
   it("reuses one resolution per Client without sharing credentials between Client instances", async () => {
     const t = await fixture()
     const peer = new Client({ environment: t.environment })
-    const otherGet = vi.spyOn(peer.session, "keyring")
     await t.client.request("GET", "/api/user")
     await t.client.request("GET", "/api/user")
     await peer.request("GET", "/api/user")
     await peer.request("GET", "/api/user")
     expect(t.gets()).toBe(1)
-    expect(otherGet).toHaveBeenCalledTimes(1)
+    expect(peer.session.gets).toBe(1)
     expect(t.received).toHaveLength(4)
     expect(t.received.every((request) => request.authenticated)).toBe(true)
   })
 
   it("deduplicates concurrent lookup waiters before either HTTP request begins", async () => {
     const t = await fixture(), lookup = deferred<ReturnType<typeof output>>()
-    spawn.mockReturnValueOnce(lookup.promise)
+    faults.push(hold(lookup.promise))
     const first = t.client.request("GET", "/api/first"), second = t.client.request("GET", "/api/second")
     expect(t.gets()).toBe(1)
     expect(t.received).toEqual([])
@@ -214,20 +274,20 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     await Promise.all([first, second])
     expect(t.received).toHaveLength(2)
     expect(t.gets()).toBe(1)
-    expect(spawn.mock.calls[0]![2]).toMatchObject({ timeoutMs: 10_000, signal: expect.any(AbortSignal) })
+    expect(calls[0]![2]).toMatchObject({ timeoutMs: 10_000, signal: expect.any(AbortSignal) })
   })
 
   it.each(["storage failure", "missing login"])(
     "does not cache %s or start an unauthenticated request",
     async (reason) => {
       const t = await fixture()
-      if (reason === "storage failure") spawn.mockRejectedValueOnce(new Error("synthetic secure-store failure"))
-      else native.delete("127.0.0.1")
+      if (reason === "storage failure") faults.push(() => Effect.fail(new Error("synthetic secure-store failure")))
+      else await t.client.session.keyring("delete", t.origin)
       await expect(t.client.request("GET", "/api/user")).rejects.toMatchObject({
         code: reason === "storage failure" ? "credential_storage_failed" : "not_signed_in"
       })
       expect(t.received).toEqual([])
-      native.set("127.0.0.1", "synthetic-keyring-value")
+      await t.client.session.keyring("set", t.origin, "synthetic-keyring-value")
       await t.client.request("GET", "/api/user")
       await t.client.request("GET", "/api/user")
       expect(t.gets()).toBe(2)
@@ -250,7 +310,7 @@ describe("per-command authenticated credential reuse (#3396)", () => {
   it("explicit tokens and anonymous calls bypass and do not replace the saved-session resolution", async () => {
     const t = await fixture()
     await t.client.request("GET", "/api/user")
-    t.keyring.mockRejectedValue(storageFailure())
+    persistentFault = () => Effect.fail(storageFailure())
     t.allow("synthetic-explicit")
     t.route("/public", (_request, response) => {
       response.end("{}")
@@ -295,7 +355,7 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     async (action) => {
       const t = await fixture(), peer = new Session(t.environment)
       await t.client.request("GET", "/api/user")
-      spawn.mockRejectedValueOnce(new Error("synthetic mutation failure"))
+      faults.push(() => Effect.fail(new Error("synthetic mutation failure")))
       await expect(action === "save" ? peer.save(t.origin, "synthetic-unsaved") : peer.clear(t.origin))
         .rejects.toMatchObject({ code: "credential_storage_failed" })
       await t.client.request("GET", "/api/recovery")
@@ -306,12 +366,12 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     }
   )
 
-  it("native host mutation invalidates another home's cached native credential", async () => {
+  it("another auth store cannot invalidate or overwrite a cached native credential", async () => {
     const t = await fixture(), other = await fixture()
     await t.client.request("GET", "/api/user")
     await other.client.session.save(t.origin, "synthetic-shared-native-rotation")
     await t.client.request("GET", "/api/user")
-    expect(t.gets()).toBe(2)
+    expect(t.gets()).toBe(1)
     expect(t.received.every((request) => request.authenticated)).toBe(true)
   })
 
@@ -320,12 +380,11 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     t.environment.SMITHERS_DISABLE_SYSTEM_KEYRING = "1"
     t.allow("synthetic-file-only")
     await t.client.session.save(t.origin, "synthetic-file-only")
-    const resolve = vi.spyOn(t.client.session, "require")
     await t.client.request("GET", "/api/user")
     await other.client.session.save(t.origin, "synthetic-native-other-home")
     await t.client.request("GET", "/api/user")
-    expect(resolve).toHaveBeenCalledTimes(1)
-    expect(spawn.mock.calls.filter(([, args]) => args[0] === "find-generic-password")).toHaveLength(0)
+    expect(t.client.session.requires).toBe(1)
+    expect(calls.filter(([, args]) => isGet(args))).toHaveLength(0)
   })
 
   it("a file-only cache is fenced by pending native logout sharing only its auth file", async () => {
@@ -341,12 +400,11 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     })
     expect(peer.configPath).not.toBe(t.client.session.configPath)
     expect(peer.authPath).toBe(t.client.session.authPath)
-    spawn.mockImplementationOnce(async () => {
+    faults.push(fault(async (...args) => {
       entered.resolve()
       await release.promise
-      native.delete("127.0.0.1")
-      return output()
-    })
+      return Effect.runPromise(live(...args))
+    }))
     const clearing = peer.clear(t.origin)
     try {
       await entered.promise
@@ -371,7 +429,6 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     t.environment.SMITHERS_DISABLE_SYSTEM_KEYRING = "1"
     t.allow("synthetic-file-original")
     await t.client.session.save(t.origin, "synthetic-file-original")
-    const require = vi.spyOn(t.client.session, "require")
     await t.client.request("GET", "/api/user")
     t.disallow("synthetic-file-original")
     t.allow("synthetic-file-replacement")
@@ -380,28 +437,28 @@ describe("per-command authenticated credential reuse (#3396)", () => {
       JSON.stringify({ api_url: t.origin, token: "synthetic-file-replacement" })
     )
     await t.client.request("GET", "/api/user")
-    expect(require).toHaveBeenCalledTimes(2)
+    expect(t.client.session.requires).toBe(2)
     const contents = await readFile(t.client.session.authPath, "utf8")
     const replacement = join(t.home, "replacement-auth.json")
     await writeFile(replacement, contents)
     await rename(replacement, t.client.session.authPath)
     await t.client.request("GET", "/api/user")
     await t.client.request("GET", "/api/user")
-    expect(require).toHaveBeenCalledTimes(3)
+    expect(t.client.session.requires).toBe(3)
     expect(t.received).toHaveLength(4)
     expect(t.received.every((request) => request.authenticated)).toBe(true)
   })
 
-  it("changing native storage mode replaces the resolution without reusing the other source", async () => {
+  it("explicit file credentials stay authoritative across native storage mode changes", async () => {
     const t = await fixture()
     await writeFile(t.client.session.authPath, JSON.stringify({ api_url: t.origin, token: "synthetic-mode-file" }))
     t.allow("synthetic-mode-file")
     const sources: boolean[] = []
     for (
-      const [path, expected] of [["/api/native", "synthetic-keyring-value"], ["/api/file", "synthetic-mode-file"], [
+      const [path, expected] of [["/api/native", "synthetic-mode-file"], ["/api/file", "synthetic-mode-file"], [
         "/api/native-again",
-        "synthetic-keyring-value"
-      ], ["/api/reuse", "synthetic-keyring-value"]]
+        "synthetic-mode-file"
+      ], ["/api/reuse", "synthetic-mode-file"]]
     ) {
       t.route(path!, (request, response) => {
         const matches = request.headers.authorization === `token ${expected}`
@@ -409,22 +466,21 @@ describe("per-command authenticated credential reuse (#3396)", () => {
         response.writeHead(matches ? 200 : 401).end("{}")
       })
     }
-    const require = vi.spyOn(t.client.session, "require")
     await t.client.request("GET", "/api/native")
     t.environment.SMITHERS_DISABLE_SYSTEM_KEYRING = "1"
     await t.client.request("GET", "/api/file")
     delete t.environment.SMITHERS_DISABLE_SYSTEM_KEYRING
     await t.client.request("GET", "/api/native-again")
     await t.client.request("GET", "/api/reuse")
-    expect(require).toHaveBeenCalledTimes(3)
-    expect(spawn.mock.calls.filter(([, args]) => args[0] === "find-generic-password")).toHaveLength(2)
+    expect(t.client.session.requires).toBe(3)
+    expect(calls.filter(([, args]) => isGet(args))).toHaveLength(0)
     expect(t.received.every((request) => request.authenticated)).toBe(true)
     expect(sources).toEqual([true, true, true, true])
   })
 
   it.each(["rotation", "sign-out"])("a held old lookup cannot publish after separate-Session %s", async (mutation) => {
     const t = await fixture(), peer = new Session(t.environment), lookup = deferred<ReturnType<typeof output>>()
-    spawn.mockReturnValueOnce(lookup.promise)
+    faults.push(hold(lookup.promise))
     const requesting = t.client.request("GET", "/api/user").then(() => "sent", (cause) => cause.code)
     if (mutation === "rotation") await peer.save(t.origin, "synthetic-later-login")
     else await peer.clear(t.origin)
@@ -438,12 +494,14 @@ describe("per-command authenticated credential reuse (#3396)", () => {
   it("fences a held lookup while native mutation is still pending, then recovers after commit", async () => {
     const t = await fixture(), peer = new Session(t.environment), lookup = deferred<ReturnType<typeof output>>()
     const mutationEntered = deferred(), releaseMutation = deferred()
-    spawn.mockReturnValueOnce(lookup.promise).mockImplementationOnce(async (_command, _args, options) => {
-      mutationEntered.resolve()
-      await releaseMutation.promise
-      native.set("127.0.0.1", options.env.SMITHERS_CRED_TOKEN!)
-      return output()
-    })
+    faults.push(
+      hold(lookup.promise),
+      fault(async (...args) => {
+        mutationEntered.resolve()
+        await releaseMutation.promise
+        return Effect.runPromise(live(...args))
+      })
+    )
     const requesting = t.client.request("GET", "/api/user").then(() => "sent", (cause) => cause.code)
     const changing = peer.save(t.origin, "synthetic-after-pending-mutation")
     await mutationEntered.promise
@@ -462,25 +520,22 @@ describe("per-command authenticated credential reuse (#3396)", () => {
 
   it("fences auth mutation in the final microtask between credential resolution and HTTP admission", async () => {
     const t = await fixture(), peer = new Session(t.environment), entered = deferred(), release = deferred()
-    spawn.mockResolvedValueOnce(output("synthetic-keyring-value")).mockImplementationOnce(
-      async (_command, _args, options) => {
+    faults.push(
+      live,
+      fault(async (...args) => {
         entered.resolve()
         await release.promise
-        native.set("127.0.0.1", options.env.SMITHERS_CRED_TOKEN!)
-        return output()
-      }
+        return Effect.runPromise(live(...args))
+      })
     )
     let reads = 0, changing: Promise<unknown> | undefined
-    const readIdentity = t.client.session.credentialIdentity.bind(t.client.session)
-    vi.spyOn(t.client.session, "credentialIdentity").mockImplementation((origin) => {
-      const result = readIdentity(origin)
+    t.client.session.identityRead = () => {
       if (++reads === 2) {
         queueMicrotask(() => {
           changing = peer.save(t.origin, "synthetic-final-gap-login")
         })
       }
-      return result
-    })
+    }
     try {
       const requesting = t.client.request("GET", "/api/user").then(() => "sent", (cause) => cause.code)
       await entered.promise
@@ -494,20 +549,18 @@ describe("per-command authenticated credential reuse (#3396)", () => {
 
   it("bounds continuous pre-HTTP login churn and permits recovery after the churn ends", async () => {
     const t = await fixture(), peer = new Session(t.environment)
-    const original = spawn.getMockImplementation()!
     let lookups = 0
-    spawn.mockImplementation(async (command, args, options) => {
-      if (args[0] !== "find-generic-password") return original(command, args, options)
-      const old = native.get("127.0.0.1")!
-      await peer.save(t.origin, `synthetic-churn-${++lookups}`)
-      return output(old)
+    persistentFault = fault(async (...args) => {
+      const result = await Effect.runPromise(live(...args))
+      if (isGet(args[1])) await peer.save(t.origin, `synthetic-churn-${++lookups}`)
+      return result
     })
     await expect(t.client.request("GET", "/api/no-churning-request")).rejects.toMatchObject({
       code: "credentials_changing"
     })
     expect(lookups).toBe(3)
     expect(t.received).toEqual([])
-    spawn.mockImplementation(original)
+    persistentFault = undefined
     await t.client.request("GET", "/api/recovery")
     expect(t.gets()).toBe(4)
     expect(t.received[0]?.authenticated).toBe(true)
@@ -579,14 +632,14 @@ describe("per-command authenticated credential reuse (#3396)", () => {
 
   it("one cancelled waiter does not cancel another waiting on the same native lookup", async () => {
     const t = await fixture(), lookup = deferred<ReturnType<typeof output>>(), caller = new AbortController()
-    spawn.mockReturnValueOnce(lookup.promise)
+    faults.push(hold(lookup.promise))
     const cancelled = t.client.response("GET", "/api/cancelled", undefined, { signal: caller.signal }).catch((cause) =>
       cause.code
     )
     const live = t.client.request("GET", "/api/live")
     caller.abort()
     expect(await cancelled).toBe("cancelled")
-    expect(spawn.mock.calls[0]![2].signal?.aborted).toBe(false)
+    expect(calls[0]![2].signal?.aborted).toBe(false)
     lookup.resolve(output("synthetic-keyring-value"))
     await live
     await t.client.request("GET", "/api/reuse")
@@ -596,13 +649,13 @@ describe("per-command authenticated credential reuse (#3396)", () => {
 
   it("last-waiter abort evicts and signals the native lookup; its late rejection cannot evict recovery", async () => {
     const t = await fixture(), lookup = deferred<ReturnType<typeof output>>(), caller = new AbortController()
-    spawn.mockReturnValueOnce(lookup.promise)
+    faults.push(hold(lookup.promise))
     const cancelled = t.client.response("GET", "/api/cancelled", undefined, { signal: caller.signal }).catch((cause) =>
       cause.code
     )
     caller.abort()
     expect(await cancelled).toBe("cancelled")
-    expect(spawn.mock.calls[0]![2].signal?.aborted).toBe(true)
+    expect(calls[0]![2].signal?.aborted).toBe(true)
     await t.client.request("GET", "/api/recovery")
     lookup.reject(new Refused({ fault: "user", code: "cancelled", message: "synthetic native lookup cancelled" }))
     await new Promise<void>((done) => setImmediate(done))
@@ -611,15 +664,16 @@ describe("per-command authenticated credential reuse (#3396)", () => {
     expect(t.received.map((request) => request.path)).toEqual(["/api/recovery", "/api/reuse"])
   })
 
-  it("owned native cancellation remains cancellation instead of authenticating through a fallback file", async () => {
+  it("owned native cancellation remains cancellation instead of falling back to config", async () => {
     const t = await fixture(), caller = new AbortController()
-    await writeFile(t.client.session.authPath, JSON.stringify({ api_url: t.origin, token: "synthetic-fallback" }))
+    t.client.session.saveConfig({ api_origin: t.origin, token: "synthetic-fallback" })
     const cancelled = new Refused({ fault: "user", code: "cancelled", message: "synthetic native lookup cancelled" })
-    spawn.mockImplementationOnce((_command, _args, options) =>
+    faults.push(fault((_command, _args, options) =>
       new Promise((_done, failed) => {
-        options.signal!.addEventListener("abort", () => failed(cancelled), { once: true })
+        if (options.signal!.aborted) failed(cancelled)
+        else options.signal!.addEventListener("abort", () => failed(cancelled), { once: true })
       })
-    )
+    ))
     const resolving = t.client.session.resolve(t.origin, caller.signal)
     caller.abort()
     await expect(resolving).rejects.toBe(cancelled)
@@ -671,7 +725,7 @@ describe("terminal credential files (#3537)", () => {
       (await new Session({ ...f.environment, SMITHERS_TOKEN_FILE: path, SMITHERS_TOKEN: "synthetic-env-value" })
         .require()).source
     ).toBe("env")
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
     expect((await session.clear()).env_active).toBe(true)
   })
 
@@ -694,7 +748,7 @@ describe("terminal credential files (#3537)", () => {
     } finally {
       await chmod(path, 0o600)
     }
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("resolves a managed terminal only from its session file, whatever the environment says", async () => {
@@ -710,7 +764,7 @@ describe("terminal credential files (#3537)", () => {
         f.origin
       )
     )
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("refuses explicit bearer and case-insensitive Authorization overrides before HTTP admission", async () => {
@@ -732,7 +786,7 @@ describe("terminal credential files (#3537)", () => {
       })
     }
     expect(f.received).toEqual([])
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("refuses a managed session without its path even with a valid saved or environment credential", async () => {
@@ -752,7 +806,7 @@ describe("terminal credential files (#3537)", () => {
       await expect(client.response("POST", "/probe", {})).rejects.toMatchObject({ code: "token_file_unavailable" })
     }
     expect(f.received).toEqual([])
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("keeps managed sessions bound to the host bridge when configuration or request options select another origin", async () => {
@@ -796,7 +850,7 @@ describe("terminal credential files (#3537)", () => {
     await expect(a.response("POST", "/probe", {})).rejects.toMatchObject({ code: "token_file_unavailable" })
     expect(f.received.length).toBe(before)
     expect(f.received.filter(({ method }) => method === "POST")).toHaveLength(1)
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("keeps malformed managed paths bound and refuses environment identity overrides", async () => {
@@ -816,7 +870,7 @@ describe("terminal credential files (#3537)", () => {
       })
       await expect(session.require()).rejects.toMatchObject({ code: "token_file_unavailable" })
     }
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 
   it("reads the backend from SMITHERS_URL, the variable a signed-in terminal sets", async () => {
@@ -861,7 +915,7 @@ describe("terminal credential files (#3537)", () => {
     await expect(a.response("GET", "/probe")).rejects.toMatchObject({ status: 401 })
     await expect(a.response("POST", "/probe", {})).rejects.toMatchObject({ code: "token_file_unavailable" })
     expect(f.received.filter(({ method }) => method === "POST")).toHaveLength(1)
-    expect(spawn).not.toHaveBeenCalled()
+    expect(calls).toHaveLength(0)
   })
 })
 

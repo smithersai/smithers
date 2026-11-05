@@ -319,11 +319,11 @@ export class Client {
     stdout: Redaction.lineRedactor(this.outputRules),
     stderr: Redaction.lineRedactor(this.outputRules)
   }
-  constructor(runtime: Runtime = {}, live = false) {
+  constructor(runtime: Runtime = {}, live = false, session?: Session) {
     this.runtime = runtime
     this.live = live
     this.env = runtime.environment ?? process.env
-    this.session = new Session(this.env)
+    this.session = session ?? new Session(this.env)
   }
   get home() {
     return this.env.HOME || homedir()

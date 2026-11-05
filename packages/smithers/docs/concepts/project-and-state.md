@@ -151,6 +151,23 @@ Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
 and `CEREBRAS_API_KEY`) are not in this set. The seat resolver reads them, not
 the CLI, and `smthrs doctor` reports which are present.
 
+## Saved CLI logins
+
+`SMITHERS_AUTH_FILE` selects a credential store; its default is
+`$HOME/.config/smithers/auth.json`. Native keyring entries are scoped to the
+canonical file path and the complete API origin, including scheme and port.
+Two stores can log in simultaneously to the same API without replacing each
+other. Relative paths and symlinked parents that reach the same file share a
+store. Logout clears only that store's entry.
+
+An explicit token in the auth file takes precedence over a stale native
+entry. Legacy hostname-only keyring entries are read only for an unversioned
+record at the OS account's original default location, bound to the exact API
+origin. Changing `HOME` or selecting another file never claims that legacy
+login. Reading does not migrate or write credentials; the next explicit login
+writes the scoped v2 record. Logout of an eligible legacy record also clears
+its legacy entry. Custom stores never delete it.
+
 ## Planning failures
 
 A loaded flow whose graph cannot be built or compiled fails planning with
