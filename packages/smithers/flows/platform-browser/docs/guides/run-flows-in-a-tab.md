@@ -167,13 +167,20 @@ drain pending bytes first. The database format, `synchronous = FULL` and every
 SQLite sync call stay intact. A failed host write fails subsequent operations
 on that file until it closes.
 
+`BrowserSqlite.open` reads back `PRAGMA synchronous` before lending a connection
+and refuses any mode other than `FULL` (2), including on a nonexclusive VFS.
+A refused configuration reports the existing journal-stage diagnostic and the
+scope releases the connection.
+
 Pool disposal drops an unsynced buffered tail. Every acknowledged `FULL`
 commit has already drained and flushed its bytes; SQLite's normal file close
 also drains before releasing the file.
 
 `test/browser/WalWrites.test.ts` counts real OPFS writes for a fixed 128-row
-transaction, checks the complete values and SQLite integrity, then kills the
-worker with uncommitted writes and reopens its files. Its operation-count gate
+transaction and kills the worker at its commit acknowledgment, before any next
+SQL call or close can drain the buffer. Reopening checks every value and SQLite
+integrity; a second worker crash checks uncommitted writes. Removing the `jSync`
+drain loses acknowledged rows and fails this test. Its operation-count gate
 does not depend on a fast machine. `test/WalBuffer.test.ts` exercises bounded
 buffers, reused byte views, file visibility and injected host failures over
 real files; the existing browser durability suite covers engine recovery.

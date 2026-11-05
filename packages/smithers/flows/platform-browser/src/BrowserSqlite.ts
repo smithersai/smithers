@@ -322,15 +322,21 @@ export const open = (filename: string): Effect.Effect<Database, SqlError, Sqlite
       ),
       (db) => Effect.promise(() => sqlite3.close(db))
     )
-    if (exclusive === true) {
-      yield* StorageDiagnostics.observe(
-        "journal",
-        Effect.tryPromise({
-          try: () => Statements.runAll({ sqlite3, db }, JOURNAL, [], "array"),
-          catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
-        })
-      )
-    }
+    yield* StorageDiagnostics.observe(
+      "journal",
+      Effect.tryPromise({
+        try: async () => {
+          if (exclusive === true) await Statements.runAll({ sqlite3, db }, JOURNAL, [], "array")
+          // A PRAGMA may succeed without applying the requested mode. Buffered WAL commits rely on FULL's
+          // jSync boundary, so refuse the connection before any caller can acknowledge a less durable write.
+          const { rows } = await Statements.runAll({ sqlite3, db }, "PRAGMA synchronous", [], "array")
+          if ((rows[0] as ReadonlyArray<unknown> | undefined)?.[0] !== 2) {
+            throw new Error("SQLite synchronous must be FULL")
+          }
+        },
+        catch: (cause) => Statements.failed(cause, "Failed to journal database", "connect")
+      })
+    )
     return { sqlite3, db }
   })
 

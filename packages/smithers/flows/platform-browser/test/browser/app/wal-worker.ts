@@ -1,4 +1,4 @@
-/** Counts real OPFS writes, and leaves an uncommitted transaction for a worker-crash recovery check. */
+/** Acknowledges a commit before any later SQL can drain its WAL; also exercises an uncommitted worker crash. */
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
@@ -38,6 +38,8 @@ const program = Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     if (mode === "write") {
       yield* sql`CREATE TABLE data (id INTEGER PRIMARY KEY, value TEXT NOT NULL)`
+      const journal = yield* sql`PRAGMA journal_mode`
+      const synchronous = yield* sql`PRAGMA synchronous`
       writes = 0
       syncs = 0
       yield* sql.withTransaction(
@@ -47,20 +49,22 @@ const program = Effect.gen(function*() {
           { discard: true }
         )
       )
+      // This is the commit acknowledgment. No read, size check, next transaction or scope close may flush
+      // buffered bytes before the parent terminates us. Only jSync can make this acknowledged tail durable.
+      self.postMessage({ committed: true, writes, syncs, journal, synchronous })
+      return yield* Effect.never
     }
-    const cost = { writes, syncs }
+    if (mode === "uncommitted") {
+      yield* sql`BEGIN IMMEDIATE`
+      yield* sql`UPDATE data SET value = ${"uncommitted".repeat(1024)}`
+      self.postMessage({ uncommitted: true })
+      return yield* Effect.never
+    }
     const rows = yield* sql<{ id: number; value: string }>`SELECT id, value FROM data ORDER BY id`
     const valid = rows.length === 128 &&
       rows.every((row, id) => row.id === id && row.value === String(id).padStart(4, "0") + "x".repeat(1020))
     const integrity = yield* sql`PRAGMA integrity_check`
-    const journal = yield* sql`PRAGMA journal_mode`
-    const synchronous = yield* sql`PRAGMA synchronous`
-    if (mode === "write") {
-      // Force dirty pages through SQLite before killing the worker, without acknowledging their commit.
-      yield* sql`BEGIN IMMEDIATE`
-      yield* sql`UPDATE data SET value = ${"uncommitted".repeat(1024)}`
-    }
-    self.postMessage({ ...cost, valid, integrity, journal, synchronous })
+    self.postMessage({ valid, integrity })
     return yield* Effect.never
   }).pipe(Effect.provide(BrowserSqlite.layer({ filename: "test.db" }).pipe(Layer.provide(sqlite))))
 })
