@@ -1,7 +1,8 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, realpathSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
-import { join, resolve } from "node:path"
+import { tmpdir } from "node:os"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { test } from "node:test"
 import { pathToFileURL } from "node:url"
 import { createVitest } from "vitest/node"
@@ -9,9 +10,7 @@ import { createVitest } from "vitest/node"
 for (const fails of [false, true]) {
   for (const shared of [false, true]) {
     test(`test scratch and ${shared ? "shared" : "owned"} loader caches after ${fails ? "failure" : "success"}`, async () => {
-      const parent = resolve(".cache")
-      mkdirSync(parent, { recursive: true })
-      const root = mkdtempSync(join(parent, "process-cache-cleanup-"))
+      const root = mkdtempSync(join(realpathSync(tmpdir()), "process-cache-cleanup-"))
       const before = [process.env.NODE_COMPILE_CACHE, process.env.TMPDIR, process.env.TMP, process.env.TEMP]
       const compileCache = shared ? join(root, "outer-node-compile-cache") : undefined
       const require = createRequire(import.meta.resolve("vitest/package.json"))
@@ -21,6 +20,7 @@ for (const fails of [false, true]) {
       let runner
       let owned
       try {
+        symlinkSync(resolve("node_modules"), join(root, "node_modules"), "junction")
         if (compileCache === undefined) delete process.env.NODE_COMPILE_CACHE
         else process.env.NODE_COMPILE_CACHE = compileCache
         writeFileSync(join(root, "fixture.ts"), "const answer: number = 42; console.log(answer)")
@@ -66,6 +66,8 @@ for (const fails of [false, true]) {
         })
         await runner.start()
         owned = readFileSync(receipt, "utf8")
+        const path = relative(realpathSync(new URL("../../../", import.meta.url)), realpathSync(root))
+        assert.ok(path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path), "test fixtures must stay outside workspace discovery")
         assert.equal(runner.state.getCountOfFailedTests() > 0, fails)
         assert.equal(existsSync(join(owned, "fixture-leftover")), true)
       } finally {

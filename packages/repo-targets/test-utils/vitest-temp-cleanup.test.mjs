@@ -1,19 +1,19 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
-import { join, resolve } from "node:path"
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { test } from "node:test"
 import { createVitest } from "vitest/node"
 import { registerRootCleanup } from "./vitest-root-temp.mjs"
 
 for (const fails of [false, true]) {
   test(`Vitest removes root SSR transforms after ${fails ? "failure" : "success"}`, async () => {
-    const parent = resolve(".cache")
-    mkdirSync(parent, { recursive: true })
-    const root = mkdtempSync(join(parent, "vitest-cleanup-"))
+    const root = mkdtempSync(join(realpathSync(tmpdir()), "vitest-cleanup-"))
     const previousExitCode = process.exitCode
     let runner
     let scratch
     try {
+      symlinkSync(resolve("node_modules"), join(root, "node_modules"), "junction")
       writeFileSync(
         join(root, "case.test.js"),
         `import { test, expect } from 'vitest'; test('real transform', () => expect(1).toBe(${fails ? 2 : 1}));`
@@ -33,6 +33,8 @@ for (const fails of [false, true]) {
       assert.equal(typeof scratch, "string")
       await runner.start()
       assert.equal(existsSync(join(scratch, "ssr")), true, "exercise actual disk transforms")
+      const path = relative(realpathSync(new URL("../../../", import.meta.url)), realpathSync(root))
+      assert.ok(path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path), "test fixtures must stay outside workspace discovery")
       assert.equal(runner.state.getCountOfFailedTests() > 0, fails)
     } finally {
       try {
@@ -47,9 +49,7 @@ for (const fails of [false, true]) {
 }
 
 test("root cleanup refuses a directory outside the current temporary owner", async () => {
-  const parent = resolve(".cache")
-  mkdirSync(parent, { recursive: true })
-  const root = mkdtempSync(join(parent, "vitest-ownership-"))
+  const root = mkdtempSync(join(realpathSync(tmpdir()), "vitest-ownership-"))
   const foreign = join(root, "foreign")
   mkdirSync(foreign)
   const keys = ["TMPDIR", "TMP", "TEMP"]
@@ -61,6 +61,7 @@ test("root cleanup refuses a directory outside the current temporary owner", asy
       else process.env[key] = previous[index]
     })
   try {
+    symlinkSync(resolve("node_modules"), join(root, "node_modules"), "junction")
     runner = await createVitest("test", { config: false, root, watch: false, reporters: [] })
     for (const key of keys) process.env[key] = foreign
     assert.throws(() => registerRootCleanup(runner), /root scratch ownership/)

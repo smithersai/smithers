@@ -1,15 +1,13 @@
 import assert from "node:assert/strict"
-import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
-import { join, resolve } from "node:path"
+import { isAbsolute, join, relative, resolve, sep } from "node:path"
 import { test } from "node:test"
 import { createVitest } from "vitest/node"
 
 for (const [fails, preserve] of [[false, false], [true, false], [false, true]]) {
   test(`coverage ${preserve ? "at an explicit destination is kept" : "scratch is removed"} after ${fails ? "failed" : "passed"} tests`, async () => {
-    const parent = resolve(".cache")
-    mkdirSync(parent, { recursive: true })
-    const root = mkdtempSync(join(parent, "coverage-cleanup-"))
+    const root = mkdtempSync(join(realpathSync(tmpdir()), "coverage-cleanup-"))
     const reportsDirectory = preserve
       ? join(root, "reports")
       : join(tmpdir(), `flows-cleanup-contract-${fails}-coverage-${process.pid}`)
@@ -17,6 +15,7 @@ for (const [fails, preserve] of [[false, false], [true, false], [false, true]]) 
     let runner
     let wroteReports = false
     try {
+      symlinkSync(resolve("node_modules"), join(root, "node_modules"), "junction")
       writeFileSync(join(root, "value.js"), "export const value = 1;")
       writeFileSync(
         join(root, "case.test.js"),
@@ -43,6 +42,8 @@ for (const [fails, preserve] of [[false, false], [true, false], [false, true]]) 
       })
       await runner.start()
       wroteReports = existsSync(join(reportsDirectory, "coverage-final.json"))
+      const path = relative(realpathSync(new URL("../../../", import.meta.url)), realpathSync(root))
+      assert.ok(path === ".." || path.startsWith(`..${sep}`) || isAbsolute(path), "test fixtures must stay outside workspace discovery")
     } finally {
       try {
         await runner?.close()
