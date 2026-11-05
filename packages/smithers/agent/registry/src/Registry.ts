@@ -21,7 +21,7 @@ import {
   retiredProjectFlowsDirectory,
   type Source
 } from "./Descriptor.ts"
-import { Discovery, layer as discoveryLayer } from "./Discovery.ts"
+import { Discovery, layer as discoveryLayer, type SkillSource } from "./Discovery.ts"
 import type * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
 import { readVerifiedBody } from "./internal/Body.ts"
 import * as MarkdownFlow from "./MarkdownFlow.ts"
@@ -565,6 +565,8 @@ export interface ProjectOptions {
   readonly snapshots?: ExecutionSnapshot.Service | undefined
   /** The project root. `<root>/.smithers/flows` is scanned for `flow.ts`, `flow.mdx` and `SKILL.md`. */
   readonly root: string
+  /** Additional workspace-relative skill libraries, scanned after project flows in declared order. */
+  readonly skills?: ReadonlyArray<string | { readonly root: string }> | undefined
   /** Installed packs, scanned after project flows and checked against `runtimeVersion`. */
   readonly packs?: PackConfig | undefined
 }
@@ -591,12 +593,43 @@ export const projectSource = (
 })
 
 /**
+ * Orders project flows before declared skill libraries. Library roots stay
+ * within the project, including through symbolic links during discovery.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const projectSources = (
+  path: Path.Path,
+  options: ProjectOptions
+): ReadonlyArray<Source> => [
+  projectSource(path, options.root),
+  ...(options.skills ?? []).map((library): SkillSource => {
+    const root = typeof library === "string" ? library : library.root
+    if (
+      typeof root !== "string" || root.trim() === "" || /^([/\\]|[A-Za-z]:)/.test(root) ||
+      [...root].some((character) => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127) ||
+      root.split(/[/\\]/).includes("..")
+    ) {
+      throw new TypeError("Project skill roots must be workspace-relative directories")
+    }
+    return {
+      source: "project-skills",
+      root: path.join(options.root, ...root.trim().split(/[/\\]/)),
+      naming: "frontmatter",
+      skills: true,
+      confinementRoot: options.root,
+      lockfileRoot: options.root
+    }
+  })
+]
+
+/**
  * Provides a project's refreshable registry using portable discovery.
  *
- * Scans `<root>/.smithers/flows` first, then installed packs with their
- * provenance, compatibility checks, and local-pack precedence. Project flows
- * shadow pack flows of the same name. Every refresh rescans both sources and
- * packs. Flows left in a root `flows/` never load; the scan reports one
+ * Scans `<root>/.smithers/flows` first, then declared skill libraries, then
+ * installed packs with their provenance and compatibility checks. Project
+ * flows shadow skills and packs of the same name; earlier libraries shadow
+ * later ones. Every refresh rescans all sources and packs. Flows left in a root `flows/` never load; the scan reports one
  * `retired_root` warning instead.
  *
  * The project source remains configured when `.smithers/flows/` is absent.
@@ -616,7 +649,7 @@ export const layerProject = (
       const path = yield* Path.Path
       return layer({
         snapshots: options.snapshots,
-        sources: [projectSource(path, options.root)],
+        sources: projectSources(path, options),
         ...(options.packs === undefined ? {} : { packs: options.packs })
       }).pipe(Layer.provide(discoveryLayer))
     })
