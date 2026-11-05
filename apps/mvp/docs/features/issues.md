@@ -229,7 +229,9 @@ device store and syncs as it always does; the first paint only stands in until t
 
 The boot timeline marks `smithers.first_paint.painted` and how the paint ended (`handed_over`, `deadline`, `wipe`,
 `person_mismatch`, ...), plus `hand_over_waiting` and `hand_over_ready` when boot arrives before the lock grant,
-never a title or a person. Direct issue reads use
+never a title or a person. The terminal mark is committed before cleanup and carries the previous state, triggering
+boundary and whether the node was connected. The smoke attaches these marks on every run: a `none` from `pending`
+means the shell never painted; an authorized early title can still render (decision 0152). Direct issue reads use
 `issues.read` spans, `issues.search` logs and `smithers_issue_reads` counts with `purpose=issue`; list searches use
 `purpose=search`. The pending shell and its hold are boot/privacy infrastructure, so they remain in core;
 UI uses the catalog's `@smthrs/ui` entry without adding a library. Direct issue reads wait for restored repository

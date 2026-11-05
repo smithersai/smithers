@@ -114,3 +114,25 @@ This belongs to the existing first-paint core boundary because it runs before th
 existing issues HTTP client and the catalog's persisted-collection/data-gate libraries (`@smthrs/effect-tanstack-db`),
 not a second issues store. `issues.search.early` and `issues_early_search_reads` record duration and outcome without
 search text. `issues.search.paint` and `issues_early_search_paints` record gate decisions. The shell marks when it accepted input on the boot timeline.
+
+
+## Terminal evidence and the smoke contract (2026-11-05)
+
+The shell commits its one terminal performance mark before removing its node or running teardown callbacks. The
+mark's content-free detail names the previous state (`pending` or `painted`), the triggering boundary (router, DOM,
+response, request, lock, session, storage, lifecycle, timer, search, release or revocation), and whether the node
+was connected. A detached slot is distinguishable from a shell-directed removal, and a refused read from a paint.
+Reentrant revocation cannot add a second terminal mark.
+
+The issue smoke accepts the shell's title **or** the authorized early issue read (the 2026-11-04 rule above). Therefore
+absence of `#first-paint` does not establish that it was removed: a permitted empty shell response ends as `none`
+without painting. The smoke requires exactly one terminal mark; `none` is valid only from `pending`, with no paint
+mark or connected node. If it painted, only navigation or hand-over satisfies this navigation test. Wipe, expiry,
+revocation, missing records and duplicate outcomes still fail. Every run attaches the first-paint timeline even on
+failure, without page content, URLs or identities. No retry or assertion delay is needed.
+
+The 2026-11-05 production failure supplied only a zero count for navigation/hand-over, so its precise terminal path
+cannot be recovered from that excerpt. Native Chromium regressions reproduce both the zero-count empty-response case
+(using a failed Effect read service through the real HTTP response contract) and the old removal-before-mark order.
+This changes the existing boot/privacy boundary, using its browser host and Effect service contract; no new library,
+plugin, data store or runtime is introduced.
