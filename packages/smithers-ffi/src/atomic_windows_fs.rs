@@ -365,6 +365,10 @@ pub(super) fn run(
     }
     let options = &request["options"];
     match operation {
+        "syncDirectory" => {
+            directory(&root, &confined(&root, request, field(request, "path")?)?, false)?.sync()?;
+            Ok(Value::Null)
+        }
         "exists" | "stat" | "realPath" => {
             let path = field(request, "path")?;
             let parts = confined(&root, request, path)?;

@@ -78,6 +78,7 @@ fn exchange(
 pub(super) fn syscall(operation: &str) -> &'static str {
     match operation {
         "readFile" | "readFileString" | "writeFile" | "writeFileString" | "digest" => "open",
+        "syncDirectory" => "fsync",
         "exists" => "access",
         "stat" => "stat",
         "readLink" => "readlink",

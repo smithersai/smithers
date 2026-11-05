@@ -578,6 +578,10 @@ fn run(request: &Value, content_limit: usize, response_limit: usize) -> io::Resu
     }
     let options = &request["options"];
     match operation {
+        "syncDirectory" => {
+            directory(&root, &confined(request, field(request, "path")?)?, false, 0)?.sync_all()?;
+            Ok(Value::Null)
+        }
         "exists" | "stat" | "realPath" => {
             let path = field(request, "path")?;
             let parts = confined(request, path)?;

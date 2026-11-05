@@ -82,7 +82,18 @@ const reasons: Record<string, PlatformError.SystemErrorTag | undefined> = {
  * @private
  * @since 1.0.0
  */
-export type FramedRequest = KernelFileSystem.AtomicRequest | KernelFileSystem.AtomicBatchRequest
+export interface PublicationRequest {
+  readonly operation: "syncDirectory"
+  readonly boundaryRoot: string
+  readonly logicalRoot: string
+  readonly rootIdentity: string
+  readonly path: string
+}
+
+/** Native host operations use the same bounded transport as kernel requests. @internal */
+export type HostRequest = KernelFileSystem.AtomicRequest | PublicationRequest
+
+export type FramedRequest = HostRequest | KernelFileSystem.AtomicBatchRequest
 
 /** The operand a framed request names, for a failure's `pathOrDescriptor`. */
 const operand = (request: FramedRequest): string | undefined =>
@@ -494,7 +505,8 @@ export const convert = <A>(
     request.operation === "chown" ||
     request.operation === "makeDirectory" ||
     request.operation === "remove" ||
-    request.operation === "rename"
+    request.operation === "rename" ||
+    request.operation === "syncDirectory"
   ) {
     if (value !== null) {
       throw atomicHelperFault("result_malformed", `atomic helper returned a non-null ${request.operation} result`)

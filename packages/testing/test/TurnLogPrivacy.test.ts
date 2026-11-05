@@ -9,9 +9,11 @@ import * as TurnLog from "../src/TurnLog.ts"
 describe("TurnLog private publication", () => {
   it.live("does not remember a turn when the private publication service fails", () =>
     Effect.gen(function*() {
+      const native = yield* NodeHost.AtomicFileSystem.ownerPrivate
       const log = yield* TurnLog.make({ file: "turns.jsonl" }).pipe(Effect.provideService(
         NodeHost.AtomicFileSystem.ownerPrivate,
         {
+          ...native,
           append: () =>
             Effect.fail(
               PlatformError.badArgument({ module: "FileSystem", method: "append", description: "faulty publication" })

@@ -6,13 +6,19 @@
  * @since 1.0.0
  */
 
-import type * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import { Effect, type PlatformError } from "effect"
 import { type ChildProcessWithoutNullStreams, spawn } from "node:child_process"
 import { accessSync, constants, lstatSync, readlinkSync, realpathSync, statSync } from "node:fs"
 import { basename, dirname, isAbsolute, join, parse, relative, sep } from "node:path"
 import type { Limits } from "../AtomicFileSystem.ts"
-import { convert, decode, failure, frameHeaderBytes, type HelperResult } from "./AtomicFileSystemProtocol.ts"
+import {
+  convert,
+  decode,
+  failure,
+  frameHeaderBytes,
+  type HelperResult,
+  type HostRequest
+} from "./AtomicFileSystemProtocol.ts"
 import { AtomicHelperError } from "./AtomicHelperError.ts"
 import { atomicHelperFault } from "./AtomicHelperFault.ts"
 
@@ -108,7 +114,7 @@ export const usableExecutable = (configured: string, boundaryRoot: string | unde
  * @since 1.0.0
  */
 export const spawnHelper = <A>(
-  request: KernelFileSystem.AtomicRequest,
+  request: HostRequest,
   executable: string,
   payload: Buffer,
   settings: { readonly limits: Limits; readonly timeoutMs: number }

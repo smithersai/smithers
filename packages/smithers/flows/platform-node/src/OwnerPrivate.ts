@@ -1,19 +1,23 @@
 /** Owner-private native publication, shared by host consumers. @since 1.0.0 */
-import type * as KernelFileSystem from "@smthrs/kernel/FileSystem"
+import type { HostRequest } from "./internal/AtomicFileSystemProtocol.ts"
 import { Effect, type PlatformError } from "effect"
 import { realpath, stat } from "node:fs/promises"
 import { basename, dirname, join, resolve } from "node:path"
 
 /** @since 1.0.0 @category models */
 export interface Service {
+  readonly syncDirectory: (directory: string, identity: string) => Effect.Effect<void, PlatformError.PlatformError>
   readonly append: (file: string, text: string) => Effect.Effect<void, PlatformError.PlatformError>
 }
 
 /** @internal */
 export const make = (
-  execute: (request: KernelFileSystem.AtomicRequest) => Effect.Effect<unknown, PlatformError.PlatformError>,
+  execute: (request: HostRequest) => Effect.Effect<unknown, PlatformError.PlatformError>,
   failure: (path: string, cause: unknown) => PlatformError.PlatformError
 ): Service => ({
+  syncDirectory: (root, identity) => execute({
+    operation: "syncDirectory", boundaryRoot: root, logicalRoot: root, rootIdentity: identity, path: root
+  }).pipe(Effect.asVoid),
   append: (file, text) =>
     Effect.gen(function*() {
       const target = resolve(file)
@@ -37,6 +41,6 @@ export const make = (
         path: join(root, basename(target)),
         data: text,
         options: { flag: "a-private", mode: 0o600 }
-      } as unknown as KernelFileSystem.AtomicRequest)
+      } as unknown as HostRequest)
     })
 })
