@@ -36,18 +36,50 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts",
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
     "./wasm/flows_jj.wasm": "./wasm/flows_jj.wasm",
     "./internal/*": null,
     "./*/index": null,
-    "./Jj": "./src/Jj.ts",
-    "./browser/BrowserJj": "./src/browser/BrowserJj.ts",
+    "./Jj": {
+      "types": "./src/Jj.ts",
+      "vibelang-source": "./src/Jj.ts",
+      "default": "./.vibelang/js/src/Jj.js"
+    },
+    "./browser/BrowserJj": {
+      "types": "./src/browser/BrowserJj.ts",
+      "vibelang-source": "./src/browser/BrowserJj.ts",
+      "default": "./.vibelang/js/src/browser/BrowserJj.js"
+    },
     "./browser/WasiFs": "./src/browser/WasiFs.ts",
-    "./browser/WasiPreview1": "./src/browser/WasiPreview1.ts",
-    "./bun/BunJj": "./src/bun/BunJj.ts",
-    "./index": "./src/index.ts",
-    "./node/NodeJj": "./src/node/NodeJj.ts",
-    "./node/resolveJjBinary": "./src/node/resolveJjBinary.ts"
+    "./browser/WasiPreview1": {
+      "types": "./src/browser/WasiPreview1.ts",
+      "vibelang-source": "./src/browser/WasiPreview1.ts",
+      "default": "./.vibelang/js/src/browser/WasiPreview1.js"
+    },
+    "./bun/BunJj": {
+      "types": "./src/bun/BunJj.ts",
+      "vibelang-source": "./src/bun/BunJj.ts",
+      "default": "./.vibelang/js/src/bun/BunJj.js"
+    },
+    "./index": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    },
+    "./node/NodeJj": {
+      "types": "./src/node/NodeJj.ts",
+      "vibelang-source": "./src/node/NodeJj.ts",
+      "default": "./.vibelang/js/src/node/NodeJj.js"
+    },
+    "./node/resolveJjBinary": {
+      "types": "./src/node/resolveJjBinary.ts",
+      "vibelang-source": "./src/node/resolveJjBinary.ts",
+      "default": "./.vibelang/js/src/node/resolveJjBinary.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -61,7 +93,9 @@
     "THIRD_PARTY_NOTICES.md",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/internal/JjInternalFault.vibe",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
