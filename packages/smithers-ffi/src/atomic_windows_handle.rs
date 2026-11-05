@@ -344,9 +344,8 @@ impl Info {
             "atime": millis(self.basic.LastAccessTime),
             "birthtime": millis(self.basic.CreationTime),
             "dev": self.file.dwVolumeSerialNumber,
-            // Effect's optional numeric inode cannot represent every NTFS ID.
-            // Root identity remains an exact decimal string via identity().
-            "ino": (inode <= 9_007_199_254_740_991).then_some(inode),
+            // JSON numbers cannot carry every NTFS file ID to JavaScript.
+            "ino": inode.to_string(),
             "mode": mode,
             "nlink": self.standard.NumberOfLinks,
             "uid": 0, "gid": 0, "rdev": 0,
@@ -1397,19 +1396,19 @@ mod tests {
     }
 
     #[test]
-    fn optional_numeric_inodes_never_round_an_exact_root_identity() {
+    fn decimal_inodes_retain_the_exact_root_identity() {
         let temporary = tempfile::tempfile().unwrap();
         let mut metadata = info(&temporary).unwrap();
         metadata.file.dwVolumeSerialNumber = 7;
         metadata.file.nFileIndexHigh = 0x20_0000;
         metadata.file.nFileIndexLow = 1;
         assert_eq!(metadata.identity(), "7:9007199254740993");
-        assert!(metadata.stat_json().unwrap()["ino"].is_null());
+        assert_eq!(metadata.stat_json().unwrap()["ino"], "9007199254740993");
         metadata.file.nFileIndexHigh = 0x1f_ffff;
         metadata.file.nFileIndexLow = u32::MAX;
         assert_eq!(
-            metadata.stat_json().unwrap()["ino"].as_u64(),
-            Some(9_007_199_254_740_991)
+            metadata.stat_json().unwrap()["ino"].as_str(),
+            Some("9007199254740991")
         );
     }
 
@@ -1433,7 +1432,7 @@ mod tests {
                 .stat_json()
                 .unwrap();
             let output = std::process::Command::new("node").arg("-e").arg(
-                "const s=require('node:fs').lstatSync(process.argv[1]);console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:s.mtimeMs,atime:s.atimeMs,birthtime:s.birthtimeMs,dev:s.dev,ino:Number.isSafeInteger(s.ino)?s.ino:null,mode:s.mode,nlink:s.nlink,uid:s.uid,gid:s.gid,rdev:s.rdev,size:String(s.size),blksize:String(s.blksize),blocks:s.blocks}))"
+                "const s=require('node:fs').lstatSync(process.argv[1],{bigint:true});console.log(JSON.stringify({type:s.isDirectory()?'Directory':'File',mtime:Number(s.mtimeNs)/1e6,atime:Number(s.atimeNs)/1e6,birthtime:Number(s.birthtimeNs)/1e6,dev:Number(s.dev),ino:String(s.ino),mode:Number(s.mode),nlink:Number(s.nlink),uid:Number(s.uid),gid:Number(s.gid),rdev:Number(s.rdev),size:String(s.size),blksize:String(s.blksize),blocks:Number(s.blocks)}))"
             ).arg(temp.path().join(name)).output().unwrap();
             assert!(
                 output.status.success(),

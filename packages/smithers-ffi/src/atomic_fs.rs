@@ -422,7 +422,7 @@ fn stat_json(stat: libc::stat, birthtime: Option<f64>) -> Value {
     let (mtime_ns, atime_ns) = (stat.st_mtime_nsec, stat.st_atime_nsec);
     json!({ "type":kind, "mtime":stat.st_mtime as f64 * 1000.0 + mtime_ns as f64 / 1_000_000.0,
         "atime":stat.st_atime as f64 * 1000.0 + atime_ns as f64 / 1_000_000.0,
-        "birthtime":birthtime, "dev":stat.st_dev, "ino":stat.st_ino, "mode":stat.st_mode,
+        "birthtime":birthtime, "dev":stat.st_dev, "ino":stat.st_ino.to_string(), "mode":stat.st_mode,
         "nlink":stat.st_nlink, "uid":stat.st_uid, "gid":stat.st_gid, "rdev":stat.st_rdev,
         "size":stat.st_size.to_string(), "blksize":stat.st_blksize.to_string(), "blocks":stat.st_blocks })
 }

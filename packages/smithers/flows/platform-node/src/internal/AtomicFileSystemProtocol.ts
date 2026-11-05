@@ -284,7 +284,8 @@ const toInfo = (value: unknown): FileSystem.File.Info => {
     atime: Option.some(date(info.atime, "atime")),
     birthtime: optional(info.birthtime, (raw) => date(raw, "birthtime")),
     dev: BigInt(integer(info.dev, "dev")),
-    ino: optional(info.ino, (raw) => BigInt(integer(raw, "ino"))),
+    ino: optional(info.ino, (raw) => typeof raw === "string" && /^(0|[1-9][0-9]{0,19})$/.test(raw) &&
+      BigInt(raw) <= 0xffffffffffffffffn ? BigInt(raw) : BigInt(integer(raw, "ino"))),
     mode: integer(info.mode, "mode"),
     nlink: Option.some(BigInt(integer(info.nlink, "nlink"))),
     uid: Option.some(integer(info.uid, "uid")),
