@@ -1,4 +1,20 @@
-import { preloadPatchDiff } from "@pierre/diffs/ssr"
+import type { preloadPatchDiff as preload } from "@pierre/diffs/ssr"
+import { pierreRuntimeGzipBase64 } from "./pierreRuntimeGzipBase64.ts"
+
+type Renderer = {
+  preloadPatchDiff: (args: Parameters<typeof preload<undefined, undefined>>[0]) => Promise<{ prerenderedHTML: string }>
+}
+let renderer: Promise<Renderer> | undefined
+
+/** Inflate the pinned offline resource only when a textual diff needs Pierre. */
+async function loadRenderer(): Promise<Renderer> {
+  const bytes = Uint8Array.from(atob(pierreRuntimeGzipBase64()), (char) => char.charCodeAt(0))
+  const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream("gzip"))
+  const code = await new Response(stream).text()
+  // Only generated dependency bytes from our measured flow closure execute;
+  // patches never enter this program. Keep the library out of the global scope.
+  return new Function(`${code}; return pierreReview;`)() as Renderer
+}
 
 /**
  * A per-line annotation slot to prerender into the diff. For each entry the
@@ -27,6 +43,7 @@ export async function renderPierreFileDiff(args: {
   themeType?: "light" | "dark" | "system"
   annotations?: Array<PierreDiffAnnotation>
 }): Promise<string> {
+  const { preloadPatchDiff } = await (renderer ??= loadRenderer())
   const result = await preloadPatchDiff({
     patch: args.diff.endsWith("\n") ? args.diff : `${args.diff}\n`,
     options: {
