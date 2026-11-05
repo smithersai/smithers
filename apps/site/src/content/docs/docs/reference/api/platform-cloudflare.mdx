@@ -275,15 +275,16 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 
 ### Constants
 
-| Export                                 | Value                                                               | Meaning                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `ExecutionObject.intentKey`            | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
-| `ExecutionObject.failuresKey`          | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
-| `ExecutionObject.settledKey`           | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.    |
-| `ExecutionObject.settledRetentionMs`   | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.         |
-| `ExecutionObject.startGraceMs`         | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
-| `ExecutionObject.retryPolicy`          | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
-| `ExecutionObject.defaultDriveBudgetMs` | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.   |
+| Export                                   | Value                                                               | Meaning                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `ExecutionObject.intentKey`              | `"smithers/intent"`                                                 | The storage key the intent lives under.                                          |
+| `ExecutionObject.failuresKey`            | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.                |
+| `ExecutionObject.settledKey`             | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.            |
+| `ExecutionObject.settledRetentionMs`     | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.                 |
+| `ExecutionObject.startGraceMs`           | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies.         |
+| `ExecutionObject.retryPolicy`            | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.                     |
+| `ExecutionObject.defaultDriveBudgetMs`   | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.           |
+| `ExecutionObject.admittedStartTimeoutMs` | `2_000`                                                             | How long a child's start during its parent's drive waits before routing does it. |
 
 `ExecutionObject.driveBudget` is a `Config.Config<number>`: the setting
 `EXECUTION_DRIVE_BUDGET_SECONDS`, whole seconds from 1 to 899, as
@@ -298,7 +299,7 @@ a `ConfigError`. The Durable Object class reads it once and passes it to every
 | `ExecutionObject.starts`        | `smithers_cloudflare_execution_starts`                                          | `outcome`: `accepted`, `duplicate`, `conflict` or `failed`                   |
 | `ExecutionObject.alarms`        | `smithers_cloudflare_execution_alarms`                                          | `outcome`: `idle`, `settled`, `parked`, `yielded`, `retrying` or `forgotten` |
 | `ExecutionObject.driveDuration` | `smithers_cloudflare_execution_drive_duration` (ms histogram, buckets to 900 s) | `outcome`: `settled`, `parked`, `yielded`, `unfinished` or `failed`          |
-| `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start` or `wake`, counted per successful call                      |
+| `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start`, `wake` or `admitted`, counted per successful call          |
 | `ExecutionObject.wakes`         | `smithers_cloudflare_execution_wakes`                                           | `outcome`: `armed` or `idle`                                                 |
 
 Each `alarm` span carries `smithers.execution.started` and

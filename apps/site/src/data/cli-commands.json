@@ -1429,6 +1429,72 @@
       }
     },
     {
+      "name": "issue list",
+      "description": "List issues",
+      "schema": {
+        "args": {
+          "type": "object",
+          "properties": {},
+          "additionalProperties": false
+        },
+        "options": {
+          "type": "object",
+          "properties": {
+            "all": {
+              "default": false,
+              "type": "boolean",
+              "description": "Fetch all pages automatically"
+            },
+            "cursor": {
+              "type": "string",
+              "description": "Pagination cursor (from previous response)"
+            },
+            "limit": {
+              "default": 30,
+              "type": "number",
+              "description": "Results per page"
+            },
+            "repo": {
+              "type": "string",
+              "description": "Repository (OWNER/REPO)"
+            },
+            "search": {
+              "type": "string",
+              "description": "Search titles, or #number"
+            },
+            "state": {
+              "default": "open",
+              "type": "string",
+              "enum": [
+                "open",
+                "closed",
+                "fixed",
+                "verified",
+                "all"
+              ],
+              "description": "Filter by state"
+            },
+            "view": {
+              "type": "string",
+              "description": "Saved issue view id from issue views; replaces --state"
+            },
+            "verbose": {
+              "default": false,
+              "description": "Show redacted diagnostic details",
+              "type": "boolean"
+            }
+          },
+          "required": [
+            "all",
+            "limit",
+            "state",
+            "verbose"
+          ],
+          "additionalProperties": false
+        }
+      }
+    },
+    {
       "name": "issue new",
       "description": "Open a GitHub issue; waits for the person's confirmation",
       "schema": {
@@ -2013,6 +2079,22 @@
               "description": "Suppress progress messages",
               "default": false,
               "type": "boolean"
+            },
+            "field": {
+              "description": "Read one bounded event field by JSON pointer: /events/<sequence>/payload/<field>",
+              "type": "string"
+            },
+            "offset": {
+              "description": "Character offset in a string --field",
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740991
+            },
+            "length": {
+              "description": "Characters per string field page (default 4096)",
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 65536
             },
             "timing": {
               "description": "Report where the run's time and tokens went",

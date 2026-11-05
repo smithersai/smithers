@@ -16,6 +16,7 @@ Commands:
   resume      Resume a parked durable run
   show        Open a run's card
   signal      Deliver a durable JSON signal
+  signals     Inspect durable signal delivery receipts
   steer       Send an attributed operator message
   stop        Stop a run a budget or time limit parked
   verify      Report which recorded steps the current flow code would replay and which it would execute again

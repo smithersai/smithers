@@ -8482,14 +8482,14 @@ reads, `maxHours` (1 to `MAX_HOURS`, 12) and `restarts` (0 to `MAX_RESTARTS`, 5)
 - `Job`: `{ key, claim, generation, task, deadline, leaseSeconds, reclaimed }`,
   what a runner claims. `reclaimed` marks a job handed back to a runner that
   restarted while holding it.
-- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine? }`,
+- `ClaimRequest` `{ profiles, free, running, waitSeconds, machine?, minQueuedSeconds? }` (`minQueuedSeconds`: an overflow runner takes only a job claimable that long),
   `ClaimResponse`, `HeartbeatRequest` `{ key, claim, delivered?, account?,
   cpuSeconds?, usage? }` (`delivered`: the steers the agent read),
   `HeartbeatResponse` `{ held, cancel, leaseSeconds, steers? }` (the steers it
   hasn't, oldest first, each a `Steer` `{ id, text }`),
   `SettleRequest` `{ key, claim, outcome, delivered? }`, `SettleResponse`, and `ROUTES` (`/api/runners/claim`,
-  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb? }` is
-  what a claim says about the runner's machine; a heartbeat's `account` is the
+  `/heartbeat`, `/settle`, `/events`). `Machine` `{ version?, load1?, diskFreeGb?, held? }` is
+  what a claim says about the runner's machine (`held`, why it takes no job by its own admission rule); a heartbeat's `account` is the
   opaque label the runner's hook chose (written as a profile is), `cpuSeconds`
   the agent's process tree's CPU time, and `usage` what it reported so far. A
   host reads them for its fleet view and stall alerts.
@@ -12334,6 +12334,11 @@ redacted before they cross the protocol boundary. Stored and projected values
 are rendered through `Output.renderValue`, so only a validated control receipt
 can set a nonzero process status.
 
+When embedding, reuse one `engineDurable` value across `layerControl`, its
+runtime and its journal. Materialization shares the caller's layer memo map,
+so nested writes join the same SQL transaction regardless of acquisition order.
+A failed outer transaction rolls back the plan and its journal entry together.
+
 ## Cli
 
 `Cli.makeCli(config?)` builds the unified Incur command tree. Its Zod schemas
@@ -13070,6 +13075,10 @@ port. A host without one refuses both with `InvalidInput` whose issue is
 
 ### Receipts
 
+An observed approval wait retains its native wake address and answer target
+when legacy journal history names the same request. Only a verified current
+grant fact may replace that target; matching decisions still close the wait.
+
 `Receipt` is the union every mutation answers:
 
 | Member           | Fields                                                              |
@@ -13256,6 +13265,14 @@ A running engine-created run outside the launch index also fails with
 `ClaimLost` when its owner is dead; its persisted execution state is preserved.
 Node-approval decisions use the durable resume delegation instead.
 
+Debug records named `control.resume.progress` carry only `runId` and `stage`.
+They distinguish reading the run, entering its mutation, verifying its code,
+claiming it, recording the request and committing the receipt. A stalled resume's
+last stage identifies the boundary still waiting; inputs and credentials are
+never included.
+`control.resume.storage` uses the same fields for state, launch-index and
+ownership-claim boundaries inside the SQL runtime.
+
 `registerApproval` is idempotent and returns the token with its current
 tagged decision. `Pending` parks, `Approved` opens a gate, and `Denied` fails it.
 Use `requireApproved` to enforce this distinction. A registration that disagrees
@@ -13382,16 +13399,23 @@ engine observations. Mutation methods remain refused.
 
 ### Models
 
-| Type                             | Shape                                                                                                                                |
-| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
-| `Launch`                         | `{ plan: StoredPlan; run: RunSummary }`. `run.runId` is the execution id the executor must start.                                    |
-| `Acceptance`                     | `"accepted"` (taken now) or `"pending"` (queued).                                                                                    |
-| `CancelRequest`, `ResumeRequest` | `{ runId: RunId }`                                                                                                                   |
-| `CancelTerminal`                 | `{ _tag: "Terminal"; status: "completed" \| "failed" \| "cancelled" }`. The engine's own status, which the plane cannot read itself. |
-| `CancelRecord`                   | `"recorded" \| "already-requested" \| "unknown" \| CancelTerminal`                                                                   |
-| `ResumeUptake`                   | `"resuming" \| "unknown"`                                                                                                            |
-| `Signal`                         | `{ runId: RunId; signal: SignalPayload }`                                                                                            |
-| `SignalDelivery`                 | `"delivered" \| "no-match" \| "unknown"`                                                                                             |
+| Type             | Shape                                                                                                                                |
+| ---------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `Launch`         | `{ plan: StoredPlan; run: RunSummary }`. `run.runId` is the execution id the executor must start.                                    |
+| `Acceptance`     | `"accepted"` (taken now) or `"pending"` (queued).                                                                                    |
+| `CancelRequest`  | `{ runId: RunId }`                                                                                                                   |
+| `ResumeRequest`  | `{ runId: RunId, delegationSequence?: number }`                                                                                      |
+| `CancelTerminal` | `{ _tag: "Terminal"; status: "completed" \| "failed" \| "cancelled" }`. The engine's own status, which the plane cannot read itself. |
+| `CancelRecord`   | `"recorded" \| "already-requested" \| "unknown" \| CancelTerminal`                                                                   |
+| `ResumeUptake`   | `"resuming" \| "unknown"`                                                                                                            |
+| `Signal`         | `{ runId: RunId; signal: SignalPayload }`                                                                                            |
+| `SignalDelivery` | `"delivered" \| "no-match" \| "unknown"`                                                                                             |
+
+An approval offers `resumeRun` its durable `delegationSequence`. The executor
+checks that sequence again before admission; consumed or superseded offers
+answer `unknown` and cannot start another round. Omitting the sequence preserves
+direct host recovery and engine wake behavior. The `control.run.resumed` journal
+event carries the same sequence, correlating every delivery with one durable request.
 
 `settleCancelledPark` is called after the cancel mutation commits, never inside
 it: driving a run re-enters the engine, whose writes would wait on the writer
@@ -15729,6 +15753,11 @@ both backends), skips it with `ignore: true`, or runs `body`; `when` limits it
 to rows where the condition holds. `query` does not parse SQL, so its template
 must not contain `?` anywhere but a placeholder.
 
+A native SQL defect before a write body starts is a typed `DatabaseError`,
+including failed transaction acquisition and its rollback. Intentional SQL
+defects raised by the write body keep their original channel. A lost PostgreSQL
+connection therefore leaves the engine’s attempt available for recovery.
+
 ---
 
 # @smthrs/engine-store
@@ -15833,19 +15862,19 @@ polls. Completed predecessor history remains unchanged. On normal parent exit,
 `onParentExit` belongs to the child's creating round and is retained through its
 handoffs; explicit cancellation still cascades to linked children.
 
-| Export                  | Signature                                                                                                                           | Meaning                                                                                                                    |
-| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                                           |
-| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/docs/reference/api/flow/) declares.                                         |
-| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                            |
-| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.                     |
-| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                                           |
-| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions).             |
-| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                                     |
-| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number }`                                                      | What `drive` drives, with an optional budget and hold. See [Drive budget](#drive-budget).                                  |
-| `Driver`                | `Context.Service<{ admit, drive, reportRecovery }>`                                                                                 | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`. See [Registration recovery](#registration-recovery). |
-| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                                      |
-| `Recovery`              | `{ registrations: number; durationMs: number }`                                                                                     | What `Driver.reportRecovery` reports and answers. See [Registration recovery](#registration-recovery).                     |
+| Export                  | Signature                                                                                                                           | Meaning                                                                                                                      |
+| ----------------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------- |
+| `Options`               | interface                                                                                                                           | Construction options. See below.                                                                                             |
+| `make`                  | `(options: Options) => Effect<FlowRuntime["Service"], never, Requirements>`                                                         | Builds the `FlowRuntime` service the port in [`@smthrs/flow`](/docs/reference/api/flow/) declares.                                           |
+| `layer`                 | `(options: Options) => Layer<SnapshotBoundary \| FlowRuntime, never, Requirements>`                                                 | Provides both, using the ambient `Jj` for action bodies and engine bookkeeping.                                              |
+| `layerWithPrivilegedJj` | `(options: Options, privilegedJj: Layer<Jj, E, R>) => Layer<SnapshotBoundary \| FlowRuntime, E, Requirements \| R>`                 | The same, with a private repository for engine bookkeeping while ambient `Jj` stays for action bodies.                       |
+| `Sweep`                 | `"process" \| { readonly host: string }`                                                                                            | Who wakes the store's runs. See `Options.sweep`.                                                                             |
+| `nextWake`              | `(executionId: string) => Effect<Option<number>, RunStoreError, RunStore \| DurableEngineState>`                                    | When a host must next drive the execution, in epoch milliseconds. See [Hosted executions](#hosted-executions).               |
+| `Driven`                | `{ _tag: "Settled"; status } \| { _tag: "Parked"; wakeAtMs: number \| undefined } \| { _tag: "Unfinished" } \| { _tag: "Yielded" }` | What one `drive` left an execution as.                                                                                       |
+| `DriveOptions`          | `{ executionId: string; payload: object; budgetMs?: number; holdMs?: number; row?: RunRow }`                                        | What `drive` drives, with an optional budget and hold, and the row the host already read. See [Drive budget](#drive-budget). |
+| `Driver`                | `Context.Service<{ admit, drive, reportRecovery }>`                                                                                 | Provided by `layer` and `layerWithPrivilegedJj` beside `FlowRuntime`. See [Registration recovery](#registration-recovery).   |
+| `drive`                 | `(flow: Flow.Any, options: DriveOptions) => Effect<Driven, FlowCycleDetected \| RunStoreError, Driver>`                             | Drives one execution once, for its host. See [Hosted executions](#hosted-executions).                                        |
+| `Recovery`              | `{ registrations: number; durationMs: number }`                                                                                     | What `Driver.reportRecovery` reports and answers. See [Registration recovery](#registration-recovery).                       |
 
 ### EngineStore.Options
 
@@ -16048,6 +16077,11 @@ Set the budget at the invocation's limit less the longest step it may start.
 Each yield counts on `EngineStoreMetrics.driveYields` and logs
 `engine-store: drive yielded its budget at a step boundary` with the budget and
 the elapsed time.
+
+`row` is the run's row as the host read it at the start of the drive. The
+drive takes the run's existence, flow and capability ceilings from it, which
+never change, instead of reading the row again for each; its status and claim
+are still read fresh before the claim.
 
 A run its own flow parks on a wake due within `holdMs` (`defaultHoldMs`, five
 seconds, unless set), such as a durable sleep of a second or a clock that came
@@ -17325,15 +17359,26 @@ nonce is a UUIDv4 from the injected `Crypto` service.
 Edge-triggered in-process wakes, with durable polling as the miss-tolerant
 fallback.
 
-| Export       | Signature                                          | Meaning                                     |
-| ------------ | -------------------------------------------------- | ------------------------------------------- |
-| `WakeBus`    | `Context.Service<Service>`                         | Service tag.                                |
-| `Service`    | `{ wake, awaitWake, waiters }`                     | See below.                                  |
-| `makeUnsafe` | `() => Service`                                    | Constructs a bus. Nothing is durable.       |
-| `make`       | `Effect<Service>`                                  | The same, as an effect.                     |
-| `layer`      | `Layer<WakeBus>`                                   | Provides a fresh bus.                       |
-| `makeNoop`   | `(overrides?: Partial<Service>) => Service`        | Wakes are dropped and waiters park forever. |
-| `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>` | Provides it.                                |
+| Export       | Signature                                                   | Meaning                                     |
+| ------------ | ----------------------------------------------------------- | ------------------------------------------- |
+| `WakeBus`    | `Context.Service<Service>`                                  | Service tag.                                |
+| `Service`    | `{ wake, awaitWake, waiters }`                              | See below.                                  |
+| `makeUnsafe` | `() => Service`                                             | Constructs a bus. Nothing is durable.       |
+| `make`       | `Effect<Service>`                                           | The same, as an effect.                     |
+| `layer`      | `Layer<WakeBus>`                                            | Provides a fresh bus.                       |
+| `makeNoop`   | `(overrides?: Partial<Service>) => Service`                 | Wakes are dropped and waiters park forever. |
+| `layerNoop`  | `(overrides?: Partial<Service>) => Layer<WakeBus>`          | Provides it.                                |
+| `Admitted`   | `Context.Reference<(admission: Admission) => Effect<void>>` | Called once a child's admission commits.    |
+| `Admission`  | `{ flow, executionId, payload }`                            | The child, its payload encoded as stored.   |
+
+`Admitted` is what the engine calls once a child run it admitted has
+committed, its row and parent edge durable; the default does nothing. A host
+that drives each execution in its own place provides it to start the child
+there at once, while the parent's drive goes on. It is a shortcut, never the
+record: the host must still start children from what the store holds after
+the drive, so a lost or refused announcement only delays the child. A child
+admitted inside a transaction whose commit the journal cannot observe is not
+announced.
 
 `wake(executionId)` resumes every waiter parked on that execution; with no
 waiters the wake is dropped. `awaitWake(executionId)` parks until the next one,
@@ -17562,6 +17607,10 @@ values remain in their existing protected rows; the journal carries digests.
 Use `checkpointState` when compacting: a compacted run without its fold checkpoint
 fails with `checkpoint_missing`. `capture` and `rebuild` read the existing
 migrated database and journal; neither creates another store or executes a flow.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.
 
 ---
 
@@ -23982,9 +24031,12 @@ See [Test against a real journal](https://github.com/smithersai/smithers/blob/ma
 
 ## Sequence allocation
 
-`emitDurable` allocates both sequences inside the writer's transaction
-(`MAX(seq) + 1`, taking the in-memory clock as a floor) and inserts the row
-before returning, so the returned `seq` is already committed. Use it wherever a
+`emitDurable` allocates both sequences inside the writer's transaction and
+inserts the row before returning, so the returned `seq` is already committed.
+The `INSERT` itself takes `seq` as the greater of the in-memory floor and the
+run's `MAX(seq) + 1`, in the same statement, so the write costs one round trip
+for the sequence and the row; the producer sequence, when the input names
+none, is read first (`MAX(source_seq) + 1`). Use it wherever a
 caller acts on the returned sequence: lifecycle finalization, cross-process
 supervisors, or any deployment where a second writer may open the same run. A
 durable boundary must not advance the run or expose its result until this
@@ -29718,13 +29770,13 @@ interface DrainInput {
 }
 ```
 
-| Field             | Meaning                                                                                                                                                                                                                                     |
-| ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `runId`           | The run whose journal holds the notifications.                                                                                                                                                                                              |
-| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                                                                                                    |
-| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                   |
-| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                      |
-| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`. |
+| Field             | Meaning                                                                                                                                                                                                                                                                                              |
+| ----------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `runId`           | The run whose journal holds the notifications.                                                                                                                                                                                                                                                       |
+| `targetLineageId` | The lineage this boundary belongs to. Notifications for other lineages are left pending.                                                                                                                                                                                                             |
+| `boundary`        | The name of this safe point. With `runId` and `targetLineageId` it is the drain identity.                                                                                                                                                                                                            |
+| `wouldIdle`       | Whether the run would have nothing to do if this boundary delivered nothing. When true and no steer was promoted, one queued notification is promoted.                                                                                                                                               |
+| `cutoffSeq`       | The journal sequence that opened this turn. Steers admitted after it are held for the next boundary. Omitting it delivers everything pending for the lineage. A value that is not a non-negative integer fails with `notification_invalid`.                                                          |
 | `ids`             | The pending steers this boundary delivers, by id, for a consumer that confirms each one it took, such as an agent outside the run that answered after each. Ids not pending for the lineage are ignored; nothing else is promoted, queued notifications included. It takes the place of `cutoffSeq`. |
 
 ### DrainReceipt
@@ -29885,7 +29937,7 @@ The pure bounded queue: the same rules with no I/O and no journal. Import from
 | `applyAdmission` | `(state: State, notification: Notification, seq: number, decision: AdmissionDecision) => State`     | Applies a decision already committed in a journal record. Replay never re-decides.                                                                                                             |
 | `pending`        | `(state: State, admission: "steer" \| "queue", targetLineageId?: string) => ReadonlyArray<Pending>` | Still-pending notifications of one admission class, in durable journal order, for one lineage or for every lineage.                                                                            |
 | `promoteSteers`  | `(state: State, cutoffSeq: number, targetLineageId?: string) => Promotion`                          | Promotes every steer admitted at or before the cutoff. Notifications admitted after it remain pending.                                                                                         |
-| `promoteIds`     | `(state: State, ids: ReadonlyArray<string>, targetLineageId?: string) => Promotion`                 | Promotes the pending steers named in `ids`, in admission order, whatever their sequences. Ids not pending for the lineage are ignored.                                                          |
+| `promoteIds`     | `(state: State, ids: ReadonlyArray<string>, targetLineageId?: string) => Promotion`                 | Promotes the pending steers named in `ids`, in admission order, whatever their sequences. Ids not pending for the lineage are ignored.                                                         |
 | `promoteQueued`  | `(state: State, targetLineageId?: string) => Promotion`                                             | Promotes exactly the oldest pending queued notification, or nothing.                                                                                                                           |
 | `applyPromoted`  | `(state: State, ids: ReadonlyArray<string>) => State`                                               | Removes the ids a durable promotion record names, while replaying history.                                                                                                                     |
 
@@ -31801,6 +31853,10 @@ modules with their specifiers.
 [Flows, actions, and plans](/docs/concepts/flows-actions-plans/) for what a built
 graph means, and [`@smthrs/plan`](/docs/reference/api/plan/) for the persisted form a graph
 compiles into.
+
+The runtime’s optional `recordNode(record, { flush: true })` commits a progress
+record before returning. Burndown uses it for per-item landing and release so
+a slow neighboring item cannot keep completed progress buffered.
 
 ---
 
@@ -34572,15 +34628,16 @@ class IntentConflict extends Schema.TaggedError<IntentConflict>()(
 
 ### Constants
 
-| Export                                 | Value                                                               | Meaning                                                                  |
-| -------------------------------------- | ------------------------------------------------------------------- | ------------------------------------------------------------------------ |
-| `ExecutionObject.intentKey`            | `"smithers/intent"`                                                 | The storage key the intent lives under.                                  |
-| `ExecutionObject.failuresKey`          | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.        |
-| `ExecutionObject.settledKey`           | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.    |
-| `ExecutionObject.settledRetentionMs`   | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.         |
-| `ExecutionObject.startGraceMs`         | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies. |
-| `ExecutionObject.retryPolicy`          | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.             |
-| `ExecutionObject.defaultDriveBudgetMs` | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.   |
+| Export                                   | Value                                                               | Meaning                                                                          |
+| ---------------------------------------- | ------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| `ExecutionObject.intentKey`              | `"smithers/intent"`                                                 | The storage key the intent lives under.                                          |
+| `ExecutionObject.failuresKey`            | `"smithers/failures"`                                               | The storage key the count of alarms without progress lives under.                |
+| `ExecutionObject.settledKey`             | `"smithers/settled"`                                                | The storage key when the execution settled, in epoch ms, lives under.            |
+| `ExecutionObject.settledRetentionMs`     | `86_400_000`                                                        | How long a settled object keeps its intent before it forgets it.                 |
+| `ExecutionObject.startGraceMs`           | `5_000`                                                             | How long after `start` stores an intent its alarm fires if `start` dies.         |
+| `ExecutionObject.retryPolicy`            | `RetryPolicy.make({ initialMs: 1_000, factor: 2, maxMs: 300_000 })` | The backoff between alarms without progress. Never gives up.                     |
+| `ExecutionObject.defaultDriveBudgetMs`   | `600_000`                                                           | How long a drive keeps starting steps unless `alarm` is given another.           |
+| `ExecutionObject.admittedStartTimeoutMs` | `2_000`                                                             | How long a child's start during its parent's drive waits before routing does it. |
 
 `ExecutionObject.driveBudget` is a `Config.Config<number>`: the setting
 `EXECUTION_DRIVE_BUDGET_SECONDS`, whole seconds from 1 to 899, as
@@ -34595,7 +34652,7 @@ a `ConfigError`. The Durable Object class reads it once and passes it to every
 | `ExecutionObject.starts`        | `smithers_cloudflare_execution_starts`                                          | `outcome`: `accepted`, `duplicate`, `conflict` or `failed`                   |
 | `ExecutionObject.alarms`        | `smithers_cloudflare_execution_alarms`                                          | `outcome`: `idle`, `settled`, `parked`, `yielded`, `retrying` or `forgotten` |
 | `ExecutionObject.driveDuration` | `smithers_cloudflare_execution_drive_duration` (ms histogram, buckets to 900 s) | `outcome`: `settled`, `parked`, `yielded`, `unfinished` or `failed`          |
-| `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start` or `wake`, counted per successful call                      |
+| `ExecutionObject.routed`        | `smithers_cloudflare_execution_routed`                                          | `route`: `start`, `wake` or `admitted`, counted per successful call          |
 | `ExecutionObject.wakes`         | `smithers_cloudflare_execution_wakes`                                           | `outcome`: `armed` or `idle`                                                 |
 
 Each `alarm` span carries `smithers.execution.started` and
@@ -36335,6 +36392,11 @@ and `unixSockets`. Native agent confinement uses a strict process and IPC
 policy and closes Unix sockets; build tools retain their declared policy. Build
 output files may open a parent directory; agent permission profiles never use
 that build-specific option.
+
+A launcher mounts its named package root so scripts can load sibling modules.
+Module-format-only manifests under `bin/` do not narrow that root. Custom host
+probes can implement `Host.packageDirectory`; omitted, manifest existence is
+used. The search stays bounded and never grants the host home or filesystem root.
 
 ---
 
@@ -42770,8 +42832,8 @@ https://smithers.sh/docs/reference/api/testing/
 
 > **Related APIs:** [`@smthrs/canonical`](/docs/reference/api/canonical/) · [`@smthrs/core`](/docs/reference/api/core/) · [`@smthrs/engine`](/docs/reference/api/engine/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/jj`](/docs/reference/api/jj/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/kernel`](/docs/reference/api/kernel/) · [`@smthrs/model`](/docs/reference/api/model/) · [`@smthrs/plan`](/docs/reference/api/plan/) · [`@smthrs/platform-browser`](/docs/reference/api/platform-browser/) · [`@smthrs/scorers`](/docs/reference/api/scorers/)
 
-`@smthrs/testing` exports twenty-four modules from its root entry point, and each is
-also importable from `@smthrs/testing/<Module>`:
+`@smthrs/testing` exports module namespaces from its root entry point.
+Import a namespace from the root or use a declared package subpath:
 
 ```ts
 import { Conformance, EngineSubject, TestLayers } from "@smthrs/testing"
@@ -44884,6 +44946,52 @@ SIGTERM and exits `1` with the message on a parse or startup failure.
 | `FlowEngineLike` scheduler passes awaiting a published result: 1000     | Fails typed rather than spinning                                        |
 | Conformance pin wait: a bounded live-clock schedule, roughly one second | Fails rather than hanging                                               |
 | `ScoreGate` sample count                                                | No limit; the minimum is an iterative reduction, not an argument spread |
+
+## RealCliDriver
+
+Import `{ RealCliDriver }` from `@smthrs/testing`. `make(options)` allocates a
+scoped temporary project and fresh HOME, XDG, auth, session and temporary roots.
+`run(args, input?)` executes literal arguments and optional piped input, returning
+`{ code, stdout, stderr }`. `execute({ executable, args?, cwd, env?, input?,
+timeoutMs?, maxBytes? })` runs one command without allocating state.
+
+Provide the library catalog's injected filesystem, path and supervised process
+services, such as `NodeHost.layer` from `@smthrs/platform-node`. No ambient
+environment is inherited; explicitly supply PATH and required configuration.
+State roots override caller-supplied values. Both output pipes drain concurrently
+with UTF-8 decoding. The default deadline is 30 seconds and the combined byte
+budget is 1 MiB. `DriverError.reason` distinguishes invalid bounds, timeout and
+output overflow; platform failures retain their typed errors. Scope closure
+terminates the owned process group and removes temporary state.
+
+## TerminalRecording
+
+Import `{ TerminalRecording }` from `@smthrs/testing`. `make({ title, columns?,
+rows?, frameDurationMs?, maxFrames?, renderer?, env? })` creates a bounded
+recording. `capture(label, screen)` accepts public, settled plain-text screens;
+never pass credentials, private input or ANSI escapes. `write(newDirectory)`
+returns `{ gif, cast, manifest }` after successful conversion through real
+FFmpeg 7+ with drawtext, fontconfig and palette filters.
+
+Defaults are 110 columns, 40 rows, 800 ms per frame and 64 frames. Durations
+use GIF's 10 ms precision. Frames must fit the row count and terminal display
+width, including wide and combining glyphs, checked with the TUI's existing
+`string-width` library inside the Effect capture boundary. Fixed geometry,
+explicit row positioning and an asciinema v2 timeline make replay independent of
+process latency. Replaying identical saved frames in the same renderer/font
+environment produces identical GIF bytes. Each new destination retains text
+frames, row files, `terminal.filter`, `terminal.cast` and renderer diagnostics;
+`manifest.json` is created only after a successful GIF conversion. A failed
+conversion preserves evidence without a success manifest; stale destinations
+are refused.
+
+The CLI journey in `packages/smithers/test/e2e/cli-journey.test.ts` covers fresh
+signed-out state, credential refusal and current repository URLs. The
+`terminal recording evidence` case in `apps/tui/e2e/tui.test.ts` uses the
+production TUI in a real PTY for session commands and keyboard navigation.
+`SMITHERS_TERMINAL_ARTIFACTS` selects the parent evidence directory; each run
+creates a fresh child. The CLI additionally accepts `SMITHERS_TERMINAL_PATH`
+for a native executable PATH when a host shim depends on its original HOME.
 
 ---
 
@@ -47126,7 +47234,9 @@ the page's messages.
 ## `Home`
 
 A repository's own home: the sections and blocks `.smithers/home.json` declares, and who sees each section. See
-[Read a repository's home](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/read-a-home.md).
+[Read a repository's home](https://github.com/smithersai/smithers/blob/main/packages/smithers/ui/views/docs/read-a-home.md). `Home.Url` accepts safe absolute
+HTTP(S) URLs and origin-relative paths starting with one `/`; `Home.DocsUrl`
+requires absolute HTTPS URLs without credentials.
 
 | Export                                                                                                                       | What it is                                                                                                                                                                                                          |
 | ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -47221,7 +47331,7 @@ npm install -g smthrs@next
 | [`monitor`](#monitor) | Every run, with its debug view |
 | [`pr`](#pr) | Open a pull request's card |
 | [`review`](#review) | Review a change, return findings; waits for the person's confirmation |
-| [`run`](#run) | Advanced |
+| [`run`](#run) | Execute run targets selected by a pattern |
 | [`runs`](#runs) | Inspect and control durable execution records |
 | [`search`](#search) | Search code, wiki and runs |
 | [`shell`](#shell) | Open an interactive terminal in a workspace via the WebSocket terminal endpoint |
@@ -47964,6 +48074,25 @@ smthrs issue comment <number> [options]
 | `--repo` | string |  | no | Repository (OWNER/REPO) |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 
+### `issue list`
+
+List issues
+
+```text
+smthrs issue list [options]
+```
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--all` | boolean | `false` | no | Fetch all pages automatically |
+| `--cursor` | string |  | no | Pagination cursor (from previous response) |
+| `--limit` | number | `30` | no | Results per page |
+| `--repo`, `-R` | string |  | no | Repository (OWNER/REPO) |
+| `--search` | string |  | no | Search titles, or #number |
+| `--state` | one of `open`, `closed`, `fixed`, `verified`, `all` | `open` | no | Filter by state |
+| `--view` | string |  | no | Saved issue view id from issue views; replaces `--state` |
+| `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
+
 ### `issue new`
 
 Open a GitHub issue; waits for the person's confirmation
@@ -48103,11 +48232,32 @@ smthrs review <patterns...> [options]
 
 ## `run`
 
-Advanced
+Execute run targets selected by a pattern
 
 ```text
-smthrs run <command>
+smthrs run <patterns...> [options] | <command>
 ```
+
+| Argument | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `patterns` | array of string, min items 1 |  | yes | Bazel labels or recursive patterns; the verb runs their union |
+
+| Option | Type | Default | Required | Description |
+| --- | --- | --- | --- | --- |
+| `--workspace`, `-w` | string | `<cwd>` | no | Directory inside a workspace containing WORKSPACE.ts |
+| `--cache-dir` | string |  | no | Workspace-relative cache directory; overrides the WORKSPACE.ts declaration |
+| `--verbose` | boolean | `false` | no | Show plain progress for agent and pipe consumers |
+| `--plan` | boolean | `false` | no | Print the inert plan instead of executing |
+| `--jobs`, `-j` | integer, minimum 1 |  | no | Maximum concurrent targets; defaults to host parallelism. Exclusive targets run alone after ready ordinary work |
+| `--include-exclusive` | boolean | `false` | no | Include exclusive targets in wildcard ci/test selections; explicit labels already include them |
+| `--cache` | boolean | `true` | no | Consult the result cache before running; `--no-cache` bypasses reads |
+| `--known-red` | string |  | no | JSON list of targets already red, with owner and expiry; their failures are reported but fail only when newly red |
+| `--fail-fast` | boolean | `false` | no | Stop at the first failure that fails the run: start nothing new, cancel running targets, report, exit 1 |
+| `--results-file` | string |  | no | Also write the run's summary, one status per label, as JSON to this new file; human output is unchanged |
+| `--name`, `-n` | string |  | no | Package name supplied to scaffold targets |
+| `--message`, `-m` | string |  | no | Commit message for a Git.Commit target; wins over the declared message |
+| `--sweep` | boolean | `false` | no | Let a Git.Commit target with no declared path scope commit the whole working tree |
+| `--input`, `-i` | array of string |  | no | Payload input for agent targets as name=value; repeatable |
 
 ### `run inspect`
 
@@ -48200,6 +48350,9 @@ smthrs runs show <run> [options]
 | `--remote` | string |  | no | Remote control plane URL; defaults to SMITHERS_REMOTE |
 | `--mcp-config` | string |  | no | Path to the configured MCP servers |
 | `--quiet` | boolean | `false` | no | Suppress progress messages |
+| `--field` | string |  | no | Read one bounded event field by JSON pointer: /events/\<sequence>/payload/\<field> |
+| `--offset` | integer, minimum 0 |  | no | Character offset in a string `--field` |
+| `--length` | integer, minimum 1, maximum 65536 |  | no | Characters per string field page (default 4096) |
 | `--timing` | boolean | `false` | no | Report where the run's time and tokens went |
 | `--verbose` | boolean | `false` | no | Show redacted diagnostic details |
 | `--cloud` | boolean | `false` | no | Use repository flows and runs on the backend |

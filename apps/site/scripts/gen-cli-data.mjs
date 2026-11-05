@@ -124,7 +124,9 @@ outputs.set(join(dataDir, "removed-commands.json"), JSON.stringify(removed, null
 outputs.set(join(site, guidePage), renderMigrationPage(readFileSync(join(root, guideSource), "utf8"), removed))
 outputs.set(join(helpDir, "smthrs.txt"), topHelp)
 // Reference supplements do not widen install discovery, skills or MCP.
-const referenceCommands = ["change list", "change status", "change files", "change show", "change conflicts", "generate package", "generate ci", "tui"]
+// `run` also owns target arguments beside its person-facing `inspect` child.
+// Its target schema is reference-only, so capture it without widening discovery.
+const referenceCommands = ["run", "change list", "change status", "change files", "change show", "change conflicts", "generate package", "generate ci", "tui"]
 const commandPaths = new Set([
   ...referenceCommands,
   "completions", "mcp", "mcp add", "mcp doctor", "skills", "skills add", "skills list"

@@ -795,3 +795,8 @@ client opens the read transaction itself; any other PostgreSQL client reads at
 both backends), skips it with `ignore: true`, or runs `body`; `when` limits it
 to rows where the condition holds. `query` does not parse SQL, so its template
 must not contain `?` anywhere but a placeholder.
+
+A native SQL defect before a write body starts is a typed `DatabaseError`,
+including failed transaction acquisition and its rollback. Intentional SQL
+defects raised by the write body keep their original channel. A lost PostgreSQL
+connection therefore leaves the engine’s attempt available for recovery.
