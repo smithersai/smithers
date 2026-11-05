@@ -1,4 +1,9 @@
+import * as Exec from "@smthrs/targets/Exec"
+import * as Manager from "@smthrs/targets/PackageManager"
+import * as Runtime from "@smthrs/targets/Runtime"
+import * as Target from "@smthrs/targets/Target"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 import * as ChildProcess from "node:child_process"
 import * as Fs from "node:fs/promises"
 import * as Os from "node:os"
@@ -11,6 +16,7 @@ import * as PackageDiscovery from "../src/PackageDiscovery.ts"
 import * as PackageExec from "../src/PackageExec.ts"
 import { PackageIndex } from "../src/PackageIndex.ts"
 import * as PackageLoader from "../src/PackageLoader.ts"
+import { runTarget } from "../src/TargetExecution.ts"
 import { write } from "./helpers/WriteFile.ts"
 
 const execFile = promisify(ChildProcess.execFile)
@@ -21,7 +27,7 @@ afterEach(async () => {
 
 // A real local package keeps the fresh-checkout regression independent of a registry.
 // Its bin deliberately differs from its package name: resolution needs the installed manifest.
-const fixture = async (source = "") => {
+const fixture = async (source = "", confined = false) => {
   const root = await Fs.realpath(await Fs.mkdtemp(Path.join(Os.tmpdir(), "sm-b17-pnpm-")))
   roots.push(root)
   const version = (await execFile("pnpm", ["--version"])).stdout.trim()
@@ -76,7 +82,7 @@ export const Workspace = S.Workspace("fresh-pnpm-install", {
   runtime: S.Runtime.Node({ version: ${JSON.stringify(process.versions.node)} }),
   packageManager: S.PackageManager.Pnpm({ manifest, lockfile: S.file("//pnpm-lock.yaml"), workspaces: S.file("//pnpm-workspace.yaml") }),
   nodeModules: S.Npm.NodeModules({ packageJson: manifest }),
-  sandboxes: S.Sandboxes({ default: S.Sandbox.None() })
+  ${confined ? "" : "sandboxes: S.Sandboxes({ default: S.Sandbox.None() })"}
 })`
   )
   await write(
@@ -101,7 +107,7 @@ ${
         runtimeExecutable: process.execPath
       }
     })
-  return { root, options, install }
+  return { root, options, install, version }
 }
 
 describe("fresh pnpm installations", () => {
@@ -131,8 +137,10 @@ export const Package = S.Package({ targets: { check } })`)
   it.each(["lint", "ci"] as const)("retains kind-specific attributes after install under %s", async (verb) => {
     const { options } = await fixture(`
 import * as Target from "@smthrs/targets/Target"
+import * as Runtime from "@smthrs/targets/Runtime"
 import * as Shell from "@smthrs/targets/Shell"
 import * as Effect from "effect/Effect"
+import * as Schema from "effect/Schema"
 const install = S.Install({ lockfilePath: "pnpm-lock.yaml" })
 const Check = Target.make("Shell.Test", {
   attrs: Shell.TestAttrs,
@@ -235,5 +243,117 @@ export const Package = S.Package({ targets: { install, check } })`)
     expect(after.ino).toBe(before.ino)
     expect(after.mtimeNs).toBe(before.mtimeNs)
     expect((await execFile(bin)).stdout).toContain("FRESH_PNPM_TOOL_EXECUTED")
+  })
+})
+
+// This action uses the same Exec service as Typecheck/Vitest, without replacing
+// either the package manager or an installed tool with a scripted executable.
+const StoreProbe = Target.make("B17.PnpmStoreProbe", {
+  attrs: Schema.Struct({ packageManager: Manager.PackageManager }),
+  kinds: ["test"],
+  success: Exec.Result,
+  error: Exec.ExecError,
+  implementation: ({ packageManager }) =>
+    Exec.runTool({ cwd: ".", argv: [packageManager.executable, "exec", "node", "probe.cjs"] })
+})
+
+const storeProbe = async (root: string, marker?: string) => {
+  const pnpm = await Fs.realpath((await execFile("sh", ["-c", "command -v pnpm"])).stdout.trim())
+  await write(
+    root,
+    "probe.cjs",
+    `
+const assert = require("node:assert/strict")
+const fs = require("node:fs")
+const path = require("node:path")
+const { execFileSync } = require("node:child_process")
+// Use the real selected manager; the sandbox intentionally hides ungranted PATH aliases.
+const store = execFileSync(process.execPath, [${JSON.stringify(pnpm)}, "store", "path"], { encoding: "utf8" }).trim()
+assert.ok(store.startsWith(${JSON.stringify(Path.join(root, ".flows/store/pnpm") + Path.sep)}), store)
+assert.equal(process.env.pnpm_config_verify_deps_before_run, "false")
+assert.equal(process.env.B17_DECLARED_ENV, ${JSON.stringify(marker)})
+assert.throws(() => fs.writeFileSync(path.join(${JSON.stringify(root)}, "undeclared.txt"), "escape"),
+  (error) => ["EROFS", "EPERM", "EACCES"].includes(error.code))
+console.log("CONFINED_PNPM_STORE_OK")
+`
+  )
+}
+
+describe("confined pnpm consumers", () => {
+  it("uses Install's store for native exec", async () => {
+    const { root, options, install } = await fixture(
+      `
+const check = S.Shell.Test({
+  bin: S.PackageManager.bin,
+  args: ["exec", "node", "probe.cjs"],
+  data: [S.file("//probe.cjs")]
+})
+export const Package = S.Package({ targets: { check } })`,
+      true
+    )
+    await install()
+    await storeProbe(root)
+    const bin = Path.join(root, "node_modules/.bin/fixture-command")
+    const before = await Fs.stat(bin, { bigint: true })
+    const runOptions = { ...options, verb: "test" as const, patterns: ["//:check"] }
+    const result = await PackageExec.run(runOptions)
+    expect(result.ok, JSON.stringify(result.results)).toBe(true)
+    expect(result.results.find((row) => row.label === "//:check")?.status).toBe("ran")
+    const again = await PackageExec.run(runOptions)
+    expect(again.results.find((row) => row.label === "//:check")?.status).toBe("hit")
+    const after = await Fs.stat(bin, { bigint: true })
+    expect(after.ino).toBe(before.ino)
+    expect(after.mtimeNs).toBe(before.mtimeNs)
+    await expect(Fs.access(Path.join(root, "undeclared.txt"))).rejects.toThrow()
+  })
+
+  it.each([false, true])("uses Install's store for action exec (declared environment=%s)", async (declared) => {
+    const { root, install, version } = await fixture("", true)
+    await install()
+    await storeProbe(root, declared ? "retained" : undefined)
+    await Fs.mkdir(Path.join(root, ".flows/cache"), { recursive: true })
+    const target = StoreProbe({
+      packageManager: Manager.ResolvedPnpmPackageManager.make({
+        name: "pnpm",
+        executable: "pnpm",
+        version,
+        runtime: Runtime.ResolvedNodeRuntime.make({
+          name: "node",
+          version: process.versions.node,
+          executable: process.execPath
+        })
+      })
+    })
+    const bin = Path.join(root, "node_modules/.bin/fixture-command")
+    const before = await Fs.stat(bin, { bigint: true })
+    const result = await Effect.runPromise(runTarget(
+      root,
+      ".flows",
+      target,
+      Target.metadata(target).attrs,
+      "b17-confined-pnpm",
+      [],
+      undefined,
+      declared
+        ? {
+          storePath: "/nix/store/test",
+          hash: "test",
+          closure: [],
+          path: (process.env.PATH ?? "").split(Path.delimiter),
+          variables: { B17_DECLARED_ENV: "retained" }
+        }
+        : undefined,
+      {
+        policy: undefined,
+        reads: ["probe.cjs", "package.json", "pnpm-lock.yaml", "pnpm-workspace.yaml", "node_modules"],
+        writes: [".flows"],
+        readOnly: [".flows/cache"]
+      }
+    ))
+    expect(result).toMatchObject({ exitCode: 0, stdout: "CONFINED_PNPM_STORE_OK\n" })
+    const after = await Fs.stat(bin, { bigint: true })
+    expect(after.ino).toBe(before.ino)
+    expect(after.mtimeNs).toBe(before.mtimeNs)
+    await expect(Fs.access(Path.join(root, "undeclared.txt"))).rejects.toThrow()
   })
 })

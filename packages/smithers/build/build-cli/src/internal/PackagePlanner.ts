@@ -2746,13 +2746,19 @@ const visit = async (
   if (context.managerBinary !== undefined && argv !== undefined) {
     readSet.push(...managerFilesOf(context.index.workspace))
     if (packagePath !== "") readSet.push(`${packagePath}/package.json`)
+    if (context.managerBinary === "pnpm") {
+      // Reuse Install's store, including in nested pnpm commands. Otherwise
+      // pnpm probes the read-only workspace to choose a store before exec.
+      env["pnpm_config_store_dir"] = `${PackageManager.storeRoot}/pnpm`
+      env["pnpm_config_verify_deps_before_run"] = "false"
+      absoluteEnv.push("pnpm_config_store_dir")
+    }
     // pnpm 11 verifies the dependency tree before `run` and `exec` and installs
     // when it disagrees. A keyed, confined check would then reach the registry
     // and rewrite `node_modules` as a side effect of running `tsc`. Installing
     // is the `Npm.NodeModules` resource's business; a consumer of it never
-    // installs. The setting lives only in `pnpm-workspace.yaml`, so `--config.`
-    // is the one spelling that reaches pnpm from here. Only pnpm's own argv
-    // takes it: `vitest run` from `node_modules/.bin` is not `pnpm run`.
+    // installs. Pin pnpm's own run/exec setting in argv as well as the inherited
+    // environment. Direct node_modules binaries do not accept pnpm's flags.
     if (
       context.managerBinary === "pnpm" &&
       NodePath.basename(argv[0]!).replace(/\.(?:cmd|exe)$/i, "") === context.managerBinary &&
