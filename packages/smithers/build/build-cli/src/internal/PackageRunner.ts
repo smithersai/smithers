@@ -64,10 +64,12 @@ import {
   bundlerScratchDirectory,
   collectTagged,
   decodeStoredResolve,
+  installationDependencies,
   keyMaterialWithGraph,
   managerFilesOf,
   nodeModulesDirectories,
   plan,
+  planAfterInstall,
   staticPrefixOf,
   takesExclusiveTreePermit,
   workspaceRootToken
@@ -93,6 +95,9 @@ const joined = <A>(run: (signal: AbortSignal) => Promise<A>): Effect.Effect<A, u
 export interface ExecutionServices {
   readonly exec: typeof Exec.run
   readonly target: typeof runTarget
+  readonly install: (
+    ...args: Parameters<typeof runInstall>
+  ) => Effect.Effect<Awaited<ReturnType<typeof runInstall>>, unknown>
   readonly resolveGraph: typeof RspackRunner.resolveGraph
   readonly build: typeof RspackRunner.runBuild
   readonly sessions: typeof AgentFake.sessionFactoryFromEnvironment
@@ -113,6 +118,7 @@ export interface ExecutionServices {
 export const executionServicesLive: ExecutionServices = {
   exec: Exec.run,
   target: runTarget,
+  install: (root, options) => joined((signal) => runInstall(root, { ...options, signal })),
   resolveGraph: RspackRunner.resolveGraph,
   build: RspackRunner.runBuild,
   sessions: AgentFake.sessionFactoryFromEnvironment,
@@ -1124,8 +1130,10 @@ export const executeEffect = (
       treeRoot: string = root
     ): Effect.Effect<ServiceSupervisor.ServiceSpec | { readonly error: string }, unknown> =>
       Effect.gen(function*() {
-        const serveNode = planned.nodes.get(label)
-        if (serveNode === undefined) return { error: `service ${label} was not planned` }
+        const original = planned.nodes.get(label)
+        if (original === undefined) return { error: `service ${label} was not planned` }
+        const serveNode = yield* refreshInstalledNode(original)
+        if (typeof serveNode === "string") return { error: `service ${label}: ${serveNode}` }
         if (serveNode.refusal !== undefined) return { error: `service ${label}: ${serveNode.refusal}` }
         if (serveNode.lane?.kind === "docker-service") {
           const key = treeRoot === root ? label : `${label} @ ${treeRoot}`
@@ -3275,14 +3283,11 @@ export const executeEffect = (
               ))
             }
             case "Install": {
-              const installed = yield* joined((signal) =>
-                runInstall(root, {
-                  cacheDirectory,
-                  sensitiveEnvironment: credentialNames,
-                  signal,
-                  toolchain: declaredToolchain(node.attrs)
-                })
-              )
+              const installed = yield* services.install(root, {
+                cacheDirectory,
+                sensitiveEnvironment: credentialNames,
+                toolchain: declaredToolchain(node.attrs)
+              })
               Target.metadata(node.declaration).decodeSuccess(installed.result)
               return green("ran")
             }
@@ -3387,6 +3392,52 @@ export const executeEffect = (
         return current.refusal
       })
 
+    /** Resolve installed tool identities and authority after their producers finish. */
+    const refreshInstalledNode = (node: PackageNode): Effect.Effect<PackageNode | string> =>
+      Effect.gen(function*() {
+        const installations = installationDependencies(node.dependencies, planned.nodes)
+        if (installations.length === 0) return node
+        yield* verifyExecutables(node)
+        if (installations.some((label) => !["ran", "hit"].includes(reports.get(label)?.status ?? ""))) {
+          return "installation dependency has no successful execution receipt"
+        }
+        const refreshed = yield* joined((signal) =>
+          planAfterInstall(
+            {
+              ...options,
+              verb: "auto",
+              patterns: [node.label],
+              rootLabels: undefined,
+              plan: false,
+              readCache: false,
+              reporter: undefined,
+              log: () => {},
+              signal
+            },
+            new Set(installations),
+            node,
+            planned.nodes
+          )
+        )
+        const current = refreshed.nodes.get(node.label)
+        if (current === undefined) return "target disappeared after installation"
+        // Retain authority captured before install. Newly created local
+        // directories are expected; a new external alias is never a grant.
+        const local = nodeModulesDirectories([node.cwd, node.packagePath])
+          .map((directory) => NodePath.join(root, directory))
+        for (const installation of current.dependencyInstallations ?? []) {
+          if (!(node.dependencyInstallations ?? []).includes(installation) && !local.includes(installation)) {
+            return "dependency installation changed since planning"
+          }
+        }
+        if (node.approval !== undefined && current.approval !== node.approval) {
+          return "approval required: target changed after installation"
+        }
+        byLabel.set(node.label, current)
+        effectiveKeys.set(node.label, current.keyPreview)
+        return current
+      }).pipe(Effect.catchCause((cause) => Effect.succeed(Diagnostic.describe(Cause.squash(cause)))))
+
     /** Settles one node: gate and dependency checks, refusal, then dispatch. */
     const settle = (node: PackageNode): Effect.Effect<Outcome, unknown> =>
       Effect.gen(function*() {
@@ -3406,6 +3457,9 @@ export const executeEffect = (
             return { status: "skipped", error: `dependency ${blocked} did not succeed`, blockedBy: blocked }
           }
         }
+        const current = yield* refreshInstalledNode(node)
+        if (typeof current === "string") return fail(current)
+        node = current
         if (node.refusal !== undefined) return fail(node.refusal)
         if (node.approval !== undefined) {
           const stale = yield* approvalRecheck({ ...node, approval: node.approval })
