@@ -880,7 +880,6 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
         },
         { principal: { id: "memory", kind: "test" }, scopes: ["once", "run", "remembered"], targets: ["Plan", "Node"] }
       ]).pipe(Effect.orDie))
-      const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority)
       const configuredFlows = options.flows ?? plannable.map((entry): MemoryFlow => ({
         flowId: entry.flowId,
         description: `Reserved ${entry.verb} system flow`,
@@ -900,6 +899,14 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
       }>()
       const tokens = new Map<string, MutableToken>()
       const runs = new Map<RunId, MutableRun>()
+      const authorizeApproval: Service["authorizeApproval"] = (request) =>
+        approvalAuthority.authorize(request, {
+          flowId: Effect.sync(() =>
+            request.target._tag === "Plan"
+              ? plans.get(request.target.planId)?.card.flowId
+              : runs.get(request.target.runId)?.summary.flowId
+          )
+        })
       const mutations = new Map<IdempotencyKey, MutationRecord>()
       const runKeys = new Map<IdempotencyKey, { readonly fingerprint: string }>()
       const installedGrants: Array<BulkGrant> = []

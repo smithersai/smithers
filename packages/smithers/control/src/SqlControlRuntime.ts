@@ -442,7 +442,6 @@ const makeRuntime = (
     : Object.freeze({ ...options.owner })
   const isAlive = options.isAlive
   const approvalAuthority = options.approvalAuthority ?? ApprovalAuthority.local
-  const authorizeApproval = approvalAuthority.authorize.bind(approvalAuthority)
 
   return Effect.gen(function*() {
     const crypto = yield* Crypto.Crypto
@@ -1595,6 +1594,21 @@ const makeRuntime = (
           INSERT INTO control_run_messages (run_id, kind, payload_json)
           VALUES (${runId}, ${kind}, ${JSON.stringify(payload)})
         `.pipe(Effect.mapError(persistence("append a run message")))
+      })
+
+    const authorizeApproval: Service["authorizeApproval"] = (request) =>
+      approvalAuthority.authorize(request, {
+        flowId: Effect.gen(function*() {
+          if (request.target._tag === "Plan") {
+            const row = yield* readPlan(request.target.planId)
+            return Option.isSome(row) ? (yield* storedPlan(row.value)).card.flowId : undefined
+          }
+          return yield* requireRow(request.target.runId).pipe(
+            Effect.flatMap(summaryOf),
+            Effect.map((summary) => summary.flowId),
+            Effect.catchTag("/control/RunNotFound", () => Effect.succeed(undefined))
+          )
+        })
       })
 
     const service = make({
