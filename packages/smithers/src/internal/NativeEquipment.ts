@@ -34,6 +34,7 @@ import { homedir } from "node:os"
 import { isAbsolute, join, relative, sep } from "node:path"
 import type * as Application from "../Application.ts"
 import * as CliError from "../CliError.ts"
+import { Refused } from "../CliError.ts"
 import * as Environment_ from "../Environment.ts"
 import * as Providers from "../Providers.ts"
 import * as ClaudeCode from "./ClaudeCode.ts"
@@ -180,6 +181,7 @@ export const seatResolver = (
           if (claude) {
             selected.CLAUDE_CONFIG_DIR = directory
             delete selected.ANTHROPIC_API_KEY
+            delete selected.ANTHROPIC_API_KEY_FILE
             delete selected.ANTHROPIC_AUTH_TOKEN
             delete selected.CLAUDE_CODE_OAUTH_TOKEN
             delete selected.ANTHROPIC_BASE_URL
@@ -189,6 +191,7 @@ export const seatResolver = (
             delete selected.ANTHROPIC_FOUNDRY_BASE_URL
           } else {
             delete selected.OPENAI_API_KEY
+            delete selected.OPENAI_API_KEY_FILE
             delete selected.CODEX_API_KEY
             delete selected.OPENAI_BASE_URL
             selected.CODEX_HOME = directory
@@ -212,6 +215,13 @@ export const seatResolver = (
  */
 const aliasSeat = async (declared: string, host: Providers.Host): Promise<string> => {
   const seat = Providers.expandSeat(declared)
+  // A configured pool is tried before any local Claude credential. Only its
+  // fallback needs to inspect local keys or the subscription login.
+  if (
+    seat !== declared && seat.startsWith("anthropic:") && accountPoolOf(host.environment)?.routes.includes("anthropic")
+  ) {
+    return `claude-code:${declared}`
+  }
   return seat !== declared && seat.startsWith("anthropic:") && (await credential("anthropic", host))._tag === "Refused"
     ? `claude-code:${declared}`
     : seat
@@ -239,7 +249,10 @@ const withAliases = (base: SeatResolver.Service, host: Providers.Host): SeatReso
             new Seat.SeatUnresolved({ seat: declared, message: Providers.seatRefusal(declared)! })
           )
         }
-        const seat = yield* Effect.promise(() => aliasSeat(declared, host))
+        const seat = yield* Effect.tryPromise({
+          try: () => aliasSeat(declared, host),
+          catch: (error) => new Seat.SeatUnresolved({ seat: declared, message: credentialRefusal(error) })
+        })
         const resolved = poolFirst(declared, seat, host)
           ? base.resolve(Providers.expandSeat(declared)).pipe(Effect.catch(() => base.resolve(seat)))
           : base.resolve(seat)
@@ -283,6 +296,11 @@ const hostOf = (environment: Readonly<Record<string, string | undefined>>): Prov
   claudeCode: () => Providers.claudeCodeLogin(environment)
 })
 
+const credentialRefusal = (error: unknown): string =>
+  error instanceof Refused && error.code === "provider_key_file_unavailable"
+    ? error.message
+    : "Provider credentials are unavailable"
+
 const credential = async (provider: string, host: Providers.Host): Promise<Credential> => {
   const environment = host.environment
   // The OpenAI-compatible Chat Completions providers are routed by table
@@ -321,19 +339,19 @@ const credential = async (provider: string, host: Providers.Host): Promise<Crede
   if (authMode !== "api-key" && authMode !== "chatgpt") {
     return refused((seat) => `${openaiAuthVariable} must be "api-key" or "chatgpt" to run the ${seat} seat`)
   }
-  const value = environment[variable]
-  const key = value === undefined || value.length === 0 ? undefined : value
   if (authMode === "chatgpt") {
     // Behind the Smithers model proxy the ChatGPT seat carries the proxy
     // credential as the `openai` seat's key.
     const origin = Endpoint.proxyOrigin("chatgpt", environment)
     if (origin !== undefined) {
+      const key = Providers.providerKey([variable], environment)?.key
       return key === undefined
         ? refused((seat) => `Set ${variable} to run the ${seat} seat through the model proxy`)
         : { _tag: "Pooled", key, origin }
     }
     return credential("codex", host)
   }
+  const key = Providers.providerKey([variable], environment)?.key
   return key === undefined ? refused((seat) => `Set ${variable} to run the ${seat} seat`) : { _tag: "Key", key }
 }
 
@@ -460,7 +478,10 @@ const providerSeats = (
             message: "The configured subscription pool has no available account for this seat."
           })
         }
-        const signed = yield* Effect.promise(() => credential(provider, host))
+        const signed = yield* Effect.tryPromise({
+          try: () => credential(provider, host),
+          catch: (error) => new Seat.SeatUnresolved({ seat, message: credentialRefusal(error) })
+        })
         switch (signed._tag) {
           case "Refused":
             return yield* new Seat.SeatUnresolved({ seat, message: signed.refusal(seat) })
@@ -674,14 +695,21 @@ export const layerSeatResolver = (
 export const seatCandidates = async (host: Providers.Host): Promise<ReadonlyArray<string>> => {
   const pool = accountPoolOf(host.environment)
   const available = await Promise.all(SeatRouter.seats.map(async (alias) => {
-    const seat = await aliasSeat(alias, host)
-    // A route the pool is configured for is offered: the pool is asked which
-    // routes have accounts when the seat resolves.
-    const expanded = poolFirst(alias, seat, host) ? Providers.expandSeat(alias) : seat
-    const route = poolRouteOf(expanded.slice(0, expanded.indexOf(":")), host.environment)
-    if (pool !== undefined && route !== undefined && pool.routes.includes(route)) return true
-    const provider = seat.slice(0, seat.indexOf(":"))
-    return (await credential(provider, host))._tag !== "Refused"
+    try {
+      const seat = await aliasSeat(alias, host)
+      // A route the pool is configured for is offered: the pool is asked which
+      // routes have accounts when the seat resolves.
+      const expanded = poolFirst(alias, seat, host) ? Providers.expandSeat(alias) : seat
+      const route = poolRouteOf(expanded.slice(0, expanded.indexOf(":")), host.environment)
+      if (pool !== undefined && route !== undefined && pool.routes.includes(route)) return true
+      const provider = seat.slice(0, seat.indexOf(":"))
+      return (await credential(provider, host))._tag !== "Refused"
+    } catch (error) {
+      // Discovery omits this unavailable seat; an explicit resolution still
+      // returns its typed credential refusal and cannot select another key.
+      if (error instanceof Refused && error.code === "provider_key_file_unavailable") return false
+      throw error
+    }
   }))
   return SeatRouter.seats.filter((_, index) => available[index])
 }
@@ -767,7 +795,14 @@ export const layerSeatEvaluator = (
   Layer.effect(Evaluator.Evaluator)(Effect.gen(function*() {
     const executor = yield* RequestExecutor.RequestExecutor
     const resolver = seatResolver(environment, executor)
-    const key = environment["AI_GATEWAY_API_KEY"]?.trim()
+    const resolvedKey = yield* Effect.result(Effect.try({
+      try: () => Providers.providerKey(["AI_GATEWAY_API_KEY"], environment)?.key.trim(),
+      catch: (error) => new Evaluator.EvaluatorError({ code: "unconfigured", message: credentialRefusal(error) })
+    }))
+    if (resolvedKey._tag === "Failure") {
+      return Evaluator.Evaluator.of({ evaluate: () => Effect.fail(resolvedKey.failure) })
+    }
+    const key = resolvedKey.success
     const keyed = key !== undefined && key !== ""
     // Claude Haiku on this machine's Claude Code first, by Claude Code's own
     // `haiku` alias: asked for `claude-haiku-4-5` by id on 2026-10-13, it
@@ -795,7 +830,10 @@ export const layerSeatEvaluator = (
     }
     const subscription: Evaluator.Evaluator = Evaluator.Evaluator.of({
       evaluate: (request) =>
-        Effect.promise(subscriptionSeat).pipe(
+        Effect.tryPromise({
+          try: subscriptionSeat,
+          catch: (error) => new Evaluator.EvaluatorError({ code: "unconfigured", message: credentialRefusal(error) })
+        }).pipe(
           Effect.flatMap((seat) =>
             seat !== undefined
               ? resolver.resolve(seat).pipe(

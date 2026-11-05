@@ -2,10 +2,10 @@
  * Which model seats this machine can run `smthrs suggest` on, and which one
  * it runs on.
  *
- * Detection is pure over an injected environment, home directory, and file
- * reader, so the whole matrix (a Codex session, an API-key login, an empty
- * key, an override) is a table of small cases rather than a fixture in
- * `$HOME`. The order of {@link order} is the documented seat order and the
+ * Detection uses an injected environment, home directory, and login-file
+ * reader. Explicit provider key files are opened through an owner-private
+ * descriptor check, and their contents never enter detection metadata.
+ * The order of {@link order} is the documented seat order and the
  * only ranking there is: the first available entry is the seat, and nothing
  * here weighs one provider against another.
  *
@@ -26,8 +26,9 @@ import * as Endpoint from "@smthrs/model/Endpoint"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Data from "effect/Data"
 import { execFile } from "node:child_process"
-import { accessSync, constants } from "node:fs"
+import { accessSync, closeSync, constants, fstatSync, openSync, readSync } from "node:fs"
 import { delimiter, join } from "node:path"
+import { Refused } from "./CliError.ts"
 import * as Environment from "./Environment.ts"
 
 /**
@@ -141,8 +142,75 @@ export const compatible: Readonly<Record<string, Compatible>> = {
   vercel: { baseUrl: Endpoint.providerOrigins.vercel, variables: ["AI_GATEWAY_API_KEY"] }
 }
 
+const readKeyFile = (path: string, variable: string): string => {
+  const unavailable = () =>
+    new Refused({
+      fault: "user",
+      code: "provider_key_file_unavailable",
+      message: `Cannot read ${variable}: expected an owner-private regular file (0600 or 0400) containing one API key`
+    })
+  try {
+    // Open first, then inspect/read the same descriptor. No symlink following,
+    // no FIFO blocking, and no unbounded read if the file grows after fstat.
+    const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK)
+    try {
+      const stat = fstatSync(descriptor)
+      if (
+        !stat.isFile() || stat.size > 16384 || process.getuid === undefined || stat.uid !== process.getuid() ||
+        (stat.mode & 0o177) !== 0 || (stat.mode & 0o400) === 0
+      ) throw unavailable()
+      const bytes = Buffer.alloc(16385)
+      let length = 0
+      while (length < bytes.length) {
+        const count = readSync(descriptor, bytes, length, bytes.length - length, null)
+        if (count === 0) break
+        length += count
+      }
+      const key = bytes.subarray(0, length).toString("utf8").replace(/\r?\n$/, "")
+      if (length > 16384 || !/^[A-Za-z0-9._~+/=-]+$/.test(key)) throw unavailable()
+      return key
+    } finally {
+      closeSync(descriptor)
+    }
+  } catch {
+    // Never attach the filesystem error, path or file contents to diagnostics.
+    throw unavailable()
+  }
+}
+
 /**
- * The first key variable of a compatible provider that is set and non-empty.
+ * Resolve provider keys without copying them into the host environment.
+ * Non-empty direct variables win, in declared alias order. Only when all are
+ * unset/empty are their `_FILE` variants tried in the same order. An explicitly
+ * selected but invalid file is refused, never replaced by another credential.
+ * Files must be owned by this account, regular, and private (0600 or 0400).
+ * Hosts without POSIX ownership checks refuse files rather than assuming an ACL.
+ * One trailing LF or CRLF is removed; values are reread on every resolution.
+ *
+ * @category getters
+ * @since 1.0.0
+ */
+export const providerKey = (
+  variables: ReadonlyArray<string>,
+  environment: Environment.Source
+): { readonly variable: string; readonly key: string } | undefined => {
+  for (const variable of variables) {
+    const key = Environment.read(environment, variable)
+    if (key !== undefined) return { variable, key }
+  }
+  for (const variable of variables) {
+    const name = `${variable}_FILE`
+    const path = Environment.read(environment, name)
+    if (path !== undefined) return { variable: name, key: readKeyFile(path, name) }
+  }
+  return undefined
+}
+
+/**
+ * A compatible provider's key, resolved by {@link providerKey}. In particular,
+ * AI_GATEWAY_API_KEY wins over AI_GATEWAY_API_KEY_FILE for Vercel AI Gateway.
+ * The returned value belongs only in the provider's redacted authentication;
+ * never export it into child environments or detection metadata.
  *
  * @category getters
  * @since 1.0.0-rc.0
@@ -152,12 +220,7 @@ export const compatibleKey = (
   environment: Environment.Source
 ): { readonly variable: string; readonly key: string } | undefined => {
   const entry = Object.hasOwn(compatible, provider) ? compatible[provider] : undefined
-  if (entry === undefined) return undefined
-  for (const variable of entry.variables) {
-    const key = Environment.read(environment, variable)
-    if (key !== undefined) return { variable, key }
-  }
-  return undefined
+  return entry === undefined ? undefined : providerKey(entry.variables, environment)
 }
 
 /**
@@ -361,7 +424,14 @@ const keyed = (
   variables: ReadonlyArray<string>,
   environment: Environment.Source
 ): Detection => {
-  const set = variables.find((variable) => Environment.read(environment, variable) !== undefined)
+  let set: string | undefined
+  let refusal: string | undefined
+  try {
+    set = providerKey(variables, environment)?.variable
+  } catch (error) {
+    if (!(error instanceof Refused) || error.code !== "provider_key_file_unavailable") throw error
+    refusal = error.message
+  }
   const blank = variables.filter((variable) => environment[variable] === "")
   const named = variables.map((variable) => `$${variable}`).join(" or ")
   return {
@@ -369,11 +439,11 @@ const keyed = (
     label: labels[id],
     seat: defaultSeat[id],
     available: set !== undefined,
-    reason: set !== undefined
+    reason: refusal ?? (set !== undefined
       ? `$${set} is set`
       : blank.length === 0
       ? `${named} is not set`
-      : `${blank.map((variable) => `$${variable}`).join(" and ")} exported but empty`,
+      : `${blank.map((variable) => `$${variable}`).join(" and ")} exported but empty`),
     // Not spelled as an assignment. `Redaction.redactDiagnostic` rewrites anything of
     // the form `<NAME>KEY=<value>`, and this sentence reaches an operator
     // through `cli/LegacyBin.ts` or `cli/Entry.ts`, both of which redact
@@ -582,11 +652,12 @@ export const claudeCode = async (host: Host): Promise<{
   readonly setupHint: string
   readonly executable?: string | undefined
 }> => {
-  if (Environment.read(host.environment, "ANTHROPIC_API_KEY") !== undefined) {
+  const key = providerKey(["ANTHROPIC_API_KEY"], host.environment)
+  if (key !== undefined) {
     return {
       available: false,
-      reason: "$ANTHROPIC_API_KEY is set, so Claude seats run on the API",
-      setupHint: "use an anthropic:<model> seat, or unset ANTHROPIC_API_KEY to use your Claude subscription"
+      reason: `$${key.variable} is set, so Claude seats run on the API`,
+      setupHint: `use an anthropic:<model> seat, or unset ${key.variable} to use your Claude subscription`
     }
   }
   const login = await host.claudeCode?.()

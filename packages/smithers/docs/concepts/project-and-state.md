@@ -147,9 +147,23 @@ exported-but-blank variable is how a shell spells "not configured".
 `Environment.readInteger` requires the whole value to be digits, so `30s` and
 `30abc` are ignored rather than read as 30.
 
-Provider keys (`ANTHROPIC_API_KEY`, `OPENAI_API_KEY`, `OPENROUTER_API_KEY`,
-and `CEREBRAS_API_KEY`) are not in this set. The seat resolver reads them, not
-the CLI, and `smthrs doctor` reports which are present.
+Provider keys are resolved by the seat resolver; `smthrs doctor` reports
+availability without printing their values. Each variable also accepts a
+`_FILE` variant: `ANTHROPIC_API_KEY_FILE`, `OPENAI_API_KEY_FILE`,
+`OPENROUTER_API_KEY_FILE`, `MOONSHOT_API_KEY_FILE`, `GEMINI_API_KEY_FILE`,
+`GOOGLE_API_KEY_FILE`, `CEREBRAS_API_KEY_FILE`, and `AI_GATEWAY_API_KEY_FILE`.
+The Gateway key also configures the Jev evaluator.
+
+Non-empty direct variables take precedence over files. For Gemini, direct
+`GEMINI_API_KEY` precedes `GOOGLE_API_KEY`; only when both are empty or unset
+are `GEMINI_API_KEY_FILE` then `GOOGLE_API_KEY_FILE` considered. A selected
+file that cannot be read safely is refused; it never falls back to another
+credential. Files must be regular, owned by the current OS account, and mode
+0600 or 0400. Symlinks, empty files, multiple lines, whitespace and files over
+16 KiB are refused. One trailing LF or CRLF is allowed. Hosts without POSIX
+ownership checks refuse file credentials. Resolution rereads the file, so
+rotation takes effect on the next resolution. Contents are not exported into
+child environments, detection metadata or diagnostics.
 
 ## Saved CLI logins
 
