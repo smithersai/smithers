@@ -27,8 +27,8 @@
     "./internal/*": null,
     "./*/index": null,
     "./Canonical": {
-      "types": "./src/Canonical.ts",
-      "vibelang-source": "./src/Canonical.ts",
+      "types": "./.vibe/declarations/Canonical.d.vibe.ts",
+      "vibelang-source": "./src/Canonical.vibe",
       "default": "./.vibelang/js/src/Canonical.js"
     },
     "./index": {
@@ -65,7 +65,8 @@
     "README.md",
     "docs/",
     "examples/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/Canonical.vibe"
   ],
   "publishConfig": {
     "access": "public",
