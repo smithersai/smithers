@@ -10,11 +10,24 @@ import * as Input from "@smthrs/targets/Input"
 import * as SafeFs from "@smthrs/targets/SafeFs"
 import * as Target from "@smthrs/targets/Target"
 import * as Clock from "effect/Clock"
+import * as Data from "effect/Data"
 import * as Effect from "effect/Effect"
 import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as Diagnostic from "../../Diagnostic.ts"
 import type * as Rule from "../RuleContract.ts"
+
+/**
+ * Evidence that cannot support the planned documentation check.
+ *
+ * @category errors
+ * @since 1.0.0
+ */
+export class DocsEvidenceError extends Data.TaggedError("smithers-build/DocsEvidenceError")<{
+  readonly code: "unavailable" | "unplanned"
+  readonly path: string
+  readonly message: string
+}> {}
 
 type Selection = Extract<Rule.Selection, { readonly rule: "Docs.Check" }> & {
   readonly writeSet: ReadonlyArray<string>
@@ -79,12 +92,21 @@ export const contract: Rule.Contract<Selection, Request, { readonly output?: unk
     for (const { input, path, text } of observations) {
       const digest = DocsCheck.evidenceDigest(text, input, now)
       if (digest === undefined) {
-        throw new Error(
-          `unknown: ${lane.output} needs current evidence at ${path}; collect the dependency observation before re-verifying`
-        )
+        throw new DocsEvidenceError({
+          code: "unavailable",
+          path,
+          message:
+            `unknown: ${lane.output} needs current evidence at ${path}; collect the dependency observation before re-verifying`
+        })
       }
       const index = files.findIndex((file) => file.path === path)
-      if (index < 0) throw new Error(`unknown: evidence ${path} was not included in the planned closure`)
+      if (index < 0) {
+        throw new DocsEvidenceError({
+          code: "unplanned",
+          path,
+          message: `unknown: evidence ${path} was not included in the planned closure`
+        })
+      }
       files[index] = { path, digest }
     }
     const stampPath = NodePath.join(root, ...lane.stamp.split("/"))
