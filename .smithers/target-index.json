@@ -63038,6 +63038,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/smithers/build/build-cli/tsconfig.lint.json"
+      },
+      {
+        "kind": "file",
         "path": "eslint.jsdoc.js"
       },
       {

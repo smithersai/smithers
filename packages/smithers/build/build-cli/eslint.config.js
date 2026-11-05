@@ -35,7 +35,10 @@ export default tseslint.config(
     extends: [tseslint.configs.recommended],
     languageOptions: {
       parserOptions: {
-        projectService: true,
+        // Lint source and examples in one program without loading the test suite
+        // or retaining a second copy of their shared dependency graph.
+        projectService: false,
+        project: "./tsconfig.lint.json",
         tsconfigRootDir: import.meta.dirname
       }
     },
@@ -81,17 +84,6 @@ export default tseslint.config(
       "unicorn/no-abusive-eslint-disable": "error",
       "unicorn/no-accessor-recursion": "error",
       "unicorn/prefer-array-flat-map": "error"
-    }
-  },
-  {
-    // tsconfig.json covers only src/, so the project service cannot find the
-    // examples; tsconfig.test.json, which the typecheck target uses, does.
-    files: ["examples/**/*.ts"],
-    languageOptions: {
-      parserOptions: {
-        projectService: false,
-        project: "./tsconfig.test.json"
-      }
     }
   },
   {
