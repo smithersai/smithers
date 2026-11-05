@@ -1318,6 +1318,22 @@
       }
     },
     {
+      "id": "issues/file-tree",
+      "description": "File an issue import plan on smithers.sh as a tree of sub-issues, with machine tokens, resumable.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/issues/file-tree/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "net:get:**",
+        "net:post:**"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
+    },
+    {
       "id": "land",
       "description": "Commit every edit in the shared checkout to main and, with push, publish it after the landing gates.",
       "summary": null,
@@ -1799,6 +1815,23 @@
         "tokens": 20000000,
         "milliseconds": 14400000
       }
+    },
+    {
+      "id": "test/coverage-campaign",
+      "description": "Inventory retained packages and inspect reproducible test receipts; refuse incomplete qualification.",
+      "summary": null,
+      "featured": false,
+      "kind": "ts",
+      "path": ".smithers/flows/test/coverage-campaign/flow.ts",
+      "capabilities": [
+        "fs:read:**",
+        "fs:write:.smithers/flows/test/coverage-campaign/**",
+        "proc:spawn:node *",
+        "proc:spawn:jj *"
+      ],
+      "model": null,
+      "modelInvocable": false,
+      "flows": []
     },
     {
       "id": "todo",
