@@ -143,10 +143,12 @@ describe("printChannel.buffer", () => {
     // far over the budget, values exactly at the statement floor and one either
     // side of it, and frames of every count from one to thousands.
     for (const byteCount of [0, 1, 8, 511, 512, 513, 4_000, 16_384, 40_000, 500_000]) {
+      // This case supplies the original byte count itself, including already-elided values.
+      // Do not measure every retained copy only to replace that measurement below.
+      const text = "x".repeat(Math.min(byteCount, 20_000))
       for (const count of [1, 2, 12, 32, 33, 200, 5_000]) {
         for (const unread of [0, 4_000]) {
-          const frame = Array.from({ length: count }, () => statement("x".repeat(Math.min(byteCount, 20_000))))
-            .map((held) => ({ text: held.text, bytes: byteCount }))
+          const frame = Array.from({ length: count }, () => ({ text, bytes: byteCount }))
           expect(bytes.size(printChannel.buffer(frame, unread)), `bytes=${byteCount} count=${count} unread=${unread}`)
             .toBeLessThanOrEqual(Sandbox.printFrameBytes)
         }
