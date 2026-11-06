@@ -164,9 +164,9 @@
     },
     "./MemoryEntries": {
       "types": {
-        "default": "./src/MemoryEntries.ts"
+        "default": "./.vibe/declarations/src/MemoryEntries.d.vibe.ts"
       },
-      "vibelang-source": "./src/MemoryEntries.ts",
+      "vibelang-source": "./src/MemoryEntries.vibe",
       "default": "./.vibelang/js/src/MemoryEntries.js"
     },
     "./ModelAuthor": {
@@ -237,7 +237,8 @@
     "README.md",
     "CHANGELOG.md",
     ".vibelang/js",
-    "src/SubChains.vibe"
+    "src/SubChains.vibe",
+    "src/MemoryEntries.vibe"
   ],
   "publishConfig": {
     "access": "public",

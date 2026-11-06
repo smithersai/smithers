@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { runAChain } from "../examples/run-a-chain.ts"
+import { runAChain } from "../examples/run-a-chain.vibe"
 
 describe("examples", () => {
   it("run-a-chain finishes with the matched count", async () => {

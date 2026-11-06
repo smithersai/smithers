@@ -7,7 +7,7 @@ import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Author from "../src/Author.vibe"
 import type * as Catalog from "../src/Catalog.vibe"
-import * as MemoryEntries from "../src/MemoryEntries.ts"
+import * as MemoryEntries from "../src/MemoryEntries.vibe"
 import { flow, runChain, runOn } from "./harness.ts"
 
 const services = Layer.provideMerge(RecallKeyword.layer, TestMemory.layerWithDatabase)

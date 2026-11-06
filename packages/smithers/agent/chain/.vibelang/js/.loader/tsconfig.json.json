@@ -117,7 +117,7 @@
      "relative": "packages/smithers/agent/chain/src"
     },
     null,
-    "ZeaMETTpU1_k3lbGXJciHw8yMD0tsos8mn8ORxJXl8U",
+    "VapHZk4t__5h0fuHzuqF0-F-tG-d5L1h25B4uFTEhaA",
     [],
     {
      "recursive": true,
@@ -339,15 +339,15 @@
     "path": {
      "relative": "packages/smithers/agent/chain/package.json"
     },
-    "size": 9027,
-    "hash": "1yMt5Ov8OsvVVMSZljuQtTt0RIa08FWyBxRUkLWafOI"
+    "size": 9089,
+    "hash": "ytMGjj5fKIclNfa924YmCpIZv2igR69ygPnhKX8mrxQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 5792,
-    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
+    "size": 5846,
+    "hash": "i6JJi0lsEiBkd2vdaB53mnhAjKPmVi4S4kHtRpnAF88"
    },
    {
     "path": {
@@ -402,8 +402,8 @@
     "path": {
      "relative": "packages/smithers/agent/memory/package.json"
     },
-    "size": 12559,
-    "hash": "zzGSd5Bv674CFPuEVyPEHapfnuCEGmA_G_ONvmy1AbQ"
+    "size": 12986,
+    "hash": "TScz0ePGBg1qlkQGQ6az6PLaihvtljo5K9qfhoZKQEQ"
    },
    {
     "path": {
@@ -437,8 +437,8 @@
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
-    "size": 5939,
-    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
+    "size": 7010,
+    "hash": "e8ExeeI_-R-7WbqAA3L5db70KeE2WuC1-NXEnTCcL1o"
    },
    {
     "path": {
@@ -2159,10 +2159,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+     "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
     },
-    "size": 3466,
-    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+    "size": 3364,
+    "hash": "Vt245oY5GzEJWu0aI_2ozleaQdo77LyMCMUIsz7JCSY"
    },
    {
     "path": {
@@ -2189,8 +2189,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/src/index.vibe"
     },
-    "size": 1664,
-    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+    "size": 1666,
+    "hash": "Hd8vMVI2OlcM02QkrsWnSKituLfroBIUHlrp6QcyUGs"
    },
    {
     "path": {
@@ -3881,10 +3881,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/Fts.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
     },
-    "size": 9590,
-    "hash": "-983dq1cJ2j4bCxjlivCiQM4MLKws1rdbwoLfMNvjXw"
+    "size": 9341,
+    "hash": "EMDed_H1FTQFIPf9AzLspQi9o0ejb_GgpFBNGouSuAE"
    },
    {
     "path": {
@@ -3897,29 +3897,29 @@
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
     },
-    "size": 10028,
-    "hash": "3m-E2DiLMX-qd0hJmtRfBa6kQqv4sV2quZ1t1EaYLHU"
+    "size": 10030,
+    "hash": "xFvt-bgOZ1xCKHkKlarxxE38ocj1NHJdEiDBs3mu5F8"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/Instrument.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/Instrument.vibe"
     },
-    "size": 2574,
-    "hash": "c3UM4Cq3LcFhUze9AxPg9AuITScQebvQKVVxfOZriuU"
+    "size": 2480,
+    "hash": "I-lzm9Td-nQacxqAVgl0_3sXd6eAcKby-EhORNB978A"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Notes.ts"
     },
-    "size": 13663,
-    "hash": "P78BMLRuiJR9uaXdOUPgj36ilF3x0nR4mHJ_ENIxB3w"
+    "size": 13665,
+    "hash": "svNNm2lkC-Rjdvt7nuDDEFA8qzscnRGss1R-dY-R3Sk"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/internal/Search.ts"
     },
-    "size": 9833,
-    "hash": "v9CMwYRKZRckvJ8CMqsUKNbbQz-WDvgtf5jAB8IU-7c"
+    "size": 9835,
+    "hash": "2zbjiLXEWCnv6vnUDRCkhMUDpbdWBzn48Ux2D8yXa3w"
    },
    {
     "path": {
@@ -3944,10 +3944,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.ts"
+     "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
     },
-    "size": 1234,
-    "hash": "8AEb36zpJCH-kFlxo7edDVUaKxGsq1dulumE3-GWa5E"
+    "size": 1204,
+    "hash": "HabCPDOX0vGWf113P1MHqu4EY9NQN63e4tb20a4LIxg"
    },
    {
     "path": {
@@ -3972,38 +3972,38 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Migrations.ts"
+     "relative": "packages/smithers/agent/memory/src/Migrations.vibe"
     },
-    "size": 1405,
-    "hash": "1CMwJPP6tnIfFWf154At-3ufUYfZuLRuH0-hLlsLcOQ"
+    "size": 1407,
+    "hash": "29DXntxh-5BORku-dUJgPGSgdbc70DoOVXx6p9ApZuw"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
     },
-    "size": 15966,
-    "hash": "S0uvN7iXYxn5apIK9r2fwLQBGDPLW9iNpYIdRKllXE4"
+    "size": 15970,
+    "hash": "wSC-xm2RJ6PgrJWeUEbZnLrNrsBsv4o627AE3xwXtQM"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Recall.ts"
+     "relative": "packages/smithers/agent/memory/src/Recall.vibe"
     },
-    "size": 9330,
-    "hash": "461ro3OCrCuDlja4cZVO-i_1f9wJWTyDBkzA5UP9fGo"
+    "size": 9269,
+    "hash": "OwoKmri4cdig1A1ymebBKDb-U7KHkNdsUYJPSM-AO4s"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/WithMemory.ts"
+     "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
     },
-    "size": 8970,
-    "hash": "IGyJgrG9gx2NazRfuPFpZNbWlcQ3iaV7EVqdclst00I"
+    "size": 9085,
+    "hash": "4B5RvGVVo5xmwFnsf6ebYBiRwdc9UyKVMkAIPs8JFsk"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/memory/src/Flows.ts"
+     "relative": "packages/smithers/agent/memory/src/Flows.vibe"
     },
-    "size": 13209,
-    "hash": "uRpRQzSbkt9Zk8RWayR2lQCIHtHnIkPEjlsevDGxN8Q"
+    "size": 12867,
+    "hash": "3hWimleFLh4J3DK59MN7eOQLVbt-MOsw2af88jhVW_8"
    },
    {
     "path": {
@@ -4014,10 +4014,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/chain/src/MemoryEntries.ts"
+     "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
     },
-    "size": 8043,
-    "hash": "PuBKKi8q3WOGNNqFXbSKvJ7mHXIE83C1OSZybyz3Bno"
+    "size": 8086,
+    "hash": "8wwAgPCLjbsJQVZsr13cvsUy5pYZlErWof8Uxb9f1BQ"
    },
    {
     "path": {
@@ -5829,8 +5829,8 @@
     "path": {
      "relative": "packages/smithers/agent/chain/src/index.ts"
     },
-    "size": 3965,
-    "hash": "Toj-lscUJDntCKwhc5nGWfBt5v7MRATZwQG83gFS9W0"
+    "size": 3967,
+    "hash": "w4-UpareT_JymdRO8cbj7g2xc24UvefmEXQfydpQvdY"
    },
    {
     "path": {
@@ -6740,7 +6740,7 @@
     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
    },
    {
-    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
@@ -7385,7 +7385,7 @@
     "relative": "packages/smithers/agent/memory/src/internal/FtsQuery.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/Fts.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/Fts.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Store.vibe"
@@ -7394,7 +7394,7 @@
     "relative": "packages/smithers/agent/memory/src/internal/Facts.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/Instrument.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/Instrument.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/Notes.ts"
@@ -7409,7 +7409,7 @@
     "relative": "packages/smithers/flows/database/src/Migrations.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.ts"
+    "relative": "packages/smithers/agent/memory/src/internal/MemoryFtsFold.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/internal/MemoryIndexes.vibe"
@@ -7421,25 +7421,25 @@
     "relative": "packages/smithers/agent/memory/src/internal/NoteLifecycle.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Migrations.ts"
+    "relative": "packages/smithers/agent/memory/src/Migrations.vibe"
    },
    {
     "relative": "packages/smithers/agent/memory/src/MemoryStore.ts"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Recall.ts"
+    "relative": "packages/smithers/agent/memory/src/Recall.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/WithMemory.ts"
+    "relative": "packages/smithers/agent/memory/src/WithMemory.vibe"
    },
    {
-    "relative": "packages/smithers/agent/memory/src/Flows.ts"
+    "relative": "packages/smithers/agent/memory/src/Flows.vibe"
    },
    {
     "relative": "packages/smithers/agent/chain/src/internal/failureCode.ts"
    },
    {
-    "relative": "packages/smithers/agent/chain/src/MemoryEntries.ts"
+    "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
    },
    {
     "relative": "packages/smithers/agent/model/src/ModelRequest.ts"
@@ -7817,6 +7817,26 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
+    },
+    "line": 165,
+    "column": 12,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
+    },
+    "line": 178,
+    "column": 50,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/chain/src/Steering.vibe"
     },
     "line": 21,
@@ -8095,6 +8115,46 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;;;GAWG;;;;;;;AAEH;;;;;;GAMG;AACH,MAAM,OAAO,aAAc,SAAQ,MAAM,CAAC,WAAW,EAAiB,CAAC,sBAAsB,EAAE;IAC7F,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,sBAAsB,CAAC,CAAC,IAAI,CAC/C,MAAM,CAAC,sBAAsB,CAAC,MAAM,CAAC,OAAO,CAAC,sBAAsB,CAAC,CAAC,CACtE;IACD,OAAO,EAAE,MAAM,CAAC,MAAM;CACvB,CAAC;CAAG;AAsBL;;;;;;GAMG;AACH,MAAM,OAAO,QAAS,SAAQ,OAAO,CAAC,OAAO,EAAqB,CAAC,iBAAiB,CAAC;CAAG;AAExF;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,cAAuB,EAAW,EAAE,CAAC,QAAQ,CAAC,EAAE,CAAC,cAAc,CAAC,CAAA;AAErF,MAAM,WAAW,GAAG,CAAC,SAAiB,EAAiB,EAAE,CAAC,IAAI,aAAa,CAAC,EAAE,OAAO,EAAE,GAAG,SAAS,iBAAiB,EAAE,CAAC,CAAA;AAEvH;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAW,EAAE,CACpE,IAAI,CAAC;IACH,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,CAAC,OAAO,CAAC,CAAC,CAAC;IAC3E,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,WAAW,CAAC,OAAO,CAAC,CAAC,CAAC;IAC3E,GAAG,SAAS;CACb,CAAC,CAAA;AAEJ;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,SAAS,GAAqB,EAAE,EAAmB,EAAE,CAC7E,KAAK,CAAC,OAAO,CAAC,QAAQ,CAAC,CAAC,QAAQ,CAAC,SAAS,CAAC,CAAC,CAAA;AAE9C;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,CAAC,OAAO,GAA0B,EAAE,EAAmB,EAAE;IAClF,qEAAqE;IACrE,wEAAwE;IACxE,MAAM,QAAQ,GAAG,CAAC,GAAG,OAAO,CAAC,CAAA;IAC7B,OAAO,KAAK,CAAC,MAAM,CAAC,QAAQ,CAAC,CAC3B,a,CAAA;QACE,MAAM,GAAG,UAAO,GAAG,CAAC,IAAI,CAAwB,QAAQ,CAAC,CAAA;QACzD,OAAO,IAAI,CAAC;YACV,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,CAAC,OAAO,EAAE,EAAE,CAAC,GAAG,CAAC,MAAM,CAAC,GAAG,EAAE,CAAC,KAAK,EAAE,EAAE,CAAC,CAAC,GAAG,KAAK,EAAE,OAAO,CAAC,CAAC,CAAC;YAChG,KAAK,EAAE,MAAM,CAAC,EAAE,CAAC,gBAAgB,CAAC,CAAC,GAAG,EAAE,CAAC,GAAG,CAAC,SAAS,CAAC,GAAG,EAAE,EAAE,CAAC,CAAC;SACjE,CAAC,CAAA;IACJ,CAAC,CAAA,CACF,CAAA;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
+     }
+    ],
+    "code": "/**\n * The memory door: `remember` and `recall` as catalog entries.\n *\n * Binds the memory package's own shipped contract — its input/output\n * schemas and `runRemember`/`runRecall` handlers — under the flows'\n * declared names. Payloads and results are held to those schemas, with\n * the actual parse failure quoted in every refusal; store failures carry\n * the memory package's stable error code as the call's `cause`\n * (https://chain.smithers.sh/contract/).\n *\n * Both entries run under the host's `WithMemory.Policy`: a bank the policy\n * does not name fails `invalid_namespace` before the store runs, an empty\n * bank means the policy's own, and every remembered fact records the chain,\n * link, and call ordinal that wrote it. A script is model-authored, so the\n * bank in its payload is never the authority. The policy is part of each\n * entry's digest, so a journal written under one policy never replays under\n * another.\n *\n * Composition note: hosts that also mount the memory flows through the\n * registry must bind them there OR here, not both — a catalog holding two\n * `remember` declarations discloses one and runs the other, and journals\n * written under the registry's digest will refuse to resume against this\n * door's digest.\n *\n * @since 0.1.0\n */\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Digest from \"@smthrs/core/Digest\";\nimport * as Node from \"@smthrs/core/Node\";\nimport * as Flows from \"@smthrs/memory/Flows\";\nimport * as MemoryStore from \"@smthrs/memory/MemoryStore\";\nimport * as Recall from \"@smthrs/memory/Recall\";\nimport * as WithMemory from \"@smthrs/memory/WithMemory\";\nimport { Effect, Layer, Schema } from \"effect\";\nimport * as Catalog from \"./Catalog.js\";\nimport { failureCode } from \"./internal/failureCode.js\";\nimport * as JsonBoundary from \"./JsonBoundary.js\";\n// A store failure discloses only the memory package's own shipped code; a\n// tag would leak an implementation name the flows never promised.\nconst codeOf = (error) => failureCode(error, [\"code\"]);\n/**\n * The digest of a memory entry's shipped contract — name, description,\n * effect declaration, and the input/output schema shapes — so a\n * memory-package upgrade that changes the contract re-keys every call\n * that names it instead of replaying stale results.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const contractDigest = (contract) => $invoke(Digest, () => (Digest.canonical({\n    description: contract.description,\n    effects: { ...contract.effects },\n    input: Node.schemaIdentity(contract.input, { onExcessProperty: \"error\" }),\n    name: contract.name,\n    output: Node.schemaIdentity(contract.output, { onExcessProperty: \"error\" })\n})));\n/**\n * The binding identity of a memory entry: its {@link contractDigest} and the\n * decoded policy it runs under. A journaled `recall` is replayed by digest, so\n * two policies must never share one: a result recorded under a broader policy\n * would otherwise answer a call under a narrower one.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const bindingDigest = (contract, policy) => $invoke(Digest, () => (Digest.canonical({ contract: contractDigest(contract), policy })));\nconst entryOf = (contract, policy, run, decode) => ({\n    description: contract.description,\n    digest: bindingDigest(contract, policy),\n    handler: Effect_1.fnUntraced(function* handler(payload, slot) {\n        const input = yield* (Effect.mapError(decode(payload), (error) => new Catalog.CallError({\n            cause: \"invalid_input\",\n            message: `\"${contract.name}\" rejected its input: ${JsonBoundary.failureMessage(error)}`,\n            name: contract.name\n        })));\n        const result = yield* (Effect.mapError(run(input, slot), (error) => new Catalog.CallError({\n            cause: codeOf(error),\n            message: `\"${contract.name}\" failed [${codeOf(error)}]: ${JsonBoundary.failureMessage(error)}`,\n            name: contract.name\n        })));\n        // The shipped Output schema is the journal contract: a result that\n        // does not decode never settles.\n        return yield* (Effect.mapError(Schema.decodeUnknownEffect(contract.output)(result), (error) => new Catalog.CallError({\n            cause: \"invalid_output\",\n            message: `\"${contract.name}\" produced output outside its contract: ${JsonBoundary.failureMessage(error)}`,\n            name: contract.name\n        })));\n    }),\n    name: contract.name\n});\n// The call slot is the fact's provenance: the chain is the run, the link is\n// the node, and the call ordinal is the iteration within it.\nconst provenanceOf = (slot) => slot === undefined ? {} : { iteration: slot.ordinal, nodeId: `link-${slot.link}`, runId: slot.chain };\n/**\n * Builds the two memory entries over the ambient store and recall\n * services — exactly those two services are captured, so call-time\n * provisions of anything else are never shadowed. Every call runs under\n * `policy`; an invalid policy fails with the memory package's\n * `invalid_argument` error.\n *\n * @category constructors\n * @since 0.1.0\n * @slop\n */\nexport const make = Effect_1.fnUntraced(runtime.$joinedFrame(function* make(policy) {\n    const [remember, recallFlow] = yield* Effect.try({\n        catch: (error) => error,\n        try: () => [WithMemory.withMemory(Flows.remember, policy), WithMemory.withMemory(Flows.recall, policy)]\n    });\n    // The decoded, frozen policy both entries enforce and are keyed by.\n    const bound = WithMemory.policyOf(remember);\n    const store = yield* MemoryStore.MemoryStore;\n    const recall = yield* Recall.Recall;\n    const decodeRemember = Schema.decodeUnknownEffect(Flows.RememberInput);\n    const decodeRecall = Schema.decodeUnknownEffect(Flows.RecallInput);\n    return [\n        entryOf({\n            description: Flows.rememberDescription,\n            effects: { ...Flows.rememberEffects },\n            input: Flows.RememberInput,\n            name: Flows.rememberName,\n            output: Flows.RememberOutput\n        }, bound, (input, slot) => Effect.provideService(Flows.runRememberFor(remember, input, provenanceOf(slot)), MemoryStore.MemoryStore, store), decodeRemember),\n        entryOf({\n            description: Flows.recallDescription,\n            effects: { ...Flows.recallEffects },\n            input: Flows.RecallInput,\n            name: Flows.recallName,\n            output: Flows.RecallOutput\n        }, bound, (input) => Effect.provideService(Flows.runRecallFor(recallFlow, input), Recall.Recall, recall), decodeRecall)\n    ];\n}));\n/**\n * The memory entries under `policy` as a whole catalog of their own —\n * composed with the system entries, keeping the sealed realm's promise.\n *\n * @category layers\n * @since 0.1.0\n * @slop\n */\nexport const layer = (policy) => Layer.effect(Catalog.Catalog)(Effect.map(make(policy), (entries) => Catalog.make(Catalog.withSystem(entries))));\nimport { invoke as $invoke } from \"./MemoryEntries.vibe.$call$ts.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "MemoryEntries.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe.$call$ts.js"
+     }
+    ],
+    "code": "export function invoke(target, arg0) {\n    return target[\"digest\"](arg0());\n}\n",
+    "map": {
+     "version": 3,
+     "file": "MemoryEntries.vibe.$call$ts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/chain/src/MemoryEntries.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAyME,MAAM,UAAU,MAAM,CACpB,MAAS,EACT,IAAwE;IAExE,OAAO,MAAM,CAAC,QAAQ,CAAC,CAAC,IAAI,EAAE,CAAC,CAAA;AACjC,CAAC"
     }
    },
    {

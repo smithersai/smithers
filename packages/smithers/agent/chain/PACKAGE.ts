@@ -176,7 +176,7 @@ const securityReview = Smithers.SecurityReview({
         "A catalog shared across chains or tenants that captures one MemoryStore and Recall service at make time.",
         "Remembered facts written with empty provenance, so a poisoned memory cannot be traced to the chain, link, and call that wrote it."
       ],
-      paths: ["src/MemoryEntries.ts"]
+      paths: ["src/MemoryEntries.vibe"]
     },
     {
       id: "journal-secret-leak",
@@ -190,7 +190,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/Chain.ts",
-        "src/MemoryEntries.ts",
+        "src/MemoryEntries.vibe",
         "src/ModelAuthor.vibe",
         "src/internal/failureCode.ts",
         "src/Observation.vibe"

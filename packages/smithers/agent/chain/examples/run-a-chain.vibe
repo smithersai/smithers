@@ -9,7 +9,6 @@ import * as Catalog from "@smthrs/chain/Catalog"
 import * as Chain from "@smthrs/chain/Chain"
 import * as Journal from "@smthrs/chain/Journal"
 import * as QuickJsRunner from "@smthrs/chain/QuickJsRunner"
-import { Effect, Layer } from "effect"
 
 const grep: Catalog.Entry = {
   name: "grep",
@@ -32,4 +31,4 @@ const layers = Layer.mergeAll(
 )
 
 /** Runs the chain and resolves with its terminal outcome. */
-export const runAChain = () => Effect.runPromise(Chain.run({ goal: "count the TODOs" }).pipe(Effect.provide(layers)))
+export const runAChain = () => Effect.runPromise(Chain.run({ goal: "count the TODOs" }) |> Effect.provide(%, layers))
