@@ -138,6 +138,22 @@ additions include deferred flow loading, scoped approval proofs, signal receipts
 coordination status, bounded failure diagnostics, GitHub pagination and issue
 relations, skill libraries, documentation evidence, and CLI/terminal test tools.
 
+Declaration diagnostics now default `EngineStore.Options.declarationRoot` to the
+injected workspace root. A host without a workspace must pass an explicit root
+to retain relative declaration paths; this default no longer consults `process.cwd()`.
+The private `NodeJournal.hostRoot` helper is not a supported import path.
+
+Node checkpoint writes and file-backed turn-log appends use the host's native
+owner-private publication service. These operations require the matching
+packaged or explicitly configured `smithers-jj-export` helper. The existing
+`AtomicFileSystem.ownerPrivate` injection point supports publication adapters;
+its service covers directory creation, file publication, directory sync and
+append.
+
+Workspace declarations may omit toolchains for repositories whose selected
+targets do not need them. Selecting a target still requires its actual runtime
+and tools; this does not supply an implicit toolchain.
+
 Run-store migration 1006 is exported but remains outside `Migrations.set`.
 Readers that flush deferred revisions must ship before activation; retain the
 staged activation and rollback contract. Existing persisted runs can lack the
