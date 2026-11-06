@@ -22,7 +22,7 @@ import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as EngineSubject from "../../src/EngineSubject.vibe"
 import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
-import { EngineUnavailableError } from "../../src/TestingError.ts"
+import { EngineUnavailableError } from "../../src/TestingError.vibe"
 import { describe, expect, it } from "../../src/Vitest.vibe"
 
 /** Decorates the in-memory runtime, keeping every other operation real. */

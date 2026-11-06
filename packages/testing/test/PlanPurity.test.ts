@@ -15,7 +15,7 @@ import { expect } from "vitest"
 import { ModelLike } from "../src/ModelLike.vibe"
 import * as Plan from "../src/Plan.vibe"
 import { expectPlan, expectPure } from "../src/PlanAssertions.vibe"
-import { CapabilityContractError } from "../src/TestingError.ts"
+import { CapabilityContractError } from "../src/TestingError.vibe"
 import * as TestLayers from "../src/TestLayers.vibe"
 
 /** The defect a poisoned capability raises, or `undefined` when it did not. */

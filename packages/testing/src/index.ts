@@ -12,7 +12,7 @@
  */
 
 /** @since 0.0.0 @category errors */
-export * as TestingError from "./TestingError.ts"
+export * as TestingError from "./TestingError.vibe"
 
 /** @since 0.0.0 @category models */
 export * as PlanLike from "./PlanLike.ts"

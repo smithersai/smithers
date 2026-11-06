@@ -6,7 +6,7 @@
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import type { JournalEntryLike } from "./EngineSubject.vibe";
-import { FixtureDivergenceError } from "../../../src/TestingError.ts";
+import { FixtureDivergenceError } from "./TestingError.vibe";
 /**
  * The first attributable difference between two journal entries.
  *

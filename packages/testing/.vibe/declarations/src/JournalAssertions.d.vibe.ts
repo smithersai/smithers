@@ -5,7 +5,7 @@
  */
 import * as Effect from "effect/Effect";
 import type { JournalEntryLike } from "./EngineSubject.vibe";
-import { ExactlyOnceUnsupportedError, JournalAssertionError } from "../../../src/TestingError.ts";
+import { ExactlyOnceUnsupportedError, JournalAssertionError } from "./TestingError.vibe";
 /**
  * A terminal outcome recorded by an engine journal.
  *

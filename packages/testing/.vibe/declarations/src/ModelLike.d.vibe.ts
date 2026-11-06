@@ -19,7 +19,7 @@
  */
 import { Context } from "effect";
 import type { Stream } from "effect";
-import type { CapabilityContractError } from "../../../src/TestingError.ts";
+import type { CapabilityContractError } from "./TestingError.vibe";
 /**
  * The public request shape of `/model/ModelRequest`, copied structurally so a
  * fixture stores plain data and a third-party subject need not adopt the model

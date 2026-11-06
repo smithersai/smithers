@@ -20,7 +20,7 @@ import type { EngineSubject as Subject, FlowSpec, StepSpec } from "../src/Engine
 import * as EngineSubject from "../src/EngineSubject.vibe"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as MemoryEngine from "../src/MemoryEngine.ts"
-import { type EngineSubjectError, EngineUnavailableError } from "../src/TestingError.ts"
+import { type EngineSubjectError, EngineUnavailableError } from "../src/TestingError.vibe"
 import { describe, expect, it } from "../src/Vitest.vibe"
 
 const flowLayer = FlowEngineLike.layerOver(FlowEngine.layerMemory)

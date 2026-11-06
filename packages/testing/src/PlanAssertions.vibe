@@ -8,7 +8,7 @@ import * as Effect from "effect/Effect"
 import { canonical, compare, same } from "./internal/Structural.ts"
 import * as Plan from "./Plan.vibe"
 import type { PlanLike, PlanNodeLike } from "./PlanLike.ts"
-import { type PlanAssertionCode, PlanAssertionError } from "./TestingError.ts"
+import { type PlanAssertionCode, PlanAssertionError } from "./TestingError.vibe"
 
 /**
  * An expected placement: a bare tag, or a tag with an exact option payload.

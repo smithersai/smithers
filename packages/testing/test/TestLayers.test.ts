@@ -17,7 +17,7 @@ import * as Random from "effect/Random"
 import * as Stream from "effect/Stream"
 import { describe, expect, it } from "vitest"
 import { ModelLike } from "../src/ModelLike.vibe"
-import { CapabilityContractError } from "../src/TestingError.ts"
+import { CapabilityContractError } from "../src/TestingError.vibe"
 import * as TestLayers from "../src/TestLayers.vibe"
 
 const raised = <A, E>(effect: Effect.Effect<A, E, never>): Promise<unknown> =>

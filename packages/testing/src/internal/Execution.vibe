@@ -14,7 +14,7 @@
  */
 
 import * as Option from "effect/Option"
-import { ExecutionConflictError } from "../TestingError.ts"
+import { ExecutionConflictError } from "../TestingError.vibe"
 import { canonical } from "./Structural.ts"
 
 /**

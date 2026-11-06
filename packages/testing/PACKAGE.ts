@@ -120,7 +120,7 @@ const securityReview = Smithers.SecurityReview({
         "Divergence or ScoreSuite reports embedding raw model output or fixture contents in text printed on failure."
       ],
       paths: [
-        "src/TestingError.ts",
+        "src/TestingError.vibe",
         "src/RecordedModel.vibe",
         "src/PlanAssertions.vibe",
         "src/JournalAssertions.vibe",

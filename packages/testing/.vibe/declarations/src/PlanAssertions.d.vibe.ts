@@ -5,7 +5,7 @@
  */
 import * as Effect from "effect/Effect";
 import type { PlanLike } from "../../../src/PlanLike.ts";
-import { PlanAssertionError } from "../../../src/TestingError.ts";
+import { PlanAssertionError } from "./TestingError.vibe";
 /**
  * An expected placement: a bare tag, or a tag with an exact option payload.
  * When `options` is omitted only the tag is compared.

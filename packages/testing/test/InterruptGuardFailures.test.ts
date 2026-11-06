@@ -10,7 +10,7 @@ import * as Effect from "effect/Effect"
 import type { EngineSubject as Subject, ExecutionResult } from "../src/EngineSubject.vibe"
 import * as EngineSubject from "../src/EngineSubject.vibe"
 import * as Interrupt from "../src/pins/Interrupt.vibe"
-import { EngineUnavailableError } from "../src/TestingError.ts"
+import { EngineUnavailableError } from "../src/TestingError.vibe"
 import { describe, expect, it } from "../src/Vitest.vibe"
 
 type Violation =

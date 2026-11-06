@@ -16,7 +16,7 @@ import type { ConformanceCase } from "../Conformance.vibe"
 import type { EngineSubject, ExecutionResult, FlowSpec, JournalEntryLike, StepSpec } from "../EngineSubject.vibe"
 import { assert, awaitFiber, fail, invoke, waitUntil } from "../internal/Pin.vibe"
 import { same } from "../internal/Structural.ts"
-import type { ConformanceViolation, EngineSubjectError } from "../TestingError.ts"
+import type { ConformanceViolation, EngineSubjectError } from "../TestingError.vibe"
 
 const loserInterruptedPin = "race/loser-interrupted"
 const recordedWinnerPin = "race/recorded-winner-replay"

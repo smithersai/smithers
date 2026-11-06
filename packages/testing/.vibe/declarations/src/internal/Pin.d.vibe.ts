@@ -14,7 +14,7 @@
 import * as Effect from "effect/Effect";
 import type * as Exit from "effect/Exit";
 import type * as Fiber from "effect/Fiber";
-import { ConformanceViolation } from "../../../../src/TestingError.ts";
+import { ConformanceViolation } from "../TestingError.vibe";
 /**
  * Fails a pin with its stable `conformance_violation` code, naming the pin and
  * carrying the expectation and the observation as typed fields.

@@ -13,7 +13,7 @@
  * @since 0.0.0
  */
 import { Context, Effect, Layer } from "effect";
-import type { EngineSubjectError } from "../../../src/TestingError.ts";
+import type { EngineSubjectError } from "./TestingError.vibe";
 /**
  * One step of a conformance flow: either a body to run or a race between
  * branches.

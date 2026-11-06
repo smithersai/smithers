@@ -17,7 +17,7 @@ import { canonicalRequestDigest, index, type RecordedCall, recordedRequest } fro
 import * as FixtureStore from "../src/FixtureStore.ts"
 import type { ModelRequestLike } from "../src/ModelLike.vibe"
 import * as RecordingModel from "../src/RecordingModel.ts"
-import { FixtureEncodingError } from "../src/TestingError.ts"
+import { FixtureEncodingError } from "../src/TestingError.vibe"
 
 /** A mutable request in the structural shape the recorder projects. */
 const mutableRequest = () => ({

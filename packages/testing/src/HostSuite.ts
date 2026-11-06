@@ -18,7 +18,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
-import { CapabilityContractError } from "./TestingError.ts"
+import { CapabilityContractError } from "./TestingError.vibe"
 import { poisonedClockAndRandom } from "./TestLayers.vibe"
 
 /**

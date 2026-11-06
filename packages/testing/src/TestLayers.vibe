@@ -13,7 +13,7 @@ import * as Layer from "effect/Layer"
 import type { EngineSubject } from "./EngineSubject.vibe"
 import { ModelLike } from "./ModelLike.vibe"
 import * as TestHost from "./TestHost.ts"
-import { CapabilityContractError } from "./TestingError.ts"
+import { CapabilityContractError } from "./TestingError.vibe"
 
 const denied = (capability: string, operation: string): CapabilityContractError =>
   new CapabilityContractError({ capability, operation })

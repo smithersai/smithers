@@ -10,7 +10,7 @@ import * as Identity from "./pins/Identity.ts"
 import * as Interrupt from "./pins/Interrupt.vibe"
 import * as Race from "./pins/Race.ts"
 import * as Replay from "./pins/Replay.ts"
-import type { ConformanceViolation, EngineSubjectError } from "./TestingError.ts"
+import type { ConformanceViolation, EngineSubjectError } from "./TestingError.vibe"
 
 /**
  * A black-box assertion over an {@link EngineSubject} implementation.

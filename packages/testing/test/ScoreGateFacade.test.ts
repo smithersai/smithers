@@ -5,7 +5,7 @@ import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
 import { describe, expect, it } from "vitest"
 import * as ScoreGate from "../src/ScoreGate.ts"
-import * as TestingError from "../src/TestingError.ts"
+import * as TestingError from "../src/TestingError.vibe"
 
 describe("ScoreGate compatibility facade", () => {
   it("shares the runtime functions, error constructor, and schemas by identity", () => {

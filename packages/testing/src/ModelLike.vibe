@@ -19,7 +19,7 @@
  */
 
 import type { Stream } from "effect"
-import type { CapabilityContractError } from "./TestingError.ts"
+import type { CapabilityContractError } from "./TestingError.vibe"
 
 /**
  * The public request shape of `/model/ModelRequest`, copied structurally so a

@@ -6,7 +6,7 @@
 import * as Effect from "effect/Effect";
 import * as Scope from "effect/Scope";
 import { type EngineSubject as EngineSubjectService, type ExecutionResult } from "./EngineSubject.vibe";
-import type { EngineSubjectError, EngineUnavailableError } from "../../../src/TestingError.ts";
+import type { EngineSubjectError, EngineUnavailableError } from "./TestingError.vibe";
 /**
  * A stable engine facade and controls for replacing its live in-memory
  * instance while retaining the persistent execution store.

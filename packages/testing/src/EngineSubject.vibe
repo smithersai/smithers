@@ -13,8 +13,8 @@
  * @since 0.0.0
  */
 
-import type { EngineSubjectError } from "./TestingError.ts"
-import { EngineUnavailableError } from "./TestingError.ts"
+import type { EngineSubjectError } from "./TestingError.vibe"
+import { EngineUnavailableError } from "./TestingError.vibe"
 
 /**
  * One step of a conformance flow: either a body to run or a race between

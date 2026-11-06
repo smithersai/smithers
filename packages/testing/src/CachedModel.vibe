@@ -21,7 +21,7 @@ import { canonicalRequestDigest, type Fixture, index, type RecordedCall, recorde
 import type { FixtureStore } from "./FixtureStore.ts"
 import type { ModelErrorLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.vibe"
 import * as RecordingModel from "./RecordingModel.ts"
-import { UnscriptedModelError } from "./TestingError.ts"
+import { UnscriptedModelError } from "./TestingError.vibe"
 
 /**
  * What a cached model is built from.

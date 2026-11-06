@@ -165,8 +165,8 @@
       "default": "./.vibelang/js/src/TestLayers.js"
     },
     "./TestingError": {
-      "types": "./src/TestingError.ts",
-      "vibelang-source": "./src/TestingError.ts",
+      "types": "./.vibe/declarations/src/TestingError.d.vibe.ts",
+      "vibelang-source": "./src/TestingError.vibe",
       "default": "./.vibelang/js/src/TestingError.js"
     },
     "./index": {
@@ -221,7 +221,8 @@
     "CHANGELOG.md",
     "docs/",
     ".vibelang/js",
-    "src/BuiltinScript.vibe"
+    "src/BuiltinScript.vibe",
+    "src/TestingError.vibe"
   ],
   "publishConfig": {
     "access": "public",

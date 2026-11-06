@@ -8,7 +8,7 @@ import type { Effect } from "effect"
 import { Schema } from "effect"
 import { compare, snapshot } from "./internal/Structural.ts"
 import type { ModelErrorLike, ModelEventLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.vibe"
-import { FixtureEncodingError } from "./TestingError.ts"
+import { FixtureEncodingError } from "./TestingError.vibe"
 
 /**
  * One recorded model invocation.

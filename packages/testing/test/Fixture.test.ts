@@ -4,7 +4,7 @@ import { Effect } from "effect"
 import { canonicalRequestDigest, decode, index, recordedRequest } from "../src/Fixture.vibe"
 import type { RecordedCall } from "../src/Fixture.vibe"
 import type { ModelRequestLike } from "../src/ModelLike.vibe"
-import { FixtureEncodingError } from "../src/TestingError.ts"
+import { FixtureEncodingError } from "../src/TestingError.vibe"
 
 const request = (overrides: Partial<ModelRequestLike> = {}): ModelRequestLike => ({
   modelId: "openai:gpt-5-mini",

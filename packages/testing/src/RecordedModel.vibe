@@ -13,7 +13,7 @@ import {
   type ModelLikeError,
   type ModelRequestLike
 } from "./ModelLike.vibe"
-import { ReplayHarnessMismatchError, UnscriptedModelError } from "./TestingError.ts"
+import { ReplayHarnessMismatchError, UnscriptedModelError } from "./TestingError.vibe"
 
 /**
  * Options for recorded-model replay.

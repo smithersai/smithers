@@ -45,8 +45,8 @@ import {
   type StepSpec
 } from "./EngineSubject.vibe"
 import { conflict, type ExecutionConflict } from "./internal/Execution.vibe"
-import type { EngineSubjectError } from "./TestingError.ts"
-import { EngineUnavailableError } from "./TestingError.ts"
+import type { EngineSubjectError } from "./TestingError.vibe"
+import { EngineUnavailableError } from "./TestingError.vibe"
 
 /**
  * The payload wrapper the adapter registers for every `FlowSpec`.
