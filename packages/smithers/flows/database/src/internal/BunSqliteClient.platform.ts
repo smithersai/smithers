@@ -1,22 +1,6 @@
 /// <reference types="bun" />
-/**
- * Bun SQLite client whose raw writes report affected rows.
- *
- * Adapted from `@effect/sql-sqlite-bun@4.0.4` `SqliteClient.make`. That driver
- * runs every statement through `.all()`, so `.raw` on INSERT, UPDATE and
- * DELETE yields `[]` and `DurableWriter.affectedRows` fails `unsupported`
- * (issue #2419). Like `@effect/sql-sqlite-node`, a statement without result
- * columns runs through `.run()` here and `.raw` returns
- * `{ changes, lastInsertRowid }`. Everything else follows the upstream file:
- * the open and its PRAGMAs fail as a typed `SqlError`, a `file:` name opens as
- * a URI, the WAL switch is retried for the busy timeout, and a failed COMMIT
- * is rolled back before the connection is lent again. Delete this module once
- * the upstream driver reports affected rows. `BunSqliteClient.test.ts`
- * measures it over a `bun:sqlite` shim; `NativeBunSqliteClient.test.ts` and
- * agent/memory `NativeBunAffectedRows.test.ts` run it under real Bun.
- *
- * @since 1.0.0
- */
+
+// The platform code of BunSqliteClient.vibe, which a .vibe file does not import as a value (EK4402).
 
 import type { SqliteClientConfig } from "@effect/sql-sqlite-bun/SqliteClient"
 import { constants, Database } from "bun:sqlite"
@@ -24,7 +8,6 @@ import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
@@ -37,16 +20,13 @@ import * as Stream from "effect/Stream"
 
 const MAX_BUSY_TIMEOUT = 2_147_483_647
 const NANOS_PER_MILLI = BigInt(1_000_000)
-
 const failed = (cause: unknown, message: string, operation: string): SqlError =>
   new SqlError({ reason: classifySqliteError(cause, { message, operation }) })
-
 /** The connection, and whether SQLite still holds a transaction open on it. */
 interface BunConnection extends Connection {
   readonly isTransaction: () => boolean
 }
-
-const make = (
+export const make = (
   options: SqliteClientConfig
 ): Effect.Effect<Client.SqlClient, SqlError, Scope.Scope | Reactivity.Reactivity> =>
   Effect.gen(function*() {
@@ -161,10 +141,3 @@ const make = (
         : undefined
     })
   })
-
-/** Provides the Bun `SqlClient`; `.raw` on a write returns `{ changes, lastInsertRowid }`.
- * @since 1.0.0
- * @category layers
- */
-export const layer = (config: SqliteClientConfig): Layer.Layer<Client.SqlClient, SqlError> =>
-  Layer.effect(Client.SqlClient, make(config)).pipe(Layer.provide(Reactivity.layer))

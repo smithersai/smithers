@@ -104,7 +104,8 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/internal/BunSqliteClient.vibe"
   ],
   "publishConfig": {
     "access": "public",

@@ -34,7 +34,7 @@ vi.mock("bun:sqlite", async () => {
     }
   }
 })
-vi.mock("../src/internal/BunSqliteClient.ts", () => import("@effect/sql-sqlite-node/SqliteClient"))
+vi.mock("../src/internal/BunSqliteClient.vibe", () => import("@effect/sql-sqlite-node/SqliteClient"))
 
 import * as BunDatabase from "../src/bun/BunDatabase.ts"
 import * as Dialect from "../src/Dialect.vibe"

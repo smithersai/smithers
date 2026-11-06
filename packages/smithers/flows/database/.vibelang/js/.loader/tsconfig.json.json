@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/database"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "WbgoxDQ_5VCktcHPI1eR5DLM8IbSSiP_Yib_BdnHE04",
   "configs": [
    {
     "path": {
@@ -26,7 +26,7 @@
      "relative": "packages/smithers/flows/database/src"
     },
     null,
-    "sOYS6Ad6EG2sbPD5e0KWiUF4S5XUJz2WJvxg8bV_TyI",
+    "uHeFianBHfVh1VMgTgVk-1WWF2cJm6o12vT9jMT33Rs",
     [],
     {
      "recursive": true,
@@ -248,8 +248,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8983,
-    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
+    "size": 9024,
+    "hash": "KTj9J9Mi1wLpxzgyHjmDAvr0i_Bg5ZH9eWWRqZZAvNM"
    },
    {
     "path": {
@@ -3083,10 +3083,444 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/AsyncResult.d.ts"
     },
-    "size": 7672,
-    "hash": "qDEm7UxmNzpuVMSOv2xurtajdC7DgrT45aAdlJoNMv0"
+    "size": 25262,
+    "hash": "4sIKmI2QUHZXzsvYguHvy0b1iDu3-tjYTFBIbkQOuZM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/AtomRegistry.d.ts"
+    },
+    "size": 10470,
+    "hash": "9O0G4YqkRbwcc59-In9HSWfDS4zsRPXRW3Ji8BFWcGk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/Atom.d.ts"
+    },
+    "size": 64076,
+    "hash": "xzQQYqSm6ItsvD_pujoIKSt0tOaBIvqlxdxbNzfFVdg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/FindMyWay.d.ts"
+    },
+    "size": 1436,
+    "hash": "fdwoJ026HvwjkQpEiItoxczvPPWH43-bx6_O4kep-uw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpIncomingMessage.d.ts"
+    },
+    "size": 4130,
+    "hash": "9X2DFxlDIieyalRbOHvzFW6_pmAnnRYAGszj3ZQcInY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpMethod.d.ts"
+    },
+    "size": 3164,
+    "hash": "14AgB5TebkuaKaQdWK9v0tMg_j4QSsYloVhMbfccS1w"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpBody.d.ts"
+    },
+    "size": 13574,
+    "hash": "JdqywVlEVn8gzK5eSXO4997dQSF9VSJUqKPD8ffiWSk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Etag.d.ts"
+    },
+    "size": 3128,
+    "hash": "AS0UWTIxeRt6Xa-ICSZ3sqhSVCN6VGFqkxiQJNrdVz8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/CircuitBreaker.d.ts"
+    },
+    "size": 33620,
+    "hash": "6lhkdbKkvmHsFcEYaxi7l-MtqCVefo5yXZBZx54b9qk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/RateLimiter.d.ts"
+    },
+    "size": 18574,
+    "hash": "wbXgpG6F_3Xxxb6Aws5Pv8mTZVD1uRHg-CoiUlpX1lI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Url.d.ts"
+    },
+    "size": 17962,
+    "hash": "tMzYXlGeEkzWNOq90PvfVPy8xDlptfa5EzHgQlB-a_0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClientRequest.d.ts"
+    },
+    "size": 42643,
+    "hash": "me-RNUoOA5M_oSo7cWiq5BPtGVh2gmMqzke1hF5EbQc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/socket/Socket.d.ts"
+    },
+    "size": 25094,
+    "hash": "0Cf-9CNT3VajX44kJhXuvus5ydGLDabwYUYoJFAXteo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClientResponse.d.ts"
+    },
+    "size": 9295,
+    "hash": "fqrMT6DMjQxcsUPV9_QlgKl4YQhonk8JnXUpHeT29r4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClientError.d.ts"
+    },
+    "size": 9709,
+    "hash": "IA-ogPDK_pAnRmnM-2xVioBr7ZNwaNBOiXCXtcOKdn0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClient.d.ts"
+    },
+    "size": 77125,
+    "hash": "8XWJj0yFd5XRIPmcVJDeuu7bNbmhYqtG_poV5zdlnM8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Template.d.ts"
+    },
+    "size": 3960,
+    "hash": "Wm7noB81RvWB84TiuPKTuyBlo63oCjmp2uLBEtoCpII"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerResponse.d.ts"
+    },
+    "size": 30228,
+    "hash": "GDUnuBZN5HGLP5511aOG0N59NPFhXbR4WFPI0TIFDtw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpPlatform.d.ts"
+    },
+    "size": 6165,
+    "hash": "r6DXDt7e8zKiqCefoGqiwoXUUGSAYWtKZyIdYEOyzo4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerRespondable.d.ts"
+    },
+    "size": 2316,
+    "hash": "t0wiP48I8Lw5hSveNycd1vy9VX7Ar_B9pMgDKg-nZts"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerError.d.ts"
+    },
+    "size": 9564,
+    "hash": "leWqb-hiW3MBjgqJ5J6XdKhLYgclPg4NbHeq1j5VqbM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/MultipartParser/HeadersParser.d.ts"
+    },
+    "size": 1389,
+    "hash": "GWtXBb7ZMUK2fIjXnUHRQ-dHSzT-4kosvKeLRtL3SYI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/MultipartParser.d.ts"
+    },
+    "size": 2914,
+    "hash": "iDsVCbD_2AIiI65Oz94jd58hf5inqK-8-Tf4Wo3gZlw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Multipart.d.ts"
+    },
+    "size": 15243,
+    "hash": "WXk8TnEBtt0zU9bfoVrEcQ6hIJ12zaHZGy7N7_h0KrM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerRequest.d.ts"
+    },
+    "size": 13221,
+    "hash": "U3_APm6cAObv03PwRmBTIlDsm8aHIihD1k5zzLTzS2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpMiddleware.d.ts"
+    },
+    "size": 15492,
+    "hash": "odNgYIVk5SDNDD-dENFfAePwM0Ym-sx6w_bRlhAosPI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServer.d.ts"
+    },
+    "size": 10896,
+    "hash": "TkWOPZWGGP1F62gI--LOvAt2oQlErRHxKECYParzH6Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpRouter.d.ts"
+    },
+    "size": 31828,
+    "hash": "SMLbLUZmmGJXtvvbKHzM6mMw_hT-TkIWvmCp5jpDH1I"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/encoding/Sse.d.ts"
+    },
+    "size": 11379,
+    "hash": "Fmwr_ayd9o5g0s8kNgVtDPEZ15dytzKkVRuOJDQAXEU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
+    },
+    "size": 3210,
+    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSchema.d.ts"
+    },
+    "size": 33776,
+    "hash": "oRRMtbP_t1NtFNCBVNcTlHmPIiYNmBd58ezmpza039c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiError.d.ts"
+    },
+    "size": 22439,
+    "hash": "Etkv-dnkktQNseuaNP54LHQ72o8ZJHTkp1wHM2AzQ_Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSecurity.d.ts"
+    },
+    "size": 6440,
+    "hash": "q2tAUGBZ_DdM4mtHAL9RI9iNXBdHoUffIzvFbHlvi08"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiMiddleware.d.ts"
+    },
+    "size": 17256,
+    "hash": "EbqaZWiaGwcb7UjXGnqHoS01JqeohAEfBL9GUdFauEY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiGroup.d.ts"
+    },
+    "size": 10492,
+    "hash": "A_KkgwnU5rqDsuZK4IFZ56-mqixiK3W_3mnbcG4ZuFQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiEndpoint.d.ts"
+    },
+    "size": 52343,
+    "hash": "c2mJ-w9tv2gSGS3KkbRh_MVxsAYMtEIijtJ5TvgqLZs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApi.d.ts"
+    },
+    "size": 11453,
+    "hash": "FGfWY8p54kEiztH4A3Wx-ERRwxrfWAG8B4eP1c2sQz0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiClient.d.ts"
+    },
+    "size": 20053,
+    "hash": "r0t3zPNblTVxcNwRSIGQ61MulZJepo-Y6b17_OppXh0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/AtomHttpApi.d.ts"
+    },
+    "size": 6282,
+    "hash": "nKGfqAEd0un-7xVsa5RrAMHtF3n_okHGnSnubEtKG0E"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/AtomRef.d.ts"
+    },
+    "size": 3039,
+    "hash": "D1WijgkOe-ZSPstC1rJeh258qlkU4xDpKBiUQpgs0fo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/WorkerError.d.ts"
+    },
+    "size": 3857,
+    "hash": "V6v-kxDbBtEBa2oY4BrOfp-Ukm6W0Tf8hH1so8-_lFc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcClientError.d.ts"
+    },
+    "size": 2470,
+    "hash": "0r0FSPq8410Wr3CBuO-H-CeFELWlymVDYmkQXmZPE_4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcMessage.d.ts"
+    },
+    "size": 13180,
+    "hash": "kMnxm88YojMllZsyeWSzeamoJM8uqmt401RIWysH9m0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcMiddleware.d.ts"
+    },
+    "size": 8929,
+    "hash": "ey_i0y8B4ddzcBcy-VQhuN8ZUv_qrSBgcdILMMLjr48"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcSchema.d.ts"
+    },
+    "size": 2676,
+    "hash": "uC56XX_ID3exTunjCH-K4OrsSPHw-Eiy-arYgTD45JE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/Rpc.d.ts"
+    },
+    "size": 27625,
+    "hash": "VrScNI_WJ0XrrLvB8p4-vOGYyQnQxgbQTQ6DR25z_nc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/Worker.d.ts"
+    },
+    "size": 4507,
+    "hash": "udCtK1jcKQg7UN5IUYnqHUdyRVOuaqT6lb_7LjngNYM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcGroup.d.ts"
+    },
+    "size": 7176,
+    "hash": "5jQTytNuEo9vIbVif5NN6INed4m9RSztxolusGwKZYs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcSerialization.d.ts"
+    },
+    "size": 8120,
+    "hash": "ljDibX2ilce9qwNCwJk__lwCeIa7ZXbdBPzqNPjyFEM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/Utils.d.ts"
+    },
+    "size": 1163,
+    "hash": "pPgDmwekbYwVy8juL_LacRERQsKq_oVuEOBxPDHCHOE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcClient.d.ts"
+    },
+    "size": 19359,
+    "hash": "L5VPLDeP1_tp1KeqlI4SvqRRzs46gzJuaeE9rWEtTcE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/AtomRpc.d.ts"
+    },
+    "size": 4638,
+    "hash": "9e3iFrTKOjMopT40lgV47OrV63M3tR7SGYOyq9e-6i0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/Hydration.d.ts"
+    },
+    "size": 2497,
+    "hash": "IZc32Q3Ve_lis8jkZgWp02u4ttSMbfkNswU93eE_3Jk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/reactivity/index.d.ts"
+    },
+    "size": 816,
+    "hash": "KgG5i2YxesL5UigXtC6jUQ75lhWf7Ubu2s4RZPbocI0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/schema/VariantSchema.d.ts"
+    },
+    "size": 14359,
+    "hash": "Ka3HqCp9B7s-KAs0MLZFN2IDmQ-q4yf9VqQf9lPrO2Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/schema/Model.d.ts"
+    },
+    "size": 28748,
+    "hash": "VzOj3-TgV9taDQivRB-xJmw_Fs6nJCl1M83RLdaTXRE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlResolver.d.ts"
+    },
+    "size": 6541,
+    "hash": "DDGIMgsBC4XTMIDYVOAN40Dv5lqMWPu-duEmnyDZFDc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlModel.d.ts"
+    },
+    "size": 4127,
+    "hash": "cNvBFWILlpPFzpvVqSwQlyeQsoI9z9qy1pvA-ABBgbE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlSchema.d.ts"
+    },
+    "size": 4311,
+    "hash": "7-cefBJuTjyga7_MLxSETGBWpV0SHQy0MSJHU3yTzc0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/SqlStream.d.ts"
+    },
+    "size": 772,
+    "hash": "QkZPicTQZIqkJxntPoojzNl5Bu3zjUy1Hj4buFtMpYc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/sql/index.d.ts"
+    },
+    "size": 916,
+    "hash": "QN3P1ss1nFP1deREonsDmDXEiXvHiR7OlbuSmD6xaDU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.platform.ts"
+    },
+    "size": 6441,
+    "hash": "war6oBq9kVUjUap3s3IzDHiNA6Syn822mPixZD0rc8w"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "size": 1864,
+    "hash": "On7G7-a6zSWEDVUo8Y5RFykBZbzCABSAWSUWdRLcdRw"
    },
    {
     "path": {
@@ -3113,8 +3547,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/bun/BunDatabase.ts"
     },
-    "size": 3030,
-    "hash": "za2FRtBRs3m-ly1LZdLs0rr4dz1NO1cKyW9JIf_56n4"
+    "size": 3032,
+    "hash": "D-v5065-HKee7yL_YcFdRmCBVOGMpZtWKeIVOJsAk_E"
    },
    {
     "path": {
@@ -3198,7 +3632,10 @@
     "relative": "packages/smithers/flows/database/src/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.ts"
+    "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.platform.ts"
+   },
+   {
+    "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
    },
    {
     "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.platform.ts"
@@ -3525,6 +3962,66 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "line": 29,
+    "column": 33,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlConnection#Connection` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "line": 37,
+    "column": 31,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `@effect/sql-sqlite-bun/SqliteClient#SqliteClientConfig` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "line": 37,
+    "column": 71,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "line": 37,
+    "column": 82,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlError#SqlError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "line": 38,
+    "column": 23,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/sql/SqlClient#SqlClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+    },
+    "line": 38,
+    "column": 78,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/reactivity/Reactivity#layer` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/database/src/internal/PostgresSelection.vibe"
     },
     "line": 31,
@@ -3823,6 +4320,26 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;AAEH;;;GAGG;AACH,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAEnD;;;GAGG;AACH,OAAO,KAAK,eAAe,MAAM,sBAAwB,CAAA;AAEzD;;;GAGG;AACH,OAAO,KAAK,UAAU,MAAM,iBAAiB,CAAA;AAE7C;;;GAGG;AACH,OAAO,KAAK,kBAAkB,MAAM,yBAAyB,CAAA;AAE7D;;;GAGG;AACH,OAAO,KAAK,gBAAgB,MAAM,gCAAgC,CAAA;AAElE;;GAEG;AACH,OAAO,KAAK,WAAW,MAAM,kBAAkB,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+     }
+    ],
+    "code": "/// <reference types=\"bun\" />\n/**\n * Bun SQLite client whose raw writes report affected rows.\n *\n * Adapted from `@effect/sql-sqlite-bun@4.0.4` `SqliteClient.make`. That driver\n * runs every statement through `.all()`, so `.raw` on INSERT, UPDATE and\n * DELETE yields `[]` and `DurableWriter.affectedRows` fails `unsupported`\n * (issue #2419). Like `@effect/sql-sqlite-node`, a statement without result\n * columns runs through `.run()` here and `.raw` returns\n * `{ changes, lastInsertRowid }`. Everything else follows the upstream file:\n * the open and its PRAGMAs fail as a typed `SqlError`, a `file:` name opens as\n * a URI, the WAL switch is retried for the busy timeout, and a failed COMMIT\n * is rolled back before the connection is lent again. Delete this module once\n * the upstream driver reports affected rows. `BunSqliteClient.test.ts`\n * measures it over a `bun:sqlite` shim; `NativeBunSqliteClient.test.ts` and\n * agent/memory `NativeBunAffectedRows.test.ts` run it under real Bun.\n *\n * @since 1.0.0\n */\nimport * as Reactivity from \"effect/reactivity/Reactivity\";\nimport * as Layer from \"effect/Layer\";\nimport * as Client from \"effect/sql/SqlClient\";\nimport { SqlError } from \"effect/sql/SqlError\";\nimport { make as make$platform } from \"./BunSqliteClient.platform.js\";\nconst make = make$platform;\n/** Provides the Bun `SqlClient`; `.raw` on a write returns `{ changes, lastInsertRowid }`.\n * @since 1.0.0\n * @category layers\n */\nexport const layer = (config) => Layer.effect(Client.SqlClient, make(config)).pipe(Layer.provide(Reactivity.layer));\n",
+    "map": {
+     "version": 3,
+     "file": "BunSqliteClient.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/database/src/internal/BunSqliteClient.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,6BAA6B;AAC7B;;;;;;;;;;;;;;;;;GAiBG;;AAGH,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,KAAK,MAAM,MAAM,sBAAsB,CAAA;AAE9C,OAAO,EAAE,QAAQ,EAAE,MAAM,qBAAqB,CAAA;AAC9C,OAAO,EAAE,IAAI,IAAI,aAAa,EAAE,MAAM,+BAA+B,CAAA;AAMrE,MAAM,IAAI,GAAG,aAAa,CAAA;AAC1B;;;GAGG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,MAA0B,EAA2C,EAAE,CAC3F,KAAK,CAAC,MAAM,CAAC,MAAM,CAAC,SAAS,EAAE,IAAI,CAAC,MAAM,CAAC,CAAC,CAAC,IAAI,CAAC,KAAK,CAAC,OAAO,CAAC,UAAU,CAAC,KAAK,CAAC,CAAC,CAAA"
     }
    },
    {
