@@ -1,6 +1,8 @@
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
-import { readFileSync } from "node:fs"
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
+import { tmpdir } from "node:os"
+import { join } from "node:path"
 import { test } from "node:test"
 
 const workflow = readFileSync(new URL("../workflows/windows-confinement.yml", import.meta.url), "utf8")
@@ -58,3 +60,26 @@ for (const kernel of [
     assert.doesNotMatch(result.stdout, /WSL2 kernel:/)
   })
 }
+
+// The pinned upstream jj release is packed with ./jj, not jj. GNU tar treats
+// those member names differently; reproduce that with a real archive (#4166).
+test("extracts the jj executable using the pinned release archive layout", () => {
+  const member = workflow.match(/tar -xzf \/tmp\/jj\.tar\.gz -C \/usr\/local\/bin ([^\r\n]+)/)?.[1]
+  assert.ok(member, "missing jj archive extraction")
+  const root = mkdtempSync(join(tmpdir(), "smithers-wsl-jj-"))
+  try {
+    const source = join(root, "source")
+    mkdirSync(source)
+    writeFileSync(join(source, "jj"), "pinned release executable contents\n")
+    const archive = join(root, "jj.tar.gz")
+    const packed = spawnSync("tar", ["-czf", archive, "-C", source, "./jj"], { encoding: "utf8" })
+    assert.ifError(packed.error)
+    assert.equal(packed.status, 0, packed.stderr)
+    const extracted = spawnSync("tar", ["-xOzf", archive, member], { encoding: "utf8" })
+    assert.ifError(extracted.error)
+    assert.equal(extracted.status, 0, extracted.stderr)
+    assert.equal(extracted.stdout, "pinned release executable contents\n")
+  } finally {
+    rmSync(root, { recursive: true, force: true })
+  }
+})
