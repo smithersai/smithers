@@ -110,7 +110,8 @@ jobs:
           set -euo pipefail
           source_root="$(wslpath -u "$1")"
           apt-get update
-          apt-get install -y bubblewrap ca-certificates curl git xz-utils
+          apt-get install -y bubblewrap ca-certificates curl git libatomic1 xz-utils
+          bwrap --version
           if [ -e /proc/sys/kernel/apparmor_restrict_unprivileged_userns ]; then
             sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
           fi
@@ -124,11 +125,13 @@ jobs:
           curl --fail --location --output /tmp/node-checksums "https://nodejs.org/dist/v${node_version}/SHASUMS256.txt"
           (cd /tmp && grep "  $archive\$" node-checksums | sha256sum --check --strict -)
           tar -xJf "/tmp/$archive" --strip-components=1 -C /usr/local
+          node --version
           package_manager="$(node -p 'JSON.parse(require("node:fs").readFileSync("package.json", "utf8")).packageManager')"
           npm install --global "$package_manager"
           curl --fail --location --output /tmp/jj.tar.gz https://github.com/jj-vcs/jj/releases/download/v0.39.0/jj-v0.39.0-x86_64-unknown-linux-musl.tar.gz
           echo '8da8d96e9c8696c21ad47847a63d533e249acb0449d9af0f0562b5ea7b024f04  /tmp/jj.tar.gz' | sha256sum --check --strict -
           tar -xzf /tmp/jj.tar.gz -C /usr/local/bin ./jj
+          jj --version
           chown -R confinement:confinement /home/confinement/workspace
           runuser -u confinement -- bash -c 'cd /home/confinement/workspace && pnpm install --frozen-lockfile --ignore-scripts'
           '@

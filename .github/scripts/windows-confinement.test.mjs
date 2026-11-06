@@ -83,3 +83,17 @@ test("extracts the jj executable using the pinned release archive layout", () =>
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+// A fresh Ubuntu WSL image does not supply libatomic.so.1, which the pinned
+// Node 26 binary links. Keep that dependency before the first Node execution.
+test("provisions and verifies the pinned Linux toolchain runtime dependencies", () => {
+  const setup = workflow.split("      - name: Install the WSL2 toolchain and checkout\n")[1]?.split("      - name:")[0]
+  assert.ok(setup, "missing WSL2 toolchain provisioning")
+  const apt = setup.match(/apt-get install -y ([^\r\n]+)/)
+  assert.ok(apt, "missing Linux toolchain packages")
+  assert.ok(apt[1].split(/\s+/).includes("libatomic1"), "Node 26 requires libatomic.so.1 in a fresh WSL distro")
+  assert.ok(setup.indexOf(apt[0]) < setup.indexOf('node -p'), "install runtime libraries before executing Node")
+  assert.match(setup, /tar -xJf [^\n]+\n\s+node --version/)
+  assert.match(setup, /tar -xzf \/tmp\/jj\.tar\.gz -C \/usr\/local\/bin \.\/jj\n\s+jj --version/)
+  assert.match(setup, /bwrap --version/)
+})
