@@ -15,7 +15,7 @@ export * as Read from "./Read.ts"
  * @category flows
  * @since 1.0.0
  */
-export * as Write from "./Write.ts"
+export * as Write from "./Write.vibe"
 
 /**
  * @category flows
@@ -33,13 +33,13 @@ export * as Ls from "./Ls.ts"
  * @category flows
  * @since 1.0.0
  */
-export * as Glob from "./Glob.ts"
+export * as Glob from "./Glob.vibe"
 
 /**
  * @category flows
  * @since 1.0.0
  */
-export * as Grep from "./Grep.ts"
+export * as Grep from "./Grep.vibe"
 
 /** @category services @since 1.0.0 */
 export * as Search from "./Search.vibe"
@@ -140,7 +140,7 @@ export * as ExaWebSearch from "./ExaWebSearch.ts"
 /** @category services @since 1.0.0 */
 export * as LanguageServer from "./LanguageServer.vibe"
 /** @category flows @since 1.0.0 */
-export * as Lsp from "./Lsp.ts"
+export * as Lsp from "./Lsp.vibe"
 
 /**
  * @category registries

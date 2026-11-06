@@ -3,9 +3,9 @@ import { Deferred, Effect, Exit, Fiber, FileSystem, Option, Path, PlatformError 
 import { describe, expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
-import * as Preserve from "../src/internal/Preserve.ts"
+import * as Preserve from "../src/internal/Preserve.vibe"
 import type * as StdError from "../src/StdError.vibe"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 const original = "original content that must survive a failed replacement\n"
 const replacement = "replacement content\n"

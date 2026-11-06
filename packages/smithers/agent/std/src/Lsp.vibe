@@ -139,46 +139,62 @@ const isAbsolutePath = (path: string): boolean => path.startsWith("/") || /^[A-Z
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Lsp.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, LanguageServer.LanguageServer | FileSystem.FileSystem> {
-  const server = yield* LanguageServer.LanguageServer
-  const path = input.path
-  const position = path === undefined || input.line === undefined || input.character === undefined
-    ? undefined
-    : { path, line: input.line - 1, character: input.character - 1 }
-  if ((input.operation === "workspaceSymbols")) return { result: yield* server.workspaceSymbols(input.query ?? "") }
-  if (path === undefined || !isAbsolutePath(path)) {
-    return yield* Effect.fail(
-      new StdError.StdError({ code: "invalid_input", message: "A normalized absolute path is required" })
-    )
+export const run = effect (
+  input: {
+    readonly operation:
+      | "callHierarchyIncoming"
+      | "callHierarchyOutgoing"
+      | "definition"
+      | "diagnostics"
+      | "documentSymbols"
+      | "hover"
+      | "implementation"
+      | "prepareCallHierarchy"
+      | "references"
+      | "workspaceSymbols"
+    readonly path?: string | undefined
+    readonly line?: number | undefined
+    readonly character?: number | undefined
+    readonly query?: string | undefined
   }
-  // The server reads the file itself, outside the guarded filesystem, so the
-  // path is authorized here: a read the caller could not make through `read`
-  // is not made through the language server either.
-  const fileSystem = yield* FileSystem.FileSystem
-  yield* fileSystem.stat(path).pipe(Effect.mapError(FsFailure.reading(path, `File not found: ${path}`)))
-  if (input.operation === "documentSymbols") return { result: yield* server.documentSymbols(path) }
-  if (input.operation === "diagnostics") return { result: yield* server.diagnostics(path) }
-  if (position === undefined) {
-    return yield* Effect.fail(
-      new StdError.StdError({ code: "invalid_input", message: "1-based line and character are required" })
-    )
-  }
-  switch (input.operation) {
-    case "hover":
-      return { result: yield* server.hover(position) }
-    case "definition":
-      return { result: yield* server.definition(position) }
-    case "references":
-      return { result: yield* server.references(position) }
-    case "implementation":
-      return { result: yield* server.implementation(position) }
-    case "prepareCallHierarchy":
-      return { result: yield* server.prepareCallHierarchy(position) }
-    case "callHierarchyIncoming":
-      return { result: yield* server.callHierarchyIncoming(position) }
-    case "callHierarchyOutgoing":
-      return { result: yield* server.callHierarchyOutgoing(position) }
-  }
-})
+): typeof Output.Type!StdError.StdError!(LanguageServer.LanguageServer | FileSystem.FileSystem) =>
+  try withSpan(
+    (effect (): typeof Output.Type!StdError.StdError!(LanguageServer.LanguageServer | FileSystem.FileSystem) => {
+      const server = try LanguageServer.LanguageServer
+      const path = input.path
+      const position = path === undefined || input.line === undefined || input.character === undefined
+        ? undefined
+        : { path, line: input.line - 1, character: input.character - 1 }
+      if ((input.operation === "workspaceSymbols")) return { result: try server.workspaceSymbols(input.query ?? "") }
+      if (path === undefined || !isAbsolutePath(path)) {
+        throw new StdError.StdError({ code: "invalid_input", message: "A normalized absolute path is required" })
+      }
+      // The server reads the file itself, outside the guarded filesystem, so the
+      // path is authorized here: a read the caller could not make through `read`
+      // is not made through the language server either.
+      const fileSystem = try FileSystem.FileSystem
+      try (fileSystem.stat(path) |> Effect.mapError(%, FsFailure.reading(path, `File not found: ${path}`)))
+      if (input.operation === "documentSymbols") return { result: try server.documentSymbols(path) }
+      if (input.operation === "diagnostics") return { result: try server.diagnostics(path) }
+      if (position === undefined) {
+        throw new StdError.StdError({ code: "invalid_input", message: "1-based line and character are required" })
+      }
+      switch (input.operation) {
+        case "hover":
+          return { result: try server.hover(position) }
+        case "definition":
+          return { result: try server.definition(position) }
+        case "references":
+          return { result: try server.references(position) }
+        case "implementation":
+          return { result: try server.implementation(position) }
+        case "prepareCallHierarchy":
+          return { result: try server.prepareCallHierarchy(position) }
+        case "callHierarchyIncoming":
+          return { result: try server.callHierarchyIncoming(position) }
+        case "callHierarchyOutgoing":
+          return { result: try server.callHierarchyOutgoing(position) }
+      }
+    })(),
+    "Lsp.run"
+  )

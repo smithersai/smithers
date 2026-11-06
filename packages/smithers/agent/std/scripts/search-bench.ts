@@ -2,8 +2,8 @@
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer } from "effect"
 import { resolve } from "node:path"
-import * as Glob from "../src/Glob.ts"
-import * as Grep from "../src/Grep.ts"
+import * as Glob from "../src/Glob.vibe"
+import * as Grep from "../src/Grep.vibe"
 import * as NativeSearch from "../src/NativeSearch.ts"
 import * as PortableSearch from "../src/PortableSearch.ts"
 

@@ -8,7 +8,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { promisify } from "node:util"
 import { afterAll, describe, expect, it, vi } from "vitest"
-import * as Grep from "../src/Grep.ts"
+import * as Grep from "../src/Grep.vibe"
 import * as Grouping from "../src/internal/Grouping.ts"
 import * as LinearRegex from "../src/internal/LinearRegex.ts"
 import * as NativeSearch from "../src/NativeSearch.ts"
@@ -67,7 +67,7 @@ describe("portable search bounds", () => {
       import { Effect, Layer } from "effect"
       import { NodeServices } from "@effect/platform-node"
       import * as PortableSearch from ${JSON.stringify(new URL("../src/PortableSearch.ts", import.meta.url).href)}
-      import * as Grep from ${JSON.stringify(new URL("../src/Grep.ts", import.meta.url).href)}
+      import * as Grep from ${JSON.stringify(new URL("../src/Grep.vibe", import.meta.url).href)}
       let ticks = 0
       const timer = setInterval(() => { ticks++ }, 1)
       try {

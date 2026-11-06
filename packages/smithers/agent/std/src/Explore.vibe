@@ -5,8 +5,8 @@
  */
 
 import * as Schema from "effect/Schema"
-import * as Glob from "./Glob.ts"
-import * as Grep from "./Grep.ts"
+import * as Glob from "./Glob.vibe"
+import * as Grep from "./Grep.vibe"
 import { envelope } from "./internal/Declaration.ts"
 import * as Ls from "./Ls.ts"
 import * as Read from "./Read.ts"

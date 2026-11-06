@@ -10,7 +10,7 @@ import * as FileMutation from "../src/internal/FileMutation.vibe"
 import * as LanguageServer from "../src/LanguageServer.vibe"
 import * as Read from "../src/Read.ts"
 import { StdError } from "../src/StdError.vibe"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 // This deliberately substitutes only the provider seam to prove tool batching,
 // ordering and refusal behavior against real files. It does not qualify guest

@@ -1,6 +1,6 @@
 import { Cause, Effect, Exit, FileSystem, PlatformError } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Grep from "../src/Grep.ts"
+import * as Grep from "../src/Grep.vibe"
 import { MAX_LINE_CHARS } from "../src/internal/Text.ts"
 import * as Read from "../src/Read.ts"
 import { fileInfo, layer } from "./TestLayers.ts"

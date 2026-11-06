@@ -21,7 +21,7 @@ import { expect, it } from "vitest"
 import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
 import type * as StdError from "../src/StdError.vibe"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 const guarded = (workspace: string) =>
   KernelFileSystem.layer.pipe(

@@ -19,7 +19,7 @@ import { capability, envelope } from "./internal/Declaration.ts"
 import * as Diagnostics from "./internal/Diagnostics.vibe"
 import * as FileMutation from "./internal/FileMutation.vibe"
 import * as FsFailure from "./internal/FsFailure.vibe"
-import * as Preserve from "./internal/Preserve.ts"
+import * as Preserve from "./internal/Preserve.vibe"
 import * as StdError from "./StdError.vibe"
 
 /**

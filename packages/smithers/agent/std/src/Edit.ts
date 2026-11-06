@@ -28,7 +28,7 @@ import * as Diagnostics from "./internal/Diagnostics.vibe"
 import * as FileMutation from "./internal/FileMutation.vibe"
 import * as FsFailure from "./internal/FsFailure.vibe"
 import * as Match from "./internal/Match.ts"
-import * as Preserve from "./internal/Preserve.ts"
+import * as Preserve from "./internal/Preserve.vibe"
 import { sourceLines } from "./internal/Text.ts"
 import * as StdError from "./StdError.vibe"
 

@@ -98,8 +98,8 @@ const securityReview = Smithers.SecurityReview({
         "ApplyPatch or Edit creating parent directories through a symlinked directory."
       ],
       paths: [
-        "src/internal/Preserve.ts",
-        "src/Write.ts",
+        "src/internal/Preserve.vibe",
+        "src/Write.vibe",
         "src/Edit.ts",
         "src/ApplyPatch.ts",
         "src/internal/ApplyPatch.vibe"
@@ -194,7 +194,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/Html.ts",
         "src/internal/TestReport.ts",
         "src/internal/LinearRegex.ts",
-        "src/Grep.ts",
+        "src/Grep.vibe",
         "src/PortableSearch.ts"
       ]
     },
@@ -209,7 +209,7 @@ const securityReview = Smithers.SecurityReview({
         "Lsp.run forwarding any absolute path to the language server with only an isAbsolutePath check, so documentSymbols, hover, or diagnostics reveal an out-of-workspace file.",
         "The host language server loading workspace-controlled code (tsconfig plugins, a workspace-local typescript or node_modules binary) outside any sandbox."
       ],
-      paths: ["src/NativeSearch.ts", "src/Grep.ts", "src/Glob.ts", "src/Lsp.ts"]
+      paths: ["src/NativeSearch.ts", "src/Grep.vibe", "src/Glob.vibe", "src/Lsp.vibe"]
     },
     {
       id: "container-seal",

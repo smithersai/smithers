@@ -1,8 +1,8 @@
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import * as Explore from "../src/Explore.vibe"
-import * as Glob from "../src/Glob.ts"
-import * as Grep from "../src/Grep.ts"
+import * as Glob from "../src/Glob.vibe"
+import * as Grep from "../src/Grep.vibe"
 import * as Ls from "../src/Ls.ts"
 import * as Read from "../src/Read.ts"
 

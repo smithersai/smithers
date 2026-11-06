@@ -48,7 +48,6 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
 import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
 import { MAX_ENTRIES } from "./internal/Text.ts"
 import * as Search from "./Search.vibe"
@@ -184,17 +183,27 @@ export const presentation = {
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Glob.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, Search.Search> {
-  const patternError = Contract.validateGlob(input.pattern)
-  if (patternError !== undefined) return yield* Effect.fail(patternError)
-  const search = yield* Search.Search
-  return yield* search.glob({
-    pattern: input.pattern,
-    root: input.root ?? ".",
-    hidden: input.hidden ?? false,
-    noIgnore: input.noIgnore ?? false,
-    limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)
-  })
-})
+export const run = effect (
+  input: {
+    readonly pattern: string
+    readonly root?: string | undefined
+    readonly hidden?: boolean | undefined
+    readonly noIgnore?: boolean | undefined
+    readonly limit?: number | undefined
+  }
+): typeof Output.Type!StdError.StdError!Search.Search =>
+  try withSpan(
+    (effect (): typeof Output.Type!StdError.StdError!Search.Search => {
+      const patternError = Contract.validateGlob(input.pattern)
+      if (patternError !== undefined) throw patternError
+      const search = try Search.Search
+      return try search.glob({
+        pattern: input.pattern,
+        root: input.root ?? ".",
+        hidden: input.hidden ?? false,
+        noIgnore: input.noIgnore ?? false,
+        limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)
+      })
+    })(),
+    "Glob.run"
+  )

@@ -13,7 +13,7 @@ import * as ApplyPatch from "../src/ApplyPatch.ts"
 import * as Edit from "../src/Edit.ts"
 import * as Read from "../src/Read.ts"
 import { StdError } from "../src/StdError.vibe"
-import * as Write from "../src/Write.ts"
+import * as Write from "../src/Write.vibe"
 
 const original = "alpha\nbeta\n"
 const stale = (path: string) =>

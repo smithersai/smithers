@@ -45,7 +45,6 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
 import { capability, envelope, rootSubtree } from "./internal/Declaration.ts"
 import { invalidInput } from "./internal/SearchContract.vibe"
 import { MAX_GREP_MATCHES } from "./internal/Text.ts"
@@ -300,21 +299,41 @@ const empty = (output: typeof Output.Type): boolean => output.matches.length ===
  * @category handlers
  * @since 1.0.0
  */
-export const run = Effect.fn("Grep.run")(function*(
-  input: typeof Input.Type
-): Effect.fn.Return<typeof Output.Type, StdError.StdError, Search.Search> {
-  const normalized = normalize(input)
-  if (normalized instanceof StdError.StdError) return yield* Effect.fail(normalized)
-  const search = yield* Search.Search
-  const result = yield* search.grep(normalized)
-  if (normalized.fixedStrings || !empty(result) || !metacharacters.test(normalized.pattern)) return result
-  const literal = yield* search.grep({ ...normalized, fixedStrings: true })
-  if (empty(literal)) return result
-  const explanation =
-    `The pattern found nothing as a regular expression and these results come from re-running it literally (fixedStrings: true).`
-  return {
-    ...literal,
-    retriedAsLiteral: true,
-    notice: literal.notice === undefined ? explanation : `${explanation} ${literal.notice}`
+export const run = effect (
+  input: {
+    readonly pattern: string
+    readonly root?: string | undefined
+    readonly fixedStrings?: boolean | undefined
+    readonly ignoreCase?: boolean | undefined
+    readonly smartCase?: boolean | undefined
+    readonly globs?: readonly string[] | undefined
+    readonly beforeContext?: number | undefined
+    readonly afterContext?: number | undefined
+    readonly context?: number | undefined
+    readonly maxCount?: number | undefined
+    readonly filesWithMatches?: boolean | undefined
+    readonly hidden?: boolean | undefined
+    readonly symbols?: boolean | undefined
+    readonly noIgnore?: boolean | undefined
+    readonly limit?: number | undefined
   }
-})
+): typeof Output.Type!StdError.StdError!Search.Search =>
+  try withSpan(
+    (effect (): typeof Output.Type!StdError.StdError!Search.Search => {
+      const normalized = normalize(input)
+      if (normalized instanceof StdError.StdError) throw normalized
+      const search = try Search.Search
+      const result = try search.grep(normalized)
+      if (normalized.fixedStrings || !empty(result) || !metacharacters.test(normalized.pattern)) return result
+      const literal = try search.grep({ ...normalized, fixedStrings: true })
+      if (empty(literal)) return result
+      const explanation =
+        `The pattern found nothing as a regular expression and these results come from re-running it literally (fixedStrings: true).`
+      return {
+        ...literal,
+        retriedAsLiteral: true,
+        notice: literal.notice === undefined ? explanation : `${explanation} ${literal.notice}`
+      }
+    })(),
+    "Grep.run"
+  )

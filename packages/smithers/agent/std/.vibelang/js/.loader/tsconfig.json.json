@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/agent/std"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "WbgoxDQ_5VCktcHPI1eR5DLM8IbSSiP_Yib_BdnHE04",
   "configs": [
    {
     "path": {
@@ -110,7 +110,7 @@
      "relative": "packages/smithers/agent/std/src"
     },
     null,
-    "c88QolstANMNs8q3P6mmY-fuhYUSMA7n1Yx1t71j_BQ",
+    "Icx49w_sPCOHFCtCxTbRHPDT29DDZJa97OZWfySz_GI",
     [],
     {
      "recursive": true,
@@ -339,8 +339,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/package.json"
     },
-    "size": 18741,
-    "hash": "HbDxdtoBmw1cvKzIFoCYIyjsRRQsidsb56ak7nhL81k"
+    "size": 18955,
+    "hash": "mstuBAJ7zTNDbTkPtk2bvZZX3qlWMUCKqsFNA6FGTxo"
    },
    {
     "path": {
@@ -367,8 +367,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 5792,
-    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
+    "size": 5846,
+    "hash": "i6JJi0lsEiBkd2vdaB53mnhAjKPmVi4S4kHtRpnAF88"
    },
    {
     "path": {
@@ -409,8 +409,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8983,
-    "hash": "QSZR03nptJqCje0WXw_V-pRjFImyBRhMZyDcYRpJYMg"
+    "size": 9024,
+    "hash": "KTj9J9Mi1wLpxzgyHjmDAvr0i_Bg5ZH9eWWRqZZAvNM"
    },
    {
     "path": {
@@ -423,15 +423,15 @@
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
-    "size": 5939,
-    "hash": "sppPWs-DikX26fTKmJQEs4ASAuXwTQOIDKUJl8JIM_Q"
+    "size": 7010,
+    "hash": "e8ExeeI_-R-7WbqAA3L5db70KeE2WuC1-NXEnTCcL1o"
    },
    {
     "path": {
      "relative": "packages/smithers/notifications/package.json"
     },
-    "size": 8141,
-    "hash": "HEo0kTwc-dOtFCKf6lo2TywQyGj60SM4Mye31nbxoCI"
+    "size": 8169,
+    "hash": "ChoYYBp9yohU4SV_XQDn44IqZBY8LZofuTkD8TZkcWQ"
    },
    {
     "path": {
@@ -2250,17 +2250,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/internal/Preserve.ts"
+     "relative": "packages/smithers/agent/std/src/internal/Preserve.platform.ts"
     },
-    "size": 4376,
-    "hash": "9rKjyw6fInrM2NIku9KD_21f5aALYpC46zfbK-DLE_M"
+    "size": 3413,
+    "hash": "cqNOTwRrOXHb608_JgT7sfZxJwQt16rEoNHt-H-rKu8"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
+    },
+    "size": 1286,
+    "hash": "-ixqOfXjDL3E9d8KFFvjyHMjGMlIk39CbqnHEPWlw64"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/ApplyPatch.ts"
     },
-    "size": 16415,
-    "hash": "wkRVDEOdg66F7NIIdXCSJM66GbvqQgG2MslfQenEr-4"
+    "size": 16417,
+    "hash": "Q6kgHwS8RaE0wHUzi_xEFY30_Jyur2yG8-ag-wPkpQg"
    },
    {
     "path": {
@@ -2327,10 +2334,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+     "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
     },
-    "size": 3466,
-    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+    "size": 3364,
+    "hash": "Vt245oY5GzEJWu0aI_2ozleaQdo77LyMCMUIsz7JCSY"
    },
    {
     "path": {
@@ -2357,8 +2364,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/src/index.vibe"
     },
-    "size": 1664,
-    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+    "size": 1666,
+    "hash": "Hd8vMVI2OlcM02QkrsWnSKituLfroBIUHlrp6QcyUGs"
    },
    {
     "path": {
@@ -3225,8 +3232,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29125,
-    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
+    "size": 29135,
+    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
    },
    {
     "path": {
@@ -3386,15 +3393,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23051,
-    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
+    "size": 23089,
+    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5610,
-    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
+    "size": 5612,
+    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
    },
    {
     "path": {
@@ -3407,8 +3414,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6389,
-    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
+    "size": 6391,
+    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
    },
    {
     "path": {
@@ -3610,8 +3617,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14134,
-    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
+    "size": 14148,
+    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
    },
    {
     "path": {
@@ -3631,15 +3638,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4649,
-    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
+    "size": 4653,
+    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10284,
-    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
+    "size": 10288,
+    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
    },
    {
     "path": {
@@ -3764,8 +3771,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 21996,
-    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
+    "size": 22016,
+    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
    },
    {
     "path": {
@@ -3799,8 +3806,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2762,
-    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
+    "size": 2764,
+    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
    },
    {
     "path": {
@@ -3820,8 +3827,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1723,
-    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
+    "size": 1725,
+    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
    },
    {
     "path": {
@@ -3855,8 +3862,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Deadline.vibe"
     },
-    "size": 8464,
-    "hash": "FfMT9KOpLcjFMtpkYFY4t-kJwfqY0auSnn__Dmrb5WE"
+    "size": 8472,
+    "hash": "bZQWspojeuR376eyg647eW0LfGpx_U7to06jnd_mQNo"
    },
    {
     "path": {
@@ -4520,15 +4527,15 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/ReadTransaction.vibe"
     },
-    "size": 821,
-    "hash": "jsrWBpxRJQYNzMvXF9NKwgI4unUsfN9Z6qwiDZPjb7M"
+    "size": 823,
+    "hash": "51rXlYqR5wIlKgSrBN93V9fd-2kaHfBz3_tTiFYFDRA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/database/src/Dialect.vibe"
     },
-    "size": 10156,
-    "hash": "ZAFv7m1i-TvSbTeSl_pQH9NNOmRbCctwWwSBbIpmprw"
+    "size": 10158,
+    "hash": "2qpF8l12cct1aXQg-R00mZLeyxuRHXGu0TgIaOIdRAo"
    },
    {
     "path": {
@@ -4793,8 +4800,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Edit.ts"
     },
-    "size": 13990,
-    "hash": "wBQObUlLJXEcKYw2f6G04SAC6_5JxKAcRVR-ar5oiSE"
+    "size": 13992,
+    "hash": "DvnnID4l4e5g_FdfYNcO8Hlrx2Dy-u7uJBRkj7bxsEk"
    },
    {
     "path": {
@@ -4877,22 +4884,22 @@
     "path": {
      "relative": "packages/smithers/control/src/CredentialCipher.vibe"
     },
-    "size": 2947,
-    "hash": "iUVCgDHBpySG_I3ULVtmEnLvK3be-rMSuJ9mPqtWwjg"
+    "size": 2949,
+    "hash": "cTQzxpbeeiSzRWJW2Jt7Ev7CrUNQ3lf6TNbfYPLJSSI"
    },
    {
     "path": {
      "relative": "packages/smithers/control/src/CredentialStore.vibe"
     },
-    "size": 4722,
-    "hash": "Sj63fjG8c1T8OIiTcv4JG_raR866aSj0p1Sd-N942Es"
+    "size": 4724,
+    "hash": "B9Q1T13RoHjge-HQ1TU2EVe46dmiXpRfZAPO0cznD-k"
    },
    {
     "path": {
      "relative": "packages/smithers/control/src/Credential.vibe"
     },
-    "size": 11399,
-    "hash": "FkO3acqCRu6K8DZO_hJmrICTQgDPzMUxUWvy7fZ9_ZI"
+    "size": 11415,
+    "hash": "UFhjLlfKIMqimk36D4WbqudG4Ar5SYPDFGe1h3OGH1E"
    },
    {
     "path": {
@@ -4980,17 +4987,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/Glob.ts"
+     "relative": "packages/smithers/agent/std/src/Glob.vibe"
     },
-    "size": 7416,
-    "hash": "Q85DX4i2yNvbag2TsIdkV3Mdd1BMHl1dkPfhnlUCI4c"
+    "size": 7642,
+    "hash": "YocjkVLE85-6jCbSbGcPuuU3X9CKcZeC21Tf419Y9QQ"
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/Grep.ts"
+     "relative": "packages/smithers/agent/std/src/Grep.vibe"
     },
-    "size": 12713,
-    "hash": "nD2vK-tVaPdICtNc4woMfG_hbmwJdrR7eppsQDi6gmo"
+    "size": 13417,
+    "hash": "ONbGZbA9tQNiKT5AbClxiAK6_WAs1IHjEUyovUNO6qk"
    },
    {
     "path": {
@@ -5010,8 +5017,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/Explore.vibe"
     },
-    "size": 2762,
-    "hash": "r93u4OZXmtXjiT20QmgSjh1i9KAe4tqqKFbhZGhMyIE"
+    "size": 2766,
+    "hash": "61fQj4EJulZCRnGUcVjrFjjlzfim3SG4nhoZOEB8llk"
    },
    {
     "path": {
@@ -5078,10 +5085,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/Lsp.ts"
+     "relative": "packages/smithers/agent/std/src/Lsp.vibe"
     },
-    "size": 6046,
-    "hash": "IrpJ274qvZmEXZwtZL3IHIp5aUo0uQndt92961ycKsg"
+    "size": 6625,
+    "hash": "vylvQXkbTca7P3Yz8Pqba4GcAdDPbc71XPoFc7K0T4w"
    },
    {
     "path": {
@@ -5134,17 +5141,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/agent/std/src/Write.ts"
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
     },
-    "size": 6049,
-    "hash": "EHKfoSJQtkrcl4NOPGODGNZ0RnnZY8ofgN06GsBhzHE"
+    "size": 6301,
+    "hash": "Q21rTZjgTvun3g4pvrXYeT_fnNduEy3hbF6-_J0cd-Y"
    },
    {
     "path": {
      "relative": "packages/smithers/agent/std/src/Manifest.ts"
     },
-    "size": 4411,
-    "hash": "gAOEYa-oem5bTsFWti4-FvvuGv5yT49LlAemUdL17zE"
+    "size": 4419,
+    "hash": "n3y3nu2BX2EN598Q8crix0kuew7xY16GJ0N0UYhtgCo"
    },
    {
     "path": {
@@ -5206,8 +5213,8 @@
     "path": {
      "relative": "packages/smithers/agent/std/src/index.ts"
     },
-    "size": 3004,
-    "hash": "E6SZ4q1mKn8SuFrl53oiLckbwQ1cw4eDirokY3kUH6Y"
+    "size": 3012,
+    "hash": "e0RgNeQBzdqe6WzGKv16QanO3CT0xRlj6lYdB9AmF30"
    },
    {
     "path": {
@@ -6243,7 +6250,10 @@
     "relative": "packages/smithers/agent/std/src/internal/FileMutation.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/internal/Preserve.ts"
+    "relative": "packages/smithers/agent/std/src/internal/Preserve.platform.ts"
+   },
+   {
+    "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/ApplyPatch.ts"
@@ -6276,7 +6286,7 @@
     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
    },
    {
-    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
@@ -7041,10 +7051,10 @@
     "relative": "packages/smithers/agent/std/src/SearchContract.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/Glob.ts"
+    "relative": "packages/smithers/agent/std/src/Glob.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/Grep.ts"
+    "relative": "packages/smithers/agent/std/src/Grep.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Ls.ts"
@@ -7062,7 +7072,7 @@
     "relative": "packages/smithers/agent/std/src/HttpPost.vibe"
    },
    {
-    "relative": "packages/smithers/agent/std/src/Lsp.ts"
+    "relative": "packages/smithers/agent/std/src/Lsp.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/internal/CodexText.ts"
@@ -7086,7 +7096,7 @@
     "relative": "packages/smithers/agent/std/src/WebFetch.ts"
    },
    {
-    "relative": "packages/smithers/agent/std/src/Write.ts"
+    "relative": "packages/smithers/agent/std/src/Write.vibe"
    },
    {
     "relative": "packages/smithers/agent/std/src/Manifest.ts"
@@ -7132,6 +7142,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/agent/std/src/Grep.vibe"
+    },
+    "line": 153,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "Match holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema Match { … }.\n  Its quick fix writes schema Match { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/agent/std/src/HttpPost.vibe"
     },
     "line": 116,
@@ -7149,6 +7169,36 @@
     "category": "warning",
     "code": "EK38130",
     "text": "unstableApiUsage: `effect/http/HttpClientRequest#bodyText` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Lsp.vibe"
+    },
+    "line": 160,
+    "column": 85,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Lsp.vibe"
+    },
+    "line": 162,
+    "column": 98,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Lsp.vibe"
+    },
+    "line": 175,
+    "column": 41,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    },
    {
     "file": {
@@ -7249,6 +7299,66 @@
     "category": "warning",
     "code": "EK4837",
     "text": "StdError extends Schema.TaggedError; a schema error declaration, schema error StdError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
+    },
+    "line": 148,
+    "column": 53,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
+    },
+    "line": 148,
+    "column": 71,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/Path#Path` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
+    },
+    "line": 150,
+    "column": 66,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
+    },
+    "line": 150,
+    "column": 84,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/Path#Path` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
+    },
+    "line": 151,
+    "column": 41,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/Write.vibe"
+    },
+    "line": 152,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/Path#Path` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    },
    {
     "file": {
@@ -7413,6 +7523,46 @@
    {
     "file": {
      "relative": "packages/smithers/agent/std/src/internal/FsFailure.vibe"
+    },
+    "line": 36,
+    "column": 23,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
+    },
+    "line": 21,
+    "column": 26,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
+    },
+    "line": 24,
+    "column": 23,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/PlatformError#PlatformError` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
+    },
+    "line": 33,
+    "column": 26,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/FileSystem#FileSystem` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
     },
     "line": 36,
     "column": 23,
@@ -7705,6 +7855,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
+     }
+    ],
+    "code": "/**\n * Per-file atomic replacement that preserves permission bits and ownership.\n * The sibling is complete before rename; no crash-durability guarantee is made.\n * A file whose owner this process cannot assign is rewritten in place instead.\n *\n * @since 1.0.0\n */\nimport * as Effect from \"effect/Effect\";\nimport { replace as replace$platform } from \"./Preserve.platform.js\";\n/**\n * Replaces a file's text atomically, preserving its permission bits and owner.\n *\n * @category filesystem\n * @since 1.0.0\n */\nexport const writeFileString = (fileSystem, path, content) => replace(fileSystem, path, (target, flag, mode) => fileSystem.writeFileString(target, content, { flag, mode }));\n/**\n * Replaces a file's bytes with the same atomic boundary used for text writes.\n *\n * @category filesystem\n * @since 1.0.0\n */\nexport const writeFile = (fileSystem, path, content) => replace(fileSystem, path, (target, flag, mode) => fileSystem.writeFile(target, content, { flag, mode }));\nconst replace = replace$platform;\n",
+    "map": {
+     "version": 3,
+     "file": "Preserve.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/std/src/internal/Preserve.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;GAMG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAGvC,OAAO,EAAE,OAAO,IAAI,gBAAgB,EAAE,MAAM,wBAAwB,CAAA;AAEpE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,CAC7B,UAAiC,EACjC,IAAY,EACZ,OAAe,EACmB,EAAE,CACpC,OAAO,CAAC,UAAU,EAAE,IAAI,EAAE,CAAC,MAAM,EAAE,IAAI,EAAE,IAAI,EAAE,EAAE,CAAC,UAAU,CAAC,eAAe,CAAC,MAAM,EAAE,OAAO,EAAE,EAAE,IAAI,EAAE,IAAI,EAAE,CAAC,CAAC,CAAA;AAChH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CACvB,UAAiC,EACjC,IAAY,EACZ,OAAmB,EACe,EAAE,CACpC,OAAO,CAAC,UAAU,EAAE,IAAI,EAAE,CAAC,MAAM,EAAE,IAAI,EAAE,IAAI,EAAE,EAAE,CAAC,UAAU,CAAC,SAAS,CAAC,MAAM,EAAE,OAAO,EAAE,EAAE,IAAI,EAAE,IAAI,EAAE,CAAC,CAAC,CAAA;AAC1G,MAAM,OAAO,GAAG,gBAAgB,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/std/src/Container.vibe"
      }
     ],
@@ -7885,6 +8055,46 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/std/src/Glob.vibe"
+     }
+    ],
+    "code": "/**\n * The `glob` projection of Smithers Ripgrep Subset v1.\n *\n * It has the same two peer implementations as `grep` and supports the\n * `rg --files -g` pattern subset: `*`, `**`, `?`, and brace alternatives;\n * results are path sorted; hidden files are opt-in; root and nested .gitignore\n * files apply by default (even outside git repositories). `noIgnore: true` opts\n * out. Parent/global ignore files, .git/info/exclude, .ignore and .rgignore\n * are not read. Caller globs filter the remaining files without overriding\n * ignores. An explicitly named ignored or skipped directory is still searched.\n *\n * **Patterns are relative to `root`, never to the filesystem.** A candidate is\n * matched by the path it has *relative to the search root*, so `tests/**\\/*.py`\n * — what every caller writing a project-relative pattern means — matches\n * `<root>/tests/admin_views/admin.py`. Three rules follow, and both peers\n * implement all three identically:\n *\n * - A pattern with no `/` matches the **basename** at any depth: `*.py` finds\n *   every Python file in the subtree.\n * - A pattern containing `/` is matched against the root-relative path and is\n *   anchored at the root: `tests/*.py` matches `<root>/tests/a.py` and not\n *   `<root>/src/tests/a.py`.\n * - A leading `/` is the same anchor spelled explicitly, not a filesystem\n *   absolute path: `/a.py` matches only `<root>/a.py`, where bare `a.py` would\n *   match any `a.py` in the subtree. A leading `./` means the same anchor.\n *\n * `**` crosses directory boundaries, `*` and `?` stay inside one segment, and\n * `?` consumes one UTF-8 byte. Trailing spaces are not part of a pattern:\n * `rg` reads `-g` by gitignore's rules and drops them, so `\"a.ts \"` finds\n * `a.ts`, and a pattern left blank by that is rejected rather than read as no\n * filter at all.\n *\n * A `root` that names one file is that file. It is reported whatever the\n * pattern says, because `rg` searches a path given on its command line without\n * consulting `-g`, and a walk that reaches one file has nothing to filter.\n *\n * A walk skips what it cannot read — a dangling symlink, a link cycle, a\n * directory the process may not list — and reports everything it did reach.\n * One unreadable entry never fails the call.\n *\n * The consequence worth stating is the one that cost a SWE-bench run 41 of its\n * 43 frames: an *absolute* pattern such as `/home/repo/tests/**` is read as the\n * root-relative path `home/repo/tests/**`, which nothing under a root of\n * `/home/repo` can match. That answer is now never silent — a pattern no file\n * under the root could match reports why through `notice`, so \"unsatisfiable\"\n * and \"searched and found none\" stay distinguishable.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { capability, envelope, rootSubtree } from \"./internal/Declaration.js\";\nimport { MAX_ENTRIES } from \"./internal/Text.js\";\nimport * as Search from \"./Search.js\";\nimport * as Contract from \"./SearchContract.js\";\n/**\n * The registry name for glob.\n *\n * @category identifiers\n * @since 1.0.0\n */\nexport const name = \"glob\";\n/**\n * The model-facing glob description.\n *\n * @category descriptions\n * @since 1.0.0\n */\nexport const description = \"Find files through the Smithers Ripgrep Subset v1 contract.\";\n/**\n * Input accepted by {@link flow} and {@link run}.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Input = Schema.Struct({\n    pattern: Schema.NonEmptyString.annotate({\n        description: \"Ripgrep -g pattern, matched against paths relative to root, never absolute paths: *, ?, {a,b} stay inside one segment, ** crosses directories, a pattern without / matches any basename, and a leading / anchors at root.\"\n    }),\n    root: Schema.optional(Schema.String).annotate({\n        description: \"Search root the pattern is relative to; defaults to . (the host workspace).\"\n    }),\n    hidden: Schema.optional(Schema.Boolean).annotate({ description: \"Ripgrep --hidden.\" }),\n    noIgnore: Schema.optional(Schema.Boolean).annotate({\n        description: \"Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply.\"\n    }),\n    limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({\n        description: `Maximum paths, capped at ${MAX_ENTRIES}.`\n    })\n});\n/**\n * Output produced by {@link run}.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Output = Schema.Struct({\n    paths: Schema.Array(Schema.String),\n    total: Schema.Int,\n    truncated: Schema.Boolean,\n    notice: Schema.optional(Schema.String)\n});\n/**\n * Conservative sealed declaration for all workspace files.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effects = envelope({ tier: \"sealed\", mode: \"hermetic\", reads: [\"/**\"], writes: [] });\n/**\n * Narrows the read declaration to the requested root subtree.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effectsFor = (input) => envelope({ tier: \"sealed\", mode: \"hermetic\", reads: [rootSubtree(input.root ?? \".\")], writes: [] });\n/**\n * Capability strings requested by glob.\n *\n * @category capabilities\n * @since 1.0.0\n */\nexport const capabilities = [capability(\"fs:read\", \"/**\")];\n/**\n * Declaration-only glob flow.\n *\n * @category flows\n * @since 1.0.0\n */\nexport const flow = { name, description, input: Input, output: Output, capabilities, effects };\n/**\n * What a call to this flow does, for a reader of a run.\n *\n * Display metadata only. `@smthrs/registry` `Descriptor.FlowActivity` is the\n * governing vocabulary and `StandardFlows` binds this value onto the flow's\n * descriptor, where the binding site checks it. `declarationDigest` excludes\n * it, so declaring it cannot invalidate a call identity or a cached prompt.\n *\n * @category presentation\n * @since 1.0.0-rc.0\n */\nexport const activity = \"reads\";\n/**\n * How one recorded call to this flow reads: the verb for each settlement, the\n * input field that is its subject, and the measured output fields a one-line\n * summary may count.\n *\n * Display metadata only, governed by `@smthrs/registry`\n * `Descriptor.CallPresentation` and checked where `StandardFlows` binds it.\n *\n * @category presentation\n * @since 1.0.0-rc.0\n */\nexport const presentation = {\n    verb: { pending: \"listing\", success: \"listed\", failure: \"failed to list\" },\n    subject: \"pattern\",\n    result: \"paths\"\n};\n/**\n * Runs one `rg --files -g` contract call through the selected peer implementation.\n *\n * @category handlers\n * @since 1.0.0\n */\nexport const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(function* () {\n        const patternError = Contract.validateGlob(input.pattern);\n        if (patternError !== undefined)\n            return yield* Effect_1.fail(patternError);\n        const search = yield* Search.Search;\n        return yield* search.glob({\n            pattern: input.pattern,\n            root: input.root ?? \".\",\n            hidden: input.hidden ?? false,\n            noIgnore: input.noIgnore ?? false,\n            limit: Math.min(input.limit ?? MAX_ENTRIES, MAX_ENTRIES)\n        });\n    }))(), \"Glob.run\"); } }.run);\n",
+    "map": {
+     "version": 3,
+     "file": "Glob.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/std/src/Glob.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/std/src/Grep.vibe"
+     }
+    ],
+    "code": "/**\n * The `grep` flow and its Smithers Ripgrep Subset v1 contract.\n *\n * Supported ripgrep semantics: Rust-style regular expressions restricted to\n * Smithers Ripgrep ASCII v1; `-F` (`fixedStrings`); `-i` (`ignoreCase`) and `-S`\n * (`smartCase`); ordered `-g` include/exclude globs; `-A`, `-B`, and `-C`\n * context; per-file `--max-count`; `--files-with-matches`; `--hidden`; and\n * deterministic path/line ordering. Root and nested .gitignore files apply by\n * default, including outside git repositories. `noIgnore: true` opts out.\n * Parent/global ignore files, .git/info/exclude, .ignore and .rgignore are not\n * read. File-type registries are outside v1, and there is no `types` field to\n * pass. Patterns are capped at 4096 ASCII bytes and counted repetitions at 1000. Invalid UTF-8 is replacement-decoded; NUL-bearing\n * files are skipped and counted, while an explicitly named binary file is a\n * typed failure.\n *\n * Results are match-centric, which is `rg --json`'s own grouping: `limit`\n * counts matches, each match carries the context lines that belong to it, and\n * every context line belongs to exactly one match. A budget that counted rows\n * could spend itself on context and drop the match — astropy-7166 paid three\n * frames for exactly that — so a hit is never droppable to make room for its\n * own surroundings. Truncation is disclosed through `notice`.\n *\n * Each returned hit also carries the definition enclosing it when the file's\n * shape says so plainly, so a read window is computed rather than guessed, and\n * a metacharacter pattern that finds nothing is retried as a literal with\n * `retriedAsLiteral` set. Both are properties of the contract rather than of a\n * peer: they are computed in `internal/Grouping.ts` for both implementations.\n *\n * `globs` accepts exactly the shapes `glob` accepts and reads them the same\n * way: every pattern is matched against each candidate's path *relative to\n * `root`*, a pattern without `/` matches the basename at any depth, and a\n * leading `/` or `./` anchors at the root rather than naming a filesystem\n * absolute path. A `root` that names one file is searched whatever the globs\n * say. Caller globs filter after ignores; they never override them. See `Glob` for the full statement of the rules. A search that matched\n * nothing because a positive glob was unsatisfiable says so through `notice`\n * instead of returning a silent empty result.\n *\n * `filesSearched` counts every file the walk and globs admitted, including the binaries\n * `skippedBinary` reports and any file the process could not open. A walk\n * skips what it cannot read rather than failing the call.\n *\n * Native and in-process implementations are peers behind `Search.Search`.\n * This module declares and validates the call; it performs no host access.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport { capability, envelope, rootSubtree } from \"./internal/Declaration.js\";\nimport { invalidInput } from \"./internal/SearchContract.js\";\nimport { MAX_GREP_MATCHES } from \"./internal/Text.js\";\nimport * as Search from \"./Search.js\";\nimport * as Contract from \"./SearchContract.js\";\nimport * as StdError from \"./StdError.js\";\n/**\n * The registry name for grep.\n *\n * @category identifiers\n * @since 1.0.0\n */\nexport const name = \"grep\";\n/**\n * The model-facing grep description.\n *\n * @category descriptions\n * @since 1.0.0\n */\nexport const description = \"Search file contents through the Smithers Ripgrep Subset v1 contract. limit counts matches, each carrying its own context and enclosing definition; fixedStrings searches a literal, and one is retried.\";\n/**\n * Input accepted by {@link flow} and {@link run}.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Input = Schema.Struct({\n    pattern: Schema.String.annotate({ description: \"Smithers Ripgrep ASCII v1 expression.\" }),\n    root: Schema.optional(Schema.String).annotate({\n        description: \"Search root the globs are relative to; defaults to . (the host workspace).\"\n    }),\n    fixedStrings: Schema.optional(Schema.Boolean).annotate({ description: \"Ripgrep -F.\" }),\n    ignoreCase: Schema.optional(Schema.Boolean).annotate({ description: \"Ripgrep -i.\" }),\n    smartCase: Schema.optional(Schema.Boolean).annotate({ description: \"Ripgrep -S.\" }),\n    globs: Schema.optional(Schema.Array(Schema.String)).annotate({\n        description: \"Ordered ripgrep -g globs, matched against paths relative to root, never absolute paths: a glob without / matches any basename, a leading / anchors at root, and ** crosses directories. Prefix exclusions with !.\"\n    }),\n    beforeContext: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({\n        description: \"Ripgrep -B.\"\n    }),\n    afterContext: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({\n        description: \"Ripgrep -A.\"\n    }),\n    context: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({ description: \"Ripgrep -C.\" }),\n    maxCount: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))).annotate({\n        description: \"Ripgrep --max-count, per file; at least 1.\"\n    }),\n    filesWithMatches: Schema.optional(Schema.Boolean).annotate({ description: \"Ripgrep --files-with-matches.\" }),\n    hidden: Schema.optional(Schema.Boolean).annotate({ description: \"Ripgrep --hidden.\" }),\n    symbols: Schema.optional(Schema.Boolean).annotate({\n        description: \"Report the definition enclosing each returned hit; true by default.\"\n    }),\n    noIgnore: Schema.optional(Schema.Boolean).annotate({\n        description: \"Honor root-scoped .gitignore files by default. Set true to include ignored paths; hidden and fixed directory skips still apply.\"\n    }),\n    limit: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))).annotate({\n        description: `Global result limit, capped at ${MAX_GREP_MATCHES}.`\n    })\n});\n/**\n * One matching or context line.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const ContextLine = Schema.Struct({\n    line: Schema.Int.annotate({ description: \"1-based line number\" }),\n    text: Schema.String\n});\n/**\n * The definition a hit sits inside, when the file's shape says so plainly.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Symbol = Schema.Struct({\n    kind: Schema.String.annotate({ description: \"The declaration keyword, such as def or class\" }),\n    name: Schema.String,\n    startLine: Schema.Int.annotate({ description: \"1-based first line of the definition\" }),\n    endLine: Schema.Int.annotate({\n        description: \"1-based last line of the definition; read this range, do not guess one\"\n    })\n});\n/**\n * One hit and the context that belongs to it.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Match = Schema.Struct({\n    file: Schema.String,\n    line: Schema.Int,\n    text: Schema.String,\n    before: Schema.Array(ContextLine),\n    after: Schema.Array(ContextLine),\n    symbol: Schema.optional(Symbol)\n});\n/**\n * Output produced by {@link run}.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Output = Schema.Struct({\n    matches: Schema.Array(Match),\n    files: Schema.Array(Schema.String),\n    filesSearched: Schema.Int,\n    skippedBinary: Schema.Int,\n    truncated: Schema.Boolean,\n    retriedAsLiteral: Schema.optional(Schema.Boolean).annotate({\n        description: \"Present when the pattern found nothing as a regex and these results come from re-running it literally\"\n    }),\n    notice: Schema.optional(Schema.String)\n});\n/**\n * Conservative sealed declaration for all workspace files.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effects = envelope({ tier: \"sealed\", mode: \"hermetic\", reads: [\"/**\"], writes: [] });\n/**\n * Narrows the read declaration to the requested root subtree.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effectsFor = (input) => envelope({ tier: \"sealed\", mode: \"hermetic\", reads: [rootSubtree(input.root ?? \".\")], writes: [] });\n/**\n * Capability strings requested by grep.\n *\n * @category capabilities\n * @since 1.0.0\n */\nexport const capabilities = [capability(\"fs:read\", \"/**\")];\n/**\n * Declaration-only grep flow.\n *\n * @category flows\n * @since 1.0.0\n */\nexport const flow = { name, description, input: Input, output: Output, capabilities, effects };\n/**\n * What a call to this flow does, for a reader of a run.\n *\n * Display metadata only. `@smthrs/registry` `Descriptor.FlowActivity` is the\n * governing vocabulary and `StandardFlows` binds this value onto the flow's\n * descriptor, where the binding site checks it. `declarationDigest` excludes\n * it, so declaring it cannot invalidate a call identity or a cached prompt.\n *\n * @category presentation\n * @since 1.0.0-rc.0\n */\nexport const activity = \"reads\";\n/**\n * How one recorded call to this flow reads: the verb for each settlement, the\n * input field that is its subject, and the measured output fields a one-line\n * summary may count.\n *\n * Display metadata only, governed by `@smthrs/registry`\n * `Descriptor.CallPresentation` and checked where `StandardFlows` binds it.\n *\n * @category presentation\n * @since 1.0.0-rc.0\n */\nexport const presentation = {\n    verb: { pending: \"searching\", success: \"searched\", failure: \"failed to search\" },\n    subject: \"pattern\",\n    result: \"matches\"\n};\nconst normalize = (input) => {\n    if (input.ignoreCase === true && input.smartCase === true) {\n        return invalidInput(\"-i and -S are mutually exclusive\");\n    }\n    if (input.context !== undefined && (input.beforeContext !== undefined || input.afterContext !== undefined)) {\n        return invalidInput(\"-C cannot be combined with -A or -B\");\n    }\n    // `rg --max-count 0` answers nothing at all, not even the summary the native\n    // peer parses, so a cap that admits no match is rejected rather than read\n    // differently by each peer.\n    if (input.maxCount !== undefined && input.maxCount < 1) {\n        return invalidInput(\"--max-count must be at least 1\");\n    }\n    const fixedStrings = input.fixedStrings ?? false;\n    const patternError = Contract.validatePattern(input.pattern, fixedStrings);\n    if (patternError !== undefined)\n        return patternError;\n    for (const glob of input.globs ?? []) {\n        const globError = Contract.validateGlob(glob);\n        if (globError !== undefined)\n            return globError;\n    }\n    return {\n        pattern: input.pattern,\n        root: input.root ?? \".\",\n        fixedStrings,\n        ignoreCase: input.ignoreCase ?? false,\n        smartCase: input.smartCase ?? false,\n        globs: input.globs ?? [],\n        beforeContext: input.context ?? input.beforeContext ?? 0,\n        afterContext: input.context ?? input.afterContext ?? 0,\n        maxCount: input.maxCount,\n        filesWithMatches: input.filesWithMatches ?? false,\n        hidden: input.hidden ?? false,\n        noIgnore: input.noIgnore ?? false,\n        symbols: input.symbols ?? true,\n        limit: Math.min(input.limit ?? MAX_GREP_MATCHES, MAX_GREP_MATCHES)\n    };\n};\nconst metacharacters = /[\\\\^$.|?*+()[\\]{}]/;\nconst empty = (output) => output.matches.length === 0 && output.files.length === 0;\n/**\n * Runs one validated ripgrep-contract call through the selected peer implementation.\n *\n * A pattern full of metacharacters that finds nothing is the most common way a\n * search lies: `sphinx-16612` searched 867 files for a parenthesised name and\n * read `0 of 867` as \"this symbol is not used here\". The retry costs one more\n * pass over the same tree only in the case that already found nothing, and the\n * result says plainly that the answer came from the literal reading.\n *\n * @category handlers\n * @since 1.0.0\n */\nexport const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(runtime.$joinedFrame(function* () {\n        const normalized = normalize(input);\n        if (normalized instanceof StdError.StdError)\n            return yield* Effect_1.fail(normalized);\n        const search = yield* Search.Search;\n        const result = yield* search.grep(normalized);\n        if (normalized.fixedStrings || !empty(result) || !metacharacters.test(normalized.pattern))\n            return result;\n        const literal = yield* search.grep({ ...normalized, fixedStrings: true });\n        if (empty(literal))\n            return result;\n        const explanation = `The pattern found nothing as a regular expression and these results come from re-running it literally (fixedStrings: true).`;\n        return {\n            ...literal,\n            retriedAsLiteral: true,\n            notice: literal.notice === undefined ? explanation : `${explanation} ${literal.notice}`\n        };\n    })))(), \"Grep.run\"); } }.run);\n",
+    "map": {
+     "version": 3,
+     "file": "Grep.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/std/src/Grep.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/std/src/Explore.vibe"
      }
     ],
@@ -7899,7 +8109,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,IAAI,MAAM,WAAW,CAAA;AACjC,OAAO,KAAK,IAAI,MAAM,WAAW,CAAA;AACjC,OAAO,EAAE,QAAQ,EAAE,MAAM,2BAA2B,CAAA;AACpD,OAAO,KAAK,EAAE,MAAM,SAAS,CAAA;AAC7B,OAAO,KAAK,IAAI,MAAM,WAAW,CAAA;AAEjC;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,SAAkB,CAAA;AAEtC;;;;;GAKG;AACH,MAAM,CAAC,MAAM,WAAW,GACtB,sHAAsH,CAAA;AAExH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,MAAM,CAAC,MAAM,CAAC;IACjC,MAAM,EAAE,MAAM,CAAC,MAAM,CAAC,QAAQ,CAAC;QAC7B,WAAW,EAAE,wCAAwC;KACtD,CAAC;CACH,CAAC,CAAA;AAUF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,MAAM,CAAC;IAClC,QAAQ,EAAE,MAAM,CAAC,MAAM,CAAC,QAAQ,CAAC;QAC/B,WAAW,EAAE,oDAAoD;KAClE,CAAC;CACH,CAAC,CAAA;AAUF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,QAAQ,CAAC;IAC9B,IAAI,EAAE,QAAQ;IACd,IAAI,EAAE,UAAU;IAChB,KAAK,EAAE,CAAC,KAAK,CAAC;IACd,MAAM,EAAE,EAAE;CACX,CAAC,CAAA;AAEF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,CAAC,MAAyB,EAAE,EAAE,CAAC,OAAO,CAAA;AAEhE,MAAM,KAAK,GAAG,MAAM,CAAC,MAAM,CACzB;IACE,IAAI,CAAC,IAAI;IACT,EAAE,CAAC,IAAI;IACP,IAAI,CAAC,IAAI;IACT,IAAI,CAAC,IAAI;CACD,CACX,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,YAAY,GAA0B,MAAM,CAAC,MAAM,CAC9D,CAAC,GAAG,IAAI,GAAG,CAAC,KAAK,CAAC,OAAO,CAAC,CAAC,IAAI,EAAE,EAAE,CAAC,IAAI,CAAC,YAAY,CAAC,CAAC,CAAC,CAAC,IAAI,EAAE,CAChE,CAAA;AAED;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,OAEpB,EAAE,EAAE,CAAC,CAAC;IACL,IAAI;IACJ,WAAW;IACX,KAAK,EAAE,KAAK;IACZ,MAAM,EAAE,MAAM;IACd,KAAK,EAAE,OAAO,CAAC,KAAK;IACpB,KAAK;IACL,MAAM,EAAE,WAAW;IACnB,YAAY;IACZ,OAAO;CACE,CAAA,CAAA;AAEX;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,IAAI,CAAC,EAAE,CAAC,CAAA"
+     "mappings": "AAAA;;;;GAIG;AAEH,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AACvC,OAAO,KAAK,IAAI,MAAM,WAAa,CAAA;AACnC,OAAO,KAAK,IAAI,MAAM,WAAa,CAAA;AACnC,OAAO,EAAE,QAAQ,EAAE,MAAM,2BAA2B,CAAA;AACpD,OAAO,KAAK,EAAE,MAAM,SAAS,CAAA;AAC7B,OAAO,KAAK,IAAI,MAAM,WAAW,CAAA;AAEjC;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,SAAkB,CAAA;AAEtC;;;;;GAKG;AACH,MAAM,CAAC,MAAM,WAAW,GACtB,sHAAsH,CAAA;AAExH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,MAAM,CAAC,MAAM,CAAC;IACjC,MAAM,EAAE,MAAM,CAAC,MAAM,CAAC,QAAQ,CAAC;QAC7B,WAAW,EAAE,wCAAwC;KACtD,CAAC;CACH,CAAC,CAAA;AAUF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,MAAM,CAAC;IAClC,QAAQ,EAAE,MAAM,CAAC,MAAM,CAAC,QAAQ,CAAC;QAC/B,WAAW,EAAE,oDAAoD;KAClE,CAAC;CACH,CAAC,CAAA;AAUF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,OAAO,GAAG,QAAQ,CAAC;IAC9B,IAAI,EAAE,QAAQ;IACd,IAAI,EAAE,UAAU;IAChB,KAAK,EAAE,CAAC,KAAK,CAAC;IACd,MAAM,EAAE,EAAE;CACX,CAAC,CAAA;AAEF;;;;;GAKG;AACH,MAAM,CAAC,MAAM,UAAU,GAAG,CAAC,MAAyB,EAAE,EAAE,CAAC,OAAO,CAAA;AAEhE,MAAM,KAAK,GAAG,MAAM,CAAC,MAAM,CACzB;IACE,IAAI,CAAC,IAAI;IACT,EAAE,CAAC,IAAI;IACP,IAAI,CAAC,IAAI;IACT,IAAI,CAAC,IAAI;CACD,CACX,CAAA;AAED;;;;;GAKG;AACH,MAAM,CAAC,MAAM,YAAY,GAA0B,MAAM,CAAC,MAAM,CAC9D,CAAC,GAAG,IAAI,GAAG,CAAC,KAAK,CAAC,OAAO,CAAC,CAAC,IAAI,EAAE,EAAE,CAAC,IAAI,CAAC,YAAY,CAAC,CAAC,CAAC,CAAC,IAAI,EAAE,CAChE,CAAA;AAED;;;;;;;GAOG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,CAAC,OAEpB,EAAE,EAAE,CAAC,CAAC;IACL,IAAI;IACJ,WAAW;IACX,KAAK,EAAE,KAAK;IACZ,MAAM,EAAE,MAAM;IACd,KAAK,EAAE,OAAO,CAAC,KAAK;IACpB,KAAK;IACL,MAAM,EAAE,WAAW;IACnB,YAAY;IACZ,OAAO;CACE,CAAA,CAAA;AAEX;;;;;GAKG;AACH,MAAM,CAAC,MAAM,IAAI,GAAG,IAAI,CAAC,EAAE,CAAC,CAAA"
     }
    },
    {
@@ -7945,6 +8155,26 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/agent/std/src/Lsp.vibe"
+     }
+    ],
+    "code": "/**\n * The `lsp` flow: one code-intelligence query per call.\n *\n * The handler checks the path and 1-based position each operation needs,\n * authorizes the path as a read through the guarded `FileSystem` (the server\n * process reads the file on its own), forwards the query to the bound\n * `LanguageServer`, and returns the server's answer unchanged in `result`.\n *\n * @since 1.0.0\n */\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Effect from \"effect/Effect\";\nimport * as FileSystem from \"effect/FileSystem\";\nimport * as Schema from \"effect/Schema\";\nimport { capability, envelope } from \"./internal/Declaration.js\";\nimport * as FsFailure from \"./internal/FsFailure.js\";\nimport * as LanguageServer from \"./LanguageServer.js\";\nimport * as StdError from \"./StdError.js\";\n/**\n * The registry name of the `lsp` flow.\n *\n * @category identifiers\n * @since 1.0.0\n */\nexport const name = \"lsp\";\n/**\n * The one-line description the model sees for the `lsp` flow.\n *\n * @category descriptions\n * @since 1.0.0\n */\nexport const description = \"Inspect code intelligence through the configured language server.\";\n/**\n * What the `lsp` flow accepts.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Input = Schema.Struct({\n    operation: Schema.Literals([\n        \"hover\",\n        \"definition\",\n        \"references\",\n        \"implementation\",\n        \"documentSymbols\",\n        \"workspaceSymbols\",\n        \"prepareCallHierarchy\",\n        \"callHierarchyIncoming\",\n        \"callHierarchyOutgoing\",\n        \"diagnostics\"\n    ]).annotate({\n        description: \"The query to run; workspaceSymbols takes query, documentSymbols and diagnostics take path, the rest take path with line and character\"\n    }),\n    path: Schema.optional(Schema.String).annotate({\n        description: \"Absolute path of the file to query; required by every operation except workspaceSymbols\"\n    }),\n    line: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))).annotate({\n        description: \"1-based line of the position to query, as read and grep report it\"\n    }),\n    character: Schema.optional(Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))).annotate({\n        description: \"1-based character offset within the line\"\n    }),\n    query: Schema.optional(Schema.String).annotate({\n        description: \"Symbol text to search the workspace for; workspaceSymbols only\"\n    })\n});\n/**\n * What the `lsp` flow returns.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Output = Schema.Struct({\n    result: Schema.Unknown.annotate({\n        description: \"The language server's answer for this operation, passed through in the server's own shape\"\n    })\n});\n/**\n * The declared effect envelope of the `lsp` flow, before any input is known.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effects = envelope({\n    tier: \"sealed\",\n    mode: \"hermetic\",\n    reads: [\"/**\"],\n    writes: []\n});\n/**\n * Returns the workspace-wide envelope every language-server query needs.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effectsFor = (_input) => effects;\n/**\n * The authority the `lsp` flow requires.\n *\n * @category capabilities\n * @since 1.0.0\n */\nexport const capabilities = [capability(\"fs:read\", \"/**\")];\n/**\n * The `lsp` flow declaration: schemas, capabilities, and effects, with the\n * implementation attached separately.\n *\n * @category flows\n * @since 1.0.0\n */\nexport const flow = {\n    name,\n    description,\n    input: Input,\n    output: Output,\n    capabilities,\n    effects\n};\nconst isAbsolutePath = (path) => path.startsWith(\"/\") || /^[A-Za-z]:[\\\\/]/.test(path);\n/**\n * Runs the `lsp` flow: queries the configured language server.\n *\n * @category handlers\n * @since 1.0.0\n */\nexport const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(function* () {\n        const server = yield* LanguageServer.LanguageServer;\n        const path = input.path;\n        const position = path === undefined || input.line === undefined || input.character === undefined\n            ? undefined\n            : { path, line: input.line - 1, character: input.character - 1 };\n        if ((input.operation === \"workspaceSymbols\"))\n            return { result: yield* server.workspaceSymbols(input.query ?? \"\") };\n        if (path === undefined || !isAbsolutePath(path)) {\n            return yield* Effect_1.fail(new StdError.StdError({ code: \"invalid_input\", message: \"A normalized absolute path is required\" }));\n        }\n        // The server reads the file itself, outside the guarded filesystem, so the\n        // path is authorized here: a read the caller could not make through `read`\n        // is not made through the language server either.\n        const fileSystem = yield* FileSystem.FileSystem;\n        yield* (Effect.mapError(fileSystem.stat(path), FsFailure.reading(path, `File not found: ${path}`)));\n        if (input.operation === \"documentSymbols\")\n            return { result: yield* server.documentSymbols(path) };\n        if (input.operation === \"diagnostics\")\n            return { result: yield* server.diagnostics(path) };\n        if (position === undefined) {\n            return yield* Effect_1.fail(new StdError.StdError({ code: \"invalid_input\", message: \"1-based line and character are required\" }));\n        }\n        switch (input.operation) {\n            case \"hover\":\n                return { result: yield* server.hover(position) };\n            case \"definition\":\n                return { result: yield* server.definition(position) };\n            case \"references\":\n                return { result: yield* server.references(position) };\n            case \"implementation\":\n                return { result: yield* server.implementation(position) };\n            case \"prepareCallHierarchy\":\n                return { result: yield* server.prepareCallHierarchy(position) };\n            case \"callHierarchyIncoming\":\n                return { result: yield* server.callHierarchyIncoming(position) };\n            case \"callHierarchyOutgoing\":\n                return { result: yield* server.callHierarchyOutgoing(position) };\n        }\n    }))(), \"Lsp.run\"); } }.run);\n",
+    "map": {
+     "version": 3,
+     "file": "Lsp.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/std/src/Lsp.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/agent/std/src/UpdatePlan.vibe"
      }
     ],
@@ -7960,6 +8190,26 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/agent/std/src/Write.vibe"
+     }
+    ],
+    "code": "/**\n * Write flow declaration and portable handler.\n *\n * @since 1.0.0\n */\nimport { withSpan } from \"effect/Effect\";\nimport { $catchExpression } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Path from \"@smthrs/kernel/Path\";\nimport * as Effect from \"effect/Effect\";\nimport * as FileSystem from \"effect/FileSystem\";\nimport * as Schema from \"effect/Schema\";\nimport { capability, envelope } from \"./internal/Declaration.js\";\nimport * as Diagnostics from \"./internal/Diagnostics.js\";\nimport * as FileMutation from \"./internal/FileMutation.js\";\nimport * as FsFailure from \"./internal/FsFailure.js\";\nimport * as Preserve from \"./internal/Preserve.js\";\nimport * as StdError from \"./StdError.js\";\n/**\n * Registry name for the write flow.\n *\n * @category identifiers\n * @since 1.0.0\n */\nexport const name = \"write\";\n/**\n * Model-facing description of the write flow.\n *\n * @category descriptions\n * @since 1.0.0\n */\nexport const description = \"Write UTF-8 text to a path, replacing any existing file; parent directories are created. Prefer edit for targeted changes.\";\n/**\n * Input schema for the write flow.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Input = Schema.Struct({\n    path: Schema.String.annotate({ description: \"Path of the file to write\" }),\n    content: Schema.String.annotate({ description: \"Complete UTF-8 file contents\" })\n});\n/**\n * Output schema for the write flow.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Output = Schema.Struct({\n    path: Schema.String.annotate({ description: \"Path that was written\" }),\n    bytesWritten: Schema.Number.annotate({ description: \"Number of UTF-8 bytes written\" }),\n    created: Schema.Boolean.annotate({ description: \"Whether the file did not previously exist\" })\n});\n/**\n * Static conservative effect envelope for the write flow.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effects = envelope({ tier: \"compensable\", mode: \"hermetic\", reads: [\"/**\"], writes: [\"/**\"] });\n/**\n * Narrows the write effect envelope to one input path.\n *\n * @category effects\n * @since 1.0.0\n */\nexport const effectsFor = (input) => envelope({ tier: \"compensable\", mode: \"hermetic\", reads: [input.path], writes: [input.path] });\n/**\n * Capabilities required by the write flow.\n *\n * @category capabilities\n * @since 1.0.0\n */\nexport const capabilities = [capability(\"fs:read\", \"/**\"), capability(\"fs:write\", \"/**\")];\n/**\n * Declaration-only write flow.\n *\n * @category flows\n * @since 1.0.0\n */\nexport const flow = { name, description, input: Input, output: Output, capabilities, effects };\n/**\n * What a call to this flow does, for a reader of a run.\n *\n * Display metadata only. `@smthrs/registry` `Descriptor.FlowActivity` is the\n * governing vocabulary and `StandardFlows` binds this value onto the flow's\n * descriptor, where the binding site checks it. `declarationDigest` excludes\n * it, so declaring it cannot invalidate a call identity or a cached prompt.\n *\n * @category presentation\n * @since 1.0.0-rc.0\n */\nexport const activity = \"writes\";\n/**\n * How one recorded call to this flow reads: the verb for each settlement, the\n * input field that is its subject, and the measured output fields a one-line\n * summary may count.\n *\n * Display metadata only, governed by `@smthrs/registry`\n * `Descriptor.CallPresentation` and checked where `StandardFlows` binds it.\n *\n * @category presentation\n * @since 1.0.0-rc.0\n */\nexport const presentation = {\n    verb: { pending: \"writing\", success: \"wrote\", failure: \"failed to write\" },\n    subject: \"path\",\n    result: \"write\"\n};\nconst writeError = (path, message) => new StdError.StdError({ code: \"command_failed\", message, path });\n/**\n * Replaces a file's contents through the permission-aware kernel filesystem.\n *\n * @category handlers\n * @since 1.0.0\n */\nexport const run = (input) => Effect_1.suspend({ run: () => { return withSpan((Effect_1.fnUntraced(function* () {\n        const fileSystem = yield* FileSystem.FileSystem;\n        const path = yield* Path.Path;\n        yield* FileMutation.validate(fileSystem, [input.path]);\n        if (!FileMutation.isVersioned(fileSystem)) {\n            yield* (Effect.mapError(fileSystem.makeDirectory(path.dirname(input.path), { recursive: true }), FsFailure.denied(input.path, () => writeError(input.path, `Could not create the parent directory of ${input.path}`))));\n        }\n        return yield* Effect.scoped(Effect_1.gen(function* () {\n            const mutation = yield* FileMutation.acquire(fileSystem, [input.path], path);\n            const existed = yield* $catchExpression(() => fileSystem.exists(input.path), () => Effect_1.sync(() => { return false; }));\n            if (existed) {\n                const info = yield* (Effect.mapError(fileSystem.stat(input.path), FsFailure.denied(input.path, () => writeError(input.path, `Could not inspect ${input.path} before writing`))));\n                if (info.type === \"Directory\") {\n                    return yield* Effect_1.fail(writeError(input.path, `Cannot write a file over directory ${input.path}`));\n                }\n            }\n            yield* mutation.commit([{\n                    path: input.path,\n                    content: new TextEncoder().encode(input.content)\n                }], Effect.mapError(Preserve.writeFileString(fileSystem, input.path, input.content), (error) => error.reason.method === \"chmod\"\n                ? writeError(input.path, `Could not preserve the mode of ${input.path} before replacement by chmod`)\n                : FsFailure.denied(input.path, () => writeError(input.path, `Could not write ${input.path}`))(error)));\n            yield* Diagnostics.sync(path.resolve(input.path), input.content);\n            return {\n                path: input.path,\n                bytesWritten: new TextEncoder().encode(input.content).byteLength,\n                created: !existed\n            };\n        }));\n    }))(), \"Write.run\"); } }.run);\n",
+    "map": {
+     "version": 3,
+     "file": "Write.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/agent/std/src/Write.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {

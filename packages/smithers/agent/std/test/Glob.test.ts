@@ -1,7 +1,7 @@
 import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import * as Glob from "../src/Glob.ts"
-import * as Grep from "../src/Grep.ts"
+import * as Glob from "../src/Glob.vibe"
+import * as Grep from "../src/Grep.vibe"
 import { layer } from "./TestLayers.ts"
 
 const execute = <A, E>(effect: Effect.Effect<A, E, never>) => Effect.runPromise(effect)
