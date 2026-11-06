@@ -33,6 +33,7 @@ import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
 import type { Key } from "./internal/model.ts"
+import { toJsonSchemaDocument } from "./internal/schemaFingerprintDocument.ts"
 import { decodeStored, encodeKey, encodeStored, quote } from "./internal/stored.ts"
 
 /**
@@ -1022,14 +1023,16 @@ const fnv1a = (text: string): string => {
 
 /**
  * A schema's fingerprint: a hash of its JSON Schema document with its keys
- * in order. Two schemas that check rows alike have the same one; a check JSON
+ * in order, retaining the union grouping deployed with Effect 4.0.5.
+ * Effect 4.1's equivalent anyOf flattening does not rewrite existing locks.
+ * Two schemas that check rows alike have the same one; a check JSON
  * Schema can't state, such as a custom filter, leaves it unchanged.
  *
  * @category lock
  * @since 0.3.0
  */
 export const fingerprint = (schema: Schema.Top): string =>
-  fnv1a(JSON.stringify(canonical(Schema.toJsonSchemaDocument(schema))))
+  fnv1a(JSON.stringify(canonical(toJsonSchemaDocument(Schema.toRepresentation(Schema.toCodecJson(schema))))))
 
 /**
  * One store in the lock: its kind, whether it is retired, and each version's
