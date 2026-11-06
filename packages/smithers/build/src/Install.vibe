@@ -394,7 +394,7 @@ const lockfileFor = (manager: PackageManager.Name): string => manager === "pnpm"
 
 const verifyManagerContract = (
   manager: PackageManager.Service
-): Effect.Effect<void, PackageManager.PackageManagerError> => {
+): void!PackageManager.PackageManagerError => {
   if (!["pnpm", "bun"].includes(manager.name)) {
     return Effect.fail(environmentMismatch("the package-manager layer declares an unknown manager"))
   }
@@ -427,17 +427,14 @@ const verifyManagerContract = (
  *
  * @private
  */
-const verifyEnvironment = (
+const verifyEnvironment = effect (
   manager: PackageManager.Service,
   runtime: Runtime.Service
-): Effect.Effect<string, PackageManager.PackageManagerError> =>
-  Effect.gen(function*() {
-    yield* verifyManagerContract(manager)
-    yield* runtime.verify.pipe(
-      Effect.mapError((cause) => environmentMismatch(cause.message))
-    )
-    return yield* manager.verify
-  })
+): string!PackageManager.PackageManagerError => {
+  try verifyManagerContract(manager)
+  runtime.verify catch effect (cause) => { throw environmentMismatch(cause.message) }
+  return try manager.verify
+}
 
 /**
  * Refuses to link a store with a different manager implementation.
@@ -449,7 +446,7 @@ const verifyStoreManager = (
   managerVersion: string,
   platform: PackageManager.Platform | null,
   store: PackageManager.StoreManifest
-): Effect.Effect<void, PackageManager.PackageManagerError> => {
+): void!PackageManager.PackageManagerError => {
   const samePlatform = store.platform === null
     ? platform === null
     : platform !== null &&
@@ -469,19 +466,14 @@ const inputDrift = (path: string): PackageManager.PackageManagerError =>
     message: `install input ${path} changed since measurement or could not be reverified`
   })
 
-const optionalInput = (root: string, path: string) =>
-  Effect.gen(function*() {
-    const fs = yield* FileSystem.FileSystem
-    const present = yield* fs.exists(`${root}/${path}`).pipe(
-      Effect.mapError(() =>
-        new PackageManager.PackageManagerError({
-          code: "manifest_unreadable",
-          message: `cannot inspect ${path}`
-        })
-      )
-    )
-    return present ? { path, digest: yield* PackageManager.lockfileDigest(root, path) } : null
-  })
+const optionalInput = effect (root: string, path: string) => {
+  const fs = try FileSystem.FileSystem
+  const present = fs.exists(`${root}/${path}`) catch effect () => { throw new PackageManager.PackageManagerError({
+        code: "manifest_unreadable",
+        message: `cannot inspect ${path}`
+      }) }
+  return present ? { path, digest: try PackageManager.lockfileDigest(root, path) } : null
+}
 
 /** Digests the one default hook file pnpm will load, which every pnpm command names. */
 const pnpmfileInput = (root: string) =>
@@ -494,23 +486,20 @@ const pnpmfileInput = (root: string) =>
   )
 
 /** Re-read fixed manager paths, never paths supplied by a recorded payload. */
-const verifyContent = (manager: PackageManager.Service, content: Content) =>
-  Effect.gen(function*() {
-    const current = yield* executeMeasure().pipe(
-      Effect.provideService(PackageManager.PackageManager, manager),
-      Effect.mapError((error) => inputDrift(error.message))
-    )
-    for (const field of ["lockfile", "npmrc", "pnpmfile", "workspace"] as const) {
-      const expected = content[field]
-      const actual = current[field]
-      if (expected === null && actual === null) continue
-      if (expected?.path !== actual?.path || expected?.digest !== actual?.digest || expected === undefined) {
-        const path = actual?.path ?? expected?.path ?? field
-        return yield* Effect.fail(inputDrift(path))
-      }
+const verifyContent = effect (manager: PackageManager.Service, content: Content) => {
+  const current = (executeMeasure()
+    |> Effect.provideService(%, PackageManager.PackageManager, manager)) catch effect (error) => { throw inputDrift(error.message) }
+  for (const field of ["lockfile", "npmrc", "pnpmfile", "workspace"] as const) {
+    const expected = content[field]
+    const actual = current[field]
+    if (expected === null && actual === null) continue
+    if (expected?.path !== actual?.path || expected?.digest !== actual?.digest || expected === undefined) {
+      const path = actual?.path ?? expected?.path ?? field
+      throw inputDrift(path)
     }
-    return current
-  })
+  }
+  return current
+}
 
 /**
  * The implementation of {@link Measure}.
@@ -533,23 +522,18 @@ const verifyContent = (manager: PackageManager.Service, content: Content) =>
  * @category layers
  * @since 0.1.0
  */
-export const executeMeasure = (): Effect.Effect<
-  Content,
-  PackageManager.PackageManagerError,
-  PackageManager.PackageManager | FileSystem.FileSystem | Crypto.Crypto
-> =>
-  Effect.gen(function*() {
-    const manager = yield* PackageManager.PackageManager
-    yield* verifyManagerContract(manager)
-    const lockfile = yield* PackageManager.lockfileDigest(manager.projectRoot, manager.lockfileName)
-    const npmrc = yield* PackageManager.npmrcDigest(manager.projectRoot)
-    return {
-      lockfile: { path: manager.lockfileName, digest: lockfile },
-      npmrc: npmrc === null ? null : { path: ".npmrc", digest: npmrc },
-      pnpmfile: manager.name === "pnpm" ? yield* pnpmfileInput(manager.projectRoot) : null,
-      workspace: manager.name === "pnpm" ? yield* optionalInput(manager.projectRoot, "pnpm-workspace.yaml") : null
-    }
-  })
+export const executeMeasure = effect (): Content!PackageManager.PackageManagerError!(PackageManager.PackageManager | FileSystem.FileSystem | Crypto.Crypto) => {
+  const manager = try PackageManager.PackageManager
+  try verifyManagerContract(manager)
+  const lockfile = try PackageManager.lockfileDigest(manager.projectRoot, manager.lockfileName)
+  const npmrc = try PackageManager.npmrcDigest(manager.projectRoot)
+  return {
+    lockfile: { path: manager.lockfileName, digest: lockfile },
+    npmrc: npmrc === null ? null : { path: ".npmrc", digest: npmrc },
+    pnpmfile: manager.name === "pnpm" ? try pnpmfileInput(manager.projectRoot) : null,
+    workspace: manager.name === "pnpm" ? try optionalInput(manager.projectRoot, "pnpm-workspace.yaml") : null
+  }
+}
 
 /**
  * Implements {@link Measure}.
@@ -575,14 +559,14 @@ export const MeasureLive = Measure.toLayer(executeMeasure)
  * @since 0.1.0
  */
 export const executeFetch = ({ content }: { readonly content: Content }) =>
-  Effect.gen(function*() {
-    const manager = yield* PackageManager.PackageManager
-    const runtime = yield* Runtime.Runtime
-    const managerVersion = yield* verifyEnvironment(manager, runtime)
-    yield* verifyContent(manager, content)
-    yield* manager.fetch
-    const verified = yield* verifyContent(manager, content)
-    return yield* PackageManager.storeManifest({
+  effect {
+    const manager = try PackageManager.PackageManager
+    const runtime = try Runtime.Runtime
+    const managerVersion = try verifyEnvironment(manager, runtime)
+    try verifyContent(manager, content)
+    try manager.fetch
+    const verified = try verifyContent(manager, content)
+    return try PackageManager.storeManifest({
       manager: manager.name,
       managerVersion,
       platform: manager.platformSensitive ? runtime.platform : null,
@@ -591,7 +575,7 @@ export const executeFetch = ({ content }: { readonly content: Content }) =>
       pnpmfileDigest: verified.pnpmfile?.digest ?? null,
       workspaceDigest: verified.workspace?.digest ?? null
     })
-  })
+  }
 
 /**
  * Implements {@link FetchPnpm}.
@@ -621,7 +605,7 @@ const verifyStoreContent = (
   platform: PackageManager.Platform | null,
   content: Content,
   store: PackageManager.StoreManifest
-): Effect.Effect<void, PackageManager.PackageManagerError, Crypto.Crypto> =>
+): void!PackageManager.PackageManagerError!Crypto.Crypto =>
   Effect.flatMap(
     PackageManager.storeManifest({
       manager: manager.name,
@@ -663,29 +647,27 @@ export const executeLink = ({ content, store }: {
   readonly content: Content
   readonly store: PackageManager.StoreManifest
 }) =>
-  Effect.gen(function*() {
-    const manager = yield* PackageManager.PackageManager
-    const runtime = yield* Runtime.Runtime
-    const managerVersion = yield* verifyEnvironment(manager, runtime)
+  effect {
+    const manager = try PackageManager.PackageManager
+    const runtime = try Runtime.Runtime
+    const managerVersion = try verifyEnvironment(manager, runtime)
     const platform = manager.platformSensitive ? runtime.platform : null
-    yield* verifyStoreManager(manager, managerVersion, platform, store)
-    const verified = yield* verifyContent(manager, content)
-    yield* verifyStoreContent(manager, managerVersion, platform, verified, store)
-    const packageJsonDigest = yield* PackageManager.packageJsonDigest(manager.projectRoot)
-    yield* manager.link
-    const managerEvidence = yield* manager.linkManifest
-    yield* verifyContent(manager, content)
-    const currentPackageJsonDigest = yield* PackageManager.packageJsonDigest(manager.projectRoot).pipe(
-      Effect.mapError(() => inputDrift("package.json"))
-    )
-    if (currentPackageJsonDigest !== packageJsonDigest) return yield* Effect.fail(inputDrift("package.json"))
-    const manifest = yield* PackageManager.linkedTreeManifest({
+    try verifyStoreManager(manager, managerVersion, platform, store)
+    const verified = try verifyContent(manager, content)
+    try verifyStoreContent(manager, managerVersion, platform, verified, store)
+    const packageJsonDigest = try PackageManager.packageJsonDigest(manager.projectRoot)
+    try manager.link
+    const managerEvidence = try manager.linkManifest
+    try verifyContent(manager, content)
+    const currentPackageJsonDigest = PackageManager.packageJsonDigest(manager.projectRoot) catch effect () => { throw inputDrift("package.json") }
+    if (currentPackageJsonDigest !== packageJsonDigest) throw inputDrift("package.json")
+    const manifest = try PackageManager.linkedTreeManifest({
       storeDigest: store.digest,
       packageJsonDigest,
       managerEvidence
     })
     return { store: store.digest, manifest, linked: true }
-  })
+  }
 
 /**
  * Implements {@link Link}.

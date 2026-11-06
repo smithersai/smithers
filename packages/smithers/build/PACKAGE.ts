@@ -402,7 +402,7 @@ const securityReview = Smithers.SecurityReview({
         "A .pnpmfile.cjs hook admitted into the install without being declared as executed repository code.",
         "pnpmInvocation resolving a relative Windows PATH component against projectRoot, so a repository-planted pnpm.cmd picks the JavaScript entry the runtime executes."
       ],
-      paths: ["src/PackageManager.ts", "src/Install.ts"]
+      paths: ["src/PackageManager.ts", "src/Install.vibe"]
     },
     {
       id: "install-file-confinement",
@@ -414,7 +414,7 @@ const securityReview = Smithers.SecurityReview({
         "An error message that embeds file contents rather than only the path.",
         "A literal credential in .npmrc (userinfo URL or credential-named key) digested instead of refused."
       ],
-      paths: ["src/PackageManager.ts", "src/Install.ts"]
+      paths: ["src/PackageManager.ts", "src/Install.vibe"]
     },
     {
       id: "install-store-attestation",
@@ -426,7 +426,7 @@ const securityReview = Smithers.SecurityReview({
         "A pnpm or Node version mismatch that warns instead of failing with environment_mismatch.",
         "An .npmrc or pnpm-workspace.yaml key (pnpmfile, global-pnpmfile, hooks) that loads a hook file other than .pnpmfile.cjs, whose bytes are then outside the store digest."
       ],
-      paths: ["src/Install.ts", "src/PackageManager.ts", "src/Runtime.ts"]
+      paths: ["src/Install.vibe", "src/PackageManager.ts", "src/Runtime.ts"]
     }
   ]
 })

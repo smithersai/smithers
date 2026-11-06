@@ -18,7 +18,7 @@ import * as Context from "effect/Context"
 import * as Fs from "node:fs"
 import * as NodePath from "node:path"
 import { describe, expect, it } from "vitest"
-import * as Install from "../src/Install.ts"
+import * as Install from "../src/Install.vibe"
 import * as PackageManager from "../src/PackageManager.ts"
 
 const packageRoot = NodePath.join(import.meta.dirname, "..")
@@ -311,7 +311,7 @@ describe("packages/smithers/build prose", () => {
     // `d191c9dfcf` deleted `checkDeclaredManager`. A sealed action receives the
     // layer and never the declaration, so prose promising the comparison
     // describes a guard that cannot run.
-    expect(read("src/Install.ts")).not.toContain("checkDeclaredManager")
+    expect(read("src/Install.vibe")).not.toContain("checkDeclaredManager")
     for (const file of proseFiles()) {
       expect(read(file), `${file} promises a declared-manager check that was deleted`).not.toMatch(
         /the manager the workspace declared, the manager the composition provided/i

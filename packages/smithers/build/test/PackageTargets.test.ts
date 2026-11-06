@@ -113,7 +113,7 @@ describe("umbrella lint target", () => {
     // the graph is what CI invokes, so the two must name the same trees.
     for (
       const path of [
-        "src/Install.ts",
+        "src/Install.vibe",
         "test/Docs.test.ts",
         "examples/check-runtime.ts",
         "terraform/modules/cache/service/storage.js"
