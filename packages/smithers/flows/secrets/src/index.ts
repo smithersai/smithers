@@ -41,7 +41,7 @@ export * as Egress from "./Egress.vibe"
  *
  * @since 0.1.0
  */
-export * as Placeholder from "./Placeholder.ts"
+export * as Placeholder from "./Placeholder.vibe"
 
 /**
  * Scrubbing a value's echoes from text and streams.
