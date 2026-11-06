@@ -20,13 +20,16 @@ function AcceptanceList({ items }) {
  * `Only you`. Commit (the button, Enter in the title, ⌘Enter or Ctrl+Enter in
  * the prompt) always prevents the browser's submission and calls `onCommit`
  * only while no commit is on its way, the trimmed title and prompt are
- * non-empty, and the title fits `maxTitleLength`.
+ * non-empty, the title fits `maxTitleLength`, and, given `issues`, an issue
+ * is chosen.
  */
-export function TodoDraftCard({ repo, source, title, prompt, acceptance, onTitleChange, onPromptChange, onCommit, onDiscard, committing = false, refused, maxTitleLength = 120, className, ...props }) {
+export function TodoDraftCard({ repo, source, title, prompt, acceptance, onTitleChange, onPromptChange, onCommit, onDiscard, committing = false, refused, maxTitleLength = 120, issues, issue, onIssueChange, className, ...props }) {
     useInjectUiCss();
     const titleId = useId();
     const promptId = useId();
-    const canCommit = !committing && title.trim() !== "" && prompt.trim() !== "" && title.length <= maxTitleLength;
+    const issueId = useId();
+    const canCommit = !committing && title.trim() !== "" && prompt.trim() !== "" && title.length <= maxTitleLength &&
+        (issues === undefined || issue !== undefined);
     const commit = () => {
         if (canCommit)
             onCommit();
@@ -39,7 +42,13 @@ export function TodoDraftCard({ repo, source, title, prompt, acceptance, onTitle
                                 return;
                             event.preventDefault();
                             commit();
-                        } })] }), _jsxs(Field, { children: [_jsx(Label, { htmlFor: promptId, children: "Prompt" }), _jsx(Textarea, { id: promptId, value: prompt, onChange: (event) => onPromptChange(event.target.value), onKeyDown: (event) => {
+                        } })] }), issues === undefined ? null : (_jsxs(Field, { children: [_jsx(Label, { htmlFor: issueId, children: "Issue" }), _jsxs("select", { id: issueId, className: "sui-input sui-todo-draft-issue", value: issue === undefined ? "" : String(issue), onChange: (event) => {
+                            const chosen = Number(event.currentTarget.value);
+                            if (Number.isInteger(chosen) && chosen > 0)
+                                onIssueChange?.(chosen);
+                        }, children: [_jsx("option", { value: "", children: "Choose an issue" }), issue !== undefined && !issues.some((each) => each.number === issue)
+                                ? _jsx("option", { value: String(issue), children: `#${issue}` })
+                                : null, issues.map((each) => (_jsx("option", { value: String(each.number), children: `#${each.number} ${each.title}` }, each.number)))] })] })), _jsxs(Field, { children: [_jsx(Label, { htmlFor: promptId, children: "Prompt" }), _jsx(Textarea, { id: promptId, value: prompt, onChange: (event) => onPromptChange(event.target.value), onKeyDown: (event) => {
                             if (!isSubmitChord(event))
                                 return;
                             event.preventDefault();

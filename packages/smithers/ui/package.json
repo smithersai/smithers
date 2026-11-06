@@ -331,5 +331,17 @@
     "happy-dom": "20.13.2",
     "vibelang": "file:../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz",
     "vibelang-unplugin": "file:../../../.vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz"
+  },
+  "imports": {
+    "#vibelang/emitted/src/app-operations/index": {
+      "types": "./.vibe/declarations/src/app-operations/index.d.vibe.ts",
+      "vibelang-source": "./src/app-operations/index.vibe",
+      "default": "./.vibelang/js/src/app-operations/index.js"
+    },
+    "#vibelang/emitted/src/flow-form": {
+      "types": "./.vibe/declarations/src/flow-form.d.vibe.ts",
+      "vibelang-source": "./src/flow-form.vibe",
+      "default": "./.vibelang/js/src/flow-form.js"
+    }
   }
 }

@@ -8,7 +8,7 @@
  * @since 1.0.0
  */
 import { parseSubmit } from "./command-line"
-import { type FormField, positionalRead } from "./flow-form"
+import { type FormField, positionalRead } from "#vibelang/emitted/src/flow-form"
 
 /** One command a composer offers: its name without the slash, what it does, and its arguments. */
 export interface SlashCommand {

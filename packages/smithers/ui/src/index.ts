@@ -966,7 +966,7 @@ export {
   type FormDraft,
   type FormField,
   type FormHints,
-} from "./flow-form";
+} from "#vibelang/emitted/src/flow-form";
 export * from "./flow-graph";
 
 export { ChatTimeline, timelineKey, timelineLabel, timelineBlocks, timelineCapacity, timelineExchanges, timelineLevelCount, timelineWidths, TIMELINE_ROOM, type TimelineBlock, type TimelineMarker, type ChatTimelineEntry, type ChatTimelineProps } from "./chat/ChatTimeline";

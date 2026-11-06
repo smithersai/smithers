@@ -4,7 +4,7 @@
  * the GUI keeps its `world` ids so persisted sessions load unchanged.
  */
 import { Schema } from "effect"
-import { NoInput, operation } from "./index.vibe"
+import { NoInput, operation } from "#vibelang/emitted/src/app-operations/index"
 
 /** The product name of Smithers' understanding of a repository. */
 export const WIKI_DISPLAY_NAME = "Wiki"
