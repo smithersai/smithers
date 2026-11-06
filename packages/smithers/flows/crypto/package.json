@@ -34,33 +34,13 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": {
-      "types": "./src/index.ts",
-      "vibelang-source": "./src/index.ts",
-      "default": "./.vibelang/js/src/index.js"
-    },
+    ".": "./src/index.ts",
     "./internal/*": null,
     "./*/index": null,
-    "./Crypto": {
-      "types": "./src/Crypto.ts",
-      "vibelang-source": "./src/Crypto.ts",
-      "default": "./.vibelang/js/src/Crypto.js"
-    },
-    "./Identity": {
-      "types": "./src/Identity.ts",
-      "vibelang-source": "./src/Identity.ts",
-      "default": "./.vibelang/js/src/Identity.js"
-    },
-    "./Sha256": {
-      "types": "./src/Sha256.ts",
-      "vibelang-source": "./src/Sha256.ts",
-      "default": "./.vibelang/js/src/Sha256.js"
-    },
-    "./index": {
-      "types": "./src/index.ts",
-      "vibelang-source": "./src/index.ts",
-      "default": "./.vibelang/js/src/index.js"
-    }
+    "./Crypto": "./src/Crypto.ts",
+    "./Identity": "./src/Identity.ts",
+    "./Sha256": "./src/Sha256.ts",
+    "./index": "./src/index.ts"
   },
   "files": [
     "src/**/*.ts",
@@ -72,9 +52,7 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/",
-    "src/Uuid.vibe",
-    ".vibelang/js"
+    "docs/"
   ],
   "publishConfig": {
     "access": "public",
