@@ -1,3 +1,19 @@
+diff --git a/dist/cjs/broadcast-coordinator.cjs b/dist/cjs/broadcast-coordinator.cjs
+index 888a393b561f9482185221313cccb7d40be0a91d..eef87f38abdef4953ab46c36d1b81fe5fc6f5de7 100644
+--- a/dist/cjs/broadcast-coordinator.cjs
++++ b/dist/cjs/broadcast-coordinator.cjs
+@@ -333,6 +333,11 @@ class BroadcastCollectionCoordinator {
+     }
+   }
+   async requestEnsurePersistedIndex(collectionId, signature, spec, scopedAdapter, localEnsureCompleted = false, cacheGenerationClaimId) {
++    // An index can be requested while this tab is still acquiring leadership.
++    // Its BroadcastChannel never delivers its own RPC, so select the initial
++    // route before deciding whether to dispatch locally or to another leader.
++    const initialRoute = this.waitForInitialRoute(collectionId)
++    if (initialRoute) await initialRoute
+     if (this.isLeader(collectionId)) {
+       if (localEnsureCompleted) return;
+       const adapter = scopedAdapter ?? this.requireAdapter(collectionId);
 diff --git a/dist/cjs/persisted.d.cts b/dist/cjs/persisted.d.cts
 index d37166df038e2368f8b76d39760840749fb857ec..64469971a3d6b3796064191abd9506ab537c682c 100644
 --- a/dist/cjs/persisted.d.cts
@@ -34,7 +50,7 @@ index d37166df038e2368f8b76d39760840749fb857ec..64469971a3d6b3796064191abd9506ab
  /**
   * Forwards a driver's shared logical scheduling identity to a transparent
 diff --git a/dist/cjs/sqlite-core-adapter.cjs b/dist/cjs/sqlite-core-adapter.cjs
-index e43769a4b73ac4f958f98618063671948e005ac6..d05f7c547098859ddd5254e1fc0c7a9478f57988 100644
+index e43769a4b73ac4f958f98618063671948e005ac6..4d06f5defd7f0db446ee3770430796bc2d462ec9 100644
 --- a/dist/cjs/sqlite-core-adapter.cjs
 +++ b/dist/cjs/sqlite-core-adapter.cjs
 @@ -1043,6 +1043,38 @@ function buildIndexName(collectionId, signature) {
@@ -497,6 +513,22 @@ index e43769a4b73ac4f958f98618063671948e005ac6..d05f7c547098859ddd5254e1fc0c7a94
      await this.driver.exec(
        `CREATE TABLE IF NOT EXISTS cache_generation (
           logical_id TEXT NOT NULL,
+diff --git a/dist/esm/broadcast-coordinator.js b/dist/esm/broadcast-coordinator.js
+index 5bf92745aa8ce7361ad97d0e246ceea5a33eede5..46892fd16892ec9298c07ff63bf6993dc0a74877 100644
+--- a/dist/esm/broadcast-coordinator.js
++++ b/dist/esm/broadcast-coordinator.js
+@@ -331,6 +331,11 @@ class BroadcastCollectionCoordinator {
+     }
+   }
+   async requestEnsurePersistedIndex(collectionId, signature, spec, scopedAdapter, localEnsureCompleted = false, cacheGenerationClaimId) {
++    // An index can be requested while this tab is still acquiring leadership.
++    // Its BroadcastChannel never delivers its own RPC, so select the initial
++    // route before deciding whether to dispatch locally or to another leader.
++    const initialRoute = this.waitForInitialRoute(collectionId)
++    if (initialRoute) await initialRoute
+     if (this.isLeader(collectionId)) {
+       if (localEnsureCompleted) return;
+       const adapter = scopedAdapter ?? this.requireAdapter(collectionId);
 diff --git a/dist/esm/persisted.d.ts b/dist/esm/persisted.d.ts
 index 550d2414ac6a62ca26a47dbf9712c9e58b297369..9e74d37d406be0e25e93b4da6820d5060be2cb39 100644
 --- a/dist/esm/persisted.d.ts
@@ -533,7 +565,7 @@ index 550d2414ac6a62ca26a47dbf9712c9e58b297369..9e74d37d406be0e25e93b4da6820d506
  /**
   * Forwards a driver's shared logical scheduling identity to a transparent
 diff --git a/dist/esm/sqlite-core-adapter.js b/dist/esm/sqlite-core-adapter.js
-index a632016fed33bbbbbc08ef688130054218b22328..17924a0a4739aa2b3b0d31b47609a4b7c1de9617 100644
+index a632016fed33bbbbbc08ef688130054218b22328..c8f069f1096784cc88a3313f7e432b7b619e8087 100644
 --- a/dist/esm/sqlite-core-adapter.js
 +++ b/dist/esm/sqlite-core-adapter.js
 @@ -1041,6 +1041,38 @@ function buildIndexName(collectionId, signature) {
@@ -996,3 +1028,19 @@ index a632016fed33bbbbbc08ef688130054218b22328..17924a0a4739aa2b3b0d31b47609a4b7
      await this.driver.exec(
        `CREATE TABLE IF NOT EXISTS cache_generation (
           logical_id TEXT NOT NULL,
+diff --git a/src/broadcast-coordinator.ts b/src/broadcast-coordinator.ts
+index 03e2954e6dc3b2addbfe7e19d7032811394ac974..148a245fb942c4c01aba6b210b10252b6715912f 100644
+--- a/src/broadcast-coordinator.ts
++++ b/src/broadcast-coordinator.ts
+@@ -688,6 +688,11 @@ export class BroadcastCollectionCoordinator implements PersistedCollectionCoordi
+     localEnsureCompleted = false,
+     cacheGenerationClaimId?: string,
+   ): Promise<void> {
++    // An index can be requested while this tab is still acquiring leadership.
++    // Its BroadcastChannel never delivers its own RPC, so select the initial
++    // route before deciding whether to dispatch locally or to another leader.
++    const initialRoute = this.waitForInitialRoute(collectionId)
++    if (initialRoute) await initialRoute
+     if (this.isLeader(collectionId)) {
+       if (localEnsureCompleted) return
+       const adapter = scopedAdapter ?? this.requireAdapter(collectionId)
