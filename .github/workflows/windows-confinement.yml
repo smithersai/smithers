@@ -4,6 +4,7 @@ on:
     branches: [main]
     paths:
       - .github/workflows/windows-confinement.yml
+      - .github/scripts/windows-confinement.test.mjs
       - "packages/smithers/flows/platform-node/**"
       - "packages/smithers/build/build-cli/**"
       - "packages/smithers/build/targets/**"
@@ -12,6 +13,7 @@ on:
   pull_request:
     paths:
       - .github/workflows/windows-confinement.yml
+      - .github/scripts/windows-confinement.test.mjs
       - "packages/smithers/flows/platform-node/**"
       - "packages/smithers/build/build-cli/**"
       - "packages/smithers/build/targets/**"
@@ -69,6 +71,8 @@ jobs:
         with:
           node-version-file: .node-version
       - uses: pnpm/action-setup@0977fd99725f1db4007ccb2928dbb4e90d06cc86
+      - name: Verify WSL2 provisioning contract
+        run: node --test .github/scripts/windows-confinement.test.mjs
       - name: Install the native Windows test launcher
         run: pnpm install --frozen-lockfile --ignore-scripts
       # Docker Desktop is unsupported on Windows Server. WSL2 supplies the
@@ -80,14 +84,23 @@ jobs:
       - name: Provision WSL2
         shell: pwsh
         run: |
+          function Assert-Wsl2Kernel([string] $Kernel) {
+            if ($Kernel.Trim() -notmatch '^[0-9]+\.[0-9]+\.[0-9]+[\w.+-]*-microsoft-standard-WSL2\z') {
+              throw "Expected a running WSL2 kernel, received: $Kernel"
+            }
+            Write-Host "WSL2 kernel: $($Kernel.Trim())"
+          }
           wsl --update --web-download
           if ($LASTEXITCODE -ne 0) { throw 'WSL update failed' }
           wsl --set-default-version 2
           if ($LASTEXITCODE -ne 0) { throw 'WSL2 is unavailable' }
           wsl --install --distribution Ubuntu-24.04 --no-launch --web-download
           if ($LASTEXITCODE -ne 0) { throw 'Ubuntu installation failed' }
-          wsl --set-version Ubuntu-24.04 2
-          if ($LASTEXITCODE -ne 0) { throw 'Ubuntu is not running on WSL2' }
+          # Converting an already-WSL2 distro returns WSL_E_VM_MODE_INVALID_STATE.
+          # Launch it and verify the running kernel instead of converting it again.
+          $kernel = wsl --distribution Ubuntu-24.04 --user root --exec uname -r
+          if ($LASTEXITCODE -ne 0) { throw 'WSL2 launch failed' }
+          Assert-Wsl2Kernel (($kernel -join "`n").Trim())
           wsl --list --verbose
           if ($LASTEXITCODE -ne 0) { throw 'WSL inspection failed' }
       - name: Install the WSL2 toolchain and checkout
