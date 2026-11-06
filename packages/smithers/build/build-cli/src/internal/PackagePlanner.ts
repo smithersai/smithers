@@ -321,6 +321,8 @@ interface PlanContext {
   storeWarned: boolean
   /** The remote cache the plan-time store reads through, when one is declared. */
   readonly remoteCache: Workspace.RemoteCacheAccess | undefined
+  /** Package and declared tree input → its digested rows (plan-time, memoized). */
+  readonly treeInputs: Map<string, Promise<Pick<Workspace.ExpandedInput, "files" | "digest">>>
   /** ImportClosure label → canonical result digest (plan-time, memoized). */
   /** Expanded crate sets, memoized per `S.Cargo.AppSet` label. */
   readonly crateSets: Map<string, ReadonlyArray<CrateRow>>
@@ -1209,7 +1211,45 @@ const labelOf = (context: PlanContext, target: Target.AnyTarget): string => {
   return label
 }
 
-/** Expands and digests one target's declared inputs against its package. */
+/** The tree inputs a plan reads once: everything declared but a git diff. */
+type TreeInput = Exclude<Input.Declared, Input.GitDiff>
+
+/** The file rows one declared tree input names, resolved against its package. */
+const treeInputFiles = async (
+  context: PlanContext,
+  packagePath: string,
+  declaration: TreeInput
+): Promise<ReadonlyArray<Input.FileDigest>> => {
+  if (declaration._tag === "File") {
+    const path = Input.resolvePath(packagePath, declaration.path)
+    const digest = await Input.digestFile(NodePath.join(context.root, path), {
+      workspaceRoot: context.root,
+      signal: context.signal
+    })
+    return [{ path, digest }]
+  }
+  const matches = declaration._tag === "Glob"
+    ? await Input.expandGlob(context.root, packagePath, declaration, {
+      cacheDirectory: context.cacheDirectory,
+      repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
+      signal: context.signal
+    })
+    : await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
+      cacheDirectory: context.cacheDirectory,
+      signal: context.signal
+    })
+  return Input.digestFiles(context.root, matches, { signal: context.signal })
+}
+
+/**
+ * Expands and digests one target's declared inputs against its package.
+ *
+ * One plan reads each distinct tree input once, whichever targets declare it.
+ * A walk's cost follows the glob's static prefix, not what it matches: 3,200
+ * targets declaring `cases/*.mjs` walked all 3,200 case directories each, for
+ * 56 minutes of a one-minute plan. Planning finishes before any target runs,
+ * so every target of a plan also keys the same bytes for a shared input.
+ */
 const expandInputs = async (
   context: PlanContext,
   packagePath: string,
@@ -1217,36 +1257,20 @@ const expandInputs = async (
 ): Promise<ReadonlyArray<Workspace.ExpandedInput>> => {
   const expanded: Array<Workspace.ExpandedInput> = []
   for (const declaration of declarations) {
-    if (declaration._tag === "File") {
-      const path = Input.resolvePath(packagePath, declaration.path)
-      const digest = await Input.digestFile(NodePath.join(context.root, path), {
-        workspaceRoot: context.root,
-        signal: context.signal
-      })
-      const files = [{ path, digest }]
-      expanded.push({ declaration, files, digest: Input.digestText(JSON.stringify(files)) })
+    if (declaration._tag === "GitDiff") {
+      expanded.push(await expandGitDiff(context, declaration))
       continue
     }
-    if (declaration._tag === "Glob") {
-      const matches = await Input.expandGlob(context.root, packagePath, declaration, {
-        cacheDirectory: context.cacheDirectory,
-        repositoryBoundaries: Object.values(context.index.workspace.repos ?? {}).map((repo) => repo.path),
-        signal: context.signal
-      })
-      const files = await Input.digestFiles(context.root, matches, { signal: context.signal })
-      expanded.push({ declaration, files, digest: Input.digestText(JSON.stringify(files)) })
-      continue
+    const key = JSON.stringify([packagePath, declaration])
+    let rows = context.treeInputs.get(key)
+    if (rows === undefined) {
+      rows = treeInputFiles(context, packagePath, declaration).then((files) => ({
+        files,
+        digest: Input.digestText(JSON.stringify(files))
+      }))
+      context.treeInputs.set(key, rows)
     }
-    if (declaration._tag === "PnpmWorkspace") {
-      const matches = await Input.expandPnpmWorkspace(context.root, packagePath, declaration, {
-        cacheDirectory: context.cacheDirectory,
-        signal: context.signal
-      })
-      const files = await Input.digestFiles(context.root, matches, { signal: context.signal })
-      expanded.push({ declaration, files, digest: Input.digestText(JSON.stringify(files)) })
-      continue
-    }
-    expanded.push(await expandGitDiff(context, declaration))
+    expanded.push({ declaration, ...(await rows) })
   }
   return expanded
 }
@@ -3820,6 +3844,7 @@ const planWithServices = async (
     store: undefined,
     storeWarned: false,
     remoteCache: options.remoteCache,
+    treeInputs: new Map(),
     crateSets: new Map(),
     closureDigests: new Map(),
     closureResults: new Map(),

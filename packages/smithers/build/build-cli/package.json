@@ -699,6 +699,7 @@
     "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
     "circular": "node ../../../repo-targets/scripts/circular.mjs",
     "test": "vitest",
+    "bench": "vitest bench --run --coverage.enabled=false --reporter=verbose",
     "coverage": "vitest --coverage"
   },
   "dependencies": {
