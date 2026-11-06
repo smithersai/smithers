@@ -761,6 +761,61 @@ describe("ModelProxy prepare", () => {
     expect(client.annotations).not.toHaveProperty("role")
   })
 
+  it("keeps terminal stream cleanup in the request's server context", async () => {
+    const server: Metric.MetricRegistry = new Map()
+    const client: Metric.MetricRegistry = new Map()
+    const transport: Metric.MetricRegistry = new Map()
+    const serverLogs: Array<StructuredLog> = []
+    const transportLogs: Array<StructuredLog> = []
+    const observed = (registry: Metric.MetricRegistry, logs: Array<StructuredLog>) =>
+      Context.make(Metric.MetricRegistry, registry).pipe(Context.add(
+        Logger.CurrentLoggers,
+        new Set([
+          Logger.make((options) => logs.push(Logger.formatStructured.log(options)))
+        ])
+      ))
+    const model = Model.make({
+      stream: () =>
+        Stream.make<ReadonlyArray<ModelEvent>>(
+          { type: "text-delta", id: "t", text: "ok" },
+          { type: "usage", inputTokens: 5, outputTokens: 2 }
+        )
+    })
+    // Request-local services differ from those converting the response to Web
+    // streams, as on a Worker. The actual client cancels after its terminal line.
+    const handler = HttpEffect.toWebHandlerWith<never, HttpServerRequest.HttpServerRequest>(
+      observed(transport, transportLogs)
+    )(
+      ModelProxy.serve({ prepare: hostPrepare(model) }).pipe(Effect.provideContext(observed(server, serverLogs)))
+    )
+    const received = await Effect.runPromise(
+      Effect.gen(function*() {
+        const model = yield* ModelProxy.makeClient({ url })
+        return yield* Stream.runCollect(model.stream(request()))
+      }).pipe(
+        Effect.provide(FetchHttpClient.layer),
+        Effect.provideService(FetchHttpClient.Fetch, (input, init) => handler(new Request(input, init))),
+        Effect.provideContext(observed(client, []))
+      )
+    )
+    expect(received).toHaveLength(2)
+    const count = (registry: Metric.MetricRegistry, type: string) =>
+      Effect.runSync(
+        Metric.value(Metric.withAttributes(ModelProxy.tokens, { type, model: "host-model" })).pipe(
+          Effect.provideService(Metric.MetricRegistry, registry)
+        )
+      ).count
+    expect(count(server, "input")).toBe(5)
+    expect(count(server, "output")).toBe(2)
+    expect(serverLogs.map((log) => log.message)).toEqual(["model.proxy.serve"])
+    expect(transportLogs).toEqual([])
+    expect(transport.size).toBe(0)
+    expect(
+      Effect.runSync(Metric.snapshot.pipe(Effect.provideService(Metric.MetricRegistry, client)))
+        .some((metric) => metric.id === "smithers_model_tokens")
+    ).toBe(false)
+  })
+
   it("keeps the proxy's own attribute over a host attribute of the same name", async () => {
     const h = harness({ attributes: { side: "spoofed", outcome: "spoofed" } })
 

@@ -549,7 +549,13 @@ export const serve = <R = never>(
     const body = lines.pipe(
       Stream.merge(Stream.map(Stream.fromQueue(beats), keepAlive), { haltStrategy: "left" }),
       // A client that went away gets no terminal line; `onEnd` still hears of it, as `interrupted`.
-      Stream.onExit((exit) => Effect.andThen(call.finish(exit), end("interrupted"))),
+      Stream.onExit((exit) =>
+        Effect.andThen(call.finish(exit), end("interrupted")).pipe(
+          // Response cancellation can finalize in the HTTP transport's context.
+          // Completion belongs to the request, including its metrics and onEnd.
+          Effect.provideContext(context)
+        )
+      ),
       Stream.provideService(Tracer.ParentSpan, span),
       Stream.provideContext(context)
     )
