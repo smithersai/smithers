@@ -13,7 +13,7 @@ import { canonicalize } from "@smthrs/canonical"
 import { Sha256 } from "@smthrs/crypto"
 import * as Sha256Digest from "@smthrs/crypto/Sha256"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
-import { Effect, Schema } from "effect"
+import { Effect } from "effect"
 import type { ApprovalTarget, PlanInput } from "../Control.ts"
 import { CodeDrift } from "../ControlError.ts"
 import type {
@@ -119,7 +119,9 @@ export const mutationKey = (
   key: IdempotencyKey,
   principal: Pick<Principal, "id" | "kind">
 ): string =>
-  `${operation}:actor:${Sha256Digest.digestSync(canonical({ id: principal.id, kind: principal.kind }))}:${key}`
+  `${operation}:actor:${
+    $invoke(Sha256Digest, (): infer _ => (canonical({ id: principal.id, kind: principal.kind })))
+  }:${key}`
 
 /**
  * The content digest of a value's canonical bytes.
@@ -127,7 +129,7 @@ export const mutationKey = (
  * @since 0.1.0
  * @private
  */
-export const digest = (value: unknown) => Schema.decodeUnknownEffect(Sha256)(canonical(value)).pipe(Effect.orDie)
+export const digest = (value: unknown) => Schema.decodeUnknownEffect(Sha256)(canonical(value)) |> Effect.orDie(%)
 
 /**
  * Envelope equality by canonical bytes, not by reference or key order.
@@ -223,50 +225,59 @@ export interface PlanSource {
  * @since 0.1.0
  * @private
  */
-export const planCard = (source: PlanSource) =>
-  Effect.gen(function*() {
-    const plan = source.handoff?.plan
-    const nodes: ReadonlyArray<PlanNode> = plan === undefined
-      ? []
-      : plan.nodes.map((node) => ({
-        ...node,
-        status: source.handoff?.statuses?.[node.id] ?? "run"
-      }))
-    const planDigest = yield* digest({
-      flowId: source.flowId,
-      input: source.decodedInput,
-      envelope: source.envelope,
-      deployClass: source.deployClass,
-      ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
-      // The persisted plan digest covers keys, edges, effects, conflicts,
-      // priorities, and generations. Hashing only node keys loses executable
-      // graph changes whose content keys legitimately stay stable.
-      persistedPlan: plan?.digest ?? null
-    })
-    const target: ApprovalTarget = {
-      _tag: "Plan",
-      planId: source.planId,
-      digest: planDigest,
-      envelope: source.envelope
-    }
-    return {
-      planId: source.planId,
-      flowId: source.flowId,
-      digest: planDigest,
-      inputSummary: canonical(source.decodedInput),
-      envelope: source.envelope,
-      deployClass: source.deployClass,
-      ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
-      ...(plan === undefined ? {} : { plan }),
-      nodes,
-      // Outside `digest` above on purpose: the edges are how a reader draws
-      // the plan, not what the plan will do, so gaining them must not
-      // invalidate an approval taken before the host reported them.
-      ...(source.handoff?.graph === undefined ? {} : { graph: source.handoff.graph }),
-      approval: {
-        target,
-        scope: "run" as const,
-        idempotencyKey: source.idempotencyKey ?? `approve:${source.planId}`
-      }
-    } satisfies PlanCard
+export const planCard = effect (source: PlanSource) => {
+  const plan = source.handoff?.plan
+  const nodes: ReadonlyArray<PlanNode> = plan === undefined
+    ? []
+    : plan.nodes.map((node) => ({
+      ...node,
+      status: source.handoff?.statuses?.[node.id] ?? "run"
+    }))
+  const planDigest = try digest({
+    flowId: source.flowId,
+    input: source.decodedInput,
+    envelope: source.envelope,
+    deployClass: source.deployClass,
+    ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
+    // The persisted plan digest covers keys, edges, effects, conflicts,
+    // priorities, and generations. Hashing only node keys loses executable
+    // graph changes whose content keys legitimately stay stable.
+    persistedPlan: plan?.digest ?? null
   })
+  const target: ApprovalTarget = {
+    _tag: "Plan",
+    planId: source.planId,
+    digest: planDigest,
+    envelope: source.envelope
+  }
+  return {
+    planId: source.planId,
+    flowId: source.flowId,
+    digest: planDigest,
+    inputSummary: canonical(source.decodedInput),
+    envelope: source.envelope,
+    deployClass: source.deployClass,
+    ...(source.executionDigest === undefined ? {} : { executionDigest: source.executionDigest }),
+    ...(plan === undefined ? {} : { plan }),
+    nodes,
+    // Outside `digest` above on purpose: the edges are how a reader draws
+    // the plan, not what the plan will do, so gaining them must not
+    // invalidate an approval taken before the host reported them.
+    ...(source.handoff?.graph === undefined ? {} : { graph: source.handoff.graph }),
+    approval: {
+      target,
+      scope: "run" as const,
+      idempotencyKey: source.idempotencyKey ?? `approve:${source.planId}`
+    }
+  } satisfies PlanCard
+}
+
+module $call$ts {
+  export function invoke<T extends { "digestSync": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["digestSync"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["digestSync"], (...args: any[]) => any>> {
+    return target["digestSync"](arg0())
+  }
+}
+import { invoke as $invoke } from $call$ts

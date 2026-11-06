@@ -26,7 +26,7 @@ import { ClaimLost, PersistenceError, PlanDigestMismatch, RunNotFound } from "..
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import * as ControlLive from "../src/ControlLive.ts"
 import { ControlRuntime, type RunQuery, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
-import { mutationKey } from "../src/internal/planning.ts"
+import { mutationKey } from "../src/internal/planning.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { contract, type Stack } from "./ControlContract.ts"

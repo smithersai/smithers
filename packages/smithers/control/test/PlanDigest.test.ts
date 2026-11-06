@@ -23,7 +23,7 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import { Effect, Layer } from "effect"
 import { describe, expect, it } from "vitest"
 import type { Envelope } from "../src/ControlSchema.ts"
-import { planCard, type PlanSource } from "../src/internal/planning.ts"
+import { planCard, type PlanSource } from "../src/internal/planning.vibe"
 
 const crypto = Layer.succeed(Crypto.Crypto, Sha256.syncCrypto)
 

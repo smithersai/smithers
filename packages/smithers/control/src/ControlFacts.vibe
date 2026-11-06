@@ -33,7 +33,7 @@ export const runFact = (
   baseline: "created" | "legacy" = "legacy"
 ): typeof RunFact.Type => {
   if (run.executionObservation !== undefined || run.executionView !== undefined) {
-    throw new Error("A control fact cannot persist an executor observation")
+    $raise(new Error("A control fact cannot persist an executor observation"))
   }
   return Schema.decodeUnknownSync(RunFact)({ factVersion: version, baseline, run: structuredClone(run) })
 }
@@ -110,26 +110,31 @@ export const approvalDecisionFact = (
  */
 export const commitRun = <E, R>(
   journal: Journal.Service,
-  change: Effect.Effect<ControlSchema.RunSummary, E, R>,
+  change: ControlSchema.RunSummary!E!R,
   sourceId: string,
   eventType: string,
   detail: Readonly<Record<string, unknown>> = {},
   baseline: "created" | "legacy" = "legacy"
 ) =>
-  journal.transact(Effect.gen(function*() {
-    const run = yield* change
-    yield* journal.emitDurableUnfenced(
+  journal.transact(effect {
+    const run = try change
+    try journal.emitDurableUnfenced(
       new JournalEvent.Input({
         runId: JournalEvent.RunId.make(run.runId),
         sourceId: JournalEvent.SourceId.make(sourceId),
         eventType,
-        payload: JSON.parse(
-          JSON.stringify({ ...detail, runId: run.runId, status: run.status, ...runFact(run, baseline) })
-        )
+        payload: try Effect.orDie(Effect.try({
+          try: () =>
+            $invoke(
+              JSON,
+              () => (JSON.stringify({ ...detail, runId: run.runId, status: run.status, ...runFact(run, baseline) }))
+            ),
+          catch: (e) => e
+        }))
       })
     )
     return run
-  }))
+  })
 
 /** The token and submit-ready request have one durable admission boundary.
  * @category facts
@@ -152,20 +157,22 @@ export const commitApprovalRequest = (
         })
       )
     }
-    return journal.transact(Effect.gen(function*() {
-      const token = yield* runtime.registerApproval(target)
+    return journal.transact(effect {
+      const token = try runtime.registerApproval(target)
       if (token._tag === "Pending") {
-        yield* journal.emitDurableUnfenced(
+        try journal.emitDurableUnfenced(
           new JournalEvent.Input({
             runId: JournalEvent.RunId.make(fact.runId),
             sourceId: JournalEvent.SourceId.make(sourceId),
             eventType: "control.approval.requested",
-            payload: JSON.parse(JSON.stringify(fact))
+            payload: try Effect.orDie(
+              Effect.try({ try: () => $invoke(JSON, () => (JSON.stringify(fact))), catch: (e) => e })
+            )
           })
         )
       }
       return token
-    }))
+    })
   })
 
 /** Honest coverage of the displayed lifecycle; engine rows are a separate authority.
@@ -390,3 +397,20 @@ export const fold = (
     approvals: [...requests.values()].map(({ row }) => row)
   }
 }
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts
+
+module $call$ts {
+  export function invoke<T extends { "parse": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["parse"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["parse"], (...args: any[]) => any>> {
+    return target["parse"](arg0())
+  }
+}
+import { invoke as $invoke } from $call$ts

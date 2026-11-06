@@ -117,7 +117,7 @@ import {
   planFingerprint,
   sameEnvelope,
   signalCommandFingerprint
-} from "./internal/planning.ts"
+} from "./internal/planning.vibe"
 import { causeMessages, missingTable } from "./internal/sqlSchemaErrors.ts"
 import * as Lineage from "./Lineage.vibe"
 import * as Migrations from "./Migrations.vibe"

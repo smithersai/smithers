@@ -380,7 +380,7 @@ describe("ControlLive", () => {
       "src/ControlRuntime.ts",
       "src/ControlLive.ts",
       "src/SqlControlRuntime.ts",
-      "src/internal/planning.ts",
+      "src/internal/planning.vibe",
       "src/test/TestControl.ts",
       "test/ControlContract.ts"
     ]

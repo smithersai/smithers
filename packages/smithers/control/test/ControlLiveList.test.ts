@@ -16,7 +16,7 @@ import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.ts"
 import { PlanCard } from "../src/ControlSchema.ts"
 import type { Envelope, FireSummary, ListResponse, Principal, Receipt, TriggerSummary } from "../src/ControlSchema.ts"
 import * as DispatchReader from "../src/DispatchReader.vibe"
-import { mutationKey } from "../src/internal/planning.ts"
+import { mutationKey } from "../src/internal/planning.vibe"
 import { park } from "./Park.ts"
 import { descriptor, live, memoryRuntime, type Stack } from "./TestStack.ts"
 

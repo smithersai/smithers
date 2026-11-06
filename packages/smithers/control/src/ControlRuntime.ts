@@ -61,7 +61,7 @@ import {
   planFingerprint,
   sameEnvelope,
   signalCommandFingerprint
-} from "./internal/planning.ts"
+} from "./internal/planning.vibe"
 import { plannable } from "./SystemFlows.ts"
 
 /**

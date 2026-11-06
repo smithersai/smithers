@@ -14,7 +14,7 @@ import { Control } from "./Control.ts"
 import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.ts"
 import { ControlRuntime } from "./ControlRuntime.ts"
 import type { FlowId, IdempotencyKey, Receipt, RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
-import { alreadyApplied } from "./internal/planning.ts"
+import { alreadyApplied } from "./internal/planning.vibe"
 
 /**
  * Opaque request data passed to a channel before decoding.

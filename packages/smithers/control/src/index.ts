@@ -185,4 +185,4 @@ export * as Health from "./Health.vibe"
 export * as JevSessionChecker from "./JevSessionChecker.vibe"
 
 /** Versioned control lifecycle producer and projection contract. */
-export * as ControlFacts from "./ControlFacts.ts"
+export * as ControlFacts from "./ControlFacts.vibe"

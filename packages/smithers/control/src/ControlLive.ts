@@ -42,7 +42,7 @@ import {
 } from "./ControlError.ts"
 import type { CancelRecord, Launch } from "./ControlExecutor.ts"
 import { ControlExecutor } from "./ControlExecutor.ts"
-import * as ControlFacts from "./ControlFacts.ts"
+import * as ControlFacts from "./ControlFacts.vibe"
 import { ControlRuntime, type IdPage, type IdPageRequest, launchedByMatches, type RunPage } from "./ControlRuntime.ts"
 import type {
   ControlEvent,
@@ -73,7 +73,7 @@ import {
 import * as DispatchReader from "./DispatchReader.vibe"
 import { schemaIssuePath } from "./internal/issues.ts"
 import * as MutationBoundary from "./internal/MutationBoundary.ts"
-import { alreadyApplied, canonical, mutationKey } from "./internal/planning.ts"
+import { alreadyApplied, canonical, mutationKey } from "./internal/planning.vibe"
 import * as Lineage from "./Lineage.vibe"
 import * as Steering from "./Steering.ts"
 
