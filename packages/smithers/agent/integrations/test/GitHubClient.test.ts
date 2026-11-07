@@ -177,7 +177,7 @@ describe("GitHubClient request typing", () => {
       .toEqualTypeOf<Effect.Effect<string, IntegrationError>>()
 
     // @ts-expect-error a request without a schema cannot name its response type
-    offline.request<{ login: string }>("GET", "/user")
+    const _untypedRequest = offline.request<{ login: string }>("GET", "/user")
   })
 })
 

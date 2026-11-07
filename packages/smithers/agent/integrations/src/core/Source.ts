@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Polling sources composed inside a durable flow. Each turn journals its batch,
  * handler receipt and cursor commit separately; waits use the engine's clock.
@@ -7,7 +8,7 @@
 
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.ts"
 import { CursorStore } from "./CursorStore.ts"
 import { ExternalEvent } from "./ExternalEvent.ts"
@@ -51,7 +52,7 @@ export interface RunOptions {
  * @category models
  * @since 1.0.0
  */
-export type RunContext = CursorStore | Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+export type RunContext = CursorStore | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 
 /**
  * A polling source bound to one cursor. A source must have only one active driver.

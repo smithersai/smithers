@@ -53,16 +53,16 @@ describe("IntegrationFailure as a schema error", () => {
 
   it("keeps the class's checks on its fields", () => {
     const decode = Schema.decodeUnknownOption(IntegrationFailure)
-    expect(decode({ _tag: "IntegrationFailure", ...payload }).isSome()).toBe(true)
-    expect(decode({ _tag: "IntegrationFailure", ...payload, deliveredMessageIds: [0] }).isNone()).toBe(true)
-    expect(decode({ _tag: "IntegrationFailure", ...payload, reason: "unknown" }).isNone()).toBe(true)
+    expect(Option.isSome(decode({ _tag: "IntegrationFailure", ...payload }))).toBe(true)
+    expect(Option.isNone(decode({ _tag: "IntegrationFailure", ...payload, deliveredMessageIds: [0] }))).toBe(true)
+    expect(Option.isNone(decode({ _tag: "IntegrationFailure", ...payload, reason: "unknown" }))).toBe(true)
   })
 
   it("reads a journal entry written under the qualified tag only once that tag is accepted", () => {
     const entry = Schema.encodeSync(Persisted)(new Persisted(payload))
     const decode = Schema.decodeUnknownOption(IntegrationFailure)
-    expect(decode(entry).isNone()).toBe(true)
-    expect(decode({ ...entry, _tag: "IntegrationFailure" }).isSome()).toBe(true)
+    expect(Option.isNone(decode(entry))).toBe(true)
+    expect(Option.isSome(decode({ ...entry, _tag: "IntegrationFailure" }))).toBe(true)
   })
 })
 
