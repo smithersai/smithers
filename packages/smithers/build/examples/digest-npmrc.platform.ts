@@ -1,3 +1,5 @@
+// The platform code of digest-npmrc.vibe, which a .vibe file does not import as a value (EK4402).
+
 /**
  * Keys an install on a project's `.npmrc` without letting a credential into
  * the key. `PackageManager.npmrcDigest` hashes the file when every credential
