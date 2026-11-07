@@ -90,7 +90,7 @@ const securityReview = Smithers.SecurityReview({
         "examples/19-cancel-and-child-cleanup.ts",
         "examples/37-host-containment.ts",
         "examples/37-host-containment-host.ts",
-        "examples/40-sandbox-placement.ts",
+        "examples/40-sandbox-placement.vibe",
         "examples/41-sandboxed-flow.ts",
         "examples/sandboxed-child.ts"
       ]
@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "decodeURIComponent or JSON.parse on request input with no try/catch in a request or line handler.",
         "A PUT /ac/{key} accepted without a body size limit."
       ],
-      paths: ["examples/35-remote-cache.ts", "examples/10-telemetry-export.ts"]
+      paths: ["examples/35-remote-cache.vibe", "examples/35-remote-cache.platform.ts", "examples/10-telemetry-export.vibe"]
     },
     {
       id: "example-agent-prompt-payload",

@@ -15,17 +15,13 @@ import { Crypto } from "@smthrs/crypto"
 import { CacheSync, EngineStore, StepBoundary, WorkspaceSandbox } from "@smthrs/engine-store"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Journal, type JournalEvent } from "@smthrs/journal"
-import { Jj } from "@smthrs/kernel"
 import { NodeRuntime, TestNodeRuntime } from "@smthrs/platform-node"
 import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import * as CombinedCacheStore from "@smthrs/step-cache/CombinedCacheStore"
 import * as RemoteCacheStore from "@smthrs/step-cache/RemoteCacheStore"
-import * as Effect from "effect/Effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { createServer, type Server } from "node:http"
+import * as $platform from "./35-remote-cache.platform.ts"
 
 /** What one run of the example observed. */
 export interface Summary {
@@ -40,7 +36,6 @@ export interface Summary {
   /** The `unpublished` cache-provenance records the second engine journalled. */
   readonly unpublished: ReadonlyArray<string>
 }
-
 /** The recorded entries the in-process action cache holds, keyed by digest. */
 export interface SharedTier {
   readonly url: string
@@ -48,10 +43,8 @@ export interface SharedTier {
   readonly writes: () => number
   readonly close: () => Promise<void>
 }
-
 /** The largest entry body the example tier accepts, in bytes. */
 export const maxEntryBytes = 1024 * 1024
-
 /**
  * A real HTTP action cache: `GET /ac/{key}` answers a stored entry or 404,
  * `PUT /ac/{key}` records one. `refusePut` makes every write answer 503, which
@@ -62,91 +55,18 @@ export const maxEntryBytes = 1024 * 1024
  * `maxEntryBytes` answers 413, so a malformed request cannot crash or exhaust
  * the process.
  */
-export const startSharedTier = (refusePut: boolean, port = 0): Promise<SharedTier> => {
-  const entries = new Map<string, string>()
-  let reads = 0
-  let writes = 0
-  const server: Server = createServer((request, response) => {
-    let key: string
-    try {
-      key = decodeURIComponent((request.url ?? "").replace(/^\/ac\//, ""))
-    } catch {
-      request.resume()
-      response.writeHead(400).end()
-      return
-    }
-    if (request.method === "GET") {
-      reads++
-      const entry = entries.get(key)
-      if (entry === undefined) {
-        response.writeHead(404).end()
-        return
-      }
-      response.writeHead(200, { "content-type": "application/json" }).end(entry)
-      return
-    }
-    if (request.method === "PUT") {
-      if (refusePut) {
-        request.resume()
-        response.writeHead(503).end()
-        return
-      }
-      const chunks: Array<Buffer> = []
-      let size = 0
-      let tooLarge = false
-      request.on("data", (chunk: Buffer) => {
-        if (tooLarge) return
-        size += chunk.length
-        if (size > maxEntryBytes) {
-          tooLarge = true
-          chunks.length = 0
-          response.writeHead(413, { connection: "close" }).end()
-          return
-        }
-        chunks.push(chunk)
-      })
-      request.on("end", () => {
-        if (tooLarge) return
-        writes++
-        entries.set(key, Buffer.concat(chunks).toString("utf8"))
-        response.writeHead(201).end()
-      })
-      return
-    }
-    response.writeHead(405).end()
-  })
-  return new Promise((resolve, reject) => {
-    server.once("error", reject)
-    server.listen(port, "127.0.0.1", () => {
-      server.removeListener("error", reject)
-      const address = server.address()
-      const port = typeof address === "object" && address !== null ? address.port : 0
-      resolve({
-        url: `http://127.0.0.1:${port}`,
-        reads: () => reads,
-        writes: () => writes,
-        close: () =>
-          new Promise((closed) => {
-            server.closeAllConnections()
-            server.close(() => closed())
-          })
-      })
-    })
-  })
-}
-
+export const startSharedTier = (refusePut: boolean, port = 0): Promise<SharedTier> =>
+  $platform.startSharedTier(refusePut, port)
 /** The declared atom the flow's body names. */
 export const Bundle = Action.make("examples/RemoteBundle", {
   payload: { target: Schema.String },
   success: Schema.String
 })
-
 export const Build = Flow.make("examples/RemoteBuild", {
   payload: { target: Schema.String },
   success: Schema.String,
   body: (payload) => Bundle.call(payload)
 })
-
 /**
  * The sealed step whose result travels.
  *
@@ -172,7 +92,6 @@ export const Compile = (onExecute: () => void) =>
       return "dist/server.js"
     })
   })
-
 /**
  * One durable engine whose step cache reads through, and publishes to, the
  * shared tier at `endpoint`.
@@ -187,14 +106,14 @@ const engineLayer = (filename: string, hostId: string, endpoint: string) => {
   const remote = RemoteCacheStore.make({ endpoint })
   const shared = Layer.mergeAll(
     Layer.effect(CacheStore.CacheStore)(
-      Effect.gen(function*() {
-        const local = yield* CacheStore.make
+      effect {
+        const local = try CacheStore.make
         return CombinedCacheStore.make({
           local,
-          remote: yield* remote,
+          remote: try remote,
           publication: "deferred"
         })
-      })
+      }
     ),
     CacheSync.layer(remote)
   )
@@ -228,7 +147,6 @@ const engineLayer = (filename: string, hostId: string, endpoint: string) => {
     Layer.provideMerge(Layer.merge(AtomicFileSystem.layer, NodePath.layer))
   )
 }
-
 const runOn = (
   filename: string,
   hostId: string,
@@ -236,31 +154,30 @@ const runOn = (
   executionId: string,
   onExecute: () => void
 ) =>
-  Effect.gen(function*() {
-    const result = yield* Build.execute({ target: "server" }, { executionId })
-    const journal = yield* Journal.Journal
-    yield* journal.flush
-    const page = yield* journal.entries({ runId: executionId as JournalEvent.RunId, limit: 200 })
+  effect {
+    const result = try Build.execute({ target: "server" }, { executionId })
+    const journal = try Journal.Journal
+    try journal.flush
+    const page = try journal.entries({ runId: executionId as JournalEvent.RunId, limit: 200 })
     const unpublished = page.entries
       .filter((entry) => entry.eventType === "flows.engine.cache-provenance")
       .map((entry) => entry.payload as { readonly action?: string })
       .filter((payload) => payload.action === "unpublished")
       .map(() => executionId)
     return { result, unpublished }
-  }).pipe(
-    Effect.provide(
-      Layer.mergeAll(
-        Bundle.toLayer(({ target }) => Effect.map(Compile(onExecute), (artifact) => `${artifact}?target=${target}`)),
-        Interpreter.layer(Build)
-      ).pipe(
-        Layer.provideMerge(Action.layerImplementations),
-        Layer.provideMerge(engineLayer(filename, hostId, endpoint))
-      )
-    ),
-    Effect.scoped,
-    Effect.orDie
+  }
+  |> Effect.provide(
+    %,
+    Layer.mergeAll(
+      Bundle.toLayer(({ target }) => Effect.map(Compile(onExecute), (artifact) => `${artifact}?target=${target}`)),
+      Interpreter.layer(Build)
+    ).pipe(
+      Layer.provideMerge(Action.layerImplementations),
+      Layer.provideMerge(engineLayer(filename, hostId, endpoint))
+    )
   )
-
+  |> Effect.scoped(%)
+  |> Effect.orDie(%)
 /**
  * Runs the same flow on two engines over two database files, against one shared
  * action cache.

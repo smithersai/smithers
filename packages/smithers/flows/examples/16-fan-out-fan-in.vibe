@@ -18,31 +18,35 @@ import { Journal, type JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Executable, Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import { dirname, join } from "node:path"
-import { fileURLToPath } from "node:url"
-import { batches, Check, Collect, gateBody, specs } from "./16-gate-topology.vibe"
+import { Check, Collect, gateBody } from "./16-gate-topology.vibe"
 import gateModule from "./16-project/.smithers/flows/gate/flow.ts"
 
-export { batches, Check, type CheckSpec, Collect, declaredBatches, specs } from "./16-gate-topology.vibe"
+module platform2 {
+  import { dirname, join } from "node:path"
+  import { fileURLToPath } from "node:url"
 
+  export const $join: typeof join = ((...args: Parameters<typeof join>) => join(...args)) as typeof join
+  export const $dirname: typeof dirname = ((...args: Parameters<typeof dirname>) => dirname(...args)) as typeof dirname
+  export const $fileURLToPath: typeof fileURLToPath =
+    ((...args: Parameters<typeof fileURLToPath>) => fileURLToPath(...args)) as typeof fileURLToPath
+}
+
+import { $dirname, $fileURLToPath, $join } from platform2
+
+export { batches, Check, type CheckSpec, Collect, declaredBatches, specs } from "./16-gate-topology.vibe"
 /** The release gate: five checks, two at a time, one report. */
 export const Gate = Flow.make("examples/Gate", {
   payload: { target: Schema.String },
   success: Schema.String,
   body: ({ target }: { readonly target: string }) => gateBody(target)
 })
-
 /** The project whose `.smithers/flows/` directory declares the gate. */
-export const projectRoot: string = join(dirname(fileURLToPath(import.meta.url)), "16-project")
-
+export const projectRoot: string = $join($dirname($fileURLToPath(import.meta.url)), "16-project")
 /** The name discovery derives for `.smithers/flows/gate/flow.ts` from its directory. */
 export const discoveredFlow = "gate"
-
 /** The priority the declaration on disk carries. */
 export const declaredOnDiskPriority = 7
-
 /**
  * How the discovered descriptor is loaded.
  *
@@ -57,13 +61,10 @@ const bridge: Executable.Options = {
   delegates: [],
   load: () => Effect.succeed({ default: gateModule })
 }
-
 /** The platform services discovery and body loading read the project through. */
 const platform = Layer.mergeAll(NodeFileSystem.layer, NodePath.layer)
-
 /** `<projectRoot>/.smithers/flows/**`, scanned, with bodies still unread. */
 const registry = Registry.layerProject({ root: projectRoot }).pipe(Layer.provide(platform), Layer.orDie)
-
 /**
  * Starts the bridged flow.
  *
@@ -75,13 +76,10 @@ const start = (
   executable: Executable.Executable,
   target: string,
   executionId: string
-): Effect.Effect<string, never, FlowRuntime.FlowRuntime | Crypto.Crypto> =>
-  (executable.flow.execute({ input: { target } }, { executionId }) as Effect.Effect<
-    string,
-    unknown,
-    FlowRuntime.FlowRuntime | Crypto.Crypto
-  >).pipe(Effect.orDie)
-
+): string!never!(FlowRuntime.FlowRuntime | Crypto.Crypto) =>
+  (executable.flow.execute({ input: { target } }, {
+    executionId
+  }) as string!unknown!(FlowRuntime.FlowRuntime | Crypto.Crypto)) |> Effect.orDie(%)
 /** What one run of the gate the project declared observed. */
 export interface DiscoveredSummary {
   /** The descriptor name discovery derived from the directory. */
@@ -99,7 +97,6 @@ export interface DiscoveredSummary {
   /** The most checks that were ever running at the same moment. */
   readonly maxInFlight: number
 }
-
 /**
  * Runs the gate the project declared on disk.
  *
@@ -108,19 +105,19 @@ export interface DiscoveredSummary {
  * module's graph under, and the plan the engine drives is the plan `main`
  * builds: the same five checks, the same bound of two, the same report.
  */
-export const discovered = (filename: string): Effect.Effect<DiscoveredSummary> =>
-  Effect.gen(function*() {
+export const discovered = (filename: string): DiscoveredSummary!! =>
+  effect {
     let inFlight = 0
     let maxInFlight = 0
 
     const check = Check.toLayer(({ name }) =>
-      Effect.gen(function*() {
+      effect {
         inFlight += 1
         maxInFlight = Math.max(maxInFlight, inFlight)
-        yield* Effect.sleep("25 millis")
+        try Effect.sleep("25 millis")
         inFlight -= 1
         return `${name}:clean`
-      })
+      }
     )
 
     const collect = Collect.toLayer((verdicts) =>
@@ -129,29 +126,31 @@ export const discovered = (filename: string): Effect.Effect<DiscoveredSummary> =
       )
     )
 
-    const executable = yield* Executable.fromRegistry(discoveredFlow, bridge).pipe(
-      Effect.provide(Layer.merge(registry, platform)),
-      Effect.orDie
-    )
+    const executable = try (Executable.fromRegistry(discoveredFlow, bridge)
+      |> Effect.provide(%, Layer.merge(registry, platform))
+      |> Effect.orDie(%))
 
     // The plan, before anything runs. The delegating node carries the priority
     // the file declared, beside the priorities the body states itself.
-    const planned = Graph.nodes(Graph.build(executable.flow, { input: { target: "release" } }))
+    const planned = (try Effect.orDie(Effect.try({
+      try: () => Graph.nodes(Graph.build(executable.flow, { input: { target: "release" } })),
+      catch: (e) => e
+    })))
       .map((node) => node.draft.priority)
       .filter((priority): priority is number => priority !== undefined)
 
-    const report = yield* Effect.scoped(
-      start(executable, "release", "gate-discovered").pipe(
-        Effect.provide(
+    const report = try Effect.scoped(
+      start(executable, "release", "gate-discovered")
+        |> Effect.provide(
           // `executable.layer` registers the module's own flow beside the
           // bridged one, because the bridge calls it: there is no separate
           // delegate to register.
+          %,
           Layer.mergeAll(check, collect, executable.layer).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-gate-discovered"))
           )
         )
-      )
     )
 
     return {
@@ -163,8 +162,7 @@ export const discovered = (filename: string): Effect.Effect<DiscoveredSummary> =
       report,
       maxInFlight
     } satisfies DiscoveredSummary
-  }).pipe(Effect.orDie)
-
+  } |> Effect.orDie(%)
 /** The priority each check carries in the built plan, by check name. */
 export const declaredPriorities = (target = "release"): Readonly<Record<string, number | undefined>> => {
   const found: Record<string, number | undefined> = {}
@@ -175,7 +173,6 @@ export const declaredPriorities = (target = "release"): Readonly<Record<string, 
   }
   return found
 }
-
 /** What one run of the gate observed. */
 export interface Summary {
   /** The report the fan-in step produced. */
@@ -191,17 +188,16 @@ export interface Summary {
   /** The distinct lifecycle events the run journalled. */
   readonly eventTypes: ReadonlyArray<string>
 }
-
 /** Runs the gate over one SQLite file and reports what the fan-out did. */
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     const started: Array<string> = []
     const dispatches: Record<string, number> = {}
     let inFlight = 0
     let maxInFlight = 0
 
     const check = Check.toLayer(({ name }) =>
-      Effect.gen(function*() {
+      effect {
         started.push(name)
         dispatches[name] = (dispatches[name] ?? 0) + 1
         inFlight += 1
@@ -210,10 +206,10 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         // enough that the suite stays quick. Without a suspension point the
         // members would settle one after another and the bound would be
         // unexercised rather than merely untested.
-        yield* Effect.sleep("25 millis")
+        try Effect.sleep("25 millis")
         inFlight -= 1
         return `${name}:clean`
-      })
+      }
     )
 
     const collect = Collect.toLayer((verdicts) =>
@@ -222,26 +218,26 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       )
     )
 
-    const observed = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const report = yield* Gate.execute({ target: "release" }, { executionId: "gate-1" })
+    const observed = try Effect.scoped(
+      effect {
+        const report = try Gate.execute({ target: "release" }, { executionId: "gate-1" })
         // The same execution id, so this is a re-drive rather than a second
         // gate. Each fan-out member's verdict is already recorded against its
         // own step key, so the batch is rebuilt from durable state and no check
         // dispatches again.
-        const replayed = yield* Gate.execute({ target: "release" }, { executionId: "gate-1" })
-        const journal = yield* Journal.Journal
-        yield* journal.flush
-        const page = yield* journal.entries({ runId: "gate-1" as JournalEvent.RunId, limit: 500 })
+        const replayed = try Gate.execute({ target: "release" }, { executionId: "gate-1" })
+        const journal = try Journal.Journal
+        try journal.flush
+        const page = try journal.entries({ runId: "gate-1" as JournalEvent.RunId, limit: 500 })
         return { report, replayed, eventTypes: [...new Set(page.entries.map((entry) => entry.eventType))] }
-      }).pipe(
-        Effect.provide(
+      }
+        |> Effect.provide(
+          %,
           Layer.mergeAll(check, collect, Interpreter.layer(Gate)).pipe(
             Layer.provideMerge(Action.layerImplementations),
             Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-gate"))
           )
         )
-      )
     )
 
     return {
@@ -252,4 +248,4 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       dispatches,
       eventTypes: observed.eventTypes
     } satisfies Summary
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)

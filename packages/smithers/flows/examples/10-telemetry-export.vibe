@@ -35,22 +35,26 @@ import { Journal, type JournalEvent } from "@smthrs/journal"
 import * as Otlp from "@smthrs/observability/Otlp"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
-import * as FetchHttpClient from "effect/http/FetchHttpClient"
-import * as Layer from "effect/Layer"
-import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
+
+module platform {
+  /** @throws {never} */
+  export function $globalThis_fetch() {
+    return globalThis.fetch
+  }
+}
+
+import { $globalThis_fetch } from platform
 
 export const Pack = Action.make("examples/Pack", {
   payload: { target: Schema.String },
   success: Schema.String
 })
-
 export const Ship = Flow.make("examples/Ship", {
   payload: { target: Schema.String },
   success: Schema.String,
   body: (payload) => Pack.call(payload)
 })
-
 export interface Summary {
   readonly result: string
   /** Distinct span names the collector acknowledged, sorted. */
@@ -62,7 +66,6 @@ export interface Summary {
   /** `Metric.value` on the tagged dispatch view, read without the exporter. */
   readonly successfulDispatches: number
 }
-
 /** The narrow slice of an OTLP JSON body the summary reads. */
 interface TraceExport {
   readonly resourceSpans?: ReadonlyArray<{
@@ -71,7 +74,6 @@ interface TraceExport {
     }>
   }>
 }
-
 interface MetricExport {
   readonly resourceMetrics?: ReadonlyArray<{
     readonly scopeMetrics?: ReadonlyArray<{
@@ -79,39 +81,33 @@ interface MetricExport {
     }>
   }>
 }
-
 interface Recorded {
   readonly url: string
   readonly body: string
 }
-
 const requestBody = (init: RequestInit | undefined): string =>
   typeof init?.body === "string"
     ? init.body
-    : new TextDecoder().decode(init?.body as Uint8Array)
-
+    : $invoke(new TextDecoder(), () => (init?.body as Uint8Array))
 const distinctSorted = (names: ReadonlyArray<string>): ReadonlyArray<string> => [...new Set(names)].sort()
-
 const spanNames = (recorded: ReadonlyArray<Recorded>): ReadonlyArray<string> =>
   distinctSorted(
     recorded
       .filter((request) => request.url.endsWith("/v1/traces"))
-      .flatMap((request) => (JSON.parse(request.body) as TraceExport).resourceSpans ?? [])
+      .flatMap((request) => ($invoke2(JSON, () => (request.body)) as TraceExport).resourceSpans ?? [])
       .flatMap((resource) => resource.scopeSpans ?? [])
       .flatMap((scope) => scope.spans ?? [])
       .map((span) => span.name)
   )
-
 const metricNames = (recorded: ReadonlyArray<Recorded>): ReadonlyArray<string> =>
   distinctSorted(
     recorded
       .filter((request) => request.url.endsWith("/v1/metrics"))
-      .flatMap((request) => (JSON.parse(request.body) as MetricExport).resourceMetrics ?? [])
+      .flatMap((request) => ($invoke2(JSON, () => (request.body)) as MetricExport).resourceMetrics ?? [])
       .flatMap((resource) => resource.scopeMetrics ?? [])
       .flatMap((scope) => scope.metrics ?? [])
       .map((metric) => metric.name)
   )
-
 /**
  * Executes the flow with telemetry provided, then summarizes what exported.
  *
@@ -122,9 +118,9 @@ const metricNames = (recorded: ReadonlyArray<Recorded>): ReadonlyArray<string> =
  */
 export const main = (
   filename: string,
-  fetchImpl: typeof globalThis.fetch = globalThis.fetch
-): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+  fetchImpl: typeof globalThis.fetch = $globalThis_fetch()
+): Summary!! =>
+  effect {
     const recorded: Array<Recorded> = []
     const recordingFetch = ((
       input: Parameters<typeof globalThis.fetch>[0],
@@ -143,29 +139,30 @@ export const main = (
       serviceName: "examples-telemetry"
     })
 
-    const program = Effect.gen(function*() {
-      const result = yield* Ship.execute({ target: "server" }, { executionId: "telemetry-1" })
+    const program = effect {
+      const result = try Ship.execute({ target: "server" }, { executionId: "telemetry-1" })
 
       // Read path 2: the durable journal, no collector involved.
-      const journal = yield* Journal.Journal
-      yield* journal.flush
-      const page = yield* journal.entries({
+      const journal = try Journal.Journal
+      try journal.flush
+      const page = try journal.entries({
         runId: "telemetry-1" as JournalEvent.RunId,
         limit: 200
       })
 
       // Read path 3: the tagged metric view, no exporter involved.
-      const dispatches = yield* Metric.value(EngineStoreMetrics.dispatch.Success)
+      const dispatches = try Metric.value(EngineStoreMetrics.dispatch.Success)
 
       return {
         result,
         journalEventTypes: page.entries.map((entry) => entry.eventType),
         successfulDispatches: dispatches.count
       }
-    })
+    }
 
-    const outcome = yield* program.pipe(
-      Effect.provide(
+    const outcome = try (program
+      |> Effect.provide(
+        %,
         Layer.mergeAll(
           Pack.toLayer(({ target }) => Effect.succeed(`dist/${target}.tar`)),
           Interpreter.layer(Ship)
@@ -173,12 +170,11 @@ export const main = (
           Layer.provideMerge(Action.layerImplementations),
           Layer.provideMerge(TestNodeRuntime.durableEngine(filename, "examples-telemetry"))
         )
-      ),
-      Effect.provide(telemetry),
-      Effect.provideService(FetchHttpClient.Fetch, recordingFetch),
-      Effect.provideService(Metric.MetricRegistry, new Map()),
-      Effect.scoped
-    )
+      )
+      |> Effect.provide(%, telemetry)
+      |> Effect.provideService(%, FetchHttpClient.Fetch, recordingFetch)
+      |> Effect.provideService(%, Metric.MetricRegistry, new Map())
+      |> Effect.scoped(%))
 
     // The telemetry scope closed above, so the shutdown flush has posted.
     return {
@@ -186,4 +182,24 @@ export const main = (
       spanNames: spanNames(recorded),
       metricNames: metricNames(recorded)
     }
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)
+
+module $call$ts {
+  export function invoke<T extends { "decode": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["decode"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["decode"], (...args: any[]) => any>> {
+    return target["decode"](arg0())
+  }
+}
+import { invoke as $invoke } from $call$ts
+
+module $call$ts2 {
+  export function invoke<T extends { "parse": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["parse"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["parse"], (...args: any[]) => any>> {
+    return target["parse"](arg0())
+  }
+}
+import { invoke as $invoke2 } from $call$ts2

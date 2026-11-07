@@ -105,6 +105,13 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/jj/tsconfig.json"
+    },
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/sandbox/tsconfig.json"
     },
     "size": 1284,
@@ -263,8 +270,8 @@
     "path": {
      "relative": "pnpm-lock.yaml"
     },
-    "size": 1032990,
-    "hash": "JWXHDc5FqtoaD_7kBZtDp_c1gN0Pv_YzpXJiGdIsulM"
+    "size": 1033342,
+    "hash": "ToTWzvSj2LGhxHYgS1D9GQlopt_P9dNN_CeEzD6D5n4"
    },
    {
     "path": {
@@ -338,8 +345,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7128,
-    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
+    "size": 7188,
+    "hash": "tn4RcBxIeShNMXTfH8LxoPn_iminrBnO2FV2R3DeZ24"
    },
    {
     "path": {
@@ -401,8 +408,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11258,
-    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
+    "size": 11620,
+    "hash": "eLJMZl6jaonWcgTs6guIIEaV-VxrLMo48ooX5dtL648"
    },
    {
     "path": {
@@ -429,8 +436,8 @@
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
-    "size": 7010,
-    "hash": "e8ExeeI_-R-7WbqAA3L5db70KeE2WuC1-NXEnTCcL1o"
+    "size": 7426,
+    "hash": "Gpvz9cbnIOo0lDQVCDpzBBHGoy4193_9gJSSgJtmuG4"
    },
    {
     "path": {
@@ -3124,10 +3131,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.ts"
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
     },
-    "size": 39010,
-    "hash": "cqH8FtLpbxXm_1n_7Dd6HOrZZEtAI30l2o14FkuR3Lw"
+    "size": 40685,
+    "hash": "QC-_ujkmCvG3QcxggaCksSaaBA5_pxHeD9LZkHedPOQ"
    },
    {
     "path": {
@@ -3586,7 +3593,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+     "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
     },
     "size": 2042,
     "hash": "wb2hLivujMZ5mMsu7b9K4k-9eiklIGlniDCH9JUftnE"
@@ -4440,10 +4447,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
     },
-    "size": 75096,
-    "hash": "_mlxwRw7wGsrbBEnDv7Ax92E2tL4beu8b6ukLyYN6WA"
+    "size": 75215,
+    "hash": "MM4UCJtf8cRyW2GgCmq22HbCztw4V6vwqyZDDuacmdo"
    },
    {
     "path": {
@@ -4650,10 +4657,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
+     "relative": "packages/smithers/flows/journal/src/JournalGeneration.vibe"
     },
-    "size": 3448,
-    "hash": "hs9V74OzFZsvig3_-H5R6VTXMod0o-0HDSAt0J2MZUw"
+    "size": 3344,
+    "hash": "Xd5B5_cKqa2DY5--jlJ2B5C5HrloIhY7uDbM7lsTI0Y"
    },
    {
     "path": {
@@ -4666,29 +4673,393 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
     },
-    "size": 133667,
-    "hash": "NE5CzGudJwrdNZk506DZ_yPIro2DQFsSje3EqpwVMWI"
+    "size": 133671,
+    "hash": "NRnskCCkDnPEkKmFdhZo3P5R_k8yeEZLgi0FIm8QomY"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/Worker.d.ts"
     },
-    "size": 20719,
-    "hash": "fkywAhB33uzprw3HWRluZ53hNVTI1xAfZ-zVA8pVkGY"
+    "size": 4507,
+    "hash": "udCtK1jcKQg7UN5IUYnqHUdyRVOuaqT6lb_7LjngNYM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcSerialization.d.ts"
+    },
+    "size": 8120,
+    "hash": "ljDibX2ilce9qwNCwJk__lwCeIa7ZXbdBPzqNPjyFEM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/Utils.d.ts"
+    },
+    "size": 1163,
+    "hash": "pPgDmwekbYwVy8juL_LacRERQsKq_oVuEOBxPDHCHOE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcClient.d.ts"
+    },
+    "size": 19359,
+    "hash": "L5VPLDeP1_tp1KeqlI4SvqRRzs46gzJuaeE9rWEtTcE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityId.d.ts"
+    },
+    "size": 1452,
+    "hash": "8G6KvjvryXqT0lOzLVz0ddBd34nYGeX5PJ-TUXgxZLw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityType.d.ts"
+    },
+    "size": 1688,
+    "hash": "Pr9kw3NwirstIvug3uhdyEJcxyd3UcZJi_h3_qb_qYk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardId.d.ts"
+    },
+    "size": 3452,
+    "hash": "IRZYtpZiXKDE-crBMSrm0iKOcZS-aoL3MT5s66Ybqng"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityAddress.d.ts"
+    },
+    "size": 3010,
+    "hash": "SZDSwm7j3-YI_9Eh0kkQZVeFTOZr2-lQDTPLmcOrzNo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerAddress.d.ts"
+    },
+    "size": 3040,
+    "hash": "yrFRicKdgra5vnhnDh1zXykc_uaeqp5wmkoGMP0Xfbs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MachineId.d.ts"
+    },
+    "size": 1460,
+    "hash": "bSsSmAAMdM0qkQqMlCis3_mAuVUCx7_mi5YoSxSSVeg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Snowflake.d.ts"
+    },
+    "size": 6636,
+    "hash": "2VBrV_inJwvsXHU3OeEyArFJpjeFrVtkStxHYbLVjYg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterError.d.ts"
+    },
+    "size": 7433,
+    "hash": "HJuVgbkR2eLkp8af7NmcCYHV_lwNlHYdEbfvF8RKdRM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Envelope.d.ts"
+    },
+    "size": 11771,
+    "hash": "1stqdRL93Op15owECroyNwBVzcmXoST5dTEWDkQoHfY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Message.d.ts"
+    },
+    "size": 9872,
+    "hash": "X1umrjOArFnumH98ibH25OmdXXPqYq6ySwge6hJI8c4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Reply.d.ts"
+    },
+    "size": 10360,
+    "hash": "Y8xeHUmrlthiwICskWsLXc9t4OoJ_Pa8_YMyIyzyHX8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingConfig.d.ts"
+    },
+    "size": 18524,
+    "hash": "HL_NI8Jc-1XjO6o0UGXJz3eDhUaIhDQf2Ve2hyyWA4M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Entity.d.ts"
+    },
+    "size": 13096,
+    "hash": "iRHq5o8OmWj3pKEvtSKALC8zQ2mT1MBznsLDOV77j20"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MessageStorage.d.ts"
+    },
+    "size": 34555,
+    "hash": "mKDYRuaIlnF7LPrnOFL2AgOip1mz8lGwGJvzQcneaNQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sTypes.d.ts"
+    },
+    "size": 167852,
+    "hash": "MzaOsujXKwE01wYSdIB_9cJURiZPT6_ZPQRTE3eTq2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sHttpClient.d.ts"
+    },
+    "size": 3629,
+    "hash": "5Pgx_v1Grrxhdl4IwxaedajTCDYRjx359m6zWULPA1k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runners.d.ts"
+    },
+    "size": 9902,
+    "hash": "i5zZdlh1sG2cuVK0Oy-J9-7Ct2Rug1wG5jJT6oNo-ps"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerHealth.d.ts"
+    },
+    "size": 3568,
+    "hash": "DGmZ-CMQIQW-6ZY-_NaaF8lfdHYoTtR6HKO2NaDpWT0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runner.d.ts"
+    },
+    "size": 3783,
+    "hash": "69XynDbyEGfcXTm_2YEpnkcPG3XNzv76QSfA0iCGKxI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerStorage.d.ts"
+    },
+    "size": 8502,
+    "hash": "k-BpEYMaDbHwjb6RrCmgQt92Pcl88BfX6ylYMQCi9jc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingletonAddress.d.ts"
+    },
+    "size": 1606,
+    "hash": "Jvz0RpNd6mtglj8ut8Cqf8pNg5m2wpcSWVlerpRw1l0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingRegistrationEvent.d.ts"
+    },
+    "size": 2625,
+    "hash": "DzqEGkDybRTSmzt2XBdXczG5cuVaMYl19Z1zPChvEFw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Sharding.d.ts"
+    },
+    "size": 6566,
+    "hash": "mAf9eV5VDjHayYpFIJB69aAJ_OCZWsn9jmq9tmhbMfg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterCron.d.ts"
+    },
+    "size": 3266,
+    "hash": "6oXHUEEOMyMmhYOL1_oUIMZtkuOWQwL95-sxXFdIHsU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterMetrics.d.ts"
+    },
+    "size": 8365,
+    "hash": "mgieQocV1C9i_XWkiaaLX8TI9OV5nTjE7ApoNJhdtxA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterSchema.d.ts"
+    },
+    "size": 6172,
+    "hash": "Xko8-BfThlGviTI6FW7SvVh_4hKZH4-SqWE-IdlNhws"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Workflow.d.ts"
+    },
+    "size": 18929,
+    "hash": "T9ym1nDkGu9D_4BX1TVD2t4tpo9nrcTDwbE4dOaXBTg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableDeferred.d.ts"
+    },
+    "size": 17080,
+    "hash": "0HYeLXjSxTYk2VxmgCR8lsaA7Bq82UNrkpMNKZc0kXg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableClock.d.ts"
+    },
+    "size": 1683,
+    "hash": "acpDCCT8b7Nx7nC7nWDNGg6pktVOgOR57nNFEur5P64"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/WorkflowEngine.d.ts"
+    },
+    "size": 12971,
+    "hash": "4iB3RMXpMelb_0M-FV7m_hX1LXYhTrUzjNOWE7ejhu0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Activity.d.ts"
+    },
+    "size": 6644,
+    "hash": "O94vksRKgyrgx3OpMnXkXv-ze3pAieV5454TvoG64YA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterWorkflowEngine.d.ts"
+    },
+    "size": 4850,
+    "hash": "QmHx8o8GTlbXU_8dolLMcz9IuE0FNXzEvM3sCRv9H8s"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/DeliverAt.d.ts"
+    },
+    "size": 1543,
+    "hash": "Ibq4ocbdh2IG6-2ubhgLC-7utULf4uXp_F5y__Ili5M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxy.d.ts"
+    },
+    "size": 6091,
+    "hash": "KxDdcwmF-ZTCWCwOTdF6iDpL5VSaHb2J44AsdW9DuMU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxyServer.d.ts"
+    },
+    "size": 2133,
+    "hash": "bmMHlqj_ihcpQEXaCF3kgP7FAwzNKVbLoZhfVS-XmxE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityResource.d.ts"
+    },
+    "size": 3871,
+    "hash": "mXP4oDVO_i9Z2XGGVEFoEOeAHSoR6LijEePcguUn1XY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/HttpRunner.d.ts"
+    },
+    "size": 7605,
+    "hash": "7IROn5E5L336j0R3t8Z6Wf9pbt2jijPO911OeEy7ff4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/socket/SocketServer.d.ts"
+    },
+    "size": 4068,
+    "hash": "9iPFiG2Y8CfYqbEsesbm0DXSVUTUDFCR4hvO33yZ6wU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/WorkerRunner.d.ts"
+    },
+    "size": 2044,
+    "hash": "dl1B5AbgAlD0W0SwH4LlrHS2ZJNdzIk6vzhXNTZxa9Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcServer.d.ts"
+    },
+    "size": 18536,
+    "hash": "SLvivVFrpm6fGl1TpikzHlXm6nGwlZ2I5BkAZhi0yWs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerServer.d.ts"
+    },
+    "size": 2766,
+    "hash": "VIRLTgOJbKvN-uKw4a678tWL_BEBXh_N-mbt1RozfE4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingleRunner.d.ts"
+    },
+    "size": 2868,
+    "hash": "dZihTYTMszQrGTTdK09ZbcE861r7u-4aRGLWZ0Xpz6U"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Singleton.d.ts"
+    },
+    "size": 1982,
+    "hash": "-cmWeYzA3_N5yknjp7BQxpXTMRB4a_1aNizeMA7BidY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SocketRunner.d.ts"
+    },
+    "size": 2388,
+    "hash": "jgMC7JfEhtM9wsz0RZGvsYwaGkbRfz8IWOKsC_lUBjg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlMessageStorage.d.ts"
+    },
+    "size": 5399,
+    "hash": "4IhxmO3kZYtbzvxbnUmY5NeXG1izrpH82KGob9Yvpzw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlRunnerStorage.d.ts"
+    },
+    "size": 4301,
+    "hash": "QRDzqXBCqRCTVozYpCJLHrQmtSf8oN6M5XFkd37yaIc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/TestRunner.d.ts"
+    },
+    "size": 1023,
+    "hash": "S7Jp3TeumNcJNeTal7pDVdhK_FHlK5iBI8NKfdbmqA8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/index.d.ts"
+    },
+    "size": 3870,
+    "hash": "TCw4mrTHA5ASw2V2ECEmcvSyCaTQphcrVWlaD_pOQ0Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/RedactedLogger.vibe"
+    },
+    "size": 20510,
+    "hash": "OOLS2Q13ASnoZkp_puunp2bC28e_fYMddKfGuQlgUY0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
     },
-    "size": 21223,
-    "hash": "CCWOAsQ-VlpL7CoYjPcDQm913MhWxnYhTszJHjYePJE"
+    "size": 21225,
+    "hash": "dIxDun9aC5C5HQHC9kbpBz2DUXxlUIMIZNHZdr5F8Q0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/index.ts"
     },
-    "size": 2240,
-    "hash": "0gUWEzql0RZDvjoOTSrz7cYZJgeP0Gt7-meBfeBvdT8"
+    "size": 2246,
+    "hash": "J6nvuoYNungVB15kqAUx8Bp9MGEGX-SEHKqY8KTQHlQ"
    },
    {
     "path": {
@@ -4755,17 +5126,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/jj/src/Jj.ts"
+     "relative": "packages/smithers/flows/jj/src/Jj.vibe"
     },
-    "size": 18558,
-    "hash": "i1HzzhZOZmyc-pvkvhf9u1rJnW97j2-Xe8Hwd_4cnHQ"
+    "size": 18386,
+    "hash": "mjtAjzbCG1AjK6iDJ5yM_noNdZO0A1rNsJUYdV6nzQM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/src/index.ts"
     },
-    "size": 713,
-    "hash": "Hd4W17hXn7Rhvh21wf83cWLu51OadhpAFf_WhLNkzMk"
+    "size": 715,
+    "hash": "eN5H2DMrbkKkeaPqz9wP8O9KI3ErA5OAfDtH4R0pD-I"
    },
    {
     "path": {
@@ -5401,8 +5772,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/CombinedArtifacts.ts"
     },
-    "size": 17034,
-    "hash": "oNE0hky2Q-NoJlsuvVijvMnfOVahg7hJBDgU_6T4Zjk"
+    "size": 17036,
+    "hash": "2YAYF9AnbJrC-Yj-EIjOkSNevW7-z0kF54AvFgN6CfI"
    },
    {
     "path": {
@@ -5415,8 +5786,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/index.vibe"
     },
-    "size": 2115,
-    "hash": "qcaJKGfSvX1KJaQE3QABOR2Dq7HpYYovak-ei24pa3o"
+    "size": 2117,
+    "hash": "gNpV7DJLFH_IkbXf7iyEKp5moHCkwhXm4ataYYKXS6M"
    },
    {
     "path": {
@@ -7541,55 +7912,6 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/Worker.d.ts"
-    },
-    "size": 4507,
-    "hash": "udCtK1jcKQg7UN5IUYnqHUdyRVOuaqT6lb_7LjngNYM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcSerialization.d.ts"
-    },
-    "size": 8120,
-    "hash": "ljDibX2ilce9qwNCwJk__lwCeIa7ZXbdBPzqNPjyFEM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/Utils.d.ts"
-    },
-    "size": 1163,
-    "hash": "pPgDmwekbYwVy8juL_LacRERQsKq_oVuEOBxPDHCHOE"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcClient.d.ts"
-    },
-    "size": 19359,
-    "hash": "L5VPLDeP1_tp1KeqlI4SvqRRzs46gzJuaeE9rWEtTcE"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/socket/SocketServer.d.ts"
-    },
-    "size": 4068,
-    "hash": "9iPFiG2Y8CfYqbEsesbm0DXSVUTUDFCR4hvO33yZ6wU"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/WorkerRunner.d.ts"
-    },
-    "size": 2044,
-    "hash": "dl1B5AbgAlD0W0SwH4LlrHS2ZJNdzIk6vzhXNTZxa9Q"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcServer.d.ts"
-    },
-    "size": 18536,
-    "hash": "SLvivVFrpm6fGl1TpikzHlXm6nGwlZ2I5BkAZhi0yWs"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcTest.d.ts"
     },
     "size": 1375,
@@ -9596,7 +9918,7 @@
     "relative": "packages/smithers/flows/engine-store/src/ArtifactGc.ts"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.ts"
+    "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
    },
    {
     "relative": "packages/smithers/flows/engine-store/src/ArtifactSync.ts"
@@ -9710,7 +10032,7 @@
     "relative": "packages/smithers/flows/journal/src/migrations/0006_consensus.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+    "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
    },
    {
     "relative": "packages/smithers/flows/run-store/src/migrations/0001_initial.vibe"
@@ -10055,7 +10377,7 @@
     "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+    "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
    },
    {
     "relative": "packages/smithers/flows/engine/src/internal/Diagnostic.ts"
@@ -10118,7 +10440,7 @@
     "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
+    "relative": "packages/smithers/flows/journal/src/JournalGeneration.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
@@ -10127,7 +10449,7 @@
     "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
+    "relative": "packages/smithers/flows/journal/src/RedactedLogger.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
@@ -10163,7 +10485,7 @@
     "relative": "packages/smithers/flows/kernel/src/ContainedSpawner.ts"
    },
    {
-    "relative": "packages/smithers/flows/jj/src/Jj.ts"
+    "relative": "packages/smithers/flows/jj/src/Jj.vibe"
    },
    {
     "relative": "packages/smithers/flows/jj/src/index.ts"
@@ -11507,6 +11829,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/jj/src/Jj.vibe"
+    },
+    "line": 169,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "JjError extends Schema.TaggedError; a schema error declaration, schema error JjError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/journal/src/ExecutionFact.vibe"
     },
     "line": 45,
@@ -11534,6 +11866,16 @@
     "category": "warning",
     "code": "EK4836",
     "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
+    },
+    "line": 1242,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "RedactionDepthError extends Schema.TaggedError; a schema error declaration, schema error RedactionDepthError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
    },
    {
     "file": {

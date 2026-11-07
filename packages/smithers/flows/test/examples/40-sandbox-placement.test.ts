@@ -2,7 +2,7 @@ import { afterAll, expect, it } from "@effect/vitest"
 import { existsSync, mkdtempSync, readdirSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { contents, main } from "../../examples/40-sandbox-placement.ts"
+import { contents, main } from "../../examples/40-sandbox-placement.vibe"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-sandbox-placement-"))
 
