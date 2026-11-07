@@ -45,38 +45,49 @@ allowBuilds:
   workerd: false
 
 linkWorkspacePackages: true
+# Test adapters depend on the runtime they exercise, forming deliberate development cycles.
+# pnpm 11 must schedule these cycles to run recursive typecheck/check/test scripts.
+ignoreWorkspaceCycles: true
 verifyDepsBeforeRun: false
 
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
   "@types/bun": "1.4.4"
-  "effect": "4.0.5"
-  "@effect/opentelemetry": "4.0.5"
-  "@effect/platform-bun": "4.0.5"
-  "@effect/platform-node": "4.0.5"
-  "@effect/platform-node-shared": "4.0.5"
-  "@effect/sql-d1": "4.0.5"
-  "@effect/sql-sqlite-bun": "4.0.5"
-  "@effect/sql-sqlite-do": "4.0.5"
-  "@effect/sql-sqlite-node": "4.0.5"
-  "@effect/vitest": "4.0.5"
+  "effect": "4.1.1"
+  "vibelang": "0.0.12"
+  "vibelang-runtime": "0.0.12"
+  "vibelang-vite": "0.0.12"
+  "vibelang-unplugin": "0.0.12"
+  "alchemy": "2.0.0-beta.85"
+  "@alchemy.run/node-utils": "2.0.0-beta.85"
+  "@alchemy.run/frontend-frameworks": "2.0.0-beta.85"
+  "@effect/opentelemetry": "4.1.1"
+  "@effect/platform-bun": "4.1.1"
+  "@effect/platform-node": "4.1.1"
+  "@effect/platform-node-shared": "4.1.1"
+  "@effect/sql-d1": "4.1.1"
+  "@effect/sql-pg": "4.1.1"
+  "@effect/sql-sqlite-bun": "4.1.1"
+  "@effect/sql-sqlite-do": "4.1.1"
+  "@effect/sql-sqlite-node": "4.1.1"
+  "@effect/vitest": "4.1.1"
 
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
+  # beta.85 lib/Local/LocalProvider.js still strips build plugins in diff/reconcile;
+  # lib/Local/RpcSerialization.js still drops functions and has no deferred-module rehydration.
+  # Port the existing local-dev fix after inspecting both beta.85 sources.
+  alchemy@2.0.0-beta.85: patches/alchemy@2.0.0-beta.85.patch
+  # beta.85 moved WorkerProvider to @alchemy.run/cloudflare; its diff still passes
+  # stripped news to hasChanged (lib/Workers/WorkerProvider.js:3713), losing build plugins.
+  "@alchemy.run/cloudflare@2.0.0-beta.85": patches/@alchemy.run__cloudflare@2.0.0-beta.85.patch
   # Opt-in incremental query publication: access revocations must not wait behind ordered-window refills.
   # LiveQuery.Publication preserves settled publication by default; apps/mvp selects incremental (decision 0110).
   "@tanstack/db@0.15.1": patches/@tanstack__db@0.15.1.patch
   "@tanstack/offline-transactions@1.1.3": patches/@tanstack__offline-transactions@1.1.3.patch
   "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
-  # Keep the loader template from being mistaken for its own inline map by Playwright.
-  vibelang@0.0.8: patches/vibelang@0.0.8.patch
-  # alchemy 2.0.0-beta.83: WorkerProvider.diff bundles a Worker from the props Diff.stripEffects returns, which turns
-  # its build.input.plugins into undefined, so `alchemy plan` bundled every Worker without its build plugins and
-  # failed on .vibe sources. The patch hands hasChanged the Worker's own build options. Delete it with the Alchemy
-  # release that fixes this upstream; apps/mvp/infra/WorkerBundles.test.ts's expected failure says when.
-  # Local dev also preserves build through stripEffects and rehydrates deferred plugin module references after RPC.
-  alchemy@2.0.0-beta.83: patches/alchemy@2.0.0-beta.83.patch
+  # VibeLang 0.0.12 uses inline-source-map.mjs with a split sourceMappingURL directive; the 0.0.8 loader patch is upstream.
   # TanStack DB's SQLite persistence sends every statement on its own, about 35 to restore one collection, and each is
   # a round trip to the engine worker over SharedSqlite (~2 ms). The patches give its driver `batch` and
   # `transactionBatch` over the database's `executeBatch`, and restore a collection in about five batches: schema once
@@ -99,10 +110,12 @@ minimumReleaseAgeExclude:
   - 'vibelang-linux-x64'
   - 'vibelang-win32-arm64'
   - 'vibelang-win32-x64'
+  - '@smthrs/cli-win32-arm64@0.0.12'
+  - '@smthrs/cli-win32-x64@0.0.12'
 
 # Alchemy publishes declarations importing workers-types but declares it only for development.
 # Give its declarations the same exact type dependency as the app, independent of hoisting.
 packageExtensions:
-  alchemy@2.0.0-beta.83:
+  "@alchemy.run/cloudflare@2.0.0-beta.85":
     dependencies:
       "@cloudflare/workers-types": "5.20261019.1"

@@ -15,19 +15,19 @@
     "@smthrs/scorers": "workspace:*",
     "@smthrs/core": "workspace:*",
     "@smthrs/model": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "@smthrs/cli": "workspace:*",
     "@smthrs/engine": "workspace:*",
     "@smthrs/flow": "workspace:*",
     "@smthrs/flows": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "@effect/platform-node": "4.0.5"
+    "@effect/platform-node": "4.1.1"
   },
   "devDependencies": {
     "@smthrs/targets": "workspace:*",
     "@types/node": "26.4.1",
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
-    "vibelang": "0.0.8"
+    "vibelang": "0.0.12"
   }
 }

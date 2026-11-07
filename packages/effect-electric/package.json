@@ -70,7 +70,7 @@
   "devDependencies": {
     "@smthrs/database": "workspace:*",
     "@effect/language-service": "0.87.2",
-    "@effect/sql-pg": "4.0.5",
+    "@effect/sql-pg": "4.1.1",
     "@electric-sql/client": "1.5.28",
     "@eslint/js": "9.39.5",
     "@journeyapps/wa-sqlite": "1.7.2",
@@ -81,7 +81,7 @@
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "esbuild": "0.28.2",
     "eslint": "9.39.5",
     "eslint-import-resolver-typescript": "4.4.5",
@@ -91,8 +91,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   },
   "peerDependencies": {
@@ -100,6 +100,6 @@
     "@tanstack/db": "0.15.1",
     "@tanstack/db-sqlite-persistence-core": "0.4.11",
     "@tanstack/electric-db-collection": "0.6.2",
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }

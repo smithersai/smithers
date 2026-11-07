@@ -89,7 +89,7 @@
     "@smthrs/memory": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/registry": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "quickjs-emscripten-core": "0.32.0"
   },
   "devDependencies": {
@@ -108,8 +108,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   }
 }

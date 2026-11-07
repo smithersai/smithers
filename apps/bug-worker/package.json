@@ -17,10 +17,11 @@
   "devDependencies": {
     "@smthrs/control": "workspace:*",
     "@types/node": "26.4.1",
-    "alchemy": "2.0.0-beta.82",
+    "alchemy": "2.0.0-beta.85",
     "bun-types": "^1.4.0",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.8"
+    "vibelang": "0.0.12",
+    "@alchemy.run/cloudflare": "2.0.0-beta.85"
   }
 }

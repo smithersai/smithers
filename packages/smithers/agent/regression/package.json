@@ -14,7 +14,7 @@
     "test:character": "bun test character"
   },
   "dependencies": {
-    "@effect/platform-node": "4.0.5",
+    "@effect/platform-node": "4.1.1",
     "@smthrs/agent": "workspace:*",
     "@smthrs/core": "workspace:*",
     "@smthrs/engine": "workspace:*",
@@ -25,7 +25,7 @@
     "@smthrs/plan": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/scorers": "workspace:*",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "yaml": "2.9.0"
   },
   "devDependencies": {

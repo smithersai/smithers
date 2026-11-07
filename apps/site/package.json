@@ -18,8 +18,8 @@
   },
   "devDependencies": {
     "@astrojs/check": "^0.9.10",
-    "@effect/platform-node": "4.0.5",
-    "@effect/platform-node-shared": "4.0.5",
+    "@effect/platform-node": "4.1.1",
+    "@effect/platform-node-shared": "4.1.1",
     "@smthrs/agent": "workspace:*",
     "@smthrs/capability": "workspace:*",
     "@smthrs/control": "workspace:*",
@@ -49,11 +49,12 @@
     "@smthrs/ui": "workspace:*",
     "@types/bun": "1.4.4",
     "@types/react": "^19.2.18",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "typescript": "~5.9.3",
-    "vibelang": "0.0.8",
-    "vibelang-vite": "0.0.8",
-    "wrangler": "4.151.2"
+    "vibelang": "0.0.12",
+    "vibelang-vite": "0.0.12",
+    "wrangler": "4.151.2",
+    "@alchemy.run/cloudflare": "2.0.0-beta.85"
   },
   "dependencies": {
     "@astrojs/react": "^6.0.5",

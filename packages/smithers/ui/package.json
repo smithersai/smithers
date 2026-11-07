@@ -139,7 +139,7 @@
     "@xterm/xterm": "^6.0.0",
     "class-variance-authority": "^0.7.1",
     "d3-force": "3.0.0",
-    "effect": "4.0.5",
+    "effect": "4.1.1",
     "radix-ui": "^1.6.7",
     "recharts": "^3.10.1",
     "@codemirror/autocomplete": "6.20.3",
@@ -178,7 +178,7 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "0.0.8",
-    "vibelang-unplugin": "0.0.8"
+    "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12"
   }
 }
