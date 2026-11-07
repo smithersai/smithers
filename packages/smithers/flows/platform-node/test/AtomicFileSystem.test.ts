@@ -851,7 +851,8 @@ describe("Node atomic filesystem", () => {
       const matches = (
         execute: (
           root: string,
-          effect: Effect.Effect<Array<string>, never, FileSystem.FileSystem>
+          pattern: string,
+          exclude: ReadonlyArray<string> | undefined
         ) => Effect.Effect<Array<string>, unknown>
       ) =>
         Effect.gen(function*() {
@@ -860,10 +861,8 @@ describe("Node atomic filesystem", () => {
           for (const [index, [pattern, exclude]] of patterns(root).entries()) {
             const found = yield* execute(
               root,
-              Effect.flatMap(
-                FileSystem.FileSystem,
-                (fs) => Effect.orDie(fs.glob(join(root, pattern), exclude === undefined ? { root } : { exclude, root }))
-              )
+              pattern,
+              exclude
             )
             // Labelled by row index rather than by the exclude list: the two
             // runs seed two different roots, and an absolute exclude would put
@@ -884,8 +883,17 @@ describe("Node atomic filesystem", () => {
       // ships.
       const pinned = new Set(["[.]/*", "nested/[.]/mid.txt", "nested/[.]/"])
       const patternOf = (row: string) => row.split(" ")[1]!
-      const guarded = yield* matches((root, effect) => run(root, effect))
-      const native = yield* matches((_root, effect) => effect.pipe(Effect.provide(NodeFileSystem.layer)))
+      const guarded = yield* matches((root, pattern, exclude) => run(root, Effect.flatMap(
+        FileSystem.FileSystem,
+        (fs) => Effect.orDie(fs.glob(join(root, pattern), exclude === undefined ? { root } : { exclude, root }))
+      )))
+      // Effect 4.1 derives FileSystem.glob with its shared Glob grammar, so it
+      // is no longer the native Node oracle this atomic helper promises to match.
+      const native = yield* matches((root, pattern, exclude) => Effect.promise(async () => {
+        const rows: Array<string> = []
+        for await (const row of glob(join(root, pattern), { cwd: root, exclude: exclude === undefined ? undefined : [...exclude] })) rows.push(row)
+        return rows
+      }))
       expect(guarded.filter((row) => !pinned.has(patternOf(row)))).toEqual(
         native.filter((row) => !pinned.has(patternOf(row)))
       )
