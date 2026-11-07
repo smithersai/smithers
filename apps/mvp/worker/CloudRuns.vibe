@@ -1,22 +1,22 @@
 import type { Flow } from "@smthrs/flow"
 import { EngineStore } from "@smthrs/flows"
-import { Cause, Clock, Effect, Layer, Metric, Option, Schema } from "effect"
+import { Effect, Layer, Metric } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { CLOUD_RUNS_LIMIT } from "../src/features/runs/contract.ts"
 import type { CloudRun, CloudTrigger } from "../src/features/runs/schema.ts"
-import { type Actor, Sessions } from "#vibelang/emitted/worker/Actor"
-import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
-import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
+import { type Actor, Sessions } from "./Actor.vibe"
+import { codeOf } from "./ErrorCode.vibe"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
+import { repositoryOf } from "./github/Config.vibe"
 import * as GitHubHost from "./github/Host.ts"
-import * as Dispatch from "#vibelang/emitted/worker/ci/Dispatch"
+import * as Dispatch from "./ci/Dispatch.vibe"
 import * as Checks from "./flows/Checks.ts"
 import * as DatabaseLoad from "./flows/DatabaseLoad.ts"
-import * as RepoClone from "#vibelang/emitted/worker/flows/RepoClone"
+import * as RepoClone from "./flows/RepoClone.vibe"
 import * as SpendAlert from "./flows/SpendAlert.ts"
-import { mayRead } from "#vibelang/emitted/worker/stack/Access"
+import { mayRead } from "./stack/Access.vibe"
 
 // The runs on Cloudflare a person may read, for the Runs page beside this device's own (docs/features/runs.md#runs-on-cloudflare,
 // ruling FLOW-13: runs read like GitHub Actions). One read, `GET /api/cloud-runs?limit=<n>`, joins three indexes the app
@@ -120,17 +120,17 @@ export const read = <E, R, EE, ER>(
     readonly roles: RepoRoles.RepoRoles<R>
   },
 ) =>
-  Effect.gen(function* () {
-    const sql = yield* SqlClient.SqlClient
+  effect {
+    const sql = try SqlClient.SqlClient
     const member = mayRead(Option.some(actor))
     const todos = member
-      ? yield* sql<TodoRow>`
+      ? try sql<TodoRow>`
         SELECT a.id::text AS id, a.ordinal, a.status, a.branch, a.repo_id, r.by_login,
           (extract(epoch FROM a.created_at) * 1000)::bigint AS created_ms
         FROM todo_attempts a JOIN todo_requests r ON r.todo_id = a.todo_id AND r.revision = a.revision
         ORDER BY a.created_at DESC, a.id DESC LIMIT ${limit}`
       : []
-    const repoRows = yield* sql<RepoRow>`
+    const repoRows = try sql<RepoRow>`
       SELECT execution, repo_id, flow, ref, event, launched_by,
         (extract(epoch FROM created_at) * 1000)::bigint AS created_ms
       FROM runs WHERE execution IS NOT NULL ORDER BY created_at DESC, id DESC LIMIT ${limit}`
@@ -138,7 +138,7 @@ export const read = <E, R, EE, ER>(
     const readable = new Map<string, boolean>()
     let partial = false
     for (const repoId of [...new Set(repoRows.map((row) => row.repo_id))].slice(0, MAX_REPOSITORIES)) {
-      const resolved = yield* options.roles.resolve(actor, repositoryOf(repoOf(repoId))).pipe(Effect.result)
+      const resolved = try (options.roles.resolve(actor, repositoryOf(repoOf(repoId))) |> Effect.result(%))
       if (resolved._tag === "Failure") {
         const status = RepoRoles.REFUSALS[resolved.failure.code]
         if (status === 503 || resolved.failure.code === "rate_limited") partial = true
@@ -175,16 +175,16 @@ export const read = <E, R, EE, ER>(
         })
       ),
     ]
-    const reads = yield* EngineStore.RunInspection.RunInspection
+    const reads = try EngineStore.RunInspection.RunInspection
     const known = indexed.length === 0
       ? []
-      : (yield* reads.list({ runIds: indexed.map((row) => row.runId), roots: false, limit: indexed.length })).runs
+      : (try reads.list({ runIds: indexed.map((row) => row.runId), roots: false, limit: indexed.length })).runs
     const states = new Map(known.map((summary) => [summary.runId, summary]))
     // A TODO's engine can complete after settling its TODO failed (docs/features/runs.md#the-run-page): its row reads
     // the work's result, failed, as its page's header does.
     const failedTodos = new Set(todos.filter((row) => row.status === "failed").map((row) => `todo:${row.id}`))
     const system = actor.role === "admin"
-      ? (yield* reads.list({ flows: SYSTEM_FLOW_TAGS, limit })).runs.map((summary): CloudRun => ({
+      ? (try reads.list({ flows: SYSTEM_FLOW_TAGS, limit })).runs.map((summary): CloudRun => ({
         runId: summary.runId,
         flow: summary.flowName,
         kind: "system",
@@ -202,23 +202,24 @@ export const read = <E, R, EE, ER>(
     const runs = [
       ...indexed.map((row) => {
         const stated = withState(row, states.get(row.runId))
-        return stated.status === "completed" && failedTodos.has(row.runId) ? { ...stated, status: "failed" as const } : stated
+        return stated.status === "completed" && failedTodos.has(row.runId)
+          ? { ...stated, status: "failed" as const }
+          : stated
       }),
       ...system,
     ]
       .sort((left, right) => right.createdAtMs - left.createdAtMs)
       .slice(0, limit)
     return { runs, partial, counts: { todo: todos.length, repo: repos.length, system: system.length } }
-  }).pipe(
-    Effect.provide(options.database),
-    Effect.provide(Layer.provide(options.inspection, options.engine)),
-  )
+  }
+  |> Effect.provide(%, options.database)
+  |> Effect.provide(%, Layer.provide(options.inspection, options.engine))
 
 /** `GET /api/cloud-runs?limit=<n>`: the runs on Cloudflare the asker may read, newest first. */
 export const route = <E, R, EE, ER>(options: Parameters<typeof read<E, R, EE, ER>>[2]) =>
-  Effect.gen(function* () {
-    const request = yield* HttpServerRequest.HttpServerRequest
-    const startedAt = yield* Clock.currentTimeMillis
+  effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const startedAt = try Clock.currentTimeMillis
     const fields: Record<string, string | number> = {}
     const refused = (status: number, code: string) => {
       fields.outcome = code
@@ -227,39 +228,37 @@ export const route = <E, R, EE, ER>(options: Parameters<typeof read<E, R, EE, ER
         headers: status === 503 ? { ...noStore, "retry-after": String(ShapeAccess.RETRY_AFTER_SECONDS) } : noStore,
       })
     }
-    const response = yield* Effect.gen(function* () {
+    const response = try (effect {
       if (request.method !== "GET") {
         fields.outcome = "method"
         return HttpServerResponse.empty({ status: 405, headers: { allow: "GET" } })
       }
-      const actor = yield* (yield* Sessions).resolve.pipe(Effect.option)
+      const actor = try ((try Sessions).resolve |> Effect.option(%))
       if (Option.isNone(actor)) return refused(503, "unavailable")
       if (Option.isNone(actor.value)) return refused(401, "authentication")
       const text = new URL(request.url, "http://localhost").searchParams.get("limit")
       const limit = text === null ? Option.some(CLOUD_RUNS_LIMIT) : decodeLimit(text)
       if (Option.isNone(limit)) return refused(400, "invalid")
-      const listed = yield* read(actor.value.value, limit.value, options)
+      const listed = try read(actor.value.value, limit.value, options)
       fields.outcome = listed.partial ? "partial" : "read"
       fields.runs = listed.runs.length
       fields.todo = listed.counts.todo
       fields.repo = listed.counts.repo
       fields.system = listed.counts.system
       return HttpServerResponse.jsonUnsafe({ runs: listed.runs }, { headers: noStore })
-    }).pipe(
-      Effect.catchCause((cause) =>
+    }
+      |> Effect.catchCause(%, (cause) =>
         Effect.sync(() => {
           fields.errorCode = codeOf(Cause.squash(cause))
           return refused(503, "unavailable")
-        })
-      ),
-    )
+        })))
     const outcome = String(fields.outcome)
     fields.status = response.status
-    fields.durationMs = (yield* Clock.currentTimeMillis) - startedAt
-    yield* Metric.update(Metric.withAttributes(lists, { outcome }), 1)
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
-    yield* Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
+    fields.durationMs = (try Clock.currentTimeMillis) - startedAt
+    try Metric.update(Metric.withAttributes(lists, { outcome }), 1)
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, outcome })
+    try (Effect.logWithLevel(response.status >= 500 ? "Error" : response.status >= 400 ? "Warn" : "Info")(
       "runs.cloud.list",
-    ).pipe(Effect.annotateLogs({ ...fields, outcome }))
+    ) |> Effect.annotateLogs({ ...fields, outcome })(%))
     return response
-  }).pipe(Effect.withSpan("runs.cloud.list", { kind: "server" }))
+  } |> withSpan(%, "runs.cloud.list", { kind: "server" })
