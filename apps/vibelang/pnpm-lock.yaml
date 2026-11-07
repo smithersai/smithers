@@ -8,9 +8,6 @@ importers:
 
   .:
     dependencies:
-      '@effect/platform-browser':
-        specifier: 4.1.1
-        version: 4.1.1(effect@4.1.1)
       '@smthrs/ui-css':
         specifier: link:../../packages/smithers/ui/ui-css
         version: link:../../packages/smithers/ui/ui-css

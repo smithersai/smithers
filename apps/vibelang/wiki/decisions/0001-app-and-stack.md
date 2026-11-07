@@ -3,7 +3,7 @@
 **Status:** accepted, 2026-11-07. **Rulings:** VL-1, VL-4, VL-5, VL-6.
 
 **Decision.** vibelang.smithers.sh is `apps/vibelang` in the Smithers monorepo. Its runtime dependencies are `effect`
-4.1.1, `@effect/platform-browser`, `foldkit` 0.170.0 (and Foldkit's own `parse5`), `vibelang-runtime` 0.0.12 and
+4.1.1, `foldkit` 0.170.0 (and Foldkit's own `parse5`), `vibelang-runtime` 0.0.12 and
 Smithers packages. Build and test tools are `vibelang`, `vibelang-vite`, `vite`, `vitest`, `@effect/vitest`,
 `happy-dom`, `@playwright/test` and `alchemy`. Effect code is VibeLang (`.vibe`); files with no Effect code stay `.ts`
 (the repository rule), which keeps the state machine provable by LemmaScript (0005).

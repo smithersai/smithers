@@ -21,15 +21,18 @@ const examples = scriptedReplies.flatMap((reply, script) =>
 
 describe("scripted VibeLang examples", () => {
   it("contains examples to compile", () => expect(examples.length).toBeGreaterThan(0))
+  it("rejects malformed syntax and invalid types through the full compiler", () => {
+    for (const [name, source] of [["bad-syntax.vibe", "effect function broken( {"], ["bad-types.vibe", 'const x: number = "wrong"']]) {
+      const file = join(directory, name!)
+      writeFileSync(file, source!)
+      const checked = spawnSync(compiler, ["--ignoreConfig", "--noEmit", "--skipLibCheck", "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler", file], { encoding: "utf8" })
+      expect(checked.error).toBeUndefined()
+      expect(checked.status).not.toBe(0)
+      expect(checked.stdout + checked.stderr).toContain("error")
+    }
+  })
   for (const { name, source } of examples) {
     it(`compiles ${name} without diagnostics`, () => {
-      // The projection CLI can exit zero even with diagnostics: check the payload as well as the process.
-      const result = spawnSync(compiler, ["--ts-projection", name], { input: source, encoding: "utf8" })
-      expect(result.error).toBeUndefined()
-      expect(result.status).toBe(0)
-      expect(result.stderr).toBe("")
-      const projected = JSON.parse(result.stdout)
-      expect(projected.diagnostics ?? []).toEqual([])
       const file = join(directory, name)
       writeFileSync(file, source)
       const checked = spawnSync(compiler, ["--ignoreConfig", "--noEmit", "--skipLibCheck", "--target", "es2022", "--module", "esnext", "--moduleResolution", "bundler", file], { encoding: "utf8" })

@@ -21,7 +21,6 @@
     "verify:broken": "bash verify/broken.sh"
   },
   "dependencies": {
-    "@effect/platform-browser": "4.1.1",
     "@smthrs/ui-css": "link:../../packages/smithers/ui/ui-css",
     "@smthrs/ui-styleguide": "link:../../packages/smithers/ui/ui-styleguide",
     "effect": "4.1.1",
