@@ -3,7 +3,7 @@
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.ts"
-import { hasConversation, type Message as AppMessage, Message, type Model, PROMPT_ID } from "./main.vibe"
+import { hasConversation, type Message as AppMessage, Message, type Model, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { render } from "./markdown.ts"
 
 type H = HtmlBuilder<AppMessage>
@@ -20,7 +20,7 @@ export function view(model: Model, h: H): Document {
       [
         top(model, h),
         model.surface === "splash" ? splash(h) : chat(model, h),
-        ...(model.palette ? [palette(model, h)] : []),
+        palette(model, h),
       ],
     ),
   }
@@ -101,7 +101,7 @@ function chat(model: Model, h: H): Html {
         ])]
         : []),
     ]),
-    model.palette ? h.div([], []) : composer(model, h),
+    composer(model, h),
   ])
 }
 
@@ -132,9 +132,9 @@ function pendingView(post: Pending, name: string, h: H): Html {
   )
 }
 
-function promptInput(model: Model, h: H, placeholder: string): Html {
+function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): Html {
   return h.textarea([
-    h.Id(PROMPT_ID),
+    h.Id(id),
     h.Class("sui-chat-composer-input"),
     h.Rows(1),
     h.Placeholder(placeholder),
@@ -149,7 +149,7 @@ function promptInput(model: Model, h: H, placeholder: string): Html {
 
 function composer(model: Model, h: H): Html {
   return h.form(
-    [h.Class("sui-chat-composer"), h.DataAttribute("docked", "true"), h.Style({ viewTransitionName: "prompt" }), h.OnSubmit(Message.SubmittedDraft())],
+    [h.Class("sui-chat-composer"), h.DataAttribute("docked", "true"), h.Style({ viewTransitionName: model.palette ? "none" : "prompt" }), h.OnSubmit(Message.SubmittedDraft())],
     [
       promptInput(model, h, "Ask about VibeLang"),
       h.div([h.Class("sui-chat-composer-toolbar")], [
@@ -173,18 +173,16 @@ function statusText(model: Model): string {
 // ── ⌘K ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function palette(model: Model, h: H): Html {
-  return h.div([h.Class("vl-palette-layer")], [
+  return h.dialog([h.Id(PALETTE_ID), h.Class("vl-palette-layer"), h.AriaLabel("Ask the agent"), h.AriaModal(true), h.AriaHidden(!model.palette), h.OnCancelPreventDefault(Message.PressedEscape())], [
     h.div([h.Class("vl-palette-scrim"), h.OnClick(Message.PressedEscape())], []),
     h.form(
       [
         h.Class("vl-palette sui-chat-composer"),
-        h.Role("dialog"),
-        h.AriaLabel("Ask the agent"),
-        h.Style({ viewTransitionName: "prompt" }),
+        h.Style({ viewTransitionName: model.palette ? "prompt" : "none" }),
         h.OnSubmit(Message.SubmittedDraft()),
       ],
       [
-        promptInput(model, h, "Ask about VibeLang, or describe what to change"),
+        promptInput(model, h, "Ask about VibeLang, or describe what to change", PALETTE_PROMPT_ID),
         h.div([h.Class("sui-chat-composer-toolbar")], [
           h.span([h.Class("sui-chat-composer-status")], [h.kbd([h.Class("vl-kbd")], ["⏎"]), " to send · ", h.kbd([h.Class("vl-kbd")], ["esc"]), " to close"]),
           h.div([h.Class("sui-chat-composer-actions")], [

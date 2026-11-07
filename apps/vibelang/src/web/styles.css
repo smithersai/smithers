@@ -82,7 +82,8 @@ button { font: inherit; }
 .vl-send:disabled { opacity: .35; cursor: default; }
 
 /* ── ⌘K ──────────────────────────────────────────────────────────────────────── */
-.vl-palette-layer { position: fixed; inset: 0; z-index: 50; display: grid; justify-items: center; align-content: start; padding: 18vh 16px 0; }
+.vl-palette-layer { margin: 0; width: 100%; max-width: none; height: 100dvh; max-height: none; border: 0; background: transparent; color: inherit; position: fixed; inset: 0; z-index: 50; display: grid; justify-items: center; align-content: start; padding: 18vh 16px 0; }
+.vl-palette-layer:not([open]) { display: none; }
 .vl-palette-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); animation: vl-fade .14s ease-out both; }
 .vl-palette { position: relative; width: min(100%, 640px); }
 @keyframes vl-fade { from { opacity: 0; } }

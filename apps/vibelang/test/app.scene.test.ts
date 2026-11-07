@@ -2,7 +2,7 @@
 import { Command, click, expect, given, placeholder, role, scene, Subscription, text, type } from "foldkit/scene"
 import { describe, test } from "vitest"
 import { newClient } from "../src/core/conversation.ts"
-import { FocusPrompt, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
+import { ShowPalette, ClosePalette, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.ts"
 
 const home: Model = {
@@ -38,14 +38,15 @@ describe("the splash", () => {
       { update, view },
       given(home),
       Subscription.emit(Message.PressedCommandK()),
-      Command.expectExact(FocusPrompt({})),
-      Command.resolve(FocusPrompt, Message.FocusedPrompt()),
+      Command.expectExact(ShowPalette({})),
+      Command.resolve(ShowPalette, Message.FocusedPrompt()),
       expect(role("dialog", { name: "Ask the agent" })).toExist(),
       type(placeholder("Ask about VibeLang, or describe what to change"), "How do I install it?"),
       click(role("button", { name: "Send" })),
-      Command.expectExact(PostMessage({ conversation: HOME_CONVERSATION, clientId: "s1-1", name: "Ada", text: "How do I install it?" })),
+      Command.expectExact(PostMessage({ conversation: HOME_CONVERSATION, clientId: "s1-1", name: "Ada", text: "How do I install it?" }), ClosePalette({ dock: true })),
+      Command.resolve(ClosePalette, Message.FocusedPrompt()),
       Command.resolve(PostMessage, Message.SucceededPost({ clientId: "s1-1" })),
-      expect(role("dialog", { name: "Ask the agent" })).toBeAbsent(),
+      expect(role("dialog", { name: "Ask the agent" })).toHaveAttr("aria-hidden", "true"),
       expect(role("button", { name: "Expand the VibeLang home page" })).toExist(),
       expect(text("How do I install it?")).toExist(),
     )
@@ -56,8 +57,9 @@ describe("the splash", () => {
       { update, view },
       given({ ...home, palette: true }),
       Subscription.emit(Message.PressedEscape()),
-      Command.expectNone(),
-      expect(role("dialog", { name: "Ask the agent" })).toBeAbsent(),
+      Command.expectExact(ClosePalette({ dock: false })),
+      Command.resolve(ClosePalette, Message.FocusedPrompt()),
+      expect(role("dialog", { name: "Ask the agent" })).toHaveAttr("aria-hidden", "true"),
     )
   })
 })

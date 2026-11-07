@@ -16,3 +16,11 @@
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
 waits on what a person sees (a role, a text, `data-done`), never a timer. Screenshots wait for view transitions to end.
+
+**Keyboard regressions (review 6, 8, 13).** `e2e/focus.spec.ts` uses only the keyboard to send, dismiss with Escape
+or a second ⌘K, restore the actual opener, retain an unsent draft, and wrap Tab/Shift+Tab. The native dialog is opened
+with Foldkit `Dom.showDialog({ isModal: true })`: background controls disappear from role queries. Tests await the
+specific palette or docked input's focus before typing, assert its value, and await Send becoming enabled before
+navigating to it. A focus assertion on the shared accessible name alone can accidentally accept the outgoing input.
+The dialog stays mounted so `Dom.closeDialog` can release isolation and restore its opener; scenes assert its closed
+accessibility state and resolve the real close command. Chat retains its docked input while the palette is open.

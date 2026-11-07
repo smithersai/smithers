@@ -36,7 +36,7 @@ test.describe("splash and chat", () => {
     await page.screenshot({ path: testInfo.outputPath("3-chat.png") })
 
     // The docked composer stays inside the window on every screen (it overflowed on phones, 2026-11-07).
-    const composer = await page.locator(".sui-chat-composer").boundingBox()
+    const composer = await page.locator(".sui-chat-composer[data-docked]").boundingBox()
     expect(composer).not.toBeNull()
     expect(composer!.x).toBeGreaterThanOrEqual(0)
     expect(composer!.x + composer!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
