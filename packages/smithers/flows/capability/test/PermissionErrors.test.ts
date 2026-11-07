@@ -467,7 +467,7 @@ describe("permission failures", () => {
     expect(decoded).toMatchObject(input)
     expect(decoded).not.toBe(input)
     const result = Effect.runSyncExit(Effect.gen(function*() {
-      yield* decoded
+      return yield* decoded
     }))
     expect(Exit.isFailure(result)).toBe(true)
     if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBe(decoded)

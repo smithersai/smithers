@@ -30,7 +30,7 @@ export const decodePermissionError = (input: unknown): Option.Option<PermissionE
     switch (input._tag) {
       case "@smthrs/capability/PermissionRequired":
         return Option.some(
-          new PermissionRequired({
+          PermissionRequired.new({
             requestId: input.requestId,
             runId: input.runId,
             capability: new Capability(input.capability),
@@ -39,7 +39,7 @@ export const decodePermissionError = (input: unknown): Option.Option<PermissionE
           })
         )
       case "@smthrs/capability/PermissionDenied":
-        return Option.some(new PermissionDenied({ capability: new Capability(input.capability), reason: input.reason }))
+        return Option.some(PermissionDenied.new({ capability: new Capability(input.capability), reason: input.reason }))
       case "@smthrs/capability/GrantStoreError":
         return Option.some(new GrantStoreError({ code: input.code, message: input.message, cause: input.cause }))
     }

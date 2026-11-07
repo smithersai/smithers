@@ -53,23 +53,23 @@ export class PermissionRequired extends Schema.TaggedError<PermissionRequired>()
     meta: PermissionMeta
   }
 ) {
-  constructor(props: {
+  static new(props: {
     readonly code?: "permission_required"
     readonly requestId: string
     readonly runId?: string | undefined
     readonly capability: Capability
     readonly tier: EffectTier
     readonly meta: Readonly<Record<string, unknown>>
-  }) {
+  }): PermissionRequired {
     const meta = permissionMetaSnapshot(props.meta)
-    super({ ...props, code: "permission_required", meta })
-    Object.defineProperty(this, "capability", {
+    const error = new PermissionRequired({ ...props, code: "permission_required", meta })
+    Object.defineProperty(error, "capability", {
       value: capabilitySnapshot(props.capability),
       enumerable: true,
       writable: false,
       configurable: false
     })
-    Object.defineProperty(this, "meta", {
+    Object.defineProperty(error, "meta", {
       value: meta,
       enumerable: true,
       writable: false,
@@ -77,6 +77,7 @@ export class PermissionRequired extends Schema.TaggedError<PermissionRequired>()
     })
     // Do not freeze a Schema.Class instance: Effect needs to populate its
     // symbol-keyed hash and equality caches after construction.
+    return error
   }
 }
 
@@ -94,7 +95,7 @@ export const permissionRequired = (options: {
   readonly tier: EffectTier
   readonly meta?: Readonly<Record<string, unknown>> | undefined
 }): PermissionRequired =>
-  new PermissionRequired({
+  PermissionRequired.new({
     code: "permission_required",
     requestId: options.requestId,
     runId: options.runId,
