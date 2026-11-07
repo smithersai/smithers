@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-unplugin/esbuild"
 
 const api = fileURLToPath(new URL("../workerd/worker.ts", import.meta.url))
-const site = fileURLToPath(new URL("../../worker/index.ts", import.meta.url))
+const site = fileURLToPath(new URL("../../worker/index.vibe", import.meta.url))
 
 /** The emitted Factory CLI (`pnpm build:surfaces`). */
 export const cliPath = fileURLToPath(new URL("../../dist-factory/surfaces/cli-entry.js", import.meta.url))

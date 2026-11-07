@@ -33,7 +33,7 @@ apps/vibelang/
   src/surfaces/   the shared command registry, CLI, MCP server and discovery manifest
   skills/         agent instructions for the Factory CLI
   src/web/        the Foldkit program (main.vibe), its view (view.vibe) and styles
-  worker/         the site Worker (index.ts) and the API Worker (Api.vibe): sequencer, reply flow, budget
+  worker/         the site Worker (index.vibe) and the API Worker (Api.vibe): sequencer, reply flow, budget
   infra/          the Alchemy stack (Stack.vibe; alchemy.run.ts re-exports it)
   test/ e2e/      unit, property and scene tests; browser tests
   wiki/           this wiki

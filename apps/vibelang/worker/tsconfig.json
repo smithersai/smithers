@@ -13,5 +13,5 @@
     "allowImportingTsExtensions": true,
     "types": ["@cloudflare/workers-types"]
   },
-  "include": ["."]
+  "include": [".", "../test/worker.test.vibe"]
 }

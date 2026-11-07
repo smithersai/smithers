@@ -24,8 +24,13 @@
     "test",
     "e2e",
     "infra",
+    "scripts",
     "alchemy.run.ts",
     "vite.config.ts",
     "playwright.config.ts"
+  ],
+  // The site Worker's test needs Cloudflare's types, so the Worker project checks it (worker/tsconfig.json).
+  "exclude": [
+    "test/worker.test.vibe"
   ]
 }
