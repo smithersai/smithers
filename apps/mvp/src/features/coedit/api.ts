@@ -41,7 +41,7 @@ export const postUpdate = (origin: string, textId: string, request: UpdateReques
           HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1"),
         ),
       )
-      .pipe(Effect.mapError(() => new UpdateNotTaken({})))
+      .pipe(Effect.catch(() => Effect.fail(new UpdateNotTaken({}))))
     yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
     if (response.status !== 200) {
       const refused = yield* response.json.pipe(Effect.option, Effect.map(Option.flatMap(decodeRefusal)))
@@ -53,7 +53,7 @@ export const postUpdate = (origin: string, textId: string, request: UpdateReques
     }
     return yield* response.json.pipe(
       Effect.flatMap(decodeTaken),
-      Effect.mapError(() => new UpdateNotTaken({ status: response.status })),
+      Effect.catch(() => Effect.fail(new UpdateNotTaken({ status: response.status }))),
     )
   }).pipe(
     // Interrupting the request aborts its fetch, so a stalled body stops too.
