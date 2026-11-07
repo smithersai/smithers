@@ -1,0 +1,35 @@
+/**
+ * Timestamped PostgreSQL fixture identities, independent of a driver.
+ *
+ * @since 1.0.0
+ */
+/** Exact timestamped PostgreSQL fixture identity pattern.
+ * @category testing
+ * @since 1.0.0
+ */
+export const NAME_PATTERN = "^[a-z][a-z0-9_]{0,18}_[1-9][0-9]{9}_[0-9a-f]{32}$";
+/** A generated ASCII identifier, never truncated by Postgres (63 bytes maximum).
+ * @category testing
+ * @since 1.0.0
+ */
+export const schemaName = (prefix, createdAt = Math.floor(Date.now() / 1_000)) => {
+    const normalized = prefix.replaceAll("-", "_");
+    if (!/^[a-z][a-z0-9_]*(?![\s\S])/.test(normalized) || !Number.isInteger(createdAt) || createdAt < 1_000_000_000 || createdAt > 9_999_999_999) {
+        throw new Error("Invalid test schema identity");
+    }
+    return `${normalized.slice(0, 19)}_${createdAt}_${crypto.randomUUID().replaceAll("-", "")}`;
+};
+/** Derive a store identity without losing the timestamp or exceeding Postgres' identifier limit.
+ * Existing non-timestamped configured prefixes retain their historical naming behavior.
+ * @category testing
+ * @since 1.0.0
+ */
+export const forStore = (prefix, store) => {
+    const match = prefix.match(new RegExp(NAME_PATTERN));
+    if (match?.[0] !== prefix)
+        return `${prefix}_${store}`;
+    if (!/^[a-z][a-z0-9_]{0,18}(?![\s\S])/.test(store))
+        throw new Error("Invalid test store identity");
+    const suffix = prefix.slice(-44);
+    return `${store}${suffix}`;
+};

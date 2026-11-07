@@ -13,11 +13,11 @@ import {
   type MergeFlow,
   queueRequestOf,
 } from "../../src/features/pulls/contract.ts"
-import { codeOf } from "../ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import type { Services } from "./Apply.vibe"
-import { classify, withToken } from "./Calls.vibe"
-import { repositoryOf } from "./Config.vibe"
-import * as Metrics from "./Metrics.vibe"
+import { classify, withToken } from "#vibelang/emitted/worker/github/Calls"
+import { repositoryOf } from "#vibelang/emitted/worker/github/Config"
+import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import { fetchPull, liveBaseHeadOf, moveBase, projectPull } from "./Pulls.ts"
 import * as Store from "./Store.ts"
 

@@ -1,0 +1,66 @@
+import { Interpreter } from "@smthrs/flow"
+import { ShareClient, type ShareRefused } from "./api.ts"
+import { BranchShare, BranchShareRefused, BranchShareUnavailable, RequestShare, type ShareFailure } from "./flows"
+import { shares } from "./metrics.vibe"
+import type { Change } from "./schema"
+
+// `branch/share`'s step (docs/features/branch-workspace.md#sharing): one `POST /api/branches/<id>/shares` through
+// `ShareClient`, on this device's engine.
+
+/** What ChatApi's refusal means to the flow. */
+export const shareFailure = (refused: ShareRefused): ShareFailure =>
+  refused.status === 401
+    ? new BranchShareRefused({ reason: "sign_in" })
+    : refused.status === 403
+    ? new BranchShareRefused({ reason: "forbidden" })
+    : refused.status === 404
+    ? new BranchShareRefused({ reason: refused.code === "no_person" ? "no_person" : "not_found" })
+    : refused.status === 409
+    ? new BranchShareRefused({ reason: "too_many" })
+    : refused.status === 400 || refused.status === 413
+    ? new BranchShareRefused({ reason: "invalid" })
+    : new BranchShareUnavailable()
+
+/** The kind of change, for the records: never the login or the grantee. */
+export const kindOf = (change: Change): string =>
+  "login" in change
+    ? "person"
+    : change.grantee === "repository"
+    ? "link"
+    : change.access === null
+    ? "remove"
+    : "access"
+
+/**
+ * What `branch/share/request` does: one `POST /api/branches/<id>/shares`. Records a span `branch.share`, a log line
+ * with the change's kind, the outcome and ChatApi's status, and a count of `shares` by kind and outcome.
+ */
+export const requestShare = ({ branchId, change }: typeof RequestShare.payloadSchema.Type) =>
+  effect {
+    const startedAt = try Clock.currentTimeMillis
+    const answer = try Effect.result((try ShareClient).change(branchId, change))
+    const failure = answer._tag === "Failure" ? shareFailure(answer.failure) : undefined
+    const outcome = failure === undefined
+      ? "shared"
+      : failure._tag === "@smthrs/mvp/sharing/BranchShareRefused"
+      ? failure.reason
+      : "unavailable"
+    try Metric.update(Metric.withAttributes(shares, { change: kindOf(change), outcome }), 1)
+    try Effect.annotateCurrentSpan({ outcome })
+    try (Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("branch.share")
+      |> Effect.annotateLogs({
+        outcome,
+        change: kindOf(change),
+        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+        durationMs: (try Clock.currentTimeMillis) - startedAt,
+        feature: "sharing",
+      })(%))
+    if (answer._tag === "Success") return answer.success
+    throw failure!
+  } |> withSpan(%, "branch.share")
+
+/** Registers `branch/share` with its step, asking through the host's `ShareClient`. */
+export const registration = Interpreter.layerWithImplementations(BranchShare, RequestShare.toLayer(requestShare))
+
+/** `branch/share`, asking ChatApi on `origin`. Needs the host's `HttpClient`. */
+export const registrationAt = (origin: string) => registration.pipe(Layer.provide(ShareClient.layer({ origin })))

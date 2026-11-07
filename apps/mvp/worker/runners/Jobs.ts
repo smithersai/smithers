@@ -1,7 +1,7 @@
 import { AgentRunner } from "@smthrs/agent"
 import { Cause, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { codeOf } from "../ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as Fleet from "./Fleet.ts"
 import * as Overflow from "./Overflow.ts"
 

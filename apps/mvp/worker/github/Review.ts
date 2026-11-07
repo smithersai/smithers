@@ -12,12 +12,12 @@ import {
   SHA,
 } from "../../src/features/pulls/contract.ts"
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import { FlowStarter } from "../Flows.vibe"
+import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { FlowStarter } from "#vibelang/emitted/worker/Flows"
 import { checkRunIdOf, ReviewRun } from "../flows/Checks.ts"
-import { type GitHubApp, type Repository, repositoryOf } from "./Config.vibe"
+import { type GitHubApp, type Repository, repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "./RepoRoles.ts"
 
 // Review on request (decision 0129, docs/features/pulls.md#review-on-request): `POST

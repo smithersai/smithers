@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { BUG_INBOX_PATH, bugAlertId, bugSubject } from "../../src/features/bugs/contract.ts"
-import { codeOf } from "../ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as AlertDelivery from "./AlertDelivery.ts"
 
 // `ops/BugReport { id }` (docs/features/bugs.md#the-admins-hear): once a person files a report

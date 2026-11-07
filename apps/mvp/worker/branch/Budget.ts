@@ -1,8 +1,8 @@
 import { Effect, type Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { DEFAULT_SANDBOX_LIMITS, type SandboxLimits } from "../../src/features/spend/contract.ts"
-import { codeOf } from "../ErrorCode.vibe"
-import { CI_OWNER } from "../flows/CiJobMachine.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { CI_OWNER } from "#vibelang/emitted/worker/flows/CiJobMachine"
 import type { SandboxBranch } from "./Sandboxes.vibe"
 
 // Sandbox budgets (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md): how many machines may be awake, and

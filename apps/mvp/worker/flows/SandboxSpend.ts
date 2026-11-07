@@ -4,8 +4,8 @@ import { Node } from "@smthrs/plan"
 import { Clock, Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Budget from "../branch/Budget.ts"
-import { codeOf } from "../ErrorCode.vibe"
-import * as Flows from "../Flows.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as Flows from "#vibelang/emitted/worker/Flows"
 import * as AlertDelivery from "./AlertDelivery.ts"
 
 // `ops/SandboxSpend { from, until }` (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md#the-spend-alert):

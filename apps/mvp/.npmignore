@@ -1,0 +1,7 @@
+
+# BEGIN VibeLang emitted runtime packing
+!/.vibelang/
+/.vibelang/*
+!/.vibelang/js/
+!/.vibelang/js/**
+# END VibeLang emitted runtime packing

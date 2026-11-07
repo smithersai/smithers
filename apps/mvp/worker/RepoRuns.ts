@@ -1,7 +1,7 @@
 import { Uuid, WebCrypto } from "@smthrs/crypto"
 import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import * as RepoFlow from "./ci/RepoFlow.vibe"
+import * as RepoFlow from "#vibelang/emitted/worker/ci/RepoFlow"
 import {
   LINEAGE_DEPTH,
   REPO_RUN_NAMESPACE,

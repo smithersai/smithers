@@ -27,19 +27,19 @@ import {
   type TestResult,
   writeExecutionId,
 } from "../../src/features/personal-model/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import * as Flows from "../Flows.vibe"
+import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as Flows from "#vibelang/emitted/worker/Flows"
 import { SecretKeys } from "../secrets/Keys.ts"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import * as Codex from "./Codex.ts"
 import * as ModelFlows from "./ModelFlows.ts"
 import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.ts"
-import { connectionDefaults } from "./Defaults.vibe"
+import { connectionDefaults } from "#vibelang/emitted/worker/personal/Defaults"
 import * as Subscriptions from "./Subscriptions.ts"
 import * as Store from "./Store.ts"
-import * as PersonalUsage from "./Usage.vibe"
+import * as PersonalUsage from "#vibelang/emitted/worker/personal/Usage"
 
 // A person's own connections' routes (decisions 0096, 0107 and 0132, docs/features/personal-model.md). Credentials are
 // write-only: no route answers one.

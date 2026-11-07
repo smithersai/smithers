@@ -1,5 +1,5 @@
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { fold as foldWriteNotice } from "./WriteFeed.vibe"
+import { fold as foldWriteNotice } from "#vibelang/emitted/worker/github/WriteFeed"
 import { COMMITMENTS, commitmentOf } from "../../src/features/issues/lifecycle.ts"
 import { GitHub } from "@smthrs/integrations"
 import { Effect, Option, Schema } from "effect"

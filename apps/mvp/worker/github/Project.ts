@@ -1,6 +1,6 @@
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect } from "effect"
-import { statusOf } from "./Calls.vibe"
+import { statusOf } from "#vibelang/emitted/worker/github/Calls"
 import type { Repository } from "./Config.vibe"
 import * as Store from "./Store.ts"
 

@@ -3,7 +3,7 @@ import { Node } from "@smthrs/plan"
 import { Config, Duration, Effect, Layer, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ANSWER_SETTLE_WITHIN, ANSWER_TURN_WAIT } from "../../src/features/agent/contract.ts"
-import { codeOf } from "../ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { withAnswerConversation } from "../Messages.ts"
 import * as Notifications from "../Notifications.ts"
 

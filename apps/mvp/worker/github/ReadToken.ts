@@ -1,9 +1,9 @@
 import { GitHub } from "@smthrs/integrations"
 import { Clock, Config, Effect, Metric, Option, Redacted, Ref } from "effect"
 import type { HttpClient } from "effect/http"
-import { codeOf } from "../ErrorCode.vibe"
-import * as GitHubConfig from "./Config.vibe"
-import * as Metrics from "./Metrics.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as GitHubConfig from "#vibelang/emitted/worker/github/Config"
+import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 
 // What GitHub REST reads of public repositories go out as (docs/features/repo.md#configuration): the clone's size call
 // (worker/RepoUpstream.ts) and a repository's About (worker/RepoAbout.ts). GitHub allows an unauthenticated caller 60

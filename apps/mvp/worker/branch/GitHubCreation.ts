@@ -5,12 +5,12 @@ import { Context, Effect, Layer, Metric, Option, Schema, type Redacted } from "e
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import type { Actor } from "../Actor.vibe"
-import { classify, statusOf, withToken } from "../github/Calls.vibe"
-import * as Config from "../github/Config.vibe"
+import { classify, statusOf, withToken } from "#vibelang/emitted/worker/github/Calls"
+import * as Config from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Conversations from "./Conversations.ts"
 import * as Repos from "../Repos.ts"
-import { CreateRefused } from "./CreateRefused.vibe"
+import { CreateRefused } from "#vibelang/emitted/worker/branch/CreateRefused"
 
 /** Explicit, repository-selected GitHub creation; never used by the default branch flow. */
 export interface Input {

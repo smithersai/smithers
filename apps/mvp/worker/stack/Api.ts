@@ -1,6 +1,6 @@
 import { withRequestRay } from "../RequestRay.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { canAsk } from "../Actor.vibe"
+import { canAsk } from "#vibelang/emitted/worker/Actor"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -28,13 +28,13 @@ import {
   TODOS_SHAPE_ROUTE,
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
+import { type Actor, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { repositoryOf as repositoryNamed } from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ShapeAccess from "../ShapeAccess.vibe"
-import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./Access.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
+import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "#vibelang/emitted/worker/stack/Access"
 import * as Stack from "./Stack.ts"
 import type { TodoStatusRead } from "../../src/features/todos/schema.ts"
 

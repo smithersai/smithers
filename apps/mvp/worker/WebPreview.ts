@@ -4,9 +4,9 @@ import { Cause, Clock, Config, Duration, Effect, Metric, Option, Schema } from "
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { MAX_PREVIEW_BODY_BYTES, MAX_URL_LENGTH, WEB_MODES } from "../src/features/web/contract.ts"
 import { checkUrl, LOCAL_HOSTS } from "../src/features/web/url.ts"
-import { Sessions } from "./Actor.vibe"
-import { readBounded } from "./Body.vibe"
-import { codeOf } from "./ErrorCode.vibe"
+import { Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { localHttpConfig, policyFor } from "./Views.ts"
 
 // Checking a page before the conversation shows it (docs/features/web-pages.md#before-a-page-is-framed):

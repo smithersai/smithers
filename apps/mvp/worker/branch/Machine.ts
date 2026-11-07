@@ -1,7 +1,7 @@
 import { type Sandbox, SandboxTools } from "@smthrs/sandbox"
 import { Cause, Clock, Duration, Effect, Metric } from "effect"
 import { SANDBOX_USER } from "../../src/features/terminal/contract.ts"
-import { codeOf } from "../ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import type { CommandOutcome, CommandRequest, SleepOutcome, ToolOutcome } from "./Machines.vibe"
 import { provisionArgv, userOf } from "./Users.ts"
 

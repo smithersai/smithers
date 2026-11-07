@@ -26,12 +26,12 @@ import {
   SHA_PATTERN,
   textOf,
 } from "../src/features/repo/contract.ts"
-import { type Actor, canClone, Sessions } from "./Actor.vibe"
-import { readBounded } from "./Body.vibe"
-import { codeOf } from "./ErrorCode.vibe"
-import { FlowStarter } from "./Flows.vibe"
-import { Clone } from "./flows/RepoClone.vibe"
-import * as AboutStore from "./about/Store.vibe"
+import { type Actor, canClone, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { FlowStarter } from "#vibelang/emitted/worker/Flows"
+import { Clone } from "#vibelang/emitted/worker/flows/RepoClone"
+import * as AboutStore from "#vibelang/emitted/worker/about/Store"
 import * as RepoAbout from "./RepoAbout.ts"
 import * as RepoMetrics from "./RepoMetrics.ts"
 import * as RepoReads from "./RepoReads.ts"

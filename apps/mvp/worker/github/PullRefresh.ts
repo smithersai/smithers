@@ -1,9 +1,9 @@
 import { Cause, Clock, type Duration, Effect, type Layer, Metric, Option, Ref } from "effect"
 import { SqlClient } from "effect/sql"
 import { applyExecutionId, itemId, reconcileBucketStart } from "../../src/features/issues/contract.ts"
-import { FlowStarter } from "../Flows.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import { Apply } from "./Apply.vibe"
+import { FlowStarter } from "#vibelang/emitted/worker/Flows"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import { Apply } from "#vibelang/emitted/worker/github/Apply"
 import type { Repository } from "./Config.vibe"
 
 export const refreshes = Metric.counter("smithers_pull_refresh_starts", { incremental: true })

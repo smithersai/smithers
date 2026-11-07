@@ -1,0 +1,41 @@
+import { Layer } from "effect"
+import { answerAskingTab } from "../../flows/askingTab"
+import { navigationChannel } from "./contract"
+import { appPath } from "./paths"
+import { GoCall } from "./schema"
+
+// The tab's side of `app/navigate` (docs/features/flows.md#navigation): every tab listens on the engine's navigation
+// channel, and only the tab that started a call's request answers it (src/flows/askingTab.ts), moving through the
+// router when the call has a path. Every other tab, and every other device, stays where it is.
+
+/** What the browser gives navigation: the engine's name, the app's origin, and the router's navigate. */
+export interface NavigationHost {
+  /** The engine's name: its navigation channel is `<name>/navigate`. */
+  readonly name: string
+  /** The app's origin: a path is checked against it again before the tab moves. */
+  readonly origin: string
+  /** Takes this tab to `path`, an app path: TanStack Router's `navigate`, outside React. */
+  readonly navigate: (path: string) => void | Promise<void>
+}
+
+/**
+ * Answers the navigation channel for this tab's requests until its scope closes: goes to the call's path, checked once
+ * more (`appPath`), and answers whether the tab moved. A navigate that throws or rejects answers that it did not move.
+ */
+export const tabNavigation = (host: NavigationHost) =>
+  Layer.effectDiscard(
+    answerAskingTab({
+      channel: navigationChannel(host.name),
+      input: GoCall,
+      answer: ({ path }) => {
+        const target = path === undefined ? undefined : appPath(path, host.origin)
+        return target === undefined || target._tag === "Refused"
+          ? Effect.succeed({ moved: false })
+          : (Effect.tryPromise(async () => {
+            await host.navigate(target.path)
+          })
+            |> Effect.as(%, { moved: true })
+            |> Effect.orElseSucceed(%, () => ({ moved: false })))
+      },
+    }),
+  )

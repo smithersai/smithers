@@ -26,7 +26,7 @@ import {
   routed,
   type SleepOutcome,
   type ToolOutcome,
-} from "./branch/Machines.vibe"
+} from "#vibelang/emitted/worker/branch/Machines"
 import { userOf } from "./branch/Users.ts"
 import { asUser, configuredSessionOn, failureFields, runOn, type UserOptions } from "./branch/Session.ts"
 import { Forge, proxy } from "./branch/Forge.ts"
@@ -38,11 +38,11 @@ import {
   Sandboxes,
   SandboxUnavailable,
   TerminalSockets,
-} from "./branch/Sandboxes.vibe"
+} from "#vibelang/emitted/worker/branch/Sandboxes"
 import * as Agents from "./personal/Agents.ts"
 import * as Subscriptions from "./personal/Subscriptions.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
-import * as RegistryEgress from "./branch/RegistryEgress.vibe"
+import * as RegistryEgress from "#vibelang/emitted/worker/branch/RegistryEgress"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 import * as Overflow from "./runners/Overflow.ts"
 import * as SocketAccess from "./SocketAccess.ts"

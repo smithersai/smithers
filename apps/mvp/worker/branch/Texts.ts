@@ -16,14 +16,14 @@ import {
   type TextScope,
 } from "../../src/features/coedit/contract.ts"
 import type { Access } from "../../src/features/branch/contract.ts"
-import { type Actor, type Role, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import { type Actor, type Role, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn, type Policy } from "./Access.ts"
 import * as Conversations from "./Conversations.ts"
-import { Rooms } from "./Rooms.vibe"
-import { isUpgrade, sameOrigin } from "./Upgrade.vibe"
+import { Rooms } from "#vibelang/emitted/worker/branch/Rooms"
+import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade"
 import * as SocketAccess from "../SocketAccess.ts"
 
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they

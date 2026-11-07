@@ -11,7 +11,7 @@ import {
   RepoReadUnavailable,
 } from "../src/features/repo/flows.ts"
 import { type Refs, RefsListing, TreeListing } from "../src/features/repo/schema.ts"
-import { codeOf } from "./ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as RepoMetrics from "./RepoMetrics.ts"
 import * as Repos from "./Repos.ts"
 

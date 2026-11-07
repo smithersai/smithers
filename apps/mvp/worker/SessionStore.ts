@@ -1,6 +1,6 @@
 import { Config, Effect, Option, Schema } from "effect"
 import { SqlClient, type Statement } from "effect/sql"
-import { SessionsUnavailable, type Actor, type Role } from "./Actor.vibe"
+import { SessionsUnavailable, type Actor, type Role } from "#vibelang/emitted/worker/Actor"
 
 // Sign-in's rows in Postgres (docs/features/sign-in.md#postgres): people, sign-ins in progress and sessions. Postgres'
 // clock decides every expiry. Each function is one statement, or one transaction, against the `SqlClient` in context.

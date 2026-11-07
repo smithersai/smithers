@@ -12,15 +12,15 @@ import {
   TERMINALS_TABLE,
 } from "../../src/features/terminal/contract.ts"
 import type { Actor } from "../Actor.vibe"
-import { refusesPersonOnly, canAsk, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import * as Flows from "../Flows.vibe"
+import { refusesPersonOnly, canAsk, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as Flows from "#vibelang/emitted/worker/Flows"
 import { TerminalOpen } from "../flows/TerminalOpen.ts"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import { branchAccess, canEdit, canView } from "./Access.ts"
-import { TerminalSockets } from "./Sandboxes.vibe"
-import { isUpgrade, sameOrigin } from "./Upgrade.vibe"
+import { TerminalSockets } from "#vibelang/emitted/worker/branch/Sandboxes"
+import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade"
 import * as SocketAccess from "../SocketAccess.ts"
 
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):

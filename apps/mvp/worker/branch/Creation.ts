@@ -9,7 +9,7 @@ import { BRANCH_OPERATIONS, type BranchOperation, CREATION_ACTIONS, type Creatio
 import { readSource } from "../../src/features/flows-ui/checks.ts"
 import { isRepository, repoId } from "../../src/features/repo/contract.ts"
 import { BRANCH_FLOWS } from "../../src/plugins/builtinFlows.ts"
-import { Sessions } from "../Actor.vibe"
+import { Sessions } from "#vibelang/emitted/worker/Actor"
 import { isMemberOn } from "./Access.ts"
 import { homeRepositoryNames } from "./Conversations.ts"
 import { defaultBranch } from "./Forge.ts"

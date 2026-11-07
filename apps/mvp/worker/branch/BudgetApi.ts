@@ -9,10 +9,10 @@ import {
   SANDBOX_LIMITS_TABLE,
 } from "../../src/features/spend/contract.ts"
 import { SandboxLimitsRequest } from "../../src/features/spend/schema.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import { refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import * as Budget from "./Budget.ts"
 
 // The sandbox limits as Admins set them (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md#the-limits):

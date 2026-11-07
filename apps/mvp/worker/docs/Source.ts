@@ -3,7 +3,7 @@ import { Docs, Home } from "@smthrs/views"
 import { Cause, Clock, Config, Context, Data, Duration, Effect, Layer, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import { type DocsRefusal, MAX_PAGE_BYTES } from "../../src/features/docs/contract.ts"
-import { codeOf } from "../ErrorCode.vibe"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as Curated from "../home/Curated.ts"
 import type * as RepoAbout from "../RepoAbout.ts"
 

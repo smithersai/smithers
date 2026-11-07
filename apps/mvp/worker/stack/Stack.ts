@@ -2,7 +2,7 @@ import * as WriteAuthority from "../WriteAuthority.ts"
 import { digestSync } from "@smthrs/crypto"
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { foldCommit } from "./StackFeed.vibe"
+import { foldCommit } from "#vibelang/emitted/worker/stack/StackFeed"
 import * as WorkLinks from "../github/WorkLinks.ts"
 import { todoExecutionId } from "../../src/features/pulls/contract.ts"
 import {

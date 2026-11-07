@@ -4,12 +4,12 @@ import type { GitHub } from "@smthrs/integrations"
 import { Config, Effect, type Layer, Option } from "effect"
 import type { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
-import * as RepoClone from "./flows/RepoClone.vibe"
-import { statusOf } from "./github/Calls.vibe"
+import * as RepoClone from "#vibelang/emitted/worker/flows/RepoClone"
+import { statusOf } from "#vibelang/emitted/worker/github/Calls"
 import * as GitHubHost from "./github/Host.ts"
 import * as RepoReads from "./RepoReads.ts"
 import * as Repos from "./Repos.ts"
-import { RepoUpstream } from "./RepoUpstream.vibe"
+import { RepoUpstream } from "#vibelang/emitted/worker/RepoUpstream"
 
 // The repository feature's configuration (docs/features/repo.md#configuration), read with Effect `Config` where ChatApi
 // and the `FlowExecution` Durable Object start: the Code Storage organization, GitHub's optional token, the budgets and

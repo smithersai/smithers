@@ -10,11 +10,11 @@ import {
   MACHINES_SHAPE_ROUTE,
 } from "../../src/features/fleet/contract.ts"
 import { isRepository } from "../../src/features/repo/contract.ts"
-import { canAsk } from "../Actor.vibe"
+import { canAsk } from "#vibelang/emitted/worker/Actor"
 import { mayMaintain } from "../feeds/Api.ts"
-import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
+import { repositoryOf as repositoryNamed } from "#vibelang/emitted/worker/github/Config"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 
 // The fleet's shapes (decision 0143, docs/features/fleet.md#the-shapes): one Electric shape per repository for its
 // runs, and one for its machines, so fifty runs are fifty rows of one shape, never fifty inspectors.

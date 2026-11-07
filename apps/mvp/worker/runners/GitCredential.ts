@@ -2,7 +2,7 @@ import { GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Function, type Layer, Option, Redacted } from "effect"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import type { SqlClient } from "effect/sql"
-import { type GitHubApp, repositoryOf } from "../github/Config.vibe"
+import { type GitHubApp, repositoryOf } from "#vibelang/emitted/worker/github/Config"
 import * as Tokens from "../github/Tokens.ts"
 import type { GitCredential } from "./Api.ts"
 

@@ -12,14 +12,14 @@ import {
   type RunAnswer,
   RunAnswer as RunAnswerSchema,
 } from "../src/features/status/schema.ts"
-import { type Actor, boundTo, refusesPersonOnly, Sessions } from "./Actor.vibe"
+import { type Actor, boundTo, refusesPersonOnly, Sessions } from "#vibelang/emitted/worker/Actor"
 import { askingOnAnswer } from "./branch/Access.ts"
-import { readBounded } from "./Body.vibe"
-import { codeOf } from "./ErrorCode.vibe"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import { withAnswerConversation } from "./Messages.ts"
 import * as Notifications from "./Notifications.ts"
 import * as RunCredentials from "./RunCredentials.ts"
-import * as ShapeAccess from "./ShapeAccess.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 
 // Agent status in ChatApi (decision 0015, docs/features/agent-status.md#the-routes): the `runs` rows a run's own steps
 // report its status to, the answer a person gives its open question, and Electric's `runs` shape.

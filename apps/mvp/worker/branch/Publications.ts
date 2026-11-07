@@ -4,7 +4,7 @@ import { HttpServerRequest } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { PUBLICATION_COLUMNS, PUBLICATIONS_TABLE } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import { branchAccess, canView } from "./Access.ts"
 
 // `GET /api/shapes/branch-publications?branch=<id>` (docs/features/branch-publish.md#the-branch-page): a branch's

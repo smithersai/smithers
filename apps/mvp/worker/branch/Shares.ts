@@ -12,16 +12,16 @@ import {
   type ShareAccess,
 } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
-import { type Actor, refusesPersonOnly, type Role, Sessions } from "../Actor.vibe"
-import { readBounded } from "../Body.vibe"
-import { codeOf } from "../ErrorCode.vibe"
+import { type Actor, refusesPersonOnly, type Role, Sessions } from "#vibelang/emitted/worker/Actor"
+import { readBounded } from "#vibelang/emitted/worker/Body"
+import { codeOf } from "#vibelang/emitted/worker/ErrorCode"
 import * as Repos from "../Repos.ts"
-import * as ShapeAccess from "../ShapeAccess.vibe"
+import * as ShapeAccess from "#vibelang/emitted/worker/ShapeAccess"
 import { branchAccess, canView, type Policy, policyOf, underPolicy } from "./Access.ts"
-import { Directory } from "./People.vibe"
-import { Rooms } from "./Rooms.vibe"
+import { Directory } from "#vibelang/emitted/worker/branch/People"
+import { Rooms } from "#vibelang/emitted/worker/branch/Rooms"
 import { enforceRooms } from "./Texts.ts"
-import { type Revoked, TerminalSockets } from "./Sandboxes.vibe"
+import { type Revoked, TerminalSockets } from "#vibelang/emitted/worker/branch/Sandboxes"
 
 // Sharing a branch, Google Docs style (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):
 //

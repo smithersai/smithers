@@ -2,9 +2,9 @@ import { Core, GitHub } from "@smthrs/integrations"
 import { Clock, Effect, Metric, Option, type Redacted, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import type { SessionKeys } from "../SessionKeys.ts"
-import { classify, isRateLimited, statusOf } from "./Calls.vibe"
+import { classify, isRateLimited, statusOf } from "#vibelang/emitted/worker/github/Calls"
 import type { Repository } from "./Config.vibe"
-import * as Metrics from "./Metrics.vibe"
+import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 import * as Store from "./Store.ts"
 
 // `GitHubTokens` (decision 0012 §3, docs/features/issues.md#tokens): the two tokens a GitHub step acts with.

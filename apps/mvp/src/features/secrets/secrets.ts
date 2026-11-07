@@ -1,7 +1,7 @@
 import { Context, Effect, Layer } from "effect"
 import { runners } from "../../boundary"
 import { cancel, open, put, remove, startDelete, startRotate, warm } from "./actions"
-import { SecretsClient } from "./api"
+import { SecretsClient } from "#vibelang/emitted/src/features/secrets/api"
 import { SecretsStore } from "./store"
 
 // Secrets as a frontend sees them (docs/features/secrets.md#the-secrets-page): live queries to read and plain functions
