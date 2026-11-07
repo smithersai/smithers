@@ -100,6 +100,22 @@ describe("sync over a faulty transport", () => {
           const journal = yield* Journal.Journal
           const pair = yield* TestSocket.makePair()
           const client = yield* TestSync.connect(pair)
+          const following = Deferred.makeUnsafe<void>()
+          // Disconnect a live Subscribe request, after catch-up has ended.
+          // RPC 4.1 can start its socket reads before the first consumer pull.
+          pair.faults.installFilter((bytes) => {
+            const decoded: unknown = JSON.parse(new TextDecoder().decode(bytes))
+            const frames: ReadonlyArray<unknown> = Array.isArray(decoded) ? decoded : [decoded]
+            if (
+              frames.some((frame) =>
+                typeof frame === "object" && frame !== null &&
+                "_tag" in frame && frame._tag === "Request" && "tag" in frame && frame.tag === "Sync.Subscribe"
+              )
+            ) {
+              Deferred.doneUnsafe(following, Effect.void)
+            }
+            return true
+          })
 
           yield* journal.emitDurableUnfenced({ runId: id, sourceId, eventType: "first", payload: { value: 0 } })
           yield* journal.flush
@@ -108,6 +124,7 @@ describe("sync over a faulty transport", () => {
             client.subscribe({ scope: { _tag: "Run", runId: id }, cursors: [] }).pipe(Stream.take(2))
           ).pipe(Effect.forkChild({ startImmediately: true }))
 
+          yield* Deferred.await(following)
           yield* pair.faults.disconnect()
           const settled = yield* Fiber.await(fiber).pipe(Effect.timeoutOption("500 millis"))
           yield* Fiber.interrupt(fiber)
