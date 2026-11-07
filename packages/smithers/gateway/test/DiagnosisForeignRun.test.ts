@@ -5,7 +5,7 @@
  */
 import type { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
-import * as Diagnosis from "../src/Diagnosis.ts"
+import * as Diagnosis from "../src/Diagnosis.vibe"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
 
 const at = (sequence: number, kind: string, runId: string | undefined, payload: unknown) =>

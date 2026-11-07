@@ -17,8 +17,8 @@
 import { ControlError, ControlRpcs, ControlSchema } from "@smthrs/control"
 import { Schema } from "effect"
 import { Rpc, RpcGroup } from "effect/rpc"
-import { GatewayError } from "./GatewayError.ts"
-import * as GatewaySchema from "./GatewaySchema.ts"
+import { GatewayError } from "./GatewayError.vibe"
+import * as GatewaySchema from "./GatewaySchema.vibe"
 import * as RunHistory from "./RunHistory.ts"
 
 /**

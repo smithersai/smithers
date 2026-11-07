@@ -47,13 +47,13 @@
     "./internal/*": null,
     "./*/index": null,
     "./Diagnosis": {
-      "types": "./src/Diagnosis.ts",
-      "vibelang-source": "./src/Diagnosis.ts",
+      "types": "./.vibe/declarations/src/Diagnosis.d.vibe.ts",
+      "vibelang-source": "./src/Diagnosis.vibe",
       "default": "./.vibelang/js/src/Diagnosis.js"
     },
     "./GatewayError": {
-      "types": "./src/GatewayError.ts",
-      "vibelang-source": "./src/GatewayError.ts",
+      "types": "./.vibe/declarations/src/GatewayError.d.vibe.ts",
+      "vibelang-source": "./src/GatewayError.vibe",
       "default": "./.vibelang/js/src/GatewayError.js"
     },
     "./GatewayProjection": {
@@ -67,8 +67,8 @@
       "default": "./.vibelang/js/src/GatewayRpcs.js"
     },
     "./GatewaySchema": {
-      "types": "./src/GatewaySchema.ts",
-      "vibelang-source": "./src/GatewaySchema.ts",
+      "types": "./.vibe/declarations/src/GatewaySchema.d.vibe.ts",
+      "vibelang-source": "./src/GatewaySchema.vibe",
       "default": "./.vibelang/js/src/GatewaySchema.js"
     },
     "./GatewayServer": {
@@ -77,13 +77,13 @@
       "default": "./.vibelang/js/src/GatewayServer.js"
     },
     "./Projections": {
-      "types": "./src/Projections.ts",
-      "vibelang-source": "./src/Projections.ts",
+      "types": "./.vibe/declarations/src/Projections.d.vibe.ts",
+      "vibelang-source": "./src/Projections.vibe",
       "default": "./.vibelang/js/src/Projections.js"
     },
     "./RuntimeBridge": {
-      "types": "./src/RuntimeBridge.ts",
-      "vibelang-source": "./src/RuntimeBridge.ts",
+      "types": "./.vibe/declarations/src/RuntimeBridge.d.vibe.ts",
+      "vibelang-source": "./src/RuntimeBridge.vibe",
       "default": "./.vibelang/js/src/RuntimeBridge.js"
     },
     "./index": {
@@ -92,8 +92,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./node/NodeGateway": {
-      "types": "./src/node/NodeGateway.ts",
-      "vibelang-source": "./src/node/NodeGateway.ts",
+      "types": "./.vibe/declarations/src/node/NodeGateway.d.vibe.ts",
+      "vibelang-source": "./src/node/NodeGateway.vibe",
       "default": "./.vibelang/js/src/node/NodeGateway.js"
     },
     "./bun/BunGateway": {
@@ -136,7 +136,13 @@
     "CHANGELOG.md",
     "dist/vendor/**",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/Diagnosis.vibe",
+    "src/GatewayError.vibe",
+    "src/GatewaySchema.vibe",
+    "src/Projections.vibe",
+    "src/RuntimeBridge.vibe",
+    "src/node/NodeGateway.vibe"
   ],
   "publishConfig": {
     "access": "public",

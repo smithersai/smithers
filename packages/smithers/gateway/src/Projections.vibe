@@ -36,11 +36,11 @@ import type { Service as ControlService } from "@smthrs/control/Control"
 import { Control } from "@smthrs/control/Control"
 import * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as Health from "@smthrs/control/Health"
-import { Context, Effect, Layer, Schema, Stream } from "effect"
-import * as Diagnosis from "./Diagnosis.ts"
-import { GatewayError, settingRefusal } from "./GatewayError.ts"
+import { Context, Effect, Layer, Stream } from "effect"
+import * as Diagnosis from "./Diagnosis.vibe"
+import { GatewayError, settingRefusal } from "./GatewayError.vibe"
 import * as GatewayProjection from "./GatewayProjection.ts"
-import * as GatewaySchema from "./GatewaySchema.ts"
+import * as GatewaySchema from "./GatewaySchema.vibe"
 import { callEventKey, nativeCallEvent, nativeStepEvent } from "./internal/callEvents.vibe"
 import { retainedDigestBytes } from "./internal/digestMemory.ts"
 import * as NativeResolution from "./internal/nativeResolution.ts"
@@ -200,7 +200,7 @@ export interface Service {
   readonly snapshot: <S extends GatewaySchema.ProjectionSelector>(
     selector: S,
     after?: GatewaySchema.ProjectionCursor | undefined
-  ) => Effect.Effect<GatewaySchema.SnapshotOf<S>, GatewayError>
+  ) => GatewaySchema.SnapshotOf<S>!GatewayError
   /**
    * A snapshot followed by recomputed deltas and keepalive frames, or, when
    * `after` names a cursor this selector issued, the deltas after it alone.
@@ -220,7 +220,9 @@ export interface Service {
  * @since 1.0.0
  * @category services
  */
-export class Projections extends Context.Service<Projections, Service>()("@smthrs/gateway/Projections") {}
+export service Projections: Service {
+  static readonly key = "@smthrs/gateway/Projections"
+}
 
 /**
  * The part of a control-plane failure a client is allowed to see: the failure's
@@ -371,7 +373,7 @@ const decodeSnapshot = Schema.decodeUnknownSync(GatewaySchema.ProjectionSnapshot
 const decodedEvent = (
   candidate: unknown,
   message: string
-): Effect.Effect<ControlSchema.ControlEvent, GatewayError> =>
+): ControlSchema.ControlEvent!GatewayError =>
   Effect.suspend(() => {
     try {
       const event = decodeEvent(candidate)
@@ -399,7 +401,7 @@ const appendEvent = (
   candidate: unknown,
   message: string,
   run: ControlSchema.RunSummary
-): Effect.Effect<EventBuffer, GatewayError> =>
+): EventBuffer!GatewayError =>
   Effect.flatMap(decodedEvent(candidate, message), (decoded) => {
     // Ordering is checked before admission by eventsOf, runDeltaFrames and
     // workspaceDeltaFrames. bufferOf only replays an ordered cursor prefix.
@@ -510,10 +512,10 @@ const bufferOf = (
   message: string,
   compactHealth: boolean,
   run: ControlSchema.RunSummary
-): Effect.Effect<EventBuffer, GatewayError> =>
+): EventBuffer!GatewayError =>
   events.reduce(
     (state, event) => Effect.flatMap(state, (buffer) => appendEvent(buffer, event, message, run)),
-    Effect.succeed(emptyEventBuffer(compactHealth)) as Effect.Effect<EventBuffer, GatewayError>
+    Effect.succeed(emptyEventBuffer(compactHealth)) as EventBuffer!GatewayError
   )
 
 const cursorOf = (
@@ -750,7 +752,7 @@ const rowsOf = (
 const boundedRows = (
   selector: GatewaySchema.ProjectionSelector,
   candidate: unknown
-): Effect.Effect<ReadonlyArray<unknown>, GatewayError> =>
+): ReadonlyArray<unknown>!GatewayError =>
   Effect.suspend(() => {
     try {
       const schema = Schema.Array(GatewaySchema.rowSchemaFor(selector))
@@ -765,7 +767,7 @@ const boundedRows = (
     }
   })
 
-const frameOf = (candidate: unknown): Effect.Effect<GatewaySchema.GatewayFrame, GatewayError> =>
+const frameOf = (candidate: unknown): GatewaySchema.GatewayFrame!GatewayError =>
   Effect.suspend(() => {
     try {
       return Effect.succeed(decodeFrame(candidate))
@@ -776,7 +778,7 @@ const frameOf = (candidate: unknown): Effect.Effect<GatewaySchema.GatewayFrame, 
     }
   })
 
-const snapshotOf = (candidate: unknown): Effect.Effect<GatewaySchema.ProjectionSnapshot, GatewayError> =>
+const snapshotOf = (candidate: unknown): GatewaySchema.ProjectionSnapshot!GatewayError =>
   Effect.suspend(() => {
     try {
       return Effect.succeed(decodeSnapshot(candidate))
@@ -808,7 +810,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   const eventsOf = (
     run: ControlSchema.RunSummary,
     compactHealth: boolean
-  ): Effect.Effect<EventBuffer, GatewayError> =>
+  ): EventBuffer!GatewayError =>
     Effect.suspend(() => {
       const runId = run.runId
       const key = `${runId}:${compactHealth}`
@@ -840,7 +842,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             }
             return appendEvent(buffer, event, message, run)
           })
-      ).pipe(Effect.tap((buffer) =>
+      ) |> Effect.tap(%, (buffer) =>
         Effect.sync(() => {
           const current = journalBuffers.get(key)
           if (current === undefined || comparePosition(buffer.lastPosition, current.lastPosition) >= 0) {
@@ -848,8 +850,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             journalBuffers.set(key, { ...buffer, events: [...buffer.events] })
             if (journalBuffers.size > 32) journalBuffers.delete(journalBuffers.keys().next().value!)
           }
-        })
-      ))
+        }))
     })
 
   /**
@@ -871,10 +872,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   const runEventsPage = (
     run: ControlSchema.RunSummary,
     after: CursorPosition | undefined
-  ): Effect.Effect<
-    { readonly events: ReadonlyArray<ControlSchema.ControlEvent>; readonly lastPosition: CursorPosition },
-    GatewayError
-  > => {
+  ): { readonly events: ReadonlyArray<ControlSchema.ControlEvent>; readonly lastPosition: CursorPosition }!GatewayError => {
     const runId = run.runId
     const message = `Reading the events of ${runId} failed`
     interface Page {
@@ -900,7 +898,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         Stream.takeWhile(() => !stopped)
       ),
       () => empty,
-      (page, candidate): Effect.Effect<Page, GatewayError> =>
+      (page, candidate): Page!GatewayError =>
         page.full ? Effect.succeed(page) : Effect.flatMap(
           decodedEvent(candidate, `${message}: the control plane returned an invalid event`),
           (decoded) => {
@@ -934,12 +932,11 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             return Effect.succeed({ events: page.events, bytes, seen, last: position, full: stopped })
           }
         )
-    ).pipe(
-      Effect.map((page) => ({
+    )
+      |> Effect.map(%, (page) => ({
         events: page.events,
         lastPosition: page.last ?? after ?? { value: 0, offset: 0 }
       }))
-    )
   }
 
   const runsMatching = (
@@ -950,7 +947,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
       readonly terminal?: boolean
     },
     newest?: number
-  ): Effect.Effect<ReadonlyArray<ControlSchema.RunSummary>, GatewayError> => {
+  ): ReadonlyArray<ControlSchema.RunSummary>!GatewayError => {
     const singleRun = filters.runId !== undefined
     // Only runOf omits the bound: it reads one identified run.
     const ceiling = newest ?? 1
@@ -958,7 +955,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
       accumulated: ReadonlyArray<ControlSchema.RunSummary>,
       seen: Set<string>,
       cursor?: string | undefined
-    ): Effect.Effect<ReadonlyArray<ControlSchema.RunSummary>, GatewayError> => {
+    ): ReadonlyArray<ControlSchema.RunSummary>!GatewayError => {
       const remaining = ceiling - accumulated.length
       return control.list({
         _tag: "runs",
@@ -966,10 +963,10 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         limit: remaining,
         ...(newest === undefined ? {} : { order: "newest" as const }),
         ...(cursor === undefined ? {} : { cursor })
-      }).pipe(
-        Effect.tapError((cause) => logReadFailure("list-runs", cause)),
-        Effect.mapError((cause) => unavailable("Listing runs failed", cause)),
-        Effect.flatMap((response) => {
+      })
+        |> Effect.tapError(%, (cause) => logReadFailure("list-runs", cause))
+        |> Effect.mapError(%, (cause) => unavailable("Listing runs failed", cause))
+        |> Effect.flatMap(%, (response) => {
           if (response._tag !== "runs") return Effect.succeed(accumulated)
           const ids = new Set(accumulated.map((run) => run.runId))
           const added = response.items.filter((run) => {
@@ -987,7 +984,6 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
           // also caps the number of pages at maxWorkspaceRuns.
           return page(runs, seen, response.nextCursor)
         })
-      )
     }
     return Effect.suspend(() => page([], new Set()))
   }
@@ -1000,42 +996,41 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
    * tell an unknown run from a run with no events: `@smthrs/control`
    * `ControlLive.snapshotForRun` answers an empty stream for both.
    */
-  const runOf = (runId: string): Effect.Effect<ControlSchema.RunSummary, GatewayError> =>
-    runsMatching({ runId }).pipe(
-      Effect.flatMap((runs) => {
-        const run = runs.find((candidate) => candidate.runId === runId)
-        return run === undefined
-          ? Effect.fail(new GatewayError({ code: "run_not_found", message: `No run ${runId}` }))
-          : Effect.succeed(run)
-      })
-    )
+  const runOf = (runId: string): ControlSchema.RunSummary!GatewayError =>
+    runsMatching({ runId })
+    |> Effect.flatMap(%, (runs) => {
+      const run = runs.find((candidate) => candidate.runId === runId)
+      return run === undefined
+        ? Effect.fail(new GatewayError({ code: "run_not_found", message: `No run ${runId}` }))
+        : Effect.succeed(run)
+    })
 
   /** Pin the journal between equal summaries; refuse a continuously moving row. */
   const consistentRunSource = (
     before: ControlSchema.RunSummary,
     attempts = 8,
     compactHealth = true
-  ): Effect.Effect<RunSource, GatewayError> =>
-    Effect.gen(function*() {
-      const buffer = yield* eventsOf(before, compactHealth)
-      const run = yield* runOf(before.runId)
+  ): RunSource!GatewayError =>
+    effect {
+      const buffer = try eventsOf(before, compactHealth)
+      const run = try runOf(before.runId)
       if (JSON.stringify(before) === JSON.stringify(run)) return { run, ...buffer }
-      if (attempts === 1) return yield* Effect.fail(unavailable("Run changed throughout the snapshot read", undefined))
-      return yield* consistentRunSource(run, attempts - 1, compactHealth)
-    })
+      if (attempts === 1) throw unavailable("Run changed throughout the snapshot read", undefined)
+      return try consistentRunSource(run, attempts - 1, compactHealth)
+    }
 
   /** One run and its journal at a reconciled cutoff. */
-  const runSourceOf = (runId: string, compactHealth = true): Effect.Effect<RunSource, GatewayError> =>
+  const runSourceOf = (runId: string, compactHealth = true): RunSource!GatewayError =>
     Effect.flatMap(runOf(runId), (run) => consistentRunSource(run, 8, compactHealth))
 
   /** Newest terminal runs, filtered and limited by the control query itself. */
-  const durationRunsOf = (flowId: string): Effect.Effect<ReadonlyArray<ControlSchema.RunSummary>, GatewayError> =>
+  const durationRunsOf = (flowId: string): ReadonlyArray<ControlSchema.RunSummary>!GatewayError =>
     runsMatching({ flowId, terminal: true }, maxDurationRuns)
 
   /** Every run a workspace selector folds, and each one's journal. */
   const workspaceSourceOf = (
     selector: GatewaySchema.ProjectionSelector
-  ): Effect.Effect<ReadonlyArray<RunSource>, GatewayError> =>
+  ): ReadonlyArray<RunSource>!GatewayError =>
     Effect.flatMap(
       // The inbox asks the control plane which runs are parked rather than
       // reading every run's journal to find out, and a duration fold asks it
@@ -1058,45 +1053,44 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     )
 
   /** The reconciled source a snapshot folds. */
-  const sourceOf = (selector: GatewaySchema.ProjectionSelector): Effect.Effect<Source, GatewayError> => {
+  const sourceOf = (selector: GatewaySchema.ProjectionSelector): Source!GatewayError => {
     const runId = scopeOf(selector)
     return runId === undefined
       ? Effect.map(workspaceSourceOf(selector), (runs) => ({ _tag: "workspace" as const, runs }))
       : Effect.map(runSourceOf(runId, selector._tag !== "run-events"), (run) => ({ _tag: "run" as const, run }))
   }
 
-  const snapshot = (
+  const snapshot = effect (
     selector: GatewaySchema.ProjectionSelector,
     after?: GatewaySchema.ProjectionCursor | undefined
-  ): Effect.Effect<GatewaySchema.ProjectionSnapshot, GatewayError> =>
-    Effect.gen(function*() {
-      if (after !== undefined) {
-        if (selector._tag !== "run-events") {
-          return yield* malformed("Only run-events snapshots accept an after cursor")
-        }
-        const scope = resumeScope(selector, after)
-        if (typeof scope !== "string") return yield* scope
+  ): GatewaySchema.ProjectionSnapshot!GatewayError => {
+    if (after !== undefined) {
+      if (selector._tag !== "run-events") {
+        throw malformed("Only run-events snapshots accept an after cursor")
       }
-      // `run-events` answers the journal itself, so it pages rather than folds:
-      // one bounded read from the caller's cursor, and the position it reached
-      // to ask for the next page from. Every other selector answers rows whose
-      // size is bounded by the selector, so it folds the reconciled source.
-      if (selector._tag === "run-events") {
-        const run = yield* runOf(selector.runId)
-        const page = yield* runEventsPage(run, after)
-        const rows = yield* boundedRows(selector, page.events)
-        return yield* snapshotOf({ selector, cursor: cursorOf(selector, page.lastPosition), rows })
-      }
-      const source = yield* sourceOf(selector)
-      const rows = yield* boundedRows(selector, rowsOf(selector, source, now()))
-      return yield* snapshotOf({ selector, cursor: cursorOf(selector, cursorPositionOf(source)), rows })
-    })
+      const scope = resumeScope(selector, after)
+      if (typeof scope !== "string") throw scope
+    }
+    // `run-events` answers the journal itself, so it pages rather than folds:
+    // one bounded read from the caller's cursor, and the position it reached
+    // to ask for the next page from. Every other selector answers rows whose
+    // size is bounded by the selector, so it folds the reconciled source.
+    if (selector._tag === "run-events") {
+      const run = try runOf(selector.runId)
+      const page = try runEventsPage(run, after)
+      const rows = try boundedRows(selector, page.events)
+      return try snapshotOf({ selector, cursor: cursorOf(selector, page.lastPosition), rows })
+    }
+    const source = try sourceOf(selector)
+    const rows = try boundedRows(selector, rowsOf(selector, source, now()))
+    return try snapshotOf({ selector, cursor: cursorOf(selector, cursorPositionOf(source)), rows })
+  }
 
   const snapshotFrames = (
     selector: GatewaySchema.ProjectionSelector,
     source: Source,
     rows: ReadonlyArray<unknown>
-  ): Effect.Effect<ReadonlyArray<GatewaySchema.GatewayFrame>, GatewayError> => {
+  ): ReadonlyArray<GatewaySchema.GatewayFrame>!GatewayError => {
     const cursor = cursorOf(selector, cursorPositionOf(source))
     return Effect.forEach([
       { _tag: "snapshot-start", selector, cursor },
@@ -1125,7 +1119,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
     turnsBefore: number,
     duplicateCall: boolean,
     carry: Diagnosis.Digest | undefined
-  ): Effect.Effect<ReadonlyArray<unknown>, GatewayError> => {
+  ): ReadonlyArray<unknown>!GatewayError => {
     if (selector._tag === "run-events") return Effect.succeed([event])
     if (selector._tag === "transcript") {
       return Effect.succeed(duplicateCall ? [] : transcriptAppend(event, turnsBefore))
@@ -1219,10 +1213,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
               return seen
             })()
           }),
-          (state, candidate): Effect.Effect<
-            readonly [RunFollowState, ReadonlyArray<RunDelta>],
-            GatewayError
-          > =>
+          (state, candidate): readonly [RunFollowState, ReadonlyArray<RunDelta>]!GatewayError =>
             Effect.flatMap(
               decodedEvent(candidate, `${message}: the control plane returned an invalid event`),
               (event) => {
@@ -1374,7 +1365,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         return oldest
       }
       const noFrames: ReadonlyArray<GatewaySchema.GatewayFrame> = []
-      const delta = (): Effect.Effect<ReadonlyArray<GatewaySchema.GatewayFrame>, GatewayError> =>
+      const delta = (): ReadonlyArray<GatewaySchema.GatewayFrame>!GatewayError =>
         Effect.flatMap(
           boundedRows(
             selector,
@@ -1402,122 +1393,117 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
        * whose row must be re-read before its rows are refolded.
        */
       type Admission = "unchanged" | "fresh" | "stale"
-      const admit = (
+      const admit = effect (
         event: ControlSchema.ControlEvent,
         refreshed: Set<string>
-      ): Effect.Effect<Admission, GatewayError> =>
-        Effect.gen(function*() {
-          const runId = event.runId
-          if (runId === undefined) return "unchanged"
-          const current = sources.get(runId)
-          const verdict = judged.get(runId)
-          const previous = current?.observed ?? verdict?.observed
-          if (previous !== undefined && event.sequence < previous.value) {
-            return yield* Effect.fail(unavailable(`${message}: event sequences moved backward`, undefined))
+      ): Admission!GatewayError => {
+        const runId = event.runId
+        if (runId === undefined) return "unchanged"
+        const current = sources.get(runId)
+        const verdict = judged.get(runId)
+        const previous = current?.observed ?? verdict?.observed
+        if (previous !== undefined && event.sequence < previous.value) {
+          throw unavailable(`${message}: event sequences moved backward`, undefined)
+        }
+        const position: CursorPosition = {
+          value: event.sequence,
+          offset: previous?.value === event.sequence ? previous.offset + 1 : 0
+        }
+        if (current !== undefined) {
+          current.observed = position
+          if (
+            current.source.events.length > 0 && comparePosition(position, current.source.lastPosition) <= 0
+          ) return "unchanged"
+          if (!refreshed.has(runId)) {
+            current.source = { ...current.source, run: try runOf(runId) }
+            refreshed.add(runId)
           }
-          const position: CursorPosition = {
-            value: event.sequence,
-            offset: previous?.value === event.sequence ? previous.offset + 1 : 0
-          }
-          if (current !== undefined) {
-            current.observed = position
-            if (
-              current.source.events.length > 0 && comparePosition(position, current.source.lastPosition) <= 0
-            ) return "unchanged"
-            if (!refreshed.has(runId)) {
-              current.source = { ...current.source, run: yield* runOf(runId) }
-              refreshed.add(runId)
-            }
-            const buffer = yield* appendEvent(
-              current.source,
-              event,
-              `${message}: event history is invalid`,
-              current.source.run
-            )
-            current.source = { run: current.source.run, ...buffer }
-            return "stale"
-          }
-          if (verdict !== undefined) {
-            verdict.observed = position
-            if (verdict.lastPosition === undefined || comparePosition(position, verdict.lastPosition) <= 0) {
-              return "unchanged"
-            }
-          }
-          // At the ceiling a run newer than the oldest followed run displaces
-          // it, so the workspace keeps the newest runs as the snapshot does.
-          const displaced = sources.size >= maxWorkspaceRuns ? oldestFollowed() : undefined
-          if (displaced !== undefined) {
-            const newer = yield* runOf(runId).pipe(
-              Effect.map((run) => createdAfter(run, displaced.source.run)),
-              Effect.catchIf((failure) => failure.code === "run_not_found", () => Effect.succeed(false))
-            )
-            if (!newer) return "unchanged"
-          }
-          return yield* runSourceOf(runId).pipe(
-            Effect.flatMap((source) => {
-              const admitted = source.events.length > 0 && comparePosition(position, source.lastPosition) <= 0
-                ? Effect.succeed(source)
-                : Effect.map(
-                  appendEvent(source, event, `${message}: event history is invalid`, source.run),
-                  (buffer): RunSource => ({ run: source.run, ...buffer })
-                )
-              return Effect.map(admitted, (complete): Admission => {
-                if (!eligibleForWorkspace(selector, complete)) {
-                  remember(runId, complete.lastPosition, position)
-                  return "unchanged"
-                }
-                judged.delete(runId)
-                if (displaced !== undefined && sources.size >= maxWorkspaceRuns) {
-                  sources.delete(displaced.source.run.runId)
-                }
-                makeRoom()
-                sources.set(runId, { source: complete, observed: position, rows: rowsOfSource(complete) })
-                return "fresh"
-              })
-            }),
-            Effect.catchIf(
-              (failure) => failure.code === "run_not_found",
-              () => {
-                remember(runId, undefined, position)
-                return Effect.succeed<Admission>("unchanged")
-              }
-            )
+          const buffer = try appendEvent(
+            current.source,
+            event,
+            `${message}: event history is invalid`,
+            current.source.run
           )
-        })
-      /** Refold one grown run using the row refreshed before its batch's compaction, or exclude it. */
-      const refresh = (runId: string): Effect.Effect<void, GatewayError> =>
-        Effect.gen(function*() {
-          const current = sources.get(runId)
-          /* v8 ignore next -- only runs still followed after the batch are refreshed. */
-          if (current === undefined || current.observed === undefined) return
-          const source = current.source
-          if (eligibleForWorkspace(selector, source)) {
-            current.rows = rowsOfSource(source)
-          } else {
-            sources.delete(runId)
-            remember(runId, source.lastPosition, current.observed)
+          current.source = { run: current.source.run, ...buffer }
+          return "stale"
+        }
+        if (verdict !== undefined) {
+          verdict.observed = position
+          if (verdict.lastPosition === undefined || comparePosition(position, verdict.lastPosition) <= 0) {
+            return "unchanged"
           }
-        })
+        }
+        // At the ceiling a run newer than the oldest followed run displaces
+        // it, so the workspace keeps the newest runs as the snapshot does.
+        const displaced = sources.size >= maxWorkspaceRuns ? oldestFollowed() : undefined
+        if (displaced !== undefined) {
+          const newer = try (runOf(runId)
+            |> Effect.map(%, (run) => createdAfter(run, displaced.source.run))
+            |> Effect.catchIf(%, (failure) => failure.code === "run_not_found", () => Effect.succeed(false)))
+          if (!newer) return "unchanged"
+        }
+        return try (runSourceOf(runId)
+          |> Effect.flatMap(%, (source) => {
+            const admitted = source.events.length > 0 && comparePosition(position, source.lastPosition) <= 0
+              ? Effect.succeed(source)
+              : Effect.map(
+                appendEvent(source, event, `${message}: event history is invalid`, source.run),
+                (buffer): RunSource => ({ run: source.run, ...buffer })
+              )
+            return Effect.map(admitted, (complete): Admission => {
+              if (!eligibleForWorkspace(selector, complete)) {
+                remember(runId, complete.lastPosition, position)
+                return "unchanged"
+              }
+              judged.delete(runId)
+              if (displaced !== undefined && sources.size >= maxWorkspaceRuns) {
+                sources.delete(displaced.source.run.runId)
+              }
+              makeRoom()
+              sources.set(runId, { source: complete, observed: position, rows: rowsOfSource(complete) })
+              return "fresh"
+            })
+          })
+          |> Effect.catchIf(
+            %,
+            (failure) => failure.code === "run_not_found",
+            () => {
+              remember(runId, undefined, position)
+              return Effect.succeed<Admission>("unchanged")
+            }
+          ))
+      }
+      /** Refold one grown run using the row refreshed before its batch's compaction, or exclude it. */
+      const refresh = effect (runId: string): void!GatewayError => {
+        const current = sources.get(runId)
+        /* v8 ignore next -- only runs still followed after the batch are refreshed. */
+        if (current === undefined || current.observed === undefined) return
+        const source = current.source
+        if (eligibleForWorkspace(selector, source)) {
+          current.rows = rowsOfSource(source)
+        } else {
+          sources.delete(runId)
+          remember(runId, source.lastPosition, current.observed)
+        }
+      }
       return control.watch({ follow: true }).pipe(
         Stream.tapError((cause) => logReadFailure("follow-workspace", cause)),
         Stream.mapError((cause) => unavailable(message, cause)),
         Stream.groupedWithin(workspaceDeltaBatchSize, workspaceDeltaCoalesceMillis),
-        Stream.mapEffect((batch) =>
-          Effect.gen(function*() {
-            const stale = new Set<string>()
-            const refreshed = new Set<string>()
-            let changed = false
-            for (const candidate of batch) {
-              const event = yield* decodedEvent(candidate, `${message}: the control plane returned an invalid event`)
-              const admission = yield* admit(event, refreshed)
-              if (admission === "unchanged") continue
-              changed = true
-              if (admission === "stale" && event.runId !== undefined) stale.add(event.runId)
-            }
-            yield* Effect.forEach(stale, refresh, { discard: true })
-            return changed ? yield* delta() : noFrames
-          })
-        ),
+        Stream.mapEffect(effect (batch) => {
+          const stale = new Set<string>()
+          const refreshed = new Set<string>()
+          let changed = false
+          for (const candidate of batch) {
+            const event = try decodedEvent(candidate, `${message}: the control plane returned an invalid event`)
+            const admission = try admit(event, refreshed)
+            if (admission === "unchanged") continue
+            changed = true
+            if (admission === "stale" && event.runId !== undefined) stale.add(event.runId)
+          }
+          try Effect.forEach(stale, refresh, { discard: true })
+          return changed ? try delta() : noFrames
+        }),
         Stream.flattenIterable
       )
     }))
@@ -1602,7 +1588,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   /** Snapshot and follow share the reconciled event buffer. */
   const fromSnapshot = (
     selector: GatewaySchema.ProjectionSelector
-  ): Effect.Effect<Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>, GatewayError> =>
+  ): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>!GatewayError =>
     Effect.flatMap(
       sourceOf(selector),
       (source) =>
@@ -1624,7 +1610,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
   const fromCursor = (
     selector: GatewaySchema.ProjectionSelector,
     after: GatewaySchema.ProjectionCursor
-  ): Effect.Effect<Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>, GatewayError> => {
+  ): Stream.Stream<GatewaySchema.GatewayFrame, GatewayError>!GatewayError => {
     const scope = resumeScope(selector, after)
     return typeof scope === "string"
       ? Effect.flatMap(runSourceOf(scope, selector._tag !== "run-events"), (source) => {
@@ -1640,19 +1626,19 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
         // A valid issued health cursor may have been superseded in the bounded fold.
         // Verify it against the durable stream rather than accepting arbitrary positions.
         const issued = retained ? Effect.succeed(true) : source.compactHealth ?
-          control.watch({
+          (control.watch({
             runId: scope,
             follow: false,
             ...(position.value === 0 ? {} : { afterSequence: position.value - 1 })
-          }).pipe(
-            Stream.takeWhile((event) => event.sequence <= position.value),
-            Stream.take(maxEventsPerRun + 1),
-            Stream.runCollect,
-            Effect.map((events) =>
-              events.length <= maxEventsPerRun && events[position.offset]?.sequence === position.value
-            ),
-            Effect.mapError((cause) => unavailable("Checking the projection cursor failed", cause))
-          ) :
+          })
+            |> Stream.takeWhile(%, (event) => event.sequence <= position.value)
+            |> Stream.take(%, maxEventsPerRun + 1)
+            |> Stream.runCollect(%)
+            |> Effect.map(
+              %,
+              (events) => events.length <= maxEventsPerRun && events[position.offset]?.sequence === position.value
+            )
+            |> Effect.mapError(%, (cause) => unavailable("Checking the projection cursor failed", cause))) :
           Effect.succeed(false)
         return Effect.flatMap(issued, (valid) =>
           valid
@@ -1696,7 +1682,7 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
 export const make = (
   control: ControlService,
   options: { readonly heartbeatMillis?: number | undefined } = {}
-): Effect.Effect<Service, GatewayError> =>
+): Service!GatewayError =>
   Effect.suspend(() => {
     const refusal = settingRefusal("The gateway keepalive cadence", options.heartbeatMillis)
     return refusal === undefined

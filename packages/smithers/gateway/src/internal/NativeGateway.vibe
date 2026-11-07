@@ -23,9 +23,9 @@ import { Effect, Layer } from "effect"
 import type { HttpServer } from "effect/http/HttpServer"
 import type { ServeError } from "effect/http/HttpServerError"
 import type { ListenOptions } from "node:net"
-import { GatewayError, settingRefusal } from "../GatewayError.ts"
+import { GatewayError, settingRefusal } from "../GatewayError.vibe"
 import * as GatewayServer from "../GatewayServer.ts"
-import type * as RuntimeBridge from "../RuntimeBridge.ts"
+import type * as RuntimeBridge from "../RuntimeBridge.vibe"
 
 /**
  * Where the gateway binds, and whether a non-loopback bind was asked for.

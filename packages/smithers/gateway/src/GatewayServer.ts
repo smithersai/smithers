@@ -37,13 +37,13 @@ import { Effect, Layer, Option, Schema, Stream, type Types } from "effect"
 import * as ByteSize from "effect/ByteSize"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
-import { GatewayError, settingRefusal } from "./GatewayError.ts"
+import { GatewayError, settingRefusal } from "./GatewayError.vibe"
 import { GatewayRpcs } from "./GatewayRpcs.ts"
-import * as GatewaySchema from "./GatewaySchema.ts"
+import * as GatewaySchema from "./GatewaySchema.vibe"
 import * as HostBranchPresence from "./HostBranchPresence.ts"
-import { heartbeatIntervalMillis, Projections } from "./Projections.ts"
+import { heartbeatIntervalMillis, Projections } from "./Projections.vibe"
 import * as RunHistory from "./RunHistory.ts"
-import * as RuntimeBridge from "./RuntimeBridge.ts"
+import * as RuntimeBridge from "./RuntimeBridge.vibe"
 
 /**
  * What `GET /health` answers: the `GatewaySchema.GatewayHealth` identity plus

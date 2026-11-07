@@ -56,7 +56,7 @@ import * as RunCatalog from "@smthrs/sync/RunCatalog"
 import * as WorkspaceShare from "@smthrs/sync/WorkspaceShare"
 import { Cause, Context, Effect, Exit, Fiber, Layer, Schema } from "effect"
 import { dirname, join } from "node:path"
-import * as Projections from "../src/Projections.ts"
+import * as Projections from "../src/Projections.vibe"
 import { databaseFile, storage } from "./GatewayStack.ts"
 
 /** The flow the engine executes, and the id the control plane plans against. */

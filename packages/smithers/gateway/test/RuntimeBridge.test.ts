@@ -8,8 +8,8 @@ import { Effect, Layer, Logger, Schema, Stream } from "effect"
 import { HttpRouter, HttpServer } from "effect/http"
 import { readFileSync } from "node:fs"
 import { createServer } from "node:http"
-import * as NodeGateway from "../src/node/NodeGateway.ts"
-import * as RuntimeBridge from "../src/RuntimeBridge.ts"
+import * as NodeGateway from "../src/node/NodeGateway.vibe"
+import * as RuntimeBridge from "../src/RuntimeBridge.vibe"
 import { stack } from "./GatewayStack.ts"
 
 const digest = "a".repeat(64)

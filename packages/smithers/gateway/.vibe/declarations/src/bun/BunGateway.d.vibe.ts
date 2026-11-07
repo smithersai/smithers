@@ -3,7 +3,7 @@
  */
 import { Layer } from "effect";
 import type { HttpServer } from "effect/http/HttpServer";
-import { GatewayError } from "../../../../src/GatewayError.ts";
+import { GatewayError } from "../GatewayError.vibe";
 import type * as GatewayServer from "../../../../src/GatewayServer.ts";
 import * as NativeGateway from "../internal/NativeGateway.vibe";
 export { bearerPrincipal, scopedPrincipal } from "../internal/NativeGateway.vibe";
@@ -16,4 +16,4 @@ export type ServerOptions = Pick<NativeGateway.ServerOptions, "host" | "port" | 
  * @since 1.0.0
  * @category layers
  */
-export declare const layer: (health: GatewayServer.Health, options?: ServerOptions) => Layer.Layer<HttpServer, GatewayError | import("@smthrs/sync/SyncError").SyncError, import("@smthrs/control/Control").Control | import("../../../../src/Projections.ts").Projections | import("@smthrs/sync/SyncRpcs").SyncAuth | import("@smthrs/sync/SyncServer").SyncServer>;
+export declare const layer: (health: GatewayServer.Health, options?: ServerOptions) => Layer.Layer<HttpServer, GatewayError | import("@smthrs/sync/SyncError").SyncError, import("@smthrs/control/Control").Control | import("../Projections.vibe").Projections | import("@smthrs/sync/SyncRpcs").SyncAuth | import("@smthrs/sync/SyncServer").SyncServer>;

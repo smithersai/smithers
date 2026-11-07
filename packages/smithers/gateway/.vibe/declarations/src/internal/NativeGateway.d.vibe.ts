@@ -22,9 +22,9 @@ import { Effect, Layer } from "effect";
 import type { HttpServer } from "effect/http/HttpServer";
 import type { ServeError } from "effect/http/HttpServerError";
 import type { ListenOptions } from "node:net";
-import { GatewayError } from "../../../../src/GatewayError.ts";
+import { GatewayError } from "../GatewayError.vibe";
 import * as GatewayServer from "../../../../src/GatewayServer.ts";
-import type * as RuntimeBridge from "../../../../src/RuntimeBridge.ts";
+import type * as RuntimeBridge from "../RuntimeBridge.vibe";
 /**
  * Where the gateway binds, and whether a non-loopback bind was asked for.
  *
@@ -174,4 +174,4 @@ export declare const ingressOptions: (options: ServerOptions) => GatewayServer.I
  * @since 1.0.0
  * @category layers
  */
-export declare const makeLayer: (server: (options: ListenOptions) => Layer.Layer<HttpServer, ServeError | GatewayError>) => (health: GatewayServer.Health, options?: ServerOptions) => Layer.Layer<HttpServer, GatewayError | import("@smthrs/sync/SyncError").SyncError, import("@smthrs/control/Control").Control | import("../../../../src/Projections.ts").Projections | import("@smthrs/sync/SyncRpcs").SyncAuth | import("@smthrs/sync/SyncServer").SyncServer>;
+export declare const makeLayer: (server: (options: ListenOptions) => Layer.Layer<HttpServer, ServeError | GatewayError>) => (health: GatewayServer.Health, options?: ServerOptions) => Layer.Layer<HttpServer, GatewayError | import("@smthrs/sync/SyncError").SyncError, import("@smthrs/control/Control").Control | import("../Projections.vibe").Projections | import("@smthrs/sync/SyncRpcs").SyncAuth | import("@smthrs/sync/SyncServer").SyncServer>;

@@ -7,7 +7,7 @@
  */
 import { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
-import * as Diagnosis from "../src/Diagnosis.ts"
+import * as Diagnosis from "../src/Diagnosis.vibe"
 import { lastStepResolvedText, moduleRunJournal, moduleRunOutput } from "./fixtures/module-run-journal.ts"
 
 let sequence = 0

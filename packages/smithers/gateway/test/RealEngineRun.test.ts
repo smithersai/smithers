@@ -19,7 +19,7 @@ import { Control } from "@smthrs/control/Control"
 import type { ApprovalPayload, PlanCard, RunSummary } from "@smthrs/control/ControlSchema"
 import { Effect, type Scope } from "effect"
 import type * as GatewayProjection from "../src/GatewayProjection.ts"
-import { Projections } from "../src/Projections.ts"
+import { Projections } from "../src/Projections.vibe"
 import { Drives, EngineRun, flowId, stack } from "./RealEngineRun.ts"
 
 const approvalOf = (card: PlanCard): ApprovalPayload => ({

@@ -10,7 +10,7 @@ import { Effect, Layer, Schema, type Scope } from "effect"
 import { RpcTest } from "effect/rpc"
 import { GatewayRpcs } from "../src/GatewayRpcs.ts"
 import * as GatewayServer from "../src/GatewayServer.ts"
-import { Projections, type Service as ProjectionsService } from "../src/Projections.ts"
+import { Projections, type Service as ProjectionsService } from "../src/Projections.vibe"
 import * as RunHistory from "../src/RunHistory.ts"
 
 const principal = { id: "gateway-test", kind: "test", stampedAt: 1 }

@@ -11,17 +11,17 @@
 /**
  * @since 0.1.0 @category errors
  */
-export * as GatewayError from "./GatewayError.ts"
+export * as GatewayError from "./GatewayError.vibe"
 
 /**
  * @since 0.1.0 @category models
  */
-export * as GatewaySchema from "./GatewaySchema.ts"
+export * as GatewaySchema from "./GatewaySchema.vibe"
 
 /**
  * @since 1.0.0 @category projections
  */
-export * as Diagnosis from "./Diagnosis.ts"
+export * as Diagnosis from "./Diagnosis.vibe"
 
 /**
  * @since 1.0.0 @category projections
@@ -56,7 +56,7 @@ export * as GatewayServer from "./GatewayServer.ts"
 /**
  * @since 1.0.0 @category services
  */
-export * as Projections from "./Projections.ts"
+export * as Projections from "./Projections.vibe"
 
 /**
  * @since 1.0.0 @category rpc
@@ -66,7 +66,7 @@ export * as RunHistory from "./RunHistory.ts"
 /**
  * @since 1.0.0 @category runtime bridge
  */
-export * as RuntimeBridge from "./RuntimeBridge.ts"
+export * as RuntimeBridge from "./RuntimeBridge.vibe"
 
 /**
  * The canonical durable journal synchronization package.

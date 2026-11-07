@@ -35,7 +35,7 @@ import { Effect, Layer } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Projections from "../src/Projections.ts"
+import * as Projections from "../src/Projections.vibe"
 
 /** Monotonic producer sequence, so two identical fixture events both admit. */
 let sequence = 0

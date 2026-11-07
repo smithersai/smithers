@@ -15,7 +15,7 @@
  * @since 1.0.0
  */
 
-import { clip, firstLine } from "./Diagnosis.ts"
+import { clip, firstLine } from "./Diagnosis.vibe"
 import {
   durationWords,
   type JournalRecord,

@@ -13,10 +13,10 @@ import type { ControlSchema } from "@smthrs/control"
 import * as Health from "@smthrs/control/Health"
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { GatewayError } from "../src/GatewayError.ts"
+import { GatewayError } from "../src/GatewayError.vibe"
 import * as GatewayProjection from "../src/GatewayProjection.ts"
-import * as GatewaySchema from "../src/GatewaySchema.ts"
-import { Projections } from "../src/Projections.ts"
+import * as GatewaySchema from "../src/GatewaySchema.vibe"
+import { Projections } from "../src/Projections.vibe"
 
 const encode = <A, I, R>(schema: Schema.Codec<A, I, R>, value: A): unknown =>
   JSON.parse(JSON.stringify(Schema.encodeUnknownSync(schema)(value)))

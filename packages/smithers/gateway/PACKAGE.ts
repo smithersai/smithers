@@ -73,7 +73,7 @@ const securityReview = Smithers.SecurityReview({
       "Loopback is local operator authority; remote listeners require an explicit credential and trusted host composition"
     ],
     path: {
-      caller: ["src/GatewayServer.ts", "src/RuntimeBridge.ts"],
+      caller: ["src/GatewayServer.ts", "src/RuntimeBridge.vibe"],
       authorization: [
         "src/internal/NativeGateway.vibe",
         "//packages/smithers/control/src/ControlRpcs.vibe",
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "A new HttpRouter.add or RpcServer mount path that is not listed in protectedPaths, rpcPaths, or boundedPostPaths.",
         "The authorize callback skipped for a protected path when options.authorize is set, or run after the body is read."
       ],
-      paths: ["src/GatewayServer.ts", "src/RuntimeBridge.ts"]
+      paths: ["src/GatewayServer.ts", "src/RuntimeBridge.vibe"]
     },
     {
       id: "principal-stamped-by-server",
@@ -137,7 +137,7 @@ const securityReview = Smithers.SecurityReview({
         "A spread of client input (such as input.approval or input.steer) placed after principal so a client field overwrites it.",
         "A RuntimeBridge route that runs a command or observation before config.authenticate succeeds."
       ],
-      paths: ["src/GatewayServer.ts", "src/RuntimeBridge.ts", "src/GatewayRpcs.ts"]
+      paths: ["src/GatewayServer.ts", "src/RuntimeBridge.vibe", "src/GatewayRpcs.ts"]
     },
     {
       id: "human-wait-answer-routing",
@@ -163,7 +163,7 @@ const securityReview = Smithers.SecurityReview({
         "plannedSource falling back to a request-supplied or environment-supplied revision instead of plan.graph.sourceRevision or verifiedCatalogSourceRevision.",
         "idempotencyKey built from fields a caller can vary to replay a completed launch or decision under a new key."
       ],
-      paths: ["src/RuntimeBridge.ts"]
+      paths: ["src/RuntimeBridge.vibe"]
     },
     {
       id: "error-and-log-sanitization",
@@ -176,9 +176,9 @@ const securityReview = Smithers.SecurityReview({
         "An Effect.log call that logs request headers, the credential, or a full request body."
       ],
       paths: [
-        "src/GatewayError.ts",
-        "src/Projections.ts",
-        "src/RuntimeBridge.ts",
+        "src/GatewayError.vibe",
+        "src/Projections.vibe",
+        "src/RuntimeBridge.vibe",
         "src/internal/NativeGateway.vibe",
         "src/bun/**"
       ]
@@ -197,8 +197,8 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/GatewayServer.ts",
-        "src/Projections.ts",
-        "src/RuntimeBridge.ts",
+        "src/Projections.vibe",
+        "src/RuntimeBridge.vibe",
         "src/internal/digestIndex.ts",
         "src/internal/digestMemory.ts"
       ]
@@ -217,8 +217,8 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/nativeResolution.ts",
         "src/internal/NativeGateway.vibe",
         "src/GatewayProjection.ts",
-        "src/Projections.ts",
-        "src/RuntimeBridge.ts"
+        "src/Projections.vibe",
+        "src/RuntimeBridge.vibe"
       ]
     },
     {
@@ -234,7 +234,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/RunTrace.vibe",
-        "src/Diagnosis.ts",
+        "src/Diagnosis.vibe",
         "src/EngineTrace.vibe",
         "src/internal/callEvents.vibe",
         "src/internal/nodeEvents.vibe"
@@ -249,7 +249,7 @@ const securityReview = Smithers.SecurityReview({
         "A field added to Health or RuntimeBridge.Identity that carries a credential, run, path, or environment value.",
         "layerHealth serving anything other than the fixed encoded Health value."
       ],
-      paths: ["src/GatewayServer.ts", "src/GatewaySchema.ts", "src/RuntimeBridge.ts"]
+      paths: ["src/GatewayServer.ts", "src/GatewaySchema.vibe", "src/RuntimeBridge.vibe"]
     },
     {
       id: "mutation-script-exec",

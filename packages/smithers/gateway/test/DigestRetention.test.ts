@@ -2,9 +2,9 @@ import { describe, expect, it } from "@effect/vitest"
 import type { Service as ControlService } from "@smthrs/control/Control"
 import type { ControlEvent, RunSummary } from "@smthrs/control/ControlSchema"
 import { Effect, Stream } from "effect"
-import * as Diagnosis from "../src/Diagnosis.ts"
+import * as Diagnosis from "../src/Diagnosis.vibe"
 import { encodedBytes, retainedDigestBytes } from "../src/internal/digestMemory.ts"
-import * as Projections from "../src/Projections.ts"
+import * as Projections from "../src/Projections.vibe"
 import { moduleRunJournal } from "./fixtures/module-run-journal.ts"
 
 const callId = `cell-call-v1:${"a".repeat(64)}`

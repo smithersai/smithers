@@ -21,7 +21,6 @@
 
 import { ControlSchema } from "@smthrs/control"
 import * as Fault from "@smthrs/flow/Fault"
-import { HashMap, Schema } from "effect"
 import { callEventKey, callScope, nativeCallEvent, nativeStepEvent, uniqueCallEvents } from "./internal/callEvents.vibe"
 import * as DigestIndex from "./internal/digestIndex.ts"
 import { encodedBytes, recordDigestBytes } from "./internal/digestMemory.ts"

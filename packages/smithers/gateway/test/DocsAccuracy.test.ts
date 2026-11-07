@@ -10,7 +10,7 @@ import * as Fs from "node:fs"
 import * as Path from "node:path"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
-import { maxEventBytes, maxEventsPerPage, maxEventsPerRun, maxProjectionBytes } from "../src/Projections.ts"
+import { maxEventBytes, maxEventsPerPage, maxEventsPerRun, maxProjectionBytes } from "../src/Projections.vibe"
 
 const packageRoot = Path.join(Path.dirname(fileURLToPath(import.meta.url)), "..")
 const read = (file: string): string => Fs.readFileSync(Path.join(packageRoot, file), "utf8")
