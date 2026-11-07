@@ -1,5 +1,5 @@
 import { LimitOffsetRequireOrderByError } from "@tanstack/db"
-import { Effect, Exit, Fiber, Schema, Scope, Stream } from "effect"
+import { Context, Effect, Exit, Fiber, Schema, Scope, Stream } from "effect"
 import { describe, expect, test } from "vitest"
 import { Collection, LiveQuery, Query } from "../src/index.ts"
 import { id, Note, note } from "./fixtures.ts"
@@ -431,4 +431,31 @@ test("a failed lazy demand withdraws the downstream display until its read scope
       expect(ids(yield* reopened.display.toArray)).toEqual(["a", "b"])
     }).pipe(Effect.provide(LiveQuery.incremental))
   )
+})
+
+
+test("synchronous observation records publications in its captured context and stops at scope close", async () => {
+  class Receipt extends Context.Service<Receipt, { readonly prefix: string }>()("test/LiveQuery/Receipt") {}
+  await run(Effect.gen(function*() {
+    const source = yield* notes([note("a", 1)])
+    const query = yield* LiveQuery.make((q) => q.from({ note: source.tanstack }).orderBy(({ note }) => note.n))
+    yield* query.preload
+    const scope = yield* Scope.make()
+    const receipts: string[] = []
+    yield* LiveQuery.observeSync(query, (rows) => Effect.gen(function*() {
+      const receipt = yield* Receipt
+      receipts.push(`${receipt.prefix}:${ids(rows).join(",")}`)
+    })).pipe(Effect.provideService(Receipt, { prefix: "tab" }), Scope.provide(scope))
+    expect(receipts.at(-1)).toBe("tab:a")
+    yield* source.insert(note("b", 2))
+    expect(ids(query.tanstack.toArray)).toEqual(["a", "b"])
+    expect(receipts.at(-1)).toBe("tab:a,b")
+    yield* source.delete("a")
+    expect(receipts.at(-1)).toBe("tab:b")
+    yield* Scope.close(scope, Exit.void)
+    const count = receipts.length
+    yield* source.insert(note("c", 3))
+    expect(ids(query.tanstack.toArray)).toEqual(["b", "c"])
+    expect(receipts).toHaveLength(count)
+  }))
 })

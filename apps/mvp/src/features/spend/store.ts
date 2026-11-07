@@ -1,5 +1,5 @@
 import { ElectricCollection, ShapeSource } from "@smthrs/effect-electric"
-import { Collection } from "@smthrs/effect-tanstack-db"
+import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
 import { Context, Effect, Layer, Metric, Option, type Scope, Stream } from "effect"
 import { AuthStore, SESSION } from "../auth/store"
 import {
@@ -179,22 +179,21 @@ export class SpendStore extends Context.Service<
           Effect.forkIn(scope, { startImmediately: true }),
         )
 
-        // A record of each alert the tab shows, once.
+        // Record in the publication's turn, before it returns to its caller.
+        // A queued rows-stream observer can lag behind the visible query.
+        // Each alert counts once per tab.
         const recorded = new Set<string>()
-        yield* open.rows.pipe(
-          Stream.runForEach((rows) =>
-            Effect.forEach(rows, (alert) => {
-              if (recorded.has(alert.id)) return Effect.void
-              recorded.add(alert.id)
-              return Effect.andThen(
-                Metric.update(shown, 1),
-                Effect.logInfo("spend.alert.shown").pipe(
-                  Effect.annotateLogs({ alertId: alert.id, calls: alert.calls, tokens: alert.tokens }),
-                ),
-              )
-            }, { discard: true })
-          ),
-          Effect.forkIn(scope, { startImmediately: true }),
+        yield* LiveQuery.observeSync(open, (rows) =>
+          Effect.forEach(rows, (alert) => {
+            if (recorded.has(alert.id)) return Effect.void
+            recorded.add(alert.id)
+            return Effect.andThen(
+              Metric.update(shown, 1),
+              Effect.logInfo("spend.alert.shown").pipe(
+                Effect.annotateLogs({ alertId: alert.id, calls: alert.calls, tokens: alert.tokens }),
+              ),
+            )
+          }, { discard: true })
         )
 
         return SpendStore.of({

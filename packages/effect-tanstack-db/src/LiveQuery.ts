@@ -190,3 +190,29 @@ const rows = <Q extends AnyQuery>(collection: TanStackLiveQuery<Q>): Stream.Stre
       Stream.map((): ReadonlyArray<Row<Q>> => collection.toArray)
     )
   }))
+
+/**
+ * Observes current rows and later publications synchronously, in the caller's context.
+ *
+ * Use for synchronous receipts such as metrics that must be recorded before a
+ * publication returns to its caller. The callback must not suspend; use `rows`
+ * for asynchronous consumers. Closing the registration's scope unsubscribes it.
+ *
+ * @category reads
+ * @since 0.2.0
+ */
+export const observeSync = <Q extends AnyQuery, R>(
+  self: LiveQuery<Q>,
+  onRows: (rows: ReadonlyArray<Row<Q>>) => Effect.Effect<void, never, R>
+): Effect.Effect<void, never, R | Scope.Scope> =>
+  Effect.gen(function*() {
+    const context = yield* Effect.context<R>()
+    // TanStack invokes this callback at its publication boundary. Keep the
+    // caller's services while running the synchronous receipt in that turn.
+    const notify = () => Effect.runSyncWith(context)(onRows(self.tanstack.toArray))
+    yield* Effect.acquireRelease(
+      Effect.sync(() => self.tanstack.subscribeChanges(notify, { includeInitialState: false })),
+      (subscription) => Effect.sync(() => subscription.unsubscribe())
+    )
+    yield* Effect.sync(notify)
+  })

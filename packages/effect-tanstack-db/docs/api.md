@@ -293,6 +293,15 @@ TanStack DB adds its virtual properties (`$synced`, `$key`, `$origin`,
 | `TanStackLiveQuery<Q>` | The TanStack DB collection behind `Q`: a single result for a query ending in `findOne()`, else many.    |
 | `Window`               | `{ readonly offset: number; readonly limit: number }`: `limit` rows from `offset` of an ordered result. |
 
+### `LiveQuery.observeSync(query, onRows)`
+
+Registers a scoped synchronous observer: current rows once, then the current
+rows at each publication. The callback is a synchronous Effect and retains the
+registration's services. Use it for receipts such as counters that must be
+recorded in the same turn as the publication. Closing the scope unsubscribes.
+The callback must not suspend; use the query's `rows` stream for asynchronous work.
+
+
 ## `Query`
 
 ```ts
