@@ -1,0 +1,42 @@
+// A transport fault over the product's real MockFactory: posts, replies, replay and live delivery stay real.
+import type { Event } from "../../src/core/conversation.ts"
+import { Factory, Unavailable } from "../../src/core/Factory.vibe"
+import { MockFactory } from "../../src/core/MockFactory.vibe"
+
+export type Fault = "drop" | "disconnect"
+export interface Trace {
+  subscriptions: Array<{ conversation: string; after: number }>
+  delivered: Event[]
+  base?: Factory.Shape
+  faulted: boolean
+}
+export function trace(): Trace {
+  return { subscriptions: [], delivered: [], faulted: false }
+}
+
+/** Lose #3 once, or break before #4 mid-reply. Subsequent subscriptions use the unmodified real stream. */
+export function faultyFactory(fault: Fault, observation: Trace) {
+  return Layer.effect(Factory, effect {
+    const base = try Factory
+    try sync(() => { observation.base = base })
+    return {
+      mode: base.mode,
+      post: base.post,
+      events: (conversation, after) => Stream.unwrap(effect {
+        try sync(() => { observation.subscriptions.push({ conversation, after }) })
+        return base.events(conversation, after).pipe(
+          Stream.mapEffect(effect (event) => {
+            if (!observation.faulted && event.seq === (fault === "drop" ? 3 : 4)) {
+              try sync(() => { observation.faulted = true })
+              if (fault === "disconnect") throw new Unavailable({ reason: "connection interrupted" })
+              return Result.failVoid
+            }
+            try sync(() => { observation.delivered.push(event) })
+            return Result.succeed(event)
+          }),
+          Stream.filterMap((event) => event),
+        )
+      }),
+    }
+  }).pipe(Layer.provide(MockFactory))
+}

@@ -1,0 +1,7 @@
+import { apply, empty } from "../../src/core/conversation.ts"
+import type { Trace } from "../../test/support/FaultyFactory.vibe"
+
+export effect function canonical(observation: Trace) {
+  const events = try Stream.runCollect(observation.base!.events("home", 0).pipe(Stream.takeUntil(event => event.type === "ReplyFinished")))
+  return Array.from(events).reduce(apply, empty)
+}

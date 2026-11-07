@@ -23,20 +23,47 @@ with Foldkit `Dom.showDialog({ isModal: true })`: background controls disappear 
 specific palette or docked input's focus before typing, assert its value, and await Send becoming enabled before
 navigating to it. A focus assertion on the shared accessible name alone can accidentally accept the outgoing input.
 The dialog stays mounted so `Dom.closeDialog` can release isolation and restore its opener; scenes assert its closed
-accessibility state and resolve the real close command. Chat retains its docked input while the palette is open.
+state and resolve the real close command. Chat retains its docked input while the palette is open.
 
 **Scroll regressions (review 7).** `e2e/scroll.spec.ts` submits an answer and four follow-ups in each viewport. It
 checks real IntersectionObserver viewport intersection and that the final paragraph clears the fixed composer.
 During the next streamed answer a real wheel scroll reaches the top; the scroll offset must stay there through
 completion. Latest must return to the tail and resume following. `app.scene.test.ts` independently checks pausing,
-manual return to the bottom, the Latest action and cancellation of pending scroll commands. Scroll commands wait for
-the render commit and are cancelled when the reader leaves the bottom, including commands queued by earlier pieces.
+manual return to the bottom and the Latest action. A follow subscription waits for the render commit; model
+dependencies cancel obsolete scroll work whenever a newer piece arrives or the reader leaves the bottom.
 
 **Announcements (review 9).** The transcript is the named Conversation `role="log"` with `aria-live="off"`, so
 stream pieces do not repeat the whole answer. Persistent Answer and Connection status regions are polite and atomic.
-Only accepted completion/failure events update Answer; a keyed child also announces identical successive answers.
+Only accepted completion/failure events update Answer; an answer ordinal distinguishes identical successive answers.
 `e2e/announcements.spec.ts` inspects Chromium's accessibility tree (log name and live/atomic properties), checks the
 region remains empty during the first stream, and preserves its completed value during the next. Scenes separately
 check completion, duplicate replay and connection transitions. Fault recovery browser cases inspect Connection's
 accessibility node and Disconnected/Connected changes. These are browser accessibility-tree receipts, not a claim of
 manual listening with an installed screen reader.
+
+**Recovery regressions (review 11, browser/runtime half).** `test/recovery.runtime.test.vibe` embeds Foldkit's actual
+application, update, commands and subscription runtime. `test/support/FaultyFactory.vibe` decorates the real product
+MockFactory: it drops event 3 once, or fails the stream before event 4 in the middle of a reply. It never invents
+posts, events, replies or replay data. Both cases assert acquisition cursors (`[0, 2]` / `[0, 3]`), equality with the
+real factory's full replay, removal of pending posts, entry uniqueness, and live delivery of a subsequent reply
+without another subscription. The browser repeats these cases in every project in `e2e/recovery.spec.ts`, including
+Connection's accessibility-tree live property and composer focus after Reconnect. Observations are read-only.
+
+The fault host is an additional HTML entry **only in Vite's e2e build mode**; it is absent from ordinary builds.
+Playwright always starts that local host, including when `E2E_BASE_URL` sends product tests to a deployment. Fault
+cases explicitly target the local host so test-only fault controls never enter deployed code.
+
+`node test/check-recovery-mutations.mjs --browser` removes the gap branch, then separately removes the reconnect
+epoch/cursor update. Each suite must fail exactly the affected case while its other case passes. It restores the
+source in `finally`; run it with no other build/test process using the workspace. Set `VIBELANG_MUTATION_LOG_DIR` to
+retain the four failure logs. The browser fix here leaves the shared core and its convergence property to the core
+lane.
+
+Announcements remain accessible while the palette is modal; only the noninteractive live-region container is exempt
+from background isolation. The native closed dialog controls its own accessibility visibility. The browser observes
+all rendered stream states and announcement text changes from before sending, including a completion while the
+palette is open; it requires exactly one completed announcement per answer and no partial answer announcements.
+Upward wheel intent pauses following, and the render's follow attribute guards
+against stale scroll work. Native scroll anchoring is disabled because the app owns following. Splash and palette
+scrolling do not change chat follow state. Playwright keeps the original three-browser concurrency as files are added,
+so streamed render assertions run under the same browser load; assertion thresholds and timeouts are unchanged.
