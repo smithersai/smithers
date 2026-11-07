@@ -7,9 +7,9 @@ import { TestClock } from "effect/testing"
 import { inspect } from "node:util"
 import { Journal } from "../src/Journal.ts"
 import { Input, type RunId, type SourceId } from "../src/JournalEvent.vibe"
-import * as Migrations from "../src/Migrations.vibe"
+import * as Migrations from "../src/Migrations.ts"
 import * as RedactedLogger from "../src/RedactedLogger.ts"
-import * as Redaction from "../src/Redaction.vibe"
+import * as Redaction from "../src/Redaction.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const runId = (value: string): RunId => value as RunId

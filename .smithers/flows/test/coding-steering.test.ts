@@ -19,7 +19,7 @@ import * as Notifications from "../../../packages/smithers/agent/harness/src/Not
 import * as DurableWriter from "../../../packages/smithers/flows/database/src/DurableWriter.ts"
 import * as Journal from "../../../packages/smithers/flows/journal/src/Journal.ts"
 import * as JournalEvent from "../../../packages/smithers/flows/journal/src/JournalEvent.vibe"
-import * as Migrations from "../../../packages/smithers/flows/journal/src/Migrations.vibe"
+import * as Migrations from "../../../packages/smithers/flows/journal/src/Migrations.ts"
 import * as SqlJournal from "../../../packages/smithers/flows/journal/src/SqlJournal.ts"
 import type { Notification } from "../../../packages/smithers/notifications/src/Notification.vibe"
 import * as NotificationEvent from "../../../packages/smithers/notifications/src/NotificationEvent.ts"

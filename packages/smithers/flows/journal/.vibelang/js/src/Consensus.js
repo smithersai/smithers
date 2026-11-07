@@ -36,7 +36,7 @@ import * as Duration from "effect/Duration";
 import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Schema from "effect/Schema";
-import { OwnerId } from "#vibelang/emitted/src/OwnerId";
+import { OwnerId } from "./OwnerId.js";
 /**
  * How often the supervision loop pulses to renew the owner's lease.
  *

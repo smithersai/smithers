@@ -10,7 +10,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Cause, Console, Context, Effect, Logger, References, Tracer } from "effect"
 import { inspect } from "node:util"
 import * as RedactedLogger from "../src/RedactedLogger.ts"
-import * as Redaction from "../src/Redaction.vibe"
+import * as Redaction from "../src/Redaction.ts"
 
 interface Capture {
   readonly lines: Array<Array<unknown>>

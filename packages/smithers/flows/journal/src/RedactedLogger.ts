@@ -53,7 +53,7 @@ import type * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Logger from "effect/Logger"
 import * as References from "effect/References"
-import * as Redaction from "#vibelang/emitted/src/Redaction"
+import * as Redaction from "./Redaction.ts"
 
 /**
  * Marks a logger this module already wrapped.

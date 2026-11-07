@@ -23,7 +23,7 @@
  * @category events
  * @since 0.1.0
  */
-export * as JournalEvent from "#vibelang/emitted/src/JournalEvent";
+export * as JournalEvent from "./JournalEvent.js";
 /**
  * @category events
  * @since 1.0.0
@@ -33,16 +33,16 @@ export * as EngineEvent from "./EngineEvent.js";
  * @category events
  * @since 1.0.0
  */
-export * as ExecutionFact from "#vibelang/emitted/src/ExecutionFact";
+export * as ExecutionFact from "./ExecutionFact.js";
 /**
  * @category events
  * @since 1.0.0
  */
-export * as CallFact from "#vibelang/emitted/src/CallFact";
+export * as CallFact from "./CallFact.js";
 /**
  * @since 1.0.0
  */
-export * as StepFact from "#vibelang/emitted/src/StepFact";
+export * as StepFact from "./StepFact.js";
 /**
  * @category services
  * @since 0.1.0
@@ -67,12 +67,12 @@ export * as SqlConsensus from "./SqlConsensus.js";
  * @category metrics
  * @since 0.1.0
  */
-export * as JournalMetrics from "#vibelang/emitted/src/JournalMetrics";
+export * as JournalMetrics from "./JournalMetrics.js";
 /**
  * @category redaction
  * @since 0.1.0
  */
-export * as Redaction from "#vibelang/emitted/src/Redaction";
+export * as Redaction from "./Redaction.js";
 /**
  * @category redaction
  * @since 0.1.0
@@ -82,19 +82,19 @@ export * as RedactedLogger from "./RedactedLogger.js";
  * @category redaction
  * @since 1.0.0
  */
-export * as TelemetryLog from "#vibelang/emitted/src/TelemetryLog";
+export * as TelemetryLog from "./TelemetryLog.js";
 /**
  * @category projections
  * @since 0.1.0
  */
-export * as Projection from "#vibelang/emitted/src/Projection";
+export * as Projection from "./Projection.js";
 /**
  * @category models
  * @since 0.1.0
  */
-export * as OwnerId from "#vibelang/emitted/src/OwnerId";
+export * as OwnerId from "./OwnerId.js";
 /**
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "#vibelang/emitted/src/Migrations";
+export * as Migrations from "./Migrations.js";

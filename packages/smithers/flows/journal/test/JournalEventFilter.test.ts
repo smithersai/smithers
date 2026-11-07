@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 import { Journal } from "../src/Journal.ts"
 import { Input, RunId, SourceId } from "../src/JournalEvent.vibe"
-import * as Migrations from "../src/Migrations.vibe"
+import * as Migrations from "../src/Migrations.ts"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 describe.each(["memory", "file"] as const)("exact event filter (%s)", (storage) => {

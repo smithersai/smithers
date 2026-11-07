@@ -25,6 +25,7 @@
  * @since 0.1.0
  */
 
+import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 
 /** JSON text carrying an arbitrary decoded value. */
@@ -1466,13 +1467,11 @@ export const redact = (value: unknown, options?: Options): unknown => {
   const walk = (node: unknown, ancestors: WeakSet<object>, depth: number, key: string): unknown => {
     if (depth > maxDepth) {
       if (onTooDeep === "name") return depthMarker
-      $raise(
-        new RedactionDepthError({
-          code: "depth_exceeded",
-          maxDepth,
-          message: `redaction depth exceeds ${maxDepth}`
-        })
-      )
+      throw new RedactionDepthError({
+        code: "depth_exceeded",
+        maxDepth,
+        message: `redaction depth exceeds ${maxDepth}`
+      })
     }
     if (typeof node === "string") return redactString(node, rules)
     // A function, a class object or a symbol carries text a walk never reaches
@@ -1837,10 +1836,3 @@ export const lineRedactor = (rules: ReadonlyArray<Rule> = diagnosticRules): Line
  * @category constructors
  */
 export const makeNoop = (): Redactor => (value) => value
-
-module $throw$ts {
-  export function raise(value: unknown): never {
-    throw value
-  }
-}
-import { raise as $raise } from $throw$ts

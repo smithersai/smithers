@@ -6,7 +6,7 @@
  */
 import { inspect } from "node:util"
 import { describe, expect, it } from "vitest"
-import * as Redaction from "../src/Redaction.vibe"
+import * as Redaction from "../src/Redaction.ts"
 
 const secret = "ZqSynthetic7Secret4Value9"
 

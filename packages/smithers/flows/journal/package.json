@@ -63,8 +63,8 @@
       "default": "./.vibelang/js/src/JournalMetrics.js"
     },
     "./Migrations": {
-      "types": "./.vibe/declarations/Migrations.d.vibe.ts",
-      "vibelang-source": "./src/Migrations.vibe",
+      "types": "./src/Migrations.ts",
+      "vibelang-source": "./src/Migrations.ts",
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./OwnerId": {
@@ -83,8 +83,8 @@
       "default": "./.vibelang/js/src/RedactedLogger.js"
     },
     "./Redaction": {
-      "types": "./.vibe/declarations/Redaction.d.vibe.ts",
-      "vibelang-source": "./src/Redaction.vibe",
+      "types": "./src/Redaction.ts",
+      "vibelang-source": "./src/Redaction.ts",
       "default": "./.vibelang/js/src/Redaction.js"
     },
     "./SqlJournal": {
@@ -102,11 +102,7 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/Notifying": {
-      "types": "./src/test/Notifying.ts",
-      "vibelang-source": "./src/test/Notifying.ts",
-      "default": "./.vibelang/js/src/test/Notifying.js"
-    },
+    "./test/Notifying": "./src/test/Notifying.ts",
     "./test/TestJournal": {
       "types": "./src/test/TestJournal.ts",
       "vibelang-source": "./src/test/TestJournal.ts",
@@ -139,9 +135,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/Migrations.vibe",
-    "src/Redaction.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -374,67 +368,5 @@
   },
   "peerDependencies": {
     "effect": "4.1.1"
-  },
-  "imports": {
-    "#vibelang/emitted/src/OwnerId": {
-      "types": "./.vibe/declarations/src/OwnerId.d.vibe.ts",
-      "vibelang-source": "./src/OwnerId.vibe",
-      "default": "./.vibelang/js/src/OwnerId.js"
-    },
-    "#vibelang/emitted/src/JournalEvent": {
-      "types": "./.vibe/declarations/src/JournalEvent.d.vibe.ts",
-      "vibelang-source": "./src/JournalEvent.vibe",
-      "default": "./.vibelang/js/src/JournalEvent.js"
-    },
-    "#vibelang/emitted/src/Redaction": {
-      "types": "./.vibe/declarations/src/Redaction.d.vibe.ts",
-      "vibelang-source": "./src/Redaction.vibe",
-      "default": "./.vibelang/js/src/Redaction.js"
-    },
-    "#vibelang/emitted/src/internal/EventTally": {
-      "types": "./.vibe/declarations/src/internal/EventTally.d.vibe.ts",
-      "vibelang-source": "./src/internal/EventTally.vibe",
-      "default": "./.vibelang/js/src/internal/EventTally.js"
-    },
-    "#vibelang/emitted/src/internal/JournalInternalFault": {
-      "types": "./.vibe/declarations/src/internal/JournalInternalFault.d.vibe.ts",
-      "vibelang-source": "./src/internal/JournalInternalFault.vibe",
-      "default": "./.vibelang/js/src/internal/JournalInternalFault.js"
-    },
-    "#vibelang/emitted/src/JournalMetrics": {
-      "types": "./.vibe/declarations/src/JournalMetrics.d.vibe.ts",
-      "vibelang-source": "./src/JournalMetrics.vibe",
-      "default": "./.vibelang/js/src/JournalMetrics.js"
-    },
-    "#vibelang/emitted/src/ExecutionFact": {
-      "types": "./.vibe/declarations/src/ExecutionFact.d.vibe.ts",
-      "vibelang-source": "./src/ExecutionFact.vibe",
-      "default": "./.vibelang/js/src/ExecutionFact.js"
-    },
-    "#vibelang/emitted/src/CallFact": {
-      "types": "./.vibe/declarations/src/CallFact.d.vibe.ts",
-      "vibelang-source": "./src/CallFact.vibe",
-      "default": "./.vibelang/js/src/CallFact.js"
-    },
-    "#vibelang/emitted/src/StepFact": {
-      "types": "./.vibe/declarations/src/StepFact.d.vibe.ts",
-      "vibelang-source": "./src/StepFact.vibe",
-      "default": "./.vibelang/js/src/StepFact.js"
-    },
-    "#vibelang/emitted/src/TelemetryLog": {
-      "types": "./.vibe/declarations/src/TelemetryLog.d.vibe.ts",
-      "vibelang-source": "./src/TelemetryLog.vibe",
-      "default": "./.vibelang/js/src/TelemetryLog.js"
-    },
-    "#vibelang/emitted/src/Projection": {
-      "types": "./.vibe/declarations/src/Projection.d.vibe.ts",
-      "vibelang-source": "./src/Projection.vibe",
-      "default": "./.vibelang/js/src/Projection.js"
-    },
-    "#vibelang/emitted/src/Migrations": {
-      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
-      "vibelang-source": "./src/Migrations.vibe",
-      "default": "./.vibelang/js/src/Migrations.js"
-    }
   }
 }

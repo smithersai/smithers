@@ -6,7 +6,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import type * as Statement from "effect/sql/Statement"
 import { TestClock } from "effect/testing"
 import * as Consensus from "../src/Consensus.ts"
-import * as Migrations from "../src/Migrations.vibe"
+import * as Migrations from "../src/Migrations.ts"
 import * as SqlConsensus from "../src/SqlConsensus.ts"
 
 const owner = { hostId: "host", pid: 101, nonce: "first" }

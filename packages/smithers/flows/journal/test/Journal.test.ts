@@ -17,7 +17,7 @@ import {
   type SourceId,
   type SourceSeq
 } from "../src/JournalEvent.vibe"
-import * as Migrations from "../src/Migrations.vibe"
+import * as Migrations from "../src/Migrations.ts"
 import type { OwnerId } from "../src/OwnerId.vibe"
 import * as Projection from "../src/Projection.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"

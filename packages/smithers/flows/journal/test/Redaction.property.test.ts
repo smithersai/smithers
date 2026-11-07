@@ -1,6 +1,6 @@
 import * as FastCheck from "fast-check"
 import { describe, expect, it } from "vitest"
-import * as Redaction from "../src/Redaction.vibe"
+import * as Redaction from "../src/Redaction.ts"
 
 const params = {
   numRuns: Number(process.env.FC_NUM_RUNS ?? 100),

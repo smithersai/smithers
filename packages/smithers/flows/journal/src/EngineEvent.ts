@@ -8,7 +8,7 @@
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Event from "#vibelang/emitted/src/JournalEvent"
+import * as Event from "./JournalEvent.vibe"
 
 /**
  * Required lineage coordinates for a root or derived run.

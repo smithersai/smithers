@@ -52,7 +52,7 @@ import * as Effect from "effect/Effect";
 import * as Layer from "effect/Layer";
 import * as Logger from "effect/Logger";
 import * as References from "effect/References";
-import * as Redaction from "#vibelang/emitted/src/Redaction";
+import * as Redaction from "./Redaction.js";
 /**
  * Marks a logger this module already wrapped.
  *
