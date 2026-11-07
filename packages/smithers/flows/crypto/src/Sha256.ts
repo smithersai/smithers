@@ -210,8 +210,7 @@ export const digestSync = (input: string | Uint8Array): Digest => encodeHex(sha2
  * @category services
  * @since 1.0.0
  */
-export const syncCrypto: typeof EffectDigest.Digest.Service = EffectDigest.Digest.of({
-  digest: (algorithm, input) =>
+const synchronousDigest: typeof EffectDigest.Digest.Service["digest"] = (algorithm, input) =>
     algorithm.name === "SHA-256"
       ? Effect.try({
         try: () => sha256(new Uint8Array(input)),
@@ -227,10 +226,11 @@ export const syncCrypto: typeof EffectDigest.Digest.Service = EffectDigest.Diges
         module: "@smthrs/crypto",
         method: "digest",
         description: `syncCrypto supports only SHA-256, not ${algorithm.name}`
-      })),
-  digestHex(algorithm, data) {
-    return Effect.map(this.digest(algorithm, data), Hex.encode)
-  }
+      }))
+
+export const syncCrypto: typeof EffectDigest.Digest.Service = EffectDigest.Digest.of({
+  digest: synchronousDigest,
+  digestHex: (algorithm, data) => Effect.map(synchronousDigest(algorithm, data), Hex.encode)
 })
 
 /**
