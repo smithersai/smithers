@@ -54,3 +54,26 @@ test("7: four follow-ups remain in the viewport; scrolling up pauses following u
   await expect(latest).toBeHidden()
 })
 
+test("sending while scrolled up brings the new post and its answer into view (Fable review, finding 1)", async ({ page }) => {
+  await page.goto("/")
+  await open(page)
+  for (let i = 0; i < 2; i++) {
+    await input(page).focus()
+    await type(page, "What is a service?")
+    await input(page).press("Enter")
+    await expect(answers(page)).toHaveCount(i + 1)
+    await expect(answers(page).last()).toHaveAttribute("data-done", "true", { timeout: 15_000 })
+  }
+  await page.waitForFunction(() => !document.documentElement.matches(":active-view-transition"))
+  await page.mouse.move(100, 250)
+  await page.mouse.wheel(0, -10000)
+  await expect.poll(() => page.evaluate(() => window.scrollY)).toBe(0)
+  await expect(page.getByRole("button", { name: "Latest" })).toBeVisible()
+  await input(page).focus()
+  await type(page, "How do errors work?")
+  await input(page).press("Enter")
+  await expect(answers(page)).toHaveCount(3)
+  await expect(answers(page).last()).toHaveAttribute("data-done", "true", { timeout: 15_000 })
+  await newestAboveComposer(page, answers(page).last().locator("p").last())
+  await expect(page.getByRole("button", { name: "Latest" })).toBeHidden()
+})

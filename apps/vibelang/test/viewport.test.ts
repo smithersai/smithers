@@ -5,8 +5,35 @@ import { transcriptViewport } from "../src/web/viewport.ts"
 describe("native transcript scroll permission", () => {
   beforeEach(() => {
     document.body.innerHTML = `<div class="vl-app" data-surface="chat"><div data-following="true"><div id="vl-newest"></div></div><textarea></textarea><div contenteditable="true"><span></span></div><dialog id="vl-palette" data-state="closed"></dialog></div>`
+    pageHeight(2000)
   })
   afterEach(() => { vi.restoreAllMocks(); document.body.innerHTML = "" })
+
+  /** The page's scrollable height against an 800 px window; happy-dom lays nothing out. */
+  function pageHeight(height: number) {
+    vi.spyOn(document.documentElement, "scrollHeight", "get").mockReturnValue(height)
+    vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(800)
+  }
+
+  test("an upward gesture on a page too short to scroll keeps following (Fable review, finding 2)", () => {
+    pageHeight(800)
+    const viewport = transcriptViewport(document)
+    const nativeScroll = vi.spyOn(Element.prototype, "scrollIntoView")
+    expect(viewport.wheel(new WheelEvent("wheel", { deltaY: -3 }))).toBeUndefined()
+    expect(viewport.key(new KeyboardEvent("keydown", { key: "Home" }))).toBeUndefined()
+    viewport.follow(0)
+    expect(nativeScroll).toHaveBeenCalledOnce()
+  })
+
+  test("sending a message while scrolled up follows again, so the post and its answer show (Fable review, finding 1)", () => {
+    const viewport = transcriptViewport(document)
+    const model = { ...init({ session: "s", name: "Ada", mode: "mock" }).model, surface: "chat" as const }
+    const intent = viewport.wheel(new WheelEvent("wheel", { deltaY: -1 }))!
+    const paused = update(model, Message.ScrolledTranscript(intent)).model
+    expect(paused.following).toBe(false)
+    const sent = update(update(paused, Message.UpdatedDraft({ value: "hi" })).model, Message.SubmittedDraft()).model
+    expect(sent.following).toBe(true)
+  })
 
   test("upward intent vetoes an already authorized follow while the old DOM still says true", () => {
     const nativeScroll = vi.spyOn(Element.prototype, "scrollIntoView")
