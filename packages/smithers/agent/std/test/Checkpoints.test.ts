@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The checkpoint store's two halves, against a scripted process.
  *
@@ -31,9 +32,9 @@ const host = (
     spawn: (command) =>
       Effect.sync(() => {
         const standard = command as ChildProcess.StandardCommand
-        const argv = [standard.command, ...standard.args]
+        const argv = [standard.command, ...standard.args.map(plainWord)]
         spawns.push(argv)
-        envs.push(standard.options.env as Readonly<Record<string, string>> | undefined)
+        envs.push(plainEnvironment(standard.options.env) as Readonly<Record<string, string>> | undefined)
         const line = argv.join(" ")
         const scripted = [...responses, ...repository].find(([fragment]) => line.includes(fragment))?.[1] ?? {}
         const found = typeof scripted === "function" ? scripted() : scripted
@@ -312,7 +313,7 @@ describe("Checkpoints.makeGit capture", () => {
           spawn: (command) =>
             Effect.sync(() => {
               const standard = command as ChildProcess.StandardCommand
-              spawns.push([standard.command, ...standard.args])
+              spawns.push([standard.command, ...standard.args.map(plainWord)])
               const empty = Stream.make(new TextEncoder().encode(""))
               return makeHandle({
                 pid: ProcessId(1),
@@ -834,3 +835,15 @@ describe("Checkpoints.makeGit host edges", () => {
     )
   })
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+const plainEnvironment = (
+  values: Record<string, string | Redacted.Redacted<string> | undefined> | undefined
+): Record<string, string | undefined> | undefined =>
+  values === undefined
+    ? undefined
+    : Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [key, value === undefined ? undefined : plainWord(value)])
+    )

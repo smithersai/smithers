@@ -5,6 +5,7 @@ import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Cause, Effect, Exit, Fiber, Layer, Option, Path, Schema, Sink, Stream } from "effect"
 import type * as ChildProcess from "effect/process/ChildProcess"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { TestClock } from "effect/testing"
 import { describe, expect, it, vi } from "vitest"
 import * as Bash from "../src/Bash.ts"
@@ -35,7 +36,7 @@ interface Spawned {
  */
 /** Whether one spawn is the container's tree fingerprint rather than the command it brackets. */
 const isFingerprint = (spawn: Spawned | ReadonlyArray<string>): boolean =>
-  (Array.isArray(spawn) ? spawn : (spawn as Spawned).args).includes(TreeFingerprint.script())
+  (Array.isArray(spawn) ? spawn : (spawn as Spawned).args.map(plainWord)).includes(TreeFingerprint.script())
 
 /** The spawns that ran the caller's command, with the fingerprints either side of it left out. */
 const commands = (spawns: ReadonlyArray<Spawned>): ReadonlyArray<Spawned> =>
@@ -53,7 +54,7 @@ const recorder = (spawns: Array<Spawned>) =>
             : undefined
           spawns.push({
             file: standard.command,
-            args: [...standard.args],
+            args: [...standard.args.map(plainWord)],
             stdin: text,
             shell: standard.options.shell === true,
             cwd: standard.options.cwd
@@ -107,7 +108,7 @@ describe("Bash", () => {
       shell: false,
       cwd: undefined
     }])
-    expect(spawns.every((spawn) => spawn.file === "docker" && spawn.args.includes("task-1"))).toBe(true)
+    expect(spawns.every((spawn) => spawn.file === "docker" && spawn.args.map(plainWord).includes("task-1"))).toBe(true)
   })
 
   it("refreshes a bound language server after a host command, and not after a container one", async () => {
@@ -903,9 +904,9 @@ describe("Bash", () => {
     expect(spawns[0]).toMatchObject({ file: "bash", args: ["-s", "--"], stdin: "echo hello" })
     expect(spawns[1]).toMatchObject({ file: "echo hello", shell: true })
     for (const spawn of spawns) {
-      expect(spawn.args ?? []).not.toContain("-l")
-      expect(spawn.args ?? []).not.toContain("-lc")
-      expect(spawn.args ?? []).not.toContain(`exec "$@"`)
+      expect(spawn.args.map(plainWord) ?? []).not.toContain("-l")
+      expect(spawn.args.map(plainWord) ?? []).not.toContain("-lc")
+      expect(spawn.args.map(plainWord) ?? []).not.toContain(`exec "$@"`)
     }
   })
 
@@ -976,8 +977,8 @@ describe("Bash", () => {
     const stalled = ChildProcessSpawner.makeNoop({
       spawn: (command) => {
         const standard = command as ChildProcess.StandardCommand
-        spawns.push([...standard.args])
-        environments.push(standard.options.env as Record<string, string> | undefined)
+        spawns.push([...standard.args.map(plainWord)])
+        environments.push(plainEnvironment(standard.options.env) as Record<string, string> | undefined)
         return Effect.never
       }
     })
@@ -1047,7 +1048,7 @@ describe("Bash", () => {
             const standard = command as ChildProcess.StandardCommand
             const spawn: Spawned = {
               file: standard.command,
-              args: [...standard.args],
+              args: [...standard.args.map(plainWord)],
               stdin: undefined,
               shell: standard.options.shell === true,
               cwd: standard.options.cwd
@@ -1089,8 +1090,8 @@ describe("Bash", () => {
     // working directory, through the same transport, as a plain `sh` script.
     const fingerprints = spawns.filter(isFingerprint)
     expect(fingerprints).toHaveLength(2)
-    expect(fingerprints[0]?.args.slice(0, 5)).toEqual(["exec", "-w", "/app", "--", "task-1"])
-    expect(fingerprints[0]?.args.slice(5, 7)).toEqual(["sh", "-c"])
+    expect(fingerprints[0]?.args.map(plainWord).slice(0, 5)).toEqual(["exec", "-w", "/app", "--", "task-1"])
+    expect(fingerprints[0]?.args.map(plainWord).slice(5, 7)).toEqual(["sh", "-c"])
     expect(spawns.map(isFingerprint)).toEqual([true, false, true])
   })
 
@@ -1244,7 +1245,7 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
     const spawner = Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(ChildProcessSpawner.makeNoop({
       spawn: (command) =>
         Effect.sync(() => {
-          environments.push((command as ChildProcess.StandardCommand).options.env)
+          environments.push(plainEnvironment((command as ChildProcess.StandardCommand).options.env))
           return makeHandle({
             pid: ProcessId(1),
             exitCode: Effect.succeed(ExitCode(0)),
@@ -1264,7 +1265,7 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
       exec: (request) =>
         Effect.succeed({
           file: "docker",
-          args: ["exec", request.container, request.file, ...request.args],
+          args: ["exec", request.container, request.file, ...request.args.map(plainWord)],
           env: { DOCKER_HOST: "unix:///run/docker.sock" }
         })
     }))
@@ -1349,3 +1350,15 @@ describe("Bash in a registered terminal (T-TRM-05)", () => {
     expect(Exit.isFailure(exit) && Option.getOrUndefined(Cause.findErrorOption(exit.cause))?.code).toBe("timeout")
   })
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+const plainEnvironment = (
+  values: Record<string, string | Redacted.Redacted<string> | undefined> | undefined
+): Record<string, string | undefined> | undefined =>
+  values === undefined
+    ? undefined
+    : Object.fromEntries(
+      Object.entries(values).map(([key, value]) => [key, value === undefined ? undefined : plainWord(value)])
+    )

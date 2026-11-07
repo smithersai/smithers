@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -39,7 +39,7 @@ JavaScript identity escapes and line continuations without evaluating source.
 npm install @smthrs/registry@next effect
 ```
 
-`effect` is a peer dependency at exactly `4.0.5`. `@effect/platform-node`
+`effect` is a peer dependency at exactly `4.1.1`. `@effect/platform-node`
 supplies the `FileSystem` and `Path` implementations the scan walks with; this
 package has no platform bindings of its own.
 

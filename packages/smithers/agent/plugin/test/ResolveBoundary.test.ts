@@ -1,5 +1,6 @@
 import { Action } from "@smthrs/flow"
 import { Context, Effect, Exit, Layer, Schema } from "effect"
+import { expectTypeOf } from "vitest"
 import { describe, expect, it, vi } from "vitest"
 import * as Hooks from "../src/Hooks.ts"
 import type { FlowsPlugin, PluginInput } from "../src/index.ts"
@@ -48,10 +49,10 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 const unprovidedServiceProbe = async () => {
   const marker = Layer.succeed(Unprovided)({ value: "marker" })
   const withMarker = await resolvedLayer([{ name: "marker", layer: marker }])
-  run(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withMarker.layer)))
+  const _provided = run(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withMarker.layer)))
   const withoutMarker = await resolvedLayer([{ name: "marker" }])
-  // @ts-expect-error dropping the marker plugin's layer leaves Unprovided unprovided
-  run(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withoutMarker.layer)))
+  const unmet = Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(withoutMarker.layer))
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
 }
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {

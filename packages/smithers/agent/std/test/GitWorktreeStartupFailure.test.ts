@@ -1,6 +1,7 @@
 import { NodeServices } from "@effect/platform-node"
 import * as ChildProcessSpawner from "@smthrs/kernel/ChildProcessSpawner"
 import { Effect, PlatformError } from "effect"
+import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -33,7 +34,9 @@ it("commit resolution reports Git startup failure without trying another ref and
         let broken = true
         const spawner = ChildProcessSpawner.makeNoop({
           spawn: (command) => {
-            if (command._tag === "StandardCommand") commands.push({ command: command.command, args: command.args })
+            if (command._tag === "StandardCommand") {
+              commands.push({ command: command.command, args: command.args.map(plainWord) })
+            }
             return broken ?
               Effect.fail(PlatformError.systemError({
                 _tag: "NotFound",
@@ -97,3 +100,6 @@ it("commit resolution reports Git startup failure without trying another ref and
     rmSync(root, { recursive: true, force: true })
   }
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

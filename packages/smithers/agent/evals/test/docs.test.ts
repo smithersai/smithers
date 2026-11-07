@@ -49,7 +49,7 @@ describe("documentation", () => {
   // Prereleases ship on the npm `next` dist-tag only; `latest` lags behind, so
   // an install line without the tag installs an older release.
   it("installs the package the way the README does", () => {
-    const install = "pnpm add @smthrs/evals@next effect@4.0.5"
+    const install = "pnpm add @smthrs/evals@next effect@4.1.1"
     const installation = read("../docs/installation.md")
     expect(read("../README.md")).toContain(install)
     expect(installation).toContain(install)

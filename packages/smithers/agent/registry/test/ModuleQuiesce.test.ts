@@ -80,7 +80,7 @@ body: Node.capture({}, ({ label }) => Node.succeed(label)) })`
               calls.push(label)
               if (label === "selected") {
                 yield* Deferred.succeed(selected, undefined)
-                yield* Effect.never
+                return yield* Effect.never
               }
               if (label === "unrelated") {
                 yield* Deferred.succeed(unrelated, undefined)
@@ -92,7 +92,7 @@ body: Node.capture({}, ({ label }) => Node.succeed(label)) })`
               }
               if (label === "shared-second") {
                 yield* Deferred.succeed(sharedSecond, undefined)
-                yield* Effect.never
+                return yield* Effect.never
               }
               return label
             }).pipe(Effect.ensuring(Effect.sync(() => {

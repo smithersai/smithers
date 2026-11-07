@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * Checkpoints over a real repository, a real git, and a real process.
  *
@@ -88,7 +89,7 @@ const mounted = (root: string): Container.Container =>
           mountedProcess,
           (request.cwd ?? "/testbed").replace(/^\/testbed/, () => root),
           request.file,
-          ...request.args
+          ...request.args.map(plainWord)
         ],
         env: request.env
       })
@@ -487,8 +488,12 @@ describe("Checkpoints over a real repository", () => {
         spawn: (command) =>
           Effect.suspend(() => {
             const standard = command as ChildProcess.StandardCommand
-            const tree = standard.args?.find((arg) => arg.startsWith("--work-tree="))?.slice("--work-tree=".length)
-            if (standard.command === "git" && standard.args.includes("read-tree") && tree !== undefined) {
+            const tree = standard.args.map(plainWord)?.find((arg) => arg.startsWith("--work-tree="))?.slice(
+              "--work-tree=".length
+            )
+            if (
+              standard.command === "git" && standard.args.map(plainWord).includes("read-tree") && tree !== undefined
+            ) {
               mkdirSync(scratch, { recursive: true })
               const name = readdirSync(scratch).find((entry) => entry.startsWith("cp-race-")) ?? basename(tree)
               rmSync(join(scratch, name), { recursive: true, force: true })
@@ -532,7 +537,10 @@ describe("Checkpoints over a real repository", () => {
         spawn: (command) =>
           Effect.suspend(() => {
             const standard = command as ChildProcess.StandardCommand
-            if (standard.command === "sh" && standard.args.some((arg) => arg.includes("stat -c %d")) && !raced) {
+            if (
+              standard.command === "sh" && standard.args.map(plainWord).some((arg) => arg.includes("stat -c %d")) &&
+              !raced
+            ) {
               rmSync(scratch, { recursive: true, force: true })
               symlinkSync(victim, scratch)
               raced = true
@@ -593,9 +601,9 @@ describe("Checkpoints over a real repository", () => {
               const standard = command as ChildProcess.StandardCommand
               if (
                 shm === undefined && standard.command === "sh" &&
-                standard.args.some((arg) => arg.includes("stat -c %d"))
+                standard.args.map(plainWord).some((arg) => arg.includes("stat -c %d"))
               ) {
-                const args = [...standard.args]
+                const args = [...standard.args.map(plainWord)]
                 args[4] = "/dev"
                 return real.spawn({ ...standard, args } as ChildProcess.StandardCommand)
               }
@@ -714,3 +722,6 @@ describe("Checkpoints over a real repository", () => {
     expect(JSON.stringify(exit)).toContain("No checkpoint is stored under")
   }, 60_000)
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

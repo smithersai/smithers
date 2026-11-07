@@ -1,3 +1,5 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 /**
  * The subject under evaluation: the Smithers agent, composed the way a host
  * composes it.
@@ -28,9 +30,8 @@
  *
  * @since 0.1.0
  */
-import * as ScriptedJudge from "../src/ScriptedJudge.ts"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -39,38 +40,28 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import {
-  Agent,
-  AgentAction,
-  Budget,
-  type FlowEngineLike,
-  QuotaPolicy,
-  Seat,
-  SeatResolver
-} from "../src/index.ts"
 import { FlowEngine } from "../../flows/engine/src/index.ts"
 import { Action, Flow, FlowRuntime, Interpreter } from "../../flows/flow/src/index.ts"
+import { Node } from "../../flows/plan/src/index.ts"
 import type { AgentEvent } from "../harness/src/index.ts"
 import { FlowBinding } from "../harness/src/index.ts"
-import {
-  Model,
-  ModelEvent,
-  type ModelRequest,
-  type Route
-} from "../model/src/index.ts"
-import { Node } from "../../flows/plan/src/index.ts"
+import { Model, ModelEvent, type ModelRequest, type Route } from "../model/src/index.ts"
 import { Registry } from "../registry/src/index.ts"
+import { Agent, AgentAction, Budget, type FlowEngineLike, QuotaPolicy, Seat, SeatResolver } from "../src/index.ts"
+import * as ScriptedJudge from "../src/ScriptedJudge.ts"
 
 const hostCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
+  EffectDigest.Digest,
+  EffectDigest.Digest.of({
     digest: (algorithm, data) =>
-      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm, data.slice().buffer)).pipe(
+      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm.name, data.slice().buffer)).pipe(
         Effect.map((buffer) => new Uint8Array(buffer))
-      )
+      ),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
-)
+).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 // Every eval seat is scripted, so there is no provider quota to park on. The
 // suite also has no approved plan envelope from which to derive a spend cap.
@@ -532,7 +523,9 @@ export const runAgent = (options: AgentOptions): Effect.Effect<Observation> =>
     const exit = yield* Deferred.await(settled)
     if (options.expectedFailureCode !== undefined) {
       const error = Exit.isFailure(exit) ? Cause.squash(exit.cause) : undefined
-      if (typeof error !== "object" || error === null || !("code" in error) || error.code !== options.expectedFailureCode) {
+      if (
+        typeof error !== "object" || error === null || !("code" in error) || error.code !== options.expectedFailureCode
+      ) {
         return yield* Effect.die(new Error(`Expected failure code ${options.expectedFailureCode}`))
       }
     }

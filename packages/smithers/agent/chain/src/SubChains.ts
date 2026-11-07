@@ -235,7 +235,7 @@ export const make = (
             Effect.provideService(ScriptRunner.ScriptRunner, runner),
             // Only a terminal is data. Preserve run failures as typed,
             // un-settled failures of the parent, with their original cause.
-            Effect.mapError((error) => new ChildRunError(error))
+            Effect.mapError((error) => ChildRunError.new(error))
           )
           if (outcome._tag === "ApprovalWait") {
             // A child waiting on approval must not settle as data: bubble

@@ -139,7 +139,7 @@ describe("sequential dispatch", () => {
                 Effect.gen(function*() {
                   seen.push("active")
                   yield* Deferred.succeed(entered, undefined)
-                  yield* Effect.never
+                  return yield* Effect.never
                 }).pipe(Effect.onInterrupt(() => Effect.sync(() => void seen.push("finalized"))))
             }
           },
@@ -217,7 +217,7 @@ describe("parallel dispatch", () => {
               Effect.gen(function*() {
                 seen.push("active")
                 yield* Deferred.succeed(entered, undefined)
-                yield* Effect.never
+                return yield* Effect.never
               }).pipe(Effect.onInterrupt(() => Effect.sync(() => void seen.push("finalized"))))
           }
         },

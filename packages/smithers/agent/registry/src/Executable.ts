@@ -64,7 +64,7 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Config from "effect/Config"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -327,7 +327,7 @@ export interface Lowered {
  * @category models
  * @since 1.0.0-rc.0
  */
-export type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
+export type Registration = FlowRuntime | Action.Implementations | EffectDigest.Digest
 
 /** Source bytes and static links verified before module evaluation.
  * @category models

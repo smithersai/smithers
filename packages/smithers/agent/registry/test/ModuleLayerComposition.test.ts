@@ -282,7 +282,7 @@ describe("module layer composition", () => {
                       yield* Layer.build(Interpreter.layer(privateChild))
                       if (resource.version === 2) {
                         yield* Deferred.succeed(entered, undefined)
-                        yield* Effect.never
+                        return yield* Effect.never
                       }
                     }))
                   )

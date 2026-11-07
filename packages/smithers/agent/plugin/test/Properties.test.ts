@@ -1,4 +1,5 @@
 import { Context, Effect } from "effect"
+import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as Config from "../src/Config.ts"
 import type { FlowsPlugin } from "../src/index.ts"
@@ -109,8 +110,8 @@ class Unprovided
 
 /** Never called; tsc checks it (#2347). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error the plugin runner provides no services
-  run(Effect.map(Unprovided, (service) => service.value))
+  const unmet = Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
   run(Effect.succeed(1))
 }
 

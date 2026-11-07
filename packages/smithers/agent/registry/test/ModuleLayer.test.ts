@@ -259,7 +259,7 @@ export default Flow.make({ name: "fixture", description: "Retained fixture", inp
         const implementation = Layer.effectDiscard(Effect.gen(function*() {
           yield* Effect.acquireRelease(Effect.void, () => Effect.sync(() => void released++))
           yield* Deferred.succeed(acquired, undefined)
-          yield* Effect.never
+          return yield* Effect.never
         }))
         const fiber = yield* Executable.fromDescriptor(descriptor, {
           delegates: [],

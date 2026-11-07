@@ -38,7 +38,7 @@ it("resumes an accepted scoring job after runtime disposal and records it exactl
         at: 1,
         score: Effect.gen(function*() {
           yield* Deferred.succeed(started, undefined)
-          if (interrupted) yield* Effect.never
+          if (interrupted) return yield* Effect.never
           completed += 1
           return { score: 1 }
         })
