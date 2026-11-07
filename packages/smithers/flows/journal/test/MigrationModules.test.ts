@@ -10,7 +10,7 @@
  */
 import { readdirSync } from "node:fs"
 import { describe, expect, it } from "vitest"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as Initial from "../src/migrations/0001_initial.vibe"
 import * as Checkpoints from "../src/migrations/0002_checkpoints.vibe"
 import * as StartupIndex from "../src/migrations/0003_startup_index.vibe"

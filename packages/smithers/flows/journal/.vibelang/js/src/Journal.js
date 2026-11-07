@@ -14,7 +14,7 @@ import * as Layer from "effect/Layer";
 import * as PubSub from "effect/PubSub";
 import * as Schema from "effect/Schema";
 import * as Stream from "effect/Stream";
-import { Entry, RunId, Seq, SourceSeq } from "./JournalEvent.js";
+import { Entry, RunId, Seq, SourceSeq } from "#vibelang/emitted/src/JournalEvent";
 /**
  * Defers a fold/cache update until the outermost durable write commits.
  * Returns false without running it when no managed commit is available.

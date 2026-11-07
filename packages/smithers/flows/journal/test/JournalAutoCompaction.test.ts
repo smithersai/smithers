@@ -6,7 +6,7 @@ import type * as Statement from "effect/sql/Statement"
 import { vi } from "vitest"
 import { Journal } from "../src/Journal.ts"
 import { Input, type RunId, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 import * as Leases from "./fixtures/leases.ts"
 

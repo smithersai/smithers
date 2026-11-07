@@ -23,7 +23,7 @@
  * @category events
  * @since 0.1.0
  */
-export * as JournalEvent from "./JournalEvent.vibe"
+export * as JournalEvent from "#vibelang/emitted/src/JournalEvent"
 
 /**
  * @category events
@@ -35,18 +35,18 @@ export * as EngineEvent from "./EngineEvent.ts"
  * @category events
  * @since 1.0.0
  */
-export * as ExecutionFact from "./ExecutionFact.vibe"
+export * as ExecutionFact from "#vibelang/emitted/src/ExecutionFact"
 
 /**
  * @category events
  * @since 1.0.0
  */
-export * as CallFact from "./CallFact.vibe"
+export * as CallFact from "#vibelang/emitted/src/CallFact"
 
 /**
  * @since 1.0.0
  */
-export * as StepFact from "./StepFact.vibe"
+export * as StepFact from "#vibelang/emitted/src/StepFact"
 
 /**
  * @category services
@@ -76,13 +76,13 @@ export * as SqlConsensus from "./SqlConsensus.ts"
  * @category metrics
  * @since 0.1.0
  */
-export * as JournalMetrics from "./JournalMetrics.vibe"
+export * as JournalMetrics from "#vibelang/emitted/src/JournalMetrics"
 
 /**
  * @category redaction
  * @since 0.1.0
  */
-export * as Redaction from "./Redaction.ts"
+export * as Redaction from "#vibelang/emitted/src/Redaction"
 
 /**
  * @category redaction
@@ -94,22 +94,22 @@ export * as RedactedLogger from "./RedactedLogger.ts"
  * @category redaction
  * @since 1.0.0
  */
-export * as TelemetryLog from "./TelemetryLog.vibe"
+export * as TelemetryLog from "#vibelang/emitted/src/TelemetryLog"
 
 /**
  * @category projections
  * @since 0.1.0
  */
-export * as Projection from "./Projection.vibe"
+export * as Projection from "#vibelang/emitted/src/Projection"
 
 /**
  * @category models
  * @since 0.1.0
  */
-export * as OwnerId from "./OwnerId.vibe"
+export * as OwnerId from "#vibelang/emitted/src/OwnerId"
 
 /**
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "#vibelang/emitted/src/Migrations"

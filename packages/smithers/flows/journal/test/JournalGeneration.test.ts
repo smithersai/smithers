@@ -6,7 +6,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { Journal } from "../src/Journal.ts"
 import type { RunId } from "../src/JournalEvent.vibe"
 import * as JournalGeneration from "../src/JournalGeneration.ts"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 
 const database = Layer.provideMerge(Migrations.layer, TestDatabase.layer)

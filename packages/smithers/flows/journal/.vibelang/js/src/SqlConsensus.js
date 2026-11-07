@@ -58,6 +58,8 @@ export const make = Effect.gen(function* () {
     // partition: a guard and the reclaim it must exclude serialize, and two
     // runs' leases do not.
     const write = (key, body) => writer.write(body, { partition: key }).pipe(Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause)));
+    /** `write` for a body that only reads: it serializes the same, with no savepoint around it. */
+    const writeReading = (key, body) => writer.write(body, { partition: key, readOnly: true }).pipe(Effect.mapError((cause) => cause instanceof ConsensusError ? cause : strategyError(cause)));
     const leaseOf = (runId) => sql `
       SELECT owner_host_id, owner_pid, owner_nonce, claim_host_id, claim_pid, claim_nonce
       FROM flows_consensus_leases
@@ -233,7 +235,7 @@ export const make = Effect.gen(function* () {
             return matches.length > 0 ? rejected("claim_fresh") : rejected("claim_changed");
         }));
     }));
-    const guard = Effect.fn("Consensus.guard")((runId, owner) => write(runId, Effect.gen(function* () {
+    const guard = Effect.fn("Consensus.guard")((runId, owner) => writeReading(runId, Effect.gen(function* () {
         const held = yield* sql `
         SELECT 1 AS ok FROM flows_consensus_leases
         WHERE run_id = ${runId}

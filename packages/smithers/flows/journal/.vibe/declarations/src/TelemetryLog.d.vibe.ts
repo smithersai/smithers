@@ -21,7 +21,7 @@
  */
 import type * as Logger from "effect/Logger";
 import * as Schema from "effect/Schema";
-import * as Redaction from "../../../src/Redaction.ts";
+import * as Redaction from "./Redaction.vibe";
 /**
  * The journal event type every log record is written under.
  *

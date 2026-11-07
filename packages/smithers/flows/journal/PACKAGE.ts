@@ -83,7 +83,7 @@ const securityReview = Smithers.SecurityReview({
         "A redact branch (toJSON, binary views, proxies, __proto__ keys, array species, symbols, functions) that returns caller text without running the rules over it.",
         "redactJsonString returning the original parsed text when the redactor throws."
       ],
-      paths: ["src/Redaction.ts"]
+      paths: ["src/Redaction.vibe"]
     },
     {
       id: "logger-redaction",
@@ -121,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
         "A Dialect helper (indexHint, greatest) fed a caller-controlled string rather than a constant.",
         "A LIMIT or cursor value that is not validated as a bounded safe integer before it reaches the query."
       ],
-      paths: ["src/SqlJournal.ts", "src/migrations/**", "src/Migrations.ts"]
+      paths: ["src/SqlJournal.ts", "src/migrations/**", "src/Migrations.vibe"]
     },
     {
       id: "run-isolation",
@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
         "A redact or canonicalize walk without the maxDepth cap that recurses on a caller value.",
         "sourceEvents or sourceSequences caches that grow without eviction or truncation cleanup."
       ],
-      paths: ["src/SqlJournal.ts", "src/Redaction.ts"]
+      paths: ["src/SqlJournal.ts", "src/Redaction.vibe"]
     },
     {
       id: "compaction-integrity",

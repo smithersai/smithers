@@ -3,7 +3,7 @@ import * as DatabaseMigrations from "@smthrs/database/Migrations"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 
 const previous = {
   ...Migrations.set,
