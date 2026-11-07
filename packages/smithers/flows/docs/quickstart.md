@@ -24,7 +24,7 @@ give it something to read:
 ```bash
 mkdir flows-quickstart && cd flows-quickstart
 npm init -y && npm pkg set type=module
-npm install @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.1.1
+npm install @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5
 mkdir -p workspace && echo "the note" > workspace/note.txt
 ```
 
@@ -33,10 +33,10 @@ The project is `"type": "module"` because the program ends in a top-level
 platform code. `@smthrs/platform-node` is the Node host: it installs the SQLite
 driver. The published `1.0.0-rc.16` runtime is imported from
 `@smthrs/flows/NodeRuntime`, as the example below shows. `effect` is on the line because
-the program imports it directly. These pins reproduce the published API used below.
+the program imports it directly. These pins reproduce the published API used below. The published rc.16 adapters require Effect 4.0.5; use that cohort together.
 
 With pnpm 11, replace the `npm install` line with
-`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.1.1`, then run
+`pnpm add @smthrs/platform-node@1.0.0-rc.16 @smthrs/flows@1.0.0-rc.16 effect@4.0.5`, then run
 `pnpm approve-builds esbuild`. pnpm 11 installs only versions at least 24 hours
 old, so `@next` can resolve to a candidate more than one release behind; an
 exact version is installed the day it is published. pnpm 11 also ends the install with
