@@ -76,6 +76,9 @@ overrides:
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
   '@opentelemetry/otlp-transformer@0.222.0': patches/@opentelemetry__otlp-transformer@0.222.0.patch
+  # vibelang-runtime 0.0.12 matches a schema error class by its own _tag only, so a family base rejects its real
+  # subclasses (packages/errors/test/TaggedFailures.test.vibe). This patch mirrors the upstream VibeLang fix;
+  # delete it when vibelang 0.0.13 is published.
   vibelang-runtime@0.0.12: patches/vibelang-runtime@0.0.12.patch
   # beta.85 lib/Local/LocalProvider.js still strips build plugins in diff/reconcile;
   # lib/Local/RpcSerialization.js still drops functions and has no deferred-module rehydration.
