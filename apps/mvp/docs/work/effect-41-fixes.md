@@ -38,12 +38,14 @@ handling at public domain boundaries. No new library or app retry mechanism.
 
 ## Validation
 
-- Full apps/mvp suite, six coverage-enabled shards per tree, 10,273 tests in 672 files each:
-  `main` 77 failing names, upgrade 80, 74 shared. Of the six red only on the upgrade, five
-  (attention panel, repo clone, terminal panel, timeline summary refusal, tab imports) pass
-  on both trees in three paired reruns of their files (221 of 221 each) and in both earlier
-  full upgrade runs; the sixth, `embeds.test.ts`'s route listener race, fails on `main` with
-  the same `TypeError` at the same line in an earlier full run.
+- Two full apps/mvp pairs, six coverage-enabled shards per tree, 10,273 tests in 672 files each:
+  `main` 77 and 78 failing names, upgrade 80 and 74, with 74 and 71 shared. No assertion is red
+  only on the upgrade in both pairs. Each of the nine red only on the upgrade in one pair passes
+  on the upgrade in the other. Three reproduce on `main` with the
+  same failure: `embeds.test.ts`'s route listener race (`TypeError` at the same line),
+  `Notifications.access.test.ts`'s cursor test (`expected [] to include 'late-followed'`, 6 of 8
+  `main` runs and 2 of 8 upgrade runs with Electric throttled to 0.05 CPU), and `TodoRunner.test.ts`
+  (`SqlError: PgConnection: Query failed`).
 - The e41land non-MVP files pair test for test, except the TUI's Bun case, which timed out
   under load and passes on rerun.
 - Recursive lint: only apps/mvp fails, with the same 18 errors on both trees.
