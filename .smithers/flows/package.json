@@ -42,7 +42,8 @@
     "@smthrs/ui-styleguide": "workspace:*",
     "mermaid": "^11.17.2",
     "@smthrs/platform-bun": "workspace:*",
-    "@smthrs/jj": "workspace:*"
+    "@smthrs/jj": "workspace:*",
+    "@smthrs/fs": "workspace:*"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
