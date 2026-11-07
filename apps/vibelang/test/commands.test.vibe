@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Ask, AskOutput, Read } from "../src/surfaces/commands.vibe"
-import { backend, LIVE_BACKEND_MESSAGE } from "../src/surfaces/backend.vibe"
+import { backend, unreachable } from "../src/surfaces/backend.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { mockReply } from "../src/core/mockReplies.ts"
@@ -79,11 +79,14 @@ describe("Factory commands", () => {
   })
 
   it.live("chooses a backend only at the edge, refusing live access explicitly", () => effect {
-    const live = withBackend(false, undefined) catch (error) => ({ _tag: error._tag, message: error.message })
+    // Nothing listens on the discard port, so the live Factory there is unreachable (test/live.workerd.test.ts serves one).
+    const closed = "http://127.0.0.1:9"
+    const configured = Effect.provide(withBackend(false, undefined), ConfigProvider.layer(ConfigProvider.fromUnknown({ VIBELANG_FACTORY_URL: closed })))
+    const live = configured catch (error) => ({ _tag: error._tag, message: error.message })
     const env = try withBackend(false, "mock")
     const flag = try withBackend(true, "live")
     try Effect.try(() => {
-      expect(live).toMatchObject({ _tag: "LiveBackendNotDeployed", message: LIVE_BACKEND_MESSAGE })
+      expect(live).toMatchObject({ _tag: "LiveBackendNotDeployed", message: unreachable(closed) })
       expect(env.entries).toEqual([])
       expect(flag.entries).toEqual([])
     })

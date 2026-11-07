@@ -1,7 +1,8 @@
 import { defineConfig, devices } from "@playwright/test"
 
 // End-to-end tests drive the real built app in a browser. Mock mode needs no backend, so the preview server is the
-// whole stack. `E2E_BASE_URL` sends product cases to a deployment; transport-fault cases always use the local host.
+// whole stack. `E2E_BASE_URL` sends product cases to a deployment, still on the mock; transport-fault cases always use
+// the local host. `E2E_LIVE_URL` opts in to e2e/live.spec.ts, the live agent.
 const deployed = process.env.E2E_BASE_URL
 // Parallel checkouts on one machine each pick their own port.
 const port = Number(process.env.E2E_PORT ?? 4173)
@@ -13,6 +14,10 @@ export default defineConfig({
   workers: 3,
   use: {
     baseURL: deployed ?? `http://127.0.0.1:${port}`,
+    // A deployment runs the live agent; these suites test the mock (VL-13), which the page runs when this key asks.
+    ...(deployed === undefined ? {} : {
+      storageState: { cookies: [], origins: [{ origin: new URL(deployed).origin, localStorage: [{ name: "vibelang.agent", value: "mock" }] }] },
+    }),
     video: "retain-on-failure",
     trace: "retain-on-failure",
   },

@@ -12,6 +12,11 @@ export const DOCS_URL = "https://vibelang.sh"
 export const SOURCE_URL = "https://github.com/smithersai/vibelang"
 export const INSTALL = "npm create vibelang@latest my-app"
 
+/** What a failed answer says: the agent's reason (a spent budget, no model), or that it failed when it gave none. */
+export function failureOf(reason: string): string {
+  return reason === "" || reason === "failed" ? "Answer failed" : reason
+}
+
 export function view(model: Model, h: H): Document {
   return {
     title: model.surface === "splash" ? "VibeLang" : "VibeLang · Chat",
@@ -119,11 +124,12 @@ function entryView(entry: Entry, session: string, h: H): Html {
     [h.Class("sui-chat-message"), h.DataAttribute("role", role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [
       h.div([h.Class("sui-chat-message-label")], [entry.author === "person" && ownPost(entry.clientId, session) ? "You" : entry.name]),
-      h.div(
+      // A reply that failed before any text has nothing to show but its reason.
+      ...(entry.text === "" && entry.done ? [] : [h.div(
         [h.Class(entry.text === "" && !entry.done ? "sui-chat-bubble vl-thinking" : "sui-chat-bubble")],
         entry.text === "" && !entry.done ? [h.span([h.Class("vl-dots"), h.Role("status"), h.AriaLabel("Thinking")], [])] : body,
-      ),
-      ...(entry.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], ["Answer failed"])]),
+      )]),
+      ...(entry.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [failureOf(entry.error)])]),
     ],
   )
 }

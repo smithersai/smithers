@@ -5,11 +5,15 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { serverPath } from "./surface-host.ts"
 import { mockReply } from "../src/core/mockReplies.ts"
+import { unreachable } from "../src/surfaces/backend.vibe"
+
+/** Nothing listens on the discard port: the live Factory there is unreachable. test/live.workerd.test.ts serves one. */
+const CLOSED = "http://127.0.0.1:9"
 
 const entry = fileURLToPath(new URL("../dist-factory/surfaces/cli-entry.js", import.meta.url))
 function cli(args: string[], backend = "") {
   return spawnSync(entry, args, {
-    encoding: "utf8", timeout: 15_000, env: { ...process.env, VIBELANG_FACTORY: backend, NO_COLOR: "1" },
+    encoding: "utf8", timeout: 15_000, env: { ...process.env, VIBELANG_FACTORY: backend, VIBELANG_FACTORY_URL: CLOSED, NO_COLOR: "1" },
   })
 }
 
@@ -38,7 +42,7 @@ describe("built CLI process", () => {
     expect(cli(["--mock", "read"]).stdout).toBe("No entries. Event: 0\n")
   })
   it.each([
-    [["read"], "live Factory backend is not deployed yet"],
+    [["read"], "can't be reached"],
     [["--mock", "ask", " "], "message was refused: empty"],
     [["--mock", "read", "--after", "-1"], "after"],
     [["--mock", "ask"], "text"],
@@ -57,11 +61,11 @@ describe("built CLI process", () => {
   })
   it("keeps MCP startup errors on stderr and exits nonzero without a live backend", () => {
     const result = spawnSync(process.execPath, [serverPath], {
-      encoding: "utf8", timeout: 10_000, env: { ...process.env, VIBELANG_FACTORY: "" },
+      encoding: "utf8", timeout: 10_000, env: { ...process.env, VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: CLOSED },
     })
     expect(result.status).toBe(1)
     expect(result.stdout).toBe("")
-    expect(result.stderr).toBe("The live Factory backend is not deployed yet. Use --mock or VIBELANG_FACTORY=mock.\n")
+    expect(result.stderr).toBe(`${unreachable(CLOSED)}\n`)
   })
   it("ships a concise skill that describes both commands and backend lifetime", () => {
     const skill = readFileSync(new URL("../skills/vibelang-factory/SKILL.md", import.meta.url), "utf8")

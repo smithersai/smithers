@@ -15,7 +15,7 @@ export const manifestCommands = commands.map((command) => ({
 export const manifest = [
   "# vibelang-factory",
   "",
-  "Use --mock (or VIBELANG_FACTORY=mock) until the live backend is deployed. Mock data lasts for one process; MCP calls share it.",
+  "Live by default, at VIBELANG_FACTORY_URL (https://vibelang.smithers.sh). --mock (or VIBELANG_FACTORY=mock) uses the scripted mock; its data lasts for one process, and MCP calls share it.",
   "Global flags: --json --mock --help --llms. Conversation defaults to home; after defaults to 0.",
   "Usage: ask <text> [--conversation <id>]; read [--conversation <id>] [--after <seq>].",
   ...manifestCommands.flatMap((command) => [

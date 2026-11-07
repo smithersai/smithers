@@ -110,6 +110,21 @@ describe("the chat", () => {
     )
   })
 
+  test("a failed answer says why, in the agent's words, and live mode shows no Mock pill", () => {
+    const reason = "The agent's daily budget is spent. It resets at 00:00 UTC."
+    scene(
+      { update, view },
+      given({ ...chatting, mode: "live" }),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "s1-1", name: "Ada", text: "hi" } })),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" } })),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFailed", seq: 3, id: "r1", reason } })),
+      expect(text(reason)).toExist(),
+      expect(text("Answer failed")).not.toExist(),
+      expect(role("status", { name: "Thinking" })).not.toExist(),
+      expect(text("Mock")).not.toExist(),
+    )
+  })
+
   test("scrolling up pauses following; Latest follows the transcript again", () => {
     scene(
       { update, view },

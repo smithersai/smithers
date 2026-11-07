@@ -1,0 +1,69 @@
+// The live factory: `Factory` over the API Worker's HTTP protocol (wire.vibe, wiki/decisions/0010-live-agent.md),
+// through Effect's `HttpClient`, so the browser, the CLI and the MCP server share it. The sequencer is the
+// conversation's Durable Object; this layer only carries intents to it and its numbered events back.
+import * as Sse from "effect/encoding/Sse"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { EventSchema, Factory, ReadSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
+import { conversationPath, Health, HEALTH_PATH, Refusal } from "./wire.vibe"
+
+const decodeHealth = Schema.decodeUnknownEffect(Health)
+const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
+const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
+const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
+
+/** `Unavailable`, naming what failed; never a response body, which could carry anything. */
+function unavailable(what: string) {
+  return () => new Unavailable({ reason: what })
+}
+
+/** What `origin`'s `/api/health` says, or `Unavailable` when it can't be reached or doesn't speak the protocol. */
+export effect function health(origin: string) {
+  const client = try HttpClient.HttpClient
+  const response = try Effect.mapError(client.get(origin + HEALTH_PATH), unavailable("health unreachable"))
+  if (response.status !== 200) throw new Unavailable({ reason: `health answered ${response.status}` })
+  const body = try Effect.mapError(response.json, unavailable("health is not JSON"))
+  return try Effect.mapError(decodeHealth(body), unavailable("health is not the protocol"))
+}
+
+/** The Factory at `origin`, such as `https://vibelang.smithers.sh`. Each call is one request; nothing is cached. */
+export function LiveFactory(origin: string) {
+  return Layer.effect(Factory, effect {
+    const client = try HttpClient.HttpClient
+    const mode: Mode = "live"
+    return {
+      mode,
+      post: effect (conversation: string, clientId: string, name: string, text: string) => {
+        const request = HttpClientRequest.post(origin + conversationPath(conversation) + "/posts").pipe(
+          HttpClientRequest.bodyJsonUnsafe({ clientId, name, text }),
+        )
+        const response = try Effect.mapError(client.execute(request), unavailable("post unreachable"))
+        if (response.status === 409) {
+          const body = try Effect.mapError(response.json, unavailable("refusal is not JSON"))
+          const refused = try Effect.mapError(decodeRefusal(body), unavailable("refusal is not the protocol"))
+          throw new Refused({ refusal: refused.refusal })
+        }
+        if (response.status < 200 || response.status > 299) throw new Unavailable({ reason: `post answered ${response.status}` })
+      },
+      read: effect (conversation: string, after: number) => {
+        const url = origin + conversationPath(conversation) + `?after=${after}`
+        const response = try Effect.mapError(client.get(url), unavailable("read unreachable"))
+        if (response.status !== 200) throw new Unavailable({ reason: `read answered ${response.status}` })
+        const body = try Effect.mapError(response.json, unavailable("read is not JSON"))
+        return try Effect.mapError(decodeSnapshot(body), unavailable("read is not the protocol"))
+      },
+      events: (conversation: string, after: number) =>
+        Stream.unwrap(effect {
+          const url = origin + conversationPath(conversation) + `/events?after=${after}`
+          const request = HttpClientRequest.get(url).pipe(HttpClientRequest.setHeader("accept", "text/event-stream"))
+          const response = try Effect.mapError(client.execute(request), unavailable("events unreachable"))
+          if (response.status !== 200) throw new Unavailable({ reason: `events answered ${response.status}` })
+          return response.stream.pipe(
+            Stream.decodeText(),
+            Stream.pipeThroughChannel(Sse.decode()),
+            Stream.mapEffect((message) => decodeEvent(message.data)),
+            Stream.mapError(unavailable("events interrupted")),
+          )
+        }),
+    }
+  })
+}

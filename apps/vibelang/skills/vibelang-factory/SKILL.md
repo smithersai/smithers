@@ -8,10 +8,13 @@ Use `vibelang-factory` to work with vibelang.smithers.sh's Factory service. Run
 Use `--help` or `ask --help` for CLI syntax. From this app checkout, `pnpm cli ...`
 builds and runs the CLI; the package bin points to its emitted executable.
 
-Until the live backend is deployed, pass `--mock` or set `VIBELANG_FACTORY=mock`.
-Without either, commands fail with `LiveBackendNotDeployed`. Mock mode uses the real
-conversation state machine and scripted replies, with no server or model. Mock data
-lasts for one process: separate CLI calls start empty. To share a mock conversation
+Commands use the live Factory at `VIBELANG_FACTORY_URL` (default
+https://vibelang.smithers.sh): a real agent answers, and everyone in a conversation
+sees its posts. If that deployment runs only the mock agent or can't be reached,
+commands fail with `LiveBackendNotDeployed`. Pass `--mock` or set
+`VIBELANG_FACTORY=mock` for the mock: the real conversation state machine and
+scripted replies, with no server or model. Mock data lasts for one process:
+separate CLI calls start empty. To share a mock conversation
 across calls, use the MCP server (`pnpm mcp --mock`); its tools have the same schemas.
 
 Post a message and wait for its entire reply:
@@ -39,4 +42,5 @@ default to `home`; `after` defaults to 0 and must be a nonnegative integer.
 
 Use `--json` when consuming results as data. Successful commands exit 0; invalid
 arguments, refused messages and unavailable backends exit nonzero with a plain error
-on stderr. Do not interpret an unavailable live backend as a successful post.
+on stderr. Do not interpret an unavailable live backend as a successful post. A
+failed reply's reason (no model, a spent daily budget) is the agent's, not yours.

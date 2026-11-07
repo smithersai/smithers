@@ -1,0 +1,68 @@
+// The HTTP protocol between `LiveFactory` and the API Worker (wiki/decisions/0010-live-agent.md). Both sides import
+// these schemas, so the browser, the CLI and the Worker cannot disagree about a field.
+//
+//   GET  /api/health                                   Health
+//   POST /api/conversations/<id>/posts                 PostBody → 200 {} | 409 Refusal
+//   GET  /api/conversations/<id>?after=<seq>           ReadSnapshot
+//   GET  /api/conversations/<id>/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <EventSchema JSON>`
+import { MAX_TEXT } from "./conversation.ts"
+import { Seq } from "./schemas.vibe"
+
+export const HEALTH_PATH = "/api/health"
+const CONVERSATIONS = "/api/conversations/"
+
+/** The most characters a conversation id or a poster's name may hold. */
+export const MAX_CONVERSATION = 128
+export const MAX_NAME = 64
+
+/** What `/api/health` says: `live` when the API Worker is bound, `mock` when the site serves the mock agent. */
+export schema Health { readonly ok: boolean; readonly agent: "mock" | "live" }
+
+/** A person's post. `text` may be longer than `MAX_TEXT`: the sequencer refuses it as `too-long`. */
+export schema PostBody {
+  readonly clientId: string
+  readonly name: string
+  readonly text: string
+}
+
+/** Why the sequencer refused a post, with HTTP 409. */
+export schema Refusal { readonly refusal: "empty" | "too-long" | "duplicate" | "busy" | "not-replying" }
+
+/** The largest post body the API reads: the longest text, its client id and name, as UTF-8, with room for JSON. */
+export const MAX_POST_BYTES = MAX_TEXT * 4 + 4096
+
+/** The cursor a `read` or `events` request asks for: `after=<seq>`, zero when absent. */
+export const After = Seq
+
+/** The path of a conversation, its id one URL-encoded segment. */
+export function conversationPath(conversation: string): string {
+  return CONVERSATIONS + encodeURIComponent(conversation)
+}
+
+/** A route of the conversation API: the conversation and what is asked of it. */
+export type Route =
+  | { readonly kind: "read"; readonly conversation: string }
+  | { readonly kind: "post"; readonly conversation: string }
+  | { readonly kind: "events"; readonly conversation: string }
+
+/** The route a path names, or `undefined`. A conversation id is 1 to `MAX_CONVERSATION` characters. */
+export function routeOf(method: string, pathname: string): Route | undefined {
+  if (!pathname.startsWith(CONVERSATIONS)) return undefined
+  const parts = pathname.slice(CONVERSATIONS.length).split("/")
+  if (parts.length > 2) return undefined
+  const decoded = decodeSegment(parts[0]!)
+  if (decoded === undefined || decoded.length === 0 || decoded.length > MAX_CONVERSATION) return undefined
+  const rest = parts[1]
+  if (rest === undefined && method === "GET") return { kind: "read", conversation: decoded }
+  if (rest === "posts" && method === "POST") return { kind: "post", conversation: decoded }
+  if (rest === "events" && method === "GET") return { kind: "events", conversation: decoded }
+  return undefined
+}
+
+function decodeSegment(segment: string): string | undefined {
+  try {
+    return decodeURIComponent(segment)
+  } catch {
+    return undefined
+  }
+}
