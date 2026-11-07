@@ -19,6 +19,7 @@
  * @since 1.0.0
  */
 
+import { Fault } from "@smthrs/flow"
 import * as Cause from "effect/Cause"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
@@ -66,6 +67,8 @@ export class AcpError extends Schema.TaggedError<AcpError>()("@smthrs/agent/Acp/
   method: Schema.String,
   rpcCode: Schema.optional(Schema.Int)
 }) {}
+
+Fault.register("@smthrs/agent/Acp/AcpError", "infra")
 
 /**
  * The two ends of an agent's stdio: the lines it writes, and how to write one

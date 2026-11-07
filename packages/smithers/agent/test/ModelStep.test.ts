@@ -273,7 +273,7 @@ describe("ModelStep.defaultRetryPolicy", () => {
       .toEqual({ _tag: "RetryAfter", delayMs: 16_000 })
     expect(RetryPolicy.decide(policy, { attempt: 6, error: rateLimited(), random: 1, elapsedMs: 31_000 }))
       .toEqual({ _tag: "GiveUp", reason: "exhausted" })
-    const denied = new Permission.PermissionDenied({
+    const denied = Permission.PermissionDenied.new({
       capability: Capability.make("net:post", "https://provider.invalid/v1/chat/completions"),
       reason: "denied"
     })
@@ -684,7 +684,7 @@ describe("ModelStep on the durable engine", () => {
   )
 
   it("fails the step on a permission refusal without retrying it", async () => {
-    const denied = new Permission.PermissionDenied({
+    const denied = Permission.PermissionDenied.new({
       capability: Capability.make("net:post", "https://provider.invalid/v1/chat/completions"),
       reason: "the host refused the provider"
     })

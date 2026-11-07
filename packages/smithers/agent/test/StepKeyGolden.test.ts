@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Golden vectors for the durable identities this package derives.
  *
@@ -30,7 +31,7 @@ import * as ModelRequest from "@smthrs/model/ModelRequest"
 import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -120,7 +121,7 @@ const drive = <A>(
   body: Effect.Effect<
     A,
     unknown,
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | FlowRuntime.FlowRuntime
     | FlowRuntime.FlowInstance
     | Budget.Budget
@@ -176,7 +177,7 @@ const callUnder = (layers: ReadonlyArray<string>) =>
         run: () =>
           Effect.map(
             Action.CurrentInvocationKey,
-            (key) => new Cell.CallResult({ outcome: "success", value: key ?? "missing" })
+            (key) => Cell.CallResult.new({ outcome: "success", value: key ?? "missing" })
           )
       }
     })

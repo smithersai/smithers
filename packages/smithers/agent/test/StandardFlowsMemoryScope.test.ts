@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Scoped model-facing memory, through the path an agent run dispatches.
  *
@@ -37,7 +38,7 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Context, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -141,7 +142,7 @@ const runFlow = EngineFlow.make("agent/test/memory-scope", {
 type RunBody = Effect.Effect<
   ReadonlyArray<AgentEvent.AgentEvent>,
   unknown,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 >
 
 /**

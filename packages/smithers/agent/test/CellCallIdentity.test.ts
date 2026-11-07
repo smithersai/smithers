@@ -5,7 +5,7 @@ import * as Cell from "@smthrs/harness/Cell"
 import * as Model from "@smthrs/model/Model"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Layer, Option, Schema, Scope, Stream } from "effect"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import { createHash } from "node:crypto"
 import { expect, it } from "vitest"
 import * as Budget from "../src/Budget.ts"
@@ -45,13 +45,13 @@ const flow = Flow.make("agent/test/cell-call-identity", {
 /** Dispatches the fixed call under `encoding` and returns its key and the material hashed on the way. */
 const observe = async (encoding: FlowEngine.KeyEncoding) => {
   const material: Array<string> = []
-  const crypto = Layer.effect(Crypto.Crypto)(Effect.map(Crypto.Crypto, (live) => ({
+  const crypto = Layer.effect(EffectDigest.Digest)(Effect.map(EffectDigest.Digest, (live) => ({
     ...live,
-    digest: (algorithm: Crypto.DigestAlgorithm, bytes: Uint8Array) => {
+    digest: (algorithm: EffectDigest.Algorithm, bytes: Uint8Array) => {
       material.push(new TextDecoder().decode(bytes))
       return live.digest(algorithm, bytes)
     }
-  }))).pipe(Layer.provide(NodeCrypto.layer))
+  }))).pipe(Layer.provideMerge(NodeCrypto.layer))
   const observed = await Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
     const scope = yield* Effect.scope
@@ -66,7 +66,7 @@ const observe = async (encoding: FlowEngine.KeyEncoding) => {
           calls: {
             run: () =>
               Effect.map(Action.CurrentInvocationKey, (key) =>
-                new Cell.CallResult({ outcome: "success", value: key ?? "missing" }))
+                Cell.CallResult.new({ outcome: "success", value: key ?? "missing" }))
           }
         })
         return yield* port.call(call)

@@ -186,7 +186,7 @@ const promoteAndCall = async (capabilityEnvelope: ReadonlyArray<Capability.Capab
           implementations: new Map([["weekly-digest", () =>
             Effect.sync(() => {
               calls += 1
-              return new Cell.CallResult({ outcome: "success", value: "digest ready" })
+              return Cell.CallResult.new({ outcome: "success", value: "digest ready" })
             })]])
         }).pipe(Stream.runForEach((event) =>
           Effect.sync(() => {

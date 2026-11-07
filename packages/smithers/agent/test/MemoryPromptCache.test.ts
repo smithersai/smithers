@@ -1,3 +1,6 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import * as EffectLayer from "effect/Layer"
 /**
  * The regression gate for memory and the prompt cache.
  *
@@ -27,7 +30,7 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { execFileSync } from "node:child_process"
 import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
@@ -146,7 +149,11 @@ const awaitParked = (
 
 /** Runs one body as one real durable execution; with `resume`, resumes it once after it parks. */
 const drive = <A, E>(
-  body: Effect.Effect<A, E, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  body: Effect.Effect<
+    A,
+    E,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options: { readonly resume?: boolean; readonly parked?: () => void } = {}
 ): Promise<ReadonlyArray<Outcome>> =>
   Effect.gen(function*() {
@@ -213,7 +220,7 @@ const run = (options: {
     const collected: Array<AgentEvent.AgentEvent> = []
     const services = yield* Effect.provide(
       Effect.context<Memory.Requirements | Evaluator.Evaluator>(),
-      Layer.merge(NodeServices.layer, options.evaluator)
+      Layer.merge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer), options.evaluator)
     )
     const agent = yield* Agent.Agent
     yield* agent.run({
@@ -322,7 +329,7 @@ describe("memory and the prompt cache", () => {
                 code: "engine_failed",
                 message: "permission required",
                 cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-                  new Permission.PermissionRequired({
+                  Permission.PermissionRequired.new({
                     requestId: "memory-restart",
                     capability: Capability.make("fs:write", "**"),
                     tier: "irreversible",

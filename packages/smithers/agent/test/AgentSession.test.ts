@@ -1,3 +1,4 @@
+import { expectTypeOf } from "vitest"
 /**
  * The composition root, end to end: control → executor → durable engine.
  *
@@ -327,7 +328,16 @@ interface StackOptions {
 
   readonly modules?: {
     readonly catalog: Executable.Catalog
-    readonly layer: Layer.Layer<never, never, Executable.Registration | NotificationQueue.NotificationQueue>
+    readonly layer: Layer.Layer<
+      never,
+      never,
+      | Executable.Registration
+      | NotificationQueue.NotificationQueue
+      | import("effect/crypto/Digest").Digest
+      | import("effect/crypto/SecureRandom").SecureRandom
+      | FlowRuntime.FlowRuntime
+      | import("@smthrs/flow").Action.Implementations
+    >
   } | undefined
   /** The scripted resolver installed as the composition's `SeatResolver`. */
   readonly resolve: SeatResolver.Service["resolve"]
@@ -540,7 +550,15 @@ const awaitStatus = (
  */
 const moduleRun = (options: {
   readonly flow: Executable.Executable["flow"]
-  readonly registration: Layer.Layer<never, never, Executable.Registration>
+  readonly registration: Layer.Layer<
+    never,
+    never,
+    | Executable.Registration
+    | import("effect/crypto/Digest").Digest
+    | import("effect/crypto/SecureRandom").SecureRandom
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
+  >
   readonly idempotencyKey: string
 }): Effect.Effect<{ readonly claims: number }, unknown> =>
   Effect.gen(function*() {
@@ -993,7 +1011,7 @@ describe("AgentSession", () => {
           promptRunner: ({ text }) =>
             Effect.sync(() => {
               rendered.push(text)
-              return new Cell.CallResult({ outcome: "success", value: "reviewed" })
+              return Cell.CallResult.new({ outcome: "success", value: "reviewed" })
             })
         })))
       }).pipe(Effect.scoped)
@@ -3587,8 +3605,8 @@ class Unprovided
 /** Never called; tsc checks it (#2704). The session sites run `body.pipe(Effect.provide(stack(...)))` uncast. */
 const unprovidedServiceProbe = (gate: Deferred.Deferred<void>) => {
   const layer = stack({ resolve: seat(capturing([])), notes: [], gate })
-  // @ts-expect-error the session stack does not provide Unprovided
-  Effect.runPromise(Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(layer), Effect.scoped))
+  const unmet = Effect.map(Unprovided, (service) => service.value).pipe(Effect.provide(layer), Effect.scoped)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof Effect.runPromise>[0]>()
   Effect.runPromise(Effect.map(Control.Control, (control) => control).pipe(Effect.provide(layer), Effect.scoped))
 }
 

@@ -1,3 +1,6 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import * as EffectLayer from "effect/Layer"
 /**
  * What each standard helper actually binds.
  *
@@ -35,7 +38,7 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Search from "@smthrs/std/Search"
 import * as TestRunner from "@smthrs/std/TestRunner"
 import { Context, Effect, Fiber, FileSystem, Layer, Option, Path, Redacted } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { existsSync, readFileSync } from "node:fs"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
@@ -96,7 +99,7 @@ const memoryServices = Context.make(MemoryStore.MemoryStore, MemoryStore.makeNoo
 )
 
 const clockServices = Context.empty() as Context.Context<
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 >
 
 /** The catalog `docs/guides/capabilities.md` promises, helper by helper. */
@@ -353,7 +356,11 @@ describe("the coding agent's terminal binding (T-TRM-05)", () => {
  * short bound.
  */
 describe("a host's command bound", () => {
-  const native = Effect.runSync(Effect.context<NodeServices.NodeServices>().pipe(Effect.provide(NodeServices.layer)))
+  const native = Effect.runSync(
+    Effect.context<NodeServices.NodeServices>().pipe(
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+    )
+  )
   const posix = process.platform === "win32" ? it.skip : it
   const bashBinding = async (callLimitMillis?: number) => {
     const [binding] = await Effect.runPromise(StandardFlows.shell(native, undefined, { callLimitMillis }).bindings())

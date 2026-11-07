@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The failure edges of the flow-engine port.
  *
@@ -14,13 +15,13 @@ import * as Cell from "@smthrs/harness/Cell"
 import { HarnessError } from "@smthrs/harness/HarnessError"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Option } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import type * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
 
-const run = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>) =>
   Effect.runPromise(Effect.provide(effect, NodeCrypto.layer))
 
 const effects: Descriptor.EffectDeclaration = {
@@ -58,7 +59,7 @@ const provenance: WorkspaceSandbox.Provenance = {
 
 /** A runner that never runs: every case here fails before or around it. */
 const runner: FlowEngineLike.WorkspaceCallRunner = {
-  run: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: "ran" }))
+  run: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "ran" }))
 }
 
 /**

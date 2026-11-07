@@ -18,7 +18,7 @@ const flow = Flow.make("agent/test/cell-call-admission", {
 })
 
 it("rejects a mutated host result through the typed failure channel with its cause", async () => {
-  const malformed = Object.assign(new Cell.CallResult({ outcome: "success", value: null }), { code: "timeout" })
+  const malformed = Object.assign(Cell.CallResult.new({ outcome: "success", value: null }), { code: "timeout" })
   const outcome = await Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
     const scope = yield* Effect.scope

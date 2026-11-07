@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The structured-output correction policy.
  *
@@ -36,7 +37,7 @@ import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import { Cause, Effect, Exit, Fiber, Layer, Metric, Option, Schema, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -453,7 +454,7 @@ const stores = Layer.mergeAll(
  * fiber, not by the layer that built the engine.
  */
 const durable = <A, E>(
-  body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
 ): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie)
@@ -491,7 +492,9 @@ const incarnation = (
  * be told. The clock goes outside the stores so the classifier, the engine row
  * and the durable timer all read the same time.
  */
-const onTestClock = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
+const onTestClock = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(Effect.orDie)
   )

@@ -58,7 +58,7 @@ const observed = (ordinal: number, sample: typeof cases[number]) => {
       eventType: "flows.harness.cell-call-settled.v1",
       flowName: sample.flowName,
       identity,
-      result: new Cell.CallResult({ outcome: "success", value: sample.value, message: sample.message })
+      result: Cell.CallResult.new({ outcome: "success", value: sample.value, message: sample.message })
     })
 }
 

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Token and latency budgets across a run's model calls.
  *
@@ -35,7 +36,7 @@ import type * as Route from "@smthrs/model/Route"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Cause, Clock, Effect, Exit, Fiber, Latch, Layer, Option, Schema, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { describe, expect, it } from "vitest"
@@ -882,8 +883,9 @@ const stores = Layer.mergeAll(
   TestStores.layer()
 )
 
-const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
-  Effect.runPromise(Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie))
+const durable = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> => Effect.runPromise(Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie))
 
 const warnings = (entries: ReadonlyArray<{ readonly eventType: string; readonly payload: unknown }>) =>
   entries.filter((entry) => entry.eventType === Budget.budgetWarningEvent).map((entry) => entry.payload)
@@ -1175,7 +1177,9 @@ describe("a budget across an engine boundary", () => {
  * suite no wall-clock time, and so the resumed run's wake is something the
  * case performs rather than waits for.
  */
-const onTestClock = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
+const onTestClock = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> =>
   Effect.runPromise(
     Effect.scoped(Effect.provide(body, Layer.merge(NodeCrypto.layer, TestClock.layer()))).pipe(Effect.orDie)
   )

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A quota refusal is never a recorded step value.
  *
@@ -39,7 +40,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import type * as Route from "@smthrs/model/Route"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, Exit, Layer, Option, Schema, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Scope from "effect/Scope"
 import { SqlClient } from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
@@ -154,8 +155,9 @@ const stores = Layer.mergeAll(
   TestStores.layerAt(":memory:")
 )
 
-const durable = <A, E>(body: Effect.Effect<A, E, Crypto.Crypto | Scope.Scope>): Promise<A> =>
-  Effect.runPromise(Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie))
+const durable = <A, E>(
+  body: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+): Promise<A> => Effect.runPromise(Effect.scoped(Effect.provide(body, NodeCrypto.layer)).pipe(Effect.orDie))
 
 /** The payload every execution carries, so all of them seal the same key. */
 const input = { diff: "-  old\n+  new" }

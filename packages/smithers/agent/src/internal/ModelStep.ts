@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The one implementation of a durable model call: its key, its recorder and
  * its action.
@@ -19,7 +20,7 @@ import { Model, ModelError, ModelEvent, ModelRequest, RequestExecutor, type Rout
 import { StepKey } from "@smthrs/plan"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
@@ -643,13 +644,13 @@ export const key = Effect.fn("ModelStep.key")(function*(
   const wire = `[${prepared.body.join(",")}]`
   // `Digest.provideSync` supplies a synchronous SHA-256 proven byte-identical
   // to the platform service, so a key needs no `Crypto` from its caller.
-  const crypto = yield* Digest.provideSync(Crypto.Crypto)
+  const crypto = yield* Digest.provideSync(EffectDigest.Digest)
   for (let ordinal = 0;; ordinal++) {
     sealed.body.request.body = `flows/agent/wire-body/${ordinal}`
     const marker = JSON.stringify(sealed.body.request.body)
     let collision = false
     const derived = yield* StepKey.fromKeyMaterial(sealed, {}).pipe(
-      Effect.provideService(Crypto.Crypto, {
+      Effect.provideService(EffectDigest.Digest, {
         ...crypto,
         digest: (algorithm, data) => {
           const canonical = new TextDecoder().decode(data)
@@ -796,7 +797,7 @@ export const dispatch = (
 ): Effect.Effect<
   Dispatched,
   typeof Failure.Type,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
 > =>
   Effect.gen(function*() {
     const fields = { step: options.name, model: options.request.modelId }

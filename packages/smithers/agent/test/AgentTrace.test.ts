@@ -165,7 +165,7 @@ describe("durable call identity", () => {
           eventType: "flows.harness.cell-call-settled.v1",
           flowName: value.flowName,
           identity: value.identity,
-          result: new Cell.CallResult({ outcome, value: null })
+          result: Cell.CallResult.new({ outcome, value: null })
         })
       )!.payload as Record<string, unknown>
 
@@ -231,7 +231,7 @@ const cell = Cell.source("ctx.done('done')")
 const transition = new Cell.Complete({ output: "done" })
 const outcome = new Cell.Settled({ transition })
 const reason = new EngineLike.SuspendReason({ code: "waiting-input", message: "Needs an answer" })
-const request = new Permission.PermissionRequired({
+const request = Permission.PermissionRequired.new({
   requestId: "permission-1",
   runId: "run-1",
   capability: Capability.make("fs:write", "notes/log.md"),
@@ -702,7 +702,7 @@ describe("trace", () => {
           eventType: "flows.harness.cell-call-settled.v1",
           flowName: "notes/save",
           identity,
-          result: new Cell.CallResult({ outcome: "failure", value: null, message: "The note was locked" })
+          result: Cell.CallResult.new({ outcome: "failure", value: null, message: "The note was locked" })
         }),
         {
           eventType: "control.agent.cell-call-settled",
@@ -910,7 +910,7 @@ describe("trace", () => {
         eventType: "flows.harness.cell-call-settled.v1",
         flowName: "read",
         identity,
-        result: new Cell.CallResult({ outcome: "success", value })
+        result: Cell.CallResult.new({ outcome: "success", value })
       })
     )
 
@@ -936,7 +936,7 @@ describe("trace", () => {
           eventType: "flows.harness.cell-call-settled.v1",
           flowName: "read",
           identity,
-          result: new Cell.CallResult({ outcome: "success", value: small })
+          result: Cell.CallResult.new({ outcome: "success", value: small })
         })
       )
     ).toEqual({
@@ -1059,14 +1059,14 @@ describe("trace", () => {
         })
       )!.payload as Record<string, unknown>
     const failed = settledWith(
-      new Cell.CallResult({ outcome: "failure", value: null, code: "timeout", message: "Flow bash timed out." })
+      Cell.CallResult.new({ outcome: "failure", value: null, code: "timeout", message: "Flow bash timed out." })
     )
     expect(failed).toMatchObject({ outcome: "failure", code: "timeout", message: "Flow bash timed out." })
     // A flow's own failure carries no code on the result; the journal says
     // which code that absence stands for instead of leaving a reader to know.
-    expect(settledWith(new Cell.CallResult({ outcome: "failure", value: null, message: "Flow bash failed." })))
+    expect(settledWith(Cell.CallResult.new({ outcome: "failure", value: null, message: "Flow bash failed." })))
       .toMatchObject({ outcome: "failure", code: Cell.defaultCallFailureCode })
-    const passed = settledWith(new Cell.CallResult({ outcome: "success", value: { exitCode: 0 } }))
+    const passed = settledWith(Cell.CallResult.new({ outcome: "success", value: { exitCode: 0 } }))
     expect(passed).not.toHaveProperty("code")
     expect(passed).not.toHaveProperty("reason")
 
@@ -1076,7 +1076,7 @@ describe("trace", () => {
         eventType: "flows.harness.cell-call-settled.v1",
         flowName: "bash",
         identity,
-        result: new Cell.CallResult({ outcome: "failure", value: null, message: "Flow bash failed." }),
+        result: Cell.CallResult.new({ outcome: "failure", value: null, message: "Flow bash failed." }),
         reason: { tag: "StdError", code: "request_failed" }
       })
     )!.payload as Record<string, unknown>
@@ -1106,7 +1106,7 @@ describe("trace", () => {
         eventType: "flows.harness.cell-call-settled.v1",
         flowName: "test/run",
         identity,
-        result: new Cell.CallResult({ outcome: "failure", value: null, message })
+        result: Cell.CallResult.new({ outcome: "failure", value: null, message })
       })
     )
 
@@ -2576,7 +2576,7 @@ describe("where time and tokens went", () => {
     eventType: "flows.harness.cell-call-settled.v1",
     flowName: "bash",
     identity,
-    result: new Cell.CallResult({ outcome: "success", value: { exitCode: 0 } })
+    result: Cell.CallResult.new({ outcome: "success", value: { exitCode: 0 } })
   } as const
 
   it("journals what a cell amounted to, and how long each of its calls took", () => {

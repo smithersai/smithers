@@ -362,7 +362,7 @@ describe("AgentAction.make", () => {
           promptRunner: ({ text }) =>
             Effect.sync(() => {
               rendered.push(text)
-              return new Cell.CallResult({ outcome: "success", value: JSON.stringify({ approved: true, issues: [] }) })
+              return Cell.CallResult.new({ outcome: "success", value: JSON.stringify({ approved: true, issues: [] }) })
             })
         }, scripted([`const answer = await ctx.call("review", { args: "diff" }); ctx.done(String(answer))`], [])))
       )
@@ -466,7 +466,7 @@ describe("AgentAction.make", () => {
             promptRunner: ({ text }) =>
               Effect.sync(() => {
                 calls.push(text)
-                return new Cell.CallResult({ outcome: "success", value: "expensive-tool-output-7f3a" })
+                return Cell.CallResult.new({ outcome: "success", value: "expensive-tool-output-7f3a" })
               })
           },
           scripted([
@@ -623,7 +623,7 @@ describe("AgentAction.make", () => {
     const rendered = JSON.stringify(failure)
     expect(rendered).toContain("StructuredOutputFailure")
     const encoded = JSON.parse(JSON.stringify(exit))
-    const error = encoded.cause.failures[0].error
+    const error = encoded.cause.reasons[0].error
     expect(error.action).toBe("agent/test/Reviewer")
     expect(error.nodeId).toEqual(expect.any(String))
     expect(error.nodeId.length).toBeGreaterThan(0)

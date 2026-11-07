@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The assembled cell path, run end-to-end outside a unit test's hand-wiring.
  *
@@ -66,7 +67,7 @@ import {
   Stream,
   Tracer
 } from "effect"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as PlatformError from "effect/PlatformError"
 import * as TestClock from "effect/testing/TestClock"
 import { describe, expect, it, vi } from "vitest"
@@ -209,7 +210,7 @@ const implementations = (
       (call) =>
         Effect.sync(() => {
           executed.push(`fs/list#${call.identity.ordinal}`)
-          return new Cell.CallResult({ outcome: "success", value: ["alpha.md"] })
+          return Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] })
         })
     ],
     [
@@ -217,7 +218,7 @@ const implementations = (
       (call) =>
         Effect.sync(() => {
           executed.push(`fs/write#${call.identity.ordinal}`)
-          return new Cell.CallResult({
+          return Cell.CallResult.new({
             outcome: "success",
             value: `wrote ${(call.input as { readonly path: string }).path}`
           })
@@ -266,7 +267,7 @@ const drive = <A, E>(
   body: Effect.Effect<
     A,
     E,
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | FlowRuntime.FlowRuntime
     | FlowRuntime.FlowInstance
     | Budget.Budget
@@ -645,9 +646,9 @@ describe("capacity seat chain", () => {
       }
     })
     const outcome = await drive(Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* EffectDigest.Digest
       return yield* collect({ model, seat: dynamic, capacity: { park: false }, registry: registryOf([]) }).pipe(
-        Effect.provideService(Crypto.Crypto, {
+        Effect.provideService(EffectDigest.Digest, {
           ...crypto,
           digest: (algorithm, data) => {
             if (mode === "key" && new TextDecoder().decode(data).includes("FactoryModelChoice")) {
@@ -2527,7 +2528,7 @@ describe("Agent.run", () => {
       }
     })
     const failing = new Map(implementations([]))
-    failing.set("fs/write", () => Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null, ...failure })))
+    failing.set("fs/write", () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: null, ...failure })))
     const outcome = await drive(
       collect({ registry: registryOf(flows), model: recorded([]), implementations: failing }).pipe(
         Effect.provideService(Tracer.Tracer, tracer)
@@ -2584,7 +2585,7 @@ describe("Agent.run", () => {
           prompt: "write the first file",
           registry: registryOf(flows),
           implementations: implementations(executed),
-          promptRunner: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: "unused" })),
+          promptRunner: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "unused" })),
           authorize: (call) => Effect.sync(() => void authorized.push(call.flowName)),
           modelParams: ModelRequest.GenerationParams.make({ maxTokens: 512 }),
           layers: ["layer-a"],
@@ -2900,7 +2901,7 @@ describe("Agent.run", () => {
                 code: "engine_failed",
                 message: "permission required",
                 cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-                  new Permission.PermissionRequired({
+                  Permission.PermissionRequired.new({
                     requestId: "memory-restart",
                     capability: Capability.make("fs:write", "**"),
                     tier: "irreversible",

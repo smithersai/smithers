@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The cell loop on the real durable engine.
  *
@@ -29,7 +30,7 @@ import { Node } from "@smthrs/plan"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Checkpoints from "@smthrs/std/Checkpoints"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import type * as Budget from "../src/Budget.ts"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
@@ -114,7 +115,7 @@ const flows = [descriptor("fs/list", "sealed"), descriptor("fs/write", "irrevers
  * in `HarnessError.cause` has to be JSON. The controller decodes it back.
  */
 const permission = Schema.encodeUnknownSync(Permission.PermissionRequired)(
-  new Permission.PermissionRequired({
+  Permission.PermissionRequired.new({
     requestId: "perm-write",
     capability: Capability.make("fs:write", "**"),
     tier: "irreversible",
@@ -145,7 +146,7 @@ const runner = (
     Effect.suspend(() => {
       executed.push(`${call.flowName}#${call.identity.frame}:${call.identity.ordinal}`)
       return Effect.succeed(
-        new Cell.CallResult({
+        Cell.CallResult.new({
           outcome: "success",
           value: call.flowName === "fs/list" ? ["alpha.md"] : `wrote ${(call.input as { path: string }).path}`
         })
@@ -210,7 +211,7 @@ const drive = <A, E>(
   body: Effect.Effect<
     A,
     E,
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | FlowRuntime.FlowRuntime
     | FlowRuntime.FlowInstance
     | Budget.Budget
@@ -337,9 +338,9 @@ describe("the cell loop on the durable engine", () => {
                 executed.push(call.flowName)
                 if (call.flowName === "fs/write" && waiting) {
                   waiting = false
-                  yield* Flow.suspend(instance)
+                  return yield* Flow.suspend(instance)
                 }
-                return new Cell.CallResult({
+                return Cell.CallResult.new({
                   outcome: "success",
                   value: call.flowName === "fs/list" ? ["alpha.md"] : "wrote alpha.md"
                 })
@@ -385,8 +386,8 @@ describe("the cell loop on the durable engine", () => {
         Effect.gen(function*() {
           executed.push(call.input)
           if (first && call.input === "read") yield* Effect.sleep(50)
-          if (first && call.input === "wait") yield* Effect.never
-          return new Cell.CallResult({ outcome: "success", value: call.input })
+          if (first && call.input === "wait") return yield* Effect.never
+          return Cell.CallResult.new({ outcome: "success", value: call.input })
         })
     }
     const outcome = await drive(
@@ -408,7 +409,7 @@ describe("the cell loop on the durable engine", () => {
         )
         if (first) {
           first = false
-          yield* port.suspend(new EngineLike.SuspendReason({ code: "waiting-input", message: "replay" }))
+          return yield* port.suspend(new EngineLike.SuspendReason({ code: "waiting-input", message: "replay" }))
         }
       }),
       { resume: true }
@@ -589,7 +590,7 @@ const counting = (executed: Array<string>): FlowEngineLike.CallRunner => ({
   run: (call) =>
     Effect.sync(() => {
       executed.push(`${call.flowName}#${call.identity.frame}:${call.identity.ordinal}`)
-      return new Cell.CallResult({ outcome: "success", value: executed.length })
+      return Cell.CallResult.new({ outcome: "success", value: executed.length })
     })
 })
 
@@ -801,7 +802,7 @@ describe("FlowEngineLike.call", () => {
       run: (call) =>
         Effect.sync(() => {
           executed.push(`${call.flowName}:${Option.getOrElse(call.placement, () => "none")}`)
-          return new Cell.CallResult({ outcome: "success", value: executed.length })
+          return Cell.CallResult.new({ outcome: "success", value: executed.length })
         })
     }
     const outcome = await drive(Effect.gen(function*() {

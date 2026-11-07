@@ -50,7 +50,7 @@ import type * as FlowEngineLike from "./FlowEngineLike.ts"
 
 /** A refusal the cell observes as an ordinary catchable failure. */
 const refused = (code: Cell.CallFailureCode, message: string): Cell.CallResult =>
-  new Cell.CallResult({ outcome: "failure", value: null, code, message })
+  Cell.CallResult.new({ outcome: "failure", value: null, code, message })
 
 /**
  * The refusal a flow that cannot be pointed at a tree answers with.

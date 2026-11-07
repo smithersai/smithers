@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * One control-plane launch, run as one durable agent session.
  *
@@ -91,7 +92,7 @@ import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -1984,7 +1985,7 @@ export const budgetParking = (
       code: "engine_failed",
       message: `Budget approval required: ${question}`,
       cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-        new Permission.PermissionRequired({
+        Permission.PermissionRequired.new({
           code: "permission_required",
           requestId,
           runId,
@@ -2983,7 +2984,7 @@ export const drainRecordedSignals: Effect.Effect<
 type Services =
   | Agent
   | ControlRuntime
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | DurableEngineState.DurableEngineState
   | FlowRuntime.FlowRuntime
   | Journal.Journal
@@ -3156,7 +3157,7 @@ export const make = (
               code: "engine_failed",
               message: `Approval required: ${input.question}`,
               cause: Schema.encodeUnknownSync(Permission.PermissionRequired)(
-                new Permission.PermissionRequired({
+                Permission.PermissionRequired.new({
                   code: "permission_required",
                   requestId: identity.requestId,
                   runId,
@@ -3886,7 +3887,7 @@ export const make = (
         // sleep, whose deferred key is hashed, so `Crypto` travels with the
         // runtime rather than being substituted at the binding.
         const engineServices = yield* Effect.context<
-          Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+          (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
         >()
         const tags: Array<string> = []
         // The trail is buffered in memory and written by a fiber of its own,
@@ -5135,7 +5136,7 @@ export const make = (
           let run = yield* runtime.getRun(input.runId)
           let waiting = yield* engineState.waiting(input.runId)
           // Native polling briefly clears the wait while the control projection
-          // still says parked. Observe an eligible durable wait; never invent it.
+          // can briefly fall back to accepted. Observe an eligible durable wait; never invent it.
           for (let poll = 0; poll < 100; poll++) {
             if (["completed", "failed", "cancelled"].includes(run.status)) {
               break
@@ -5144,7 +5145,8 @@ export const make = (
               break
             }
             if (
-              !options.reenterModules?.includes(run.flowId) || !["parked", "running"].includes(run.status) ||
+              !options.reenterModules?.includes(run.flowId) ||
+              !["accepted", "parked", "running"].includes(run.status) ||
               Option.isSome(waiting) && waiting.value.reason !== "event"
             ) break
             yield* Effect.sleep("10 millis")

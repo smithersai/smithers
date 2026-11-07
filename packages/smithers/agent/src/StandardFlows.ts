@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The built-in host capabilities, expressed as ordinary executable flows.
  *
@@ -72,7 +73,7 @@ import * as TestRun from "@smthrs/std/TestRun"
 import type * as TestRunner from "@smthrs/std/TestRunner"
 import * as Write from "@smthrs/std/Write"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
@@ -1052,7 +1053,9 @@ Fault.register("@smthrs/agent/StandardFlows/WaitRefused", "factory")
  * @since 0.1.0
  */
 export const clock = (
-  services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options: { readonly maxSeconds?: number | undefined } = {}
 ): FlowBinding.Source => {
   const requested = options.maxSeconds

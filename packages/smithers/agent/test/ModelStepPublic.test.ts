@@ -138,7 +138,7 @@ describe("ModelStep public boundary", () => {
   })
 
   it("preserves a host permission refusal without retrying the provider", async () => {
-    const denied = new Permission.PermissionDenied({
+    const denied = Permission.PermissionDenied.new({
       capability: Capability.make("net:post", "https://provider.invalid"),
       reason: "host refused"
     })

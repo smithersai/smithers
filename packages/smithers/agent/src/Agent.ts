@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The Smithers agent.
  *
@@ -75,7 +76,7 @@ import * as Checkpoints from "@smthrs/std/Checkpoints"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
@@ -624,7 +625,11 @@ const withCapacity = (
   >,
   capacity: Options["capacity"],
   services: Context.Context<
-    FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto | Budget.Budget | QuotaPolicy.QuotaClassifier
+    | FlowRuntime.FlowRuntime
+    | FlowRuntime.FlowInstance
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | Budget.Budget
+    | QuotaPolicy.QuotaClassifier
   >
 ): EngineLike.EngineLike => {
   const primary = seats[0]!.engine
@@ -1080,7 +1085,7 @@ const runProductionUnmeasured: Service["run"] = (options) =>
           const capacityServices = yield* Effect.context<
             | FlowRuntime.FlowRuntime
             | FlowRuntime.FlowInstance
-            | Crypto.Crypto
+            | (EffectDigest.Digest | SecureRandom.SecureRandom)
             | Budget.Budget
             | QuotaPolicy.QuotaClassifier
           >()

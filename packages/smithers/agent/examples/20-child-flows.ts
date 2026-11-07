@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Run two child flows, join their results, and resume the parent without
  * duplicating the children.
@@ -33,7 +34,7 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Registry from "@smthrs/registry/Registry"
 import { RunStore } from "@smthrs/run-store"
 import type * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -119,7 +120,7 @@ export const CompileTool = {
  */
 export const compileSource = (
   services: Context.Context<
-    FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<"examples/Bundle">
+    FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom) | Action.Requirement<"examples/Bundle">
   >
 ): FlowBinding.Source =>
   FlowBinding.source("release/tools", [
@@ -304,7 +305,9 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         // The context the tool handler runs the flow in: the engine, the
         // crypto, and the one action the flow's body calls.
         const services = yield* Effect.context<
-          FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<"examples/Bundle">
+          | FlowRuntime.FlowRuntime
+          | (EffectDigest.Digest | SecureRandom.SecureRandom)
+          | Action.Requirement<"examples/Bundle">
         >()
         const built = yield* Build.execute({ target: "server" }, { executionId: builderRunId }).pipe(
           Effect.provide(

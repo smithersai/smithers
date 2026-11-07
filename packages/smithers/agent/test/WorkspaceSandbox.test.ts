@@ -1,6 +1,8 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import type { FileBoundary } from "@smthrs/flow/FileBoundary"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { describe, expect, it } from "vitest"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
 import * as WorkspaceSandbox from "../src/WorkspaceSandbox.ts"
@@ -18,7 +20,7 @@ const descriptor = (
   boundaryMode
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Promise<A> =>
+const run = <A, E>(effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>): Promise<A> =>
   Effect.runPromise(effect.pipe(Effect.provide(NodeCrypto.layer)))
 
 const text = (files: ReadonlyArray<InMemoryWorkspaceSandbox.HostFile>, path: string): string | undefined => {

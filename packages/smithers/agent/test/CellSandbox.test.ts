@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A cell's flow call, executed through the outer workspace sandbox.
  *
@@ -21,7 +22,7 @@ import * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { Effect, Layer, Option, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, it } from "vitest"
 import * as FlowEngineLike from "../src/FlowEngineLike.ts"
 import * as InMemoryWorkspaceSandbox from "../src/InMemoryWorkspaceSandbox.ts"
@@ -87,7 +88,7 @@ const writer: FlowEngineLike.WorkspaceCallRunner = {
           new HarnessError({ code: "engine_failed", message: "the workspace refused the write", cause })
         )
       )
-      return new Cell.CallResult({ outcome: "success", value: `wrote ${input.path}` })
+      return Cell.CallResult.new({ outcome: "success", value: `wrote ${input.path}` })
     })
 }
 
@@ -126,7 +127,11 @@ const cellEvents = Stream.fromIterable([
 const turn = (
   sandbox: WorkspaceSandbox.Service,
   flow: Descriptor.FlowDescriptor
-): Effect.Effect<ReadonlyArray<string>, HarnessError | Sandbox.SandboxError, Crypto.Crypto> =>
+): Effect.Effect<
+  ReadonlyArray<string>,
+  HarnessError | Sandbox.SandboxError,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> =>
   Effect.gen(function*() {
     const calls = yield* FlowEngineLike.sandboxed(sandbox, writer, { layers: ["layer-a"] })
     const port = EngineLike.makeNoop({
@@ -160,7 +165,7 @@ describe("a cell call through the workspace sandbox", () => {
         const sandbox = yield* InMemoryWorkspaceSandbox.make()
         let executions = 0
         const runner = yield* FlowEngineLike.sandboxed(sandbox.service, {
-          run: () => Effect.sync(() => new Cell.CallResult({ outcome: "success", value: ++executions }))
+          run: () => Effect.sync(() => Cell.CallResult.new({ outcome: "success", value: ++executions }))
         })
         const call = (session: string) =>
           new Cell.Call({

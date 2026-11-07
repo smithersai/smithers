@@ -683,7 +683,6 @@ describe("an agent execution quarantined by the durable engine", () => {
           controlDb.close()
         }
         corrupt = true
-        const replayed = Deferred.makeUnsafe<void>()
         await Effect.runPromise(
           Effect.gen(function*() {
             const control = yield* Control.Control
@@ -691,10 +690,12 @@ describe("an agent execution quarantined by the durable engine", () => {
             if (replay === "operator") yield* control.resume({ runId, idempotencyKey: `replay:${runId}` })
             else yield* runtime.requestResume(runId)
             yield* awaitQuarantine(root, runId)
-            yield* Deferred.await(replayed)
+            // Recovery can claim the released engine row before the control
+            // follower calls resume. Both routes must publish the quarantine
+            // park; a resume-only finalizer is not a completion barrier for it.
             yield* awaitStatus(runtime, runId, "parked")
           }).pipe(
-            Effect.provide(host(root, secondOwner, "quarantine-replay", { ...options, resumed: replayed })),
+            Effect.provide(host(root, secondOwner, "quarantine-replay", options)),
             Effect.scoped,
             Effect.orDie
           )

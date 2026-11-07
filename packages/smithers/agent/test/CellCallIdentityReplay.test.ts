@@ -79,7 +79,7 @@ const reopenDeclaration = async (declaration: "retained-prior" | "current"): Pro
                   run: () =>
                     Effect.map(Action.CurrentInvocationKey, (key) => {
                       dispatched.push(key!)
-                      return new Cell.CallResult({ outcome: "success", value: { written: "unexpected redispatch" } })
+                      return Cell.CallResult.new({ outcome: "success", value: { written: "unexpected redispatch" } })
                     })
                 }
               })

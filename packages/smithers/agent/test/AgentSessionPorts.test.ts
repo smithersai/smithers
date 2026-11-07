@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The two executor ports that have to reach the engine to mean anything.
  *
@@ -30,7 +31,8 @@ import { Action, DurableDeferred, Flow, FlowRuntime, HumanTask, Interpreter, Wai
 import * as Jj from "@smthrs/kernel/Jj"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import { Clock, type Crypto, Effect, Exit, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -70,9 +72,10 @@ const jj = Jj.make({
  * stores kept in the output because the ports read them.
  */
 const makeStack = (
-  controlLayer: Layer.Layer<ControlRuntime, never, Crypto.Crypto> | null = ControlRuntimeModule.layerMemory({
-    flows: [{ flowId: "system/test", description: "test", deployClass: false, envelope }]
-  }),
+  controlLayer: Layer.Layer<ControlRuntime, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> | null =
+    ControlRuntimeModule.layerMemory({
+      flows: [{ flowId: "system/test", description: "test", deployClass: false, envelope }]
+    }),
   engineFilename = ":memory:"
 ) =>
   Layer.mergeAll(

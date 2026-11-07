@@ -14,6 +14,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
+import { expectTypeOf } from "vitest"
 import { describe, expect, it } from "vitest"
 import * as SqlTimeTravelStore from "../../flows/time-travel/src/SqlTimeTravelStore.ts"
 import * as TimeTravel from "../../flows/time-travel/src/TimeTravel.ts"
@@ -44,8 +45,8 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error run provides the stores and crypto, not Unprovided
-  run(Effect.map(Unprovided, (service) => service.value))
+  const unmet = Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof run>[0]>()
   run(Effect.map(Journal.Journal, (journal) => journal))
 }
 

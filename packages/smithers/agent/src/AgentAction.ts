@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The authoring surface for a model-backed step.
  *
@@ -71,7 +72,7 @@ import { ModelSelection } from "@smthrs/registry/Descriptor"
 import type * as Registry from "@smthrs/registry/Registry"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -542,7 +543,7 @@ export interface AgentAction<
     | Sandbox.Sandbox
     | SeatResolver
     | Steering.Source
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | Budget.Budget
     | QuotaPolicy.QuotaClassifier
     | Evaluator.Evaluator
@@ -811,7 +812,11 @@ export const implement = <
       const waitOutQuota = <A, E, R>(
         session: string,
         effect: Effect.Effect<A, E, R>
-      ): Effect.Effect<A, E, R | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto> => {
+      ): Effect.Effect<
+        A,
+        E,
+        R | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+      > => {
         let waiting = false
         let parked = 0
         return Action.retry(
@@ -910,7 +915,7 @@ export const implement = <
             | FlowRuntime.FlowInstance
             | Sandbox.Sandbox
             | Steering.Source
-            | Crypto.Crypto
+            | (EffectDigest.Digest | SecureRandom.SecureRandom)
             | Budget.Budget
             | QuotaPolicy.QuotaClassifier
             | Evaluator.Evaluator
@@ -1036,7 +1041,7 @@ export const implement = <
             | FlowRuntime.FlowInstance
             | Sandbox.Sandbox
             | Steering.Source
-            | Crypto.Crypto
+            | (EffectDigest.Digest | SecureRandom.SecureRandom)
             | Budget.Budget
             | QuotaPolicy.QuotaClassifier
             | Evaluator.Evaluator
@@ -1093,7 +1098,7 @@ export const implement = <
             | FlowRuntime.FlowInstance
             | Sandbox.Sandbox
             | Steering.Source
-            | Crypto.Crypto
+            | (EffectDigest.Digest | SecureRandom.SecureRandom)
             | Budget.Budget
             | QuotaPolicy.QuotaClassifier
             | Evaluator.Evaluator

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * One model call as a durable, sealed flow step.
  *
@@ -45,7 +46,7 @@
 import { type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CellTurn } from "@smthrs/harness"
 import { type Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
 import type { RouteResolver } from "./FlowEngineLike.ts"
@@ -225,7 +226,11 @@ export const callTimeoutMsFor: (effort: ModelRequest.ReasoningEffort | undefined
  */
 export const run = (
   options: Options
-): Effect.Effect<Result, Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance> =>
+): Effect.Effect<
+  Result,
+  Failure,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+> =>
   Effect.gen(function*() {
     const prepared = yield* options.route.prepare(options.request)
     const key = yield* Internal.key(Internal.material(options.request), prepared)
@@ -256,7 +261,10 @@ export const run = (
  * @category models
  * @since 1.0.0
  */
-export type Requirements = Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+export type Requirements =
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowRuntime
+  | FlowRuntime.FlowInstance
 
 /**
  * A `Model` whose every call is one sealed {@link run} of the running flow,

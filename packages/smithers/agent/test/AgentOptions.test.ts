@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * `Agent.Options` in combination, not one flag at a time.
  *
@@ -37,7 +38,7 @@ import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { RegistryError } from "@smthrs/registry/RegistryError"
 import { Cause, Deferred, Effect, Exit, Layer, Option, Schema, Scope, Stream } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { describe, expect, expectTypeOf, it } from "vitest"
 import * as Agent from "../src/Agent.ts"
 import type * as AgentAction from "../src/AgentAction.ts"
@@ -155,7 +156,11 @@ const driveFlow = Flow.make("agent/test/agent-options", {
 
 /** Runs one body as the whole of one real durable flow execution. */
 const drive = <A, E>(
-  body: Effect.Effect<A, E, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+  body: Effect.Effect<
+    A,
+    E,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >
 ): Promise<Outcome> =>
   Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
@@ -519,7 +524,7 @@ ctx.done(results.join("\\n"))`
         (call) =>
           Effect.sync(() => {
             executed.push(call.flowName)
-            return new Cell.CallResult({ outcome: "success", value: "ran" })
+            return Cell.CallResult.new({ outcome: "success", value: "ran" })
           })
       ])
     )
@@ -623,7 +628,7 @@ ctx.done("done")`
         (call) =>
           Effect.sync(() => {
             executed.push(call.flowName)
-            return new Cell.CallResult({ outcome: "success", value: "ran" })
+            return Cell.CallResult.new({ outcome: "success", value: "ran" })
           })
       ])
     )
@@ -773,7 +778,7 @@ ctx.done(String(answer))`
     const settled = await run(({ text }) =>
       Effect.sync(() => {
         rendered.push(text)
-        return new Cell.CallResult({ outcome: "success", value: "summarised" })
+        return Cell.CallResult.new({ outcome: "success", value: "summarised" })
       }), requests)
 
     expect(JSON.stringify(requests)).toContain("docs/summarise")
@@ -818,7 +823,7 @@ ctx.done("done")`
         (target) =>
           Effect.sync(() => {
             executed.push(target.flowName)
-            return new Cell.CallResult({ outcome: "success", value: "ran" })
+            return Cell.CallResult.new({ outcome: "success", value: "ran" })
           })
       ]])
     )

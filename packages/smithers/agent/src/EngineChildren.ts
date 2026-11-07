@@ -1,3 +1,4 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The durable half of {@link ChildFlows}: detached children as real runs.
  *
@@ -50,7 +51,7 @@ import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -212,7 +213,7 @@ export const make = (
 ): Effect.Effect<
   ChildFlows.Children,
   never,
-  Control.Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore
+  Control.Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
 > =>
   Effect.gen(function*() {
     const runtime = yield* FlowRuntime.FlowRuntime
@@ -227,7 +228,8 @@ export const make = (
      * derivation takes its digest from injected cryptography rather than a
      * global, so the port has to hold the service to be able to run it.
      */
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
+    const random = yield* SecureRandom.SecureRandom
     const pollInterval = Duration.fromInputUnsafe(options.pollInterval ?? "250 millis")
     const startTimeout = Duration.fromInputUnsafe(options.startTimeout ?? "30 seconds")
     const awaitTimeout = Duration.fromInputUnsafe(options.awaitTimeout ?? "10 minutes")
@@ -492,7 +494,8 @@ export const make = (
           "agent/await",
           dispatch === undefined ? undefined : { parentScope: dispatch }
         ).pipe(
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(EffectDigest.Digest, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, random),
           Effect.provideService(FlowRuntime.FlowInstance, parent.value)
         )
         // This is an invocation deadline, not a fresh timeout on every drive.
@@ -506,7 +509,8 @@ export const make = (
           )
         }).pipe(
           Effect.provideService(FlowRuntime.FlowRuntime, runtime),
-          Effect.provideService(Crypto.Crypto, crypto),
+          Effect.provideService(EffectDigest.Digest, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, random),
           Effect.provideService(FlowRuntime.FlowInstance, parent.value)
         )
         let attempt = 0
@@ -524,7 +528,8 @@ export const make = (
             inMemoryThreshold: 0
           }).pipe(
             Effect.provideService(FlowRuntime.FlowRuntime, runtime),
-            Effect.provideService(Crypto.Crypto, crypto),
+            Effect.provideService(EffectDigest.Digest, crypto),
+            Effect.provideService(SecureRandom.SecureRandom, random),
             Effect.provideService(FlowRuntime.FlowInstance, parent.value)
           )
         }
@@ -574,7 +579,8 @@ export const make = (
           dispatch === undefined ? undefined : { parentScope: dispatch }
         ).pipe(
           Effect.provideService(FlowRuntime.FlowInstance, parent),
-          Effect.provideService(Crypto.Crypto, crypto)
+          Effect.provideService(EffectDigest.Digest, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, random)
         )
         // The clock is read inside a SEALED step, so the message a re-drive
         // submits is byte-identical to the one the first drive submitted.
@@ -597,7 +603,8 @@ export const make = (
         }).pipe(
           Effect.provideService(FlowRuntime.FlowInstance, parent),
           Effect.provideService(FlowRuntime.FlowRuntime, runtime),
-          Effect.provideService(Crypto.Crypto, crypto)
+          Effect.provideService(EffectDigest.Digest, crypto),
+          Effect.provideService(SecureRandom.SecureRandom, random)
         )
         const receipt = yield* control.steer({
           runId: input.child,
@@ -660,5 +667,5 @@ export const layer = (
 ): Layer.Layer<
   ChildFlows.Children,
   never,
-  Control.Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore
+  Control.Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
 > => Layer.effect(ChildFlows.Children)(make(options))
