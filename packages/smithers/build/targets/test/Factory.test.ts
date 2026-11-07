@@ -12,7 +12,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Factory from "../src/Factory.ts"
-import * as Flow from "../src/Flow.ts"
+import * as Flow from "../src/Flow.vibe"
 import * as FlowCatalog from "../src/FlowCatalog.vibe"
 import * as Home from "../src/Home.vibe"
 import { Smithers } from "../src/index.ts"

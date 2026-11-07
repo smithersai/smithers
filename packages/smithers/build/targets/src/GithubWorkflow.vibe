@@ -29,6 +29,7 @@
  * @since 0.1.0
  */
 
+module platform {
 import * as Schema from "effect/Schema"
 import { Buffer } from "node:buffer"
 import * as Yaml from "yaml"
@@ -40,7 +41,6 @@ import * as Yaml from "yaml"
  * @since 0.1.0
  */
 export const maximumWorkflowBytes = 1024 * 1024
-
 /**
  * One step of a workflow job.
  *
@@ -60,7 +60,6 @@ export interface WorkflowStep {
   /** The raw `continue-on-error:` value, or `undefined` when unset. */
   readonly continueOnError: string | undefined
 }
-
 /**
  * One job of a workflow.
  *
@@ -79,7 +78,6 @@ export interface WorkflowJob {
   readonly continueOnError: string | undefined
   readonly steps: ReadonlyArray<WorkflowStep>
 }
-
 /**
  * A parsed workflow file.
  *
@@ -90,7 +88,6 @@ export interface Workflow {
   readonly name: string | undefined
   readonly jobs: ReadonlyArray<WorkflowJob>
 }
-
 /**
  * Why a workflow file was refused.
  *
@@ -111,7 +108,6 @@ export const WorkflowParseReason = Schema.Literals([
   "missing",
   "invalid_shape"
 ])
-
 /**
  * Why a workflow file was refused.
  *
@@ -119,7 +115,6 @@ export const WorkflowParseReason = Schema.Literals([
  * @since 0.1.0
  */
 export type WorkflowParseReason = typeof WorkflowParseReason.Type
-
 /**
  * A workflow file could not be read as a GitHub Actions workflow.
  *
@@ -141,27 +136,22 @@ export class WorkflowParseError extends Schema.TaggedError<WorkflowParseError>()
     return `line ${this.line}: ${this.detail}`
   }
 }
-
 const refusal = (line: number, reason: WorkflowParseReason, detail: string): WorkflowParseError =>
   new WorkflowParseError({ line, reason, detail })
-
 /** One mapping entry, with the source line of its key. */
-interface Entry {
+export interface Entry {
   readonly key: string
   readonly value: unknown
   readonly line: number
 }
-
 /** The 1-based source line a node starts on, or line 1 when it has no range. */
 const nodeLine = (counter: Yaml.LineCounter, node: unknown): number => {
   const range = (node as { readonly range?: readonly [number, number, number] } | null | undefined)?.range
   return range === undefined ? 1 : counter.linePos(range[0]).line
 }
-
 /** Whether a mapping entry was written with no value at all (`steps:`). */
 const isEmptyNode = (node: unknown): boolean =>
   node === null || node === undefined || (Yaml.isScalar(node) && node.value === null)
-
 /**
  * A field's text.
  *
@@ -184,7 +174,6 @@ const scalarText = (node: unknown): string => {
     ? text.replace(/\n+$/, "")
     : text
 }
-
 /**
  * The entries of a block mapping, in source order.
  *
@@ -216,11 +205,9 @@ const entriesOf = (
   }
   return entries
 }
-
 /** Indexes a level's entries so a field can be read by name. */
 const byKey = (entries: ReadonlyArray<Entry>): ReadonlyMap<string, Entry> =>
   new Map(entries.map((entry) => [entry.key, entry] as const))
-
 /** Refuses the keys whose effect on a gate this module cannot verify. */
 const refuseInherited = (fields: ReadonlyMap<string, Entry>, describe: (key: string) => string): void => {
   for (const key of ["defaults", "<<"]) {
@@ -228,9 +215,7 @@ const refuseInherited = (fields: ReadonlyMap<string, Entry>, describe: (key: str
     if (field !== undefined) throw refusal(field.line, "unsupported", describe(key))
   }
 }
-
 const eventNameShape = /^[A-Za-z_][A-Za-z0-9_]*$/
-
 /** Holds a workflow event to the identifier shape GitHub documents. */
 const eventName = (text: string, line: number): string => {
   if (!eventNameShape.test(text)) {
@@ -238,7 +223,6 @@ const eventName = (text: string, line: number): string => {
   }
   return text
 }
-
 /** Refuses a workflow that declares no trigger, so it can never run its gates. */
 const checkTrigger = (trigger: Entry, counter: Yaml.LineCounter): void => {
   const node = trigger.value
@@ -264,7 +248,6 @@ const checkTrigger = (trigger: Entry, counter: Yaml.LineCounter): void => {
   if (value === "") throw refusal(trigger.line, "missing", "workflow declares no trigger")
   eventName(value, trigger.line)
 }
-
 /** Reads one item of a job's `steps:` sequence. */
 const readStep = (node: unknown, job: string, counter: Yaml.LineCounter): WorkflowStep => {
   const line = nodeLine(counter, node)
@@ -322,9 +305,7 @@ const readStep = (node: unknown, job: string, counter: Yaml.LineCounter): Workfl
     continueOnError: field("continue-on-error")
   }
 }
-
 const jobIdShape = /^[A-Za-z_][A-Za-z0-9_-]*$/
-
 /** Reads one entry of the top-level `jobs:` mapping. */
 const readJob = (job: Entry, counter: Yaml.LineCounter): WorkflowJob => {
   const node = job.value
@@ -393,7 +374,6 @@ const readJob = (job: Entry, counter: Yaml.LineCounter): WorkflowJob => {
     steps
   }
 }
-
 /** Reports the first structural YAML error against the line it sits on. */
 const refuseYamlErrors = (document: Yaml.Document.Parsed, counter: Yaml.LineCounter): void => {
   const failure = document.errors[0]
@@ -402,7 +382,6 @@ const refuseYamlErrors = (document: Yaml.Document.Parsed, counter: Yaml.LineCoun
   const line = failure.linePos?.[0].line ?? counter.linePos(failure.pos[0]).line
   throw refusal(line, "invalid_yaml", `invalid YAML: ${summary}`)
 }
-
 /**
  * An alias resolves to a node declared elsewhere, which would let a gate match
  * a `run:` body that no step in that job spells out. The gate contract reports
@@ -415,7 +394,6 @@ const refuseAliases = (document: Yaml.Document.Parsed, counter: Yaml.LineCounter
     }
   })
 }
-
 /**
  * Parses a GitHub Actions workflow.
  *
@@ -498,6 +476,11 @@ export const parseWorkflow = (source: string): Workflow => {
   const name = top.get("name")
   return { name: name === undefined ? undefined : scalarText(name.value) || undefined, jobs }
 }
+}
+
+import type { Workflow, WorkflowStep } from platform
+export { WorkflowParseError, WorkflowParseReason, maximumWorkflowBytes, parseWorkflow } from platform
+export type { Workflow, WorkflowJob, WorkflowStep } from platform
 
 /**
  * A command a workflow must still run.
@@ -532,7 +515,6 @@ export interface Gate {
   readonly command: string
   readonly job?: string | undefined
 }
-
 /** Removes a shell comment from one script line, respecting quoting. */
 const stripShellComment = (line: string): string => {
   let quote: string | undefined
@@ -556,7 +538,6 @@ const stripShellComment = (line: string): string => {
   }
   return line
 }
-
 /**
  * Strips shell comments from a `run` script, line by line.
  *
@@ -571,10 +552,8 @@ const stripShellComment = (line: string): string => {
  * @since 0.1.0
  */
 export const stripShellComments = (script: string): string => script.split("\n").map(stripShellComment).join("\n")
-
 /** Characters that end one shell command and open the next. */
 const commandSeparators = new Set(["\n", ";", "&", "|", "(", ")"])
-
 /**
  * Words that introduce a command rather than being one. `sudo`, `exec`, and
  * `time` run the command that follows them; the rest are shell keywords whose
@@ -596,10 +575,8 @@ const commandIntroducers = new Set([
   "sudo",
   "exec"
 ])
-
 /** A `NAME=value` prefix, which the shell applies before running the command. */
 const assignmentPrefix = /^[A-Za-z_][A-Za-z0-9_]*=/
-
 /** Skips a quoted string, returning the index just past its closing quote. */
 const skipQuoted = (script: string, open: number): number => {
   const quote = script[open]!
@@ -618,7 +595,6 @@ const skipQuoted = (script: string, open: number): number => {
   // it can only cost a gate a match, never invent one.
   return script.length
 }
-
 /**
  * Skips a here-document, returning the index at the end of its terminator line.
  *
@@ -657,7 +633,6 @@ const skipHereDocument = (script: string, open: number): number => {
   }
   return script.length
 }
-
 /**
  * Returns the end of a shell function definition beginning at `start`.
  *
@@ -698,7 +673,6 @@ const functionDefinitionEnd = (script: string, start: number): number | undefine
   }
   return script.length
 }
-
 /**
  * One command the shell would run, as a half-open range of the script.
  *
@@ -711,7 +685,6 @@ export interface CommandSpan {
   /** The offset just past the command's last word, before its separator. */
   readonly end: number
 }
-
 /**
  * The commands the shell would run, each as the range its words occupy.
  *
@@ -819,7 +792,6 @@ export const commandSpans = (script: string): ReadonlyArray<CommandSpan> => {
   }
   return spans
 }
-
 /**
  * The offsets at which the shell would start reading a command.
  *
@@ -827,12 +799,10 @@ export const commandSpans = (script: string): ReadonlyArray<CommandSpan> => {
  * @since 0.1.0
  */
 export const commandStarts = (script: string): ReadonlyArray<number> => commandSpans(script).map((span) => span.start)
-
 /** Whether a character ends the shell word a command name occupies. */
 const endsWord = (character: string | undefined): boolean =>
   character === undefined || character === " " || character === "\t" ||
   character === "<" || character === ">" || commandSeparators.has(character)
-
 /**
  * Whether a `run` script runs the given command.
  *
@@ -849,7 +819,6 @@ export const runsCommand = (script: string, command: string): boolean => {
   const text = stripShellComments(script)
   return commandStarts(text).some((start) => text.startsWith(wanted, start) && endsWord(text[start + wanted.length]))
 }
-
 /**
  * Whether a step's `uses` value is the action a gate names.
  *
@@ -866,7 +835,6 @@ export const usesAction = (uses: string, command: string): boolean => {
   const wanted = command.trim()
   return wanted !== "" && (value === wanted || (!wanted.includes("@") && value.startsWith(`${wanted}@`)))
 }
-
 /**
  * The one step condition that proves a gate as well as no `if:` does, given an
  * earlier unconditional step with `id: setup`: it runs whenever the implicit
@@ -877,12 +845,10 @@ export const usesAction = (uses: string, command: string): boolean => {
  * @since 0.1.0
  */
 export const independentGateCondition = "!cancelled() && steps.setup.conclusion == 'success'" as const
-
 const expressionBody = (condition: string): string => {
   const normalized = condition.trim()
   return normalized.match(/^\$\{\{\s*(.*?)\s*\}\}$/)?.[1] ?? normalized
 }
-
 /**
  * Whether a parsed `if:` is provably always true.
  *
@@ -897,7 +863,6 @@ const expressionBody = (condition: string): string => {
  */
 export const alwaysRuns = (condition: string | undefined): boolean =>
   condition === undefined || expressionBody(condition) === "true"
-
 /** Whether a step runs whenever its job does, reading the steps before it. */
 const stepAlwaysRuns = (steps: ReadonlyArray<WorkflowStep>, index: number): boolean => {
   const condition = steps[index]!.condition
@@ -905,10 +870,8 @@ const stepAlwaysRuns = (steps: ReadonlyArray<WorkflowStep>, index: number): bool
   return expressionBody(condition!) === independentGateCondition &&
     steps.slice(0, index).some((step) => step.id === "setup" && step.condition === undefined)
 }
-
 /** Shell declarations for which the scanner can prove a `run` body executes. */
 const executableShells = new Set(["bash", "sh", "pwsh", "powershell", "cmd"])
-
 /**
  * Whether GitHub will execute a run body through a shell the scanner models.
  *
@@ -917,7 +880,6 @@ const executableShells = new Set(["bash", "sh", "pwsh", "powershell", "cmd"])
  */
 export const executesRunScript = (shell: string | undefined): boolean =>
   shell === undefined || executableShells.has(shell.trim().toLowerCase())
-
 /**
  * The declared required jobs a workflow does not unconditionally run.
  *
@@ -946,7 +908,6 @@ export const missingRequiredJobs = (
     .filter((id) => !unconditional.has(id))
     .map((id) => declared.has(id) ? `${id} (conditional)` : id)
 }
-
 /**
  * Reports the declared gates a workflow no longer runs.
  *
@@ -976,7 +937,6 @@ export const missingGates = (
       )
     )
   })
-
 /**
  * One supported lockfile install, with the only flags it may carry.
  *
@@ -993,7 +953,6 @@ export interface SupportedInstall {
   /** `--flag=value` flags that cannot omit a dependency the lockfile pins. */
   readonly valueFlags: ReadonlyArray<string>
 }
-
 /**
  * The lockfile installs a generated pipeline may run, and the flags each one
  * may carry.
@@ -1056,7 +1015,6 @@ export const supportedInstalls: ReadonlyArray<SupportedInstall> = [
     valueFlags: ["--concurrent-scripts"]
   }
 ]
-
 /**
  * Install commands that respect a lockfile.
  *
@@ -1064,10 +1022,8 @@ export const supportedInstalls: ReadonlyArray<SupportedInstall> = [
  * @since 0.1.0
  */
 export const supportedInstallCommands: ReadonlyArray<string> = supportedInstalls.map((install) => install.command)
-
 /** The value half of a `--flag=value` an install may carry. */
 const flagValue = /^[A-Za-z0-9][A-Za-z0-9._-]*$/
-
 /**
  * The supported install a command line is, or `undefined` when it is none of
  * them.
@@ -1100,7 +1056,6 @@ export const supportedInstallOf = (command: string): string | undefined => {
   }
   return undefined
 }
-
 /**
  * Whether a command line is a supported lockfile install.
  *
@@ -1108,7 +1063,6 @@ export const supportedInstallOf = (command: string): string | undefined => {
  * @since 0.1.0
  */
 export const isSupportedInstall = (command: string): boolean => supportedInstallOf(command) !== undefined
-
 /**
  * The command prefix that runs a workspace binary the matching lockfile
  * install already put in the tree.
@@ -1125,7 +1079,6 @@ export const isSupportedInstall = (command: string): boolean => supportedInstall
 export const workspaceExecCommands: Readonly<Record<string, string>> = Object.fromEntries(
   supportedInstalls.map((install) => [install.command, install.exec])
 )
-
 /**
  * The workspace-binary runner for a supported lockfile install, or `undefined`
  * when the install is not supported.
@@ -1137,7 +1090,6 @@ export const workspaceExec = (install: string): string | undefined => {
   const supported = supportedInstallOf(install)
   return supported === undefined ? undefined : workspaceExecCommands[supported]
 }
-
 /**
  * Whether a `run` script actually performs the given lockfile install.
  *

@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/build/targets"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "qgrPaamBNdMB9vjXQSXMrYE6ZtarfNKdrg_9oSSpJgc",
   "configs": [
    {
     "path": {
@@ -84,6 +84,13 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/jj/tsconfig.json"
+    },
+    "size": 1284,
+    "hash": "vM2Nbb4xaVtQKi-9ZlAQ4t26ZvVyE-TY-jxclEy4LH4"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/agent/model/tsconfig.json"
     },
     "size": 1328,
@@ -138,7 +145,7 @@
      "relative": "packages/smithers/build/targets/src"
     },
     null,
-    "XBLEzhUxKqIQcAAsk8aEMuiASQ65NOINIkGQ6H9Fofs",
+    "AwawBP35KtiII34TeyIsN7C3ZxOMcWgJP-ikNIs3cuo",
     [],
     {
      "recursive": true,
@@ -306,8 +313,8 @@
     "path": {
      "relative": "pnpm-lock.yaml"
     },
-    "size": 1032990,
-    "hash": "JWXHDc5FqtoaD_7kBZtDp_c1gN0Pv_YzpXJiGdIsulM"
+    "size": 1033342,
+    "hash": "ToTWzvSj2LGhxHYgS1D9GQlopt_P9dNN_CeEzD6D5n4"
    },
    {
     "path": {
@@ -423,8 +430,8 @@
     "path": {
      "relative": "packages/smithers/build/targets/package.json"
     },
-    "size": 46127,
-    "hash": "5hfGTzSXyqTSmenY57iNGSgzytE6P1sEVZNO2fgYHBc"
+    "size": 46321,
+    "hash": "YgvdAIOMB0ftwPSX_p1HWY2IMnl3tqBuuWlKjLNdWB8"
    },
    {
     "path": {
@@ -465,8 +472,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11258,
-    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
+    "size": 11620,
+    "hash": "eLJMZl6jaonWcgTs6guIIEaV-VxrLMo48ooX5dtL648"
    },
    {
     "path": {
@@ -479,8 +486,8 @@
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
-    "size": 7010,
-    "hash": "e8ExeeI_-R-7WbqAA3L5db70KeE2WuC1-NXEnTCcL1o"
+    "size": 7426,
+    "hash": "Gpvz9cbnIOo0lDQVCDpzBBHGoy4193_9gJSSgJtmuG4"
    },
    {
     "path": {
@@ -724,8 +731,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7128,
-    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
+    "size": 7188,
+    "hash": "tn4RcBxIeShNMXTfH8LxoPn_iminrBnO2FV2R3DeZ24"
    },
    {
     "path": {
@@ -4952,17 +4959,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/jj/src/Jj.ts"
+     "relative": "packages/smithers/flows/jj/src/Jj.vibe"
     },
-    "size": 18558,
-    "hash": "i1HzzhZOZmyc-pvkvhf9u1rJnW97j2-Xe8Hwd_4cnHQ"
+    "size": 18386,
+    "hash": "mjtAjzbCG1AjK6iDJ5yM_noNdZO0A1rNsJUYdV6nzQM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/src/index.ts"
     },
-    "size": 713,
-    "hash": "Hd4W17hXn7Rhvh21wf83cWLu51OadhpAFf_WhLNkzMk"
+    "size": 715,
+    "hash": "eN5H2DMrbkKkeaPqz9wP8O9KI3ErA5OAfDtH4R0pD-I"
    },
    {
     "path": {
@@ -5141,10 +5148,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
+     "relative": "packages/smithers/flows/journal/src/JournalGeneration.vibe"
     },
-    "size": 3448,
-    "hash": "hs9V74OzFZsvig3_-H5R6VTXMod0o-0HDSAt0J2MZUw"
+    "size": 3344,
+    "hash": "Xd5B5_cKqa2DY5--jlJ2B5C5HrloIhY7uDbM7lsTI0Y"
    },
    {
     "path": {
@@ -5155,10 +5162,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
     },
-    "size": 75096,
-    "hash": "_mlxwRw7wGsrbBEnDv7Ax92E2tL4beu8b6ukLyYN6WA"
+    "size": 75215,
+    "hash": "MM4UCJtf8cRyW2GgCmq22HbCztw4V6vwqyZDDuacmdo"
    },
    {
     "path": {
@@ -5171,22 +5178,351 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
     },
-    "size": 133667,
-    "hash": "NE5CzGudJwrdNZk506DZ_yPIro2DQFsSje3EqpwVMWI"
+    "size": 133671,
+    "hash": "NRnskCCkDnPEkKmFdhZo3P5R_k8yeEZLgi0FIm8QomY"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityId.d.ts"
     },
-    "size": 20719,
-    "hash": "fkywAhB33uzprw3HWRluZ53hNVTI1xAfZ-zVA8pVkGY"
+    "size": 1452,
+    "hash": "8G6KvjvryXqT0lOzLVz0ddBd34nYGeX5PJ-TUXgxZLw"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityType.d.ts"
     },
-    "size": 21223,
-    "hash": "CCWOAsQ-VlpL7CoYjPcDQm913MhWxnYhTszJHjYePJE"
+    "size": 1688,
+    "hash": "Pr9kw3NwirstIvug3uhdyEJcxyd3UcZJi_h3_qb_qYk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardId.d.ts"
+    },
+    "size": 3452,
+    "hash": "IRZYtpZiXKDE-crBMSrm0iKOcZS-aoL3MT5s66Ybqng"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityAddress.d.ts"
+    },
+    "size": 3010,
+    "hash": "SZDSwm7j3-YI_9Eh0kkQZVeFTOZr2-lQDTPLmcOrzNo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerAddress.d.ts"
+    },
+    "size": 3040,
+    "hash": "yrFRicKdgra5vnhnDh1zXykc_uaeqp5wmkoGMP0Xfbs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MachineId.d.ts"
+    },
+    "size": 1460,
+    "hash": "bSsSmAAMdM0qkQqMlCis3_mAuVUCx7_mi5YoSxSSVeg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Snowflake.d.ts"
+    },
+    "size": 6636,
+    "hash": "2VBrV_inJwvsXHU3OeEyArFJpjeFrVtkStxHYbLVjYg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterError.d.ts"
+    },
+    "size": 7433,
+    "hash": "HJuVgbkR2eLkp8af7NmcCYHV_lwNlHYdEbfvF8RKdRM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Envelope.d.ts"
+    },
+    "size": 11771,
+    "hash": "1stqdRL93Op15owECroyNwBVzcmXoST5dTEWDkQoHfY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Message.d.ts"
+    },
+    "size": 9872,
+    "hash": "X1umrjOArFnumH98ibH25OmdXXPqYq6ySwge6hJI8c4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Reply.d.ts"
+    },
+    "size": 10360,
+    "hash": "Y8xeHUmrlthiwICskWsLXc9t4OoJ_Pa8_YMyIyzyHX8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingConfig.d.ts"
+    },
+    "size": 18524,
+    "hash": "HL_NI8Jc-1XjO6o0UGXJz3eDhUaIhDQf2Ve2hyyWA4M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Entity.d.ts"
+    },
+    "size": 13096,
+    "hash": "iRHq5o8OmWj3pKEvtSKALC8zQ2mT1MBznsLDOV77j20"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MessageStorage.d.ts"
+    },
+    "size": 34555,
+    "hash": "mKDYRuaIlnF7LPrnOFL2AgOip1mz8lGwGJvzQcneaNQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sTypes.d.ts"
+    },
+    "size": 167852,
+    "hash": "MzaOsujXKwE01wYSdIB_9cJURiZPT6_ZPQRTE3eTq2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sHttpClient.d.ts"
+    },
+    "size": 3629,
+    "hash": "5Pgx_v1Grrxhdl4IwxaedajTCDYRjx359m6zWULPA1k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runners.d.ts"
+    },
+    "size": 9902,
+    "hash": "i5zZdlh1sG2cuVK0Oy-J9-7Ct2Rug1wG5jJT6oNo-ps"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerHealth.d.ts"
+    },
+    "size": 3568,
+    "hash": "DGmZ-CMQIQW-6ZY-_NaaF8lfdHYoTtR6HKO2NaDpWT0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runner.d.ts"
+    },
+    "size": 3783,
+    "hash": "69XynDbyEGfcXTm_2YEpnkcPG3XNzv76QSfA0iCGKxI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerStorage.d.ts"
+    },
+    "size": 8502,
+    "hash": "k-BpEYMaDbHwjb6RrCmgQt92Pcl88BfX6ylYMQCi9jc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingletonAddress.d.ts"
+    },
+    "size": 1606,
+    "hash": "Jvz0RpNd6mtglj8ut8Cqf8pNg5m2wpcSWVlerpRw1l0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingRegistrationEvent.d.ts"
+    },
+    "size": 2625,
+    "hash": "DzqEGkDybRTSmzt2XBdXczG5cuVaMYl19Z1zPChvEFw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Sharding.d.ts"
+    },
+    "size": 6566,
+    "hash": "mAf9eV5VDjHayYpFIJB69aAJ_OCZWsn9jmq9tmhbMfg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterCron.d.ts"
+    },
+    "size": 3266,
+    "hash": "6oXHUEEOMyMmhYOL1_oUIMZtkuOWQwL95-sxXFdIHsU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterMetrics.d.ts"
+    },
+    "size": 8365,
+    "hash": "mgieQocV1C9i_XWkiaaLX8TI9OV5nTjE7ApoNJhdtxA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterSchema.d.ts"
+    },
+    "size": 6172,
+    "hash": "Xko8-BfThlGviTI6FW7SvVh_4hKZH4-SqWE-IdlNhws"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Workflow.d.ts"
+    },
+    "size": 18929,
+    "hash": "T9ym1nDkGu9D_4BX1TVD2t4tpo9nrcTDwbE4dOaXBTg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableDeferred.d.ts"
+    },
+    "size": 17080,
+    "hash": "0HYeLXjSxTYk2VxmgCR8lsaA7Bq82UNrkpMNKZc0kXg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableClock.d.ts"
+    },
+    "size": 1683,
+    "hash": "acpDCCT8b7Nx7nC7nWDNGg6pktVOgOR57nNFEur5P64"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/WorkflowEngine.d.ts"
+    },
+    "size": 12971,
+    "hash": "4iB3RMXpMelb_0M-FV7m_hX1LXYhTrUzjNOWE7ejhu0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Activity.d.ts"
+    },
+    "size": 6644,
+    "hash": "O94vksRKgyrgx3OpMnXkXv-ze3pAieV5454TvoG64YA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterWorkflowEngine.d.ts"
+    },
+    "size": 4850,
+    "hash": "QmHx8o8GTlbXU_8dolLMcz9IuE0FNXzEvM3sCRv9H8s"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/DeliverAt.d.ts"
+    },
+    "size": 1543,
+    "hash": "Ibq4ocbdh2IG6-2ubhgLC-7utULf4uXp_F5y__Ili5M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
+    },
+    "size": 3210,
+    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSchema.d.ts"
+    },
+    "size": 33776,
+    "hash": "oRRMtbP_t1NtFNCBVNcTlHmPIiYNmBd58ezmpza039c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiError.d.ts"
+    },
+    "size": 22439,
+    "hash": "Etkv-dnkktQNseuaNP54LHQ72o8ZJHTkp1wHM2AzQ_Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSecurity.d.ts"
+    },
+    "size": 6440,
+    "hash": "q2tAUGBZ_DdM4mtHAL9RI9iNXBdHoUffIzvFbHlvi08"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiMiddleware.d.ts"
+    },
+    "size": 17256,
+    "hash": "EbqaZWiaGwcb7UjXGnqHoS01JqeohAEfBL9GUdFauEY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiGroup.d.ts"
+    },
+    "size": 10492,
+    "hash": "A_KkgwnU5rqDsuZK4IFZ56-mqixiK3W_3mnbcG4ZuFQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiEndpoint.d.ts"
+    },
+    "size": 52343,
+    "hash": "c2mJ-w9tv2gSGS3KkbRh_MVxsAYMtEIijtJ5TvgqLZs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxy.d.ts"
+    },
+    "size": 6091,
+    "hash": "KxDdcwmF-ZTCWCwOTdF6iDpL5VSaHb2J44AsdW9DuMU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApi.d.ts"
+    },
+    "size": 11453,
+    "hash": "FGfWY8p54kEiztH4A3Wx-ERRwxrfWAG8B4eP1c2sQz0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxyServer.d.ts"
+    },
+    "size": 2133,
+    "hash": "bmMHlqj_ihcpQEXaCF3kgP7FAwzNKVbLoZhfVS-XmxE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityResource.d.ts"
+    },
+    "size": 3871,
+    "hash": "mXP4oDVO_i9Z2XGGVEFoEOeAHSoR6LijEePcguUn1XY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/HttpRunner.d.ts"
+    },
+    "size": 7605,
+    "hash": "7IROn5E5L336j0R3t8Z6Wf9pbt2jijPO911OeEy7ff4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerServer.d.ts"
+    },
+    "size": 2766,
+    "hash": "VIRLTgOJbKvN-uKw4a678tWL_BEBXh_N-mbt1RozfE4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingleRunner.d.ts"
+    },
+    "size": 2868,
+    "hash": "dZihTYTMszQrGTTdK09ZbcE861r7u-4aRGLWZ0Xpz6U"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Singleton.d.ts"
+    },
+    "size": 1982,
+    "hash": "-cmWeYzA3_N5yknjp7BQxpXTMRB4a_1aNizeMA7BidY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SocketRunner.d.ts"
+    },
+    "size": 2388,
+    "hash": "jgMC7JfEhtM9wsz0RZGvsYwaGkbRfz8IWOKsC_lUBjg"
    },
    {
     "path": {
@@ -5194,6 +5530,48 @@
     },
     "size": 4293,
     "hash": "U-MK1zwSqANvTD08iperVLajOJ6q8N3nxU7pxs9nghI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlMessageStorage.d.ts"
+    },
+    "size": 5399,
+    "hash": "4IhxmO3kZYtbzvxbnUmY5NeXG1izrpH82KGob9Yvpzw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlRunnerStorage.d.ts"
+    },
+    "size": 4301,
+    "hash": "QRDzqXBCqRCTVozYpCJLHrQmtSf8oN6M5XFkd37yaIc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/TestRunner.d.ts"
+    },
+    "size": 1023,
+    "hash": "S7Jp3TeumNcJNeTal7pDVdhK_FHlK5iBI8NKfdbmqA8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/index.d.ts"
+    },
+    "size": 3870,
+    "hash": "TCw4mrTHA5ASw2V2ECEmcvSyCaTQphcrVWlaD_pOQ0Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/RedactedLogger.vibe"
+    },
+    "size": 20510,
+    "hash": "OOLS2Q13ASnoZkp_puunp2bC28e_fYMddKfGuQlgUY0"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
+    },
+    "size": 21225,
+    "hash": "dIxDun9aC5C5HQHC9kbpBz2DUXxlUIMIZNHZdr5F8Q0"
    },
    {
     "path": {
@@ -5246,7 +5624,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+     "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
     },
     "size": 2042,
     "hash": "wb2hLivujMZ5mMsu7b9K4k-9eiklIGlniDCH9JUftnE"
@@ -5255,8 +5633,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/index.ts"
     },
-    "size": 2240,
-    "hash": "0gUWEzql0RZDvjoOTSrz7cYZJgeP0Gt7-meBfeBvdT8"
+    "size": 2246,
+    "hash": "J6nvuoYNungVB15kqAUx8Bp9MGEGX-SEHKqY8KTQHlQ"
    },
    {
     "path": {
@@ -5908,377 +6286,6 @@
     },
     "size": 20916,
     "hash": "YReSuVvILsN_6z-g3Az59WKkMnj9E8DVCsVHh9tttHM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityId.d.ts"
-    },
-    "size": 1452,
-    "hash": "8G6KvjvryXqT0lOzLVz0ddBd34nYGeX5PJ-TUXgxZLw"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityType.d.ts"
-    },
-    "size": 1688,
-    "hash": "Pr9kw3NwirstIvug3uhdyEJcxyd3UcZJi_h3_qb_qYk"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardId.d.ts"
-    },
-    "size": 3452,
-    "hash": "IRZYtpZiXKDE-crBMSrm0iKOcZS-aoL3MT5s66Ybqng"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityAddress.d.ts"
-    },
-    "size": 3010,
-    "hash": "SZDSwm7j3-YI_9Eh0kkQZVeFTOZr2-lQDTPLmcOrzNo"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerAddress.d.ts"
-    },
-    "size": 3040,
-    "hash": "yrFRicKdgra5vnhnDh1zXykc_uaeqp5wmkoGMP0Xfbs"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MachineId.d.ts"
-    },
-    "size": 1460,
-    "hash": "bSsSmAAMdM0qkQqMlCis3_mAuVUCx7_mi5YoSxSSVeg"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Snowflake.d.ts"
-    },
-    "size": 6636,
-    "hash": "2VBrV_inJwvsXHU3OeEyArFJpjeFrVtkStxHYbLVjYg"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterError.d.ts"
-    },
-    "size": 7433,
-    "hash": "HJuVgbkR2eLkp8af7NmcCYHV_lwNlHYdEbfvF8RKdRM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Envelope.d.ts"
-    },
-    "size": 11771,
-    "hash": "1stqdRL93Op15owECroyNwBVzcmXoST5dTEWDkQoHfY"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Message.d.ts"
-    },
-    "size": 9872,
-    "hash": "X1umrjOArFnumH98ibH25OmdXXPqYq6ySwge6hJI8c4"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Reply.d.ts"
-    },
-    "size": 10360,
-    "hash": "Y8xeHUmrlthiwICskWsLXc9t4OoJ_Pa8_YMyIyzyHX8"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingConfig.d.ts"
-    },
-    "size": 18524,
-    "hash": "HL_NI8Jc-1XjO6o0UGXJz3eDhUaIhDQf2Ve2hyyWA4M"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Entity.d.ts"
-    },
-    "size": 13096,
-    "hash": "iRHq5o8OmWj3pKEvtSKALC8zQ2mT1MBznsLDOV77j20"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MessageStorage.d.ts"
-    },
-    "size": 34555,
-    "hash": "mKDYRuaIlnF7LPrnOFL2AgOip1mz8lGwGJvzQcneaNQ"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sTypes.d.ts"
-    },
-    "size": 167852,
-    "hash": "MzaOsujXKwE01wYSdIB_9cJURiZPT6_ZPQRTE3eTq2c"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sHttpClient.d.ts"
-    },
-    "size": 3629,
-    "hash": "5Pgx_v1Grrxhdl4IwxaedajTCDYRjx359m6zWULPA1k"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runners.d.ts"
-    },
-    "size": 9902,
-    "hash": "i5zZdlh1sG2cuVK0Oy-J9-7Ct2Rug1wG5jJT6oNo-ps"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerHealth.d.ts"
-    },
-    "size": 3568,
-    "hash": "DGmZ-CMQIQW-6ZY-_NaaF8lfdHYoTtR6HKO2NaDpWT0"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runner.d.ts"
-    },
-    "size": 3783,
-    "hash": "69XynDbyEGfcXTm_2YEpnkcPG3XNzv76QSfA0iCGKxI"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerStorage.d.ts"
-    },
-    "size": 8502,
-    "hash": "k-BpEYMaDbHwjb6RrCmgQt92Pcl88BfX6ylYMQCi9jc"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingletonAddress.d.ts"
-    },
-    "size": 1606,
-    "hash": "Jvz0RpNd6mtglj8ut8Cqf8pNg5m2wpcSWVlerpRw1l0"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingRegistrationEvent.d.ts"
-    },
-    "size": 2625,
-    "hash": "DzqEGkDybRTSmzt2XBdXczG5cuVaMYl19Z1zPChvEFw"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Sharding.d.ts"
-    },
-    "size": 6566,
-    "hash": "mAf9eV5VDjHayYpFIJB69aAJ_OCZWsn9jmq9tmhbMfg"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterCron.d.ts"
-    },
-    "size": 3266,
-    "hash": "6oXHUEEOMyMmhYOL1_oUIMZtkuOWQwL95-sxXFdIHsU"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterMetrics.d.ts"
-    },
-    "size": 8365,
-    "hash": "mgieQocV1C9i_XWkiaaLX8TI9OV5nTjE7ApoNJhdtxA"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterSchema.d.ts"
-    },
-    "size": 6172,
-    "hash": "Xko8-BfThlGviTI6FW7SvVh_4hKZH4-SqWE-IdlNhws"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Workflow.d.ts"
-    },
-    "size": 18929,
-    "hash": "T9ym1nDkGu9D_4BX1TVD2t4tpo9nrcTDwbE4dOaXBTg"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableDeferred.d.ts"
-    },
-    "size": 17080,
-    "hash": "0HYeLXjSxTYk2VxmgCR8lsaA7Bq82UNrkpMNKZc0kXg"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableClock.d.ts"
-    },
-    "size": 1683,
-    "hash": "acpDCCT8b7Nx7nC7nWDNGg6pktVOgOR57nNFEur5P64"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/WorkflowEngine.d.ts"
-    },
-    "size": 12971,
-    "hash": "4iB3RMXpMelb_0M-FV7m_hX1LXYhTrUzjNOWE7ejhu0"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Activity.d.ts"
-    },
-    "size": 6644,
-    "hash": "O94vksRKgyrgx3OpMnXkXv-ze3pAieV5454TvoG64YA"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterWorkflowEngine.d.ts"
-    },
-    "size": 4850,
-    "hash": "QmHx8o8GTlbXU_8dolLMcz9IuE0FNXzEvM3sCRv9H8s"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/DeliverAt.d.ts"
-    },
-    "size": 1543,
-    "hash": "Ibq4ocbdh2IG6-2ubhgLC-7utULf4uXp_F5y__Ili5M"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
-    },
-    "size": 3210,
-    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSchema.d.ts"
-    },
-    "size": 33776,
-    "hash": "oRRMtbP_t1NtFNCBVNcTlHmPIiYNmBd58ezmpza039c"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiError.d.ts"
-    },
-    "size": 22439,
-    "hash": "Etkv-dnkktQNseuaNP54LHQ72o8ZJHTkp1wHM2AzQ_Q"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSecurity.d.ts"
-    },
-    "size": 6440,
-    "hash": "q2tAUGBZ_DdM4mtHAL9RI9iNXBdHoUffIzvFbHlvi08"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiMiddleware.d.ts"
-    },
-    "size": 17256,
-    "hash": "EbqaZWiaGwcb7UjXGnqHoS01JqeohAEfBL9GUdFauEY"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiGroup.d.ts"
-    },
-    "size": 10492,
-    "hash": "A_KkgwnU5rqDsuZK4IFZ56-mqixiK3W_3mnbcG4ZuFQ"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiEndpoint.d.ts"
-    },
-    "size": 52343,
-    "hash": "c2mJ-w9tv2gSGS3KkbRh_MVxsAYMtEIijtJ5TvgqLZs"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxy.d.ts"
-    },
-    "size": 6091,
-    "hash": "KxDdcwmF-ZTCWCwOTdF6iDpL5VSaHb2J44AsdW9DuMU"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApi.d.ts"
-    },
-    "size": 11453,
-    "hash": "FGfWY8p54kEiztH4A3Wx-ERRwxrfWAG8B4eP1c2sQz0"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxyServer.d.ts"
-    },
-    "size": 2133,
-    "hash": "bmMHlqj_ihcpQEXaCF3kgP7FAwzNKVbLoZhfVS-XmxE"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityResource.d.ts"
-    },
-    "size": 3871,
-    "hash": "mXP4oDVO_i9Z2XGGVEFoEOeAHSoR6LijEePcguUn1XY"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/HttpRunner.d.ts"
-    },
-    "size": 7605,
-    "hash": "7IROn5E5L336j0R3t8Z6Wf9pbt2jijPO911OeEy7ff4"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerServer.d.ts"
-    },
-    "size": 2766,
-    "hash": "VIRLTgOJbKvN-uKw4a678tWL_BEBXh_N-mbt1RozfE4"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingleRunner.d.ts"
-    },
-    "size": 2868,
-    "hash": "dZihTYTMszQrGTTdK09ZbcE861r7u-4aRGLWZ0Xpz6U"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Singleton.d.ts"
-    },
-    "size": 1982,
-    "hash": "-cmWeYzA3_N5yknjp7BQxpXTMRB4a_1aNizeMA7BidY"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SocketRunner.d.ts"
-    },
-    "size": 2388,
-    "hash": "jgMC7JfEhtM9wsz0RZGvsYwaGkbRfz8IWOKsC_lUBjg"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlMessageStorage.d.ts"
-    },
-    "size": 5399,
-    "hash": "4IhxmO3kZYtbzvxbnUmY5NeXG1izrpH82KGob9Yvpzw"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlRunnerStorage.d.ts"
-    },
-    "size": 4301,
-    "hash": "QRDzqXBCqRCTVozYpCJLHrQmtSf8oN6M5XFkd37yaIc"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/TestRunner.d.ts"
-    },
-    "size": 1023,
-    "hash": "S7Jp3TeumNcJNeTal7pDVdhK_FHlK5iBI8NKfdbmqA8"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/index.d.ts"
-    },
-    "size": 3870,
-    "hash": "TCw4mrTHA5ASw2V2ECEmcvSyCaTQphcrVWlaD_pOQ0Q"
    },
    {
     "path": {
@@ -7836,24 +7843,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/build/targets/src/Flow.ts"
+     "relative": "packages/smithers/build/targets/src/Flow.vibe"
     },
-    "size": 5884,
-    "hash": "JzABIjyTDt1VzDX9WTWyYiDcQUysu2iO-IAXCb71Ag4"
+    "size": 6046,
+    "hash": "6eqgM1uIOLpX3xwFhBCKnhxumP8BKDaSeo9BU8qfz7U"
    },
    {
     "path": {
      "relative": "packages/smithers/build/targets/src/FlowCatalog.vibe"
     },
-    "size": 7214,
-    "hash": "flU18fzU1KaAVc5iF8TPIsd4x8kXYWfxmb86eI4aNP8"
+    "size": 7216,
+    "hash": "1rOmAjvUJFIlvOHv06mivrnPyFpEWa2fD-xBmPlhztI"
    },
    {
     "path": {
      "relative": "packages/smithers/build/targets/src/Factory.ts"
     },
-    "size": 40104,
-    "hash": "MZ7f9NBKhOZhYzEfTawgEaoQo46Z39PKJm_hsyeHF_M"
+    "size": 40106,
+    "hash": "7rY-gq510l7tULdcrazFUkGLUVAgjUF4qYmw2a3OQBI"
    },
    {
     "path": {
@@ -7892,10 +7899,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/build/targets/src/GithubWorkflow.ts"
+     "relative": "packages/smithers/build/targets/src/GithubWorkflow.vibe"
     },
-    "size": 43925,
-    "hash": "T0QdinxARGhuvIHnOvMKA8puStsVXTbxtBq_-A-0zo4"
+    "size": 44120,
+    "hash": "lsrQqjkrIgFJ60FhVJmN22CEX2JfCRh18vPvWmFN0XE"
    },
    {
     "path": {
@@ -7908,8 +7915,8 @@
     "path": {
      "relative": "packages/smithers/build/targets/src/GithubCiGen.ts"
     },
-    "size": 76855,
-    "hash": "h5pdijOfOz_Dv3IyiEOl9h0gBWoQmhIuGNL6Aq1AyQo"
+    "size": 76857,
+    "hash": "5HgY4J0ghzEKIqEaAhZKeGjTFrkXIN6BBLrcF2ptxAA"
    },
    {
     "path": {
@@ -7920,17 +7927,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/build/targets/src/Stamp.ts"
+     "relative": "packages/smithers/build/targets/src/Stamp.vibe"
     },
-    "size": 1386,
-    "hash": "FfG0Kv7_sSP-mSetUZXtEcJ2GgW45jEnzSkJS06dP7w"
+    "size": 1512,
+    "hash": "ikv0nrs90ZaYb5RUXCGWchgNZQ3Yx9TNe-G-mE25ZoQ"
    },
    {
     "path": {
      "relative": "packages/smithers/build/targets/src/Go.ts"
     },
-    "size": 7995,
-    "hash": "Sj_LxlBaqNzxVQzXzaUdg-GkFT_ZjeHMsgKohOyWlqs"
+    "size": 7997,
+    "hash": "9Qpf4yI-PSS8M7dSLs4HjOv3KhEkK-g_ZYkNgKxWt1o"
    },
    {
     "path": {
@@ -8244,8 +8251,8 @@
     "path": {
      "relative": "packages/smithers/build/targets/src/Smithers.ts"
     },
-    "size": 18262,
-    "hash": "E18l1bJdGtvH0w4cHM100IBJilsXWJjXr5vxdRMBhbA"
+    "size": 18270,
+    "hash": "Ec6GvJBXelvsU2oOPeUILDOH-1lNj9bQwoVYwunEWX0"
    },
    {
     "path": {
@@ -9948,7 +9955,7 @@
     "relative": "packages/smithers/flows/kernel/src/ChildProcessSpawner.ts"
    },
    {
-    "relative": "packages/smithers/flows/jj/src/Jj.ts"
+    "relative": "packages/smithers/flows/jj/src/Jj.vibe"
    },
    {
     "relative": "packages/smithers/flows/jj/src/index.ts"
@@ -10026,13 +10033,13 @@
     "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
+    "relative": "packages/smithers/flows/journal/src/JournalGeneration.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+    "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
@@ -10041,7 +10048,7 @@
     "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
+    "relative": "packages/smithers/flows/journal/src/RedactedLogger.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
@@ -10068,7 +10075,7 @@
     "relative": "packages/smithers/flows/journal/src/migrations/0006_consensus.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+    "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/index.ts"
@@ -10554,7 +10561,7 @@
     "relative": "packages/smithers/build/targets/src/Home.vibe"
    },
    {
-    "relative": "packages/smithers/build/targets/src/Flow.ts"
+    "relative": "packages/smithers/build/targets/src/Flow.vibe"
    },
    {
     "relative": "packages/smithers/build/targets/src/FlowCatalog.vibe"
@@ -10578,7 +10585,7 @@
     "relative": "packages/smithers/build/targets/src/GitTarget.ts"
    },
    {
-    "relative": "packages/smithers/build/targets/src/GithubWorkflow.ts"
+    "relative": "packages/smithers/build/targets/src/GithubWorkflow.vibe"
    },
    {
     "relative": "packages/smithers/build/targets/src/Verb.vibe"
@@ -10590,7 +10597,7 @@
     "relative": "packages/smithers/build/targets/src/GithubTarget.ts"
    },
    {
-    "relative": "packages/smithers/build/targets/src/Stamp.ts"
+    "relative": "packages/smithers/build/targets/src/Stamp.vibe"
    },
    {
     "relative": "packages/smithers/build/targets/src/Go.ts"
@@ -10860,6 +10867,46 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/build/targets/src/Flow.vibe"
+     }
+    ],
+    "code": "/**\n * Flow declarations for `.smithers/FACTORY.ts`.\n *\n * A repository's flows live under `flows/` and describe themselves in their\n * own entry files: the description, the capabilities, the model. What a flow\n * cannot say about itself is how the repository presents it: the one-line\n * `summary` a listing shows under the id, and whether it is `featured`, one\n * of the handful the repository recommends first. That prose belongs to the\n * factory declaration, under `S.Factory({ flows })`, riding the same\n * `summary` and `featured` pair every target carries.\n *\n * `Smithers.Flow` is that declaration. It is inert: it names a flow id and\n * carries its presentation, and nothing reads it until the\n * `FactoryProjection` target projects the declarations over the discovered\n * flows into the `flows` rows of `.smithers/factory.json`. A declaration\n * that names no discovered flow fails that projection by id, so a typo is\n * never silently featured.\n *\n * @since 1.0.0\n */\nimport * as Schema from \"effect/Schema\";\nimport { Declaration } from \"./Flow.vibe.platform.js\";\nexport { Declaration, Flow, idPattern, maximumIdLength } from \"./Flow.vibe.platform.js\";\n/**\n * Reports whether a value is a flow declaration.\n *\n * @category guards\n * @since 1.0.0\n */\nexport const isFlowDeclaration = Schema.is(Declaration);\n",
+    "map": {
+     "version": 3,
+     "file": "Flow.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/build/targets/src/Flow.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;;;GAmBG;;AA6HH,OAAO,EAAE,WAAW,EAAE,MAAM,yBAAQ,CAAA;AACpC,OAAO,EAAE,WAAW,EAAE,IAAI,EAAE,SAAS,EAAE,eAAe,EAAE,MAAM,yBAAQ,CAAA;AAGtE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,iBAAiB,GAA6C,MAAM,CAAC,EAAE,CAAC,WAAW,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/build/targets/src/Flow.vibe.platform.js"
+     }
+    ],
+    "code": "import * as Schema from \"effect/Schema\";\nimport * as NodeUtil from \"node:util/types\";\nimport * as Home from \"./Home.js\";\nimport * as Target from \"./Target.js\";\n/**\n * Maximum length of one declared flow id.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const maximumIdLength = 256;\n/**\n * The shape of a discovered flow id: path segments of letters, digits, `-`,\n * `_`, and `.`, joined by `/`, exactly as discovery derives them from the\n * directory path below `flows/`.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const idPattern = /^(?!\\.\\.?(?:\\/|$))[A-Za-z0-9_.-]+(?:\\/(?!\\.\\.?(?:\\/|$))[A-Za-z0-9_.-]+)*$/;\n/**\n * Schema for one inert flow declaration.\n *\n * `summary` is absent rather than empty when a declaration carries none, and\n * `featured` is always present, so a catalog row never has to guess at a\n * default the declaration did not state.\n *\n * @category schemas\n * @since 1.0.0\n */\nexport const Declaration = Schema.TaggedStruct(\"FlowDeclaration\", {\n    /** The flow id, the directory path below `flows/`. */\n    flow: Schema.NonEmptyString.check(Schema.isMaxLength(maximumIdLength), Schema.isPattern(idPattern)),\n    /** The one-line summary a listing shows under the id. */\n    summary: Schema.optional(Schema.NonEmptyString),\n    /** Whether the repository recommends this flow first. */\n    featured: Schema.Boolean,\n    /** The view the flow draws: on the run's monitor, and as the repository's default view when the home names it. */\n    view: Schema.optional(Home.FlowView)\n});\nconst optionKeys = new Set([\"flow\", \"summary\", \"featured\", \"view\"]);\n/**\n * Declares how the repository presents one of its flows.\n *\n * The declaration is validated where it is written: the id has to be a\n * discovery-shaped path, the summary one non-empty line, and `featured` a\n * boolean. Whether the id names a flow that exists is decided when the\n * catalog is rendered, because only discovery knows.\n *\n * @example\n * ```ts\n * import { Smithers } from \"@smthrs/targets\"\n *\n * export const review = Smithers.Flow({\n *   flow: \"review\",\n *   summary: \"Review the working-copy change and return a verdict with reasons.\",\n *   featured: true\n * })\n * ```\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const Flow = (options) => {\n    if (typeof options !== \"object\" || options === null || Array.isArray(options) || NodeUtil.isProxy(options) ||\n        (Object.getPrototypeOf(options) !== Object.prototype && Object.getPrototypeOf(options) !== null))\n        throw new TypeError(\"Flow options must be a plain object\");\n    if (Object.getOwnPropertySymbols(options).length > 0) {\n        throw new TypeError(\"Flow options must not contain symbol properties\");\n    }\n    const plain = {};\n    for (const key of Object.getOwnPropertyNames(options)) {\n        if (!optionKeys.has(key))\n            throw new TypeError(`Flow received unknown option ${JSON.stringify(key)}`);\n        const descriptor = Object.getOwnPropertyDescriptor(options, key);\n        if (!(\"value\" in descriptor) || descriptor.enumerable !== true) {\n            throw new TypeError(`Flow option ${key} must be an enumerable data property`);\n        }\n        plain[key] = descriptor.value;\n    }\n    const split = Target.splitPresentation(plain);\n    if (typeof split === \"string\")\n        throw new TypeError(`Flow ${JSON.stringify(plain[\"flow\"])}: ${split}`);\n    const flow = split.attrs[\"flow\"];\n    if (typeof flow !== \"string\" || !flow.isWellFormed())\n        throw new TypeError(\"Flow id must be a well-formed string\");\n    if (flow.length > maximumIdLength || !idPattern.test(flow)) {\n        throw new TypeError(`Flow id must be a directory path below flows/ (segments of letters, digits, \"-\", \"_\", \".\"): ${JSON.stringify(flow)}`);\n    }\n    const view = split.attrs[\"view\"];\n    return Home.freezeDeep(Declaration.make({\n        flow,\n        ...(split.presentation.summary === undefined ? {} : { summary: split.presentation.summary }),\n        featured: split.presentation.featured,\n        ...(view === undefined ? {} : { view: Home.decode(`Flow ${JSON.stringify(flow)} view`, Home.FlowView, view) })\n    }));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "Flow.vibe.platform.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/build/targets/src/Flow.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/build/targets/src/FlowCatalog.vibe"
      }
     ],
@@ -10900,6 +10947,46 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/build/targets/src/GithubWorkflow.vibe"
+     }
+    ],
+    "code": "/**\n * Reading and rendering GitHub Actions workflow files.\n *\n * A generated CI pipeline is only worth anything if it still runs the gates\n * the repository requires. `GithubCiGen` used to render five hard-coded steps\n * whose whole pipeline was one `pnpm dlx @smthrs/build-cli ci //...` invocation, and it\n * declared `.github/workflows/ci.yml` as its output — so building the root\n * target replaced a multi-job pipeline (typecheck, lint, circular-dependency\n * guard, browser bundle gate, release pack smoke test, Rust fmt/clippy/test,\n * WASM reproducibility, Bun, macOS, Windows) with a single job that ran none\n * of them.\n *\n * This module supplies the two halves of the fix: a renderer that can express a\n * real multi-job pipeline rather than a fixed five-step one, and a workflow\n * reader, so the rendered pipeline can be checked against the gates the\n * repository declared before a single byte is written.\n *\n * The reader is two layers. YAML lexing and structure come from `yaml`, the\n * parser this package already depends on and already reads workspace data\n * with; a hand-written scanner used to do that job and carried its own\n * quoting, indentation, and block-scalar rules, which is where its bugs lived.\n * On top of it sits the part that is this module's own: a workflow validator\n * that refuses anything the gate contract cannot verify — a YAML alias or\n * merge key, an inherited `defaults:` shell, a duplicate top-level key, job\n * id, job field, or step field, a job with no runner or no steps, a step that\n * declares neither or both of `uses` and `run`. Failing closed is the point: a\n * gate this module could not see is reported missing, never assumed present.\n *\n * @since 0.1.0\n */\nexport { WorkflowParseError, WorkflowParseReason, maximumWorkflowBytes, parseWorkflow } from \"./GithubWorkflow.vibe.platform.js\";\n/** Removes a shell comment from one script line, respecting quoting. */\nconst stripShellComment = (line) => {\n    let quote;\n    for (let index = 0; index < line.length; index++) {\n        const character = line[index];\n        if (quote !== undefined) {\n            if (character === \"\\\\\" && quote === \"\\\"\") {\n                index += 1;\n                continue;\n            }\n            if (character === quote)\n                quote = undefined;\n            continue;\n        }\n        if (character === \"'\" || character === \"\\\"\") {\n            quote = character;\n            continue;\n        }\n        // A `#` opens a shell comment at the start of a word only, which keeps\n        // `${{ ... }}`, `$#`, and `a#b` intact.\n        if (character === \"#\" && (index === 0 || /\\s/.test(line[index - 1])))\n            return line.slice(0, index);\n    }\n    return line;\n};\n/**\n * Strips shell comments from a `run` script, line by line.\n *\n * A gate proves a command still RUNS. Commented-out text is not a command, and\n * a workflow whose only remaining occurrence of `pnpm run check` sits behind a\n * `#` runs no typecheck — so the comment is removed before matching and the\n * gate is reported missing. Quoting state is not carried across lines, which\n * fails closed: a `#` inside a multi-line quoted string is treated as a\n * comment, costing a gate a match rather than inventing one.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const stripShellComments = (script) => script.split(\"\\n\").map(stripShellComment).join(\"\\n\");\n/** Characters that end one shell command and open the next. */\nconst commandSeparators = new Set([\"\\n\", \";\", \"&\", \"|\", \"(\", \")\"]);\n/**\n * Words that introduce a command rather than being one. `sudo`, `exec`, and\n * `time` run the command that follows them; the rest are shell keywords whose\n * next word is a command. `for`, `case`, and `select` are deliberately absent:\n * the word after them is a variable or a value, not a command.\n */\nconst commandIntroducers = new Set([\n    \"!\",\n    \"{\",\n    \"}\",\n    \"if\",\n    \"then\",\n    \"elif\",\n    \"else\",\n    \"while\",\n    \"until\",\n    \"do\",\n    \"time\",\n    \"sudo\",\n    \"exec\"\n]);\n/** A `NAME=value` prefix, which the shell applies before running the command. */\nconst assignmentPrefix = /^[A-Za-z_][A-Za-z0-9_]*=/;\n/** Skips a quoted string, returning the index just past its closing quote. */\nconst skipQuoted = (script, open) => {\n    const quote = script[open];\n    let index = open + 1;\n    while (index < script.length) {\n        const character = script[index];\n        // A backslash escapes inside `\"…\"` only; inside `'…'` it is literal.\n        if (quote === \"\\\"\" && character === \"\\\\\") {\n            index += 2;\n            continue;\n        }\n        if (character === quote)\n            return index + 1;\n        index += 1;\n    }\n    // An unterminated quote swallows the rest of the script, which fails closed:\n    // it can only cost a gate a match, never invent one.\n    return script.length;\n};\n/**\n * Skips a here-document, returning the index at the end of its terminator line.\n *\n * A here-document body is DATA the shell feeds to a command's stdin, never\n * commands it runs, so `cat <<'EOF' … pnpm run check … EOF` runs no typecheck.\n * The remainder of the opening line is skipped with the body, and an\n * unterminated here-document swallows the rest of the script: both can only\n * cost a gate a match, never invent one.\n */\nconst skipHereDocument = (script, open) => {\n    let index = open + 2;\n    const stripTabs = script[index] === \"-\";\n    if (stripTabs)\n        index += 1;\n    while (script[index] === \" \" || script[index] === \"\\t\")\n        index += 1;\n    let delimiter = \"\";\n    while (index < script.length) {\n        const character = script[index];\n        if (character === \"'\" || character === \"\\\"\") {\n            const close = skipQuoted(script, index);\n            delimiter += script.slice(index + 1, Math.max(index + 1, close - 1));\n            index = close;\n            continue;\n        }\n        if (/[\\s;&|()<>]/.test(character))\n            break;\n        delimiter += character;\n        index += 1;\n    }\n    const newline = script.indexOf(\"\\n\", index);\n    if (delimiter === \"\" || newline === -1)\n        return script.length;\n    let offset = newline + 1;\n    for (const line of script.slice(offset).split(\"\\n\")) {\n        if (line === delimiter || (stripTabs && line.replace(/^\\t+/, \"\") === delimiter)) {\n            return Math.min(script.length, offset + line.length);\n        }\n        offset += line.length + 1;\n    }\n    return script.length;\n};\n/**\n * Returns the end of a shell function definition beginning at `start`.\n *\n * A function body is deferred code: merely declaring\n * `check() { pnpm run check; }` does not run the command. The gate scanner\n * therefore skips the complete balanced body. If the body is malformed, the\n * rest of the script is swallowed, which fails closed. Calling the function\n * later is also not expanded by this deliberately small scanner; callers that\n * require a gate should spell the required command directly.\n */\nconst functionDefinitionEnd = (script, start) => {\n    const header = script.slice(start).match(/^(?:(?:function[ \\t\\n]+[A-Za-z_][A-Za-z0-9_]*(?:[ \\t\\n]*\\([ \\t\\n]*\\))?)|(?:[A-Za-z_][A-Za-z0-9_]*[ \\t\\n]*\\([ \\t\\n]*\\)))[ \\t\\n]*\\{/);\n    if (header === null)\n        return undefined;\n    let index = start + header[0].length;\n    let depth = 1;\n    while (index < script.length) {\n        const character = script[index];\n        if (character === \"'\" || character === \"\\\"\") {\n            index = skipQuoted(script, index);\n            continue;\n        }\n        if (character === \"\\\\\") {\n            index += 2;\n            continue;\n        }\n        if (character === \"<\" && script[index + 1] === \"<\" && script[index + 2] !== \"<\") {\n            index = skipHereDocument(script, index);\n            continue;\n        }\n        if (character === \"{\")\n            depth += 1;\n        if (character === \"}\") {\n            depth -= 1;\n            if (depth === 0)\n                return index + 1;\n        }\n        index += 1;\n    }\n    return script.length;\n};\n/**\n * The commands the shell would run, each as the range its words occupy.\n *\n * This is the whole of the fail-closed gate contract: a command is only proof\n * that something RUNS when the shell would run it, so `echo pnpm run check`,\n * `\"…; pnpm run check\"`, and `xpnpm run check` yield no command span at the\n * gate's text. Constructs this scanner does not model (backticks, `eval`)\n * simply produce no span there, which reports the gate missing rather than\n * accepting text that may not run.\n *\n * A span ends where the shell stops reading the command: at a separator, at a\n * here-document, or at the end of the script. That is what lets a caller hold\n * the WHOLE command to a policy — {@link performsInstall} checks the install's\n * own flags — rather than only its first words.\n *\n * Shell-level control flow is the one thing it deliberately looks THROUGH: a\n * command inside an `if`, a loop body, or a `case` arm is reported as run,\n * because the flows pipeline's own byte-comparison gate lives inside\n * `if ! cmp …; then`. A workflow-level `if:` is the opposite — see\n * {@link alwaysRuns} — because GitHub may skip the whole job or step.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const commandSpans = (script) => {\n    const spans = [];\n    let open;\n    let index = 0;\n    let expectCommand = true;\n    while (index < script.length) {\n        const character = script[index];\n        if (character === \" \" || character === \"\\t\") {\n            index += 1;\n            continue;\n        }\n        if (expectCommand) {\n            const functionEnd = functionDefinitionEnd(script, index);\n            if (functionEnd !== undefined) {\n                index = functionEnd;\n                open = undefined;\n                // A following command still needs its own shell separator. Without\n                // one, `f() { :; }pnpm run check` is a syntax error, not proof that\n                // the shell starts another command at `pnpm`.\n                expectCommand = false;\n                continue;\n            }\n        }\n        if (commandSeparators.has(character)) {\n            open = undefined;\n            expectCommand = true;\n            index += 1;\n            continue;\n        }\n        if (character === \"'\" || character === \"\\\"\") {\n            // A quoted first word is not a command name this scanner will vouch for.\n            index = skipQuoted(script, index);\n            if (open !== undefined)\n                open.end = index;\n            expectCommand = false;\n            continue;\n        }\n        if (character === \"\\\\\") {\n            // A backslash-newline is a line continuation: the shell joins the two\n            // lines, so it neither ends the current command nor cancels a pending\n            // one. `pnpm install --frozen-lockfile && \\` still starts a command on\n            // the next line, and reading the continuation as an ordinary escape\n            // would report that command missing.\n            if (script[index + 1] !== \"\\n\") {\n                if (open !== undefined)\n                    open.end = index + 2;\n                // Any other unquoted backslash escapes the next character, so\n                // `echo \\; pnpm run check` passes the `;` to `echo` and starts no\n                // second command. Reading it as a separator would invent a command\n                // boundary the shell does not have.\n                expectCommand = false;\n            }\n            index += 2;\n            continue;\n        }\n        // `<<<` is a here-string, whose word is on this line; `<<` opens a body.\n        if (character === \"<\" && script[index + 1] === \"<\" && script[index + 2] !== \"<\") {\n            index = skipHereDocument(script, index);\n            open = undefined;\n            expectCommand = true;\n            continue;\n        }\n        const start = index;\n        while (index < script.length) {\n            const next = script[index];\n            if (next === \" \" || next === \"\\t\" || commandSeparators.has(next))\n                break;\n            if (next === \"'\" || next === \"\\\"\") {\n                index = skipQuoted(script, index);\n                continue;\n            }\n            // The same escape target inside a word: `a\\;b` is one argument, not two\n            // commands.\n            index += next === \"\\\\\" ? 2 : 1;\n        }\n        if (expectCommand) {\n            open = { start, end: index };\n            spans.push(open);\n            const word = script.slice(start, index);\n            if (!commandIntroducers.has(word) && !assignmentPrefix.test(word))\n                expectCommand = false;\n        }\n        else if (open !== undefined) {\n            open.end = index;\n        }\n    }\n    return spans;\n};\n/**\n * The offsets at which the shell would start reading a command.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const commandStarts = (script) => commandSpans(script).map((span) => span.start);\n/** Whether a character ends the shell word a command name occupies. */\nconst endsWord = (character) => character === undefined || character === \" \" || character === \"\\t\" ||\n    character === \"<\" || character === \">\" || commandSeparators.has(character);\n/**\n * Whether a `run` script runs the given command.\n *\n * The command must begin at a shell command boundary and end at a word\n * boundary, so arguments and flags may follow it but a longer command name may\n * not. Shell comments come off first: commented-out text is not a command.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const runsCommand = (script, command) => {\n    const wanted = command.trim();\n    if (wanted === \"\")\n        return false;\n    const text = stripShellComments(script);\n    return commandStarts(text).some((start) => text.startsWith(wanted, start) && endsWord(text[start + wanted.length]));\n};\n/**\n * Whether a step's `uses` value is the action a gate names.\n *\n * The value must BE the action, either at the pinned reference the gate\n * declares or at any version of an unversioned one. A `uses` that merely\n * contains the gate's text — `my-org/actions/checkout@v4` against\n * `actions/checkout@v4` — is a different action and does not satisfy it.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const usesAction = (uses, command) => {\n    const value = uses.trim();\n    const wanted = command.trim();\n    return wanted !== \"\" && (value === wanted || (!wanted.includes(\"@\") && value.startsWith(`${wanted}@`)));\n};\n/**\n * The one step condition that proves a gate as well as no `if:` does, given an\n * earlier unconditional step with `id: setup`: it runs whenever the implicit\n * `success()` would, and also after an earlier gate went red. Generated CI\n * puts it on every gate step.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const independentGateCondition = \"!cancelled() && steps.setup.conclusion == 'success'\";\nconst expressionBody = (condition) => {\n    const normalized = condition.trim();\n    return normalized.match(/^\\$\\{\\{\\s*(.*?)\\s*\\}\\}$/)?.[1] ?? normalized;\n};\n/**\n * Whether a parsed `if:` is provably always true.\n *\n * Only the `true` literal is accepted. Anything else — `false`, a context\n * expression, a value the scanner could not read — leaves the job or step\n * conditional, and a conditional job or step is not proof that a required\n * gate runs. {@link missingGates} additionally accepts\n * {@link independentGateCondition} on a step, where it can check the setup step.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const alwaysRuns = (condition) => condition === undefined || expressionBody(condition) === \"true\";\n/** Whether a step runs whenever its job does, reading the steps before it. */\nconst stepAlwaysRuns = (steps, index) => {\n    const condition = steps[index].condition;\n    if (alwaysRuns(condition))\n        return true;\n    return expressionBody(condition) === independentGateCondition &&\n        steps.slice(0, index).some((step) => step.id === \"setup\" && step.condition === undefined);\n};\n/** Shell declarations for which the scanner can prove a `run` body executes. */\nconst executableShells = new Set([\"bash\", \"sh\", \"pwsh\", \"powershell\", \"cmd\"]);\n/**\n * Whether GitHub will execute a run body through a shell the scanner models.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const executesRunScript = (shell) => shell === undefined || executableShells.has(shell.trim().toLowerCase());\n/**\n * The declared required jobs a workflow does not unconditionally run.\n *\n * A required job is required to RUN, on the same terms as a gate: a job\n * carrying an `if:` is one GitHub may skip, so `if: false` on a required job is\n * a job the pipeline does not have. A job that exists but is conditional is\n * reported as `id (conditional)`, because \"missing\" would send an operator\n * looking for a job that is right there in the file.\n *\n * `continue-on-error` stays out of it, exactly as it does for a gate: a\n * required job asserts that the job runs, not that its failure blocks a merge,\n * and the advisory platform lanes are jobs that do run.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const missingRequiredJobs = (workflow, requiredJobs) => {\n    const declared = new Set(workflow.jobs.map((job) => job.id));\n    const unconditional = new Set(workflow.jobs.filter((job) => alwaysRuns(job.condition)).map((job) => job.id));\n    return requiredJobs\n        .filter((id) => !unconditional.has(id))\n        .map((id) => declared.has(id) ? `${id} (conditional)` : id);\n};\n/**\n * Reports the declared gates a workflow no longer runs.\n *\n * A gate is satisfied only by an UNCONDITIONAL job and step: `if: false`, and\n * every other condition that is not the always-true literal, is a job or step\n * GitHub may skip, so it cannot prove an unconditional gate. `continue-on-error`\n * is deliberately not treated the same way — a gate asserts that a command is\n * still run, not that its failure blocks a merge, and the advisory macOS and\n * Windows lanes of a real pipeline are exactly the jobs a platform-pinned gate\n * exists to pin.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const missingGates = (workflow, gates) => gates.filter((gate) => {\n    const jobs = (gate.job === undefined\n        ? workflow.jobs\n        : workflow.jobs.filter((job) => job.id === gate.job)).filter((job) => alwaysRuns(job.condition));\n    return !jobs.some((job) => job.steps.filter((_, index) => stepAlwaysRuns(job.steps, index)).some((step) => (step.run !== undefined && executesRunScript(step.shell) && runsCommand(step.run, gate.command)) ||\n        (step.uses !== undefined && usesAction(step.uses, gate.command))));\n});\n/**\n * The lockfile installs a generated pipeline may run, and the flags each one\n * may carry.\n *\n * A generated pipeline that installs with anything else — `pnpm dlx`, a bare\n * `npm install`, a fetch-from-the-network one-liner — is not reproducible and\n * is not a supported way to set a workspace up, so the renderer refuses it.\n *\n * The flag lists are ALLOWLISTS, and they are the second half of the same\n * guarantee. `pnpm install --frozen-lockfile --lockfile-only` writes a lockfile\n * and installs nothing; `--prod`, `--production`, and `--omit=dev` drop the dev\n * dependencies the workspace CLI lives in; `--filter=…` installs a slice of the\n * workspace. Each one leaves the install gate satisfied and the pinned binary\n * missing, which is a guaranteed-red or silently incomplete pipeline. Only\n * flags that cannot omit a pinned dependency are listed, and an unrecognized\n * flag is refused rather than guessed at.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const supportedInstalls = [\n    {\n        command: \"pnpm install --frozen-lockfile\",\n        exec: \"pnpm exec\",\n        flags: [\n            \"--ignore-scripts\",\n            \"--prefer-offline\",\n            \"--prefer-frozen-lockfile\",\n            \"--strict-peer-dependencies\",\n            \"--no-strict-peer-dependencies\",\n            \"--no-color\",\n            \"--silent\"\n        ],\n        valueFlags: [\"--reporter\", \"--loglevel\", \"--child-concurrency\", \"--network-concurrency\"]\n    },\n    {\n        command: \"npm ci\",\n        exec: \"npm exec --no-install --\",\n        flags: [\n            \"--ignore-scripts\",\n            \"--prefer-offline\",\n            \"--no-audit\",\n            \"--no-fund\",\n            \"--no-color\",\n            \"--foreground-scripts\",\n            \"--silent\"\n        ],\n        valueFlags: [\"--loglevel\"]\n    },\n    {\n        command: \"yarn install --immutable\",\n        exec: \"yarn run\",\n        flags: [\"--immutable-cache\", \"--check-cache\", \"--inline-builds\", \"--no-immutable-cache\"],\n        valueFlags: []\n    },\n    {\n        command: \"bun install --frozen-lockfile\",\n        exec: \"bun run\",\n        flags: [\"--ignore-scripts\", \"--no-progress\", \"--no-summary\", \"--no-verify\", \"--silent\"],\n        valueFlags: [\"--concurrent-scripts\"]\n    }\n];\n/**\n * Install commands that respect a lockfile.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const supportedInstallCommands = supportedInstalls.map((install) => install.command);\n/** The value half of a `--flag=value` an install may carry. */\nconst flagValue = /^[A-Za-z0-9][A-Za-z0-9._-]*$/;\n/**\n * The supported install a command line is, or `undefined` when it is none of\n * them.\n *\n * Extra flags are allowed only when {@link supportedInstalls} lists them for\n * that package manager. An unknown flag, a flag that can omit a pinned\n * dependency, and anything that could reach the shell or the network are all\n * refused, because each of them satisfies an install gate while leaving the\n * workspace incomplete.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const supportedInstallOf = (command) => {\n    // A backslash-newline is a line continuation the shell removes before it\n    // reads the words, so `pnpm install --frozen-lockfile \\` + `--ignore-scripts`\n    // is the one command it spells. `commandSpans` follows the continuation, and\n    // the flag policy has to read the same words it does.\n    const normalized = command.replace(/\\\\\\n[ \\t]*/g, \" \").trim();\n    for (const install of supportedInstalls) {\n        if (normalized === install.command)\n            return install.command;\n        if (!normalized.startsWith(`${install.command} `))\n            continue;\n        const suffix = normalized.slice(install.command.length).trim();\n        const allowed = suffix.split(/\\s+/).every((flag) => {\n            const separator = flag.indexOf(\"=\");\n            if (separator === -1)\n                return install.flags.includes(flag);\n            return install.valueFlags.includes(flag.slice(0, separator)) && flagValue.test(flag.slice(separator + 1));\n        });\n        if (allowed)\n            return install.command;\n    }\n    return undefined;\n};\n/**\n * Whether a command line is a supported lockfile install.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const isSupportedInstall = (command) => supportedInstallOf(command) !== undefined;\n/**\n * The command prefix that runs a workspace binary the matching lockfile\n * install already put in the tree.\n *\n * Each one resolves the binary from `node_modules`, so the version that runs is\n * the version the lockfile pinned. `npm exec --no-install` fails rather than\n * fetching. None of them may reach a registry: a generated pipeline that\n * fetched its own CLI would run a package the lockfile never approved, and the\n * install step would be decorative.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const workspaceExecCommands = Object.fromEntries(supportedInstalls.map((install) => [install.command, install.exec]));\n/**\n * The workspace-binary runner for a supported lockfile install, or `undefined`\n * when the install is not supported.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const workspaceExec = (install) => {\n    const supported = supportedInstallOf(install);\n    return supported === undefined ? undefined : workspaceExecCommands[supported];\n};\n/**\n * Whether a `run` script actually performs the given lockfile install.\n *\n * The install has to be a command the SHELL RUNS, which is the same boundary\n * target a gate uses: it must occupy a whole {@link commandSpans} span, after\n * shell comments come off. A mention inside a comment, an `echo` argument, a\n * quoted string, or a here-document body installs nothing and does not count,\n * even though every one of them is a line of the script that reads like the\n * install.\n *\n * The WHOLE command is held to the same policy as the declared install, not\n * merely its prefix. `pnpm install --frozen-lockfile --prod` starts with the\n * declared base and installs none of the dev dependencies the pinned workspace\n * CLI lives in, so it does not perform the declared install; the allowlisted\n * `pnpm install --frozen-lockfile --ignore-scripts` does.\n *\n * @category verification\n * @since 0.1.0\n */\nexport const performsInstall = (script, install) => {\n    const declared = supportedInstallOf(install);\n    if (declared === undefined)\n        return false;\n    const text = stripShellComments(script);\n    return commandSpans(text).some((span) => supportedInstallOf(text.slice(span.start, span.end)) === declared);\n};\n",
+    "map": {
+     "version": 3,
+     "file": "GithubWorkflow.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/build/targets/src/GithubWorkflow.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/build/targets/src/GithubWorkflow.vibe.platform.js"
+     }
+    ],
+    "code": "import * as Schema from \"effect/Schema\";\nimport { Buffer } from \"node:buffer\";\nimport * as Yaml from \"yaml\";\n/**\n * Maximum encoded workflow size accepted by the structural parser.\n *\n * @category constants\n * @since 0.1.0\n */\nexport const maximumWorkflowBytes = 1024 * 1024;\n/**\n * Why a workflow file was refused.\n *\n * `too_large` is a source over {@link maximumWorkflowBytes}; `invalid_yaml`\n * is a structural YAML error; `unsupported` is a construct the gate scanner\n * will not follow (an alias, a merge, an inherited `defaults:`); `duplicate`\n * is a repeated key, job id, or event; `missing` is an absent trigger, job,\n * runner, or step; `invalid_shape` is any other value of the wrong shape.\n *\n * @category models\n * @since 0.1.0\n */\nexport const WorkflowParseReason = Schema.Literals([\n    \"too_large\",\n    \"invalid_yaml\",\n    \"unsupported\",\n    \"duplicate\",\n    \"missing\",\n    \"invalid_shape\"\n]);\n/**\n * A workflow file could not be read as a GitHub Actions workflow.\n *\n * The message is `line {line}: {detail}`.\n *\n * @category errors\n * @since 0.1.0\n */\nexport class WorkflowParseError extends Schema.TaggedError()(\"smithers-build/WorkflowParseError\", {\n    line: Schema.Number,\n    reason: WorkflowParseReason,\n    detail: Schema.String\n}) {\n    name = \"WorkflowParseError\";\n    get message() {\n        return `line ${this.line}: ${this.detail}`;\n    }\n}\nconst refusal = (line, reason, detail) => new WorkflowParseError({ line, reason, detail });\n/** The 1-based source line a node starts on, or line 1 when it has no range. */\nconst nodeLine = (counter, node) => {\n    const range = node?.range;\n    return range === undefined ? 1 : counter.linePos(range[0]).line;\n};\n/** Whether a mapping entry was written with no value at all (`steps:`). */\nconst isEmptyNode = (node) => node === null || node === undefined || (Yaml.isScalar(node) && node.value === null);\n/**\n * A field's text.\n *\n * Every field this reader carries is compared as source text: a gate matches a\n * command string and `alwaysRuns` matches its few accepted conditions, so a value YAML\n * decoded to a boolean or a number is rendered back to the spelling GitHub\n * reads. A field that is not a scalar — a mapping under `if:`, a sequence\n * under `run:` — reads as the empty string, which matches no gate and no\n * accepted condition, so a value this reader cannot verify fails closed.\n */\nconst scalarText = (node) => {\n    if (!Yaml.isScalar(node))\n        return \"\";\n    const value = node.value;\n    if (value === null || value === undefined)\n        return \"\";\n    const text = typeof value === \"string\" ? value : String(value);\n    // A block scalar keeps the break that closed it. Nothing this module reads\n    // is sensitive to a trailing blank line -- a gate matches commands, not\n    // whitespace -- and dropping it keeps a one-line script exactly one line.\n    return node.type === Yaml.Scalar.BLOCK_LITERAL || node.type === Yaml.Scalar.BLOCK_FOLDED\n        ? text.replace(/\\n+$/, \"\")\n        : text;\n};\n/**\n * The entries of a block mapping, in source order.\n *\n * A duplicate mapping key is invalid YAML and the LAST occurrence wins, so a\n * gate matched against the shadowed `jobs:` mapping, job, `steps:` block, or\n * `run:` script would be reported present while GitHub runs none of it. Each\n * caller supplies the refusal for its own level, because \"duplicate key\" alone\n * does not say which job or step lost its script.\n */\nconst entriesOf = (map, counter, duplicate) => {\n    const seen = new Set();\n    const entries = [];\n    for (const item of map.items) {\n        const line = nodeLine(counter, item.key);\n        if (!Yaml.isScalar(item.key)) {\n            throw refusal(line, \"unsupported\", \"a mapping key that is not a scalar is not supported by the gate scanner\");\n        }\n        // The key is its decoded text, because `\"test\":` and `test:` are the same\n        // key. A gate or a required job pinned to `test` must see the job either\n        // way, and the duplicate check must see the two spellings as one key.\n        const key = scalarText(item.key);\n        if (seen.has(key))\n            throw duplicate(key, line);\n        seen.add(key);\n        entries.push({ key, value: item.value, line });\n    }\n    return entries;\n};\n/** Indexes a level's entries so a field can be read by name. */\nconst byKey = (entries) => new Map(entries.map((entry) => [entry.key, entry]));\n/** Refuses the keys whose effect on a gate this module cannot verify. */\nconst refuseInherited = (fields, describe) => {\n    for (const key of [\"defaults\", \"<<\"]) {\n        const field = fields.get(key);\n        if (field !== undefined)\n            throw refusal(field.line, \"unsupported\", describe(key));\n    }\n};\nconst eventNameShape = /^[A-Za-z_][A-Za-z0-9_]*$/;\n/** Holds a workflow event to the identifier shape GitHub documents. */\nconst eventName = (text, line) => {\n    if (!eventNameShape.test(text)) {\n        throw refusal(line, \"invalid_shape\", `${JSON.stringify(text)} is not a supported workflow event name shape`);\n    }\n    return text;\n};\n/** Refuses a workflow that declares no trigger, so it can never run its gates. */\nconst checkTrigger = (trigger, counter) => {\n    const node = trigger.value;\n    if (Yaml.isMap(node)) {\n        const events = entriesOf(node, counter, (key, line) => refusal(line, \"duplicate\", `duplicate workflow event ${JSON.stringify(key)}`));\n        if (events.length === 0)\n            throw refusal(trigger.line, \"missing\", \"workflow declares no trigger\");\n        for (const event of events)\n            eventName(event.key, event.line);\n        return;\n    }\n    if (Yaml.isSeq(node)) {\n        const events = node.items.map((item) => eventName(scalarText(item), nodeLine(counter, item)));\n        if (events.length === 0)\n            throw refusal(trigger.line, \"missing\", \"workflow declares no trigger\");\n        if (new Set(events).size !== events.length) {\n            throw refusal(trigger.line, \"duplicate\", \"workflow event sequence contains a duplicate event\");\n        }\n        return;\n    }\n    const value = scalarText(node);\n    if (value === \"\")\n        throw refusal(trigger.line, \"missing\", \"workflow declares no trigger\");\n    eventName(value, trigger.line);\n};\n/** Reads one item of a job's `steps:` sequence. */\nconst readStep = (node, job, counter) => {\n    const line = nodeLine(counter, node);\n    if (!Yaml.isMap(node)) {\n        throw refusal(line, \"invalid_shape\", `expected a mapping in a step of job ${JSON.stringify(job)}`);\n    }\n    const fields = byKey(entriesOf(node, counter, (key, keyLine) => refusal(keyLine, \"duplicate\", `duplicate key ${JSON.stringify(key)} in a step of job ${JSON.stringify(job)}`)));\n    if (fields.has(\"<<\")) {\n        throw refusal(line, \"unsupported\", `a YAML merge in a step of job ${JSON.stringify(job)} is not supported by the gate scanner`);\n    }\n    const field = (key) => {\n        const entry = fields.get(key);\n        return entry === undefined ? undefined : scalarText(entry.value);\n    };\n    const uses = field(\"uses\");\n    const run = field(\"run\");\n    if ((uses === undefined) === (run === undefined)) {\n        throw refusal(line, \"invalid_shape\", `a step of job ${JSON.stringify(job)} must declare exactly one of \\`uses\\` or \\`run\\``);\n    }\n    if ((uses ?? run).trim() === \"\") {\n        throw refusal(line, \"invalid_shape\", `a step of job ${JSON.stringify(job)} has an empty ${uses === undefined ? \"run\" : \"uses\"} value`);\n    }\n    const shell = field(\"shell\");\n    if (shell !== undefined && shell.trim() === \"\") {\n        throw refusal(line, \"invalid_shape\", `a step of job ${JSON.stringify(job)} has an empty shell`);\n    }\n    return {\n        name: field(\"name\"),\n        id: field(\"id\"),\n        uses,\n        run,\n        shell,\n        // A conditional step is not proof that a gate still runs, so the condition\n        // is carried out of the scan rather than dropped. An `if:` this reader\n        // cannot read as a scalar is the empty string, which is not the always-true\n        // literal and therefore fails closed.\n        condition: field(\"if\"),\n        continueOnError: field(\"continue-on-error\")\n    };\n};\nconst jobIdShape = /^[A-Za-z_][A-Za-z0-9_-]*$/;\n/** Reads one entry of the top-level `jobs:` mapping. */\nconst readJob = (job, counter) => {\n    const node = job.value;\n    if (Yaml.isSeq(node)) {\n        throw refusal(nodeLine(counter, node.items[0] ?? node), \"invalid_shape\", `expected a mapping entry in job ${JSON.stringify(job.key)}, not a sequence item`);\n    }\n    if (!Yaml.isMap(node)) {\n        throw refusal(job.line, \"invalid_shape\", `job ${JSON.stringify(job.key)} must be a block mapping`);\n    }\n    if (!jobIdShape.test(job.key)) {\n        throw refusal(job.line, \"invalid_shape\", `${JSON.stringify(job.key)} is not a valid GitHub Actions job id`);\n    }\n    const fields = byKey(entriesOf(node, counter, (key, line) => refusal(line, \"duplicate\", `duplicate key ${JSON.stringify(key)} in job ${JSON.stringify(job.key)}`)));\n    refuseInherited(fields, (key) => `${JSON.stringify(key)} in job ${JSON.stringify(job.key)} is not supported by the gate scanner`);\n    const field = (key) => {\n        const entry = fields.get(key);\n        return entry === undefined ? undefined : scalarText(entry.value);\n    };\n    const steps = [];\n    const declared = fields.get(\"steps\");\n    if (declared !== undefined && !isEmptyNode(declared.value)) {\n        if (!Yaml.isSeq(declared.value)) {\n            throw refusal(declared.line, \"invalid_shape\", \"`steps` must be a block sequence\");\n        }\n        for (const item of declared.value.items)\n            steps.push(readStep(item, job.key, counter));\n    }\n    const runsOn = field(\"runs-on\");\n    const uses = field(\"uses\");\n    if (uses !== undefined) {\n        if (uses.trim() === \"\") {\n            throw refusal(job.line, \"invalid_shape\", `reusable job ${JSON.stringify(job.key)} has an empty uses value`);\n        }\n        if (runsOn !== undefined || declared !== undefined) {\n            throw refusal(job.line, \"invalid_shape\", `reusable job ${JSON.stringify(job.key)} cannot also declare runs-on or steps`);\n        }\n    }\n    else {\n        if (runsOn === undefined || runsOn.trim() === \"\") {\n            throw refusal(job.line, \"missing\", `job ${JSON.stringify(job.key)} declares no runner`);\n        }\n        if (declared === undefined || steps.length === 0) {\n            throw refusal(job.line, \"missing\", `job ${JSON.stringify(job.key)} declares no steps`);\n        }\n    }\n    return {\n        id: job.key,\n        name: field(\"name\"),\n        runsOn,\n        uses,\n        condition: field(\"if\"),\n        continueOnError: field(\"continue-on-error\"),\n        steps\n    };\n};\n/** Reports the first structural YAML error against the line it sits on. */\nconst refuseYamlErrors = (document, counter) => {\n    const failure = document.errors[0];\n    if (failure === undefined)\n        return;\n    const summary = failure.message.split(\"\\n\")[0].replace(/ at line \\d+, column \\d+:?$/, \"\");\n    const line = failure.linePos?.[0].line ?? counter.linePos(failure.pos[0]).line;\n    throw refusal(line, \"invalid_yaml\", `invalid YAML: ${summary}`);\n};\n/**\n * An alias resolves to a node declared elsewhere, which would let a gate match\n * a `run:` body that no step in that job spells out. The gate contract reports\n * what it can read, so an alias is refused rather than followed.\n */\nconst refuseAliases = (document, counter) => {\n    Yaml.visit(document, {\n        Alias: (_key, node) => {\n            throw refusal(nodeLine(counter, node), \"unsupported\", \"a YAML alias is not supported by the gate scanner\");\n        }\n    });\n};\n/**\n * Parses a GitHub Actions workflow.\n *\n * Structure comes from `yaml`; everything this function adds is the part a\n * general YAML decoder cannot supply. It refuses a workflow whose gates it\n * could not verify: an alias or a `<<` merge, an inherited `defaults:` shell,\n * a duplicate top-level key, job id, job field, or step field, a job with no\n * runner or no steps, a step declaring neither or both of `uses` and `run`,\n * and a workflow with no trigger. Every refusal names the source line.\n *\n * @category parsing\n * @since 0.1.0\n */\nexport const parseWorkflow = (source) => {\n    if (Buffer.byteLength(source, \"utf8\") > maximumWorkflowBytes) {\n        throw refusal(1, \"too_large\", `workflow source is larger than ${maximumWorkflowBytes} bytes`);\n    }\n    const counter = new Yaml.LineCounter();\n    const document = Yaml.parseDocument(source, {\n        lineCounter: counter,\n        // `<<` stays an ordinary key, so a merge is refused by name below instead\n        // of being folded into the mapping it would shadow.\n        merge: false,\n        // Duplicates are refused per level below, because \"duplicate key\" alone\n        // does not name the job or step whose script GitHub will not run.\n        uniqueKeys: false\n    });\n    refuseYamlErrors(document, counter);\n    refuseAliases(document, counter);\n    const contents = document.contents;\n    if (Yaml.isSeq(contents)) {\n        throw refusal(nodeLine(counter, contents.items[0] ?? contents), \"invalid_shape\", \"expected a mapping entry at the top level, not a sequence item\");\n    }\n    if (contents !== null && !Yaml.isMap(contents)) {\n        throw refusal(nodeLine(counter, contents), \"invalid_shape\", \"expected a mapping at the top level\");\n    }\n    const top = byKey(contents === null\n        ? []\n        : entriesOf(contents, counter, (key, line) => refusal(line, \"duplicate\", `duplicate top-level key ${JSON.stringify(key)}`)));\n    refuseInherited(top, (key) => `top-level ${JSON.stringify(key)} is not supported by the gate scanner`);\n    const trigger = top.get(\"on\");\n    if (trigger === undefined) {\n        throw refusal(1, \"missing\", \"workflow is missing the required top-level `on` trigger\");\n    }\n    const declared = top.get(\"jobs\");\n    if (declared === undefined) {\n        throw refusal(1, \"missing\", \"workflow is missing the required top-level `jobs` mapping\");\n    }\n    checkTrigger(trigger, counter);\n    if (Yaml.isSeq(declared.value)) {\n        throw refusal(nodeLine(counter, declared.value.items[0] ?? declared.value), \"invalid_shape\", \"expected a job mapping entry, not a sequence item\");\n    }\n    if (isEmptyNode(declared.value))\n        throw refusal(1, \"missing\", \"workflow declares no jobs\");\n    if (!Yaml.isMap(declared.value)) {\n        throw refusal(declared.line, \"unsupported\", \"inline `jobs` mappings are not supported\");\n    }\n    const jobs = entriesOf(declared.value, counter, (key, line) => refusal(line, \"duplicate\", `duplicate job id ${JSON.stringify(key)}`)).map((job) => readJob(job, counter));\n    if (jobs.length === 0)\n        throw refusal(1, \"missing\", \"workflow declares no jobs\");\n    const name = top.get(\"name\");\n    return { name: name === undefined ? undefined : scalarText(name.value) || undefined, jobs };\n};\n",
+    "map": {
+     "version": 3,
+     "file": "GithubWorkflow.vibe.platform.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/build/targets/src/GithubWorkflow.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/build/targets/src/Verb.vibe"
      }
     ],
@@ -10915,6 +11002,46 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/build/targets/src/Stamp.vibe"
+     }
+    ],
+    "code": "/**\n * Inert, late-bound build stamp references.\n *\n * @since 0.1.0\n */\n/* eslint-disable jsdoc/require-description, jsdoc/no-restricted-syntax */\nimport * as Schema from \"effect/Schema\";\nexport { token } from \"./Stamp.vibe.platform.js\";\n/** */\nexport const Value = Schema.TaggedStruct(\"Stamp\", {\n    name: Schema.Literals([\"version\", \"commit\", \"commitDate\", \"buildTime\", \"versionMeta\"])\n});\nconst value = (name) => Object.freeze(Value.make({ name }));\n/** */\nexport const version = value(\"version\");\n/** */\nexport const commit = value(\"commit\");\n/** */\nexport const commitDate = value(\"commitDate\");\n/** */\nexport const buildTime = value(\"buildTime\");\n/** */\nexport const versionMeta = value(\"versionMeta\");\n",
+    "map": {
+     "version": 3,
+     "file": "Stamp.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/build/targets/src/Stamp.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;GAIG;AAEH,0EAA0E;AAC1E,OAAO,KAAK,MAAM,MAAM,eAAe,CAAA;AAqBvC,OAAO,EAAE,KAAK,EAAE,MAAM,0BAAQ,CAAA;AAE9B,MAAM;AACN,MAAM,CAAC,MAAM,KAAK,GAAG,MAAM,CAAC,YAAY,CAAC,OAAO,EAAE;IAChD,IAAI,EAAE,MAAM,CAAC,QAAQ,CAAC,CAAC,SAAS,EAAE,QAAQ,EAAE,YAAY,EAAE,WAAW,EAAE,aAAa,CAAC,CAAC;CACvF,CAAC,CAAA;AAGF,MAAM,KAAK,GAAG,CAAC,IAAmB,EAAS,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,KAAK,CAAC,IAAI,CAAC,EAAE,IAAI,EAAE,CAAC,CAAC,CAAA;AACjF,MAAM;AACN,MAAM,CAAC,MAAM,OAAO,GAAG,KAAK,CAAC,SAAS,CAAC,CAAA;AACvC,MAAM;AACN,MAAM,CAAC,MAAM,MAAM,GAAG,KAAK,CAAC,QAAQ,CAAC,CAAA;AACrC,MAAM;AACN,MAAM,CAAC,MAAM,UAAU,GAAG,KAAK,CAAC,YAAY,CAAC,CAAA;AAC7C,MAAM;AACN,MAAM,CAAC,MAAM,SAAS,GAAG,KAAK,CAAC,WAAW,CAAC,CAAA;AAC3C,MAAM;AACN,MAAM,CAAC,MAAM,WAAW,GAAG,KAAK,CAAC,aAAa,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/build/targets/src/Stamp.vibe.platform.js"
+     }
+    ],
+    "code": "/* eslint-disable jsdoc/require-description, jsdoc/no-restricted-syntax */\n/**\n * The inert placeholder a declaration carries in place of a stamp value.\n *\n * A stamp resolves after keying, so a declaration that must render a stamp\n * into a plain string (a linker flag, a Dockerfile build arg) carries this\n * token instead of a value. The token spells only the stamp's name — or, for\n * a secret-valued stamp, the environment variable's name — so it is safe in\n * key material, and the executor replaces it immediately before spawn.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const token = (name, value) => `{smthrs:stamp:${Buffer.from(JSON.stringify({ name, value })).toString(\"base64url\")}}`;\n",
+    "map": {
+     "version": 3,
+     "file": "Stamp.vibe.platform.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/build/targets/src/Stamp.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAUA,0EAA0E;AAE1E;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CAAC,IAAY,EAAE,KAAc,EAAU,EAAE,CAC5D,iBAAiB,MAAM,CAAC,IAAI,CAAC,IAAI,CAAC,SAAS,CAAC,EAAE,IAAI,EAAE,KAAK,EAAE,CAAC,CAAC,CAAC,QAAQ,CAAC,WAAW,CAAC,GAAG,CAAA"
     }
    },
    {

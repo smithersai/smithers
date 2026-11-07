@@ -19,6 +19,8 @@
  * @since 1.0.0
  */
 
+
+module platform {
 import * as Schema from "effect/Schema"
 import * as NodeUtil from "node:util/types"
 import * as Home from "./Home.vibe"
@@ -31,7 +33,6 @@ import * as Target from "./Target.ts"
  * @since 1.0.0
  */
 export const maximumIdLength = 256
-
 /**
  * The shape of a discovered flow id: path segments of letters, digits, `-`,
  * `_`, and `.`, joined by `/`, exactly as discovery derives them from the
@@ -41,7 +42,6 @@ export const maximumIdLength = 256
  * @since 1.0.0
  */
 export const idPattern = /^(?!\.\.?(?:\/|$))[A-Za-z0-9_.-]+(?:\/(?!\.\.?(?:\/|$))[A-Za-z0-9_.-]+)*$/
-
 /**
  * Schema for one inert flow declaration.
  *
@@ -62,7 +62,6 @@ export const Declaration = Schema.TaggedStruct("FlowDeclaration", {
   /** The view the flow draws: on the run's monitor, and as the repository's default view when the home names it. */
   view: Schema.optional(Home.FlowView)
 })
-
 /**
  * One inert flow declaration.
  *
@@ -70,7 +69,6 @@ export const Declaration = Schema.TaggedStruct("FlowDeclaration", {
  * @since 1.0.0
  */
 export type Declaration = typeof Declaration.Type
-
 /**
  * What a `FACTORY.ts` writes to declare a flow's presentation.
  *
@@ -83,17 +81,7 @@ export interface Options extends Target.Presentation {
   /** The view the flow draws, from the declared blocks a view may hold (`Home.FlowViewBlock`). */
   readonly view?: ReadonlyArray<typeof Home.FlowViewBlock.Type> | undefined
 }
-
 const optionKeys: ReadonlySet<string> = new Set(["flow", "summary", "featured", "view"])
-
-/**
- * Reports whether a value is a flow declaration.
- *
- * @category guards
- * @since 1.0.0
- */
-export const isFlowDeclaration: (value: unknown) => value is Declaration = Schema.is(Declaration)
-
 /**
  * Declares how the repository presents one of its flows.
  *
@@ -152,3 +140,16 @@ export const Flow = (options: Options): Declaration => {
     ...(view === undefined ? {} : { view: Home.decode(`Flow ${JSON.stringify(flow)} view`, Home.FlowView, view) })
   }))
 }
+}
+
+import { Declaration } from platform
+export { Declaration, Flow, idPattern, maximumIdLength } from platform
+export type { Options } from platform
+
+/**
+ * Reports whether a value is a flow declaration.
+ *
+ * @category guards
+ * @since 1.0.0
+ */
+export const isFlowDeclaration: (value: unknown) => value is Declaration = Schema.is(Declaration)

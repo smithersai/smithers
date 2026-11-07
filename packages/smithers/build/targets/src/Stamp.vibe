@@ -7,14 +7,8 @@
 /* eslint-disable jsdoc/require-description, jsdoc/no-restricted-syntax */
 import * as Schema from "effect/Schema"
 
-/** */
-export const Value = Schema.TaggedStruct("Stamp", {
-  name: Schema.Literals(["version", "commit", "commitDate", "buildTime", "versionMeta"])
-})
-/** */
-export type Value = typeof Value.Type
-
-const value = (name: Value["name"]): Value => Object.freeze(Value.make({ name }))
+module platform {
+/* eslint-disable jsdoc/require-description, jsdoc/no-restricted-syntax */
 
 /**
  * The inert placeholder a declaration carries in place of a stamp value.
@@ -30,7 +24,17 @@ const value = (name: Value["name"]): Value => Object.freeze(Value.make({ name })
  */
 export const token = (name: string, value: unknown): string =>
   `{smthrs:stamp:${Buffer.from(JSON.stringify({ name, value })).toString("base64url")}}`
+}
 
+export { token } from platform
+
+/** */
+export const Value = Schema.TaggedStruct("Stamp", {
+  name: Schema.Literals(["version", "commit", "commitDate", "buildTime", "versionMeta"])
+})
+/** */
+export type Value = typeof Value.Type
+const value = (name: Value["name"]): Value => Object.freeze(Value.make({ name }))
 /** */
 export const version = value("version")
 /** */

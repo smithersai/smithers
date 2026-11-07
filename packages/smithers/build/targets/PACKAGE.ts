@@ -257,7 +257,7 @@ const securityReview = Smithers.SecurityReview({
         "A generated job on pull_request_target or with write permissions that checks out and runs pull-request code.",
         "Third-party actions referenced by tag rather than a pinned commit SHA."
       ],
-      paths: ["src/GithubCiGen.ts", "src/GithubWorkflow.ts", "src/GithubTarget.ts", "src/CiToolchain.ts"]
+      paths: ["src/GithubCiGen.ts", "src/GithubWorkflow.vibe", "src/GithubTarget.ts", "src/CiToolchain.ts"]
     },
     {
       id: "agent-prompt-injection",

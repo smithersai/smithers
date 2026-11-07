@@ -19,7 +19,7 @@ import {
   supportedInstallCommands,
   WorkflowParseError,
   workspaceExec
-} from "../src/GithubWorkflow.ts"
+} from "../src/GithubWorkflow.vibe"
 
 /**
  * The Smithers repository's own pipeline, read from disk. It is the workload

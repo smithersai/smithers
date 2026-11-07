@@ -18,7 +18,7 @@
  */
 
 import * as Schema from "effect/Schema"
-import type * as Flow from "./Flow.ts"
+import type * as Flow from "./Flow.vibe"
 import * as Home from "./Home.vibe"
 
 /**

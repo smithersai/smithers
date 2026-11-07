@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest"
 import * as Cargo from "../src/Cargo.ts"
 import * as Compose from "../src/Compose.ts"
-import * as Workflow from "../src/GithubWorkflow.ts"
+import * as Workflow from "../src/GithubWorkflow.vibe"
 import * as Input from "../src/Input.ts"
 import * as Target from "../src/Target.ts"
 import { plannedCalls } from "./plan.ts"

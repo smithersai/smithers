@@ -5,7 +5,7 @@
  */
 import * as Effect from "effect/Effect"
 import { describe, expect, it } from "vitest"
-import { parseWorkflow, WorkflowParseError } from "../src/GithubWorkflow.ts"
+import { parseWorkflow, WorkflowParseError } from "../src/GithubWorkflow.vibe"
 import * as Outward from "../src/Outward.vibe"
 import * as Secret from "../src/Secret.ts"
 import * as SecretProxy from "../src/SecretProxy.ts"

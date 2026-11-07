@@ -17,7 +17,7 @@
  * @since 1.0.0
  */
 import * as Schema from "effect/Schema";
-import type * as Flow from "../../../src/Flow.ts";
+import type * as Flow from "./Flow.vibe";
 /**
  * The entry file a flow was discovered from: a `flow.ts` module, a
  * `flow.mdx` prompt, or a foreign `SKILL.md`.

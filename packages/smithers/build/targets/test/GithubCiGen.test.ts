@@ -34,7 +34,7 @@ import {
   TargetStep,
   toolchainSteps
 } from "../src/GithubCiGen.ts"
-import { parseWorkflow as parseStrictWorkflow } from "../src/GithubWorkflow.ts"
+import { parseWorkflow as parseStrictWorkflow } from "../src/GithubWorkflow.vibe"
 import * as Input from "../src/Input.ts"
 import * as RustToolchain from "../src/RustToolchain.ts"
 import { Secret } from "../src/Secret.ts"

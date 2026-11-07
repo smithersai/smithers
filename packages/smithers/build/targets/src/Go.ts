@@ -11,7 +11,7 @@ import * as Compose from "./Compose.ts"
 import * as Input from "./Input.ts"
 import * as Mise from "./Mise.vibe"
 import * as Reference from "./Reference.ts"
-import * as Stamp from "./Stamp.ts"
+import * as Stamp from "./Stamp.vibe"
 import * as Target from "./Target.ts"
 import * as WorkspaceToolchain from "./Toolchain.ts"
 
