@@ -32,7 +32,7 @@ import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Metric from "effect/Metric"
 import * as Schema from "effect/Schema"
-import type { Key } from "./internal/model.ts"
+import type { Key } from "./internal/model.vibe"
 import { toJsonSchemaDocument } from "./internal/schemaFingerprintDocument.ts"
 import { decodeStored, encodeKey, encodeStored, quote } from "./internal/stored.ts"
 

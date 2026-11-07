@@ -25,10 +25,9 @@ import {
   type SingleResult
 } from "@tanstack/db"
 import * as Effect from "effect/Effect"
-import * as Queue from "effect/Queue"
 import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
-import { type Change, LoadFailed } from "./internal/model.ts"
+import { type Change, LoadFailed } from "./internal/model.vibe"
 import { changes, preload, release, toArray } from "./internal/readers.ts"
 
 /**
@@ -79,9 +78,9 @@ export interface LiveQuery<Q extends AnyQuery> {
   /** The TanStack DB collection, for a framework binding and for `from` in another live query. */
   readonly tanstack: TanStackLiveQuery<Q>
   /** The rows as they are now. */
-  readonly toArray: Effect.Effect<ReadonlyArray<Row<Q>>>
+  readonly toArray: ReadonlyArray<Row<Q>>!!
   /** Starts the query and waits for its first result. */
-  readonly preload: Effect.Effect<void, LoadFailed>
+  readonly preload: void!LoadFailed
   /** The rows when the stream starts, then the current rows after changes; pending notifications coalesce. */
   readonly rows: Stream.Stream<ReadonlyArray<Row<Q>>>
   /** The changes from the moment the stream starts; with `initial`, the current rows first. */
@@ -91,7 +90,7 @@ export interface LiveQuery<Q extends AnyQuery> {
    * when the Effect runs; the Effect succeeds once the rows it needs have
    * loaded. On failure the query keeps its last settled window.
    */
-  readonly setWindow: (window: Partial<Window>) => Effect.Effect<void, LoadFailed>
+  readonly setWindow: (window: Partial<Window>) => void!LoadFailed
 }
 
 /**
@@ -104,7 +103,7 @@ export interface LiveQuery<Q extends AnyQuery> {
  */
 export const make = <Q extends AnyQuery>(
   query: (q: InitialQueryBuilder) => Q
-): Effect.Effect<LiveQuery<Q>, LoadFailed, Scope.Scope> =>
+): LiveQuery<Q>!LoadFailed!Scope.Scope =>
   Effect.acquireRelease(
     // Garbage collection is off: the scope owns the lifetime.
     Effect.try({
@@ -112,28 +111,26 @@ export const make = <Q extends AnyQuery>(
       catch: (cause) => new LoadFailed({ cause })
     }),
     release
-  ).pipe(Effect.map((tanstack): LiveQuery<Q> => ({
+  ) |> Effect.map(%, (tanstack): LiveQuery<Q> => ({
     tanstack,
     toArray: toArray(tanstack),
     preload: preload(tanstack),
     rows: rows(tanstack),
     changes: (options) => changes(tanstack, options),
     setWindow: (window) =>
-      Effect.try({ try: () => tanstack.utils.setWindow(window), catch: (cause) => new LoadFailed({ cause }) }).pipe(
-        Effect.flatMap((loading) =>
-          loading === true
-            ? Effect.void
-            : Effect.tryPromise({ try: () => loading, catch: (cause) => new LoadFailed({ cause }) })
-        )
-      )
-  })))
+      Effect.try({ try: () => tanstack.utils.setWindow(window), catch: (cause) => new LoadFailed({ cause }) })
+      |> Effect.flatMap(%, (loading) =>
+        loading === true
+          ? Effect.void
+          : Effect.tryPromise({ try: () => loading, catch: (cause) => new LoadFailed({ cause }) }))
+  }))
 
 const rows = <Q extends AnyQuery>(collection: TanStackLiveQuery<Q>): Stream.Stream<ReadonlyArray<Row<Q>>> =>
   // Subscribes first, then reads, so a change between the two is never lost; at worst a result repeats.
-  Stream.unwrap(Effect.gen(function*() {
+  Stream.unwrap(effect {
     // Notifications only trigger a read of the current rows; one pending read covers every intervening change.
-    const queue = yield* Queue.sliding<void>(1)
-    yield* Effect.acquireRelease(
+    const queue = try Queue.sliding<void>(1)
+    try Effect.acquireRelease(
       // Explicitly no initial state: TanStack DB then delivers every change, not only those to rows it sent.
       Effect.sync(() =>
         collection.subscribeChanges(() => Queue.offerUnsafe(queue, undefined), { includeInitialState: false })
@@ -143,4 +140,4 @@ const rows = <Q extends AnyQuery>(collection: TanStackLiveQuery<Q>): Stream.Stre
     return Stream.concat(Stream.succeed(undefined), Stream.fromQueue(queue)).pipe(
       Stream.map((): ReadonlyArray<Row<Q>> => collection.toArray)
     )
-  }))
+  })

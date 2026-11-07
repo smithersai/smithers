@@ -30,7 +30,11 @@
   "sideEffects": false,
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -42,7 +46,11 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/LiveQuery.vibe",
+    "src/internal/model.vibe",
+    "src/internal/oneWriter.vibe",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "exports": {
@@ -102,5 +110,22 @@
   },
   "dependencies": {
     "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+  },
+  "imports": {
+    "#vibelang/emitted/src/internal/model": {
+      "types": "./.vibe/declarations/src/internal/model.d.vibe.ts",
+      "vibelang-source": "./src/internal/model.vibe",
+      "default": "./.vibelang/js/src/internal/model.js"
+    },
+    "#vibelang/emitted/src/internal/oneWriter": {
+      "types": "./.vibe/declarations/src/internal/oneWriter.d.vibe.ts",
+      "vibelang-source": "./src/internal/oneWriter.vibe",
+      "default": "./.vibelang/js/src/internal/oneWriter.js"
+    },
+    "#vibelang/emitted/src/LiveQuery": {
+      "types": "./.vibe/declarations/src/LiveQuery.d.vibe.ts",
+      "vibelang-source": "./src/LiveQuery.vibe",
+      "default": "./.vibelang/js/src/LiveQuery.js"
+    }
   }
 }
