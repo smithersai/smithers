@@ -21,6 +21,10 @@ export function view(model: Model, h: H): Document {
         top(model, h),
         model.surface === "splash" ? splash(h) : chat(model, h),
         palette(model, h),
+        h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
+          h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [model.answer]),
+        ]),
+        h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
       ],
     ),
   }
@@ -88,14 +92,13 @@ function splashPane(h: H): Html {
 function chat(model: Model, h: H): Html {
   const { conversation, pending } = model.client
   return h.main([h.Class("vl-chat")], [
-    h.div([h.Class("sui-chat-messages")], [
+    h.div([h.Class("sui-chat-messages"), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
       ...conversation.entries.map((entry) => entryView(entry, h)),
       ...pending.map((post) => pendingView(post, model.name, h)),
       ...(model.stream === "failed"
         ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system")], [
           h.div([h.Class("sui-chat-bubble")], [
-            "Lost the connection. ",
             h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.ClickedReconnect())], ["Reconnect"]),
           ]),
         ])]

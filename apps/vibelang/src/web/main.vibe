@@ -41,6 +41,10 @@ export schema Model {
   readonly from: number
   /** Follow transcript growth until the reader scrolls away from the bottom. */
   readonly following: boolean
+  /** Live regions change only for completed answers and connection transitions. */
+  readonly answer: string
+  readonly announced: number
+  readonly connection: string
 }
 
 /** The conversation every visitor of the home page joins until conversations have their own pages. */
@@ -87,6 +91,9 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       epoch: 0,
       from: 0,
       following: true,
+      answer: "",
+      announced: 0,
+      connection: "",
     },
   }
 }
@@ -108,10 +115,22 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const client = Machine.receive(model.client, event)
       // A missed event: replay from the last one this copy applied.
       if (client.gap) return { model: { ...model, client: Machine.resume(client), epoch: model.epoch + 1, from: client.conversation.seq } }
-      return { model: { ...model, client }, commands: model.following && model.surface === "chat" && client.conversation.seq > model.client.conversation.seq ? [FollowLatest({})] : [] }
+      const advanced = client.conversation.seq > model.client.conversation.seq
+      const completed = advanced && (event.type === "ReplyFinished" || event.type === "ReplyFailed")
+      const answer = completed ? client.conversation.entries.find((entry) => entry.id === event.id) : undefined
+      return {
+        model: {
+          ...model,
+          client,
+          connection: model.stream === "open" ? "Connected" : model.connection,
+          answer: answer ? answer.error === "" ? answer.text : `Answer failed: ${answer.error}` : model.answer,
+          announced: completed ? event.seq : model.announced,
+        },
+        commands: model.following && model.surface === "chat" && advanced ? [FollowLatest({})] : [],
+      }
     },
-    FailedEvents: () => ({ model: { ...model, stream: "failed" } }),
-    ClickedReconnect: () => ({ model: { ...model, stream: "open", epoch: model.epoch + 1, from: model.client.conversation.seq } }),
+    FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
+    ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq } }),
     FocusedPrompt: () => ({ model }),
     ScrolledTranscript: ({ bottom }) => ({ model: { ...model, following: bottom }, commands: !bottom && model.following ? [FollowLatest.Interrupt(() => Message.CompletedCancelFollowLatest())] : [] }),
     ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FollowLatest({})] }),
@@ -142,6 +161,7 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
       sent: model.sent + 1,
       client: Machine.post(model.client, clientId, text),
       stream: model.stream === "closed" ? "open" : model.stream,
+      connection: model.stream === "closed" ? "Connecting" : model.connection,
     },
     commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true }), ...(model.following ? [FollowLatest({})] : [])],
   }

@@ -19,6 +19,9 @@ const home: Model = {
   epoch: 0,
   from: 0,
   following: true,
+  answer: "",
+  announced: 0,
+  connection: "",
 }
 
 describe("the splash", () => {
@@ -81,9 +84,15 @@ describe("the chat", () => {
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "r1", text: "Use `npm create`" } })),
       Command.resolve(FollowLatest, Message.ScrolledLatest()),
       expect(text("npm create")).toExist(),
+      expect(role("log", { name: "Conversation" })).toExist(),
+      expect(role("status", { name: "Answer" })).toHaveText(""),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFinished", seq: 4, id: "r1" } })),
       Command.resolve(FollowLatest, Message.ScrolledLatest()),
       expect(text("VibeLang agent")).toExist(),
+      expect(role("status", { name: "Answer" })).toHaveText("Use `npm create`"),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFinished", seq: 4, id: "r1" } })),
+      Command.expectNone(),
+      expect(role("status", { name: "Answer" })).toHaveText("Use `npm create`"),
     )
   })
 
@@ -122,8 +131,10 @@ describe("the chat", () => {
       given(chatting),
       Subscription.emit(Message.FailedEvents({ reason: "network" })),
       expect(text("Disconnected")).toExist(),
+      expect(role("status", { name: "Connection" })).toHaveText("Disconnected"),
       click(role("button", { name: "Reconnect" })),
       expect(role("button", { name: "Reconnect" })).toBeAbsent(),
+      expect(role("status", { name: "Connection" })).toHaveText("Reconnecting"),
     )
   })
 

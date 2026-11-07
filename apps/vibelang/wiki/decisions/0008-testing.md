@@ -31,3 +31,12 @@ During the next streamed answer a real wheel scroll reaches the top; the scroll 
 completion. Latest must return to the tail and resume following. `app.scene.test.ts` independently checks pausing,
 manual return to the bottom, the Latest action and cancellation of pending scroll commands. Scroll commands wait for
 the render commit and are cancelled when the reader leaves the bottom, including commands queued by earlier pieces.
+
+**Announcements (review 9).** The transcript is the named Conversation `role="log"` with `aria-live="off"`, so
+stream pieces do not repeat the whole answer. Persistent Answer and Connection status regions are polite and atomic.
+Only accepted completion/failure events update Answer; a keyed child also announces identical successive answers.
+`e2e/announcements.spec.ts` inspects Chromium's accessibility tree (log name and live/atomic properties), checks the
+region remains empty during the first stream, and preserves its completed value during the next. Scenes separately
+check completion, duplicate replay and connection transitions. Fault recovery browser cases inspect Connection's
+accessibility node and Disconnected/Connected changes. These are browser accessibility-tree receipts, not a claim of
+manual listening with an installed screen reader.
