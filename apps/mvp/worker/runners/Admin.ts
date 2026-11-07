@@ -12,11 +12,11 @@ import {
   parseAdminRoute,
   type Refusal,
 } from "../../src/features/runners/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
 import { installedOn, repoRoleOn, roleOn } from "../branch/Access.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import { codeOf } from "../ErrorCode.vibe"
+import * as Flows from "../Flows.vibe"
 import { SecretKeys } from "../secrets/Keys.ts"
 import * as AdminFlows from "./AdminFlows.ts"
 import * as Overflow from "./Overflow.ts"

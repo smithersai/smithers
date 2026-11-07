@@ -3,7 +3,7 @@
 import { Cause, Effect, Exit, Layer, Logger, Redacted } from "effect"
 import { describe, expect, test } from "vitest"
 import * as Database from "../db/Database.ts"
-import { type Actor, CurrentActor } from "./Actor.ts"
+import { type Actor, CurrentActor } from "./Actor.vibe"
 import * as SetModel from "./SetModel.ts"
 import { runFlow } from "./test/flowHost.ts"
 

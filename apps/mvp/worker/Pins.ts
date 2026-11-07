@@ -4,12 +4,12 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { PIN_ROUTE, PINS_SHAPE_ROUTE, PINS_TABLE } from "../src/features/pins/contract.ts"
-import { boundTo, Sessions } from "./Actor.ts"
+import { boundTo, Sessions } from "./Actor.vibe"
 import { branchAccess, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { answerConversation } from "./branch/SandboxCalls.ts"
-import { readBounded } from "./Body.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import { readBounded } from "./Body.vibe"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 
 const Id = Schema.String.check(Schema.isUUID())
 const Request = Schema.Struct({

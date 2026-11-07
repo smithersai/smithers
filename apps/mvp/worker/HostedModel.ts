@@ -2,8 +2,8 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Config, Effect, Layer, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { type Actor, CurrentActor } from "./Actor.ts"
-import { codeOf } from "./ErrorCode.ts"
+import { type Actor, CurrentActor } from "./Actor.vibe"
+import { codeOf } from "./ErrorCode.vibe"
 import { NoInvocationKey, NotAllowed } from "./SetModel.ts"
 
 // Hosted inference (docs/features/model-endpoint.md#hosted-inference, decision 0099): whether the deployment's own model

@@ -2,7 +2,7 @@
 // The endpoint's use of them, on real routes, is in worker/personal/PersonalModels.test.ts and worker/ModelEndpoint.test.ts.
 import { ModelRequest } from "@smthrs/model"
 import { describe, expect, test } from "vitest"
-import { acceptsEffort, effortOf, heavy, ROLE_TIERS } from "./ModelTiers.ts"
+import { acceptsEffort, effortOf, heavy, ROLE_TIERS } from "./ModelTiers.vibe"
 
 const request = (messages: ReadonlyArray<ModelRequest.Message>, reasoningEffort?: ModelRequest.ReasoningEffort) =>
   ModelRequest.ModelRequest.make({

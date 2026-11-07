@@ -1,5 +1,5 @@
-import { CreateRefused } from "./CreateRefused.ts"
-export { CreateRefused } from "./CreateRefused.ts"
+import { CreateRefused } from "./CreateRefused.vibe"
+export { CreateRefused } from "./CreateRefused.vibe"
 import { type CodeStorage, GitProxy, GitRemote } from "@smthrs/effect-code-storage"
 import { Context, Effect, Layer, Metric, Option } from "effect"
 import { type HttpClient, type HttpServerRequest, HttpServerResponse } from "effect/http"

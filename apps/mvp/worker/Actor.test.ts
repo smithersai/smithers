@@ -3,7 +3,7 @@ import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Effect, Logger, Metric } from "effect"
 import { describe, expect, test } from "vitest"
 import { ROLES } from "../src/features/auth/contract.ts"
-import { type Actor, boundTo, canAsk, canClone, PERSON_ONLY_FLOWS, refusesCredential, refusesPersonOnly, personOnlyRefusals } from "./Actor.ts"
+import { type Actor, boundTo, canAsk, canClone, PERSON_ONLY_FLOWS, refusesCredential, refusesPersonOnly, personOnlyRefusals } from "./Actor.vibe"
 
 const person = (role: Actor["role"], act?: Actor["act"]): Actor => ({
   subject: { kind: "person", id: `person-${role ?? "none"}` },

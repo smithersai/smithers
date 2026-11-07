@@ -4,10 +4,10 @@ import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { repoId } from "../src/features/repo/contract.ts"
 import { AboutRefused, type AboutStage, graphql, rest } from "./about/GitHubRead.ts"
-import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.ts"
-import { codeOf } from "./ErrorCode.ts"
+import type { AboutStore, KeptAnswer, KeptRefusal, Via } from "./about/Store.vibe"
+import { codeOf } from "./ErrorCode.vibe"
 import { appSlug, GITHUB_WEB } from "./GitHubAuth.ts"
-import * as GitHubConfig from "./github/Config.ts"
+import * as GitHubConfig from "./github/Config.vibe"
 import * as ReadToken from "./github/ReadToken.ts"
 import { allowed as allowedRepositories } from "./github/RepoRoles.ts"
 import * as Tokens from "./github/Tokens.ts"
@@ -37,7 +37,7 @@ import * as RepoMetrics from "./RepoMetrics.ts"
 // stage and status GitHub refused at, the rate limit left, and the parts GitHub left out. Never a token or the answer.
 
 export { AboutRefused, type AboutStage } from "./about/GitHubRead.ts"
-export type { Via } from "./about/Store.ts"
+export type { Via } from "./about/Store.vibe"
 
 /**
  * How long a claimed read holds every other request off: longer than a read's three rounds of calls at

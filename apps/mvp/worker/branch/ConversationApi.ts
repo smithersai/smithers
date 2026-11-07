@@ -9,10 +9,10 @@ import {
   MAX_ARCHIVE_BODY_BYTES,
   MY_CONVERSATIONS_SHAPE_ROUTE,
 } from "../../src/features/conversations/contract.ts"
-import { boundTo, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import { boundTo, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canView } from "./Access.ts"
 import * as People from "./ConversationPeople.ts"
 import { answerConversation } from "./SandboxCalls.ts"

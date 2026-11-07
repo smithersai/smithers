@@ -5,7 +5,7 @@ import { Node } from "@smthrs/plan"
 import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { ALERT_WORD } from "../../src/features/spend/copy.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { codeOf } from "../ErrorCode.vibe"
 import * as AlertDelivery from "./AlertDelivery.ts"
 import { DeliverUnavailable, noChannels } from "./AlertDelivery.ts"
 

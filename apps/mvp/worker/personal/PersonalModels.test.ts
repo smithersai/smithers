@@ -22,10 +22,10 @@ import {
   PERSONAL_MODEL_TEST_ROUTE,
   type TestResult,
 } from "../../src/features/personal-model/contract.ts"
-import * as Actor from "../Actor.ts"
-import * as Flows from "../Flows.ts"
+import * as Actor from "../Actor.vibe"
+import * as Flows from "../Flows.vibe"
 import * as ModelEndpoint from "../ModelEndpoint.ts"
-import * as ModelTiers from "../ModelTiers.ts"
+import * as ModelTiers from "../ModelTiers.vibe"
 import * as SpendAlert from "../flows/SpendAlert.ts"
 import { SecretKeys } from "../secrets/Keys.ts"
 import { eventually, harness, PERSONAL_KEYS, recorded, testFile } from "../test/harness.ts"
@@ -33,7 +33,7 @@ import * as PersonalApi from "./Api.ts"
 import * as ModelFlows from "./ModelFlows.ts"
 import { PersonalModels, PersonalModelsUnavailable, PersonalModelUnusable } from "./Models.ts"
 import * as Store from "./Store.ts"
-import * as PersonalUsage from "./Usage.ts"
+import * as PersonalUsage from "./Usage.vibe"
 import {
   admin,
   agent,

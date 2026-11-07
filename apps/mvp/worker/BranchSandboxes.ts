@@ -11,7 +11,7 @@ import { BranchSandbox } from "../infra/BranchSandbox.ts"
 import { CiArtifacts, GateMachine } from "../infra/GateMachine.ts"
 import { ROLES } from "../src/features/auth/contract.ts"
 import { FORGE_HOST, SANDBOX_USER, WORKSPACE } from "../src/features/terminal/contract.ts"
-import type { Role } from "./Actor.ts"
+import type { Role } from "./Actor.vibe"
 import { canEdit, canView, type Policy, underPolicy } from "./branch/Access.ts"
 import { CHECKOUT_FAILURES, checkoutArgv, forgeRemote } from "./branch/Checkout.ts"
 import * as Budget from "./branch/Budget.ts"
@@ -26,7 +26,7 @@ import {
   routed,
   type SleepOutcome,
   type ToolOutcome,
-} from "./branch/Machines.ts"
+} from "./branch/Machines.vibe"
 import { userOf } from "./branch/Users.ts"
 import { asUser, configuredSessionOn, failureFields, runOn, type UserOptions } from "./branch/Session.ts"
 import { Forge, proxy } from "./branch/Forge.ts"
@@ -38,11 +38,11 @@ import {
   Sandboxes,
   SandboxUnavailable,
   TerminalSockets,
-} from "./branch/Sandboxes.ts"
+} from "./branch/Sandboxes.vibe"
 import * as Agents from "./personal/Agents.ts"
 import * as Subscriptions from "./personal/Subscriptions.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
-import * as RegistryEgress from "./branch/RegistryEgress.ts"
+import * as RegistryEgress from "./branch/RegistryEgress.vibe"
 import * as SandboxEgress from "./secrets/SandboxEgress.ts"
 import * as Overflow from "./runners/Overflow.ts"
 import * as SocketAccess from "./SocketAccess.ts"

@@ -1,7 +1,7 @@
 import { AgentRunner } from "@smthrs/agent"
 import { Cause, Config, Effect, Metric, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import { codeOf } from "../ErrorCode.ts"
+import { codeOf } from "../ErrorCode.vibe"
 
 // The fleet's projection and its alerts' rules (decision 0143, docs/features/fleet.md). `agent_runs` is one row per
 // generation of an external agent's job, written only under the job's own key: `queue` when the job store starts it,

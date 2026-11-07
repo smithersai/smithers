@@ -5,7 +5,7 @@
 // evals/todo-steer.eval.ts use it.
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Effect, Layer } from "effect"
-import { Machines } from "../branch/Machines.ts"
+import { Machines } from "../branch/Machines.vibe"
 import { instantCommands } from "./commands.ts"
 import type { ScriptedGitHub } from "../github/test/scriptedGitHub.ts"
 

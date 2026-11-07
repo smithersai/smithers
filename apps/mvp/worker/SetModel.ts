@@ -2,8 +2,8 @@ import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
-import { type Actor, CurrentActor } from "./Actor.ts"
-import { codeOf } from "./ErrorCode.ts"
+import { type Actor, CurrentActor } from "./Actor.vibe"
+import { codeOf } from "./ErrorCode.vibe"
 import * as ModelRoles from "./ModelRoles.ts"
 
 // `admin/SetModel { role, model }` (docs/features/model-endpoint.md#roles): an admin sets which model answers a role.

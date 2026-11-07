@@ -8,7 +8,7 @@ import { Channels } from "@smthrs/notifications"
 import { Node } from "@smthrs/plan"
 import { Duration, Schema } from "effect"
 import { ALERT_PERCENT } from "../../infra/Connections.ts"
-import type * as Flows from "../Flows.ts"
+import type * as Flows from "../Flows.vibe"
 import * as AlertDelivery from "../flows/AlertDelivery.ts"
 
 const nonNegative = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))

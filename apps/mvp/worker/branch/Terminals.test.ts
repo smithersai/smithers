@@ -16,8 +16,8 @@ import {
   TERMINALS_ROUTE,
   TERMINALS_SHAPE_ROUTE,
 } from "../../src/features/terminal/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
-import * as Flows from "../Flows.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
+import * as Flows from "../Flows.vibe"
 import {
   branchHarness,
   type BranchHarness,
@@ -31,7 +31,7 @@ import { eventually, recorded, testFile } from "../test/harness.ts"
 import { BranchRoles } from "./Access.ts"
 import * as BranchApi from "./BranchApi.ts"
 import * as Conversations from "./Conversations.ts"
-import { TerminalSockets } from "./Sandboxes.ts"
+import { TerminalSockets } from "./Sandboxes.vibe"
 import * as Terminals from "./Terminals.ts"
 
 const runtime = testFile("terminals")

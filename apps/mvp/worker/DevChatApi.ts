@@ -1,8 +1,8 @@
 import * as Cloudflare from "@alchemy.run/cloudflare"
-import type * as Actor from "./Actor.ts"
+import type * as Actor from "./Actor.vibe"
 import { program, props } from "./ChatApi.ts"
 import { DEV_FEED_KEY } from "./feeds/dev.ts"
-import { repositoryOf } from "./github/Config.ts"
+import { repositoryOf } from "./github/Config.vibe"
 import type * as RepoRoles from "./github/RepoRoles.ts"
 import type { Signed } from "./SignIn.ts"
 

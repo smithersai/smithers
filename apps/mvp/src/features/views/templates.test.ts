@@ -7,7 +7,7 @@
 import { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect, Logger, type ManagedRuntime, Metric } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { failingWorker, member, nodeDevice, openTestApp, type TabOptions } from "../../test/chatApi"
 import { AuthStore, SESSION } from "../auth/store"
 import { Chat } from "../chat/chat"

@@ -1,7 +1,7 @@
 import { Effect, type ManagedRuntime } from "effect"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
 import { shaOf } from "../../../worker/test/branch.ts"
 import { openTestApp, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"

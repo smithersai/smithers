@@ -4,8 +4,8 @@
 import { Duration, Effect } from "effect"
 import { TestClock } from "effect/testing"
 import { describe, expect, test } from "vitest"
-import * as Flows from "./Flows.ts"
-import * as Pause from "./flows/Pause.ts"
+import * as Flows from "./Flows.vibe"
+import * as Pause from "./flows/Pause.vibe"
 
 describe("windows", () => {
   test("lie end to end from the epoch", () => {

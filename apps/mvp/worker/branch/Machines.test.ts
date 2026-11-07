@@ -12,8 +12,8 @@ import {
   routed,
   type SleepOutcome,
   type ToolOutcome,
-} from "./Machines.ts"
-import { CheckoutFailed, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.ts"
+} from "./Machines.vibe"
+import { CheckoutFailed, SandboxStartTimedOut, SandboxUnavailable } from "./Sandboxes.vibe"
 
 const result = { tool: "read", path: "a", content: "a", bytes: 1, truncated: false } as const
 const ran = {

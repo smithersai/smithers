@@ -6,7 +6,7 @@ import { Logger as StructuredLogger } from "@smthrs/observability"
 import { Cause, Effect, Exit, Logger } from "effect"
 import { describe, expect, test } from "vitest"
 import { runFlow } from "../test/flowHost.ts"
-import { logged, Pause, registration } from "./Pause.ts"
+import { logged, Pause, registration } from "./Pause.vibe"
 
 describe("probe/Pause on the Node host", () => {
   test("marks before, sleeps on a durable timer, marks after, and completes", async () => {

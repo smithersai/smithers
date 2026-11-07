@@ -12,7 +12,7 @@ import { agentFlows, catalogDescription, childExecutionId, publicError } from ".
 import { clientFlows, declarationOf, declarations, modelInvocable } from "./declarations"
 import { entryOf, FlowRegistry, names, registry } from "./registry"
 import { requesterOf } from "./requests"
-import { AGENT_FLOWS, PERSON_ONLY_FLOWS } from "../../worker/Actor.ts"
+import { AGENT_FLOWS, PERSON_ONLY_FLOWS } from "../../worker/Actor.vibe"
 
 /** Every source file under `src/`, tests and test support left out. */
 const sources = (dir: string): ReadonlyArray<string> =>

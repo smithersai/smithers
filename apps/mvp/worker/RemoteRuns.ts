@@ -24,19 +24,19 @@ import {
   stoppable,
   type StopRefusal,
 } from "../src/features/runs/contract.ts"
-import { type Actor, canAsk, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
+import { type Actor, canAsk, Sessions } from "./Actor.vibe"
+import { readBounded } from "./Body.vibe"
 import * as CloudRuns from "./CloudRuns.ts"
 import * as TodoSession from "./flows/TodoSession.ts"
-import { codeOf } from "./ErrorCode.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import { codeOf } from "./ErrorCode.vibe"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as RepoRuns from "./RepoRuns.ts"
 import { stillAdmitted } from "./RunAuthority.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
-import { repositoryOf } from "./github/Config.ts"
-import { mayRead } from "./stack/Access.ts"
+import { repositoryOf } from "./github/Config.vibe"
+import { mayRead } from "./stack/Access.vibe"
 import * as SocketAccess from "./SocketAccess.ts"
-import { isUpgrade, sameOrigin } from "./branch/Upgrade.ts"
+import { isUpgrade, sameOrigin } from "./branch/Upgrade.vibe"
 
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
 // a repository's runs (docs/features/actions.md), read and stopped with a role on their recorded repository.

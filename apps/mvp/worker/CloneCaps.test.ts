@@ -2,7 +2,7 @@
 import { ConfigProvider, Effect } from "effect"
 import { SqlClient } from "effect/sql"
 import { beforeEach, describe, expect, test } from "vitest"
-import type * as Actor from "./Actor.ts"
+import type * as Actor from "./Actor.vibe"
 import * as RepoMetrics from "./RepoMetrics.ts"
 import * as Repos from "./Repos.ts"
 import { testFile } from "./test/harness.ts"

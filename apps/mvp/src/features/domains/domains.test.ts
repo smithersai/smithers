@@ -5,7 +5,7 @@
 // engine with the `Dns` provider, which finds no records for a name under `.example`, so a domain stays pending.
 import { Effect, type ManagedRuntime } from "effect"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import {
   member,
   nodeDevice,

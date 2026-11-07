@@ -17,13 +17,13 @@ import {
 } from "../../src/features/bugs/contract.ts"
 import { type BugReport as Report, ReportRequest } from "../../src/features/bugs/schema.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
-import { type Actor, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import { type Actor, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import * as Flows from "../Flows.vibe"
 import { BugReport } from "../flows/BugReport.ts"
 import { bearerOf } from "../RunCredentials.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 
 // Bug reports' routes (docs/features/bugs.md).
 //

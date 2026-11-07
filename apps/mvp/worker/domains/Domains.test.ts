@@ -8,12 +8,12 @@ import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, test } fr
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DOMAINS_SHAPE_ROUTE, domainRoute, domainsRoute } from "../../src/features/domains/contract.ts"
-import * as Flows from "../Flows.ts"
-import { personOnlyRefusals } from "../Actor.ts"
+import * as Flows from "../Flows.vibe"
+import { personOnlyRefusals } from "../Actor.vibe"
 import { eventually, testFile } from "../test/harness.ts"
 import * as DomainsApi from "./Api.ts"
 import * as DomainFlows from "./DomainFlows.ts"
-import { DomainProvider, HostnameRejected, HostnameTaken, ProviderUnavailable } from "./Provider.ts"
+import { DomainProvider, HostnameRejected, HostnameTaken, ProviderUnavailable } from "./Provider.vibe"
 import * as Store from "./Store.ts"
 import {
   admin,

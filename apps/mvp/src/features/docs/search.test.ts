@@ -8,7 +8,7 @@ import { Context, Effect, Exit, Layer, Logger, Metric, Scope, Stream, Tracer } f
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import type { CuratedFile } from "../../../worker/home/Curated.ts"
 import { tracked } from "../../../worker/test/branch.ts"
 import { build } from "../../../worker/test/flowHost.ts"

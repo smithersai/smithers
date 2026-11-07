@@ -11,7 +11,7 @@ import { Context, Effect, Exit, Layer, Logger, Metric, Schema, Scope } from "eff
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import { BranchRoles } from "../../../worker/branch/Access.ts"
 import { settle } from "../../../worker/flows/SandboxCall.ts"
 import * as Messages from "../../../worker/Messages.ts"

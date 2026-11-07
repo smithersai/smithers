@@ -1,9 +1,9 @@
 import { Effect, Option } from "effect"
 import { SqlClient } from "effect/sql"
-import type { Actor } from "./Actor.ts"
+import type { Actor } from "./Actor.vibe"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import { latestRole } from "./SessionStore.ts"
-import { mayRead } from "./stack/Access.ts"
+import { mayRead } from "./stack/Access.vibe"
 
 /** Inside a run start or stop transaction: lock the authority's rows, then judge them by Postgres' current clock. */
 export const stillAdmitted = (actor: Actor, resolved: RepoRoles.Resolved) =>

@@ -1,6 +1,6 @@
 import { Clock, Effect, Option, Schema } from "effect"
 import { isRepository, repoId } from "../src/features/repo/contract.ts"
-import { FlowStarter } from "./Flows.ts"
+import { FlowStarter } from "./Flows.vibe"
 import { Refresh } from "./flows/RepoRefresh.ts"
 
 const Push = Schema.Struct({

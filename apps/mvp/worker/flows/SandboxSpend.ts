@@ -4,8 +4,8 @@ import { Node } from "@smthrs/plan"
 import { Clock, Duration, Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Budget from "../branch/Budget.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import { codeOf } from "../ErrorCode.vibe"
+import * as Flows from "../Flows.vibe"
 import * as AlertDelivery from "./AlertDelivery.ts"
 
 // `ops/SandboxSpend { from, until }` (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md#the-spend-alert):

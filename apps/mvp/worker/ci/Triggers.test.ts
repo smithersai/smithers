@@ -1,7 +1,7 @@
 // When a repository's flows run (worker/ci/Triggers.ts): the manifest's trigger rows, and which GitHub events match.
 import { readFileSync } from "node:fs"
 import { describe, expect, test } from "vitest"
-import * as Triggers from "./Triggers.ts"
+import * as Triggers from "./Triggers.vibe"
 
 const manifest = (triggers: ReadonlyArray<unknown>, extra: Record<string, unknown> = {}) =>
   JSON.stringify({ apiVersion: 1, id: "repository", contributes: { triggers }, ...extra })

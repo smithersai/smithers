@@ -15,13 +15,13 @@ import {
   writeExecutionId,
 } from "../../src/features/domains/contract.ts"
 import { repoId } from "../../src/features/repo/contract.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import * as Flows from "../Flows.vibe"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import * as DomainFlows from "./DomainFlows.ts"
-import { DomainProvider } from "./Provider.ts"
+import { DomainProvider } from "./Provider.vibe"
 import * as Store from "./Store.ts"
 
 // The custom-domain routes (decision 0039, docs/features/domains.md#routes). Every one is a Maintainer's or an Admin's,

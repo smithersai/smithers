@@ -12,16 +12,16 @@ import {
   type ShareAccess,
 } from "../../src/features/branch/contract.ts"
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.ts"
-import { type Actor, refusesPersonOnly, type Role, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { type Actor, refusesPersonOnly, type Role, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
 import * as Repos from "../Repos.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canView, type Policy, policyOf, underPolicy } from "./Access.ts"
-import { Directory } from "./People.ts"
-import { Rooms } from "./Rooms.ts"
+import { Directory } from "./People.vibe"
+import { Rooms } from "./Rooms.vibe"
 import { enforceRooms } from "./Texts.ts"
-import { type Revoked, TerminalSockets } from "./Sandboxes.ts"
+import { type Revoked, TerminalSockets } from "./Sandboxes.vibe"
 
 // Sharing a branch, Google Docs style (decision 0013 §2 and §4, docs/features/branch-workspace.md#sharing):
 //

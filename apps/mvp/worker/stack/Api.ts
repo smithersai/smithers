@@ -1,6 +1,6 @@
 import { withRequestRay } from "../RequestRay.ts"
 import * as WriteAuthority from "../WriteAuthority.ts"
-import { canAsk } from "../Actor.ts"
+import { canAsk } from "../Actor.vibe"
 import { ShapeProxy } from "@smthrs/effect-electric"
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -28,13 +28,13 @@ import {
   TODOS_SHAPE_ROUTE,
   TODOS_TABLE,
 } from "../../src/features/todos/contract.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { repositoryOf as repositoryNamed } from "../github/Config.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import { repositoryOf as repositoryNamed } from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
-import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./Access.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
+import { mayChange, mayConfigure, mayRead, mayRetryAny, viaOf } from "./Access.vibe"
 import * as Stack from "./Stack.ts"
 import type { TodoStatusRead } from "../../src/features/todos/schema.ts"
 

@@ -9,8 +9,8 @@ import { scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 import { runFlow } from "../test/flowHost.ts"
 import { testFile, uuid } from "../test/harness.ts"
 import * as ExecutionHost from "../ExecutionHost.ts"
-import * as Dispatch from "./Dispatch.ts"
-import * as Pause from "../flows/Pause.ts"
+import * as Dispatch from "./Dispatch.vibe"
+import * as Pause from "../flows/Pause.vibe"
 
 const runtime = testFile("ci_dispatch")
 beforeEach(() => reset(runtime))

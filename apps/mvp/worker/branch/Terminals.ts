@@ -11,16 +11,16 @@ import {
   openExecutionId,
   TERMINALS_TABLE,
 } from "../../src/features/terminal/contract.ts"
-import type { Actor } from "../Actor.ts"
-import { refusesPersonOnly, canAsk, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import type { Actor } from "../Actor.vibe"
+import { refusesPersonOnly, canAsk, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import * as Flows from "../Flows.vibe"
 import { TerminalOpen } from "../flows/TerminalOpen.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import { branchAccess, canEdit, canView } from "./Access.ts"
-import { TerminalSockets } from "./Sandboxes.ts"
-import { isUpgrade, sameOrigin } from "./Upgrade.ts"
+import { TerminalSockets } from "./Sandboxes.vibe"
+import { isUpgrade, sameOrigin } from "./Upgrade.vibe"
 import * as SocketAccess from "../SocketAccess.ts"
 
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):

@@ -3,9 +3,9 @@ import { Effect, Function, Metric, Option } from "effect"
 import { FetchHttpClient, HttpClient, HttpServerResponse } from "effect/http"
 import { COMPARE_SEGMENT, SHA } from "../../src/features/pulls/contract.ts"
 import { REPOS_ROUTE } from "../../src/features/repo/contract.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { statusOf, withToken } from "./Calls.ts"
-import type { GitHubApp, Repository } from "./Config.ts"
+import { codeOf } from "../ErrorCode.vibe"
+import { statusOf, withToken } from "./Calls.vibe"
+import type { GitHubApp, Repository } from "./Config.vibe"
 import * as Tokens from "./Tokens.ts"
 
 // `GET /api/repos/<owner>/<name>/compare/<base>...<head>` (decision 0012 §3, docs/features/pulls.md#files): the files two

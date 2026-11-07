@@ -5,7 +5,7 @@ import { Effect, Layer, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
 import { repoId } from "../../src/features/repo/contract.ts"
 import * as Repos from "../Repos.ts"
-import { CloneUnavailable, STEP_RETRY, SYNC_RETRY, type Services } from "./RepoClone.ts"
+import { CloneUnavailable, STEP_RETRY, SYNC_RETRY, type Services } from "./RepoClone.vibe"
 
 const Request = { owner: Schema.String, name: Schema.String }
 const Target = Schema.Struct({ ready: Schema.Boolean, id: Schema.String, branch: Schema.String, sha: Schema.String, owner: Schema.String, name: Schema.String })

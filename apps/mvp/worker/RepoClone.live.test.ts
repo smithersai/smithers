@@ -7,7 +7,7 @@ import { FetchHttpClient } from "effect/http"
 import { beforeEach, describe, expect, test } from "vitest"
 import { blobRoute, treeRoute } from "../src/features/repo/contract.ts"
 import * as RepoConfig from "./RepoConfig.ts"
-import { RepoUpstream } from "./RepoUpstream.ts"
+import { RepoUpstream } from "./RepoUpstream.vibe"
 import { testFile } from "./test/harness.ts"
 import { repoHarness, repositoryRow, resetRepos } from "./test/repos.ts"
 

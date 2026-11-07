@@ -4,13 +4,13 @@ import { Core, GitHub } from "@smthrs/integrations"
 import { Context, Effect, Layer, Metric, Option, Schema, type Redacted } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
-import type { Actor } from "../Actor.ts"
-import { classify, statusOf, withToken } from "../github/Calls.ts"
-import * as Config from "../github/Config.ts"
+import type { Actor } from "../Actor.vibe"
+import { classify, statusOf, withToken } from "../github/Calls.vibe"
+import * as Config from "../github/Config.vibe"
 import * as RepoRoles from "../github/RepoRoles.ts"
 import * as Conversations from "./Conversations.ts"
 import * as Repos from "../Repos.ts"
-import { CreateRefused } from "./CreateRefused.ts"
+import { CreateRefused } from "./CreateRefused.vibe"
 
 /** Explicit, repository-selected GitHub creation; never used by the default branch flow. */
 export interface Input {

@@ -15,7 +15,7 @@ import { Context, Deferred, Effect, Exit, Layer, type ManagedRuntime, Metric, St
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { afterEach, describe, expect, test, vi } from "vitest"
-import type { Actor } from "../../../worker/Actor.ts"
+import type { Actor } from "../../../worker/Actor.vibe"
 import * as PullStore from "../../../worker/github/Pulls.ts"
 import * as Store from "../../../worker/github/Store.ts"
 import { CHATAPI_ORIGIN, openTab, openTestApp, type TabOptions, TEST_REPOSITORY, TestChatApi } from "../../test/chatApi"

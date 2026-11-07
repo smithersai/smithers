@@ -18,13 +18,13 @@ import {
   textRoute,
   TEXTS_SHAPE_ROUTE,
 } from "../../src/features/coedit/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
 import { branchHarness, type BranchHarness, resetBranches, shared, tracked } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
 import * as Texts from "./Texts.ts"
 import { BranchRoles } from "./Access.ts"
 import * as RepoRoles from "../github/RepoRoles.ts"
-import { repositoryOf } from "../github/Config.ts"
+import { repositoryOf } from "../github/Config.vibe"
 import { app } from "../github/test/harness.ts"
 import { accountIdOf, appKey, INSTALLATION_ID, scriptedGitHub } from "../github/test/scriptedGitHub.ts"
 

@@ -1,4 +1,4 @@
-import * as GitHubConfig from "../github/Config.ts"
+import * as GitHubConfig from "../github/Config.vibe"
 import * as RepoConfig from "../RepoConfig.ts"
 import { CREATION_ROUTE } from "../../src/features/branch/creation.ts"
 import * as Creation from "./Creation.ts"

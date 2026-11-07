@@ -15,7 +15,7 @@ import { Context, type Duration, Effect, Exit, Fiber, Layer, Scope } from "effec
 import { FetchHttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { ConnectionError, SqlError } from "effect/sql/SqlError"
-import type { Actor } from "../../worker/Actor.ts"
+import type { Actor } from "../../worker/Actor.vibe"
 import { build } from "../../worker/test/flowHost.ts"
 import type { CuratedFile } from "../../worker/home/Curated.ts"
 import { harness } from "../../worker/test/harness.ts"

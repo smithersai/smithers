@@ -7,7 +7,7 @@ import { beforeAll, beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { MAX_SHARE_BODY_BYTES, MAX_SHARES, SHARES_SHAPE_ROUTE, sharesRoute } from "../../src/features/branch/contract.ts"
-import { type Actor, Sessions, SessionsUnavailable } from "../Actor.ts"
+import { type Actor, Sessions, SessionsUnavailable } from "../Actor.vibe"
 import {
   branchHarness,
   type BranchHarness,
@@ -18,7 +18,7 @@ import {
   tracked,
 } from "../test/branch.ts"
 import { eventually, recorded, testFile } from "../test/harness.ts"
-import { Directory, DirectoryUnavailable } from "./People.ts"
+import { Directory, DirectoryUnavailable } from "./People.vibe"
 import * as Shares from "./Shares.ts"
 import * as Conversations from "./Conversations.ts"
 

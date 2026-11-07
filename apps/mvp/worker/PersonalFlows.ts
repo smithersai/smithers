@@ -20,10 +20,10 @@ import {
   WriteRequest,
 } from "../src/features/flows-ui/schema.ts"
 import { placementOf, SOURCE_PATH } from "../src/features/flows-ui/source.ts"
-import { type Actor, refusesPersonOnly, Sessions } from "./Actor.ts"
-import { readBounded } from "./Body.ts"
-import { codeOf } from "./ErrorCode.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import { type Actor, refusesPersonOnly, Sessions } from "./Actor.vibe"
+import { readBounded } from "./Body.vibe"
+import { codeOf } from "./ErrorCode.vibe"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 
 // A person's own flows in ChatApi (decision 0014 §1 and §2, docs/features/flows.md#your-own-flows). A person's flow is
 // flow source, a `Flow.make` module stored here and synced to their devices, with where its latest revision runs

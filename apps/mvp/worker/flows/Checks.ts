@@ -20,14 +20,14 @@ import {
   statusContextOf,
 } from "../../src/features/pulls/contract.ts"
 import { COMMAND_LIMIT_SECONDS } from "../../src/features/sandbox/contract.ts"
-import { Machines } from "../branch/Machines.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { classify, withToken } from "../github/Calls.ts"
-import { type Repository, repositoryOf } from "../github/Config.ts"
+import { Machines } from "../branch/Machines.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import { classify, withToken } from "../github/Calls.vibe"
+import { type Repository, repositoryOf } from "../github/Config.vibe"
 import { fetchPull, projectPull } from "../github/Pulls.ts"
 import { type GitHubTokens, TokenUnavailable } from "../github/Tokens.ts"
 import type { Seat } from "../ModelEndpoint.ts"
-import type { SandboxBranch } from "../branch/Sandboxes.ts"
+import type { SandboxBranch } from "../branch/Sandboxes.vibe"
 import * as SandboxCommand from "./SandboxCommand.ts"
 
 // A pull request's checks (decision 0012 decision 12, decision 0016's factory simplified): Smithers runs on its head

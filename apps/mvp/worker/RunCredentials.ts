@@ -9,7 +9,7 @@ import {
   refusesCredential,
   Sessions,
   type SessionsUnavailable,
-} from "./Actor.ts"
+} from "./Actor.vibe"
 import { DEVICE_PERSON_HEADER, NO_DEVICE_DATA } from "../src/features/auth/contract.ts"
 import { CREDENTIAL_TTL_MS } from "../src/flows/contract.ts"
 import type { SessionKeys } from "./SessionKeys.ts"

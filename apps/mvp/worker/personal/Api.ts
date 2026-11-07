@@ -27,19 +27,19 @@ import {
   type TestResult,
   writeExecutionId,
 } from "../../src/features/personal-model/contract.ts"
-import { refusesPersonOnly, Sessions } from "../Actor.ts"
-import { readBounded } from "../Body.ts"
-import { codeOf } from "../ErrorCode.ts"
-import * as Flows from "../Flows.ts"
+import { refusesPersonOnly, Sessions } from "../Actor.vibe"
+import { readBounded } from "../Body.vibe"
+import { codeOf } from "../ErrorCode.vibe"
+import * as Flows from "../Flows.vibe"
 import { SecretKeys } from "../secrets/Keys.ts"
-import * as ShapeAccess from "../ShapeAccess.ts"
+import * as ShapeAccess from "../ShapeAccess.vibe"
 import * as Codex from "./Codex.ts"
 import * as ModelFlows from "./ModelFlows.ts"
 import { type Opened, PersonalModels, PersonalModelUnusable, sealContext } from "./Models.ts"
-import { connectionDefaults } from "./Defaults.ts"
+import { connectionDefaults } from "./Defaults.vibe"
 import * as Subscriptions from "./Subscriptions.ts"
 import * as Store from "./Store.ts"
-import * as PersonalUsage from "./Usage.ts"
+import * as PersonalUsage from "./Usage.vibe"
 
 // A person's own connections' routes (decisions 0096, 0107 and 0132, docs/features/personal-model.md). Credentials are
 // write-only: no route answers one.

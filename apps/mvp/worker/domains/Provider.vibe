@@ -1,0 +1,64 @@
+import { Context, type Effect, Layer, Option, Schema } from "effect"
+import type { CertificateState, DnsRecord, VerificationState } from "../../src/features/domains/contract.ts"
+
+// The domain provider (decision 0039 §3): what registers a custom domain, says whether it is verified and has a
+// certificate, and forgets it. Cloudflare is one implementation (worker/domains/Cloudflare.ts), reached only through
+// this service (ARCH-7); worker/domains/Dns.ts is the other, for a host that terminates its own TLS. The flows
+// (worker/domains/DomainFlows.ts) and the routes (worker/domains/Api.ts) read it; nothing else names a provider.
+
+/** A domain as its provider sees it. */
+export interface Registration {
+  /** The provider's id for the domain: what `status` and `remove` take. */
+  readonly id: string
+  /** The records the maintainer adds at their DNS provider, the routing record first. */
+  readonly records: ReadonlyArray<DnsRecord>
+  readonly verification: VerificationState
+  readonly certificate: CertificateState
+  /** Why verification or the certificate is stuck, in the provider's short words; none when nothing is. */
+  readonly problem?: string
+}
+
+/** The provider couldn't be reached, timed out or failed: the step tries again. `code` names it, never a token. */
+export class ProviderUnavailable extends Schema.TaggedError<ProviderUnavailable>()(
+  "@smthrs/mvp/domains/ProviderUnavailable",
+  { code: Schema.String },
+) {}
+
+/** The provider holds the hostname for someone else, such as another Cloudflare account. Final. */
+export class HostnameTaken extends Schema.TaggedError<HostnameTaken>()("@smthrs/mvp/domains/HostnameTaken", {}) {}
+
+/** The provider refuses the hostname for good, such as one it blocks. `reason` is its short word for why. Final. */
+export class HostnameRejected extends Schema.TaggedError<HostnameRejected>()(
+  "@smthrs/mvp/domains/HostnameRejected",
+  { reason: Schema.String },
+) {}
+
+/** A provider's operations. */
+export interface Provider {
+  /** Its name in records: `cloudflare` or `dns`. */
+  readonly name: string
+  /** The name every domain's routing record points at, such as `domains.smithers.sh`. */
+  readonly target: string
+  /** The deployment's own zone: neither it nor a name under it can be a custom domain. */
+  readonly zone: string
+  /** Registers `hostname`, or finds it when an earlier attempt already did, so a step run again registers once. */
+  readonly ensure: (
+    hostname: string,
+  ) => Registration!ProviderUnavailable | HostnameTaken | HostnameRejected
+  /** The registration `id` of `hostname` now; none when the provider no longer has it. */
+  readonly status: (id: string, hostname: string) => Option.Option<Registration>!ProviderUnavailable
+  /** Forgets registration `id`; one the provider no longer has is already forgotten. */
+  readonly remove: (id: string) => void!ProviderUnavailable
+}
+
+/** The deployment's provider, or none when custom domains are off (`DOMAINS_PROVIDER` unset). */
+export class DomainProvider extends Context.Service<DomainProvider, Option.Option<Provider>>()(
+  "@smthrs/mvp/domains/DomainProvider",
+) {
+  /** Custom domains off: every route answers `off`. */
+  static readonly off: Layer.Layer<DomainProvider> = Layer.succeed(DomainProvider, Option.none())
+
+  /** `provider`. */
+  static readonly layer = (provider: Provider): Layer.Layer<DomainProvider> =>
+    Layer.succeed(DomainProvider, Option.some(provider))
+}

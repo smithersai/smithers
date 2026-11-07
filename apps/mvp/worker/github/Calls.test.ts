@@ -2,7 +2,7 @@
 // refusal with its status, and anything that isn't one of `@smthrs/integrations`' failures.
 import { Core } from "@smthrs/integrations"
 import { describe, expect, test } from "vitest"
-import { classify, MAX_WAIT_MILLIS, statusOf } from "./Calls.ts"
+import { classify, MAX_WAIT_MILLIS, statusOf } from "./Calls.vibe"
 
 const failure = (details: Record<string, unknown>) =>
   new Core.IntegrationError.IntegrationError("delivery-failed", "GitHub request failed", details)

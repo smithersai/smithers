@@ -4,7 +4,7 @@ import { expect, test } from "vitest"
 import { testFile } from "./test/harness.ts"
 import { stackHarness, runs } from "./stack/test/stack.ts"
 import * as Stack from "./stack/Stack.ts"
-import { repositoryOf } from "./github/Config.ts"
+import { repositoryOf } from "./github/Config.vibe"
 import { githubHarness, member } from "./github/test/harness.ts"
 import { REPOSITORY } from "./github/test/fixtures.ts"
 

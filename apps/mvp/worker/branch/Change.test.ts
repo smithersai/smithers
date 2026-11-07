@@ -3,8 +3,8 @@
 import type { SandboxTools } from "@smthrs/sandbox"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { describe, expect, test } from "vitest"
-import { base64Of, ChangeRefused, ChangeUnavailable, collect } from "./Change.ts"
-import { Machines } from "./Machines.ts"
+import { base64Of, ChangeRefused, ChangeUnavailable, collect } from "./Change.vibe"
+import { Machines } from "./Machines.vibe"
 
 const BASE = "a".repeat(40)
 

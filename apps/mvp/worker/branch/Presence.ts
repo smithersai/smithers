@@ -1,12 +1,12 @@
 import { Cause, Clock, Effect, type Layer, Metric, Option, Schema } from "effect"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { SqlClient } from "effect/sql"
-import { Sessions } from "../Actor.ts"
-import { codeOf } from "../ErrorCode.ts"
+import { Sessions } from "../Actor.vibe"
+import { codeOf } from "../ErrorCode.vibe"
 import * as SocketAccess from "../SocketAccess.ts"
 import { branchAccess, canView } from "./Access.ts"
-import { Rooms } from "./Rooms.ts"
-import { isUpgrade, sameOrigin } from "./Upgrade.ts"
+import { Rooms } from "./Rooms.vibe"
+import { isUpgrade, sameOrigin } from "./Upgrade.vibe"
 
 // `GET /api/branches/<id>/room` with `Upgrade: websocket` (decision 0013 §4, docs/features/branch-workspace.md#presence):
 // joins the page's socket to the branch's room, where everyone on the branch sees who else is and where. Only this

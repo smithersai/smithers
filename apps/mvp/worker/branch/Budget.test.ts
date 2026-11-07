@@ -8,7 +8,7 @@ import { beforeEach, describe, expect, test } from "vitest"
 import * as Database from "../../db/Database.ts"
 import * as TestDatabase from "../../db/TestDatabase.ts"
 import { DEFAULT_SANDBOX_LIMITS } from "../../src/features/spend/contract.ts"
-import { CI_OWNER } from "../flows/CiJobMachine.ts"
+import { CI_OWNER } from "../flows/CiJobMachine.vibe"
 import { testFile } from "../test/harness.ts"
 import * as Budget from "./Budget.ts"
 

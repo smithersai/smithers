@@ -14,12 +14,12 @@ import * as TestDatabase from "../../db/TestDatabase.ts"
 import { cloneExecutionId, cloneSubject } from "../../src/features/repo/contract.ts"
 import * as RepoMetrics from "../RepoMetrics.ts"
 import * as Repos from "../Repos.ts"
-import { UpstreamUnavailable } from "../RepoUpstream.ts"
+import { UpstreamUnavailable } from "../RepoUpstream.vibe"
 import { fixture, type Scripted, scripted } from "../test/codeStorage.ts"
 import { build, runFlow } from "../test/flowHost.ts"
 import { testFile } from "../test/harness.ts"
 import { notificationRow, repositoryRow, resetRepos, usageRow } from "../test/repos.ts"
-import * as RepoClone from "./RepoClone.ts"
+import * as RepoClone from "./RepoClone.vibe"
 
 const runtime = testFile("repo_clone")
 

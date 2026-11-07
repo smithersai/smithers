@@ -1,6 +1,6 @@
 import { Duration, Effect, Metric, Option, Schema } from "effect"
 import { SqlClient } from "effect/sql"
-import type { Actor } from "./Actor.ts"
+import type { Actor } from "./Actor.vibe"
 import { ROLES } from "../src/features/auth/contract.ts"
 import type * as RepoRoles from "./github/RepoRoles.ts"
 

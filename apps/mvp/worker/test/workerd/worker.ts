@@ -7,7 +7,7 @@
 // This file is the program boundary: it runs Effects with `Effect.runPromise`.
 import { Effect } from "effect"
 import * as ExecutionHost from "../../ExecutionHost.ts"
-import * as Pause from "../../flows/Pause.ts"
+import * as Pause from "../../flows/Pause.vibe"
 
 /** The slice of Durable Object storage this Worker uses. */
 interface RawStorage {

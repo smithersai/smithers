@@ -1,7 +1,7 @@
 import { type ModelProxy, Pricing } from "@smthrs/model"
 import { Config, Duration, Effect, Metric, Schema } from "effect"
 import type { ModelRole } from "../src/features/model/contract.ts"
-import * as Flows from "./Flows.ts"
+import * as Flows from "./Flows.vibe"
 import * as SpendAlert from "./flows/SpendAlert.ts"
 
 // Model spend (docs/features/spend-alerts.md): what each call the model endpoint meters spent, by role and model, and

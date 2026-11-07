@@ -12,14 +12,14 @@ import { FetchHttpClient, HttpEffect } from "effect/http"
 import { SqlClient } from "effect/sql"
 import * as TestDatabase from "../../../db/TestDatabase.ts"
 import { SECRETS_TABLE } from "../../../src/features/secrets/contract.ts"
-import * as Actor from "../../Actor.ts"
-import * as Flows from "../../Flows.ts"
+import * as Actor from "../../Actor.vibe"
+import * as Flows from "../../Flows.vibe"
 import * as FlowHost from "../../test/flowHost.ts"
 import { signedIn, type testFile } from "../../test/harness.ts"
 import * as SecretsApi from "../Api.ts"
 import { SecretKeys } from "../Keys.ts"
 import * as SandboxEgress from "../SandboxEgress.ts"
-import * as SecretFlows from "../SecretFlows.ts"
+import * as SecretFlows from "../SecretFlows.vibe"
 
 type Runtime = ReturnType<typeof testFile>
 type StructuredLog = ReturnType<typeof StructuredLogger.formatStructured.log>

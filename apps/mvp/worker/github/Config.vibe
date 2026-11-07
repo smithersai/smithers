@@ -1,0 +1,74 @@
+import { Config, Effect, Option, Redacted, Schema } from "effect"
+import { repoId } from "../../src/features/repo/contract.ts"
+import { DEFAULT_REPOSITORY } from "../SignIn.ts"
+
+// The GitHub App's settings for the git loop (docs/features/issues.md#configuration, decision 0012 question 2): its ID
+// and private key, which mint installation tokens, and the webhook's secret. G0 syncs one repository, the one sign-in
+// reads roles on (`GITHUB_REPOSITORY`), because a session carries one role (decision 0012, Consequences). Without the ID
+// and the key the deployment syncs and writes nothing; without the secret the webhook route refuses every delivery and
+// Reconcile alone keeps the rows fresh.
+
+/** The repository G0 syncs: `owner/name` as `GITHUB_REPOSITORY` names it, and its row id (`github/<owner>/<name>`). */
+export interface Repository {
+  readonly owner: string
+  readonly name: string
+  readonly id: string
+}
+
+/** The GitHub App, configured. */
+export interface GitHubApp {
+  readonly appId: string
+  readonly privateKey: Redacted.Redacted<string>
+  /** `GITHUB_WEBHOOK_SECRET`; none, and the webhook route answers `503 not_configured`. */
+  readonly webhookSecret: Option.Option<Redacted.Redacted<string>>
+  readonly repository: Repository
+  /** GitHub's REST API: `GITHUB_API_URL`, `https://api.github.com` unless set. */
+  readonly apiBaseUrl: string
+}
+
+/** GitHub's REST API when `GITHUB_API_URL` is unset. */
+export const DEFAULT_API_URL = "https://api.github.com"
+
+const repositoryName = Schema.String.check(Schema.isPattern(/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/))
+
+/** An http(s) URL: a malformed `GITHUB_API_URL` fails the deployment's config, never a step. */
+const httpUrl = Schema.String.check(
+  Schema.makeFilter((value: string) => URL.canParse(value) && /^https?:$/.test(new URL(value).protocol)),
+)
+
+/** `owner/name` as a `Repository`; `repositoryName` has checked its shape. */
+export const repositoryOf = (full: string): Repository => {
+  const [owner, name] = full.split("/") as [string, string]
+  return { owner, name, id: repoId(owner, name) }
+}
+
+/** `GITHUB_REPOSITORY`: the repository G0 syncs, the one sign-in reads roles on. */
+export const repository = Config.schema(repositoryName, "GITHUB_REPOSITORY").pipe(
+  Config.withDefault(DEFAULT_REPOSITORY),
+  Config.map(repositoryOf),
+)
+
+/** The same API origin for metadata reads, including when the App is no longer configured. */
+export const apiUrl = Config.schema(httpUrl, "GITHUB_API_URL").pipe(Config.withDefault(DEFAULT_API_URL))
+
+/**
+ * Reads `GITHUB_APP_ID`, `GITHUB_APP_PRIVATE_KEY`, `GITHUB_WEBHOOK_SECRET`, `GITHUB_REPOSITORY` and `GITHUB_API_URL`.
+ * `None` without the ID or the key: the git loop is off. The key's text is never read into a log line.
+ */
+export const configured = effect {
+  const appId = try Config.option(Config.NonEmptyString("GITHUB_APP_ID"))
+  const privateKey = try Config.option(Config.Redacted("GITHUB_APP_PRIVATE_KEY"))
+  const webhookSecret = try Config.option(Config.Redacted("GITHUB_WEBHOOK_SECRET"))
+  const synced = try repository
+  const apiBaseUrl = try apiUrl
+  if (Option.isNone(appId) || Option.isNone(privateKey) || Redacted.value(privateKey.value).trim() === "") {
+    return Option.none<GitHubApp>()
+  }
+  return Option.some<GitHubApp>({
+    appId: appId.value,
+    privateKey: privateKey.value,
+    webhookSecret: Option.filter(webhookSecret, (secret) => Redacted.value(secret).length > 0),
+    repository: synced,
+    apiBaseUrl,
+  })
+}

@@ -29,14 +29,14 @@ import {
   ViewWrite,
 } from "../src/features/views/schema.ts"
 import { checkUrl } from "../src/features/web/url.ts"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "./Actor.vibe"
 import { askingOf, branchAccess, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
-import { readBounded } from "./Body.ts"
+import { readBounded } from "./Body.vibe"
 import { DocsSource } from "./docs/Source.ts"
-import { codeOf } from "./ErrorCode.ts"
+import { codeOf } from "./ErrorCode.vibe"
 import * as Messages from "./Messages.ts"
-import * as ShapeAccess from "./ShapeAccess.ts"
+import * as ShapeAccess from "./ShapeAccess.vibe"
 import * as ViewRealm from "./ViewRealm.ts"
 
 // The conversation's views in ChatApi (docs/features/web-pages.md#the-views-table, decision 0004 §8): `POST /api/views`

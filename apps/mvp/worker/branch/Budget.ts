@@ -1,9 +1,9 @@
 import { Effect, type Layer, Metric } from "effect"
 import { SqlClient } from "effect/sql"
 import { DEFAULT_SANDBOX_LIMITS, type SandboxLimits } from "../../src/features/spend/contract.ts"
-import { codeOf } from "../ErrorCode.ts"
-import { CI_OWNER } from "../flows/CiJobMachine.ts"
-import type { SandboxBranch } from "./Sandboxes.ts"
+import { codeOf } from "../ErrorCode.vibe"
+import { CI_OWNER } from "../flows/CiJobMachine.vibe"
+import type { SandboxBranch } from "./Sandboxes.vibe"
 
 // Sandbox budgets (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md): how many machines may be awake, and
 // what they cost. Will, 2026-10-19 22:45: "Add this as a TODO but we won't worry about this until we ship."
