@@ -6,13 +6,16 @@
 //
 // `CiArtifacts` is the R2 bucket the gate's boxes keep their run's artifacts in (worker/branch/Artifacts.ts), declared
 // with the gate machine. Its objects expire 7 days after they were written.
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Config, Effect } from "effect"
 
 /** The gate machine's container class: the GATE_IMAGE image, which only a deployment that sets it binds. */
 export class GateMachine extends Cloudflare.Container<GateMachine>()(
   "GateMachine",
-  Effect.map(Config.String("GATE_IMAGE"), (image) => ({ schedulingPolicy: "durable_object" as const, image: image.trim() })),
+  Effect.map(
+    Config.String("GATE_IMAGE"),
+    (image) => ({ schedulingPolicy: "durable_object" as const, image: image.trim() })
+  )
 ) {}
 
 /** How long an artifact lives: 7 days. */
@@ -22,6 +25,6 @@ export const ARTIFACT_DAYS = 7
 export const CiArtifacts = Cloudflare.R2.Bucket("CiArtifacts", {
   lifecycleRules: [{
     id: "expire-artifacts",
-    deleteObjectsTransition: { condition: { type: "Age", maxAge: ARTIFACT_DAYS * 24 * 60 * 60 } },
-  }],
+    deleteObjectsTransition: { condition: { type: "Age", maxAge: ARTIFACT_DAYS * 24 * 60 * 60 } }
+  }]
 })

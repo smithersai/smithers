@@ -18,18 +18,18 @@
  * Required env: CLOUDFLARE_API_TOKEN, ALCHEMY_PASSWORD and BUG_ADMIN_TOKEN.
  * A deploy without one fails instead of removing the live binding.
  */
-import * as Alchemy from "alchemy";
-import * as Cloudflare from "alchemy/Cloudflare";
-import * as Config from "effect/Config";
-import * as Redacted from "effect/Redacted";
-import * as Schema from "effect/Schema";
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import * as Alchemy from "alchemy"
+import * as Config from "effect/Config"
+import * as Redacted from "effect/Redacted"
+import * as Schema from "effect/Schema"
 
 const requireSecret = (name: string) =>
   Config.schema(Schema.Redacted(Schema.Trim.check(Schema.isNonEmpty())), name).pipe(
-    Config.map((value) => Redacted.make(Redacted.value(value).trim())),
-  );
-export const bugReportsProps = { title: "smithers-bug-worker-bug-reports-williamcory" };
-const bugs = Cloudflare.KV.Namespace("bug-reports", bugReportsProps);
+    Config.map((value) => Redacted.make(Redacted.value(value).trim()))
+  )
+export const bugReportsProps = { title: "smithers-bug-worker-bug-reports-williamcory" }
+const bugs = Cloudflare.KV.Namespace("bug-reports", bugReportsProps)
 
 export const workerProps = {
   name: "smithers-bug-worker-smithers-bug-worker-williamcory",
@@ -42,16 +42,16 @@ export const workerProps = {
     BUGS: bugs,
     RATE_LIMITS: Cloudflare.DurableObject("RateLimiter"),
     BUG_ADMIN_TOKEN: requireSecret("BUG_ADMIN_TOKEN"),
-    PUBLIC_BASE_URL: "https://bug.smithers.sh",
+    PUBLIC_BASE_URL: "https://bug.smithers.sh"
   },
   // A declared domain detaches every live hostname it does not list.
-  domain: { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" },
-} satisfies Cloudflare.WorkerProps;
+  domain: { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: "8ebd98d2f0dc7d8db2e61f31ebc19c14" }
+} satisfies Cloudflare.WorkerProps
 
-export const worker = Cloudflare.Worker("smithers-bug-worker", workerProps);
+export const worker = Cloudflare.Worker("smithers-bug-worker", workerProps)
 
 export default Alchemy.Stack(
   "smithers-bug-worker",
   { providers: Cloudflare.providers(), state: Cloudflare.state() },
-  worker,
-);
+  worker
+)

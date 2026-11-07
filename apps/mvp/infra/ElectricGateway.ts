@@ -1,5 +1,5 @@
 // The private shape gateway owns no container or Durable Object class (decision 0118).
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Effect } from "effect"
 import { logged } from "./ElectricAwake.ts"
 import { serve } from "./ElectricCache.ts"
@@ -18,15 +18,15 @@ export const props = {
   observability: {
     enabled: true,
     logs: { enabled: true, invocationLogs: true, persist: true },
-    traces: { enabled: true, persist: true },
-  },
+    traces: { enabled: true, persist: true }
+  }
 }
 
 export default class ElectricGateway extends Cloudflare.Worker<ElectricGateway>()(
   "ElectricGateway",
   props,
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const objects = yield* ElectricObject.from(ElectricRuntime)
     return { fetch: logged(serve((request) => objects.getByName(INSTANCE).fetch(request))) }
-  }),
+  })
 ) {}

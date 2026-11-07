@@ -11,13 +11,18 @@ import { workerBuild } from "../../../infra/WorkerBuild.ts"
 const MVP = fileURLToPath(new URL("../../..", import.meta.url))
 
 /** The compatibility ChatApi runs with (worker/ChatApi.ts `props`). */
-export const COMPATIBILITY = { date: "2026-10-01", flags: ["nodejs_compat", "enable_request_signal", "global_fetch_strictly_public"] }
+export const COMPATIBILITY = {
+  date: "2026-10-01",
+  flags: ["nodejs_compat", "enable_request_signal", "global_fetch_strictly_public"]
+}
 
 /** The root of installed package `name`, found from the module `from` resolves to. */
 const packageRoot = async (from: string, name: string): Promise<string> => {
   let dir = dirname(from)
   for (;;) {
-    const manifest = JSON.parse(await readFile(join(dir, "package.json"), "utf8").catch(() => "{}")) as { name?: string }
+    const manifest = JSON.parse(await readFile(join(dir, "package.json"), "utf8").catch(() => "{}")) as {
+      name?: string
+    }
     if (manifest.name === name) return dir
     const parent = dirname(dir)
     if (parent === dir) throw new Error(`no ${name} above ${from}`)
@@ -51,16 +56,20 @@ interface Rolldown {
 /** Alchemy's own rolldown and Cloudflare plugin set: the dependencies installed beside Alchemy (pnpm's layout). */
 const alchemyBundler = async () => {
   const alchemy = await packageRoot(fileURLToPath(import.meta.resolve("alchemy")), "alchemy")
+  const provider = await packageRoot(
+    fileURLToPath(import.meta.resolve("@alchemy.run/cloudflare")),
+    "@alchemy.run/cloudflare"
+  )
   const [rolldown, cloudflare] = await Promise.all([
     importEntry(join(alchemy, "..", "rolldown"), "."),
-    importEntry(join(alchemy, "..", "@alchemy.run", "cloudflare-runtime"), "./rolldown"),
+    importEntry(join(provider, "..", "cloudflare-runtime"), "./rolldown")
   ])
   return {
     rolldown: (await import(pathToFileURL(rolldown).href)) as Rolldown,
     cloudflare: (await import(pathToFileURL(cloudflare).href)).default as (options: {
       readonly compatibilityDate: string
       readonly compatibilityFlags: ReadonlyArray<string>
-    }) => Array<unknown>,
+    }) => Array<unknown>
   }
 }
 
@@ -72,8 +81,11 @@ export const bundle = async (entry: string) => {
     cwd: MVP,
     external: ["lightningcss", "fsevents"],
     // Alchemy's Bundle.build puts the Worker's own build plugins (infra/WorkerBuild.ts) before its Cloudflare ones.
-    plugins: [workerBuild.input.plugins, cloudflare({ compatibilityDate: COMPATIBILITY.date, compatibilityFlags: COMPATIBILITY.flags })] as never,
-    checks: { unresolvedImport: false, ineffectiveDynamicImport: false },
+    plugins: [
+      workerBuild.input.plugins,
+      cloudflare({ compatibilityDate: COMPATIBILITY.date, compatibilityFlags: COMPATIBILITY.flags })
+    ] as never,
+    checks: { unresolvedImport: false, ineffectiveDynamicImport: false }
   })
   const { output } = await build.generate({ format: "esm", entryFileNames: "worker.js", strictExecutionOrder: true })
   await build.close()
@@ -94,9 +106,9 @@ export const start = async (entry: string, name: string) => {
         name,
         compatibilityDate: COMPATIBILITY.date,
         compatibilityFlags: COMPATIBILITY.flags,
-        manifest: { mainModule: "worker.js", modules },
-      },
-    }],
+        manifest: { mainModule: "worker.js", modules }
+      }
+    }]
   })
   return { worker, wasm: output.filter((file) => file.fileName.endsWith(".wasm")).map((file) => file.fileName) }
 }

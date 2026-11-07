@@ -2,11 +2,12 @@ import { withRequestRay } from "./RequestRay.ts"
 // ChatApi's program (worker/ChatApi.ts): everything ChatApi serves and hosts. worker/ChatApi.ts loads this module when
 // the Worker first builds its program, not when Cloudflare starts the Worker, so its modules are evaluated then and
 // count against the first request's CPU instead of the Worker's startup limit (docs/infrastructure.md#limits).
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { HostModel } from "@smthrs/model-host"
 import { Logger } from "@smthrs/observability"
 import { EdgeCache } from "@smthrs/platform-cloudflare"
+import { CiJob } from "@smthrs/sandbox"
 import { RuntimeContext } from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Cause, Effect, Layer, Option, Predicate, Redacted } from "effect"
 import { FetchHttpClient, HttpServerRequest } from "effect/http"
@@ -19,67 +20,66 @@ import * as SecretsInfra from "../infra/Secrets.ts"
 import * as SignInSecret from "../infra/SignIn.ts"
 import { AUTH_ROUTE } from "../src/features/auth/contract.ts"
 import { REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE } from "../src/features/repo/contract.ts"
-import * as Conversations from "./branch/Conversations.ts"
-import * as JobMachines from "./branch/JobMachines.ts"
+import * as AgentSandbox from "./AgentSandbox.ts"
+import { BranchRoles } from "./branch/Access.ts"
 import * as BranchApi from "./branch/BranchApi.ts"
+import * as Conversations from "./branch/Conversations.ts"
 import { Forge } from "./branch/Forge.ts"
+import * as JobMachines from "./branch/JobMachines.ts"
 import { Directory } from "./branch/People.ts"
 import { TerminalSockets } from "./branch/Sandboxes.ts"
 import * as BranchRooms from "./BranchRooms.ts"
-import * as RunContent from "./RunContent.ts"
-import * as SocketAccess from "./SocketAccess.ts"
-import * as SocketChecks from "./SocketChecks.ts"
 import * as BranchSandboxes from "./BranchSandboxes.ts"
 import * as BugsApi from "./bugs/Api.ts"
-import * as FeedsApi from "./feeds/Api.ts"
 import * as Chat from "./Chat.ts"
-import * as ViewRealm from "./ViewRealm.ts"
-import { codeOf } from "./ErrorCode.ts"
-import * as ExecutionHost from "./ExecutionHost.ts"
-import * as DatabaseRoutes from "./DatabaseRoutes.ts"
-import * as Executions from "./Executions.ts"
-import * as Placement from "./Placement.ts"
-import * as Flows from "./Flows.ts"
-import { RecheckRole, recheckExecutionId } from "./flows/RecheckRole.ts"
-import * as AgentSandbox from "./AgentSandbox.ts"
 import * as Dispatch from "./ci/Dispatch.ts"
-import * as RunsApi from "./ci/RunsApi.ts"
 import * as RepoFlow from "./ci/RepoFlow.ts"
-import { CiJob } from "@smthrs/sandbox"
-import * as GitHubApi from "./github/Api.ts"
+import * as RunsApi from "./ci/RunsApi.ts"
+import * as DatabaseRoutes from "./DatabaseRoutes.ts"
 import * as DocsApi from "./docs/Api.ts"
 import * as DocsSource from "./docs/Source.ts"
-import * as HomeApi from "./home/Api.ts"
-import * as GitHubConfig from "./github/Config.ts"
-import * as GitCredential from "./runners/GitCredential.ts"
-import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
-import * as RepoApi from "./RepoApi.ts"
-import * as RemoteRuns from "./RemoteRuns.ts"
-import * as RepoConfig from "./RepoConfig.ts"
 import * as DomainsApi from "./domains/Api.ts"
 import * as DomainsConfig from "./domains/Config.ts"
 import { DomainProvider } from "./domains/Provider.ts"
+import { codeOf } from "./ErrorCode.ts"
+import * as ExecutionHost from "./ExecutionHost.ts"
+import * as Executions from "./Executions.ts"
+import * as FeedsApi from "./feeds/Api.ts"
+import * as Flows from "./Flows.ts"
+import { recheckExecutionId, RecheckRole } from "./flows/RecheckRole.ts"
+import * as RedactFeed from "./flows/RedactFeed.ts"
+import * as Todo from "./flows/Todo.ts"
+import * as TodoSession from "./flows/TodoSession.ts"
+import * as GitHubApi from "./github/Api.ts"
+import * as GitHubConfig from "./github/Config.ts"
+import * as FirstPaint from "./github/FirstPaint.ts"
+import * as RepoRoles from "./github/RepoRoles.ts"
+import * as HomeApi from "./home/Api.ts"
+import { DEFAULT_CHAT_MODEL } from "./ModelRoles.ts"
 import * as PersonalApi from "./personal/Api.ts"
 import { PersonalModels } from "./personal/Models.ts"
-import * as SecretsApi from "./secrets/Api.ts"
-import * as RunnerAdmin from "./runners/Admin.ts"
-import * as RunnerAudit from "./runners/Audit.ts"
-import * as RunnersApi from "./runners/Api.ts"
-import * as RedactFeed from "./flows/RedactFeed.ts"
-import * as FirstPaint from "./github/FirstPaint.ts"
+import * as Placement from "./Placement.ts"
+import * as RemoteRuns from "./RemoteRuns.ts"
+import * as RepoApi from "./RepoApi.ts"
+import * as RepoConfig from "./RepoConfig.ts"
 import * as RequestBackground from "./RequestBackground.ts"
+import * as RunContent from "./RunContent.ts"
+import * as RunnerAdmin from "./runners/Admin.ts"
+import * as RunnersApi from "./runners/Api.ts"
+import * as RunnerAudit from "./runners/Audit.ts"
 import * as FleetApi from "./runners/FleetApi.ts"
-import * as TodoSession from "./flows/TodoSession.ts"
+import * as GitCredential from "./runners/GitCredential.ts"
+import * as SecretsApi from "./secrets/Api.ts"
 import { SecretKeys } from "./secrets/Keys.ts"
 import * as SignIn from "./SignIn.ts"
-import * as RepoRoles from "./github/RepoRoles.ts"
-import { BranchRoles } from "./branch/Access.ts"
+import * as SocketAccess from "./SocketAccess.ts"
+import * as SocketChecks from "./SocketChecks.ts"
 import * as StackApi from "./stack/Api.ts"
 import * as IssueRead from "./stack/IssueRead.ts"
 import * as Stack from "./stack/Stack.ts"
 import * as TodoRuns from "./stack/TodoRuns.ts"
-import * as Todo from "./flows/Todo.ts"
 import * as Throttle from "./Throttle.ts"
+import * as ViewRealm from "./ViewRealm.ts"
 
 /**
  * Postgres, through Hyperdrive. Its origin is `DATABASE_URL`; under `alchemy dev` the binding passes straight
@@ -87,12 +87,12 @@ import * as Throttle from "./Throttle.ts"
  * history must see the latest writes.
  */
 const connection = (name: "ChatDatabase" | "EngineDatabase") =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const { origin, sslmode } = Database.hyperdrive(yield* Database.url)
     return yield* Cloudflare.Hyperdrive.Connection(name, {
       origin,
       caching: { disabled: true },
-      dev: { ...origin, sslmode },
+      dev: { ...origin, sslmode }
     })
   })
 
@@ -144,7 +144,13 @@ export interface ProgramOptions {
    * A test deployment's own route, answered before ChatApi's (e2e/gates/Harness.ts): given the flow executions' namespace
    * and the app's database, it answers a request or passes it on. No deploy of ChatApi itself sets it.
    */
-  readonly door?: (services: Door) => Effect.Effect<Option.Option<HttpServerResponse.HttpServerResponse>, never, HttpServerRequest.HttpServerRequest | RuntimeContext>
+  readonly door?: (
+    services: Door
+  ) => Effect.Effect<
+    Option.Option<HttpServerResponse.HttpServerResponse>,
+    never,
+    HttpServerRequest.HttpServerRequest | RuntimeContext
+  >
 }
 
 /** What a test deployment's `door` reaches: the flow executions' objects and the app's database. */
@@ -154,7 +160,7 @@ export interface Door {
 }
 
 export const program = (options: ProgramOptions = {}) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const repoFlows = yield* Dispatch.enabled
     const repositories = yield* Dispatch.repositories
     const homeRepository = yield* Conversations.configuredHomeRepositoryNames
@@ -167,7 +173,7 @@ export const program = (options: ProgramOptions = {}) =>
 /** How the socket hosts' rechecks read roles in local development, as `RepoRoles` does here (worker/SocketChecks.ts). */
 const socketChecks = (options: ProgramOptions): SocketChecks.Options => ({
   local: options.fallback !== undefined,
-  ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
+  ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })
 })
 
 const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, homeRepository, machines }: {
@@ -176,7 +182,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
   readonly homeRepository: { readonly owner: string; readonly name: string }
   readonly machines: ReadonlyArray<string>
 }) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     yield* Electric.bind
     yield* SignInSecret.bind
     yield* SecretsInfra.bind
@@ -197,7 +203,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       ...(options.localHttp === undefined ? {} : { localHttp: options.localHttp }),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
       ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
-      ...(options.summaryDailyCap === undefined ? {} : { summaryDailyCap: options.summaryDailyCap }),
+      ...(options.summaryDailyCap === undefined ? {} : { summaryDailyCap: options.summaryDailyCap })
     })
     // A person's own model (docs/features/personal-model.md): saving, removing and testing it, and its shape.
     const personalApi = yield* PersonalApi.make(database)
@@ -217,8 +223,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const engineWriter = Layer.unwrap(
       Effect.map(
         hyperdrive.connectionString,
-        (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
-      ),
+        (url) => ExecutionHost.database(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+      )
     )
     // External agents on runner machines (docs/features/agent-runners.md): the runners' own routes, which their token
     // authenticates, and an Admin's writes of a repository's runners and agents.
@@ -234,7 +240,9 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       steering: TodoSession.steering(engineWriter),
       // A private repository's mirror fetches with the App's read-only token for that repository (decision 0148). Off
       // until the review of its fixes passes: without it the route answers 404 and the runner fetches as before.
-      ...(RunnersApi.GIT_CREDENTIAL_ON ? { gitCredential: GitCredential.make(yield* GitHubConfig.configured, database) } : {}),
+      ...(RunnersApi.GIT_CREDENTIAL_ON
+        ? { gitCredential: GitCredential.make(yield* GitHubConfig.configured, database) }
+        : {})
     })
     const runnerAdmin = yield* RunnerAdmin.make(database)
     // Every live runner and its repository's installation, for the deployment's Admins (decision 0148).
@@ -243,7 +251,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const domainsApi = yield* DomainsApi.make(yield* GitHubConfig.repository, database)
     const domainProvider = yield* DomainsConfig.provider(options).pipe(
       Effect.provide(FetchHttpClient.layer),
-      Effect.orDie,
+      Effect.orDie
     )
     const sandboxObjects = (yield* BranchSandboxes.SandboxObject) as Cloudflare.DurableObject<
       BranchSandboxes.SandboxObjectShape
@@ -253,7 +261,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       sandboxObjects,
       machines.includes(JobMachines.GATE)
         ? (yield* BranchSandboxes.GateObject) as Cloudflare.DurableObject<BranchSandboxes.SandboxObjectShape>
-        : undefined,
+        : undefined
     )
     // Each branch's room, `RoomObject`s ChatApi hosts (worker/BranchRooms.ts), and the people a branch can be shared
     // with: everyone who signed in, and local development's own people (docs/features/branch-workspace.md#sharing).
@@ -265,11 +273,15 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     )
     const directory = Directory.layer(
       database,
-      localPeople.map((person) => ({ id: person.actor.subject.id, login: person.login })),
+      localPeople.map((person) => ({ id: person.actor.subject.id, login: person.login }))
     )
-    const forge = Layer.succeed(Forge, yield* Effect.service(Forge).pipe(
-      Effect.provide(Forge.layerConfig), Effect.provide(FetchHttpClient.layer),
-    ))
+    const forge = Layer.succeed(
+      Forge,
+      yield* Effect.service(Forge).pipe(
+        Effect.provide(Forge.layerConfig),
+        Effect.provide(FetchHttpClient.layer)
+      )
+    )
     // Who has which role on which repository (decision 0079): the session's on the deployment's own, GitHub's, read
     // with the App, on any other it may act on. Local development without the App keeps the developer's everywhere.
     const repository = yield* GitHubConfig.repository
@@ -282,14 +294,14 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       app,
       allowed,
       local,
-      ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
+      ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })
     })
     // Repository feeds (docs/features/feeds.md): an outside collector's documents under `FEED_KEYS`, the Maintainers'
     // answers, and the feeds' shape, by each person's role on the repository.
     const feedsApi = yield* FeedsApi.make(
       database,
       roles,
-      options.feedKey === undefined ? {} : { developmentKey: options.feedKey },
+      options.feedKey === undefined ? {} : { developmentKey: options.feedKey }
     )
     // The git loop (docs/features/issues.md): GitHub's webhook, the writes route and the issues' shapes, for every
     // repository the deployment acts on (decision 0079, slice 1b).
@@ -301,7 +313,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       allowed,
       // Repository notifications reach local development's people, who have no session, by their fixed role.
       localPeople: localPeople.map((person) => ({ id: person.actor.subject.id, role: person.actor.role })),
-      ...(local && options.localSynced !== undefined ? { localSynced: options.localSynced } : {}),
+      ...(local && options.localSynced !== undefined ? { localSynced: options.localSynced } : {})
     })
     // TODOs and the stack (docs/features/todos.md): the one route that changes a stack, through its one writer, and the
     // TODOs' shapes.
@@ -317,8 +329,8 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       database: Layer.unwrap(
         Effect.map(
           hyperdrive.connectionString,
-          (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
-        ),
+          (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+        )
       ),
       writer: engineWriter,
       schema: ExecutionHost.ENGINE_SCHEMA,
@@ -327,7 +339,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       repositoryRun: (runId) => executions.getByName(runId).repositoryRun().pipe(Effect.map(Option.fromNullishOr)),
       stop: (runId) => executions.getByName(runId).cancel(),
       // A TODO run's transcript, on its own Durable Object (worker/RunContent.ts).
-      transcript: (runId, admission) => RunContent.connect(runContents, runId, admission),
+      transcript: (runId, admission) => RunContent.connect(runContents, runId, admission)
     }, roles)
     // A repository's flows run by hand, and its runs run again (docs/features/actions.md#running-a-flow-by-hand), on the
     // repositories REPO_FLOWS_REPOSITORIES allows, by the asker's role there, read as the App and in the QuickJS realm.
@@ -339,10 +351,10 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       engine: Layer.unwrap(
         Effect.map(
           hyperdrive.connectionString,
-          (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA),
-        ),
+          (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+        )
       ),
-      variant: AgentSandbox.variant,
+      variant: AgentSandbox.variant
     })
     const githubApp = yield* GitHubConfig.configured
     const runTodos = yield* Todo.enabled
@@ -357,7 +369,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const docs = DocsApi.make()
     const docsSettings = yield* DocsSource.settings.pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
     const docsSource = DocsSource.layer(docsSettings, { about: repos.about }).pipe(
-      Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache)),
+      Layer.provide(Layer.merge(FetchHttpClient.layer, repoCache))
     )
     const logs = Logger.layerStructuredJson()
     // ChatApi hosts the remote flow executions' Durable Object (worker/Executions.ts, docs/features/remote-flows.md), and
@@ -368,11 +380,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     // exports a minute, so each lets about 20 busy tabs share a network (docs/features/chat.md#throttling).
     const shapeLimit = yield* Cloudflare.RateLimit("SHAPE_LIMIT", {
       namespaceId: 71001,
-      simple: { limit: 3000, period: 60 },
+      simple: { limit: 3000, period: 60 }
     })
     const telemetryLimit = yield* Cloudflare.RateLimit("TELEMETRY_LIMIT", {
       namespaceId: 71002,
-      simple: { limit: 3000, period: 60 },
+      simple: { limit: 3000, period: 60 }
     })
 
     /**
@@ -380,14 +392,18 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
      * check of a session runs at a time. Session resolution bounds the start acknowledgment; an expired request can
      * advance the same execution and fresh receipts never wait for completion.
      */
-    const roleChecks = Effect.gen(function* () {
+    const roleChecks = Effect.gen(function*() {
       const runtime = yield* RuntimeContext
       return SignIn.RoleChecks.of({
-        wait: (sessionId, generation) => executions.getByName(recheckExecutionId(sessionId, generation)).advance().pipe(
-          Effect.provideService(RuntimeContext, runtime),
-          Effect.catchCause((cause) => Effect.logWarning("auth.role_check").pipe(
-            Effect.annotateLogs({ sessionId, outcome: "wait_failed", errorCode: codeOf(Cause.squash(cause)) }))),
-        ),
+        wait: (sessionId, generation) =>
+          executions.getByName(recheckExecutionId(sessionId, generation)).advance().pipe(
+            Effect.provideService(RuntimeContext, runtime),
+            Effect.catchCause((cause) =>
+              Effect.logWarning("auth.role_check").pipe(
+                Effect.annotateLogs({ sessionId, outcome: "wait_failed", errorCode: codeOf(Cause.squash(cause)) })
+              )
+            )
+          ),
         start: (sessionId, generation) => {
           const executionId = recheckExecutionId(sessionId, generation)
           return ExecutionHost.intent(RecheckRole, { executionId, payload: { sessionId } }).pipe(
@@ -395,11 +411,11 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
             Effect.provideService(RuntimeContext, runtime),
             Effect.catchCause((cause) =>
               Effect.logWarning("auth.role_check").pipe(
-                Effect.annotateLogs({ sessionId, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) }),
+                Effect.annotateLogs({ sessionId, outcome: "not_started", errorCode: codeOf(Cause.squash(cause)) })
               )
-            ),
+            )
           )
-        },
+        }
       })
     })
 
@@ -410,7 +426,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     const launchFeedRedaction = yield* RedactFeed.launcher
 
     return {
-      fetch: Effect.gen(function* () {
+      fetch: Effect.gen(function*() {
         // A branch's box reaches its forge through this Worker's own entrypoint, with props naming its object
         // (worker/BranchSandboxes.ts): handed straight back to that object, never routed as a person's request.
         const box = BranchSandboxes.boxOf((yield* Cloudflare.WorkerExecutionContext).raw.props)
@@ -420,136 +436,173 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
           if (Option.isSome(answered)) return answered.value
         }
         const runtime = yield* RuntimeContext
-        const throttle = Effect.flatMap(HttpServerRequest.HttpServerRequest, Throttle.make({
-          shape: { limit: (key) => shapeLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
-          telemetry: { limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
-        }))
+        const throttle = Effect.flatMap(
+          HttpServerRequest.HttpServerRequest,
+          Throttle.make({
+            shape: { limit: (key) => shapeLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime)) },
+            telemetry: {
+              limit: (key) => telemetryLimit.limit(key).pipe(Effect.provideService(RuntimeContext, runtime))
+            }
+          })
+        )
         const checks = Layer.succeed(SignIn.RoleChecks, yield* roleChecks)
         const starter = yield* flowStarter
-        return yield* runnerAdmin.admit(signIn.admit(Effect.gen(function* () {
-        const request = yield* HttpServerRequest.HttpServerRequest
-        // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
-        const signedIn = Layer.mergeAll(checks, signIn.sessions.pipe(Layer.provide(checks)), BranchRoles.layer(roles))
-        // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
-        yield* RequestBackground.inBackground(
-          launchFeedRedaction.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(database), Effect.ignore),
+        return yield* runnerAdmin.admit(
+          signIn.admit(
+            Effect.gen(function*() {
+              const request = yield* HttpServerRequest.HttpServerRequest
+              // Who is asking, and their role on a branch's repository for every branch check (decision 0079).
+              const signedIn = Layer.mergeAll(
+                checks,
+                signIn.sessions.pipe(Layer.provide(checks)),
+                BranchRoles.layer(roles)
+              )
+              // After the response, never before it: no request waits on a claim or a start (ctx.waitUntil).
+              yield* RequestBackground.inBackground(
+                launchFeedRedaction.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(database),
+                  Effect.ignore
+                )
+              )
+              if (request.url.startsWith(`${AUTH_ROUTE}/`)) {
+                // Signing out starts `auth/RevokeGitHubToken` through `starter` and answers once the start is recorded.
+                return yield* signIn.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(signedIn)
+                )
+              }
+              const path = request.url.split("?")[0]!
+              if (BranchApi.handles(path)) {
+                const sockets = Layer.effect(TerminalSockets, BranchSandboxes.terminalSocketsOver(sandboxObjects))
+                const rooms = BranchRooms.roomsLayer(roomObjects)
+                return yield* branchApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(signedIn),
+                  Effect.provide(Layer.mergeAll(forge, sockets, rooms, directory, FetchHttpClient.layer))
+                )
+              }
+              if (RunnersApi.handles(path)) {
+                return yield* runnersApi.fetch.pipe(Effect.provide(RunContent.transcriptsLayer(runContents)))
+              }
+              if (FleetApi.handles(path)) return yield* fleet.fetch.pipe(Effect.provide(signedIn))
+              if (RunnerAudit.handles(path)) return yield* runnerAudit.fetch.pipe(Effect.provide(signedIn))
+              // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>`, `.../agents/<name>` and
+              // `.../overflow/cloudflare`, which mints and seals the overflow runner's token.
+              if (RunnerAdmin.handles(path)) {
+                return yield* runnerAdmin.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provideService(SecretKeys, secretKeys),
+                  Effect.provide(signedIn)
+                )
+              }
+              // Before the repository routes: a write is `/api/repos/<owner>/<name>/writes`.
+              if (SecretsApi.handles(path)) {
+                return yield* secretsApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provideService(SecretKeys, secretKeys),
+                  Effect.provide(signedIn)
+                )
+              }
+              if (PersonalApi.handles(path)) {
+                return yield* personalApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provideService(SecretKeys, secretKeys),
+                  Effect.provide(personalModels),
+                  Effect.provide(signedIn),
+                  Effect.provide(FetchHttpClient.layer)
+                )
+              }
+              if (BugsApi.handles(path)) {
+                return yield* bugsApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(signedIn),
+                  Effect.provide(FetchHttpClient.layer)
+                )
+              }
+              // Before the repository routes: a feed is `/api/repos/<owner>/<name>/feeds`.
+              if (FeedsApi.handles(path)) return yield* feedsApi.fetch.pipe(Effect.provide(signedIn))
+              if (DomainsApi.handles(path)) {
+                return yield* domainsApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provideService(DomainProvider, domainProvider),
+                  Effect.provide(signedIn)
+                )
+              }
+              if (GitHubApi.handles(path)) {
+                return yield* github.fetch.pipe(
+                  Effect.provideService(FirstPaint.Behind, yield* RequestBackground.firstPaintBehind),
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(signedIn)
+                )
+              }
+              // Before the repository routes too: a change is `/api/repos/<owner>/<name>/stack`. With the GitHub App and
+              // `TODO_RUNS` on, this host runs TODOs: each attempt the writer starts runs `todo` on its own Durable Object
+              // (decision 0016).
+              if (StackApi.handles(path)) {
+                const requestRuntime = yield* RuntimeContext
+                return yield* (Option.isSome(githubApp) && runTodos
+                  ? stack.fetch.pipe(Effect.provideService(
+                    Stack.TodoRuns,
+                    TodoRuns.make(starter, (executionId) =>
+                      executions.getByName(executionId).cancel().pipe(
+                        Effect.provideService(RuntimeContext, requestRuntime)
+                      ), (attemptId) =>
+                      TodoRuns.isStopped(
+                        Layer.unwrap(
+                          Effect.map(
+                            hyperdrive.connectionString,
+                            (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA)
+                          )
+                        )
+                      )(attemptId).pipe(Effect.provideService(RuntimeContext, requestRuntime)))
+                  ))
+                  : stack.fetch).pipe(Effect.provide(signedIn))
+              }
+              if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))
+              // Before the repository routes: `/api/repos/<owner>/<name>/flows[/<flow>]` and `.../runs`
+              // (docs/features/actions.md#running-a-flow-by-hand).
+              if (RunsApi.handles(path)) {
+                return yield* repoRunsApi.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(signedIn)
+                )
+              }
+              // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
+              if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
+              // And docs, `/api/repos/<owner>/<name>/docs[/page]`: open to everyone, like the about read.
+              if (DocsApi.handles(path)) return yield* docs.fetch.pipe(Effect.provide(docsSource))
+              if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {
+                return yield* repos.fetch.pipe(
+                  Effect.provideService(Flows.FlowStarter, starter),
+                  Effect.provide(signedIn),
+                  Effect.provide(repoCache)
+                )
+              }
+              // Pages checked before they are framed are requested through the Worker's fetch, which reaches public addresses
+              // only, and their answers kept in this Worker's Cache API (worker/WebPreview.ts).
+              return yield* chat.fetch.pipe(
+                Effect.provideService(Flows.FlowStarter, starter),
+                // The model endpoint answers a person who saved a model of their own with it.
+                Effect.provide(personalModels),
+                Effect.provide(signedIn),
+                Effect.provide(docsSource),
+                Effect.provide(Layer.merge(FetchHttpClient.layer, webCache))
+              )
+            }),
+            throttle
+          ).pipe(Effect.provide(checks), Effect.provideService(Flows.FlowStarter, starter))
         )
-        if (request.url.startsWith(`${AUTH_ROUTE}/`)) {
-          // Signing out starts `auth/RevokeGitHubToken` through `starter` and answers once the start is recorded.
-          return yield* signIn.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
-        }
-        const path = request.url.split("?")[0]!
-        if (BranchApi.handles(path)) {
-          const sockets = Layer.effect(TerminalSockets, BranchSandboxes.terminalSocketsOver(sandboxObjects))
-          const rooms = BranchRooms.roomsLayer(roomObjects)
-          return yield* branchApi.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provide(signedIn),
-            Effect.provide(Layer.mergeAll(forge, sockets, rooms, directory, FetchHttpClient.layer)),
-          )
-        }
-        if (RunnersApi.handles(path)) {
-          return yield* runnersApi.fetch.pipe(Effect.provide(RunContent.transcriptsLayer(runContents)))
-        }
-        if (FleetApi.handles(path)) return yield* fleet.fetch.pipe(Effect.provide(signedIn))
-        if (RunnerAudit.handles(path)) return yield* runnerAudit.fetch.pipe(Effect.provide(signedIn))
-        // Before the repository routes: `/api/repos/<owner>/<name>/runners/<name>`, `.../agents/<name>` and
-        // `.../overflow/cloudflare`, which mints and seals the overflow runner's token.
-        if (RunnerAdmin.handles(path)) {
-          return yield* runnerAdmin.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provideService(SecretKeys, secretKeys),
-            Effect.provide(signedIn),
-          )
-        }
-        // Before the repository routes: a write is `/api/repos/<owner>/<name>/writes`.
-        if (SecretsApi.handles(path)) {
-          return yield* secretsApi.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provideService(SecretKeys, secretKeys),
-            Effect.provide(signedIn),
-          )
-        }
-        if (PersonalApi.handles(path)) {
-          return yield* personalApi.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provideService(SecretKeys, secretKeys),
-            Effect.provide(personalModels),
-            Effect.provide(signedIn),
-            Effect.provide(FetchHttpClient.layer),
-          )
-        }
-        if (BugsApi.handles(path)) {
-          return yield* bugsApi.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provide(signedIn),
-            Effect.provide(FetchHttpClient.layer),
-          )
-        }
-        // Before the repository routes: a feed is `/api/repos/<owner>/<name>/feeds`.
-        if (FeedsApi.handles(path)) return yield* feedsApi.fetch.pipe(Effect.provide(signedIn))
-        if (DomainsApi.handles(path)) {
-          return yield* domainsApi.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provideService(DomainProvider, domainProvider),
-            Effect.provide(signedIn),
-          )
-        }
-        if (GitHubApi.handles(path)) {
-          return yield* github.fetch.pipe(
-            Effect.provideService(FirstPaint.Behind, yield* RequestBackground.firstPaintBehind),
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provide(signedIn),
-          )
-        }
-        // Before the repository routes too: a change is `/api/repos/<owner>/<name>/stack`. With the GitHub App and
-        // `TODO_RUNS` on, this host runs TODOs: each attempt the writer starts runs `todo` on its own Durable Object
-        // (decision 0016).
-        if (StackApi.handles(path)) {
-          const requestRuntime = yield* RuntimeContext
-          return yield* (Option.isSome(githubApp) && runTodos
-            ? stack.fetch.pipe(Effect.provideService(Stack.TodoRuns, TodoRuns.make(starter, (executionId) => executions.getByName(executionId).cancel().pipe(
-              Effect.provideService(RuntimeContext, requestRuntime),
-            ), (attemptId) => TodoRuns.isStopped(Layer.unwrap(Effect.map(hyperdrive.connectionString,
-              (url) => ExecutionHost.readDatabase(Redacted.value(url), ExecutionHost.ENGINE_SCHEMA))))(attemptId).pipe(Effect.provideService(RuntimeContext, requestRuntime)))))
-            : stack.fetch).pipe(Effect.provide(signedIn))
-        }
-        if (RemoteRuns.handles(path)) return yield* remoteRuns.fetch.pipe(Effect.provide(signedIn))
-        // Before the repository routes: `/api/repos/<owner>/<name>/flows[/<flow>]` and `.../runs`
-        // (docs/features/actions.md#running-a-flow-by-hand).
-        if (RunsApi.handles(path)) {
-          return yield* repoRunsApi.fetch.pipe(Effect.provideService(Flows.FlowStarter, starter), Effect.provide(signedIn))
-        }
-        // And a home, `/api/repos/<owner>/<name>/home` (docs/features/home.md): who the asker is and the curated home.
-        if (HomeApi.handles(path)) return yield* home.fetch.pipe(Effect.provide(signedIn))
-        // And docs, `/api/repos/<owner>/<name>/docs[/page]`: open to everyone, like the about read.
-        if (DocsApi.handles(path)) return yield* docs.fetch.pipe(Effect.provide(docsSource))
-        if (path === REPOS_ROUTE || path.startsWith(`${REPOS_ROUTE}/`) || path === REPOSITORIES_SHAPE_ROUTE) {
-          return yield* repos.fetch.pipe(
-            Effect.provideService(Flows.FlowStarter, starter),
-            Effect.provide(signedIn),
-            Effect.provide(repoCache),
-          )
-        }
-        // Pages checked before they are framed are requested through the Worker's fetch, which reaches public addresses
-        // only, and their answers kept in this Worker's Cache API (worker/WebPreview.ts).
-        return yield* chat.fetch.pipe(
-          Effect.provideService(Flows.FlowStarter, starter),
-          // The model endpoint answers a person who saved a model of their own with it.
-          Effect.provide(personalModels),
-          Effect.provide(signedIn),
-          Effect.provide(docsSource),
-          Effect.provide(Layer.merge(FetchHttpClient.layer, webCache)),
-        )
-        }), throttle).pipe(Effect.provide(checks), Effect.provideService(Flows.FlowStarter, starter)))
       }).pipe(
         withRequestRay,
         Effect.provideService(Conversations.homeRepositoryNames, homeRepository),
         Effect.provideService(SocketAccess.roleFreshMs, roleFreshMs),
         // Every shape route calls Electric through the gateway's service binding in production (infra/ElectricUpstream.ts).
-        Effect.provide(Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream))),
-        Effect.provide(logs),
-      ),
+        Effect.provide(
+          Layer.unwrap(Effect.map(Effect.service(Cloudflare.WorkerEnvironment), ElectricUpstream.upstream))
+        ),
+        Effect.provide(logs)
+      )
     }
   }).pipe(
     Effect.provide(Executions.live(DatabaseRoutes.route(pools, "FlowExecution"), {
@@ -557,17 +610,17 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
       homeRepository,
       ...(options.dev === true ? { dev: true } : {}),
       ...(options.spendAlerts === undefined ? {} : { spendAlerts: options.spendAlerts }),
-      ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel }),
+      ...(options.hostedModel === undefined ? {} : { hostedModel: options.hostedModel })
     })),
     Effect.provide(BranchSandboxes.live(
       DatabaseRoutes.route(pools, "SandboxObject"),
       socketChecks(options),
-      DatabaseRoutes.route(pools, "SocketChecks"),
+      DatabaseRoutes.route(pools, "SocketChecks")
     )),
     Effect.provide(BranchSandboxes.gateLive(
       DatabaseRoutes.route(pools, "GateObject"),
       socketChecks(options),
-      DatabaseRoutes.route(pools, "SocketChecks"),
+      DatabaseRoutes.route(pools, "SocketChecks")
     )),
     Effect.provide(BranchRooms.live(DatabaseRoutes.route(pools, "RoomObject"), socketChecks(options))),
     Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),
@@ -578,7 +631,7 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
         // The gate's run artifacts (`CiArtifacts`), bound only with the gate machine.
         Cloudflare.R2.ReadWriteBucketBinding,
         Cloudflare.RateLimitBinding,
-        Cloudflare.Telemetry({ persist: true }),
-      ),
-    ),
+        Cloudflare.Telemetry({ persist: true })
+      )
+    )
   )

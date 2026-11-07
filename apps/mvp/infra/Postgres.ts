@@ -1,12 +1,12 @@
 // Postgres in production: one Neon project. infra/ChatDatabase.ts migrates it and puts Hyperdrive in front of it;
 // Electric's container (infra/ElectricGateway.ts) replicates from it. Under `alchemy dev` it doesn't exist: the
 // compose Postgres (`pnpm db:up`) stands in.
+import * as Neon from "@alchemy.run/neon"
 import * as Alchemy from "alchemy"
-import * as Neon from "alchemy/Neon"
 import * as Output from "alchemy/Output"
 import { Config, Effect, Option, Redacted, Schema } from "effect"
-import { neonConnectionUri } from "../ops/database/Connection.ts"
 import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
+import { neonConnectionUri } from "../ops/database/Connection.ts"
 
 /** The most restore history Neon's Free plan allows, in seconds: six hours. */
 export const HISTORY_RETENTION_SECONDS = 21_600
@@ -19,7 +19,7 @@ export const HISTORY_RETENTION_SECONDS = 21_600
  */
 export const Postgres = Neon.Project(
   "ChatPostgres",
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const orgId = yield* Config.option(Config.String("NEON_ORG_ID"))
     return {
       region: "aws-us-east-1" as const,
@@ -28,9 +28,9 @@ export const Postgres = Neon.Project(
       // Six hours of restore history. Alchemy's default is a day, which Neon's Free plan refuses
       // ("requested history retention seconds exceeds allowed maximum", max 21600). Raise it with the plan.
       historyRetentionSeconds: HISTORY_RETENTION_SECONDS,
-      ...(Option.isSome(orgId) ? { orgId: orgId.value } : {}),
+      ...(Option.isSome(orgId) ? { orgId: orgId.value } : {})
     }
-  }).pipe(Effect.orDie),
+  }).pipe(Effect.orDie)
 ).pipe(Alchemy.RemovalPolicy.retain())
 
 /**
@@ -52,7 +52,7 @@ const Endpoint = Schema.Struct({
   type: Schema.String,
   branch_id: Schema.String,
   autoscaling_limit_min_cu: Schema.Number,
-  autoscaling_limit_max_cu: Schema.Number,
+  autoscaling_limit_max_cu: Schema.Number
 })
 const Endpoints = Schema.Struct({ endpoints: Schema.Array(Endpoint) })
 
@@ -65,23 +65,27 @@ const Endpoints = Schema.Struct({ endpoints: Schema.Array(Endpoint) })
 export const Compute = Alchemy.Action(
   "ChatCompute",
   (input: { readonly projectId: string; readonly branchId: string; readonly minCu: number; readonly maxCu: number }) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       const key = yield* Config.Redacted("NEON_API_KEY")
       const neon = (yield* HttpClient.HttpClient).pipe(
         HttpClient.mapRequest((request) =>
           request.pipe(
             HttpClientRequest.prependUrl(`https://console.neon.tech/api/v2/projects/${input.projectId}`),
             HttpClientRequest.bearerToken(Redacted.value(key)),
-            HttpClientRequest.acceptJson,
+            HttpClientRequest.acceptJson
           )
         ),
-        HttpClient.filterStatusOk,
+        HttpClient.filterStatusOk
       )
       const { endpoints } = yield* neon.execute(HttpClientRequest.get("/endpoints")).pipe(
-        Effect.flatMap(HttpClientResponse.schemaBodyJson(Endpoints)),
+        Effect.flatMap(HttpClientResponse.schemaBodyJson(Endpoints))
       )
-      const compute = endpoints.find((endpoint) => endpoint.type === "read_write" && endpoint.branch_id === input.branchId)
-      if (compute === undefined) return yield* Effect.die(new Error("ChatCompute: the default branch has no read-write compute"))
+      const compute = endpoints.find((endpoint) =>
+        endpoint.type === "read_write" && endpoint.branch_id === input.branchId
+      )
+      if (compute === undefined) {
+        return yield* Effect.die(new Error("ChatCompute: the default branch has no read-write compute"))
+      }
       const result = { endpointId: compute.id, minCu: input.minCu, maxCu: input.maxCu }
       // Neon restarts the compute on any update, so a range already set is left alone.
       if (compute.autoscaling_limit_min_cu === input.minCu && compute.autoscaling_limit_max_cu === input.maxCu) {
@@ -90,10 +94,10 @@ export const Compute = Alchemy.Action(
       yield* neon.execute(
         HttpClientRequest.patch(`/endpoints/${compute.id}`).pipe(
           HttpClientRequest.bodyJsonUnsafe({
-            endpoint: { autoscaling_limit_min_cu: input.minCu, autoscaling_limit_max_cu: input.maxCu },
-          }),
-        ),
+            endpoint: { autoscaling_limit_min_cu: input.minCu, autoscaling_limit_max_cu: input.maxCu }
+          })
+        )
       )
       return result
-    }).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie),
+    }).pipe(Effect.provide(FetchHttpClient.layer), Effect.orDie)
 )

@@ -1,21 +1,15 @@
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Clock, Effect, Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 import * as Database from "../db/Database.ts"
 import { type Actor, canAsk } from "./Actor.ts"
-import { BranchRoles, branchAccess, canEdit, canView } from "./branch/Access.ts"
+import { branchAccess, BranchRoles, canEdit, canView } from "./branch/Access.ts"
 import * as Conversations from "./branch/Conversations.ts"
 import { scopeAccess } from "./branch/Texts.ts"
 import * as GitHubConfig from "./github/Config.ts"
 import * as RepoRoles from "./github/RepoRoles.ts"
 import * as SessionStore from "./SessionStore.ts"
-import {
-  type Admission,
-  type Checked,
-  configuredRoleFreshMs,
-  LEASE_MS,
-  roleFresh,
-} from "./SocketAccess.ts"
+import { type Admission, type Checked, configuredRoleFreshMs, LEASE_MS, roleFresh } from "./SocketAccess.ts"
 import { mayRead } from "./stack/Access.ts"
 
 // The rules a socket host renews a lease by (worker/SocketAccess.ts): the same ones its route admitted it with.
@@ -28,7 +22,7 @@ import { mayRead } from "./stack/Access.ts"
  * `roles` is the `RepoRoles` the route asked. Anything that fails is `unverified`.
  */
 export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, roleFreshMs: number) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const now = yield* Clock.currentTimeMillis
     // A kept lease's window starts when this check started, on this Worker's clock, and runs `LEASE_MS`, never past
     // what the database said was left of the session then (decision 0151 rule 9).
@@ -55,40 +49,51 @@ export const verdict = <R>(roles: RepoRoles.RepoRoles<R>, admission: Admission, 
       role,
       ...(admission.session === null ? {} : { session: admission.session }),
       ...(admission.alias === null ? {} : { alias: admission.alias }),
-      ...(admission.cookieKey === undefined ? {} : { cookieKey: admission.cookieKey }),
+      ...(admission.cookieKey === undefined ? {} : { cookieKey: admission.cookieKey })
     }
     const basis = admission.basis
     switch (basis.kind) {
       case "run": {
-        const resolved = yield* roles.resolve(actor, GitHubConfig.repositoryOf(basis.repoId.replace(/^github\//, ""))).pipe(
-          Effect.map((resolved) => Option.some(resolved.role)),
-          // As the route: a refusal that says the deployment can't act there is no; GitHub or Postgres down is unknown.
-          Effect.catch((error) =>
-            RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
-              ? Effect.succeed(Option.none<null>())
-              : Effect.succeed(Option.some(null))
-          ),
-        )
+        const resolved = yield* roles.resolve(actor, GitHubConfig.repositoryOf(basis.repoId.replace(/^github\//, "")))
+          .pipe(
+            Effect.map((resolved) => Option.some(resolved.role)),
+            // As the route: a refusal that says the deployment can't act there is no; GitHub or Postgres down is unknown.
+            Effect.catch((error) =>
+              RepoRoles.REFUSALS[error.code] === 503 || error.code === "rate_limited"
+                ? Effect.succeed(Option.none<null>())
+                : Effect.succeed(Option.some(null))
+            )
+          )
         if (Option.isNone(resolved)) return "unverified" as const
-        return mayRead(Option.some({ ...actor, role: resolved.value })) ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "revoked" as const
+        return mayRead(Option.some({ ...actor, role: resolved.value }))
+          ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
+          : "revoked" as const
       }
       case "branch":
       case "terminal": {
         const branch = yield* branchAccess(Option.some(actor), basis.branchId)
         if (branch === undefined || !canView(branch.access)) return "revoked" as const
-        if (basis.kind === "branch") return branch.access === admission.access ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "changed" as const
+        if (basis.kind === "branch") {
+          return branch.access === admission.access
+            ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
+            : "changed" as const
+        }
         if (!canAsk(actor)) return "revoked" as const
-        return (canEdit(branch.access) ? "write" : "read") === admission.access ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "changed" as const
+        return (canEdit(branch.access) ? "write" : "read") === admission.access
+          ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
+          : "changed" as const
       }
       case "text": {
         const scoped = yield* scopeAccess(Option.some(actor), { run: basis.run })
         if (scoped === undefined || !canView(scoped.access)) return "revoked" as const
-        return scoped.access === admission.access ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const) : "changed" as const
+        return scoped.access === admission.access
+          ? ({ verdict: "keep", until, capped, expiresAt, serverExpiresAt } as const)
+          : "changed" as const
       }
     }
   }).pipe(
     Effect.catchCause(() => Effect.succeed<Checked>("unverified")),
-    Effect.withSpan("socket.verdict"),
+    Effect.withSpan("socket.verdict")
   )
 
 /** Local development's roles, as ChatApi's `RepoRoles` takes them (worker/ChatApiProgram.ts). */
@@ -104,9 +109,9 @@ export interface Options {
  */
 export const checker = <E, R>(
   connection: Effect.Effect<Cloudflare.Hyperdrive.Connection, E, R>,
-  options: Options = {},
+  options: Options = {}
 ) =>
-  Effect.gen(function* () {
+  Effect.gen(function*() {
     const hyperdrive = yield* Cloudflare.Hyperdrive.Connect(connection)
     const database = Database.layer(hyperdrive.connectionString)
     const repository = yield* GitHubConfig.repository.pipe(Effect.orDie)
@@ -121,7 +126,7 @@ export const checker = <E, R>(
       app,
       allowed,
       local: options.local === true && Option.isNone(app),
-      ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles }),
+      ...(options.localRoles === undefined ? {} : { localRoles: options.localRoles })
     })
     const branchRoles = BranchRoles.layer(roles)
     return {
@@ -130,9 +135,9 @@ export const checker = <E, R>(
           Effect.provide(branchRoles),
           Effect.provideService(Conversations.homeRepositoryNames, home),
           Effect.provideService(SessionStore.SigningKeyIds, signingKeyIds),
-          Effect.catchCause(() => Effect.succeed<Checked>("unverified")),
+          Effect.catchCause(() => Effect.succeed<Checked>("unverified"))
         ),
       within: <A, R2>(renewal: Effect.Effect<A, never, R2>) =>
-        renewal.pipe(Effect.provide(database)) as Effect.Effect<A, unknown, Exclude<R2, SqlClient.SqlClient>>,
+        renewal.pipe(Effect.provide(database)) as Effect.Effect<A, unknown, Exclude<R2, SqlClient.SqlClient>>
     }
   })

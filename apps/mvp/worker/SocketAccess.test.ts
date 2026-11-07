@@ -2,9 +2,9 @@
 // what `RunContent` runs), the room (worker/BranchRooms.ts `room`, what `RoomObject` runs) and the terminal's gate, each
 // over in-memory sockets and an in-memory storage whose alarm the test fires when the host armed it, on the test clock,
 // against this file's schema of the compose Postgres (`pnpm db:up`).
-import { PresenceRoom } from "@smthrs/sync"
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { Logger as StructuredLogger } from "@smthrs/observability"
+import { PresenceRoom } from "@smthrs/sync"
 import { ConfigProvider, Deferred, Effect, Fiber, Logger, Metric, Option, Redacted } from "effect"
 import { SqlClient } from "effect/sql"
 import { TestClock } from "effect/testing"
@@ -81,11 +81,11 @@ const memoryStorage = (store?: Store.Sql) => {
       Effect.sync(() => {
         values.clear()
         for (const table of ["events", "generations", "meta"]) store?.exec(`DROP TABLE IF EXISTS ${table}`)
-      }),
+      })
   }
   /** Moves the test clock to the alarm and runs `handler`, as Cloudflare does; the alarm is spent first. */
   const fire = <A, E, R>(handler: Effect.Effect<A, E, R>) =>
-    Effect.gen(function* () {
+    Effect.gen(function*() {
       if (alarm === null) throw new Error("no alarm armed")
       const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
       if (alarm > now) yield* TestClock.adjust(alarm - now)
@@ -102,14 +102,20 @@ const sql = (text: TemplateStringsArray, ...values: Array<unknown>) =>
 const signIn = async (role: Role, seconds = 86_400): Promise<Actor> => {
   const person = crypto.randomUUID()
   const session = crypto.randomUUID()
-  await sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}, ${Math.floor(Math.random() * 1e9)}, ${`p${person.slice(0, 8)}`})`
+  await sql`INSERT INTO people (id, github_id, github_login) VALUES (${person}, ${
+    Math.floor(Math.random() * 1e9)
+  }, ${`p${person.slice(0, 8)}`})`
   await sql`
     INSERT INTO sessions (id, token_digest, person_id, role, role_checked_at, role_verified_at, expires_at)
     VALUES (${session}, ${crypto.randomUUID()}, ${person}, ${role}, now(), now(), now() + make_interval(secs => ${seconds}))`
   return { subject: { kind: "person", id: person }, role, session }
 }
 
-const admit = async (actor: Actor, basis: SocketAccess.Basis = RUN, access: SocketAccess.Admission["access"] = "member") => {
+const admit = async (
+  actor: Actor,
+  basis: SocketAccess.Basis = RUN,
+  access: SocketAccess.Admission["access"] = "member"
+) => {
   const admitted = await runtime.runPromise(SocketAccess.admit(actor, basis, access))
   if (admitted._tag !== "admitted") throw new Error(admitted._tag)
   return admitted.admission
@@ -119,77 +125,111 @@ const admit = async (actor: Actor, basis: SocketAccess.Basis = RUN, access: Sock
 const checks = async () => {
   const scratch = await runtime.runPromise(Effect.service(TestDatabase.Scratch))
   const roles = await runtime.runPromise(
-    RepoRoles.make(scratch.database, { repository: repositoryOf(HOME), app: Option.none() }),
+    RepoRoles.make(scratch.database, { repository: repositoryOf(HOME), app: Option.none() })
   )
   const layer = branchRoles(scratch.database)
   const fresh = await runtime.runPromise(Effect.service(SocketAccess.roleFreshMs))
-  return (admission: SocketAccess.Admission) => SocketChecks.verdict(roles, admission, fresh).pipe(Effect.provide(layer))
+  return (admission: SocketAccess.Admission) =>
+    SocketChecks.verdict(roles, admission, fresh).pipe(Effect.provide(layer))
 }
 
-test.each(["home", "alias"] as const)("the production socket checker captures %s signing keys before runtime Config disappears", async boundary => {
-  const actor = { ...await signIn("admin"), cookieKey: "next" }
-  await sql`UPDATE sessions SET cookie_key = 'next' WHERE id = ${actor.session}`
-  const alias = boundary === "alias" ? crypto.randomUUID() : undefined
-  if (alias !== undefined) await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host, cookie_key)
+test.each(["home", "alias"] as const)(
+  "the production socket checker captures %s signing keys before runtime Config disappears",
+  async (boundary) => {
+    const actor = { ...await signIn("admin"), cookieKey: "next" }
+    await sql`UPDATE sessions SET cookie_key = 'next' WHERE id = ${actor.session}`
+    const alias = boundary === "alias" ? crypto.randomUUID() : undefined
+    if (alias !== undefined) {
+      await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host, cookie_key)
     VALUES (${alias}, ${alias}, ${actor.session}, 'chat.test', 'next')`
-  const admission = await runtime.runPromise(SocketAccess.admit({ ...actor, ...(alias === undefined ? {} : { alias }) }, RUN, "member")
-    .pipe(Effect.provideService(SessionStore.SigningKeyIds, ["next"])))
-  expect(admission._tag).toBe("admitted")
-  if (admission._tag !== "admitted") throw new Error("admission refused")
-  const scratch = await runtime.runPromise(TestDatabase.Scratch)
-  const url = new URL(await runtime.runPromise(TestDatabase.serverUrl))
-  url.searchParams.set("options", `-c search_path=${scratch.name}`)
-  // The host binding points at the real test database; the production checker and all authority reads run unchanged.
-  const checker = await runtime.runPromise(SocketChecks.checker(Effect.succeed({ LogicalId: "TestDatabase" } as Cloudflare.Hyperdrive.Connection)).pipe(
-    Effect.provideService(Cloudflare.Hyperdrive.Connect, () => Effect.succeed({
-      connectionString: Effect.succeed(Redacted.make(url.toString())),
-      raw: Effect.die("raw binding is unused"), host: Effect.succeed(url.hostname), port: Effect.succeed(Number(url.port)),
-      user: Effect.succeed(url.username), password: Effect.succeed(Redacted.make(url.password)), database: Effect.succeed(url.pathname.slice(1)),
-    })),
-    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({ GITHUB_REPOSITORY: HOME,
-      SESSION_SECRETS: JSON.stringify({ next: "n".repeat(64) }) })),
-  ))
-  const check = () => runtime.runPromise(checker.check(admission.admission).pipe(
-    Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))))
-  expect(await check()).toMatchObject({ verdict: "keep" })
-  await sql`UPDATE sessions SET cookie_key = 'removed' WHERE id = ${actor.session}`
-  expect(await check()).toBe("session")
-})
+    }
+    const admission = await runtime.runPromise(
+      SocketAccess.admit({ ...actor, ...(alias === undefined ? {} : { alias }) }, RUN, "member")
+        .pipe(Effect.provideService(SessionStore.SigningKeyIds, ["next"]))
+    )
+    expect(admission._tag).toBe("admitted")
+    if (admission._tag !== "admitted") throw new Error("admission refused")
+    const scratch = await runtime.runPromise(TestDatabase.Scratch)
+    const url = new URL(await runtime.runPromise(TestDatabase.serverUrl))
+    url.searchParams.set("options", `-c search_path=${scratch.name}`)
+    // The host binding points at the real test database; the production checker and all authority reads run unchanged.
+    const checker = await runtime.runPromise(
+      SocketChecks.checker(Effect.succeed({ LogicalId: "TestDatabase" } as Cloudflare.Hyperdrive.Connection)).pipe(
+        Effect.provideService(Cloudflare.Hyperdrive.Connect, () =>
+          Effect.succeed({
+            connectionString: Effect.succeed(Redacted.make(url.toString())),
+            raw: Effect.die("raw binding is unused"),
+            host: Effect.succeed(url.hostname),
+            port: Effect.succeed(Number(url.port)),
+            user: Effect.succeed(url.username),
+            password: Effect.succeed(Redacted.make(url.password)),
+            database: Effect.succeed(url.pathname.slice(1))
+          })),
+        Effect.provideService(
+          ConfigProvider.ConfigProvider,
+          ConfigProvider.fromUnknown({
+            GITHUB_REPOSITORY: HOME,
+            SESSION_SECRETS: JSON.stringify({ next: "n".repeat(64) })
+          })
+        )
+      )
+    )
+    const check = () =>
+      runtime.runPromise(
+        checker.check(admission.admission).pipe(
+          Effect.provideService(ConfigProvider.ConfigProvider, ConfigProvider.fromUnknown({}))
+        )
+      )
+    expect(await check()).toMatchObject({ verdict: "keep" })
+    await sql`UPDATE sessions SET cookie_key = 'removed' WHERE id = ${actor.session}`
+    expect(await check()).toBe("session")
+  }
+)
 
 type Check = Awaited<ReturnType<typeof checks>>
 
 /** What a host's `within` does in the object, here: the renewal runs with the file's Postgres client. */
 const within = <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) => renewal
 
-test.each(["home", "alias"] as const)("a faster %s lookup renews an underestimated lease without extending the database expiry", async boundary => {
-  const kept = count("transcript", "keep"), ended = count("transcript", "session")
-  const actor = await signIn("member")
-  const alias = boundary === "alias" ? crypto.randomUUID() : undefined
-  if (alias !== undefined) await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host)
+test.each(["home", "alias"] as const)(
+  "a faster %s lookup renews an underestimated lease without extending the database expiry",
+  async (boundary) => {
+    const kept = count("transcript", "keep"), ended = count("transcript", "session")
+    const actor = await signIn("member")
+    const alias = boundary === "alias" ? crypto.randomUUID() : undefined
+    if (alias !== undefined) {
+      await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host)
     VALUES (${alias}, ${alias}, ${actor.session}, 'alias.test')`
-  const check = await checks()
-  await sql`UPDATE sessions SET expires_at = clock_timestamp() + interval '4 seconds' WHERE id = ${actor.session}`
-  const held = await holdSql(runtime, sql => sql`LOCK TABLE sessions IN ACCESS EXCLUSIVE MODE`)
-  const admitting = admit({ ...actor, ...(alias === undefined ? {} : { alias }) })
-  try {
-    await expect.poll(async () => (await sql`SELECT 1 FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`).length)
-      .toBeGreaterThan(0)
-    // The first lookup waits over half the remaining lifetime. Its conservative local deadline is already past
-    // when Postgres answers; the second lookup is fast and measures the same still-live database expiry.
-    await sql`SELECT pg_sleep(2.5)`
-  } finally { await held.release() }
-  const admission = await admitting
-  expect(SocketAccess.ended(admission, Date.now())).toBe(true)
-  const fresh = await runtime.runPromise(check(admission))
-  expect(fresh).toMatchObject({ verdict: "keep", serverExpiresAt: admission.serverExpiresAt })
-  if (typeof fresh === "string") throw new Error("live session not confirmed")
-  expect(fresh.until).toBeGreaterThan(Date.now())
-  const [renewed] = await runtime.runPromise(SocketAccess.renew("transcript", [admission], check, within))
-  expect(renewed).toMatchObject({ verdict: "keep", admission: { serverExpiresAt: admission.serverExpiresAt } })
-  expect(renewed!.until).toBeGreaterThan(Date.now())
-  expect(count("transcript", "keep") - kept).toBe(1)
-  expect(count("transcript", "session") - ended).toBe(0)
-}, 30_000)
+    }
+    const check = await checks()
+    await sql`UPDATE sessions SET expires_at = clock_timestamp() + interval '4 seconds' WHERE id = ${actor.session}`
+    const held = await holdSql(runtime, (sql) => sql`LOCK TABLE sessions IN ACCESS EXCLUSIVE MODE`)
+    const admitting = admit({ ...actor, ...(alias === undefined ? {} : { alias }) })
+    try {
+      await expect.poll(async () =>
+        (await sql`SELECT 1 FROM pg_stat_activity WHERE ${held.pid} = ANY(pg_blocking_pids(pid))`).length
+      )
+        .toBeGreaterThan(0)
+      // The first lookup waits over half the remaining lifetime. Its conservative local deadline is already past
+      // when Postgres answers; the second lookup is fast and measures the same still-live database expiry.
+      await sql`SELECT pg_sleep(2.5)`
+    } finally {
+      await held.release()
+    }
+    const admission = await admitting
+    expect(SocketAccess.ended(admission, Date.now())).toBe(true)
+    const fresh = await runtime.runPromise(check(admission))
+    expect(fresh).toMatchObject({ verdict: "keep", serverExpiresAt: admission.serverExpiresAt })
+    if (typeof fresh === "string") throw new Error("live session not confirmed")
+    expect(fresh.until).toBeGreaterThan(Date.now())
+    const [renewed] = await runtime.runPromise(SocketAccess.renew("transcript", [admission], check, within))
+    expect(renewed).toMatchObject({ verdict: "keep", admission: { serverExpiresAt: admission.serverExpiresAt } })
+    expect(renewed!.until).toBeGreaterThan(Date.now())
+    expect(count("transcript", "keep") - kept).toBe(1)
+    expect(count("transcript", "session") - ended).toBe(0)
+  },
+  30_000
+)
 
 /** A transcript host over `store` and `storage`, with `sockets` open on it. */
 const transcriptHost = (
@@ -198,7 +238,7 @@ const transcriptHost = (
   check: (admission: SocketAccess.Admission) => Effect.Effect<SocketAccess.Checked, never, SqlClient.SqlClient>,
   store = sqliteStore(),
   wrap: <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) => Effect.Effect<A, unknown, SqlClient.SqlClient> =
-    within,
+    within
 ) => {
   // A test lists its sockets up front; the object holds one only once it is accepted, which `join` does.
   const held: Array<Socket> = []
@@ -207,7 +247,7 @@ const transcriptHost = (
     storage,
     sockets: Effect.sync(() => held),
     check,
-    within: wrap,
+    within: wrap
   })
   const join = (socket: SocketAccess.HostSocket, admission: SocketAccess.Admission, after: number) =>
     Effect.suspend(() => {
@@ -226,15 +266,17 @@ const event = (seq: number) => ({
   seq,
   at: seq,
   kind: "agent_message_chunk",
-  update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `word ${seq}` } },
+  update: { sessionUpdate: "agent_message_chunk", content: { type: "text", text: `word ${seq}` } }
 })
 
 /** Runs `body` on the test clock, set to the real time so Postgres' `now()` and the sessions' ends agree. */
 const onTestClock = <A>(body: Effect.Effect<A, unknown, SqlClient.SqlClient>) =>
-  runtime.runPromise(Effect.gen(function* () {
-    yield* TestClock.setTime(Date.now())
-    return yield* body
-  }).pipe(Effect.provide(TestClock.layer())))
+  runtime.runPromise(
+    Effect.gen(function*() {
+      yield* TestClock.setTime(Date.now())
+      return yield* body
+    }).pipe(Effect.provide(TestClock.layer()))
+  )
 
 const now = Effect.clockWith((clock) => clock.currentTimeMillis)
 
@@ -248,7 +290,7 @@ describe("a transcript's watchers", () => {
     const [stays, goes] = [new Socket(), new Socket()]
     const host = transcriptHost(memoryStorage().storage, [stays, goes], check)
     const before = count("transcript", "revoked")
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(stays, yield* Effect.promise(() => admit(kept)), -1)
       yield* host.join(goes, yield* Effect.promise(() => admit(lowered)), -1)
       yield* host.append(1, [event(0)])
@@ -270,7 +312,7 @@ describe("a transcript's watchers", () => {
     const [stays, goes] = [new Socket(), new Socket()]
     const { storage, fire, alarm } = memoryStorage()
     const host = transcriptHost(storage, [stays, goes], check)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       const admitted = yield* Effect.promise(() => admit(kept))
       yield* host.join(stays, admitted, -1)
       yield* host.join(goes, yield* Effect.promise(() => admit(leaving)), -1)
@@ -289,13 +331,15 @@ describe("a transcript's watchers", () => {
   test("a session's end on a skewed Worker clock is what the database says is left, from when the lookup started", async () => {
     const ending = await signIn("member", 600)
     for (const skew of [60 * 60 * 1000, -60 * 60 * 1000]) {
-      const [admission, workerNow] = await runtime.runPromise(Effect.gen(function* () {
-        yield* TestClock.setTime(Date.now() + skew)
-        const workerNow = yield* now
-        const admitted = yield* SocketAccess.admit(ending, RUN, "member")
-        if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
-        return [admitted.admission, workerNow] as const
-      }).pipe(Effect.provide(TestClock.layer())))
+      const [admission, workerNow] = await runtime.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(Date.now() + skew)
+          const workerNow = yield* now
+          const admitted = yield* SocketAccess.admit(ending, RUN, "member")
+          if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
+          return [admitted.admission, workerNow] as const
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
       const left = admission.expiresAt! - workerNow
       expect(left, String(skew)).toBeGreaterThan(590_000)
       expect(left, String(skew)).toBeLessThanOrEqual(600_000)
@@ -310,13 +354,15 @@ describe("a transcript's watchers", () => {
     // Past the freshness window either way, so a Worker-clock comparison would call the role stale or not yet seen.
     const fresh = await runtime.runPromise(SocketAccess.roleFreshMs)
     for (const skew of [fresh + 60 * 60 * 1000, -(fresh + 60 * 60 * 1000)]) {
-      const [admitted, renewed] = await runtime.runPromise(Effect.gen(function* () {
-        yield* TestClock.setTime(Date.now() + skew)
-        const admitted = yield* SocketAccess.admit(kept, RUN, "member")
-        if (admitted._tag !== "admitted") return [admitted._tag, undefined] as const
-        const [renewed] = yield* SocketAccess.renew("transcript", [admitted.admission], check, within)
-        return [admitted._tag, renewed] as const
-      }).pipe(Effect.provide(TestClock.layer())))
+      const [admitted, renewed] = await runtime.runPromise(
+        Effect.gen(function*() {
+          yield* TestClock.setTime(Date.now() + skew)
+          const admitted = yield* SocketAccess.admit(kept, RUN, "member")
+          if (admitted._tag !== "admitted") return [admitted._tag, undefined] as const
+          const [renewed] = yield* SocketAccess.renew("transcript", [admitted.admission], check, within)
+          return [admitted._tag, renewed] as const
+        }).pipe(Effect.provide(TestClock.layer()))
+      )
       expect(admitted, String(skew)).toBe("admitted")
       expect(renewed?.verdict, String(skew)).toBe("keep")
     }
@@ -325,17 +371,19 @@ describe("a transcript's watchers", () => {
   test("a renewal's window runs from when its check started: a slow renewal doesn't stretch it", async () => {
     const check = await checks()
     const kept = await signIn("member")
-    const [started, renewed] = await runtime.runPromise(Effect.gen(function* () {
-      yield* TestClock.setTime(Date.now())
-      const admitted = yield* SocketAccess.admit(kept, RUN, "member")
-      if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
-      const started = yield* now
-      // The renewal's other work takes 4 s after this check answered, inside its deadline.
-      const slow = <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) =>
-        Effect.tap(renewal, () => TestClock.adjust(4_000))
-      const [renewed] = yield* SocketAccess.renew("transcript", [admitted.admission], check, slow)
-      return [started, renewed] as const
-    }).pipe(Effect.provide(TestClock.layer())))
+    const [started, renewed] = await runtime.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(Date.now())
+        const admitted = yield* SocketAccess.admit(kept, RUN, "member")
+        if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
+        const started = yield* now
+        // The renewal's other work takes 4 s after this check answered, inside its deadline.
+        const slow = <A>(renewal: Effect.Effect<A, never, SqlClient.SqlClient>) =>
+          Effect.tap(renewal, () => TestClock.adjust(4_000))
+        const [renewed] = yield* SocketAccess.renew("transcript", [admitted.admission], check, slow)
+        return [started, renewed] as const
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(renewed!.verdict).toBe("keep")
     expect(renewed!.until).toBe(started + SocketAccess.LEASE_MS)
   })
@@ -345,16 +393,20 @@ describe("a transcript's watchers", () => {
     const ending = await signIn("member", 20)
     const socket = new Socket()
     const host = transcriptHost(memoryStorage().storage, [socket], check)
-    await runtime.runPromise(Effect.gen(function* () {
-      yield* TestClock.setTime(Date.now() + 60 * 60 * 1000)
-      const admitted = yield* SocketAccess.admit(ending, RUN, "member")
-      if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
-      yield* host.join(socket, admitted.admission, -1)
-      yield* host.append(1, [event(0)])
-      yield* TestClock.adjust(20_001)
-      yield* Effect.promise(() => sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${ending.session!}`)
-      yield* host.append(1, [event(1)])
-    }).pipe(Effect.provide(TestClock.layer())))
+    await runtime.runPromise(
+      Effect.gen(function*() {
+        yield* TestClock.setTime(Date.now() + 60 * 60 * 1000)
+        const admitted = yield* SocketAccess.admit(ending, RUN, "member")
+        if (admitted._tag !== "admitted") return yield* Effect.die(new Error(admitted._tag))
+        yield* host.join(socket, admitted.admission, -1)
+        yield* host.append(1, [event(0)])
+        yield* TestClock.adjust(20_001)
+        yield* Effect.promise(() =>
+          sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${ending.session!}`
+        )
+        yield* host.append(1, [event(1)])
+      }).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(socket.events()).toEqual([1])
     expect(socket.closed).toEqual({ code: 4401, reason: "session ended" })
   })
@@ -370,13 +422,15 @@ describe("a transcript's watchers", () => {
     const { storage, fire, alarm } = memoryStorage()
     const host = transcriptHost(storage, [socket], (admission) => Effect.suspend(() => (asked++, check(admission))))
     const admission = await admit(ending)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(socket, admission, -1)
       // The test's database doesn't run on the test clock: its row moves by the time the clock will move, and 41 ms
       // more, the renewal query's latency the admission's didn't have.
       const elapsed = alarm()! - admission.admittedAt
       yield* Effect.promise(() =>
-        sql`UPDATE sessions SET expires_at = expires_at - make_interval(secs => ${(elapsed + 41) / 1000}) WHERE id = ${ending.session!}`
+        sql`UPDATE sessions SET expires_at = expires_at - make_interval(secs => ${
+          (elapsed + 41) / 1000
+        }) WHERE id = ${ending.session!}`
       )
       yield* fire(host.alarm)
       expect(asked).toBe(1)
@@ -384,7 +438,9 @@ describe("a transcript's watchers", () => {
       expect(until).toBeLessThan(admission.expiresAt!)
       expect(until - (yield* now)).toBeGreaterThan(SocketAccess.RENEW_AHEAD_MS)
       expect(socket.closed).toBeUndefined()
-      yield* Effect.promise(() => sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${ending.session!}`)
+      yield* Effect.promise(() =>
+        sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${ending.session!}`
+      )
       yield* fire(host.alarm)
     }))
     expect(asked).toBe(2)
@@ -396,14 +452,19 @@ describe("a transcript's watchers", () => {
     const check = await checks()
     const ending = await signIn("member", 20)
     const socket = new Socket()
-    const host = transcriptHost(memoryStorage().storage, [socket], (admission) =>
-      Effect.suspend(() => (asked++, check(admission))))
+    const host = transcriptHost(
+      memoryStorage().storage,
+      [socket],
+      (admission) => Effect.suspend(() => (asked++, check(admission)))
+    )
     const admission = await admit(ending)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(socket, admission, -1)
       yield* host.append(1, [event(0)])
       yield* TestClock.adjust(20_001)
-      yield* Effect.promise(() => sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${ending.session!}`)
+      yield* Effect.promise(() =>
+        sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${ending.session!}`
+      )
       yield* host.append(1, [event(1)])
     }))
     expect(socket.events()).toEqual([1])
@@ -418,7 +479,7 @@ describe("a transcript's watchers", () => {
     const expired = new Socket()
     const host = transcriptHost(memoryStorage().storage, [expired], () => Effect.succeed("keep"), store)
     const admission = await admit(actor)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* TestClock.adjust(20_001)
       expect(yield* host.admissible(admission)).toBe("expired")
       yield* host.join(expired, admission, -1)
@@ -436,7 +497,7 @@ describe("a transcript's watchers", () => {
     // Confirmed three hours ago; since then only checks that couldn't reach GitHub (`keepRole` moves role_checked_at).
     await sql`UPDATE sessions SET role_verified_at = now() - interval '3 hours' WHERE id = ${actor.session!}`
     await runtime.runPromise(SessionStore.keepRole(actor.session!, 0))
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(socket, admission, -1)
       yield* TestClock.adjust(LEASE_MS + 1_000)
       yield* host.append(1, [event(0)])
@@ -452,7 +513,7 @@ describe("a transcript's watchers", () => {
     let asked = 0
     const host = transcriptHost(memoryStorage().storage, [socket], () => Effect.suspend(() => (asked++, Effect.never)))
     const admission = await admit(actor)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(socket, admission, -1)
       yield* TestClock.adjust(LEASE_MS + 1_000)
       const append = yield* Effect.forkChild(host.append(1, [event(0)]))
@@ -468,10 +529,15 @@ describe("a transcript's watchers", () => {
   test("a renewal whose Postgres client can't be opened ends every lease in it", async () => {
     const actor = await signIn("member")
     const sockets = [new Socket(), new Socket()]
-    const host = transcriptHost(memoryStorage().storage, sockets, () => Effect.succeed("keep"), sqliteStore(), () =>
-      Effect.die(new Error("no database")))
+    const host = transcriptHost(
+      memoryStorage().storage,
+      sockets,
+      () => Effect.succeed("keep"),
+      sqliteStore(),
+      () => Effect.die(new Error("no database"))
+    )
     const admission = await admit(actor)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       for (const socket of sockets) yield* host.join(socket, admission, -1)
       yield* TestClock.adjust(LEASE_MS + 1_000)
       yield* host.append(1, [event(0)])
@@ -487,7 +553,7 @@ describe("a transcript's watchers", () => {
     const host = transcriptHost(memoryStorage().storage, sockets, () => Effect.sync(() => (asked++, "keep" as const)))
     const first = await admit(actor)
     const second = await admit(actor)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(sockets[0]!, first, -1)
       yield* host.join(sockets[1]!, { ...second, admittedAt: second.admittedAt + 1 }, -1)
       yield* TestClock.adjust(LEASE_MS + 2_000)
@@ -501,12 +567,13 @@ describe("a transcript's watchers", () => {
     const check = await checks()
     const actor = await signIn("member")
     const alias = crypto.randomUUID()
-    await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES (${alias}, ${crypto.randomUUID()}, ${actor.session!}, 'alias.test')`
+    await sql`INSERT INTO host_sessions (id, token_digest, parent_id, host) VALUES (${alias}, ${crypto.randomUUID()}, ${actor
+      .session!}, 'alias.test')`
     const socket = new Socket()
     const host = transcriptHost(memoryStorage().storage, [socket], check)
     const admission = await admit({ ...actor, alias })
     await sql`UPDATE host_sessions SET revoked_at = now() WHERE id = ${alias}`
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(socket, admission, -1)
       yield* TestClock.adjust(LEASE_MS + 1_000)
       yield* host.append(1, [event(0)])
@@ -518,7 +585,7 @@ describe("a transcript's watchers", () => {
     const legacy = new Socket()
     const host = transcriptHost(memoryStorage().storage, [legacy], () => Effect.succeed("keep"))
     const before = count("transcript", "legacy")
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.restore
       yield* host.append(1, [event(0)])
     }))
@@ -544,7 +611,7 @@ describe("a transcript's watchers", () => {
     const store = sqliteStore()
     const { storage, values, fire, alarm } = memoryStorage(store)
     const socket = new Socket()
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       const start = yield* now
       // Stored a day ago by the code before `retain_until`: only its alarm says when it is forgotten.
       Store.append(store, 1, [event(0)], start - 24 * HOUR)
@@ -572,8 +639,13 @@ describe("a transcript's watchers", () => {
     const check = await checks()
     const [gone, stays, revoked, alsoRevoked] = [new Socket(), new Socket(), new Socket(), new Socket()]
     const host = transcriptHost(memoryStorage().storage, [gone, stays, revoked, alsoRevoked], check)
-    const [a, b, c, d] = [await signIn("member"), await signIn("member"), await signIn("member"), await signIn("member")]
-    await onTestClock(Effect.gen(function* () {
+    const [a, b, c, d] = [
+      await signIn("member"),
+      await signIn("member"),
+      await signIn("member"),
+      await signIn("member")
+    ]
+    await onTestClock(Effect.gen(function*() {
       for (const [socket, actor] of [[gone, a], [stays, b], [revoked, c], [alsoRevoked, d]] as const) {
         yield* host.join(socket, yield* Effect.promise(() => admit(actor)), -1)
       }
@@ -596,7 +668,7 @@ describe("a transcript's watchers", () => {
     const { storage, values, fire } = memoryStorage(store)
     const socket = new Socket()
     const actor = await signIn("member")
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       const start = yield* now
       Store.append(store, 1, [event(0)], start - RETENTION_MS + 1_000)
       const host = transcriptHost(storage, [socket], () => Effect.succeed("keep"), store)
@@ -615,9 +687,13 @@ describe("a transcript's watchers", () => {
     const [a, b, c] = [new Socket(), new Socket(), new Socket()]
     const release = Effect.runSync(Deferred.make<void>())
     // Every check waits until released, then keeps: B's is the one that waits, C's answers keep after C's end.
-    const host = transcriptHost(memoryStorage().storage, [a, b, c], () => Effect.as(Deferred.await(release), "keep" as const))
+    const host = transcriptHost(
+      memoryStorage().storage,
+      [a, b, c],
+      () => Effect.as(Deferred.await(release), "keep" as const)
+    )
     const [admittedA, admittedB, admittedC] = [await admit(actorA), await admit(actorB), await admit(actorC)]
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(a, admittedA, -1)
       yield* host.join(b, admittedB, -1)
       yield* host.join(c, admittedC, -1)
@@ -644,7 +720,7 @@ describe("a transcript's watchers", () => {
     const socket = new Socket()
     const release = Effect.runSync(Deferred.make<void>())
     const host = transcriptHost(storage, [socket], () => Effect.as(Deferred.await(release), "keep" as const), store)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       const start = yield* now
       // Its last event was stored a retention ago, less a second: it is due to be forgotten a second from now.
       Store.append(store, 1, [event(0)], start - RETENTION_MS + 1_000)
@@ -674,10 +750,12 @@ describe("a transcript's watchers", () => {
     const { storage, fire, alarm } = memoryStorage()
     const host = transcriptHost(storage, [socket], (admission) => Effect.suspend(() => (asked++, check(admission))))
     const admission = await admit(actor)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* host.join(socket, admission, -1)
       expect(alarm()).toBe(admission.expiresAt)
-      yield* Effect.promise(() => sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session!}`)
+      yield* Effect.promise(() =>
+        sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session!}`
+      )
       yield* fire(host.alarm)
     }))
     expect(asked).toBe(1)
@@ -693,26 +771,37 @@ describe("a branch's room", () => {
       sockets: Effect.sync(() => sockets),
       storage,
       check: check ?? (await checks()),
-      within,
+      within
     })
     return { rooms, fire, alarm }
   }
 
-  const join = async (rooms: Awaited<ReturnType<typeof roomOver>>["rooms"], sockets: Array<Socket>, actor: Actor, branchId: string) => {
-    const branch = await runtime.runPromise(branchAccess(Option.some(actor), branchId).pipe(
-      Effect.provide(branchRoles((await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database)),
-    ))
+  const join = async (
+    rooms: Awaited<ReturnType<typeof roomOver>>["rooms"],
+    sockets: Array<Socket>,
+    actor: Actor,
+    branchId: string
+  ) => {
+    const branch = await runtime.runPromise(
+      branchAccess(Option.some(actor), branchId).pipe(
+        Effect.provide(branchRoles((await runtime.runPromise(Effect.service(TestDatabase.Scratch))).database))
+      )
+    )
     if (branch === undefined || branch.access === "none") throw new Error("not admitted")
     const admission = await admit(actor, { kind: "branch", branchId }, branch.access)
     const socket = new Socket()
     sockets.push(socket)
-    await onTestClock(PresenceRoom.join(rooms.host, socket, BranchRooms.identityOf({
-      principal: actor.subject.id,
-      name: actor.subject.id,
-      role: actor.role,
-      access: branch.access,
-      admission,
-    }, SocketAccess.leaseFrom(admission, admission.admittedAt))))
+    await onTestClock(PresenceRoom.join(
+      rooms.host,
+      socket,
+      BranchRooms.identityOf({
+        principal: actor.subject.id,
+        name: actor.subject.id,
+        role: actor.role,
+        access: branch.access,
+        admission
+      }, SocketAccess.leaseFrom(admission, admission.admittedAt))
+    ))
     return socket
   }
 
@@ -725,11 +814,14 @@ describe("a branch's room", () => {
     const sockets: Array<Socket> = []
     const { rooms, fire } = await roomOver(sockets)
     const stays = await join(rooms, sockets, owner, branch.branchId)
-    const [goesA, goesB] = [await join(rooms, sockets, a, branch.branchId), await join(rooms, sockets, b, branch.branchId)]
+    const [goesA, goesB] = [
+      await join(rooms, sockets, a, branch.branchId),
+      await join(rooms, sockets, b, branch.branchId)
+    ]
     const heard = [goesA.sent.length, goesB.sent.length]
     // A share removed where `enforce` never reached the room: the renewal still does.
     await sql`DELETE FROM branch_shares WHERE branch_id = ${branch.branchId} AND grantee <> ${owner.subject.id}`
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* rooms.arm
       yield* fire(rooms.alarm)
     }))
@@ -781,9 +873,12 @@ describe("a branch's room", () => {
     const goes = await join(rooms, sockets, guest, branch.branchId)
     await sql`DELETE FROM branch_shares WHERE branch_id = ${branch.branchId} AND grantee = ${guest.subject.id}`
     const heard = stays.sent.length
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* TestClock.adjust(LEASE_MS + 1_000)
-      yield* rooms.receive(goes, JSON.stringify({ type: "state", state: JSON.stringify({ view: "code", path: "a.ts" }) }))
+      yield* rooms.receive(
+        goes,
+        JSON.stringify({ type: "state", state: JSON.stringify({ view: "code", path: "a.ts" }) })
+      )
     }))
     expect(goes.closed?.code).toBe(1008)
     // The owner hears the guest leave, never the guest's state.
@@ -797,14 +892,16 @@ describe("a branch's room", () => {
     let asked = 0
     const release = Effect.runSync(Deferred.make<void>())
     const real = await checks()
-    const { rooms } = await roomOver(sockets, (admission) =>
-      Effect.suspend(() => (asked++, Effect.andThen(Deferred.await(release), real(admission)))))
+    const { rooms } = await roomOver(
+      sockets,
+      (admission) => Effect.suspend(() => (asked++, Effect.andThen(Deferred.await(release), real(admission))))
+    )
     const member = await join(rooms, sockets, owner, branch.branchId)
-    await onTestClock(Effect.gen(function* () {
+    await onTestClock(Effect.gen(function*() {
       yield* TestClock.adjust(LEASE_MS + 1_000)
       const message = JSON.stringify({ type: "state", state: JSON.stringify({ view: "code", path: "a.ts" }) })
       const burst = yield* Effect.forkChild(
-        Effect.forEach(Array.from({ length: 10 }), () => rooms.receive(member, message), { concurrency: "unbounded" }),
+        Effect.forEach(Array.from({ length: 10 }), () => rooms.receive(member, message), { concurrency: "unbounded" })
       )
       for (let i = 0; i < 20; i++) yield* Effect.yieldNow
       yield* Deferred.succeed(release, undefined)
@@ -828,7 +925,7 @@ describe("a branch's room", () => {
         send: (data: string) => void sent.push(data),
         close: () => undefined,
         serializeAttachment: (value: unknown) => void (attachment = structuredClone(value)),
-        deserializeAttachment: () => attachment,
+        deserializeAttachment: () => attachment
       }
     }
     const [rawOwner, rawGuest] = [raw(), raw()]
@@ -838,18 +935,22 @@ describe("a branch's room", () => {
       sockets: Effect.sync(() => [wrap(rawOwner), wrap(rawGuest)]),
       storage,
       check: await checks(),
-      within,
+      within
     })
     for (const [actor, socket] of [[owner, rawOwner], [guest, rawGuest]] as const) {
       const access = actor === owner ? "owner" as const : "view" as const
       const admission = await admit(actor, { kind: "branch", branchId: branch.branchId }, access)
-      await onTestClock(PresenceRoom.join(rooms.host, wrap(socket), BranchRooms.identityOf({
-        principal: actor.subject.id,
-        name: actor.subject.id,
-        role: actor.role,
-        access,
-        admission,
-      }, SocketAccess.leaseFrom(admission, admission.admittedAt))))
+      await onTestClock(PresenceRoom.join(
+        rooms.host,
+        wrap(socket),
+        BranchRooms.identityOf({
+          principal: actor.subject.id,
+          name: actor.subject.id,
+          role: actor.role,
+          access,
+          admission
+        }, SocketAccess.leaseFrom(admission, admission.admittedAt))
+      ))
     }
     const heard = rawOwner.sent.length
     await onTestClock(rooms.receive(wrap(rawGuest), JSON.stringify({ type: "state", state: "here" })))
@@ -872,13 +973,17 @@ describe("a branch's room", () => {
     const admission = await admit(last, { kind: "branch", branchId: branch.branchId }, "view")
     const socket = new Socket()
     sockets.push(socket)
-    await onTestClock(PresenceRoom.join(rooms.host, socket, BranchRooms.identityOf({
-      principal: last.subject.id,
-      name: last.subject.id,
-      role: last.role,
-      access: "view",
-      admission,
-    }, SocketAccess.leaseFrom(admission, admission.admittedAt))))
+    await onTestClock(PresenceRoom.join(
+      rooms.host,
+      socket,
+      BranchRooms.identityOf({
+        principal: last.subject.id,
+        name: last.subject.id,
+        role: last.role,
+        access: "view",
+        admission
+      }, SocketAccess.leaseFrom(admission, admission.admittedAt))
+    ))
     expect(slow.rosters().length).toBeGreaterThan(0)
     expect(ends.sent.length).toBe(heard)
   })
@@ -896,7 +1001,7 @@ describe("a branch's room", () => {
       principal: "person-old",
       name: "old",
       access: "read",
-      data: JSON.stringify({ role: "member", access: "view" }),
+      data: JSON.stringify({ role: "member", access: "view" })
     }))
     await onTestClock(rooms.restore)
     expect(legacy.closed?.code).toBe(1012)
@@ -912,7 +1017,7 @@ describe("a branch's room", () => {
       sockets: Effect.sync(() => sockets),
       storage,
       check: () => Effect.succeed("keep"),
-      within: () => Effect.die(new Error("no database")),
+      within: () => Effect.die(new Error("no database"))
     })
     const stays = await join(rooms, sockets, owner, branch.branchId)
     const other = await signIn("member")
@@ -932,7 +1037,7 @@ describe("the terminal's gate", () => {
       send: (message) => void sent.push(message),
       close: () => undefined,
       addEventListener: (_type, listener) => void listeners.push(listener),
-      removeEventListener: () => undefined,
+      removeEventListener: () => undefined
     }
     let live = true
     let lapsed = 0
@@ -960,9 +1065,9 @@ describe("a host that never hibernates", () => {
       principal: "person",
       role: "member" as const,
       basis: RUN,
-      access: "member" as const,
+      access: "member" as const
     },
-    leaseUntil: start + leaseFor,
+    leaseUntil: start + leaseFor
   })
 
   test("10,000 frames on lapsed leases start one renewal, not one each", async () => {
@@ -971,7 +1076,7 @@ describe("a host that never hibernates", () => {
     const fibers: Array<Fiber.Fiber<void>> = []
     const notify = SocketAccess.coalesced(
       Effect.suspend(() => (started++, Deferred.await(release))),
-      (effect) => void fibers.push(Effect.runFork(effect)),
+      (effect) => void fibers.push(Effect.runFork(effect))
     )
     for (let frame = 0; frame < 10_000; frame++) notify()
     expect([started, fibers.length]).toEqual([1, 1])
@@ -982,7 +1087,7 @@ describe("a host that never hibernates", () => {
   })
 
   /** Lets the loops' fibers run up to their next sleep. */
-  const settle = Effect.gen(function* () {
+  const settle = Effect.gen(function*() {
     for (let i = 0; i < 20; i++) yield* Effect.yieldNow
   })
 
@@ -990,173 +1095,189 @@ describe("a host that never hibernates", () => {
   const loops = (
     leases: Array<ReturnType<typeof lease>>,
     start: number,
-    renewDue: Effect.Effect<void> = Effect.void,
+    renewDue: Effect.Effect<void> = Effect.void
   ) => {
     const renewedAt: Array<number> = []
     const expiredAt: Array<number> = []
     const loop = SocketAccess.renewalLoop(
       () => leases,
       Effect.andThen(Effect.flatMap(now, (at) => Effect.sync(() => void renewedAt.push(at - start))), renewDue),
-      Effect.flatMap(now, (at) => Effect.sync(() => {
-        expiredAt.push(at - start)
-        // The host closes every ended socket: it leaves the lease list.
-        for (let i = leases.length - 1; i >= 0; i--) {
-          const end = leases[i]!.admission.expiresAt
-          if (end !== null && end <= at) leases.splice(i, 1)
-        }
-      })),
-      "terminal",
+      Effect.flatMap(now, (at) =>
+        Effect.sync(() => {
+          expiredAt.push(at - start)
+          // The host closes every ended socket: it leaves the lease list.
+          for (let i = leases.length - 1; i >= 0; i--) {
+            const end = leases[i]!.admission.expiresAt
+            if (end !== null && end <= at) leases.splice(i, 1)
+          }
+        })),
+      "terminal"
     )
     return { loop, renewedAt, expiredAt }
   }
 
   test("a lease acted on before the loop's wake wakes it then; a later one doesn't move it", async () => {
-    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, LEASE_MS)]
-      const host = loops(leases, start)
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      // A viewer whose session ends at 5 s attaches while the loop sleeps until 50 s.
-      const sooner = lease(start, 5_000, 5_000)
-      leases.push(sooner)
-      yield* host.loop.ensure(scope, sooner)
-      yield* host.loop.ensure(scope, lease(start, null, 2 * LEASE_MS))
-      yield* settle
-      yield* TestClock.adjust(5_000)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { renewedAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, LEASE_MS)]
+        const host = loops(leases, start)
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        // A viewer whose session ends at 5 s attaches while the loop sleeps until 50 s.
+        const sooner = lease(start, 5_000, 5_000)
+        leases.push(sooner)
+        yield* host.loop.ensure(scope, sooner)
+        yield* host.loop.ensure(scope, lease(start, null, 2 * LEASE_MS))
+        yield* settle
+        yield* TestClock.adjust(5_000)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(renewedAt).toContain(5_000)
     expect(renewedAt.every((at) => at <= 5_000)).toBe(true)
   })
 
   test("a session's end closes on time while a renewal is stalled, for a viewer who attached during it", async () => {
     let renewals = 0
-    const { expiredAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, 15_000)]
-      // Postgres hangs: the renewal the loop starts at 5 s never finishes.
-      const host = loops(leases, start, Effect.suspend(() => (renewals++, Effect.never)))
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      yield* TestClock.adjust(6_000)
-      yield* settle
-      expect(renewals).toBe(1)
-      // A viewer whose session ends at 8 s attaches while that renewal hangs.
-      const ending = lease(start, 8_000, 8_000)
-      leases.push(ending)
-      yield* host.loop.ensure(scope, ending)
-      yield* TestClock.adjust(2_000)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { expiredAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, 15_000)]
+        // Postgres hangs: the renewal the loop starts at 5 s never finishes.
+        const host = loops(leases, start, Effect.suspend(() => (renewals++, Effect.never)))
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        yield* TestClock.adjust(6_000)
+        yield* settle
+        expect(renewals).toBe(1)
+        // A viewer whose session ends at 8 s attaches while that renewal hangs.
+        const ending = lease(start, 8_000, 8_000)
+        leases.push(ending)
+        yield* host.loop.ensure(scope, ending)
+        yield* TestClock.adjust(2_000)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(expiredAt).toContain(8_000)
   })
 
   test("the renewal loop retired on an empty host restarts for a viewer who reconnects", async () => {
-    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, LEASE_MS)]
-      const host = loops(leases, start)
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      // The only viewer leaves at 45 s; the renewal loop wakes at 50 s to an empty host and retires.
-      yield* TestClock.adjust(45_000)
-      leases.splice(0)
-      yield* TestClock.adjust(5_000)
-      yield* settle
-      expect(host.renewedAt).toEqual([50_000])
-      // A viewer reconnects at 51 s, leased to 111 s: its renewal is due at 101 s, before its lease lapses.
-      yield* TestClock.adjust(1_000)
-      const back = lease(start + 51_000, null, LEASE_MS)
-      leases.push(back)
-      yield* host.loop.ensure(scope, back)
-      yield* settle
-      yield* TestClock.adjust(50_000)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { renewedAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, LEASE_MS)]
+        const host = loops(leases, start)
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        // The only viewer leaves at 45 s; the renewal loop wakes at 50 s to an empty host and retires.
+        yield* TestClock.adjust(45_000)
+        leases.splice(0)
+        yield* TestClock.adjust(5_000)
+        yield* settle
+        expect(host.renewedAt).toEqual([50_000])
+        // A viewer reconnects at 51 s, leased to 111 s: its renewal is due at 101 s, before its lease lapses.
+        yield* TestClock.adjust(1_000)
+        const back = lease(start + 51_000, null, LEASE_MS)
+        leases.push(back)
+        yield* host.loop.ensure(scope, back)
+        yield* settle
+        yield* TestClock.adjust(50_000)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(renewedAt).toContain(101_000)
   })
 
   test("the expiry timer retired on an empty host while a renewal hung restarts for a viewer who attaches", async () => {
-    const { expiredAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      // A viewer leased to 10 s whose session ends at 30 s: its renewal at 0 s hangs.
-      const leases = [lease(start, 30_000, 10_000)]
-      const host = loops(leases, start, Effect.never)
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      // At 30 s expiry closes it and, finding the host empty, retires; the renewal still hangs.
-      yield* TestClock.adjust(30_000)
-      yield* settle
-      expect(leases).toEqual([])
-      // A viewer whose session ends at 40 s attaches: expiry must run again then.
-      const next = lease(start, 40_000, 40_000)
-      leases.push(next)
-      yield* host.loop.ensure(scope, next)
-      yield* settle
-      yield* TestClock.adjust(10_000)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { expiredAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        // A viewer leased to 10 s whose session ends at 30 s: its renewal at 0 s hangs.
+        const leases = [lease(start, 30_000, 10_000)]
+        const host = loops(leases, start, Effect.never)
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        // At 30 s expiry closes it and, finding the host empty, retires; the renewal still hangs.
+        yield* TestClock.adjust(30_000)
+        yield* settle
+        expect(leases).toEqual([])
+        // A viewer whose session ends at 40 s attaches: expiry must run again then.
+        const next = lease(start, 40_000, 40_000)
+        leases.push(next)
+        yield* host.loop.ensure(scope, next)
+        yield* settle
+        yield* TestClock.adjust(10_000)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(expiredAt).toContain(40_000)
   })
 
   test("a viewer who attaches while the loop is on its way out keeps it, and one loop runs", async () => {
     const release = Effect.runSync(Deferred.make<void>())
-    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, LEASE_MS)]
-      const host = loops(leases, start, Deferred.await(release))
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      // The last viewer leaves; the loop wakes at 50 s and holds in a renewal, about to find the host empty.
-      leases.splice(0)
-      yield* TestClock.adjust(50_000)
-      yield* settle
-      const back = lease(start + 50_000, null, LEASE_MS)
-      leases.push(back)
-      yield* host.loop.ensure(scope, back)
-      yield* Deferred.succeed(release, undefined)
-      yield* settle
-      // It goes on to the new lease's renewal, once.
-      yield* TestClock.adjust(50_000)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { renewedAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, LEASE_MS)]
+        const host = loops(leases, start, Deferred.await(release))
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        // The last viewer leaves; the loop wakes at 50 s and holds in a renewal, about to find the host empty.
+        leases.splice(0)
+        yield* TestClock.adjust(50_000)
+        yield* settle
+        const back = lease(start + 50_000, null, LEASE_MS)
+        leases.push(back)
+        yield* host.loop.ensure(scope, back)
+        yield* Deferred.succeed(release, undefined)
+        yield* settle
+        // It goes on to the new lease's renewal, once.
+        yield* TestClock.adjust(50_000)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(renewedAt).toEqual([50_000, 100_000])
   })
 
   test("concurrent attaches start one loop of each kind, also after both retired", async () => {
-    const { renewedAt, expiredAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const first = lease(start, 30_000, 30_000)
-      const leases = [first]
-      const host = loops(leases, start)
-      const attachAll = (added: ReturnType<typeof lease>) =>
-        Effect.all(Array.from({ length: 10 }, () => host.loop.ensure(scope, added)), { concurrency: "unbounded", discard: true })
-      yield* attachAll(first)
-      yield* settle
-      // Its session ends at 30 s: each loop acts once, and each retires on the empty host.
-      yield* TestClock.adjust(30_000)
-      yield* settle
-      expect(leases).toEqual([])
-      const second = lease(start + 30_000, 30_000, 30_000)
-      leases.push(second)
-      yield* attachAll(second)
-      yield* settle
-      yield* TestClock.adjust(30_000)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { renewedAt, expiredAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const first = lease(start, 30_000, 30_000)
+        const leases = [first]
+        const host = loops(leases, start)
+        const attachAll = (added: ReturnType<typeof lease>) =>
+          Effect.all(Array.from({ length: 10 }, () => host.loop.ensure(scope, added)), {
+            concurrency: "unbounded",
+            discard: true
+          })
+        yield* attachAll(first)
+        yield* settle
+        // Its session ends at 30 s: each loop acts once, and each retires on the empty host.
+        yield* TestClock.adjust(30_000)
+        yield* settle
+        expect(leases).toEqual([])
+        const second = lease(start + 30_000, 30_000, 30_000)
+        leases.push(second)
+        yield* attachAll(second)
+        yield* settle
+        yield* TestClock.adjust(30_000)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     // One loop of each kind acts at most once at any time; a duplicate would repeat a time.
     expect(new Set(renewedAt).size).toBe(renewedAt.length)
     expect(renewedAt).toContain(60_000)
@@ -1170,21 +1291,23 @@ describe("a host that never hibernates", () => {
       lines.push({ message: line.message, annotations: line.annotations, level: line.level })
     })
     const secret = "postgres://someone:hunter2@db"
-    await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, LEASE_MS)]
-      const host = loops(leases, start, Effect.die(new Error(secret)))
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      yield* TestClock.adjust(50_000)
-      yield* settle
-    })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
+    await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, LEASE_MS)]
+        const host = loops(leases, start, Effect.die(new Error(secret)))
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        yield* TestClock.adjust(50_000)
+        yield* settle
+      })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
     const died = lines.filter((line) => line.message === "socket.loop")
     expect(died).toEqual([{
       message: "socket.loop",
       level: "ERROR",
-      annotations: expect.objectContaining({ host: "terminal", loop: "renewal", outcome: "died", errorCode: "unknown" }),
+      annotations: expect.objectContaining({ host: "terminal", loop: "renewal", outcome: "died", errorCode: "unknown" })
     }])
     expect(JSON.stringify(lines)).not.toContain("hunter2")
   })
@@ -1196,51 +1319,62 @@ describe("a host that never hibernates", () => {
       if (line.message === "socket.loop") lines.push(line.annotations)
     })
     let renewals = 0
-    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, LEASE_MS)]
-      const hostile = Object.defineProperty(new Error("x"), "_tag", { get: () => { throw new Error("boom") } })
-      const host = loops(leases, start, Effect.suspend(() => (renewals++ === 0 ? Effect.die(hostile) : Effect.void)))
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      yield* TestClock.adjust(50_000)
-      yield* settle
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      yield* TestClock.adjust(1)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Logger.CurrentLoggers, new Set([logger]))))
+    const { renewedAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, LEASE_MS)]
+        const hostile = Object.defineProperty(new Error("x"), "_tag", {
+          get: () => {
+            throw new Error("boom")
+          }
+        })
+        const host = loops(leases, start, Effect.suspend(() => (renewals++ === 0 ? Effect.die(hostile) : Effect.void)))
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        yield* TestClock.adjust(50_000)
+        yield* settle
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        yield* TestClock.adjust(1)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()), Effect.provideService(Logger.CurrentLoggers, new Set([logger])))
+    )
     expect(renewedAt).toEqual([50_000, 50_001])
     expect(lines).toEqual([expect.objectContaining({ loop: "renewal", outcome: "died", errorCode: "unknown" })])
   })
 
   test("a loop that died restarts for the next viewer who attaches", async () => {
     let renewals = 0
-    const { renewedAt } = await runtime.runPromise(Effect.scoped(Effect.gen(function* () {
-      const scope = yield* Effect.scope
-      const start = yield* now
-      const leases = [lease(start, null, LEASE_MS)]
-      // The first renewal dies at 50 s; a later one succeeds.
-      const host = loops(leases, start, Effect.suspend(() => (renewals++ === 0 ? Effect.die("renewal died") : Effect.void)))
-      yield* host.loop.ensure(scope, leases[0]!)
-      yield* settle
-      yield* TestClock.adjust(50_000)
-      yield* settle
-      const back = lease(start + 50_000, null, LEASE_MS)
-      leases.push(back)
-      yield* host.loop.ensure(scope, back)
-      yield* settle
-      // The first lease is past its renewal time, so the restarted loop acts a millisecond on.
-      yield* TestClock.adjust(1)
-      yield* settle
-      return host
-    })).pipe(Effect.provide(TestClock.layer())))
+    const { renewedAt } = await runtime.runPromise(
+      Effect.scoped(Effect.gen(function*() {
+        const scope = yield* Effect.scope
+        const start = yield* now
+        const leases = [lease(start, null, LEASE_MS)]
+        // The first renewal dies at 50 s; a later one succeeds.
+        const host = loops(
+          leases,
+          start,
+          Effect.suspend(() => (renewals++ === 0 ? Effect.die("renewal died") : Effect.void))
+        )
+        yield* host.loop.ensure(scope, leases[0]!)
+        yield* settle
+        yield* TestClock.adjust(50_000)
+        yield* settle
+        const back = lease(start + 50_000, null, LEASE_MS)
+        leases.push(back)
+        yield* host.loop.ensure(scope, back)
+        yield* settle
+        // The first lease is past its renewal time, so the restarted loop acts a millisecond on.
+        yield* TestClock.adjust(1)
+        yield* settle
+        return host
+      })).pipe(Effect.provide(TestClock.layer()))
+    )
     expect(renewedAt).toEqual([50_000, 50_001])
     expect(renewals).toBe(2)
   })
-
 })
 
 describe("admission", () => {
@@ -1258,103 +1392,139 @@ describe("admission", () => {
   })
 })
 
-
 describe("authoritative renewal at the cached session end", () => {
-  test.each(["extended", "ended", "unavailable", "timeout"] as const)("both terminal timers wait for one bounded check across the old deadline: %s", async outcome => {
-    const leaseOutcome = outcome === "extended" ? "keep" : outcome === "ended" ? "session" : "unverified"
-    const beforeCount = count("terminal", leaseOutcome)
-    const actor = await signIn("member", 20)
-    const branch = await tracked(runtime, BRANCH_REPO, `feature/${crypto.randomUUID()}`, "open", actor.subject.id)
-    const admission = await admit(actor, { kind: "terminal", branchId: branch.branchId }, "write")
-    const socket = new Socket()
-    let viewer: { admission: SocketAccess.Admission; lease: { until: number } } | undefined = {
-      admission, lease: { until: SocketAccess.leaseFrom(admission, admission.admittedAt) },
-    }
-    const release = Deferred.makeUnsafe<void>()
-    const real = await checks()
-    let asked = 0
-    const check: Check = current => Effect.gen(function* () {
-      asked++
-      yield* Deferred.await(release)
-      return outcome === "unavailable" ? "unverified" : yield* real(current)
-    })
-    const renew = SocketAccess.singleFlight()(Effect.gen(function* () {
-      const current = viewer
-      if (current === undefined || !SocketAccess.due(current.admission, current.lease.until, yield* now)) return
-      const [answer] = yield* SocketAccess.renew("terminal", [current.admission], check, within)
-      if (viewer !== current) return
-      if (answer!.verdict === "keep") {
-        current.admission = answer!.admission
-        current.lease.until = answer!.until!
-      } else {
-        viewer = undefined
-        const close = SocketAccess.CLOSES[answer!.verdict]
-        yield* socket.close(close.code, close.reason)
+  test.each(["extended", "ended", "unavailable", "timeout"] as const)(
+    "both terminal timers wait for one bounded check across the old deadline: %s",
+    async (outcome) => {
+      const leaseOutcome = outcome === "extended" ? "keep" : outcome === "ended" ? "session" : "unverified"
+      const beforeCount = count("terminal", leaseOutcome)
+      const actor = await signIn("member", 20)
+      const branch = await tracked(runtime, BRANCH_REPO, `feature/${crypto.randomUUID()}`, "open", actor.subject.id)
+      const admission = await admit(actor, { kind: "terminal", branchId: branch.branchId }, "write")
+      const socket = new Socket()
+      let viewer: { admission: SocketAccess.Admission; lease: { until: number } } | undefined = {
+        admission,
+        lease: { until: SocketAccess.leaseFrom(admission, admission.admittedAt) }
       }
-    }))
-    const loop = BranchSandboxes.terminalLoops(
-      () => viewer === undefined ? [] : [{ admission: viewer.admission, leaseUntil: viewer.lease.until }], renew,
-    )
-    let clock = admission.admittedAt
-    let incoming: ((event: string) => void) | undefined
-    const gated = BranchSandboxes.terminalGate<string>({
-      send: text => { socket.sent.push(String(text)) }, close: () => undefined,
-      addEventListener: (kind, listener) => { if (kind === "message") incoming = listener }, removeEventListener: () => undefined,
-    }, () => viewer, () => undefined, () => clock)
-    gated.addEventListener("message", text => { socket.sent.push(text) })
-    const settle = Effect.gen(function* () { for (let turn = 0; turn < 40; turn++) yield* Effect.yieldNow })
-    await onTestClock(Effect.scoped(Effect.gen(function* () {
-      yield* Effect.promise(() => outcome === "ended"
-        ? sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session!}`
-        : sql`UPDATE sessions SET expires_at = now() + interval '5 minutes' WHERE id = ${actor.session!}`)
-      yield* loop.ensure(yield* Effect.scope, { admission, leaseUntil: viewer!.lease.until })
-      yield* settle
-      yield* TestClock.setTime(admission.expiresAt!)
-      yield* settle
-      clock = yield* now
-      expect(asked).toBe(1)
-      expect(socket.closed).toBeUndefined()
-      gated.send("output"); incoming?.("input")
-      expect(socket.sent).toEqual([])
-      if (outcome === "timeout") yield* TestClock.adjust(SocketAccess.CHECK_TIMEOUT_MS + 1)
-      else yield* Deferred.succeed(release, undefined)
-      yield* Effect.promise(() => new Promise<void>(resolve => setImmediate(resolve)))
-      yield* settle
-      yield* Effect.promise(() => expect.poll(() => outcome === "extended" ? viewer!.admission.expiresAt! > admission.expiresAt! : socket.closed !== undefined).toBe(true))
-      clock = yield* now
-      gated.send("output"); incoming?.("input")
-      expect(asked).toBe(1)
-      expect(count("terminal", leaseOutcome) - beforeCount).toBe(1)
-      if (outcome === "extended") {
+      const release = Deferred.makeUnsafe<void>()
+      const real = await checks()
+      let asked = 0
+      const check: Check = (current) =>
+        Effect.gen(function*() {
+          asked++
+          yield* Deferred.await(release)
+          return outcome === "unavailable" ? "unverified" : yield* real(current)
+        })
+      const renew = SocketAccess.singleFlight()(Effect.gen(function*() {
+        const current = viewer
+        if (current === undefined || !SocketAccess.due(current.admission, current.lease.until, yield* now)) return
+        const [answer] = yield* SocketAccess.renew("terminal", [current.admission], check, within)
+        if (viewer !== current) return
+        if (answer!.verdict === "keep") {
+          current.admission = answer!.admission
+          current.lease.until = answer!.until!
+        } else {
+          viewer = undefined
+          const close = SocketAccess.CLOSES[answer!.verdict]
+          yield* socket.close(close.code, close.reason)
+        }
+      }))
+      const loop = BranchSandboxes.terminalLoops(
+        () => viewer === undefined ? [] : [{ admission: viewer.admission, leaseUntil: viewer.lease.until }],
+        renew
+      )
+      let clock = admission.admittedAt
+      let incoming: ((event: string) => void) | undefined
+      const gated = BranchSandboxes.terminalGate<string>(
+        {
+          send: (text) => {
+            socket.sent.push(String(text))
+          },
+          close: () => undefined,
+          addEventListener: (kind, listener) => {
+            if (kind === "message") incoming = listener
+          },
+          removeEventListener: () => undefined
+        },
+        () => viewer,
+        () => undefined,
+        () => clock
+      )
+      gated.addEventListener("message", (text) => {
+        socket.sent.push(text)
+      })
+      const settle = Effect.gen(function*() {
+        for (let turn = 0; turn < 40; turn++) {
+          yield* Effect.yieldNow
+        }
+      })
+      await onTestClock(Effect.scoped(Effect.gen(function*() {
+        yield* Effect.promise(() =>
+          outcome === "ended"
+            ? sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session!}`
+            : sql`UPDATE sessions SET expires_at = now() + interval '5 minutes' WHERE id = ${actor.session!}`
+        )
+        yield* loop.ensure(yield* Effect.scope, { admission, leaseUntil: viewer!.lease.until })
+        yield* settle
+        yield* TestClock.setTime(admission.expiresAt!)
+        yield* settle
+        clock = yield* now
+        expect(asked).toBe(1)
         expect(socket.closed).toBeUndefined()
-        expect(socket.sent).toEqual(["output", "input"])
-      } else {
-        expect(socket.closed?.code).toBe(outcome === "ended" ? 4401 : 1012)
+        gated.send("output")
+        incoming?.("input")
         expect(socket.sent).toEqual([])
-      }
-    })))
-  })
+        if (outcome === "timeout") yield* TestClock.adjust(SocketAccess.CHECK_TIMEOUT_MS + 1)
+        else yield* Deferred.succeed(release, undefined)
+        yield* Effect.promise(() => new Promise<void>((resolve) => setImmediate(resolve)))
+        yield* settle
+        yield* Effect.promise(() =>
+          expect.poll(() =>
+            outcome === "extended" ? viewer!.admission.expiresAt! > admission.expiresAt! : socket.closed !== undefined
+          ).toBe(true)
+        )
+        clock = yield* now
+        gated.send("output")
+        incoming?.("input")
+        expect(asked).toBe(1)
+        expect(count("terminal", leaseOutcome) - beforeCount).toBe(1)
+        if (outcome === "extended") {
+          expect(socket.closed).toBeUndefined()
+          expect(socket.sent).toEqual(["output", "input"])
+        } else {
+          expect(socket.closed?.code).toBe(outcome === "ended" ? 4401 : 1012)
+          expect(socket.sent).toEqual([])
+        }
+      })))
+    }
+  )
 
   for (const hostName of ["TranscriptHost", "BranchRooms", "BranchSandboxes"] as const) {
     for (const extended of [true, false]) {
       test(`${hostName}: ${extended ? "an extended session sends beyond its old end" : "an ended session closes"}, with one check and no frames while it waits`, async () => {
         const actor = await signIn("member", 20)
         const branch = await tracked(runtime, BRANCH_REPO, `feature/${crypto.randomUUID()}`, "open", actor.subject.id)
-        const basis: SocketAccess.Basis = hostName === "TranscriptHost" ? RUN
+        const basis: SocketAccess.Basis = hostName === "TranscriptHost" ?
+          RUN
           : { kind: hostName === "BranchRooms" ? "branch" : "terminal", branchId: branch.branchId }
-        const admission = await admit(actor, basis, hostName === "TranscriptHost" ? "member" : hostName === "BranchRooms" ? "owner" : "write")
+        const admission = await admit(
+          actor,
+          basis,
+          hostName === "TranscriptHost" ? "member" : hostName === "BranchRooms" ? "owner" : "write"
+        )
         const socket = new Socket()
         const { storage, alarm, fire } = memoryStorage()
         const release = Deferred.makeUnsafe<void>()
         const entered = Deferred.makeUnsafe<void>()
         const real = await checks()
         let asked = 0
-        const check: Check = (admission) => Effect.gen(function* () {
-          asked++
-          yield* Deferred.succeed(entered, undefined)
-          yield* Deferred.await(release)
-          return yield* real(admission)
-        })
+        const check: Check = (admission) =>
+          Effect.gen(function*() {
+            asked++
+            yield* Deferred.succeed(entered, undefined)
+            yield* Deferred.await(release)
+            return yield* real(admission)
+          })
         let activate: Effect.Effect<unknown, unknown, SqlClient.SqlClient>
         let renew: Effect.Effect<unknown, unknown, SqlClient.SqlClient>
         let send: Effect.Effect<unknown, unknown, SqlClient.SqlClient>
@@ -1367,24 +1537,48 @@ describe("authoritative renewal at the cached session end", () => {
           frames = () => socket.events().length
         } else if (hostName === "BranchRooms") {
           const rooms = BranchRooms.room({ sockets: Effect.succeed([socket]), storage, check, within })
-          activate = Effect.andThen(PresenceRoom.join(rooms.host, socket, BranchRooms.identityOf({
-            principal: actor.subject.id, name: "Member", role: actor.role, access: "owner", admission,
-          }, SocketAccess.leaseFrom(admission, admission.admittedAt))), rooms.arm)
+          activate = Effect.andThen(
+            PresenceRoom.join(
+              rooms.host,
+              socket,
+              BranchRooms.identityOf({
+                principal: actor.subject.id,
+                name: "Member",
+                role: actor.role,
+                access: "owner",
+                admission
+              }, SocketAccess.leaseFrom(admission, admission.admittedAt))
+            ),
+            rooms.arm
+          )
           renew = fire(rooms.alarm)
-          send = Effect.flatMap(rooms.host.sockets, all => Effect.forEach(all, each => each.send("frame")))
+          send = Effect.flatMap(rooms.host.sockets, (all) => Effect.forEach(all, (each) => each.send("frame")))
           frames = () => socket.sent.length
         } else {
           const viewer = { admission, lease: { until: SocketAccess.leaseFrom(admission, admission.admittedAt) } }
           let incoming: ((event: string) => void) | undefined
           const raw: SocketAccess.RawSocket<string> = {
-            send: text => { socket.sent.push(String(text)) }, close: () => undefined,
-            addEventListener: (type, listener) => { if (type === "message") incoming = listener }, removeEventListener: () => undefined,
+            send: (text) => {
+              socket.sent.push(String(text))
+            },
+            close: () => undefined,
+            addEventListener: (type, listener) => {
+              if (type === "message") incoming = listener
+            },
+            removeEventListener: () => undefined
           }
           let clock = admission.admittedAt
-          const gated = BranchSandboxes.terminalGate(raw, () => socket.closed === undefined ? viewer : undefined, () => undefined, () => clock)
-          gated.addEventListener("message", text => { socket.sent.push(text) })
+          const gated = BranchSandboxes.terminalGate(
+            raw,
+            () => socket.closed === undefined ? viewer : undefined,
+            () => undefined,
+            () => clock
+          )
+          gated.addEventListener("message", (text) => {
+            socket.sent.push(text)
+          })
           activate = Effect.void
-          renew = Effect.gen(function* () {
+          renew = Effect.gen(function*() {
             const [answer] = yield* SocketAccess.renew("terminal", [viewer.admission], check, within)
             if (answer!.verdict === "keep") {
               viewer.admission = answer!.admission
@@ -1394,17 +1588,24 @@ describe("authoritative renewal at the cached session end", () => {
               yield* socket.close(close.code, close.reason)
             }
           })
-          send = Effect.flatMap(now, at => Effect.sync(() => { clock = at; gated.send("frame"); incoming?.("input") }))
+          send = Effect.flatMap(now, (at) =>
+            Effect.sync(() => {
+              clock = at
+              gated.send("frame")
+              incoming?.("input")
+            }))
           frames = () => socket.sent.length
         }
-        await onTestClock(Effect.gen(function* () {
+        await onTestClock(Effect.gen(function*() {
           yield* activate
           if (hostName !== "BranchSandboxes") expect(alarm()).toBe(admission.expiresAt)
           yield* TestClock.setTime(admission.expiresAt! - 1)
           expect(asked).toBe(0)
-          yield* Effect.promise(() => extended
-            ? sql`UPDATE sessions SET expires_at = now() + interval '5 minutes' WHERE id = ${actor.session!}`
-            : sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session!}`)
+          yield* Effect.promise(() =>
+            extended
+              ? sql`UPDATE sessions SET expires_at = now() + interval '5 minutes' WHERE id = ${actor.session!}`
+              : sql`UPDATE sessions SET expires_at = now() - interval '1 second' WHERE id = ${actor.session!}`
+          )
           yield* TestClock.setTime(admission.expiresAt!)
           const renewing = yield* Effect.forkChild(renew)
           for (let turn = 0; turn < 20; turn++) yield* Effect.yieldNow

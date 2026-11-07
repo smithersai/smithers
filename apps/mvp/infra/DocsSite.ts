@@ -1,7 +1,7 @@
 // The docs site (apps/site, an Astro build) on the app's hostname. It claims only its own paths there, by zone routes,
 // and Cloudflare runs a route before the app's custom domain, so every other path stays the app's
 // (docs/infrastructure.md#domain).
-import * as Cloudflare from "alchemy/Cloudflare"
+import * as Cloudflare from "@alchemy.run/cloudflare"
 import { docsRoutes } from "./Domain.ts"
 
 /**
@@ -14,5 +14,5 @@ export const DocsSite = (domain: string) =>
     cwd: "../site",
     outdir: "dist",
     routes: docsRoutes(domain),
-    assets: { htmlHandling: "auto-trailing-slash", notFoundHandling: "404-page" },
+    assets: { htmlHandling: "auto-trailing-slash", notFoundHandling: "404-page" }
   })

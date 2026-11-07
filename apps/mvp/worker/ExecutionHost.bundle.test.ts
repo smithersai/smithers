@@ -1,7 +1,7 @@
 // worker/ExecutionHost.ts's module graph bundles for workerd: no module in it imports a bare Node built-in (`fs`, `url`,
 // `path`, ...), which workerd doesn't provide and esbuild can't resolve for it. `node:*` imports are workerd's own under
 // nodejs_compat (worker/ChatApi.ts `compatibility`; @effect/sql-pg opens its sockets with node:net), so they may stay.
-// A bare built-in means Node-only code reached the graph, as `alchemy/Cloudflare` (Alchemy's Node deploy code) did
+// A bare built-in means Node-only code reached the graph, as `@alchemy.run/cloudflare` (Alchemy's Node deploy code) did
 // through worker/flows/RedactFeed.ts. worker/ExecutionHost.workerd.test.ts then fails to build, but only where its
 // Postgres runs; this test needs none and names the import chain.
 import { build, type Metafile, type Plugin } from "esbuild"
@@ -10,7 +10,9 @@ import { relative } from "node:path"
 import { expect, test } from "vitest"
 import { entry, options } from "./test/workerd/executionBundle.ts"
 
-const BARE = new RegExp(`^(${builtinModules.filter((name) => !name.startsWith("node:")).join("|").replace(/\//g, "\\/")})(\\/.*)?$`)
+const BARE = new RegExp(
+  `^(${builtinModules.filter((name) => !name.startsWith("node:")).join("|").replace(/\//g, "\\/")})(\\/.*)?$`
+)
 
 /** The importer chain from the entry to `target`, shortest first, as the metafile's input paths. */
 const chainTo = (metafile: Metafile, start: string, target: string): Array<string> => {
@@ -49,14 +51,14 @@ test("ExecutionHost's workerd bundle imports no bare Node built-in", { timeout: 
           resolveDir: args.resolveDir,
           kind: args.kind,
           with: args.with,
-          pluginData: "record-node-imports",
+          pluginData: "record-node-imports"
         })
         // Resolved: esbuild resolves it again itself, keeping what a `browser` field disables empty.
         if (resolved.errors.length === 0) return undefined
         hits.push({ name: `${args.path} (unresolved)`, importer: args.importer })
         return { path: args.path, external: true }
       })
-    },
+    }
   }
   const result = await build({ ...options, metafile: true, plugins: [record, ...options.plugins] })
   const start = relative(process.cwd(), entry)

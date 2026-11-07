@@ -3,11 +3,11 @@
 // read later, or only on a path the plan doesn't take, is never bound, and production reads it as unset. On 2026-10-31
 // sign-in read APP_DOMAIN and APP_ALIASES only once SESSION_SECRET was set, which Alchemy binds from the stack rather
 // than from Config, so no plan ever read them and aliases signed in through their own GitHub callback (decision 0130).
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { run } from "@alchemy.run/test/Core"
 import * as Alchemy from "alchemy"
-import * as Cloudflare from "alchemy/Cloudflare"
 import * as Output from "alchemy/Output"
 import { Stage } from "alchemy/Stage"
-import { run } from "alchemy/Test/Core"
 import { ConfigProvider, Effect, Redacted } from "effect"
 import { generateKeyPairSync } from "node:crypto"
 import { readFileSync } from "node:fs"
@@ -37,7 +37,8 @@ const documented = () =>
 const pem = (type: "ec" | "rsa") =>
   (type === "ec"
     ? generateKeyPairSync("ec", { namedCurve: "P-256" })
-    : generateKeyPairSync("rsa", { modulusLength: 2048 })).privateKey.export({ type: "pkcs8", format: "pem" }).toString()
+    : generateKeyPairSync("rsa", { modulusLength: 2048 })).privateKey.export({ type: "pkcs8", format: "pem" })
+    .toString()
 
 /** A valid value for each documented setting; a newly documented one needs one here before this test passes. */
 const SETTINGS: Readonly<Record<string, string>> = {
@@ -87,7 +88,7 @@ const SETTINGS: Readonly<Record<string, string>> = {
   REPO_MAX_SIZE_MB: "500",
   REPO_BUDGET_USD: "10",
   REPO_TREE_MAX_PATHS: "10000",
-  REPO_CLONE_DEADLINE: "5 minutes",
+  REPO_CLONE_DEADLINE: "5 minutes"
 }
 
 /** The values the stack makes and binds itself (alchemy.run.ts), which a real plan's Config never sees. */
@@ -104,23 +105,26 @@ const planned = (settings: Readonly<Record<string, string>>) =>
     Alchemy.Stack(
       "chatapi-bindings",
       { providers: Cloudflare.providers(), state: Alchemy.inMemoryState() },
-      Effect.gen(function* () {
+      Effect.gen(function*() {
         const worker = yield* ChatApi.pipe(
-          Effect.provideService(Electric.Endpoint, Electric.Endpoint.of({ service: Output.literal("electric-gateway") })),
+          Effect.provideService(
+            Electric.Endpoint,
+            Electric.Endpoint.of({ service: Output.literal("electric-gateway") })
+          ),
           Effect.provideService(SignIn.Secret, SignIn.Secret.of({ value: made(STACK_MADE.SESSION_SECRET) })),
-          Effect.provideService(Secrets.Secret, Secrets.Secret.of({ value: made(STACK_MADE.SECRETS_KEY) })),
+          Effect.provideService(Secrets.Secret, Secrets.Secret.of({ value: made(STACK_MADE.SECRETS_KEY) }))
         )
         return Object.keys(worker.Props.env ?? {}).sort()
-      }),
+      })
     ).pipe(
       Effect.map((stack) => stack.output as ReadonlyArray<string>),
       Effect.provideService(Stage, "test"),
       Effect.provideService(
         ConfigProvider.ConfigProvider,
-        ConfigProvider.fromUnknown({ ...settings, CLOUDFLARE_ACCOUNT_ID: "account", CLOUDFLARE_API_TOKEN: "token" }),
-      ),
+        ConfigProvider.fromUnknown({ ...settings, CLOUDFLARE_ACCOUNT_ID: "account", CLOUDFLARE_API_TOKEN: "token" })
+      )
     ),
-    { providers: Cloudflare.providers() },
+    { providers: Cloudflare.providers() }
   )
 
 describe("ChatApi's bindings", () => {
