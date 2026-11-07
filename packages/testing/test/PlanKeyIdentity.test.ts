@@ -33,7 +33,7 @@ const declarationOf = (graph: Graph.Graph, kind: string) => {
   return { draft: drafts[ordinal]!, ordinal }
 }
 
-const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/Crypto").Crypto>): A =>
+const runKey = <A, E>(effect: Effect.Effect<A, E, import("effect/crypto/Digest").Digest>): A =>
   Effect.runSync(Digest.provideSync(effect))
 
 describe("plan key identity", () => {

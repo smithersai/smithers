@@ -14,7 +14,7 @@ npm install @smthrs/testing@next effect
 The `next` tag carries the 1.0 release candidates.
 
 [`effect`](https://effect.website) is a required peer dependency in the version
-`4.0.5`. Two copies of `effect` in one program are two sets of service
+`4.1.1`. Two copies of `effect` in one program are two sets of service
 tags, so the package takes `effect` from your project and never installs its
 own.
 
@@ -35,7 +35,7 @@ in production.
 `Vitest` module imports them. The adapter peer selects the tested release:
 
 ```bash
-npm install --save-dev vitest@5.0.0 @effect/vitest@4.0.5
+npm install --save-dev vitest@5.0.0 @effect/vitest@4.1.1
 ```
 
 Every other module works under any runner, because an assertion is an ordinary

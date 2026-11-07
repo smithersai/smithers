@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The contract's success arm, in the kernel's own package.
  *
@@ -66,13 +67,13 @@ const layerSpawnerSupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(Ch
       let pending = false
       if (
         piped === undefined && environment === undefined &&
-        probe.command === process.execPath && probe.args[0] === "-e"
+        probe.command === process.execPath && probe.args.map(plainWord)[0] === "-e"
       ) {
         output = ""
         const schedule = () => {
           pending = true
         }
-        runInNewContext(probe.args[1]!, {
+        runInNewContext(probe.args.map(plainWord)[1]!, {
           process: {
             stdout: {
               write: (value: string) => {
@@ -92,7 +93,7 @@ const layerSpawnerSupported: Layer.Layer<ChildProcessSpawner> = Layer.succeed(Ch
           })
         )
       }
-      const text = piped ?? environment ?? output ??
+      const text = piped ?? (Redacted.isRedacted(environment) ? Redacted.value(environment) : environment) ?? output ??
         (command._tag === "PipedCommand" ? "host-contract-pipeline" : "")
       const stdout = text === "" ? Stream.empty : Stream.fromArray([encoder.encode(text)])
       return makeHandle({
@@ -255,3 +256,7 @@ runHostContract(
     httpClient: httpClientCaps
   }
 )
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

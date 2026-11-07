@@ -344,7 +344,7 @@ export const hostSuite = (bundle: HostBundle, profile: HostProfile): ReadonlyArr
       Effect.gen(function*() {
         const jj = yield* JjTag
         const status = yield* jj.status()
-        if (typeof status !== "string") yield* failure("Jj", "status")
+        if (typeof status !== "string") return yield* failure("Jj", "status")
       }),
       bundle
     )
@@ -391,7 +391,7 @@ export const hostSuite = (bundle: HostBundle, profile: HostProfile): ReadonlyArr
         const first = yield* Clock.currentTimeMillis
         const second = yield* Clock.currentTimeMillis
         if (!Number.isInteger(first) || !Number.isInteger(second) || second < first) {
-          yield* failure("Clock", "currentTimeMillis")
+          return yield* failure("Clock", "currentTimeMillis")
         }
       }),
       bundle
@@ -411,7 +411,7 @@ export const hostSuite = (bundle: HostBundle, profile: HostProfile): ReadonlyArr
     ? provideNoAmbient(
       Effect.gen(function*() {
         const value = yield* Random.next
-        if (!Number.isFinite(value) || value < 0 || value >= 1) yield* failure("Random", "next")
+        if (!Number.isFinite(value) || value < 0 || value >= 1) return yield* failure("Random", "next")
       }),
       bundle
     )

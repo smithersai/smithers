@@ -1,3 +1,5 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 /**
  * `EngineSubject` adapter over the real `/engine`.
  *
@@ -27,7 +29,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -232,7 +234,7 @@ const raceStep = (
 ): Effect.Effect<
   unknown,
   unknown,
-  FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto
+  FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
 > =>
   race.branches.length === 0
     ? Effect.fail(unavailable(`Race ${race.key} has no branches`))
@@ -264,7 +266,7 @@ const raceStep = (
 export const make = (): Effect.Effect<
   EngineSubjectService,
   never,
-  Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto
+  Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
 > =>
   Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
@@ -272,7 +274,8 @@ export const make = (): Effect.Effect<
     // Captured once so the service methods stay `R = never`: a Context.Service
     // record cannot carry requirements, and the step-key derivation inside
     // `engine.register` needs a Crypto in strict type environments.
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
+    const random = yield* SecureRandom.SecureRandom
     const journals = new Map<string, Array<JournalEntryLike>>()
     const executions = new Map<string, ExecutionMeta>()
     const idempotencyIndex = new Map<string, string>()
@@ -348,9 +351,9 @@ export const make = (): Effect.Effect<
             })).pipe(Scope.provide(scope))
           return flow
         }),
-        Crypto.Crypto,
+        EffectDigest.Digest,
         crypto
-      )
+      ).pipe(Effect.provideService(SecureRandom.SecureRandom, random))
 
     const requireMeta = (executionId: string): Effect.Effect<ExecutionMeta, EngineUnavailableError> =>
       Effect.suspend(() => {
@@ -544,7 +547,7 @@ export const make = (): Effect.Effect<
 export const layer = (): Layer.Layer<
   EngineSubjectService,
   never,
-  FlowRuntime.FlowRuntime | Crypto.Crypto
+  FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
 > => Layer.effect(EngineSubjectTag)(make())
 
 /**
@@ -554,16 +557,7 @@ export const layer = (): Layer.Layer<
  * browser ship — pulling in a platform package here would cost this package
  * its browser safety.
  */
-const layerWebCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(Crypto.Crypto)(
-  Crypto.make({
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
-    digest: (algorithm, data) =>
-      Effect.map(
-        Effect.promise(() => globalThis.crypto.subtle.digest(algorithm, data as BufferSource)),
-        (digested) => new Uint8Array(digested)
-      )
-  })
-)
+const layerWebCrypto = Layer.mergeAll(EffectDigest.layerWebCrypto, SecureRandom.layerWebCrypto)
 
 /**
  * Provides an `EngineSubject` over any `FlowRuntime` implementation.
@@ -581,7 +575,7 @@ const layerWebCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(Crypto.Crypto)(
  */
 export const layerOver = <E, R>(
   runtime: Layer.Layer<FlowRuntime.FlowRuntime, E, R>
-): Layer.Layer<EngineSubjectService | Crypto.Crypto, E, R> =>
+): Layer.Layer<EngineSubjectService | (EffectDigest.Digest | SecureRandom.SecureRandom), E, R> =>
   layer().pipe(
     Layer.provide(runtime),
     Layer.provideMerge(layerWebCrypto)
@@ -593,4 +587,5 @@ export const layerOver = <E, R>(
  * @category layers
  * @since 0.0.0
  */
-export const layerMemory: Layer.Layer<EngineSubjectService | Crypto.Crypto> = layerOver(FlowEngine.layerMemory)
+export const layerMemory: Layer.Layer<EngineSubjectService | (EffectDigest.Digest | SecureRandom.SecureRandom)> =
+  layerOver(FlowEngine.layerMemory)
