@@ -10,6 +10,11 @@ test.describe("splash and chat", () => {
   test("a visitor asks the agent from the splash and reads its answer", async ({ page }, testInfo) => {
     await page.goto("/")
     await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
+    // The wordmark whose text suits the theme, and a poster before the video plays (2026-11-07).
+    const light = testInfo.project.name === "light"
+    await expect(page.locator(".vl-top .vl-logo-on-light")).toBeVisible({ visible: light })
+    await expect(page.locator(".vl-top .vl-logo-on-dark")).toBeVisible({ visible: !light })
+    await expect(page.locator(".vl-media video")).toHaveAttribute("poster", "/media/contract-poster.jpg")
     await page.screenshot({ path: testInfo.outputPath("1-splash.png") })
 
     await page.keyboard.press("ControlOrMeta+k")
@@ -28,6 +33,12 @@ test.describe("splash and chat", () => {
     await expect(answer).toContainText("npm create vibelang@latest my-app")
     await settled(page)
     await page.screenshot({ path: testInfo.outputPath("3-chat.png") })
+
+    // The docked composer stays inside the window on every screen (it overflowed on phones, 2026-11-07).
+    const composer = await page.locator(".sui-chat-composer").boundingBox()
+    expect(composer).not.toBeNull()
+    expect(composer!.x).toBeGreaterThanOrEqual(0)
+    expect(composer!.x + composer!.width).toBeLessThanOrEqual(page.viewportSize()!.width)
 
     await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
     await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()

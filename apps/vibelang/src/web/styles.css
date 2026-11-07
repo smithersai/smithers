@@ -25,9 +25,15 @@ button { font: inherit; }
 .vl-top { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
 .vl-home { display: inline-flex; align-items: center; padding: 4px; border: 0; border-radius: var(--r-1, 6px); background: transparent; cursor: pointer; }
 .vl-home:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
-.vl-logo { height: 24px; width: auto; display: block; }
-:root[data-theme="light"] .vl-logo { filter: invert(1) hue-rotate(180deg); }
-@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .vl-logo { filter: invert(1) hue-rotate(180deg); } }
+.vl-logo { display: inline-flex; }
+.vl-logo img { height: 24px; width: auto; display: block; }
+.vl-logo-on-light { display: none !important; }
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) .vl-logo-on-dark { display: none !important; }
+  :root:not([data-theme="dark"]) .vl-logo-on-light { display: block !important; }
+}
+:root[data-theme="light"] .vl-logo-on-dark { display: none !important; }
+:root[data-theme="light"] .vl-logo-on-light { display: block !important; }
 .vl-nav { display: flex; align-items: center; gap: 18px; }
 .vl-link { padding: 0; border: 0; background: none; color: var(--brand); font-size: 14px; text-decoration: none; cursor: pointer; }
 .vl-link:hover { text-decoration: underline; }
@@ -57,7 +63,10 @@ button { font: inherit; }
 .vl-pane { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-bubble, 18px); background: var(--surface); color: var(--text-muted); text-align: left; cursor: pointer; transition: border-color .15s ease; }
 .vl-pane:hover { border-color: var(--border-strong, var(--brand)); }
 .vl-pane:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
-.vl-pane .vl-logo { height: 20px; }
+.vl-pane .vl-logo img { height: 20px; }
+/* Docked, the composer spans the window less its margins, up to the transcript's width, on any screen. */
+.vl-chat .sui-chat-composer[data-docked="true"] { width: auto; max-width: 720px; margin: 0 auto; }
+@media (max-width: 600px) { .vl-chat .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; } .vl-top { padding: 12px 16px; } }
 .vl-pane-text { flex: 1; font-size: 13px; }
 .vl-pane-expand { color: var(--text-faint, var(--text-muted)); }
 .sui-chat-message[data-pending="true"] .sui-chat-bubble { opacity: .6; }

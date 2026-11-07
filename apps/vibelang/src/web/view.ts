@@ -26,8 +26,12 @@ export function view(model: Model, h: H): Document {
   }
 }
 
+/** The wordmark; styles.css shows the version whose text suits the theme. */
 function logo(h: H): Html {
-  return h.img([h.Class("vl-logo"), h.Src("/media/logo-dark.svg"), h.Alt("VibeLang")])
+  return h.span([h.Class("vl-logo")], [
+    h.img([h.Class("vl-logo-on-dark"), h.Src("/media/logo-dark.svg"), h.Alt("VibeLang")]),
+    h.img([h.Class("vl-logo-on-light"), h.Src("/media/logo-light.svg"), h.Alt("VibeLang")]),
+  ])
 }
 
 function top(model: Model, h: H): Html {
@@ -64,7 +68,7 @@ function splash(h: H): Html {
     ]),
     h.figure([h.Class("vl-media")], [
       h.video(
-        [h.Src("/media/contract.mp4"), h.Autoplay(true), h.Muted(true), h.Loop(true), h.Playsinline(true), h.AriaLabel("A!E!R: what a function returns, how it fails, what it needs")],
+        [h.Src("/media/contract.mp4"), h.Poster("/media/contract-poster.jpg"), h.Autoplay(true), h.Muted(true), h.Loop(true), h.Playsinline(true), h.AriaLabel("A!E!R: what a function returns, how it fails, what it needs")],
         [],
       ),
     ]),
