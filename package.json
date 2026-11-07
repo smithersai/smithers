@@ -38,16 +38,17 @@
     "release:status": "node --import vibelang/register .smithers/flows/release-support/main.ts status",
     "release:answer": "node --import vibelang/register .smithers/flows/release-support/main.ts answer",
     "browser": "node packages/repo-targets/browser/browser-check.mjs",
-    "check": "pnpm --recursive --if-present run check",
+    "check": "pnpm run sidecars && pnpm --recursive --if-present run check",
     "check:npm-dedupe": "node .smithers/flows/release/check-npm-dedupe.mjs",
     "circular": "pnpm --recursive --if-present run circular",
     "docs:check": "smthrs flow start docs-sync --data '{\"mode\":\"check\"}' --wait",
     "docs:sync": "pnpm --filter @smithers/site run sync:docs && smthrs flow start docs-sync --data '{\"mode\":\"write\"}' --wait",
-    "lint": "pnpm --recursive --if-present run lint",
+    "lint": "pnpm run sidecars && pnpm --recursive --if-present run lint",
     "target-index": "pnpm exec smthrs target '//:targetIndex' --write",
-    "test": "pnpm --recursive --if-present run test",
+    "test": "pnpm run sidecars && pnpm --recursive --if-present run test",
     "test:jsdoc": "node --test eslint.jsdoc.test.mjs",
-    "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0"
+    "lint:jsdoc": "eslint --config eslint.config.js \"packages/*/src/**/*.ts\" \"packages/*/*/src/**/*.ts\" \"packages/*/*/*/src/**/*.ts\" --max-warnings=0",
+    "sidecars": "node packages/repo-targets/scripts/prepare-sidecars.mjs"
   },
   "engines": {
     "node": ">=26.4.0",

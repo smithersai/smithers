@@ -256,3 +256,9 @@ __pycache__/
 
 # Portable loader records are derived compile caches, regenerated on demand.
 **/.vibelang/js/.loader/
+
+# Compiler declarations and the temporary configurations used to generate them.
+*.d.vibe.ts
+.tsconfig.vibelang-sidecars-*.json
+
+*.vibe.*.d.ts

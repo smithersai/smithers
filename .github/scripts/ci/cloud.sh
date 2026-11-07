@@ -188,6 +188,7 @@ ensure_js() {
   hash -r
   npm install --global --prefix "$tools_dir" "$package_manager" --ignore-scripts --no-audit --no-fund
   pnpm install --frozen-lockfile --ignore-scripts
+  pnpm run sidecars
   # Log what actually ran: EBADENGINE was invisible until someone read the tail.
   echo "Bootstrapped node $(node --version) npm $(npm --version)"
 }

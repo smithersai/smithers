@@ -30,6 +30,13 @@ Commit each referenced archive with its manifest and lockfile changes so a fresh
 checkout can run `pnpm install --frozen-lockfile`. The repository contract test suite verifies
 archive availability and checksums across the declared workspace packages.
 
+VibeLang declaration sidecars are generated before the root `check`, `lint` and
+`test` scripts and before CI source gates. After installing dependencies, run
+`pnpm run sidecars` before invoking package scripts or TypeScript-only tools.
+Generation checks native sources and their imports, preserves ambient declarations,
+and leaves the ordinary full project and test checks unchanged. Sidecars are not
+committed. Run each package's normal build before packing it.
+
 Before landing on `main`, run every gate:
 
 ```sh

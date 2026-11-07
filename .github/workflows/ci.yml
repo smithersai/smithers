@@ -128,6 +128,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -261,6 +268,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -394,6 +408,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -527,6 +548,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -660,6 +688,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -793,6 +828,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -926,6 +968,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1059,6 +1108,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1183,6 +1239,13 @@ jobs:
           echo "$version"
           printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Repository flows"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:pack' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1482,6 +1545,13 @@ jobs:
           echo "$version"
           printf '%s\n' "$path_entry" >> "$GITHUB_PATH"
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Issue claims and check receipts"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:issueClaim' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1694,6 +1764,13 @@ jobs:
             fi
           fi
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package documentation tarballs"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//.smithers/flows:packageDocs' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1768,6 +1845,13 @@ jobs:
             fi
           fi
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "TUI typecheck, lint and tests"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs ci '//apps/tui/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1829,6 +1913,13 @@ jobs:
         run: "rustup toolchain install"
       - id: setup
         uses: "Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Cargo lint gates"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs lint '//packages/smithers/flows/jj-wasm/...' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1901,6 +1992,13 @@ jobs:
             fi
           fi
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Native FFI clippy and tests"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs build '//:nativeFfi' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1940,6 +2038,13 @@ jobs:
       - name: "Install pinned Rust toolchain"
         id: setup
         run: "rustup toolchain install"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Build-script unit tests"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/flows/jj-wasm:buildScript' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -1984,6 +2089,13 @@ jobs:
         shell: "bash"
       - id: setup
         run: "pnpm install --frozen-lockfile --ignore-scripts"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Web bundle compilation guard"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/repo-targets:webBundleContract' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2126,6 +2238,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2268,6 +2387,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/agent/harness-detect:*' '//packages/smithers/agent/harness:*' '//packages/smithers/agent/memory:*' '//packages/smithers/build/build-cli:*' '//packages/smithers/flows/capability:*' '//packages/smithers/flows/database:*' '//packages/smithers/flows/patterns:*' '//packages/smithers/flows/step-cache:*' '//packages/smthrs-deprecation:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2410,6 +2536,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/effect-electric:*' '//packages/smithers/agent/harness/benchmarks/swebench:*' '//packages/smithers/flows/engine-store:*' '//packages/smithers/flows/kernel:*' '//packages/smithers/flows/secrets:*' '//packages/smithers/gateway:*' '//packages/smithers/ui/repo-view:*' '//packages/smithers/ui:*' '//packages/testing:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2552,6 +2685,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/effect-tanstack-db:*' '//packages/smithers/agent/model:*' '//packages/smithers/agent/scorers:*' '//packages/smithers/agent/triggers:*' '//packages/smithers/flows/core:*' '//packages/smithers/flows/engine:*' '//packages/smithers/flows/flow:*' '//packages/smithers/flows/platform-browser:*' '//packages/smithers/ui/terminal-frame:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2694,6 +2834,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/errors:*' '//packages/rpc:*' '//packages/smithers/agent/fs:*' '//packages/smithers/agent/harness/benchmarks/ale:*' '//packages/smithers/agent/integrations:*' '//packages/smithers/agent/std:*' '//packages/smithers/agent:*' '//packages/smithers/build:*' '//packages/smithers/flows/journal:*' '//packages/smithers/flows:*' '//packages/smithers/notifications:*' '//packages/smithers/ui/ui-styleguide:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2836,6 +2983,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -2978,6 +3132,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/effect-code-storage:*' '//packages/smithers/agent/model-host:*' '//packages/smithers/agent/plugin:*' '//packages/smithers/flows/crypto:*' '//packages/smithers/flows/plan-store:*' '//packages/smithers/flows/run-store:*' '//packages/smithers/flows/sandbox:*' '//packages/smithers/flows/time-travel:*' '//packages/smithers/migrate:*' '//packages/smithers/ui/views:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
@@ -3120,6 +3281,13 @@ jobs:
           cd 'packages/smithers/ui'
           pnpm exec playwright install --with-deps 'chromium' 'webkit'
         shell: "bash"
+      - name: "Generate source declarations"
+        if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
+        run: "pnpm exec smthrs build '//packages/repo-targets:sidecars' --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        env:
+          "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
+          "SMITHERS_CACHE_READ_TOKEN": "${{ secrets.SMITHERS_CACHE_READ_TOKEN }}"
+          "SMITHERS_CACHE_NAMESPACE": "${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || '' }}"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
         run: "pnpm exec smthrs test '//packages/smithers/agent/evals:*' '//packages/smithers/agent/harness/benchmarks/harbor:*' '//packages/smithers/agent/registry:*' '//packages/smithers/build/targets:*' '//packages/smithers/control:*' '//packages/smithers/flows/artifacts:*' '//packages/smithers/flows/canonical:*' '//packages/smithers/flows/observability:*' '//packages/smithers/flows/plan:*' '//packages/smithers/flows/platform-cloudflare:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"

@@ -2,5 +2,6 @@
   "extends": "../tsconfig.json",
   "include": ["flow.ts", "src/**/*.ts", "src/**/*.vibe", "tests/**/*.ts"],
   "exclude": ["node_modules"],
-  "compilerOptions": { "types": ["node", "bun"] }
+  "compilerOptions": {
+    "customConditions": ["vibelang-source"], "types": ["node", "bun"] }
 }

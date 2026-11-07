@@ -56,10 +56,10 @@ describe("test-script wiring", () => {
     }
   })
 
-  it("keeps the root aggregators fanning out recursively", () => {
-    assert.equal(rootManifest.scripts.test, "pnpm --recursive --if-present run test")
-    assert.equal(rootManifest.scripts.check, "pnpm --recursive --if-present run check")
-    assert.equal(rootManifest.scripts.lint, "pnpm --recursive --if-present run lint")
+  it("prepares source declarations before root aggregators fan out recursively", () => {
+    assert.equal(rootManifest.scripts.test, "pnpm run sidecars && pnpm --recursive --if-present run test")
+    assert.equal(rootManifest.scripts.check, "pnpm run sidecars && pnpm --recursive --if-present run check")
+    assert.equal(rootManifest.scripts.lint, "pnpm run sidecars && pnpm --recursive --if-present run lint")
   })
 
   it("keeps the pnpm workspace globs and the root manifest globs identical", () => {

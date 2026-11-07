@@ -1,9 +1,11 @@
 import assert from "node:assert/strict"
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs"
+import { spawnSync } from "node:child_process"
 import { tmpdir } from "node:os"
-import { dirname, join, resolve } from "node:path"
+import { dirname, join, relative, resolve } from "node:path"
 import { createRequire } from "node:module"
 import { test } from "node:test"
+import { prepareSidecars, sidecarProjects } from "../scripts/prepare-sidecars.mjs"
 const require = createRequire(import.meta.url)
 const ts = require("typescript")
 const fc = require("fast-check")
@@ -62,4 +64,74 @@ test("declaration conditions retain the source directory in nested package layou
       assert.equal(found.extension, ts.Extension.Ts)
     })
   ), { numRuns: 64, seed: 51719 })
+})
+
+
+test("native declarations bootstrap a clean project without weakening its full check", () => fixture(dir => {
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir")
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "declaration-bootstrap-fixture", type: "module" }))
+  mkdirSync(join(dir, "src"))
+  writeFileSync(join(dir, "tsconfig.json"), JSON.stringify({
+    vibe: { sidecarDir: ".vibe/declarations" },
+    compilerOptions: {
+      target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+      skipLibCheck: true, noEmit: true, rootDir: "src", rootDirs: [".", ".vibe/declarations"],
+      types: ["node"], allowArbitraryExtensions: true
+    },
+    include: ["src/**/*"]
+  }))
+  writeFileSync(join(dir, "src/ambient.d.ts"), "declare const ApplicationTokenBrand: unique symbol\n")
+  mkdirSync(join(dir, "dependencies"))
+  writeFileSync(join(dir, "dependencies/global.d.ts"),
+    "declare global { namespace AmbientDependency { type Token = string } }\nexport {}\n")
+  writeFileSync(join(dir, "src/context.ts"),
+    '/// <reference lib="es2024" />\nimport type {} from "../dependencies/global.js"\n')
+  writeFileSync(join(dir, "src/value.vibe"),
+    'export type Brand = typeof ApplicationTokenBrand\nexport type Token = AmbientDependency.Token\nexport effect function value() { return "ok".isWellFormed() ? 42 : 0 }\n')
+  writeFileSync(join(dir, "src/unrelated.ts"), 'export const broken: number = "wrong"\n')
+  const declaration = join(dir, ".vibe/declarations/src/value.d.vibe.ts")
+  assert.equal(existsSync(declaration), false)
+  const projects = sidecarProjects(dir)
+  assert.equal(projects.length, 1)
+  assert.ok(projects[0].files.includes(join(dir, "src/ambient.d.ts")))
+  assert.ok(!projects[0].files.includes(join(dir, "src/unrelated.ts")))
+  assert.ok(projects[0].files.includes(join(dir, "dependencies/global.d.ts")))
+  assert.ok(projects[0].libs.includes("es2024.string"))
+  assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 1)
+  assert.match(readFileSync(declaration, "utf8"), /value/)
+  const read = ts.readConfigFile(join(dir, "tsconfig.json"), ts.sys.readFile)
+  const parsed = ts.parseJsonConfigFileContent(read.config, ts.sys, dir)
+  const found = ts.resolveModuleName("./value.vibe", join(dir, "src/consumer.ts"), parsed.options, ts.sys).resolvedModule
+  assert.equal(found?.resolvedFileName, declaration)
+  const compiler = join(dirname(require.resolve("vibelang/package.json")), "bin/vibelang")
+  const full = spawnSync(process.execPath, [compiler, "-p", join(dir, "tsconfig.json")], { encoding: "utf8" })
+  assert.notEqual(full.status, 0, "the ordinary project check must still reject unrelated TypeScript errors")
+  assert.match(full.stdout + full.stderr, /TS2322/)
+  writeFileSync(join(dir, "src/value.vibe"), 'export const value: number = "wrong"\n')
+  assert.throws(() => prepareSidecars(dir, { stdio: "pipe" }), /TS2322/)
+  assert.deepEqual(readdirSync(dir).filter(name => name.startsWith(".tsconfig.vibelang-sidecars-")), [])
+}))
+
+test("declaration preparation preserves project scope and inherited conditions across nested roots", () => {
+  fc.assert(fc.property(
+    fc.array(fc.constantFrom("nested", "workspace", "source"), { maxLength: 4 }),
+    fc.array(fc.constantFrom("application-source", "browser-source", "vibelang-source"), { maxLength: 4 }),
+    (segments, conditions) => fixture(dir => {
+      const home = join(dir, ...segments, "package")
+      mkdirSync(join(home, "src"), { recursive: true })
+      mkdirSync(join(home, "test/fixtures"), { recursive: true })
+      const base = join(dir, "base.json")
+      writeFileSync(base, JSON.stringify({
+        compilerOptions: { strict: true, module: "NodeNext", moduleResolution: "NodeNext", customConditions: conditions }
+      }))
+      writeFileSync(join(home, "tsconfig.json"), JSON.stringify({
+        extends: relative(home, base), include: ["src/**/*", "test/**/*"]
+      }))
+      writeFileSync(join(home, "src/value.vibe"), "export const value = 1\n")
+      writeFileSync(join(home, "test/fixtures/broken.vibe"), "not valid VibeLang\n")
+      const [project] = sidecarProjects(dir)
+      assert.deepEqual(project.files, [join(home, "src/value.vibe")])
+      assert.deepEqual(project.conditions, [...new Set([...conditions, "vibelang-source"])])
+    })
+  ), { numRuns: 64, seed: 51720 })
 })

@@ -1006,6 +1006,19 @@ const packageOutputRoutes = Smithers.NodeTest({
 })
 
 /**
+ * Prepare generated native type inputs before stock TypeScript tools run.
+ * @since 0.1.0
+ * @category build
+ */
+const sidecars = Smithers.NodeBinary({
+  args: [],
+  timeout: "20m",
+  entry: Smithers.file("//packages/repo-targets/scripts/prepare-sidecars.mjs"),
+  srcs: [Smithers.file("//package.json"), Smithers.file("//pnpm-workspace.yaml")],
+  deps: [repositoryInputs]
+})
+
+/**
  * Public native target exports resolve to the emitted declarations.
  *
  * @since 0.1.0
@@ -1075,6 +1088,7 @@ const derivedToolingInputs = Smithers.NodeTest({
 
 export const Package = Smithers.Package({
   targets: {
+    sidecars,
     derivedToolingInputs,
     browserEntrypointSources,
     ...repositoryPackages,

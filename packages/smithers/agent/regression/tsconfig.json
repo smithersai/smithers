@@ -2,6 +2,7 @@
   "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "../../../../tsconfig.base.json",
   "compilerOptions": {
+    "customConditions": ["vibelang-source"],
     "rootDirs": [".",".vibe/declarations"],
     "rewriteRelativeImportExtensions": true,
     "module": "Node18",

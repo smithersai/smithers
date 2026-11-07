@@ -64,6 +64,7 @@ const shardCommands = (verb) => packageShards.map((shard) =>
  * @type {readonly ReleaseGate[]}
  */
 export const releaseGates = [
+  { name: "Generate source declarations", verb: "build", target: "//packages/repo-targets:sidecars" },
   { name: "Workspace targets", verb: "ci", target: "//packages/...", jobs: 2, ciCommands: shardCommands("ci") },
   { name: "Issue claims and check receipts", verb: "test", target: "//.smithers/flows:issueClaim" },
   { name: "Check bindings", verb: "test", target: "//.smithers/flows:evidenceBindings" },

@@ -1,6 +1,7 @@
 {
   "vibe": { "sidecarDir": ".vibe/declarations" },
   "compilerOptions": {
+    "customConditions": ["vibelang-source"],
     "rootDirs": [".",".vibe/declarations"],
     "target": "ES2022",
     "lib": ["ES2022", "DOM", "DOM.Iterable"],

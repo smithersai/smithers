@@ -309,7 +309,9 @@ test("every gate in ci.yml also runs in release.yml", () => {
   ])
 
   const mirrored = ["repository", "scripts", "docs", "rust-ffi", "wasm-repro"]
-  const isGate = (step) => graphCommands([step]).length > 0
+  // Each independent CI job bootstraps declarations; the serial release does so once.
+  const isPreparation = (step) => graphCommands([step]).some(command => command.includes("//packages/repo-targets:sidecars"))
+  const isGate = (step) => graphCommands([step]).length > 0 && !isPreparation(step)
   // ci.yml passes the known-red list; the release does not, so every target a
   // release mirrors must be green there, including those main tolerates.
   const expected = mirrored.flatMap((job) => jobSteps(ci, job)).filter(isGate)
@@ -348,6 +350,22 @@ test("every gate in ci.yml also runs in release.yml", () => {
   assert.deepEqual(copied.map(command).sort(), expected.map(command).sort())
   assert.deepEqual([...copied].sort(), [...expected].sort())
   assert.doesNotMatch(workflow("release.yml"), /--known-red/)
+})
+
+test("declaration preparation precedes source gates in every installed CI job and release", () => {
+  const installed = Object.entries(parse(workflow("ci.yml")).jobs).filter(([, job]) =>
+    job.steps.some(step => step.run?.includes("pnpm install --frozen-lockfile")))
+  assert.ok(installed.length > 5)
+  for (const [name, job] of [...installed, ["publish", parse(workflow("release.yml")).jobs.publish]]) {
+    const install = job.steps.findIndex(step => step.run?.includes("pnpm install --frozen-lockfile"))
+    const preparations = job.steps.flatMap((step, index) =>
+      step.run?.includes("build '//packages/repo-targets:sidecars'") ? [index] : [])
+    assert.equal(preparations.length, 1, name + " bootstraps once")
+    assert.ok(preparations[0] > install, name + " prepares after install")
+    const gates = job.steps.flatMap((step, index) =>
+      step.run && /pnpm exec (?:smthrs|smithers-build) (?:ci|lint|test|docs) /.test(step.run) ? [index] : [])
+    assert.ok(gates.every(index => index > preparations[0]), name + " prepares before source gates")
+  }
 })
 
 test("release.yml's publish job names every step once", () => {
