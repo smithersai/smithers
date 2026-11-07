@@ -44,8 +44,8 @@
   "apply-one-open": {
     "function": "apply",
     "claim": "at most one entry is unfinished",
-    "before": "if (conversation.agent === \"working\" || hasEntryId(conversation.entries, event.id)) return next",
-    "after": "if (hasEntryId(conversation.entries, event.id)) return next"
+    "before": "if (conversation.agent === \"working\" || hasEntryId(conversation.entries, event.id) || !canReplyTo(conversation.entries, event.inReplyTo)) return next",
+    "after": "if (hasEntryId(conversation.entries, event.id) || !canReplyTo(conversation.entries, event.inReplyTo)) return next"
   },
   "apply-open-exists": {
     "function": "apply",
@@ -122,7 +122,7 @@
   "decide-start": {
     "function": "decide",
     "claim": "accepted start has a fresh, nonempty reply id",
-    "before": "      if (intent.id === \"\") return refused(\"not-replying\")\n      if (hasEntryId(conversation.entries, intent.id)) return refused(\"duplicate\")\n      return accepted({ type: \"ReplyStarted\"",
+    "before": "      if (intent.id === \"\") return refused(\"not-replying\")\n      if (hasEntryId(conversation.entries, intent.id)) return refused(\"duplicate\")\n      if (!canReplyTo(conversation.entries, intent.inReplyTo)) return refused(\"not-replying\")\n      return accepted({ type: \"ReplyStarted\"",
     "after": "      return accepted({ type: \"ReplyStarted\""
   },
   "decide-busy": {
@@ -238,5 +238,41 @@
     "claim": "resume preserves conversation and pending",
     "before": "{ ...client, gap: false }",
     "after": "{ ...client, conversation: { ...client.conversation, seq: client.conversation.seq + 1 }, pending: [], gap: false }"
+  },
+  "decide-reply-target": {
+    "function": "decide",
+    "claim": "accepted reply targets an existing unanswered person post",
+    "before": "if (!canReplyTo(conversation.entries, intent.inReplyTo)) return refused(\"not-replying\")",
+    "after": "if (false) return refused(\"not-replying\")"
+  },
+  "decide-reply-correlation": {
+    "function": "decide",
+    "claim": "accepted reply carries exactly the requested target",
+    "before": "inReplyTo: intent.inReplyTo",
+    "after": "inReplyTo: intent.id"
+  },
+  "can-reply-person": {
+    "function": "canReplyTo",
+    "claim": "a reply target must be a person post",
+    "before": "entries[i]!.author === \"person\" && entries[i]!.id === id",
+    "after": "entries[i]!.id === id"
+  },
+  "can-reply-answered": {
+    "function": "canReplyTo",
+    "claim": "a post with any existing reply cannot receive a second",
+    "before": "if (entries[i]!.author === \"agent\" && entries[i]!.inReplyTo === id) return false",
+    "after": "if (false) return false"
+  },
+  "can-reply-missing": {
+    "function": "canReplyTo",
+    "claim": "a missing post cannot be answered",
+    "before": "return found",
+    "after": "return true"
+  },
+  "apply-reply-correlation": {
+    "function": "apply",
+    "claim": "the projected reply preserves its target",
+    "before": "inReplyTo: event.inReplyTo",
+    "after": "inReplyTo: event.id"
   }
 }

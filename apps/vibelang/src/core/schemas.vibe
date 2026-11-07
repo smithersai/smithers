@@ -5,6 +5,7 @@ export schema Entry {
   readonly id: string
   readonly seq: number
   readonly clientId: string
+  readonly inReplyTo: string
   readonly author: "person" | "agent"
   readonly name: string
   readonly text: string

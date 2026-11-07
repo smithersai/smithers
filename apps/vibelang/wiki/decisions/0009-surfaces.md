@@ -12,8 +12,8 @@ The existing `@effect/platform-node` host adapter supplies Node services at the 
 **Commands.** `ask <text> [--conversation <id>]` posts through `Factory` and follows numbered events until the
 matching reply finishes or fails. It returns `conversation`, completed reply `text` and `events` (the post's event
 number plus every event of its reply). Each call generates a fresh client id with Effect's `IdGenerator`. Replies
-start in post order, as the mock agent's queue already guarantees (0004); replaying from zero matches earlier queued
-posts before matching this call. A live layer must preserve that ordering contract. Independent conversations are
+carry `inReplyTo`, the accepted post's entry id. The call matches its `Posted.clientId`, then selects only the
+`ReplyStarted` that targets that post id. Skipped or out-of-order answers cannot return another person's reply. Independent conversations are
 isolated. A refused post and a failed reply are typed failures, never successful partial output.
 
 `read [--after <seq>] [--conversation <id>]` returns immediately with `conversation`, `seq` (the snapshot's event

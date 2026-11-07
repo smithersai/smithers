@@ -25,6 +25,8 @@ export interface Entry {
   readonly seq: number
   /** The id the posting client chose, for matching its pending copy; `""` for the agent's replies. */
   readonly clientId: string
+  /** The person post this reply answers; empty on person posts. */
+  readonly inReplyTo: string
   readonly author: Author
   /** The name shown beside it. */
   readonly name: string
@@ -45,7 +47,7 @@ export type Event =
     readonly name: string
     readonly text: string
   }
-  | { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string }
+  | { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string; readonly inReplyTo: string }
   | { readonly type: "ReplyDelta"; readonly seq: number; readonly id: string; readonly text: string }
   | { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
@@ -90,7 +92,7 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures (conversation.agent == "working" ==> exists(i, 0 <= i && i < conversation.entries.length && !conversation.entries[i].done)) ==> (\result.agent == "working" ==> exists(i, 0 <= i && i < \result.entries.length && !\result.entries[i].done))
 //@ ensures (forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != "")) ==> (forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].id != ""))
 //@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length ==> conversation.entries[i].id != conversation.entries[j].id))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length ==> \result.entries[i].id != \result.entries[j].id)))
-//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != event.id) ==> \result.entries.length == conversation.entries.length + 1 && \result.entries[conversation.entries.length].name == AGENT_NAME
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != event.id) && event.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == event.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != event.inReplyTo) ==> \result.entries.length == conversation.entries.length + 1 && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].inReplyTo == event.inReplyTo
 //@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[j].author == "person" ==> conversation.entries[i].clientId != conversation.entries[j].clientId))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "person" && \result.entries[j].author == "person" ==> \result.entries[i].clientId != \result.entries[j].clientId)))
 //@ ensures (forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" ==> conversation.entries[i].clientId != "")) ==> (forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].author == "person" ==> \result.entries[i].clientId != ""))
 export function apply(conversation: Conversation, event: Event): Conversation {
@@ -103,6 +105,7 @@ export function apply(conversation: Conversation, event: Event): Conversation {
         id: event.id,
         seq: event.seq,
         clientId: "",
+        inReplyTo: "",
         author: "person",
         name: event.name,
         text: event.text,
@@ -114,11 +117,12 @@ export function apply(conversation: Conversation, event: Event): Conversation {
       return { ...next, entries }
     }
     case "ReplyStarted": {
-      if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id)) return next
+      if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id) || !canReplyTo(conversation.entries, event.inReplyTo)) return next
       const entry: Entry = {
         id: event.id,
         seq: event.seq,
         clientId: "",
+        inReplyTo: event.inReplyTo,
         author: "agent",
         name: AGENT_NAME,
         text: "",
@@ -197,12 +201,31 @@ export function hasEntryId(entries: ReadonlyArray<Entry>, id: string): boolean {
   return false
 }
 
+/** Whether this is a person's post with no reply yet, including finished or failed replies. */
+//@ verify
+//@ ensures \result == (id != "" && exists(i, 0 <= i && i < entries.length && entries[i].author == "person" && entries[i].id == id) && forall(i, 0 <= i && i < entries.length && entries[i].author == "agent" ==> entries[i].inReplyTo != id))
+export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
+  if (id === "") return false
+  let found = false
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant found == exists(j, 0 <= j && j < i && entries[j].author == "person" && entries[j].id == id)
+    //@ invariant forall(j, 0 <= j && j < i && entries[j].author == "agent" ==> entries[j].inReplyTo != id)
+    //@ decreases entries.length - i
+    if (entries[i]!.author === "agent" && entries[i]!.inReplyTo === id) return false
+    if (entries[i]!.author === "person" && entries[i]!.id === id) found = true
+    i++
+  }
+  return found
+}
+
 // ── decide: the sequencer ──────────────────────────────────────────────────────────────────────────────────────────
 
 /** What the sequencer is asked to record. A person posts; the agent's flow starts, extends, ends or fails a reply. */
 export type Intent =
   | { readonly type: "Post"; readonly id: string; readonly clientId: string; readonly name: string; readonly text: string }
-  | { readonly type: "StartReply"; readonly id: string }
+  | { readonly type: "StartReply"; readonly id: string; readonly inReplyTo: string }
   | { readonly type: "AppendReply"; readonly id: string; readonly text: string }
   | { readonly type: "FinishReply"; readonly id: string }
   | { readonly type: "FailReply"; readonly id: string; readonly reason: string }
@@ -240,6 +263,8 @@ function refused(refusal: Refusal): Decision {
 //@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.text.length <= MAX_TEXT
 //@ ensures \result.ok && (\result.event.type == "Posted" || \result.event.type == "ReplyStarted") ==> \result.event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != \result.event.id)
 //@ ensures \result.ok && \result.event.type == "Posted" ==> forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].clientId != \result.event.clientId)
+//@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> \result.event.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == \result.event.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != \result.event.inReplyTo)
+//@ ensures intent.type == "StartReply" && \result.ok ==> \result.event.type == "ReplyStarted" && \result.event.inReplyTo == intent.inReplyTo
 export function decide(conversation: Conversation, intent: Intent): Decision {
   const seq = conversation.seq + 1
   switch (intent.type) {
@@ -257,7 +282,8 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
       if (conversation.agent === "working") return refused("busy")
       if (intent.id === "") return refused("not-replying")
       if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")
-      return accepted({ type: "ReplyStarted", seq, id: intent.id })
+      if (!canReplyTo(conversation.entries, intent.inReplyTo)) return refused("not-replying")
+      return accepted({ type: "ReplyStarted", seq, id: intent.id, inReplyTo: intent.inReplyTo })
     case "AppendReply":
       if (!isReplying(conversation, intent.id)) return refused("not-replying")
       return accepted({ type: "ReplyDelta", seq, id: intent.id, text: intent.text })

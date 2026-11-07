@@ -11,6 +11,8 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
 
 - `decide` is the only writer: it numbers the next event (`seq = last + 1`) or refuses with a reason. `Post` and
   `StartReply` require a nonempty entry id that has never appeared in this conversation, including finished replies.
+  `StartReply.inReplyTo` must name an existing person post with no reply, including finished or failed replies.
+  `ReplyStarted` and its projected entry preserve that post id; malformed starts only advance the replay cursor.
 - `apply` is shared: every copy applies the same numbered events in order. A stale event changes nothing; the next one
   always advances `seq`.
 - `receive` adds a client's view: posts it sent that no event has confirmed (`pending`), and `gap` when an event
@@ -21,7 +23,7 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
 invalid states can't be represented and the rules live in one module that tests and provers read directly.
 
 **Invariants** (0005 proves them for every input; replay convergence is property-tested): `seq` counts up by one
-with no gaps; the agent is `working` exactly when a reply is open, and only that reply is unfinished; entries are
+with no gaps; every accepted reply targets an existing unanswered person post; the agent is `working` exactly when a reply is open, and only that reply is unfinished; entries are
 ordered by `seq`; entry ids are nonempty and unique; a client id appears at most once; an event preserves every
 unrelated entry. The property suite checks these after every accepted intent, with a retained regression for a reply
 reusing a person's or a finished reply's id.

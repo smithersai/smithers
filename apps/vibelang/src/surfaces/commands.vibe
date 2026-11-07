@@ -26,8 +26,8 @@ effect function ask(input: AskInput) {
   const factory = try Factory
   const clientId = try IdGenerator.defaultIdGenerator.generateId()
   try factory.post(input.conversation, clientId, "Factory CLI", input.text)
-  // Replies start in post order (0004). Replay includes earlier queued posts, so overlapping asks stay correlated.
-  const pending: Array<string> = []
+  // Correlate by post identity even when an agent skips or reorders prompts.
+  let postId = ""
   const numbers: Array<number> = []
   let replyId = ""
   let text = ""
@@ -35,10 +35,9 @@ effect function ask(input: AskInput) {
   let finished = false
   try Stream.runForEachWhile(factory.events(input.conversation, 0), effect (event) => {
     if (event.type === "Posted") {
-      pending.push(event.clientId)
-      if (event.clientId === clientId) numbers.push(event.seq)
+      if (event.clientId === clientId) { postId = event.id; numbers.push(event.seq) }
     } else if (event.type === "ReplyStarted") {
-      if (pending.shift() === clientId) replyId = event.id
+      if (postId !== "" && event.inReplyTo === postId) replyId = event.id
     }
     if (event.id !== replyId) return true
     numbers.push(event.seq)

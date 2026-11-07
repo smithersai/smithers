@@ -14,7 +14,7 @@ interface State {
 interface Room {
   readonly state: Ref.Ref<State>
   readonly gate: Semaphore.Semaphore
-  readonly prompts: Queue.Queue<string>
+  readonly prompts: Queue.Queue<Extract<Event, { type: "Posted" }>>
 }
 
 /** A numbered event and the conversation it belongs to. */
@@ -52,17 +52,17 @@ export const MockFactory = Layer.effect(Factory, effect {
       if (decision.ok) {
         try PubSub.publish(published, { conversation, event: decision.event })
         // Enqueue before releasing the sequencer: caller scheduling cannot reorder accepted prompts.
-        if (decision.event.type === "Posted") try Queue.offer(room.prompts, decision.event.text)
+        if (decision.event.type === "Posted") try Queue.offer(room.prompts, decision.event)
       }
       return decision
     }))
   }
 
-  effect function reply(room: Room, conversation: string, prompt: string) {
+  effect function reply(room: Room, conversation: string, prompt: Extract<Event, { type: "Posted" }>) {
     const id = try nextId("r")
-    const started = try record(room, conversation, { type: "StartReply", id })
+    const started = try record(room, conversation, { type: "StartReply", id, inReplyTo: prompt.id })
     if (!started.ok) return
-    for (const piece of chunks(mockReply(prompt))) {
+    for (const piece of chunks(mockReply(prompt.text))) {
       try sleep(MOCK_DELTA_DELAY)
       try record(room, conversation, { type: "AppendReply", id, text: piece })
     }
@@ -84,7 +84,7 @@ export const MockFactory = Layer.effect(Factory, effect {
       if (existing !== undefined) return existing
       const state = try Ref.make<State>({ conversation: empty, log: [] })
       const gate = try Semaphore.make(1)
-      const prompts = try Scope.provide(scope)(acquireRelease(Queue.unbounded<string>(), Queue.shutdown))
+      const prompts = try Scope.provide(scope)(acquireRelease(Queue.unbounded<Extract<Event, { type: "Posted" }>>(), Queue.shutdown))
       const room: Room = { state, gate, prompts }
       try Ref.set(rooms, new Map(all).set(conversation, room))
       try Effect.forkIn(consume(room, conversation), scope)

@@ -21,7 +21,7 @@ export schema Posted {
   readonly name: string
   readonly text: string
 }
-export schema ReplyStarted { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string }
+export schema ReplyStarted { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string; readonly inReplyTo: string }
 export schema ReplyDelta { readonly type: "ReplyDelta"; readonly seq: number; readonly id: string; readonly text: string }
 export schema ReplyFinished { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
 export schema ReplyFailed { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
@@ -34,6 +34,7 @@ export schema EntrySchema {
   readonly id: string
   readonly seq: Schema.Int
   readonly clientId: string
+  readonly inReplyTo: string
   readonly author: "person" | "agent"
   readonly name: string
   readonly text: string

@@ -11,7 +11,7 @@ cases=[
 ('apply-client-id','apply','event.text === "" || event.clientId === "" || hasClientId(conversation.entries, event.clientId)','event.text === "" || event.clientId === "" || (hasClientId(conversation.entries, event.clientId) && false)','nonempty person client ids are unique'),
 ('apply-phase','apply','agent: "working", replying: event.id','agent: "working", replying: ""','working iff reply id is nonempty for admitted reply starts'),
 ('apply-open-owner','apply','author: "agent",','author: "person",','only the current agent reply can be unfinished'),
-('apply-one-open','apply','if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id)) return next','if (hasEntryId(conversation.entries, event.id)) return next','at most one entry is unfinished'),
+('apply-one-open','apply','if (conversation.agent === "working" || hasEntryId(conversation.entries, event.id) || !canReplyTo(conversation.entries, event.inReplyTo)) return next','if (hasEntryId(conversation.entries, event.id) || !canReplyTo(conversation.entries, event.inReplyTo)) return next','at most one entry is unfinished'),
 ('apply-open-exists','apply','return { ...next, entries, agent: "working", replying: event.id }','return { ...next, entries: entries.map((entry) => ({ ...entry, done: true })), agent: "working", replying: event.id }','working implies an unfinished entry exists'),
 ('apply-person-id','apply','clientId: event.clientId,','clientId: "",','nonempty person ids remain nonempty for admitted posts'),
 ('apply-prefix','apply','const entries = [...conversation.entries, entry]\n      //@ assert forall','const entries = [entry, ...conversation.entries]\n      //@ assert forall','append preserves every existing entry'),
@@ -24,7 +24,7 @@ cases=[
 ('accepted','accepted','return { ok: true, event }','return { ok: true, event: { ...event, seq: event.seq + 1 } }','accepted constructor preserves event'),
 ('refused','refused','return { ok: false, refusal }','const wrong: Refusal = "busy"\n  return { ok: false, refusal: wrong }','refused constructor preserves reason'),
 ('decide-next','decide','const seq = conversation.seq + 1','const seq = conversation.seq + 2','every accepted event is the next one'),
-('decide-start','decide','      if (intent.id === "") return refused("not-replying")\n      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")\n      return accepted({ type: "ReplyStarted"','      return accepted({ type: "ReplyStarted"','accepted start has a fresh, nonempty reply id'),
+('decide-start','decide','      if (intent.id === "") return refused("not-replying")\n      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")\n      if (!canReplyTo(conversation.entries, intent.inReplyTo)) return refused("not-replying")\n      return accepted({ type: "ReplyStarted"','      return accepted({ type: "ReplyStarted"','accepted start has a fresh, nonempty reply id'),
 ('decide-busy','decide','if (conversation.agent === "working")','if (false)','accepted start requires no working reply'),
 ('decide-client-id','decide','intent.clientId === "" || hasClientId(conversation.entries, intent.clientId)','hasClientId(conversation.entries, intent.clientId) && false','accepted post has a nonempty client id and no existing matching client id'),
 ('has-entry-id','hasEntryId','if (entries[i]!.id === id) return true','if (entries[i]!.id === id) return false','exact entry-id lookup'),
@@ -44,6 +44,12 @@ cases=[
 ('receive-gap','receive','return client.gap ? client : { ...client, gap: true }','return client','future event marks a gap'),
 ('resume-gap','resume','return client.gap ? { ...client, gap: false } : client','return client','resume clears gap'),
 ('resume-frame','resume','{ ...client, gap: false }','{ ...client, conversation: { ...client.conversation, seq: client.conversation.seq + 1 }, pending: [], gap: false }','resume preserves conversation and pending'),
+('decide-reply-target','decide','if (!canReplyTo(conversation.entries, intent.inReplyTo)) return refused("not-replying")','if (false) return refused("not-replying")','accepted reply targets an existing unanswered person post'),
+('decide-reply-correlation','decide','inReplyTo: intent.inReplyTo','inReplyTo: intent.id','accepted reply carries exactly the requested target'),
+('can-reply-person','canReplyTo','entries[i]!.author === "person" && entries[i]!.id === id','entries[i]!.id === id','a reply target must be a person post'),
+('can-reply-answered','canReplyTo','if (entries[i]!.author === "agent" && entries[i]!.inReplyTo === id) return false','if (false) return false','a post with any existing reply cannot receive a second'),
+('can-reply-missing','canReplyTo','return found','return true','a missing post cannot be answered'),
+('apply-reply-correlation','apply','inReplyTo: event.inReplyTo','inReplyTo: event.id','the projected reply preserves its target'),
 ]
 manifest={}
 check='--check' in sys.argv
