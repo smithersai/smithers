@@ -31,6 +31,7 @@
     "@smthrs/kernel": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/plugin": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/rpc": "workspace:*",
     "@smthrs/sandbox": "workspace:*",

@@ -856,6 +856,9 @@ importers:
       '@smthrs/plan':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/plan
+      '@smthrs/plugin':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/plugin
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry
