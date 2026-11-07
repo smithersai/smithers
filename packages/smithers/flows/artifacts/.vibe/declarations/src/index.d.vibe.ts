@@ -70,4 +70,4 @@ export * as ImmutableCache from "../../../src/ImmutableCache.ts";
  * @since 1.0.0-rc.0
  * @slop
  */
-export * as RemoteArtifacts from "../../../src/RemoteArtifacts.ts";
+export * as RemoteArtifacts from "./RemoteArtifacts.vibe";

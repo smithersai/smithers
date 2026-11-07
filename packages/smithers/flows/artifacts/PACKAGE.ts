@@ -42,7 +42,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/FileSystemArtifactStore.ts",
-        "src/RemoteArtifacts.ts",
+        "src/RemoteArtifacts.vibe",
         "src/CombinedArtifacts.ts",
         "src/measureBytes.vibe"
       ]
@@ -61,7 +61,7 @@ const securityReview = Smithers.SecurityReview({
         "src/validateDigest.vibe",
         "src/FileSystemArtifactStore.ts",
         "src/ArtifactSweep.ts",
-        "src/RemoteArtifacts.ts",
+        "src/RemoteArtifacts.vibe",
         "src/internal/ArtifactLocks.ts"
       ]
     },
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A header value with CR or LF accepted at construction.",
         "A request sent through the ambient HttpClient without refusing 3xx, so a cache redirect to another origin or to http: replays the configured credential headers there."
       ],
-      paths: ["src/RemoteArtifacts.ts", "src/CombinedArtifacts.ts"]
+      paths: ["src/RemoteArtifacts.vibe", "src/CombinedArtifacts.ts"]
     },
     {
       id: "remote-response-bounds",
@@ -131,7 +131,7 @@ const securityReview = Smithers.SecurityReview({
         "findMissing returning a digest that was not in the requested batch.",
         "A 308 Range answer that can move the chunked upload offset backwards or loop forever."
       ],
-      paths: ["src/RemoteArtifacts.ts"]
+      paths: ["src/RemoteArtifacts.vibe"]
     },
     {
       id: "docs-credential-hygiene",

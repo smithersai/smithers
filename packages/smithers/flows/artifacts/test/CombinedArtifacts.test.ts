@@ -13,7 +13,7 @@ import { TestClock } from "effect/testing"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
 import * as ArtifactStoreMetrics from "../src/ArtifactStoreMetrics.vibe"
 import * as CombinedArtifacts from "../src/CombinedArtifacts.ts"
-import * as RemoteArtifacts from "../src/RemoteArtifacts.ts"
+import * as RemoteArtifacts from "../src/RemoteArtifacts.vibe"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
 
 const artifact = "an artifact that travels"

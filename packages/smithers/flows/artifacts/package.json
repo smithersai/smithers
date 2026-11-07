@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/FileLease.js"
     },
     "./RemoteArtifacts": {
-      "types": "./src/RemoteArtifacts.ts",
-      "vibelang-source": "./src/RemoteArtifacts.ts",
+      "types": "./.vibe/declarations/src/RemoteArtifacts.d.vibe.ts",
+      "vibelang-source": "./src/RemoteArtifacts.vibe",
       "default": "./.vibelang/js/src/RemoteArtifacts.js"
     },
     "./index": {
@@ -94,7 +94,8 @@
     "CHANGELOG.md",
     "docs/",
     ".vibelang/js",
-    "src/measureBytes.vibe"
+    "src/measureBytes.vibe",
+    "src/RemoteArtifacts.vibe"
   ],
   "publishConfig": {
     "access": "public",

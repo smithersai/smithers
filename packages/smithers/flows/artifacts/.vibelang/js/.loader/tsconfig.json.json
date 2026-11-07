@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/artifacts"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "ak4eNFdM6zV3BlRzAViwDiM1kEFV_ADieTCu8BkPRck",
   "configs": [
    {
     "path": {
@@ -26,7 +26,7 @@
      "relative": "packages/smithers/flows/artifacts/src"
     },
     null,
-    "u9n8ZmUlWA4TUvHBnbn_KwmcQrrhbx-wn7igP-kqmZg",
+    "my_K_iCAOEIxeQiQ1N-pjk8ZKMgMurkQf0KQo1ZZdgM",
     [],
     {
      "recursive": true,
@@ -194,8 +194,8 @@
     "path": {
      "relative": "pnpm-lock.yaml"
     },
-    "size": 1032876,
-    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
+    "size": 1032990,
+    "hash": "JWXHDc5FqtoaD_7kBZtDp_c1gN0Pv_YzpXJiGdIsulM"
    },
    {
     "path": {
@@ -255,8 +255,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7128,
-    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
+    "size": 7188,
+    "hash": "tn4RcBxIeShNMXTfH8LxoPn_iminrBnO2FV2R3DeZ24"
    },
    {
     "path": {
@@ -1984,17 +1984,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.ts"
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
     },
-    "size": 39010,
-    "hash": "cqH8FtLpbxXm_1n_7Dd6HOrZZEtAI30l2o14FkuR3Lw"
+    "size": 40685,
+    "hash": "QC-_ujkmCvG3QcxggaCksSaaBA5_pxHeD9LZkHedPOQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/CombinedArtifacts.ts"
     },
-    "size": 17034,
-    "hash": "oNE0hky2Q-NoJlsuvVijvMnfOVahg7hJBDgU_6T4Zjk"
+    "size": 17036,
+    "hash": "2YAYF9AnbJrC-Yj-EIjOkSNevW7-z0kF54AvFgN6CfI"
    },
    {
     "path": {
@@ -2007,8 +2007,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/index.vibe"
     },
-    "size": 2115,
-    "hash": "qcaJKGfSvX1KJaQE3QABOR2Dq7HpYYovak-ei24pa3o"
+    "size": 2117,
+    "hash": "gNpV7DJLFH_IkbXf7iyEKp5moHCkwhXm4ataYYKXS6M"
    },
    {
     "path": {
@@ -2975,7 +2975,7 @@
     "relative": "packages/smithers/flows/artifacts/src/ArtifactSweep.ts"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.ts"
+    "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/CombinedArtifacts.ts"
@@ -3017,6 +3017,296 @@
     "category": "warning",
     "code": "EK4837",
     "text": "ArtifactCorruption extends Schema.TaggedError; a schema error declaration, schema error ArtifactCorruption { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 806,
+    "column": 90,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClient#HttpClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 290,
+    "column": 46,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientResponse#HttpClientResponse` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 301,
+    "column": 74,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClient#HttpClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 361,
+    "column": 40,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClient#HttpClient` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 367,
+    "column": 54,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#HttpClientRequest` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 367,
+    "column": 92,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#HttpClientRequest` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 368,
+    "column": 62,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#setHeaders` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 369,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#removeHeader` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 370,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#removeHeader` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 371,
+    "column": 29,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#removeHeader` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 380,
+    "column": 39,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClient#withScope` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 393,
+    "column": 36,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#HttpClientRequest` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 394,
+    "column": 44,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientResponse#HttpClientResponse` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 397,
+    "column": 48,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/Headers#CurrentRedactedNames` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 398,
+    "column": 75,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/FetchHttpClient#RequestInit` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 400,
+    "column": 51,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/FetchHttpClient#RequestInit` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 406,
+    "column": 43,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/Headers#CurrentRedactedNames` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 476,
+    "column": 38,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientResponse#HttpClientResponse` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 516,
+    "column": 57,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#get` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 529,
+    "column": 40,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#put` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 530,
+    "column": 31,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#bodyUint8Array` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 541,
+    "column": 58,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientResponse#HttpClientResponse` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 575,
+    "column": 65,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#head` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 602,
+    "column": 44,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#put` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 603,
+    "column": 35,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#bodyUint8Array` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 604,
+    "column": 35,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#setHeader` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 697,
+    "column": 69,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#head` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 730,
+    "column": 48,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#post` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+    },
+    "line": 731,
+    "column": 39,
+    "category": "warning",
+    "code": "EK38130",
+    "text": "unstableApiUsage: `effect/http/HttpClientRequest#bodyUint8Array` is an unstable API. Breaking changes may happen between versions. effect(unstableApiUsage)"
    }
   ],
   "outputs": [
@@ -3163,6 +3453,46 @@
    {
     "paths": [
      {
+      "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+     }
+    ],
+    "code": "/**\n * The shared artifact tier: an {@link ArtifactStore.Service} spoken over HTTP.\n *\n * The wire protocol mirrors Bazel's dumb-HTTP remote cache, class\n * `HttpCacheClient` in `com.google.devtools.build.lib.remote.http`, which\n * documents it as: \"CAS (Content Addressable Storage) blobs are stored under\n * the path `/cas/base16-key`\", uploaded with `PUT`, downloaded with `GET`. We add\n * `HEAD /cas/{digest}` for a single existence probe and\n * `POST /cas/findMissing` for the batched one, because Bazel's HTTP client has\n * no `findMissingDigests` at all — it answers \"everything is missing\" and\n * re-uploads — and a batched probe is the whole reason\n * `MissingDigestsFinder` exists in the gRPC client.\n *\n * Transport is Effect's own `HttpClient` tag. There is no lower transport in\n * this repository, and there does not need to be one: the kernel already\n * decorates that tag with `net:get`/`net:post` capability checks, so a remote\n * artifact fetch is permission-checked like every other egress.\n *\n * ## Chunked uploads\n *\n * With `chunkBytes` set, a blob past that size travels as a sequence of\n * `PUT /cas/{digest}` requests carrying `Content-Range: bytes {a}-{b}/{total}`,\n * preceded by a `HEAD /cas/{digest}` existence probe and a\n * `Content-Range: bytes *\\/{total}` probe with an empty body. This is the\n * resumable-upload shape HTTP already has: the range probe asks what prefix\n * the tier holds and `308` means \"keep going\", with a `Range: bytes=0-{last}`\n * header on the probe or on a chunk answer moving the offset.\n *\n * Only a `308` continues the sequence, and the completing chunk's `2xx` is\n * confirmed with `HEAD` before `put` reports the digest as published. A `2xx`\n * anywhere else, to the empty probe or to a chunk the tier is still owed bytes\n * after, reads as a tier that ignored `Content-Range` and stored the body it\n * was handed, which is what plain WebDAV `PUT` does. That tier, the one that\n * answers `400`, `411`, or `416`, and the one whose `HEAD` will not confirm\n * the stored length all get the same treatment: one whole-blob `PUT`, which\n * overwrites the partial body the sequence left behind. So the blob always\n * lands whole, and the cost of turning the dial on against a server that\n * never learned about it is round trips, never a digest published over bytes\n * the server does not hold.\n *\n * This repository's own hosted and self-hosted cache services are such\n * servers: neither implements the resumable sequence, and both refuse a\n * ranged `PUT` with `400`, RFC 9110 section 14.5's answer from a resource\n * that does not support partial `PUT`. Against them `chunkBytes` costs the\n * probe round trip and the blob travels whole, and both cap one request body\n * at 16 MiB, so a blob past that cap is refused with `413` in either mode.\n *\n * The endpoint and its credentials arrive as **layer construction options**.\n * They are capabilities, never step inputs: they are not hashed into a step\n * key, journaled, or returned in a recorded result. Invalid endpoint errors are\n * sanitized before they cross the boundary.\n *\n * @since 1.0.0-rc.0\n */\nimport * as Schema from \"effect/Schema\";\nimport * as HttpClient from \"effect/http/HttpClient\";\nimport * as Layer from \"effect/Layer\";\nimport * as ArtifactStore from \"./ArtifactStore.js\";\nimport { DownloadPolicy, make } from \"./RemoteArtifacts.vibe.throwing.js\";\nexport { DownloadPolicy, make } from \"./RemoteArtifacts.vibe.throwing.js\";\n/**\n * Every download policy, in materialization order.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const downloadPolicies = Object.freeze([\"all\", \"toplevel\", \"minimal\"]);\n/**\n * Reads the download policy a store declares, or `undefined` for a store that\n * declares none — every local store, and any foreign implementation.\n *\n * @category getters\n * @since 1.0.0-rc.0\n */\nexport const downloadPolicyOf = (store) => {\n    const declared = store.downloadPolicy;\n    return Schema.is(DownloadPolicy)(declared) ? declared : undefined;\n};\n/**\n * Provides a remote artifact store as the `ArtifactStore` tag.\n *\n * Composing this *alone* makes every artifact read and write a network round\n * trip. The intended production shape is\n * {@link CombinedArtifacts.layer | CombinedArtifacts}, with this as its remote\n * tier.\n *\n * @category layers\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const layer = (options) => Layer.effect(ArtifactStore.ArtifactStore)(make(options));\n",
+    "map": {
+     "version": 3,
+     "file": "RemoteArtifacts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAqDG;;AAEH,OAAO,KAAK,UAAU,MAAM,wBAAwB,CAAA;AACpD,OAAO,KAAK,KAAK,MAAM,cAAc,CAAA;AACrC,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAusBnD,OAAO,EAAE,cAAc,EAAE,IAAI,EAAE,MAAM,oCAAQ,CAAA;AAE7C,OAAO,EAAE,cAAc,EAAE,IAAI,EAAE,MAAM,oCAAQ,CAAA;AAG7C;;;;;GAKG;AACH,MAAM,CAAC,MAAM,gBAAgB,GAAkC,MAAM,CAAC,MAAM,CAAC,CAAC,KAAK,EAAE,UAAU,EAAE,SAAS,CAAC,CAAC,CAAA;AAC5G;;;;;;GAMG;AACH,MAAM,CAAC,MAAM,gBAAgB,GAAG,CAAC,KAA4B,EAA8B,EAAE;IAC3F,MAAM,QAAQ,GAAI,KAA+C,CAAC,cAAc,CAAA;IAChF,OAAO,MAAM,CAAC,EAAE,CAAC,cAAc,CAAC,CAAC,QAAQ,CAAC,CAAC,CAAC,CAAC,QAAQ,CAAC,CAAC,CAAC,SAAS,CAAA;AACnE,CAAC,CAAA;AACD;;;;;;;;;;;GAWG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,CACnB,OAAgB,EACmF,EAAE,CACrG,KAAK,CAAC,MAAM,CAAC,aAAa,CAAC,aAAa,CAAC,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe.throwing.js"
+     }
+    ],
+    "code": "import * as Duration from \"effect/Duration\";\nimport * as Effect from \"effect/Effect\";\nimport * as FetchHttpClient from \"effect/http/FetchHttpClient\";\nimport * as Headers from \"effect/http/Headers\";\nimport * as HttpClient from \"effect/http/HttpClient\";\nimport * as HttpClientRequest from \"effect/http/HttpClientRequest\";\nimport * as Option from \"effect/Option\";\nimport * as Schema from \"effect/Schema\";\nimport * as Stream from \"effect/Stream\";\nimport * as ArtifactStore from \"./ArtifactStore.js\";\n/**\n * How eagerly a composition materializes shared blobs into its local store.\n *\n * @category models\n * @since 1.0.0-rc.0\n */\nexport const DownloadPolicy = Schema.Literals([\"all\", \"toplevel\", \"minimal\"]);\n/**\n * The default download deadline. 60 seconds is Bazel's `--remote_timeout`\n * default, governing the same dumb-HTTP cache protocol.\n */\nconst defaultDownloadTimeout = Duration.seconds(60);\nconst defaultUploadTimeout = Duration.seconds(60);\nconst defaultRequestTimeout = Duration.seconds(60);\n/**\n * The default bound on a downloaded blob: 256 MiB. Artifacts are spilled step\n * values, not media libraries; a body past this size is far more likely a\n * mis-serving cache than a legitimate blob, and the dial is per-store for a\n * deployment that knows better.\n */\nconst defaultMaxDownloadBytes = 256 * 1024 * 1024;\nconst maxFindMissingBatchDigests = 1_000;\nconst maxFindMissingBodyBytes = 256 * 1024;\nconst encoder = new TextEncoder();\nconst decoder = new TextDecoder(\"utf-8\", { fatal: true });\n/**\n * The credential-free part of a transport failure: the HTTP client's reason\n * tag and the first operating-system error code (`ECONNREFUSED`, `ENOTFOUND`,\n * `CERT_HAS_EXPIRED`) in its cause chain. Never the request, the URL, the\n * headers, or free-form text, any of which may carry a credential.\n */\nconst transportReason = (cause) => {\n    const reason = cause?.reason;\n    const tag = typeof reason?._tag === \"string\" ? reason._tag : undefined;\n    let code;\n    let current = reason ?? cause;\n    for (let depth = 0; depth < 8 && typeof current === \"object\" && current !== null; depth++) {\n        const candidate = current.code;\n        if (typeof candidate === \"string\" && /^[A-Z][A-Z0-9_]{1,63}$/.test(candidate)) {\n            code = candidate;\n            break;\n        }\n        current = current.cause;\n    }\n    const parts = [tag, code].filter((part) => part !== undefined);\n    return parts.length === 0 ? undefined : parts.join(\" \");\n};\nconst transportFailure = (operation, cause) => {\n    const reason = transportReason(cause);\n    return new ArtifactStore.ArtifactStoreError({\n        code: \"transport_failed\",\n        message: `the remote artifact tier refused ${operation}${reason === undefined ? \"\" : ` (${reason})`}`\n    });\n};\nconst unexpectedStatus = (operation, status) => new ArtifactStore.ArtifactStoreError({\n    code: \"transport_failed\",\n    message: `the remote artifact tier answered ${operation} with HTTP ${status}`\n});\nconst invalidOption = (name) => new ArtifactStore.ArtifactStoreError({\n    code: \"invalid_configuration\",\n    message: `invalid remote artifact option: ${name}`\n});\n/** The batched-probe response body. */\nconst FindMissingResponse = Schema.Struct({ missing: Schema.Array(Schema.String) });\n/** An RFC 9110 field-name token. */\nconst headerName = /^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/;\n/** Whether a header value carries a C0 control character or DEL, CR and LF included. */\nconst hasControlText = (value) => {\n    for (let index = 0; index < value.length; index++) {\n        const unit = value.charCodeAt(index);\n        if (unit <= 0x1f || unit === 0x7f)\n            return true;\n    }\n    return false;\n};\nconst configurationFailure = (message) => new ArtifactStore.ArtifactStoreError({ code: \"invalid_configuration\", message });\n/**\n * A 2xx is success, a 404 is a miss, and everything else is a transport\n * failure. Bazel's HTTP client takes the same three-way split; it is the only\n * classification a dumb-HTTP cache can support, because there is no richer\n * error envelope on the wire.\n */\nconst isOk = (response) => response.status >= 200 && response.status < 300;\n/**\n * Builds a remote artifact store over Effect's `HttpClient`.\n *\n * @category constructors\n * @since 1.0.0-rc.0\n * @slop\n */\nexport const make = (options) => Effect.gen(function* () {\n    const configured = yield* Effect.try({\n        try: () => {\n            const headers = options.headers === undefined\n                ? undefined\n                : Object.freeze(Object.fromEntries(Object.entries(options.headers).map(([name, value]) => {\n                    // Refused here, once, rather than on every request as an opaque\n                    // transport failure: a CRLF in a value or a space in a name can\n                    // never become a valid header.\n                    if (typeof value !== \"string\" || value.length > 16 * 1024 || hasControlText(value)) {\n                        throw new TypeError(\"header value\");\n                    }\n                    if (!headerName.test(name))\n                        throw new TypeError(\"header name\");\n                    return [name, value];\n                })));\n            return {\n                endpoint: options.endpoint,\n                headers,\n                downloadTimeout: options.downloadTimeout,\n                uploadTimeout: options.uploadTimeout,\n                requestTimeout: options.requestTimeout,\n                maxDownloadBytes: options.maxDownloadBytes,\n                maxFindMissingResponseBytes: options.maxFindMissingResponseBytes,\n                chunkBytes: options.chunkBytes,\n                downloadPolicy: options.downloadPolicy\n            };\n        },\n        catch: () => invalidOption(\"options\")\n    });\n    if (typeof configured.endpoint !== \"string\")\n        return yield* Effect.fail(invalidOption(\"endpoint\"));\n    const endpoint = yield* Effect.try({\n        try: () => new URL(configured.endpoint),\n        catch: () => configurationFailure(\"invalid remote artifact endpoint\")\n    });\n    // A self-hosted cache on this machine is reachable over plain HTTP, and\n    // loopback traffic never leaves the host. Only literal loopback names are\n    // exempt: a `*.localhost` name reaches loopback only on a resolver that\n    // follows RFC 6761, and one that forwards it to DNS would carry the\n    // credential headers over plaintext to whatever host answers.\n    const loopback = endpoint.hostname === \"localhost\" || endpoint.hostname === \"127.0.0.1\" ||\n        endpoint.hostname === \"[::1]\";\n    if (endpoint.protocol !== \"https:\" && !(endpoint.protocol === \"http:\" && loopback)) {\n        return yield* Effect.fail(configurationFailure(\"remote artifact endpoint must use HTTPS\"));\n    }\n    // An empty query or fragment (\"https://h/p?\") parses as \"\" yet survives\n    // serialization, so the delimiter itself is refused in the href.\n    if (endpoint.username !== \"\" || endpoint.password !== \"\" || endpoint.search !== \"\" || endpoint.hash !== \"\" ||\n        endpoint.href.includes(\"?\") || endpoint.href.includes(\"#\")) {\n        return yield* Effect.fail(configurationFailure(\"remote artifact endpoint must not contain credentials, a query, or a fragment\"));\n    }\n    endpoint.pathname = endpoint.pathname.replace(/\\/+$/, \"\");\n    const base = endpoint.toString().replace(/\\/+$/, \"\");\n    const headers = configured.headers;\n    const client = yield* HttpClient.HttpClient;\n    const credentialNames = Object.keys(headers ?? {}).map((name) => name.toLowerCase());\n    /**\n     * Protocol-owned headers are computed from each request's body and range,\n     * never inherited from credentials, including on a whole-blob fallback.\n     */\n    const authorized = (request) => (headers === undefined ? request : HttpClientRequest.setHeaders(request, headers)).pipe(HttpClientRequest.removeHeader(\"content-type\"), HttpClientRequest.removeHeader(\"content-length\"), HttpClientRequest.removeHeader(\"content-range\"));\n    // The address is a URL path segment, so it is refused before it is\n    // interpolated and percent-encoded when it is: an address carrying a\n    // separator or a `..` would otherwise point this client at a different\n    // resource on the configured endpoint. `ArtifactStore.validateDigest` is\n    // the same guard the filesystem tier applies to the same untrusted input —\n    // a digest read back out of a durable row.\n    const casUrl = (digest) => `${base}/cas/${digest}`;\n    const scopedClient = HttpClient.withScope(client);\n    /**\n     * Keep body processing inside the exchange; abort unused responses on every exit.\n     *\n     * Redirects are never followed. A fetch-based client follows them by\n     * default and strips only `Authorization` on a cross-origin hop, so a\n     * tier answering `3xx` would otherwise receive the credential headers at\n     * another origin or over plain HTTP. Manual mode hands the `3xx` back,\n     * where it is an unexpected status (or, for `308`, the resumable-upload\n     * answer this protocol already speaks).\n     */\n    const send = (operation, request, use) => Effect.gen(function* () {\n        const redactedNames = yield* Headers.CurrentRedactedNames;\n        const requestInit = yield* Effect.serviceOption(FetchHttpClient.RequestInit);\n        return yield* scopedClient.execute(request).pipe(Effect.provideService(FetchHttpClient.RequestInit, {\n            ...Option.getOrUndefined(requestInit),\n            redirect: \"manual\"\n        }), Effect.mapError((cause) => transportFailure(operation, cause)), Effect.flatMap(use), Effect.provideService(Headers.CurrentRedactedNames, [...redactedNames, ...credentialNames]), Effect.scoped);\n    });\n    const parseDeadline = (name, input, fallback) => Effect.gen(function* () {\n        const parsed = Duration.fromInput(input ?? fallback);\n        if (Option.isNone(parsed) ||\n            !Number.isFinite(Duration.toMillis(parsed.value)) ||\n            Duration.toMillis(parsed.value) <= 0) {\n            return yield* Effect.fail(invalidOption(name));\n        }\n        return parsed.value;\n    });\n    const downloadDeadline = yield* parseDeadline(\"downloadTimeout\", configured.downloadTimeout, defaultDownloadTimeout);\n    const uploadDeadline = yield* parseDeadline(\"uploadTimeout\", configured.uploadTimeout, defaultUploadTimeout);\n    const requestDeadline = yield* parseDeadline(\"requestTimeout\", configured.requestTimeout, defaultRequestTimeout);\n    const maxDownloadBytes = configured.maxDownloadBytes ?? defaultMaxDownloadBytes;\n    if (!Number.isSafeInteger(maxDownloadBytes) || maxDownloadBytes <= 0) {\n        return yield* Effect.fail(invalidOption(\"maxDownloadBytes\"));\n    }\n    const maxFindMissingResponseBytes = configured.maxFindMissingResponseBytes ?? maxFindMissingBodyBytes;\n    if (!Number.isSafeInteger(maxFindMissingResponseBytes) ||\n        maxFindMissingResponseBytes <= 0 ||\n        maxFindMissingResponseBytes > maxFindMissingBodyBytes) {\n        return yield* Effect.fail(invalidOption(\"maxFindMissingResponseBytes\"));\n    }\n    const chunkBytes = configured.chunkBytes;\n    if (chunkBytes !== undefined && (!Number.isSafeInteger(chunkBytes) || chunkBytes <= 0)) {\n        return yield* Effect.fail(invalidOption(\"chunkBytes\"));\n    }\n    const downloadPolicy = configured.downloadPolicy ?? \"all\";\n    if (!Schema.is(DownloadPolicy)(downloadPolicy)) {\n        return yield* Effect.fail(invalidOption(\"downloadPolicy\"));\n    }\n    const bodyTooLarge = (operation, received, bound) => new ArtifactStore.ArtifactStoreError({\n        code: \"transport_failed\",\n        message: `the remote artifact tier answered ${operation} with ${received} bytes, past the ${bound}-byte bound`\n    });\n    const timedOut = (operation) => new ArtifactStore.ArtifactStoreError({\n        code: \"transport_failed\",\n        message: `the remote artifact tier did not finish ${operation} within its configured deadline`\n    });\n    const within = (operation, deadline, effect) => effect.pipe(Effect.timeout(deadline), Effect.catchTag(\"TimeoutError\", () => Effect.fail(timedOut(operation))));\n    /**\n     * Reads a download body incrementally, refusing it the moment it exceeds\n     * the size bound; a `Content-Length` that already declares the excess is\n     * refused before a single body byte is read. Streaming instead of\n     * buffering the whole body means the guard fires at most one chunk past\n     * the bound, never after an arbitrarily large response is in memory.\n     */\n    const readBounded = (response, operation, bound) => Effect.gen(function* () {\n        const declared = response.headers[\"content-length\"];\n        if (declared !== undefined) {\n            const declaredBytes = Number(declared);\n            if (!/^\\d+$/.test(declared) || !Number.isSafeInteger(declaredBytes)) {\n                return yield* Effect.fail(transportFailure(`${operation} body`));\n            }\n            if (declaredBytes > bound)\n                return yield* Effect.fail(bodyTooLarge(operation, declaredBytes, bound));\n        }\n        const chunks = [];\n        let received = 0;\n        yield* Stream.runForEach(response.stream, (chunk) => Effect.suspend(() => {\n            received += chunk.byteLength;\n            if (received > bound)\n                return Effect.fail(bodyTooLarge(operation, received, bound));\n            chunks.push(new Uint8Array(chunk));\n            return Effect.void;\n        })).pipe(Effect.catchTag(\"HttpClientError\", (cause) => \n        // An absent body is zero bytes, not a transport refusal: the\n        // digest check in `get` is the arbiter of whether empty content\n        // is the requested artifact.\n        cause.reason._tag === \"EmptyBodyError\"\n            ? Effect.void\n            : Effect.fail(transportFailure(`${operation} body`))));\n        const bytes = new Uint8Array(received);\n        let offset = 0;\n        for (const chunk of chunks) {\n            bytes.set(chunk, offset);\n            offset += chunk.byteLength;\n        }\n        return bytes;\n    });\n    /** The network half of `get`: request, status split, bounded body read. */\n    const download = (digest) => send(\"a download\", authorized(HttpClientRequest.get(casUrl(digest))), (response) => Effect.gen(function* () {\n        if (response.status === 404) {\n            return yield* Effect.fail(new ArtifactStore.ArtifactMissing({ code: \"artifact_missing\", digest }));\n        }\n        if (!isOk(response))\n            return yield* Effect.fail(unexpectedStatus(\"a download\", response.status));\n        return yield* readBounded(response, \"a download\", maxDownloadBytes);\n    }));\n    /** One whole-blob `PUT`: the protocol every dumb-HTTP CAS already speaks. */\n    const uploadWhole = (digest, bytes) => send(\"an upload\", authorized(HttpClientRequest.put(casUrl(digest))).pipe(HttpClientRequest.bodyUint8Array(bytes, \"application/octet-stream\")), (response) => isOk(response) ? Effect.void : Effect.fail(unexpectedStatus(\"an upload\", response.status)));\n    /**\n     * The byte after the prefix a `Range: bytes=0-{last}` header reports, or\n     * `undefined` when the answer names no prefix. Only a prefix starting at\n     * zero is usable: a tier holding a middle span has nothing this client can\n     * continue from, so it is treated as holding nothing.\n     */\n    const resumeOffset = (response) => {\n        const header = response.headers[\"range\"];\n        if (header === undefined)\n            return undefined;\n        const match = /^bytes=0-(\\d+)$/.exec(header.trim());\n        if (match === null)\n            return undefined;\n        const last = Number(match[1]);\n        // A prefix past the safe integer range does not survive `Number`: the\n        // decimal digits are rounded, so the offset it names is a number this\n        // client made up. It proves nothing about what the tier holds, which is\n        // the same as naming no prefix at all.\n        if (!Number.isSafeInteger(last))\n            return undefined;\n        return last + 1;\n    };\n    /**\n     * A tier that refuses ranged bodies, in the three ways HTTP has to say\n     * so. `411` and `416` refuse the body's framing; `400` is RFC 9110\n     * section 14.5's answer from a resource that \"does not support partial\n     * PUT requests\", and it is what both of this repository's cache services\n     * send. Falling back on it can mask no genuine `400`: the whole-blob\n     * `PUT` that follows presents the same URL, digest, and credential, so a\n     * real refusal comes straight back on that request.\n     */\n    const rejectsRanges = (status) => status === 400 || status === 411 || status === 416;\n    /**\n     * Whether the tier holds exactly `total` bytes under `digest`, read from\n     * the `Content-Length` of a `HEAD` answer.\n     *\n     * This is the only claim about a chunked transfer this client will make on\n     * its own behalf. A tier that answers `HEAD` without a length is not\n     * refused — it simply proves nothing, so the caller sends the blob whole.\n     */\n    const holdsWhole = (digest, total) => send(\"an existence probe\", authorized(HttpClientRequest.head(casUrl(digest))), (response) => Effect.sync(() => {\n        if (!isOk(response))\n            return false;\n        const declared = response.headers[\"content-length\"];\n        return declared !== undefined && Number(declared) === total;\n    }));\n    /**\n     * Sends `bytes` as `Content-Range` chunks, resuming from whatever prefix\n     * the tier reports. Answers `false` when the tier has not proved it stored\n     * the whole blob, which is the caller's signal to send it whole.\n     *\n     * A `2xx` answer is never by itself proof of that. A tier that ignores\n     * `Content-Range`, such as plain WebDAV `PUT`, which Bazel documents as a\n     * supported dumb-HTTP cache, answers every request in this sequence `201`\n     * while storing only the last body it was handed, which for the probe is\n     * zero bytes. So only a `308` continues the sequence, and the completing\n     * chunk's `2xx` is confirmed with `HEAD` before the caller is told the\n     * digest is published. Everything else falls back, and the whole-blob\n     * `PUT` overwrites whatever partial body the sequence left behind.\n     */\n    const uploadChunked = (digest, bytes, chunk) => Effect.gen(function* () {\n        const total = bytes.byteLength;\n        const ranged = (range, body) => send(\"an upload\", authorized(HttpClientRequest.put(casUrl(digest))).pipe(HttpClientRequest.bodyUint8Array(body, \"application/octet-stream\"), HttpClientRequest.setHeader(\"content-range\", range)), \n        // Only status and headers are used after the response is released.\n        Effect.succeed);\n        // A blob the tier already holds whole costs one `HEAD` and no body.\n        // Asking first is also what makes the probe's answer readable: a `2xx`\n        // to it can no longer mean \"already there\", so the one reading left is\n        // a tier that ignored the header and stored the empty body.\n        if (yield* holdsWhole(digest, total))\n            return true;\n        // The probe carries no bytes: it exists to learn where to start, so\n        // that an interrupted transfer costs one round trip rather than the\n        // whole blob again.\n        const probe = yield* ranged(`bytes */${total}`, new Uint8Array(0));\n        if (isOk(probe) || rejectsRanges(probe.status))\n            return false;\n        if (probe.status !== 308 && probe.status !== 404) {\n            return yield* Effect.fail(unexpectedStatus(\"an upload probe\", probe.status));\n        }\n        let offset = probe.status === 308 ? resumeOffset(probe) ?? 0 : 0;\n        while (offset < total) {\n            const end = Math.min(offset + chunk, total);\n            const answer = yield* ranged(`bytes ${offset}-${end - 1}/${total}`, bytes.subarray(offset, end));\n            if (answer.status !== 308) {\n                // The completing chunk may answer `2xx`; anything before it may\n                // not, because a tier that is still owed bytes and reports success\n                // is a tier that is not reading the header. Both are checked\n                // against what the tier actually holds below.\n                if (end === total && isOk(answer))\n                    break;\n                if (isOk(answer) || rejectsRanges(answer.status))\n                    return false;\n                return yield* Effect.fail(unexpectedStatus(\"an upload\", answer.status));\n            }\n            // A tier that reports a longer prefix than this chunk delivered has\n            // more than we just sent, so the next chunk starts there. Never\n            // backwards: an answer naming a shorter prefix would loop forever.\n            offset = Math.max(end, resumeOffset(answer) ?? 0);\n        }\n        return yield* holdsWhole(digest, total);\n    });\n    const put = Effect.fn(\"RemoteArtifacts.put\")((bytes) => Effect.flatMap(ArtifactStore.snapshotBytes(bytes), (snapshot) => Effect.gen(function* () {\n        const digest = yield* ArtifactStore.measureBytes(snapshot);\n        yield* Effect.annotateCurrentSpan({ digest });\n        yield* within(\"an upload\", uploadDeadline, Effect.gen(function* () {\n            if (chunkBytes === undefined || snapshot.byteLength <= chunkBytes) {\n                yield* uploadWhole(digest, snapshot);\n                return;\n            }\n            const transferred = yield* uploadChunked(digest, snapshot, chunkBytes);\n            if (!transferred)\n                yield* uploadWhole(digest, snapshot);\n        }));\n        return digest;\n    })));\n    const get = Effect.fn(\"RemoteArtifacts.get\")((digest) => Effect.gen(function* () {\n        const validated = yield* ArtifactStore.validateDigest(digest);\n        yield* Effect.annotateCurrentSpan({ digest: validated });\n        // The deadline covers the whole exchange — request, headers, body —\n        // because a tier that stalls mid-body is exactly as unanswering as\n        // one that never accepts the connection.\n        const bytes = yield* within(\"a download\", downloadDeadline, download(validated));\n        // The shared tier is the least trusted store there is: it is written\n        // by machines this one has never met. Verifying the address here means\n        // a mis-serving or compromised cache can waste a round trip but can\n        // never substitute content.\n        const measured = yield* ArtifactStore.measureBytes(bytes);\n        if (measured !== validated) {\n            return yield* Effect.fail(new ArtifactStore.ArtifactCorruption({\n                code: \"artifact_corruption\",\n                recordedDigest: validated,\n                measuredDigest: measured\n            }));\n        }\n        return bytes;\n    }));\n    const has = Effect.fn(\"RemoteArtifacts.has\")((digest) => Effect.gen(function* () {\n        const validated = yield* ArtifactStore.validateDigest(digest);\n        yield* Effect.annotateCurrentSpan({ digest: validated });\n        const response = yield* within(\"an existence probe\", requestDeadline, send(\"an existence probe\", authorized(HttpClientRequest.head(casUrl(validated))), Effect.succeed));\n        if (response.status === 404)\n            return false;\n        if (!isOk(response))\n            return yield* Effect.fail(unexpectedStatus(\"an existence probe\", response.status));\n        return true;\n    }));\n    const findMissing = Effect.fn(\"RemoteArtifacts.findMissing\")((digests) => Effect.gen(function* () {\n        const requested = [...new Set(digests)];\n        if (requested.length === 0)\n            return [];\n        // The batch travels in a JSON body rather than a path, but an\n        // unusable address is still an unusable address, and the local tier\n        // refuses the same batch wholesale rather than probing part of it.\n        const validated = [];\n        for (const digest of requested)\n            validated.push(yield* ArtifactStore.validateDigest(digest));\n        yield* Effect.annotateCurrentSpan({ count: validated.length });\n        const missing = new Set();\n        for (let offset = 0; offset < validated.length; offset += maxFindMissingBatchDigests) {\n            const batch = validated.slice(offset, offset + maxFindMissingBatchDigests);\n            const requestBody = encoder.encode(JSON.stringify({ digests: batch }));\n            /* v8 ignore next 3 -- strict 64-byte digests plus the 1,000-entry batch cap make this\n           * at most 67,013 bytes; keep the protocol assertion beside serialization in case either invariant changes. */\n            if (requestBody.byteLength > maxFindMissingBodyBytes) {\n                return yield* Effect.fail(configurationFailure(\"remote artifact findMissing request exceeds 256 KiB\"));\n            }\n            const decoded = yield* within(\"a batched existence probe\", requestDeadline, send(\"a batched existence probe\", authorized(HttpClientRequest.post(`${base}/cas/findMissing`)).pipe(HttpClientRequest.bodyUint8Array(requestBody, \"application/json\")), (response) => Effect.gen(function* () {\n                if (!isOk(response)) {\n                    return yield* Effect.fail(unexpectedStatus(\"a batched existence probe\", response.status));\n                }\n                const bodyBytes = yield* readBounded(response, \"a batched existence probe\", maxFindMissingResponseBytes);\n                const body = yield* Effect.try({\n                    try: () => JSON.parse(decoder.decode(bodyBytes)),\n                    catch: () => transportFailure(\"a batched existence probe body\")\n                });\n                return yield* Schema.decodeUnknownEffect(FindMissingResponse)(body).pipe(Effect.mapError(() => transportFailure(\"a batched existence probe body\")));\n            })));\n            const asked = new Set(batch);\n            for (const digest of decoded.missing)\n                if (asked.has(digest))\n                    missing.add(digest);\n        }\n        // \"The returned set is guaranteed to be a subset of `digests`\"\n        // (`MissingDigestsFinder`). Bazel gets that from the server; we\n        // enforce it on this side too, because a server that answered with\n        // an unrequested digest would otherwise make the caller upload bytes\n        // it never asked about.\n        return validated.filter((digest) => missing.has(digest));\n    }));\n    return { put, get, has, findMissing, downloadPolicy };\n});\n",
+    "map": {
+     "version": 3,
+     "file": "RemoteArtifacts.vibe.throwing.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/artifacts/src/RemoteArtifacts.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "packages/smithers/flows/artifacts/src/index.vibe"
      }
     ],
@@ -3177,7 +3507,7 @@
       }
      ],
      "names": [],
-     "mappings": "AAAA;;;;;;;;;;;;;;;;;;;;;;;;;GAyBG;AAEH;;;;GAIG;AACH,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAEnD;;;;GAIG;AACH,OAAO,KAAK,oBAAoB,MAAM,2BAA6B,CAAA;AAEnE;;;GAGG;AACH,OAAO,KAAK,mBAAmB,MAAM,0BAA0B,CAAA;AAE/D;;;;GAIG;AACH,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAEnD;;;;GAIG;AACH,OAAO,KAAK,iBAAiB,MAAM,wBAAwB,CAAA;AAE3D;;;GAGG;AACH,OAAO,KAAK,SAAS,MAAM,gBAAgB,CAAA;AAE3C;;;;;GAKG;AACH,OAAO,KAAK,cAAc,MAAM,qBAAqB,CAAA;AAErD;;;;GAIG;AACH,OAAO,KAAK,eAAe,MAAM,sBAAsB,CAAA"
+     "mappings": "AAAA;;;;;;;;;;;;;;;;;;;;;;;;;GAyBG;AAEH;;;;GAIG;AACH,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAEnD;;;;GAIG;AACH,OAAO,KAAK,oBAAoB,MAAM,2BAA6B,CAAA;AAEnE;;;GAGG;AACH,OAAO,KAAK,mBAAmB,MAAM,0BAA0B,CAAA;AAE/D;;;;GAIG;AACH,OAAO,KAAK,aAAa,MAAM,oBAAoB,CAAA;AAEnD;;;;GAIG;AACH,OAAO,KAAK,iBAAiB,MAAM,wBAAwB,CAAA;AAE3D;;;GAGG;AACH,OAAO,KAAK,SAAS,MAAM,gBAAgB,CAAA;AAE3C;;;;;GAKG;AACH,OAAO,KAAK,cAAc,MAAM,qBAAqB,CAAA;AAErD;;;;GAIG;AACH,OAAO,KAAK,eAAe,MAAM,sBAAwB,CAAA"
     }
    }
   ]

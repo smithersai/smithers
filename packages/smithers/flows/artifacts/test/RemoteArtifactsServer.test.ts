@@ -20,7 +20,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import * as Layer from "effect/Layer"
 import { createServer, type Server } from "node:http"
 import * as ArtifactStore from "../src/ArtifactStore.ts"
-import * as RemoteArtifacts from "../src/RemoteArtifacts.ts"
+import * as RemoteArtifacts from "../src/RemoteArtifacts.vibe"
 import { bytes, sha256, text, withCrypto } from "./Crypto.ts"
 
 const artifact = "0123456789"
