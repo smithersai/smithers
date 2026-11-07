@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The low-level engine contract a durable store implements. `makeUnsafe`
  * adapts it into the typed `FlowRuntime` port that `@smthrs/flow` declares;
@@ -27,6 +26,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 
 import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"

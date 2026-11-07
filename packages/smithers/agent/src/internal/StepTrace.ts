@@ -1,4 +1,3 @@
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Source checkpoints for one native agent dispatch.
  * @since 1.0.0
@@ -12,6 +11,7 @@ import { type Journal, JournalEvent, StepFact } from "@smthrs/journal"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as Schema from "effect/Schema"
 import { maxTracedBytes, traceIdentity, tracer } from "../AgentSession.ts"

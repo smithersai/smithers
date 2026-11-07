@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** Scoped, bounded health observation beside the native control host.
  * @since 1.0.0
  */
@@ -9,7 +8,8 @@ import type { Journal } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, FiberMap, Layer, Metric, Schema, Scope, Semaphore } from "effect"
-import * as EffectDigest from "effect/crypto/Digest"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { randomUUID } from "node:crypto"
 
 const activeSubjects = Metric.gauge("smithers.health.monitored_subjects")

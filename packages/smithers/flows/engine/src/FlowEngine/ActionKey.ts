@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Derives the step identity an action dispatch is recorded under.
  *
@@ -13,6 +12,7 @@ import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"

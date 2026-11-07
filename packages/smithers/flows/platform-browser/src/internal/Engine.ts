@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The durable engine's composition in a dedicated Web Worker: everything
  * `BrowserRuntime` loads only when a worker builds an engine, so a tab that
@@ -15,6 +14,7 @@ import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"

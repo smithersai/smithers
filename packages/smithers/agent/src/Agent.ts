@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The Smithers agent.
  *
@@ -77,6 +76,7 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"

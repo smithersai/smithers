@@ -507,7 +507,6 @@ export const operations = (
       const seal = verification === "verified"
         ? { seal: yield* hmac(yield* sealKey(fs, root, true), sealMessage(artifactDigest)) }
         : {}
-      const crypto = yield* EffectDigest.Digest
       const stage = path.join(root, `.staging-${yield* (yield* SecureRandom.SecureRandom).uuidV4()}`)
       yield* fs.makeDirectory(stage)
       yield* Effect.gen(function*() {

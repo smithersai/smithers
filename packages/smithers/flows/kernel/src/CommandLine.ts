@@ -1,4 +1,3 @@
-import * as Redacted from "effect/Redacted"
 /**
  * @since 1.0.0-rc.0
  *
@@ -21,6 +20,7 @@ import * as Redacted from "effect/Redacted"
  */
 
 import type * as ChildProcess from "effect/process/ChildProcess"
+import * as Redacted from "effect/Redacted"
 import { isInheritedName } from "./ChildProcessEnvironment.ts"
 
 /** Tokens made only of these characters need no quoting in a POSIX shell. */

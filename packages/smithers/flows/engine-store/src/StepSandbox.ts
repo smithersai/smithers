@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Injectable, scope-safe step sandboxing over the workspace transaction.
  *
@@ -9,6 +8,7 @@ import type * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type * as KernelWorkspace from "@smthrs/kernel/Workspace"
 import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"

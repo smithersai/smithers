@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The two-tier step-cache protocol, extracted out of `ActionPersistence`.
  *
@@ -40,6 +39,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as ArtifactSync from "../ArtifactSync.ts"

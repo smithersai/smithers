@@ -1,4 +1,3 @@
-import * as Redacted from "effect/Redacted"
 /**
  * The kernel's `ProcessConfinement` seam, filled with this host's native
  * sandbox: bubblewrap on Linux, seatbelt on macOS.
@@ -29,6 +28,7 @@ import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as NodeFs from "node:fs"
 import * as NodeOs from "node:os"

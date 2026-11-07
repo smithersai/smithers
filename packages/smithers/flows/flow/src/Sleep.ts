@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The system timer, as an ordinary declared action.
  *
@@ -29,6 +28,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 
 import * as Clock from "effect/Clock"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"

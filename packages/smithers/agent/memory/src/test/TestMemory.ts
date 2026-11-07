@@ -1,5 +1,3 @@
-import * as EffectDigest from "effect/crypto/Digest"
-import * as Hex from "effect/encoding/Hex"
 /**
  * In-memory SQLite memory layer for tests.
  *
@@ -10,8 +8,10 @@ import * as Hex from "effect/encoding/Hex"
  */
 
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
+import * as Hex from "effect/encoding/Hex"
 import * as Layer from "effect/Layer"
 import * as MemoryStore from "../MemoryStore.ts"
 

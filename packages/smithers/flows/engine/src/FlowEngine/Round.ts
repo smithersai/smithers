@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Round identity inside a trampoline lineage.
  *
@@ -27,6 +26,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { Sha256 } from "@smthrs/crypto"
 import { Flow } from "@smthrs/flow"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { isWellFormedUtf16 } from "../internal/Utf16.ts"

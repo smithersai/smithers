@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The isolated half of an attempt: run the body in a workspace transaction,
  * copy its diff bundle back, and rebase a bounded number of times when the
@@ -13,6 +12,7 @@ import type { FileBoundary } from "@smthrs/flow/FileBoundary"
 import { DerivedKey } from "@smthrs/keys"
 import * as Cause from "effect/Cause"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as FileSystem from "effect/FileSystem"

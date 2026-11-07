@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * One model call as a durable, sealed flow step.
  *
@@ -47,6 +46,7 @@ import { type FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { CellTurn } from "@smthrs/harness"
 import { type Model, ModelError, type ModelEvent, type ModelRequest } from "@smthrs/model"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Stream from "effect/Stream"
 import type { RouteResolver } from "./FlowEngineLike.ts"

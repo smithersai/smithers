@@ -1,4 +1,3 @@
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Private flow construction shared by declarations and action registration.
  *
@@ -10,7 +9,7 @@ import { Sha256 } from "@smthrs/crypto"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"

@@ -1,4 +1,3 @@
-import * as Redacted from "effect/Redacted"
 /**
  * Permission-aware process spawning.
  *
@@ -28,6 +27,7 @@ import { Effect, FileSystem, Layer, Option, Path, type Scope } from "effect"
 import { type PlatformError, systemError } from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as ChildProcessEnvironment from "./ChildProcessEnvironment.ts"
 import * as CommandLine from "./CommandLine.ts"
 import { GrantStore } from "./GrantStore.ts"

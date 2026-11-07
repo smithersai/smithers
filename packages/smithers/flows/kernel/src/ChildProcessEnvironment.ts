@@ -1,10 +1,10 @@
-import * as Redacted from "effect/Redacted"
-
 /**
  * Least-authority environment construction for child processes.
  *
  * @since 1.0.0-rc.0
  */
+
+import type * as Redacted from "effect/Redacted"
 
 /**
  * Credential-bearing field names shared with the model request boundary.

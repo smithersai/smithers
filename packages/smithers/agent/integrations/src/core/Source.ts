@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Polling sources composed inside a durable flow. Each turn journals its batch,
  * handler receipt and cursor commit separately; waits use the engine's clock.
@@ -9,6 +8,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { Action, DurableClock, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { Failure, fromIntegrationError, toIntegrationError } from "./ActionFailure.ts"
 import { CursorStore } from "./CursorStore.ts"
 import { ExternalEvent } from "./ExternalEvent.ts"

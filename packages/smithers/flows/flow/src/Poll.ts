@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Polling as a durable lineage: one attempt per round, a durable wait between
  * attempts, and a bound the lineage settles on.
@@ -34,6 +33,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Node from "@smthrs/plan/Node"
 import type * as Repetition from "@smthrs/plan/Repetition"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

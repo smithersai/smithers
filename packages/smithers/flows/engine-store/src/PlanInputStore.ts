@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Authoritative source observations for one durable plan execution. These are
  * replay state, not approval data, journal projections, or evictable cache rows.
@@ -11,6 +10,7 @@ import { FileSet, Plan } from "@smthrs/plan"
 import { OwnerId } from "@smthrs/run-store/Ownership"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))

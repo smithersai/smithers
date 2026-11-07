@@ -1441,7 +1441,7 @@ const withReachableReferences = (document: Schema.Json): Schema.Json => {
         }
       } else {
         for (const [key, member] of Object.entries(value)) {
-          if (key !== "annotations" && key !== "payload") pending.push(member as Schema.Json)
+          if (key !== "annotations" && key !== "payload") pending.push(member)
         }
       }
     }

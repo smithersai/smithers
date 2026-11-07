@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The two-tier artifact protocol the step cache rides on: publish before the
  * entry, fetch on demand after it.
@@ -36,6 +35,7 @@ import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as RemoteArtifacts from "@smthrs/artifacts/RemoteArtifacts"
 import * as Context from "effect/Context"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"

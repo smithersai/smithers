@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * One control-plane launch, run as one durable agent session.
  *
@@ -50,6 +49,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
  * @since 0.1.0
  */
 
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { outsideChangeConsumerEnabled } from "./OutsideChangePolicy.ts"
 
 import * as Capability from "@smthrs/capability/Capability"

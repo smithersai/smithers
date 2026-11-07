@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The wall-clock bound one run of a flow settles by.
  *
@@ -21,6 +20,7 @@ import type * as SecureRandom from "effect/crypto/SecureRandom"
 
 import * as Clock from "effect/Clock"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"

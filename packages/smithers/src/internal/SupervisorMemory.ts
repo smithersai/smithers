@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The supervisor's memory as the native host composes it: which database it
  * lives in, how that database waits for a concurrent writer, how recall reads
@@ -24,6 +23,7 @@ import type * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import { Context, Effect, Layer, Option } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"

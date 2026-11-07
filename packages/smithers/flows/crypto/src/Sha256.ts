@@ -1,4 +1,3 @@
-import * as Hex from "effect/encoding/Hex"
 // Deep reviewed and polished by a human on 2026-08-31.
 
 /**
@@ -21,6 +20,7 @@ import * as Hex from "effect/encoding/Hex"
 
 import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
+import * as Hex from "effect/encoding/Hex"
 import * as PlatformError from "effect/PlatformError"
 import * as Schema from "effect/Schema"
 import * as SchemaGetter from "effect/SchemaGetter"
@@ -199,17 +199,7 @@ const hostFailure = (cause: unknown): Sha256Error =>
  */
 export const digestSync = (input: string | Uint8Array): Digest => encodeHex(sha256(snapshotSync(input))) as Digest
 
-/**
- * A synchronous, SHA-256-only Effect `Digest` service.
- *
- * This adapter exists for synchronous code that already consumes an Effect
- * `Crypto` service. It snapshots byte input, rejects every other digest
- * algorithm as a defect. Randomness uses the separate SecureRandom service.
- * Normal application code should supply its platform digest layer instead.
- *
- * @category services
- * @since 1.0.0
- */
+// SHA-256 over a snapshot of the input; any other algorithm is a defect.
 const synchronousDigest: typeof EffectDigest.Digest.Service["digest"] = (algorithm, input) =>
   algorithm.name === "SHA-256"
     ? Effect.try({
@@ -228,6 +218,17 @@ const synchronousDigest: typeof EffectDigest.Digest.Service["digest"] = (algorit
       description: `syncCrypto supports only SHA-256, not ${algorithm.name}`
     }))
 
+/**
+ * A synchronous, SHA-256-only Effect `Digest` service.
+ *
+ * This adapter exists for synchronous code that already consumes an Effect
+ * `Digest` service. It snapshots byte input and rejects every other digest
+ * algorithm as a defect. Randomness uses the separate `SecureRandom` service.
+ * Normal application code should supply its platform digest layer instead.
+ *
+ * @category services
+ * @since 1.0.0
+ */
 export const syncCrypto: typeof EffectDigest.Digest.Service = EffectDigest.Digest.of({
   digest: synchronousDigest,
   digestHex: (algorithm, data) => Effect.map(synchronousDigest(algorithm, data), Hex.encode)

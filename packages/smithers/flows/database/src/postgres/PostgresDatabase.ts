@@ -33,21 +33,7 @@
  */
 
 import type * as Pg from "@effect/sql-pg"
-import {
-  Cause,
-  Clock,
-  Duration,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Metric,
-  Random,
-  Redacted,
-  Result,
-  Scope,
-  Stream
-} from "effect"
+import { Cause, Clock, Duration, Effect, Exit, Fiber, Layer, Metric, Random, Redacted, Result, Stream } from "effect"
 import * as Reactivity from "effect/reactivity/Reactivity"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { Connection } from "effect/sql/SqlConnection"

@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Aggregate Bun Host bundle.
  *
@@ -37,6 +36,7 @@ import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import * as ProcessConfinement from "@smthrs/platform-node/ProcessConfinement"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type { FileSystem } from "effect/FileSystem"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"

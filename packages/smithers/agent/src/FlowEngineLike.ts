@@ -1,4 +1,3 @@
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The production `EngineLike` binding: the harness engine port executed on the
  * durable flow engine from `@smthrs/engine`.
@@ -65,6 +64,7 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -1164,7 +1164,6 @@ export const make = (
         Effect.mapError(accountingFailed)
       )
     )
-    const crypto = yield* EffectDigest.Digest
     const random = yield* SecureRandom.SecureRandom
     const observe = Option.match(observer, {
       onNone: (): Effect.Effect<Option.Option<EngineLike.Observation>, HarnessError.HarnessError> =>

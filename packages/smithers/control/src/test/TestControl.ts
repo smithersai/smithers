@@ -1,4 +1,3 @@
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Deterministic in-memory Control stack for package and consumer tests.
  *
@@ -10,6 +9,7 @@ import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as ControlExecutor from "../ControlExecutor.ts"
 import * as ControlLive from "../ControlLive.ts"
 import * as ControlRuntime from "../ControlRuntime.ts"

@@ -1,4 +1,3 @@
-import * as Redacted from "effect/Redacted"
 /**
  * Adapts a remote provider to Effect's `ChildProcessSpawner`.
  *
@@ -28,6 +27,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"

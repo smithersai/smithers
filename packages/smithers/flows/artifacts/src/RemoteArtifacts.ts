@@ -1,4 +1,3 @@
-import * as Redacted from "effect/Redacted"
 /**
  * The shared artifact tier: an {@link ArtifactStore.Service} spoken over HTTP.
  *

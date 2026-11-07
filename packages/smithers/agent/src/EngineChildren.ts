@@ -1,4 +1,3 @@
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The durable half of {@link ChildFlows}: detached children as real runs.
  *
@@ -52,6 +51,7 @@ import { Redaction } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"

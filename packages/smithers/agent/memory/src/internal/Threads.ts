@@ -1,5 +1,3 @@
-import * as Cause from "effect/Cause"
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Thread and message operations of the SQL memory store.
  *
@@ -7,8 +5,9 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
  */
 
 import * as Dialect from "@smthrs/database/Dialect"
+import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.ts"
 import type { Service } from "../MemoryStore.ts"

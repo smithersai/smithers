@@ -1,4 +1,3 @@
-import * as Redacted from "effect/Redacted"
 /**
  * Native I/O ownership for transient commands and prepared process owners.
  * @since 1.0.0
@@ -10,6 +9,7 @@ import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { type ChildProcessHandle, ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import type * as Scope from "effect/Scope"
 import * as Sink from "effect/Sink"
 import * as Stream from "effect/Stream"

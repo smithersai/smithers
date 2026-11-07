@@ -1,4 +1,3 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Owner-fenced scheduler decisions, distinct from action failure evidence and
  * redacted journal projections. Intent survives before a merge is appended.
@@ -11,6 +10,7 @@ import { Plan } from "@smthrs/plan"
 import { OwnerId } from "@smthrs/run-store/Ownership"
 import { Context, Effect, Layer, Option, Schema } from "effect"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))

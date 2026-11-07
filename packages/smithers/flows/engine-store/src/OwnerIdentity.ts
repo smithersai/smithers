@@ -1,4 +1,3 @@
-import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The source of the fencing identity a store incarnation runs under.
  *
@@ -16,6 +15,7 @@ import * as SecureRandom from "effect/crypto/SecureRandom"
 
 import type { OwnerId } from "@smthrs/journal/OwnerId"
 import * as Context from "effect/Context"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Random from "effect/Random"
