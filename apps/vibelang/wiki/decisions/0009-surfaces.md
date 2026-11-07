@@ -37,9 +37,7 @@ mock world; the skill and manifest state this explicitly. There is no invented d
 logic is `.vibe`. Emission uses `tsconfig.surfaces.json` into ignored `dist-factory/`; the package bin is
 `dist-factory/surfaces/cli-entry.js`. `pnpm cli ...` and `pnpm mcp --mock` build before running. MCP build logs
 go to stderr, leaving stdout for NDJSON-RPC. `--json` emits just the declared result; failures go to stderr with a
-nonzero exit. `--help` and `--llms` need no backend. The local pnpm workspace preserves the owning workspace's
-explicit no-build-script policy and already-approved first-party release-age exceptions; setup remains independent
-of the monorepo's older Effect version. `@types/node` is an explicit development dependency for the Node entries.
+nonzero exit. `--help` and `--llms` need no backend. The app installs with the repository's pnpm workspace. `@types/node` is an explicit development dependency for the Node entries.
 
 **Prior art.** `~/vl/ref/incur`'s README, SKILL and `src/{Cli,Mcp,Skill}.ts`: one command tree, derived tools and a
 compact Markdown discovery surface. We use Effect Schema and Effect transports rather than incur's runtime stack.

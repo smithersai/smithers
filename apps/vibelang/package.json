@@ -5,7 +5,6 @@
   "type": "module",
   "description": "vibelang.smithers.sh, the VibeLang factory: a Foldkit app written in VibeLang on Effect, served by Cloudflare and deployed by Alchemy.",
   "scripts": {
-    "setup": "pnpm install --config.minimum-release-age-exclude='vibelang*' --config.minimum-release-age-exclude='@smthrs/*'",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4173 --strictPort",
@@ -21,8 +20,13 @@
     "verify:broken": "bash verify/broken.sh"
   },
   "dependencies": {
-    "@smthrs/ui-css": "link:../../packages/smithers/ui/ui-css",
-    "@smthrs/ui-styleguide": "link:../../packages/smithers/ui/ui-styleguide",
+    "@smthrs/agent": "workspace:*",
+    "@smthrs/flow": "workspace:*",
+    "@smthrs/model": "workspace:*",
+    "@smthrs/model-host": "workspace:*",
+    "@smthrs/platform-cloudflare": "workspace:*",
+    "@smthrs/ui-css": "workspace:*",
+    "@smthrs/ui-styleguide": "workspace:*",
     "effect": "4.1.1",
     "foldkit": "0.170.0",
     "vibelang-runtime": "0.0.12"
@@ -37,8 +41,11 @@
     "@playwright/test": "1.62.1",
     "@types/node": "26.6.6",
     "alchemy": "2.0.0-beta.85",
+    "esbuild": "0.28.2",
     "happy-dom": "20.14.6",
+    "miniflare": "5.20261019.0-beta",
     "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vite": "8.3.4",
     "vitest": "5.0.5"

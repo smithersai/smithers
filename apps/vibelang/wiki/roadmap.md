@@ -31,11 +31,9 @@ brick                                   state         proof
 - **VibeLang bugs to fix upstream** (reproductions on nyc-01 under `~/vl/vibelang-bugs/`): `vibelang-error-subclass-is`
   (after `--fix`, `is` stops matching a subclass of an error), `vibelang-format-npm-reference` (the formatter can't
   resolve its shipped binary on Linux). EK4802 on Effect CLI Commands is fixed and queued (`1794050628-ek4802`).
-- **The monorepo moves to Effect 4.1.1, VibeLang 0.0.12 and Alchemy beta.85.** Foldkit 0.170 needs Effect `~4.1.0`,
-  Alchemy beta.85 needs `^4.1.0` and `vibelang-runtime` 0.0.12 pins 4.1.1, while the monorepo pins 4.0.5. Until that
-  lands, this app installs on its own (`pnpm run setup`, excluded in the root `pnpm-workspace.yaml`)
-  and links `@smthrs/ui-css` and `@smthrs/ui-styleguide` with `link:`. After it lands: join the workspace, switch to
-  `workspace:*`, delete the standalone pnpm-workspace.yaml and `setup` script and the `resolve.alias` and `paths` entries for the style guide.
+- **Done: the app is a workspace package (2026-11-07).** With the monorepo on Effect 4.1.1, VibeLang 0.0.12 and
+  Alchemy beta.85, `apps/vibelang` installs with the repository (`workspace:*` Smithers packages, no standalone
+  lockfile, `setup` script or style-guide alias) and declares its targets in `PACKAGE.ts`.
 - **Alchemy's state store.** Alchemy beta.85 keeps state in format v8; apps/mvp's beta.83 keeps the account's default
   store at v7. This stack uses its own store, `smithers-vibelang-state` (infra/Stack.vibe). Moving apps/mvp to beta.85
   migrates the default store, so that deploy and the migration happen together.

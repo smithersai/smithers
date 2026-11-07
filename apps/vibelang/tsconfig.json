@@ -17,12 +17,7 @@
     "exactOptionalPropertyTypes": true,
     "types": [
       "vite/client"
-    ],
-    "paths": {
-      "@smthrs/ui-styleguide": [
-        "../../packages/smithers/ui/ui-styleguide/src/index.ts"
-      ]
-    }
+    ]
   },
   "include": [
     "src",

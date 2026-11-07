@@ -14,5 +14,6 @@ Smithers packages. Build and test tools are `vibelang`, `vibelang-vite`, `vite`,
 chat; record it here. The build and test tools above are listed for Will's review: they ship nothing to browsers or
 Workers.
 
-**Consequence.** Foldkit needs Effect `~4.1.0` and the monorepo pins 4.0.5, so the app installs on its own until the
-monorepo upgrade lands (roadmap).
+**Consequence.** Foldkit needs Effect `~4.1.0`; the app installed on its own until the monorepo moved to Effect
+4.1.1. Since 2026-11-07 it is a workspace package: `pnpm install` at the root installs it, its Smithers packages are
+`workspace:*`, and `PACKAGE.ts` declares its targets.

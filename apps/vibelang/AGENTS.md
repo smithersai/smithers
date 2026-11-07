@@ -23,10 +23,9 @@ as its code (VL-23).
 
 ## Commands
 
-From this directory, until the monorepo is on Effect 4.1 (see [the roadmap](wiki/roadmap.md)):
+From this directory, after `pnpm install` at the repository root (the app is a workspace package):
 
 ```sh
-pnpm run setup      # installs on its own; VibeLang and @smthrs packages skip the release-age wait (Will, 2026-10-21)
 pnpm dev            # http://localhost:5178
 pnpm typecheck      # vibelang -p tsconfig.json
 pnpm test           # properties, integration, scenes
