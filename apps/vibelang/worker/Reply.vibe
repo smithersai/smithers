@@ -43,6 +43,7 @@ export service ChatModel {
 /** The reasons a person reads on a failed reply. Short, and never a provider's message, which could hold anything. */
 export const REASONS = {
   budget: "The agent's daily budget is spent. It resets at 00:00 UTC.",
+  credit: "The agent's model provider is out of credit.",
   unconfigured: "The agent has no model configured.",
   refused: "The model refused to answer.",
   unavailable: "The model is unavailable. Try again.",
@@ -86,7 +87,8 @@ export function requestFor(modelId: string, turns: ReadonlyArray<Turn>) {
 /** The reason a person reads for a provider error the model step sealed. */
 export function reasonOf(error: ModelError.ModelError): string {
   if (error.code === "content_policy") return REASONS.refused
-  if (error.code === "out_of_credit" || error.code === "quota_exceeded") return REASONS.budget
+  // The provider's billing, not this deployment's daily budget (Budget.vibe): a person must not read one as the other.
+  if (error.code === "out_of_credit" || error.code === "quota_exceeded") return REASONS.credit
   return REASONS.unavailable
 }
 

@@ -88,6 +88,6 @@ test.describe("splash and chat", () => {
   test("the deployment says which agent it runs", async ({ request }) => {
     test.skip(process.env.E2E_BASE_URL === undefined, "vite preview has no Worker; this runs against a deployment")
     const health = await request.get("/api/health")
-    expect(await health.json()).toEqual({ ok: true, agent: "mock" })
+    expect(await health.json()).toEqual({ ok: true, agent: "live" })
   })
 })
