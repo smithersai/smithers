@@ -43,7 +43,7 @@ import * as AtomicFileSystem from "@smthrs/platform-node/AtomicFileSystem"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Registry from "@smthrs/registry/Registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import { Cause, Deferred, Duration, Effect, Exit, Layer, Logger, Option, Schedule, Schema, Stream } from "effect"
+import { Cause, Deferred, Duration, Effect, Exit, Fiber, Layer, Logger, Option, Schedule, Schema, Stream } from "effect"
 import * as References from "effect/References"
 import { mkdtempSync } from "node:fs"
 import { rm } from "node:fs/promises"
@@ -500,6 +500,7 @@ describe("an agent execution quarantined by the durable engine", () => {
         const resumed = Deferred.makeUnsafe<void>()
         const engineJournal = Deferred.makeUnsafe<Journal.Service>()
         let peerRuntime: ControlRuntime.Service | undefined
+        let resumeFiber: Fiber.Fiber<unknown, unknown> | undefined
         // The peer's quarantine lands inside the window this case is about: after
         // the executor read the park as a timer and claimed the control row, and
         // before the engine is asked to re-drive the execution.
@@ -543,6 +544,10 @@ describe("an agent execution quarantined by the durable engine", () => {
             const executor = yield* ControlExecutor.ControlExecutor
             const uptake = yield* executor.resumeRun({ runId: id })
             yield* Deferred.await(resumed)
+            // The engine wrapper finishes before the executor returns its claim.
+            // Join that drive too, including the case where the peer parked first.
+            if (resumeFiber === undefined) return yield* Effect.die("resume drive unavailable")
+            yield* Fiber.join(resumeFiber)
             // The refused delegation hands its control claim back to the park.
             yield* awaitStatus(runtime, id, "parked")
             return { id, uptake, wakesBefore, parkedBy: (yield* runtime.getRun(id)).parkedBy }
@@ -550,6 +555,11 @@ describe("an agent execution quarantined by the durable engine", () => {
             Effect.provide(host(root, hostOwner, "quarantine-race", {
               engineJournal,
               resumed,
+              onEngineResume: Effect.withFiber((fiber) =>
+                Effect.sync(() => {
+                  resumeFiber = fiber
+                })
+              ),
               beforeEngineResume: (id) =>
                 Effect.suspend(() => {
                   if (!quarantineOnResume) return Effect.void
