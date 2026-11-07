@@ -12,7 +12,8 @@ style.textContent = stylesheet()
 document.head.append(style)
 const observation = trace()
 let model = init({ session: "browser", mode: "mock", name: "You" }).model
-const fault = new URLSearchParams(location.search).get("fault") === "disconnect" ? "disconnect" : "drop"
+const requestedFault = new URLSearchParams(location.search).get("fault")
+const fault = requestedFault === "end" ? "end" : requestedFault === "disconnect" ? "disconnect" : "drop"
 const program = application(document.getElementById("root")!, faultyFactory(fault, observation), value => { model = value })
 window.recovery = {
   snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map(event => event.seq) }),

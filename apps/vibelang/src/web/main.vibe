@@ -332,8 +332,10 @@ export function subscriptions(keys: EventTarget, page?: Document) {
           Stream.when(
             Stream.unwrap(effect {
               const factory = try Factory
+              const ended = try message(() => Message.FailedEvents({ reason: "ended" }))
               return factory.events(conversation, from).pipe(
                 Stream.map((event) => Message.ReceivedEvent({ event })),
+                Stream.concat(Stream.make(ended)),
                 Stream.catchTag("Unavailable", (error) => Stream.make(Message.FailedEvents({ reason: error.reason }))),
               )
             }),

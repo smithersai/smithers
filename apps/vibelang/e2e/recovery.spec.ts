@@ -12,7 +12,7 @@ declare global {
 
 test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? 4173}` })
 
-for (const fault of ["drop", "disconnect"] as const) {
+for (const fault of ["drop", "disconnect", "end"] as const) {
   test(`11: ${fault} recovers through the real subscriptions and stays live without duplicates`, async ({ page }) => {
     // This fixture is local-only; deployment runs still exercise the same browser runtime via the local test host.
     await page.goto(`/e2e/runtime/index.html?fault=${fault}`)
@@ -23,7 +23,7 @@ for (const fault of ["drop", "disconnect"] as const) {
     await expect(prompt).toHaveValue("What is a service?")
     await prompt.press("Enter")
     const answers = page.locator(".sui-chat-message[data-role='assistant']")
-    if (fault === "disconnect") {
+    if (fault !== "drop") {
       const reconnect = page.getByRole("button", { name: "Reconnect" })
       await expect(reconnect).toBeVisible()
       await expect(answers).toHaveAttribute("data-done", "false")

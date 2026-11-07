@@ -8,7 +8,7 @@ import { mockReply } from "../src/core/mockReplies.ts"
 import { faultyFactory, trace } from "./support/FaultyFactory.vibe"
 import { activeId, clickAsk, container, focusComposer, hasAsk, reconnect, remove, send } from "./support/browser.ts"
 
-for (const fault of ["drop", "disconnect"] as const) {
+for (const fault of ["drop", "disconnect", "end"] as const) {
   it.live(`real runtime recovers from ${fault} using its last applied seq, without duplicates`, () => scoped(effect {
     const observation = trace()
     let latest = init({ session: "runtime", name: "Ada", mode: "mock" }).model
@@ -22,7 +22,7 @@ for (const fault of ["drop", "disconnect"] as const) {
     try sync(clickAsk)
     try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))
     try sync(() => send("What is a service?"))
-    if (fault === "disconnect") {
+    if (fault !== "drop") {
       try promise(() => vi.waitFor(() => expect(latest.stream).toBe("failed")))
       try Effect.try(() => {
         expect(latest.client.conversation.seq).toBe(3)

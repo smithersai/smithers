@@ -3,7 +3,7 @@ import type { Event } from "../../src/core/conversation.ts"
 import { Factory, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "drop" | "disconnect"
+export type Fault = "drop" | "disconnect" | "end"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -25,9 +25,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       read: base.read,
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
+        const ending = fault === "end" && !observation.faulted
         return base.events(conversation, after).pipe(
           Stream.mapEffect(effect (event) => {
-            if (!observation.faulted && event.seq === (fault === "drop" ? 3 : 4)) {
+            if (fault !== "end" && !observation.faulted && event.seq === (fault === "drop" ? 3 : 4)) {
               try sync(() => { observation.faulted = true })
               if (fault === "disconnect") throw new Unavailable({ reason: "connection interrupted" })
               return Result.failVoid
@@ -36,6 +37,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
             return Result.succeed(event)
           }),
           Stream.filterMap((event) => event),
+          Stream.takeUntil((event) => {
+            if (ending && event.seq === 3) { observation.faulted = true; return true }
+            return false
+          }),
         )
       }),
     }
