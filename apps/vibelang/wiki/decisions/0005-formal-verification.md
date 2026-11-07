@@ -97,3 +97,5 @@ JS number/UTF-16 model; it is not a proof of those toolchains. macOS installers 
 **Fable finding 3.** `canReplyTo` and the start correlation contracts pass a fresh Linux run: **25 verified, 0 errors**. Six additional executable mutations cover missing/non-person/already-answered targets, omitted admission guard, mismatched event target and projected target. Final mutation receipts are in the lane report.
 
 **Retry (Fable 7).** The pending recovery transition adds a frame and an exact clearing contract, plus two executable mutations. The current production proof has **28 verified, 0 errors** across thirteen marked functions; the mutation suite contains **48** unchanged-contract copies.
+
+**Fable final receipt.** Fresh production verification: **28 verified, 0 errors** in **17.321 s**. `pnpm verify:broken` rejected **48/48** executable mutations in **303.372 s** with two workers, each strictly typechecked and failed a Dafny obligation in its intended function. The eight new mutations cover reply targeting/correlation and pending retry; all forty prior copies were regenerated and rejected again.
