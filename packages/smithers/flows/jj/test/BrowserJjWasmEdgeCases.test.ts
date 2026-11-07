@@ -21,9 +21,9 @@ import * as fsModule from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as BrowserJj from "../src/browser/BrowserJj.ts"
-import * as WasiPreview1 from "../src/browser/WasiPreview1.ts"
-import { isJjError, Jj, type JjError, type JjFailure } from "../src/Jj.ts"
+import * as BrowserJj from "../src/browser/BrowserJj.vibe"
+import * as WasiPreview1 from "../src/browser/WasiPreview1.vibe"
+import { isJjError, Jj, type JjError, type JjFailure } from "../src/Jj.vibe"
 import { rootedSyncFs } from "./RootedSyncFs.ts"
 
 const wasmPath = fileURLToPath(new URL("../wasm/flows_jj.wasm", import.meta.url))

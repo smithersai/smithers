@@ -9,7 +9,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import * as Capability from "../../../packages/smithers/flows/capability/src/Capability.ts"
 import * as Permission from "../../../packages/smithers/flows/capability/src/Permission.ts"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import {
   NativeCoding,
   NativeCodingError,

@@ -1,5 +1,5 @@
 import * as Layer from "effect/Layer"
-import * as NodeJj from "../src/node/NodeJj.ts"
+import * as NodeJj from "../src/node/NodeJj.vibe"
 
 /**
  * A NodeJj layer whose startup probe may take a loaded host's full minute.

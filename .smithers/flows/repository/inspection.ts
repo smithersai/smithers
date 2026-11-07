@@ -1,7 +1,7 @@
 /** Measured source and repository history; no generated knowledge prerequisite. */
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, Option, Path, Schema } from "effect"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { NativeCoding } from "../coding/native.ts"
 import {

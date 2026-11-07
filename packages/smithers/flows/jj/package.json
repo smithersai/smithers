@@ -45,24 +45,28 @@
     "./internal/*": null,
     "./*/index": null,
     "./Jj": {
-      "types": "./src/Jj.ts",
-      "vibelang-source": "./src/Jj.ts",
+      "types": "./.vibe/declarations/src/Jj.d.vibe.ts",
+      "vibelang-source": "./src/Jj.vibe",
       "default": "./.vibelang/js/src/Jj.js"
     },
     "./browser/BrowserJj": {
-      "types": "./src/browser/BrowserJj.ts",
-      "vibelang-source": "./src/browser/BrowserJj.ts",
+      "types": "./.vibe/declarations/src/browser/BrowserJj.d.vibe.ts",
+      "vibelang-source": "./src/browser/BrowserJj.vibe",
       "default": "./.vibelang/js/src/browser/BrowserJj.js"
     },
-    "./browser/WasiFs": "./src/browser/WasiFs.ts",
+    "./browser/WasiFs": {
+      "types": "./src/browser/WasiFs.ts",
+      "vibelang-source": "./src/browser/WasiFs.ts",
+      "default": "./.vibelang/js/src/browser/WasiFs.js"
+    },
     "./browser/WasiPreview1": {
-      "types": "./src/browser/WasiPreview1.ts",
-      "vibelang-source": "./src/browser/WasiPreview1.ts",
+      "types": "./.vibe/declarations/src/browser/WasiPreview1.d.vibe.ts",
+      "vibelang-source": "./src/browser/WasiPreview1.vibe",
       "default": "./.vibelang/js/src/browser/WasiPreview1.js"
     },
     "./bun/BunJj": {
-      "types": "./src/bun/BunJj.ts",
-      "vibelang-source": "./src/bun/BunJj.ts",
+      "types": "./.vibe/declarations/src/bun/BunJj.d.vibe.ts",
+      "vibelang-source": "./src/bun/BunJj.vibe",
       "default": "./.vibelang/js/src/bun/BunJj.js"
     },
     "./index": {
@@ -71,8 +75,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./node/NodeJj": {
-      "types": "./src/node/NodeJj.ts",
-      "vibelang-source": "./src/node/NodeJj.ts",
+      "types": "./.vibe/declarations/src/node/NodeJj.d.vibe.ts",
+      "vibelang-source": "./src/node/NodeJj.vibe",
       "default": "./.vibelang/js/src/node/NodeJj.js"
     },
     "./node/resolveJjBinary": {
@@ -95,7 +99,12 @@
     "CHANGELOG.md",
     "docs/",
     "src/internal/JjInternalFault.vibe",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/Jj.vibe",
+    "src/browser/BrowserJj.vibe",
+    "src/browser/WasiPreview1.vibe",
+    "src/bun/BunJj.vibe",
+    "src/node/NodeJj.vibe"
   ],
   "publishConfig": {
     "access": "public",

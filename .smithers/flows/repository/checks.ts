@@ -5,7 +5,7 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
 import { Effect, Layer, Option, Path, Schema } from "effect"
 import { matchesGlob } from "node:path"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import {
   contained,
   type ImmutableSourceOptions,

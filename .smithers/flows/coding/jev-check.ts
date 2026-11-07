@@ -8,7 +8,7 @@ import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
 import * as Executable from "@smthrs/registry/Executable"
 import { Effect, Layer, Result, Schema } from "effect"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { privatePath } from "../repository/check-context.ts"
 import type { Comparison } from "../repository/checks.ts"
 import {

@@ -2,7 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect } from "effect"
 import type { PlatformError } from "effect/PlatformError"
 import * as Schema from "effect/Schema"
-import * as Jj from "../src/Jj.ts"
+import * as Jj from "../src/Jj.vibe"
 
 describe("jjError", () => {
   it("builds jj errors with the Jj module default and carries the command", () => {

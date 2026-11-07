@@ -73,6 +73,28 @@ import * as Schema from "effect/Schema"
 import { JjInternalFault } from "../internal/JjInternalFault.vibe"
 import type { SyncDirentLike, SyncFsLike, SyncStatsLike } from "./WasiFs.ts"
 
+module platform {
+  /** Internal control flow: thrown by syscall bodies, returned as an errno. */
+  export class ErrnoError {
+    readonly errno: number
+    constructor(errno: number) {
+      this.errno = errno
+    }
+  }
+  export const fail = (errno: number): never => {
+    throw new ErrnoError(errno)
+  }
+
+  export function $performance_now(...args: Parameters<typeof performance.now>): ReturnType<typeof performance.now> {
+    return performance.now(...args)
+  }
+  export function $crypto_getRandomValues<T extends Parameters<typeof crypto.getRandomValues>[0]>(array: T): T {
+    return crypto.getRandomValues(array)
+  }
+}
+
+import { $crypto_getRandomValues, $performance_now, ErrnoError, fail } from platform
+
 /**
  * WASI preview 1 errno values, by their spec names. Exported so tests assert
  * numbers against names rather than magic literals.
@@ -110,7 +132,6 @@ export const Errno = {
   spipe: 70,
   xdev: 75
 } as const
-
 /**
  * The wasm module called `proc_exit`. A reactor module must not exit, so the
  * shim turns the call into a thrown error that traps the calling export;
@@ -127,7 +148,6 @@ export class WasiExitError extends Schema.TaggedError<WasiExitError>()("@smthrs/
     return `wasm module called proc_exit(${this.exitCode})`
   }
 }
-
 /** Node-style error `code` strings mapped onto WASI errno values. */
 const errnoByCode: Record<string, number> = {
   EACCES: Errno.acces,
@@ -158,7 +178,6 @@ const errnoByCode: Record<string, number> = {
   ESPIPE: Errno.spipe,
   EXDEV: Errno.xdev
 }
-
 const FILETYPE = { unknown: 0, characterDevice: 2, directory: 3, regularFile: 4, symbolicLink: 7 } as const
 const OFLAGS = { creat: 1, directory: 2, excl: 4, trunc: 8 } as const
 const FDFLAGS = { append: 1 } as const
@@ -167,19 +186,6 @@ const LOOKUPFLAGS = { symlinkFollow: 1 } as const
 const RIGHTS = { fdRead: 1n << 1n, fdWrite: 1n << 6n } as const
 /** Rights are an obsolete capability mask most hosts ignore; grant everything. */
 const ALL_RIGHTS = 0xFFFF_FFFF_FFFF_FFFFn
-
-/** Internal control flow: thrown by syscall bodies, returned as an errno. */
-class ErrnoError {
-  readonly errno: number
-  constructor(errno: number) {
-    this.errno = errno
-  }
-}
-
-const fail = (errno: number): never => {
-  throw new ErrnoError(errno)
-}
-
 /**
  * A WASI `u64` narrowed to a JavaScript number. Above
  * `Number.MAX_SAFE_INTEGER` the conversion is lossy, so the syscall refuses
@@ -193,10 +199,9 @@ const fail = (errno: number): never => {
  */
 const checked = (value: bigint, errno: number): number => {
   const unsigned = BigInt.asUintN(64, value)
-  if (unsigned > BigInt(Number.MAX_SAFE_INTEGER)) return fail(errno)
+  if (unsigned > $invoke(BigInt, Number.MAX_SAFE_INTEGER)) return fail(errno)
   return Number(unsigned)
 }
-
 /**
  * A WASI `u64` nanosecond stamp converted to the seconds `utimesSync` accepts.
  *
@@ -209,13 +214,11 @@ const secondsOfNanoseconds = (value: bigint): number => {
   const unsigned = BigInt.asUintN(64, value)
   return Number(unsigned / 1_000_000_000n) + Number(unsigned % 1_000_000_000n) / 1e9
 }
-
 /** The Node-style string `code` of a thrown backend error, if it has one. */
 const codeOf = (cause: unknown): string | undefined =>
   typeof cause === "object" && cause !== null && "code" in cause && typeof cause.code === "string"
     ? cause.code
     : undefined
-
 /**
  * Milliseconds (with a fractional part carrying microseconds) to WASI
  * nanoseconds. Split at the millisecond so the multiplication never leaves
@@ -224,12 +227,10 @@ const codeOf = (cause: unknown): string | undefined =>
  */
 const nsOfMs = (ms: number): bigint => {
   const whole = Math.floor(ms)
-  return BigInt(whole) * 1_000_000n + BigInt(Math.round((ms - whole) * 1e6))
+  return $invoke(BigInt, whole) * 1_000_000n + $invoke(BigInt, Math.round((ms - whole) * 1e6))
 }
-
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
-
 interface FileFd {
   readonly kind: "file"
   readonly osFd: number
@@ -261,12 +262,9 @@ interface StdioFd {
 }
 type FdEntry = FileFd | DirFd | StdioFd
 type Resolved = { readonly nsPath: string; readonly hostPath: string }
-
 /** The meaningful segments of a path: `.` and empty drop, everything else stays. */
 const partsOf = (raw: string): Array<string> => raw.split("/").filter((segment) => segment !== "" && segment !== ".")
-
 const zeroStats = { size: 0, atimeMs: 0, mtimeMs: 0, ctimeMs: 0 }
-
 /**
  * What the shim serves the module: a synchronous filesystem, the slice of it
  * preopened as the WASI root, and where the module's stdout and stderr go.
@@ -296,7 +294,6 @@ export interface WasiPreview1Options {
   /** Receives text the module writes to fd 2 — Rust panic messages arrive here. */
   readonly onStderr?: (text: string) => void
 }
-
 /**
  * A WASI preview 1 host: the `imports` object to instantiate a module with,
  * and the {@link WasiPreview1.initialize} call that binds its memory.
@@ -337,7 +334,6 @@ export interface WasiPreview1 {
    */
   readonly dispose: () => void
 }
-
 /**
  * Creates a WASI preview 1 host over a synchronous filesystem slice.
  *
@@ -353,10 +349,12 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
 
   const buffer = (): ArrayBuffer => {
     if (memory === undefined) {
-      throw new JjInternalFault({
-        code: "wasi_not_initialized",
-        message: "WasiPreview1: initialize(memory) must be called before the module issues syscalls"
-      })
+      $raise(
+        new JjInternalFault({
+          code: "wasi_not_initialized",
+          message: "WasiPreview1: initialize(memory) must be called before the module issues syscalls"
+        })
+      )
     }
     return memory.buffer
   }
@@ -458,7 +456,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
 
   const resolvePath = (dirFd: number, ptr: number, len: number): Resolved => {
     const dir = dirOf(dirFd)
-    const raw = decoder.decode(bytes(ptr, len))
+    const raw = $invoke2(decoder, () => (bytes(ptr, len)))
     if (raw.length === 0) return fail(Errno.noent)
     return walk(partsOf(dirTarget(dir).nsPath), raw)
   }
@@ -495,10 +493,10 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     const v = view()
     const at = ptr >>> 0
     v.setBigUint64(at, 0n, true) // dev
-    v.setBigUint64(at + 8, BigInt(Math.trunc(stats.ino ?? 0)), true)
-    v.setBigUint64(at + 16, BigInt(filetype), true) // u8 filetype + 7 pad bytes
+    v.setBigUint64(at + 8, $invoke(BigInt, Math.trunc(stats.ino ?? 0)), true)
+    v.setBigUint64(at + 16, $invoke(BigInt, filetype), true) // u8 filetype + 7 pad bytes
     v.setBigUint64(at + 24, 1n, true) // nlink
-    v.setBigUint64(at + 32, BigInt(stats.size), true)
+    v.setBigUint64(at + 32, $invoke(BigInt, stats.size), true)
     v.setBigUint64(at + 40, nsOfMs(stats.atimeMs), true)
     v.setBigUint64(at + 48, nsOfMs(stats.mtimeMs), true)
     v.setBigUint64(at + 56, nsOfMs(stats.ctimeMs), true)
@@ -509,7 +507,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       return fs.statSync(path)
     } catch (cause) {
       if (codeOf(cause) === "ENOENT") return undefined
-      throw cause
+      $raise(cause)
     }
   }
 
@@ -518,7 +516,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       return fs.lstatSync(path).isSymbolicLink()
     } catch (cause) {
       if (codeOf(cause) === "ENOENT") return false
-      throw cause
+      $raise(cause)
     }
   }
 
@@ -606,9 +604,9 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     // clock shim, called synchronously by the guest, so it reads the host
     // clock directly rather than routing through Effect's `Clock`.
     const now = id === 0
-      ? BigInt(Date.now()) * 1_000_000n
+      ? $invoke(BigInt, Date.now()) * 1_000_000n
       : id === 1 || id === 2 || id === 3
-      ? nsOfMs(performance.now())
+      ? nsOfMs($performance_now())
       : fail(Errno.inval)
     view().setBigUint64(retPtr >>> 0, now, true)
     return Errno.success
@@ -718,7 +716,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     for (const iov of iovecs(iovsPtr, iovsLen)) {
       if (iov.len === 0) continue
       const n = fs.readSync(entry.osFd, bytes(iov.ptr, iov.len), 0, iov.len, checked(position, Errno.fbig))
-      position += BigInt(n)
+      position += $invoke(BigInt, n)
       total += n
       if (n < iov.len) break
     }
@@ -751,7 +749,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     for (const iov of iovecs(iovsPtr, iovsLen)) {
       if (iov.len === 0) continue
       const n = fs.writeSync(entry.osFd, bytes(iov.ptr, iov.len), 0, iov.len, checked(position, Errno.fbig))
-      position += BigInt(n)
+      position += $invoke(BigInt, n)
       total += n
       if (n < iov.len) break
     }
@@ -771,7 +769,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     for (const iov of iovecs(iovsPtr, iovsLen)) {
       if (iov.len === 0) continue
       const n = fs.readSync(entry.osFd, bytes(iov.ptr, iov.len), 0, iov.len, checked(entry.offset, Errno.fbig))
-      entry.offset += BigInt(n)
+      entry.offset += $invoke(BigInt, n)
       total += n
       if (n < iov.len) break
     }
@@ -798,7 +796,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       const name = encoder.encode(dirent.name)
       const record = new Uint8Array(24 + name.length)
       const rv = new DataView(record.buffer)
-      rv.setBigUint64(0, BigInt(index + 1), true) // d_next: the cookie that resumes after this entry
+      rv.setBigUint64(0, $invoke(BigInt, index + 1), true) // d_next: the cookie that resumes after this entry
       rv.setBigUint64(8, 0n, true) // d_ino
       rv.setUint32(16, name.length, true)
       rv.setUint32(20, filetypeOf(dirent), true) // u8 d_type + 3 pad bytes
@@ -834,7 +832,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       : whence === 1
       ? entry.offset + offset
       : whence === 2
-      ? BigInt(fs.fstatSync(entry.osFd).size) + offset
+      ? $invoke(BigInt, fs.fstatSync(entry.osFd).size) + offset
       : fail(Errno.inval)
     if (target < 0n) return fail(Errno.inval)
     entry.offset = target
@@ -865,7 +863,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
         joined.set(bytes(iov.ptr, iov.len), at)
         at += iov.len
       }
-      if (entry.sink !== undefined) entry.sink(decoder.decode(joined))
+      if (entry.sink !== undefined) entry.sink($invoke2(decoder, () => joined))
       view().setUint32(nwrittenPtr >>> 0, total, true)
       return Errno.success
     }
@@ -878,7 +876,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       // acquire the flag later through fd_fdstat_set_flags.
       const position = entry.append ? fs.fstatSync(entry.osFd).size : checked(entry.offset, Errno.fbig)
       const n = fs.writeSync(entry.osFd, bytes(iov.ptr, iov.len), 0, iov.len, position)
-      entry.offset = entry.append ? BigInt(position + n) : entry.offset + BigInt(n)
+      entry.offset = entry.append ? $invoke(BigInt, position + n) : entry.offset + $invoke(BigInt, n)
       total += n
       if (n < iov.len) break
     }
@@ -983,7 +981,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
       } catch {
         // Preserve the initialization error even when cleanup fails.
       }
-      throw cause
+      $raise(cause)
     }
   }
 
@@ -1082,7 +1080,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
   }
 
   const pathSymlink = (oldPtr: number, oldLen: number, fd: number, newPtr: number, newLen: number): number => {
-    const linkTarget = decoder.decode(bytes(oldPtr, oldLen))
+    const linkTarget = $invoke2(decoder, () => (bytes(oldPtr, oldLen)))
     if (linkTarget.length === 0) return fail(Errno.noent)
     const at = notRoot(resolvePath(fd, newPtr, newLen))
     fs.symlinkSync(linkTarget, at.hostPath)
@@ -1113,7 +1111,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
   }
 
   const procExit = (code: number): number => {
-    throw new WasiExitError({ exitCode: code >>> 0 })
+    $raise(new WasiExitError({ exitCode: code >>> 0 }))
   }
 
   const procRaise = (_signal: number): number => Errno.notsup
@@ -1121,7 +1119,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
   const randomGet = (ptr: number, len: number): number => {
     const target = bytes(ptr, len)
     for (let at = 0; at < target.length; at += 65536) {
-      crypto.getRandomValues(target.subarray(at, Math.min(at + 65536, target.length)))
+      $crypto_getRandomValues(target.subarray(at, Math.min(at + 65536, target.length)))
     }
     return Errno.success
   }
@@ -1149,10 +1147,10 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     if (cause instanceof RangeError) return Errno.fault // out-of-bounds wasm memory access
     // A misused shim is a defect in the reactor, never a filesystem errno: its
     // stable `code` is not one, so it must not reach the errno lookup below.
-    if (cause instanceof JjInternalFault) throw cause
+    if (cause instanceof JjInternalFault) $raise(cause)
     const code = codeOf(cause)
     if (code !== undefined) return errnoByCode[code] ?? Errno.io
-    throw cause
+    $raise(cause)
   }
 
   const syscall = <Args extends Array<number | bigint>>(body: (...args: Args) => number) => (...args: Args): number => {
@@ -1223,7 +1221,7 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
         first ??= { cause }
       }
     }
-    if (first !== undefined) throw first.cause
+    if (first !== undefined) $raise(first.cause)
   }
 
   return {
@@ -1234,3 +1232,30 @@ export const make = (options: WasiPreview1Options): WasiPreview1 => {
     dispose
   }
 }
+
+module $call$ts {
+  export function invoke<T extends Function>(
+    target: T,
+    arg0: Parameters<Extract<T, (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T, (...args: any[]) => any>> {
+    return target(arg0)
+  }
+}
+import { invoke as $invoke } from $call$ts
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts
+
+module $call$ts2 {
+  export function invoke<T extends { "decode": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["decode"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["decode"], (...args: any[]) => any>> {
+    return target["decode"](arg0())
+  }
+}
+import { invoke as $invoke2 } from $call$ts2

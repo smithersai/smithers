@@ -100,7 +100,7 @@ const securityReview = Smithers.SecurityReview({
         "A revision passed to restore/diff/revert as a separate argv item after --from/-r that jj could accept when it begins with \"-\".",
         "opRestore reaching jj with an operationId that is not matched by the /^[0-9a-f]+$/ guard."
       ],
-      paths: ["src/node/NodeJj.ts"]
+      paths: ["src/node/NodeJj.vibe"]
     },
     {
       id: "jj-revset-injection",
@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "String interpolation of a revision into a revset expression such as `--revision=parents(${pinned})` without validating it as a hex commit id or reverse-hex change id.",
         "requireRevision accepting anything beyond non-empty, so `x) | all() | (x` or `root()` reaches jj restore --from."
       ],
-      paths: ["src/node/NodeJj.ts", "src/browser/BrowserJj.ts"]
+      paths: ["src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe"]
     },
     {
       id: "jj-binary-resolution",
@@ -124,7 +124,7 @@ const securityReview = Smithers.SecurityReview({
         "The version-probe cache keyed so a probe under one spawner or path authorizes a different binary.",
         "permissionHint or describe emitting an override path into shell remediation text without shellQuote."
       ],
-      paths: ["src/node/resolveJjBinary.ts", "src/node/NodeJj.ts"]
+      paths: ["src/node/resolveJjBinary.ts", "src/node/NodeJj.vibe"]
     },
     {
       id: "jj-config-program-exec",
@@ -136,7 +136,7 @@ const securityReview = Smithers.SecurityReview({
         "A jj child spawned with the full process.env (secrets, JJ_CONFIG) instead of a minimal environment.",
         "A workspace cwd from a caller path whose .jj config the host jj loads before any argv override applies."
       ],
-      paths: ["src/node/NodeJj.ts"]
+      paths: ["src/node/NodeJj.vibe"]
     },
     {
       id: "wasi-preopen-escape",
@@ -149,7 +149,7 @@ const securityReview = Smithers.SecurityReview({
         "path_symlink writing a guest-controlled absolute target that the backend later follows outside the root when the shim itself does not walk it.",
         "fd-addressed operations resolved through a path captured at open time, so a rename plus symlink redirects a later mutation."
       ],
-      paths: ["src/browser/WasiPreview1.ts", "src/browser/WasiFs.ts"]
+      paths: ["src/browser/WasiPreview1.vibe", "src/browser/WasiFs.ts"]
     },
     {
       id: "wasi-memory-bounds",
@@ -161,7 +161,7 @@ const securityReview = Smithers.SecurityReview({
         "A RangeError path not mapped to Errno.fault, letting an exception unwind through the wasm stack.",
         "fd_read/fd_readdir/path_readlink sizing a host buffer from a guest-supplied length without a cap."
       ],
-      paths: ["src/browser/WasiPreview1.ts"]
+      paths: ["src/browser/WasiPreview1.vibe"]
     },
     {
       id: "jj-abi-response-trust",
@@ -174,7 +174,7 @@ const securityReview = Smithers.SecurityReview({
         "settle treating exit code 0 as success while stderr reports refused snapshot files.",
         "snapshot using an empty commitId from a malformed jj log line as a restore target."
       ],
-      paths: ["src/node/NodeJj.ts", "src/browser/BrowserJj.ts"]
+      paths: ["src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe"]
     },
     {
       id: "jj-error-leakage",
@@ -185,7 +185,7 @@ const securityReview = Smithers.SecurityReview({
         "A JjError constructed with an unbounded message or command instead of commandOf/jjErrorCause truncation.",
         "A cause projection that copies an Error's stack, env, or spawnargs into the journal."
       ],
-      paths: ["src/Jj.ts", "src/node/NodeJj.ts", "src/browser/BrowserJj.ts"]
+      paths: ["src/Jj.vibe", "src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe"]
     },
     {
       id: "jj-lock-and-restore-safety",
@@ -197,7 +197,7 @@ const securityReview = Smithers.SecurityReview({
         "workspaceAdd's pinned restore running in a directory resolved from a caller path outside the bound repository root.",
         "opRestore running jj op restore without the workspace-list equality check, or with --what broader than repo."
       ],
-      paths: ["src/node/NodeJj.ts"]
+      paths: ["src/node/NodeJj.vibe"]
     }
   ]
 })

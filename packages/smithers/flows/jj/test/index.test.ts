@@ -7,11 +7,11 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import type { PlatformError } from "effect/PlatformError"
-import * as BrowserJj from "../src/browser/BrowserJj.ts"
-import * as BunJj from "../src/bun/BunJj.ts"
+import * as BrowserJj from "../src/browser/BrowserJj.vibe"
+import * as BunJj from "../src/bun/BunJj.vibe"
 import * as Index from "../src/index.ts"
-import { Jj } from "../src/Jj.ts"
-import * as NodeJj from "../src/node/NodeJj.ts"
+import { Jj } from "../src/Jj.vibe"
+import * as NodeJj from "../src/node/NodeJj.vibe"
 
 describe("@smthrs/jj barrel", () => {
   it("re-exports the contract flat", () => {

@@ -17,11 +17,9 @@
  * resolved service set, and `JjError` round-trips through the journal, so
  * renaming either invalidates recorded runs.
  */
-
-import type * as Permission from "@smthrs/capability/Permission"
-import { Context, Effect, Layer, Schema } from "effect"
-import type { PlatformError } from "effect/PlatformError"
-
+import type * as Permission from "@smthrs/capability/Permission";
+import { Context, Effect, Layer, Schema } from "effect";
+import type { PlatformError } from "effect/PlatformError";
 /**
  * Why a jj operation failed, as a closed and stable set.
  *
@@ -38,24 +36,14 @@ import type { PlatformError } from "effect/PlatformError"
  * @category models
  * @since 0.1.0
  */
-export const JjErrorCode = Schema.Literals([
-  "not_installed",
-  "conflict",
-  "invalid_ref",
-  "snapshot_refused",
-  "stale_workspace",
-  "unsupported_version",
-  "unknown"
-])
-
+export declare const JjErrorCode: Schema.Literals<readonly ["not_installed", "conflict", "invalid_ref", "snapshot_refused", "stale_workspace", "unsupported_version", "unknown"]>;
 /**
  * The value form of {@link JjErrorCode}.
  *
  * @category models
  * @since 0.1.0
  */
-export type JjErrorCode = typeof JjErrorCode.Type
-
+export type JjErrorCode = typeof JjErrorCode.Type;
 /**
  * How many characters each string in a {@link JjErrorCause} keeps.
  *
@@ -66,10 +54,7 @@ export type JjErrorCode = typeof JjErrorCode.Type
  * @category constants
  * @since 1.0.0
  */
-export const causeMessageLimit = 1024
-
-const JjErrorCauseField = Schema.String.check(Schema.isMaxLength(causeMessageLimit))
-
+export declare const causeMessageLimit = 1024;
 /**
  * The plain-data projection of an underlying host failure.
  *
@@ -89,49 +74,21 @@ const JjErrorCauseField = Schema.String.check(Schema.isMaxLength(causeMessageLim
  * @category models
  * @since 1.0.0
  */
-export const JjErrorCause = Schema.Struct({
-  /** The failure's constructor or tag name, truncated to {@link causeMessageLimit}. */
-  name: Schema.optional(JjErrorCauseField),
-  /** The errno-style code, such as `ENOENT`, truncated to {@link causeMessageLimit}. */
-  code: Schema.optional(JjErrorCauseField),
-  /** The failure's own message, truncated to {@link causeMessageLimit}. */
-  message: JjErrorCauseField
-})
-
+export declare const JjErrorCause: Schema.Struct<{
+    /** The failure's constructor or tag name, truncated to {@link causeMessageLimit}. */
+    readonly name: Schema.optional<Schema.String>;
+    /** The errno-style code, such as `ENOENT`, truncated to {@link causeMessageLimit}. */
+    readonly code: Schema.optional<Schema.String>;
+    /** The failure's own message, truncated to {@link causeMessageLimit}. */
+    readonly message: Schema.String;
+}>;
 /**
  * The value form of {@link JjErrorCause}.
  *
  * @category models
  * @since 1.0.0
  */
-export type JjErrorCause = typeof JjErrorCause.Type
-
-const truncateCauseField = (value: string): string =>
-  value.length > causeMessageLimit ? `${value.slice(0, causeMessageLimit - 1)}…` : value
-
-/**
- * Reads one string field of a failure. A getter that throws reads as absent:
- * the projection runs inside error handlers, and a throw there would turn a
- * typed `JjError` into a defect.
- */
-const stringField = (record: Record<string, unknown> | undefined, key: string): string | undefined => {
-  try {
-    const value = record?.[key]
-    return typeof value === "string" ? value : undefined
-  } catch {
-    return undefined
-  }
-}
-
-/** `String(cause)`, or a fixed marker when the conversion throws. */
-const render = (cause: unknown): string => {
-  try {
-    return String(cause)
-  } catch {
-    return "[unrenderable failure]"
-  }
-}
-
+export type JjErrorCause = typeof JjErrorCause.Type;
 /**
  * Projects an arbitrary host failure onto the plain data {@link JjErrorCause}
  * keeps, so the value survives the journal round-trip the module header
@@ -144,18 +101,24 @@ const render = (cause: unknown): string => {
  * @category constructors
  * @since 1.0.0
  */
-export const jjErrorCause = (cause: unknown): JjErrorCause => {
-  const record = typeof cause === "object" && cause !== null ? cause as Record<string, unknown> : undefined
-  const name = stringField(record, "name") ?? stringField(record, "_tag")
-  const code = stringField(record, "code")
-  const message = stringField(record, "message") ?? render(cause)
-  return {
-    ...(name === undefined ? {} : { name: truncateCauseField(name) }),
-    ...(code === undefined ? {} : { code: truncateCauseField(code) }),
-    message: truncateCauseField(message)
-  }
-}
-
+export declare const jjErrorCause: (cause: unknown) => JjErrorCause;
+declare const JjError_base: Schema.Class<JjError, Schema.TaggedStruct<"@smthrs/jj/JjError", {
+    readonly code: Schema.Literals<readonly ["not_installed", "conflict", "invalid_ref", "snapshot_refused", "stale_workspace", "unsupported_version", "unknown"]>;
+    readonly module: Schema.optional<Schema.String>;
+    readonly method: Schema.optional<Schema.String>;
+    readonly message: Schema.String;
+    /** The jj command that produced the failure, when one was run. */
+    readonly command: Schema.optional<Schema.String>;
+    /** The underlying host failure, projected onto data that survives a journal. */
+    readonly cause: Schema.optional<Schema.Struct<{
+        /** The failure's constructor or tag name, truncated to {@link causeMessageLimit}. */
+        readonly name: Schema.optional<Schema.String>;
+        /** The errno-style code, such as `ENOENT`, truncated to {@link causeMessageLimit}. */
+        readonly code: Schema.optional<Schema.String>;
+        /** The failure's own message, truncated to {@link causeMessageLimit}. */
+        readonly message: Schema.String;
+    }>>;
+}>, import("effect/Cause").YieldableError>;
 /**
  * A jj failure, shaped after `effect/PlatformError`: a stable `code` reason,
  * the `module` and `method` that failed, and a human `message`.
@@ -166,17 +129,8 @@ export const jjErrorCause = (cause: unknown): JjErrorCause => {
  * @category errors
  * @since 0.1.0
  */
-export class JjError extends Schema.TaggedError<JjError>()("@smthrs/jj/JjError", {
-  code: JjErrorCode,
-  module: Schema.optional(Schema.String),
-  method: Schema.optional(Schema.String),
-  message: Schema.String,
-  /** The jj command that produced the failure, when one was run. */
-  command: Schema.optional(Schema.String),
-  /** The underlying host failure, projected onto data that survives a journal. */
-  cause: Schema.optional(JjErrorCause)
-}) {}
-
+export declare class JjError extends JjError_base {
+}
 /**
  * Creates a `JjError` from a failed jj operation, composing the human
  * `message` from the code, the failing `module.method`, and the optional
@@ -185,23 +139,13 @@ export class JjError extends Schema.TaggedError<JjError>()("@smthrs/jj/JjError",
  * @category constructors
  * @since 0.1.0
  */
-export const jjError = (options: {
-  readonly code: JjErrorCode
-  readonly module?: string | undefined
-  readonly method: string
-  readonly description?: string | undefined
-  readonly command?: string | undefined
-}): JjError => {
-  const module = options.module ?? "Jj"
-  return new JjError({
-    code: options.code,
-    module,
-    method: options.method,
-    message: `${options.code}: ${module}.${options.method}${options.description ? `: ${options.description}` : ""}`,
-    command: options.command
-  })
-}
-
+export declare const jjError: (options: {
+    readonly code: JjErrorCode;
+    readonly module?: string | undefined;
+    readonly method: string;
+    readonly description?: string | undefined;
+    readonly command?: string | undefined;
+}) => JjError;
 /**
  * Refines a failure to jj's own error, so a caller can tell "jj said no" from
  * "the capability kernel said no" without matching on `_tag` by hand.
@@ -209,9 +153,7 @@ export const jjError = (options: {
  * @category refinements
  * @since 0.1.0
  */
-export const isJjError = (error: unknown): error is JjError =>
-  typeof error === "object" && error !== null && "_tag" in error && error._tag === "@smthrs/jj/JjError"
-
+export declare const isJjError: (error: unknown) => error is JjError;
 /**
  * A jj change id: the human identity of a change, in jj's reverse-hex form.
  *
@@ -228,8 +170,7 @@ export const isJjError = (error: unknown): error is JjError =>
  * @category models
  * @since 0.1.0
  */
-export type ChangeId = string
-
+export type ChangeId = string;
 /**
  * A revision `restore`, `diff`, `workspaceAdd`, and `revert` accept.
  *
@@ -250,8 +191,7 @@ export type ChangeId = string
  * @category models
  * @since 1.0.0
  */
-export type Revision = string
-
+export type Revision = string;
 /**
  * A jj operation id: the full hex id `jj op log -T id` prints.
  *
@@ -263,8 +203,7 @@ export type Revision = string
  * @category models
  * @since 1.0.0
  */
-export type OperationId = string
-
+export type OperationId = string;
 /**
  * What {@link Jj.snapshot} recorded.
  *
@@ -277,11 +216,10 @@ export type OperationId = string
  * @since 1.0.0
  */
 export interface Snapshot {
-  readonly commitId: Revision
-  readonly changeId: ChangeId
-  readonly operationId?: OperationId | undefined
+    readonly commitId: Revision;
+    readonly changeId: ChangeId;
+    readonly operationId?: OperationId | undefined;
 }
-
 /**
  * Everything a `Jj` operation can fail with.
  *
@@ -298,8 +236,7 @@ export interface Snapshot {
  * @category models
  * @since 0.1.0
  */
-export type JjFailure = JjError | Permission.PermissionError
-
+export type JjFailure = JjError | Permission.PermissionError;
 /**
  * Version control as a host capability: snapshot the working copy, restore it,
  * diff two revisions, and manage the workspaces parallel agents run in.
@@ -313,73 +250,68 @@ export type JjFailure = JjError | Permission.PermissionError
  * @since 0.1.0
  */
 export interface Jj {
-  /**
-   * Captures the working copy and returns the commit that holds it. Restore to
-   * its `commitId`; the `changeId` moves if anything later rewrites the change.
-   * The CLI layers capture without closing a change and ignore `message`.
-   */
-  readonly snapshot: (message?: string) => Effect.Effect<Snapshot, JjFailure>
-  /** Puts the working copy back to `revision`. */
-  readonly restore: (revision: Revision) => Effect.Effect<void, JjFailure>
-  /** Unified diff between two revisions. */
-  readonly diff: (from: Revision, to: Revision) => Effect.Effect<string, JjFailure>
-  /**
-   * Adds a named workspace rooted at `path` — one lane per parallel agent.
-   *
-   * When `revision` is given, the new workspace is pinned at that revision
-   * instead of the lane default, which is how a fork lands the child on the
-   * frame's recorded pointer without touching the parent's working copy.
-   *
-   * `PlatformError` is in the channel because the guarded implementation
-   * canonicalizes `path` against the workspace root before it asks for the
-   * `jj:workspace-add` and `fs:write` capabilities, and resolving a path is a
-   * filesystem operation that can itself fail.
-   */
-  readonly workspaceAdd: (
-    name: string,
-    path: string,
-    revision?: Revision
-  ) => Effect.Effect<void, JjFailure | PlatformError>
-  /** Drops a named workspace, without touching the commits made in it. */
-  readonly workspaceForget: (name: string) => Effect.Effect<void, JjFailure>
-  /** The working copy's status, as jj prints it. */
-  readonly status: () => Effect.Effect<string, JjFailure>
-  /**
-   * The repository root that contains `from`.
-   *
-   * A program that is handed a path inside a checkout, such as a lane directory
-   * or a file an agent named, needs to know which repository it belongs to
-   * before it can do anything repository-shaped with it, and walking up looking
-   * for `.jj` reimplements a question jj already answers.
-   *
-   * `PlatformError` is in the channel for the same reason it is in
-   * {@link Jj.workspaceAdd}'s: the guarded implementation canonicalizes `from`
-   * against the workspace root before it asks for `jj:root`, so the capability
-   * names the directory jj is actually run in rather than a symlink alias of
-   * it, and resolving a path is a filesystem operation that can itself fail.
-   */
-  readonly root?: ((from: string) => Effect.Effect<string, JjFailure | PlatformError>) | undefined
-  /**
-   * Applies the reverse of `revision` to the working copy, and reports the
-   * paths that changed.
-   *
-   * `restore` moves the working copy back to a recorded point, which also
-   * discards everything committed after it. A revert undoes ONE change and
-   * keeps the rest, which is what an operator means by "undo that attempt" —
-   * and the paths come back because the caller has to be able to say what was
-   * undone.
-   */
-  readonly revert?:
-    | ((revision: Revision) => Effect.Effect<{ readonly reverted: ReadonlyArray<string> }, JjFailure>)
-    | undefined
-  /**
-   * Restores the whole repository to `operationId`, as `jj op restore` does:
-   * bookmarks, heads, and working-copy commits return to that operation's
-   * view, and the working copy is updated to match.
-   */
-  readonly opRestore?: ((operationId: OperationId) => Effect.Effect<void, JjFailure>) | undefined
+    /**
+     * Captures the working copy and returns the commit that holds it. Restore to
+     * its `commitId`; the `changeId` moves if anything later rewrites the change.
+     * The CLI layers capture without closing a change and ignore `message`.
+     */
+    readonly snapshot: (message?: string) => Effect.Effect<Snapshot, JjFailure>;
+    /** Puts the working copy back to `revision`. */
+    readonly restore: (revision: Revision) => Effect.Effect<void, JjFailure>;
+    /** Unified diff between two revisions. */
+    readonly diff: (from: Revision, to: Revision) => Effect.Effect<string, JjFailure>;
+    /**
+     * Adds a named workspace rooted at `path` — one lane per parallel agent.
+     *
+     * When `revision` is given, the new workspace is pinned at that revision
+     * instead of the lane default, which is how a fork lands the child on the
+     * frame's recorded pointer without touching the parent's working copy.
+     *
+     * `PlatformError` is in the channel because the guarded implementation
+     * canonicalizes `path` against the workspace root before it asks for the
+     * `jj:workspace-add` and `fs:write` capabilities, and resolving a path is a
+     * filesystem operation that can itself fail.
+     */
+    readonly workspaceAdd: (name: string, path: string, revision?: Revision) => Effect.Effect<void, JjFailure | PlatformError>;
+    /** Drops a named workspace, without touching the commits made in it. */
+    readonly workspaceForget: (name: string) => Effect.Effect<void, JjFailure>;
+    /** The working copy's status, as jj prints it. */
+    readonly status: () => Effect.Effect<string, JjFailure>;
+    /**
+     * The repository root that contains `from`.
+     *
+     * A program that is handed a path inside a checkout, such as a lane directory
+     * or a file an agent named, needs to know which repository it belongs to
+     * before it can do anything repository-shaped with it, and walking up looking
+     * for `.jj` reimplements a question jj already answers.
+     *
+     * `PlatformError` is in the channel for the same reason it is in
+     * {@link Jj.workspaceAdd}'s: the guarded implementation canonicalizes `from`
+     * against the workspace root before it asks for `jj:root`, so the capability
+     * names the directory jj is actually run in rather than a symlink alias of
+     * it, and resolving a path is a filesystem operation that can itself fail.
+     */
+    readonly root?: ((from: string) => Effect.Effect<string, JjFailure | PlatformError>) | undefined;
+    /**
+     * Applies the reverse of `revision` to the working copy, and reports the
+     * paths that changed.
+     *
+     * `restore` moves the working copy back to a recorded point, which also
+     * discards everything committed after it. A revert undoes ONE change and
+     * keeps the rest, which is what an operator means by "undo that attempt" —
+     * and the paths come back because the caller has to be able to say what was
+     * undone.
+     */
+    readonly revert?: ((revision: Revision) => Effect.Effect<{
+        readonly reverted: ReadonlyArray<string>;
+    }, JjFailure>) | undefined;
+    /**
+     * Restores the whole repository to `operationId`, as `jj op restore` does:
+     * bookmarks, heads, and working-copy commits return to that operation's
+     * view, and the working copy is updated to match.
+     */
+    readonly opRestore?: ((operationId: OperationId) => Effect.Effect<void, JjFailure>) | undefined;
 }
-
 /**
  * The service key for {@link Jj}. The tag string is durable identity — step
  * keys digest the resolved service set — so renaming it invalidates recorded
@@ -388,8 +320,7 @@ export interface Jj {
  * @category services
  * @since 0.1.0
  */
-export const Jj: Context.Service<Jj, Jj> = Context.Service("@smthrs/jj/Jj")
-
+export declare const Jj: Context.Service<Jj, Jj>;
 /**
  * Brands an implementation as the {@link Jj} service, so a new backend is
  * checked where it is written rather than where it is provided.
@@ -397,8 +328,7 @@ export const Jj: Context.Service<Jj, Jj> = Context.Service("@smthrs/jj/Jj")
  * @category constructors
  * @since 0.1.0
  */
-export const make = (impl: Jj): Jj => Jj.of(impl)
-
+export declare const make: (impl: Jj) => Jj;
 /**
  * Creates a stub `Jj` for tests. Every method fails with `JjError`
  * `not_installed` until overridden.
@@ -410,33 +340,14 @@ export const make = (impl: Jj): Jj => Jj.of(impl)
  * @category constructors
  * @since 0.1.0
  */
-export const makeNoop = (overrides: Partial<Jj>): Jj => {
-  const missing = (method: string) =>
-    Effect.fail(
-      jjError({ code: "not_installed", method, description: "jj is not available on this host" })
-    )
-  return Jj.of({
-    snapshot: () => missing("snapshot"),
-    restore: () => missing("restore"),
-    diff: () => missing("diff"),
-    workspaceAdd: () => missing("workspaceAdd"),
-    workspaceForget: () => missing("workspaceForget"),
-    status: () => missing("status"),
-    root: () => missing("root"),
-    revert: () => missing("revert"),
-    opRestore: () => missing("opRestore"),
-    ...overrides
-  })
-}
-
+export declare const makeNoop: (overrides: Partial<Jj>) => Jj;
 /**
  * Provides {@link makeNoop} as the `Jj` layer.
  *
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop = (overrides: Partial<Jj>): Layer.Layer<Jj> => Layer.succeed(Jj)(makeNoop(overrides))
-
+export declare const layerNoop: (overrides: Partial<Jj>) => Layer.Layer<Jj>;
 /**
  * The host's fence for changing a jj repository from outside a `Jj` call,
  * such as landing captured sandbox work with `jj` and `git` commands.
@@ -451,24 +362,16 @@ export const layerNoop = (overrides: Partial<Jj>): Layer.Layer<Jj> => Layer.succ
  * @since 1.0.0
  */
 export interface RepositoryMutation {
-  /** Runs `effect` holding the fences of the repository `from` names, for the operation `method`. */
-  readonly run: <A, E, R>(
-    method: string,
-    from: string,
-    effect: Effect.Effect<A, E, R>
-  ) => Effect.Effect<A, E | JjError, R>
+    /** Runs `effect` holding the fences of the repository `from` names, for the operation `method`. */
+    readonly run: <A, E, R>(method: string, from: string, effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | JjError, R>;
 }
-
 /**
  * The service key for {@link RepositoryMutation}.
  *
  * @category services
  * @since 1.0.0
  */
-export const RepositoryMutation: Context.Service<RepositoryMutation, RepositoryMutation> = Context.Service(
-  "@smthrs/jj/RepositoryMutation"
-)
-
+export declare const RepositoryMutation: Context.Service<RepositoryMutation, RepositoryMutation>;
 /**
  * Whether a failure confirms contention on Git's shared index or a ref lock.
  * Private index failures, permissions and source conflicts are not contention.
@@ -478,9 +381,7 @@ export const RepositoryMutation: Context.Service<RepositoryMutation, RepositoryM
  * @category utils
  * @since 1.0.0
  */
-export const isGitLockContention = (error: { readonly message: string }): boolean =>
-  /Could not acquire lock for index file/i.test(error.message)
-    && /could not be obtained immediately after \d+ attempt\(s\)/i.test(error.message)
-    && /(?:[/\\])index\.lock['" ]/.test(error.message)
-  || /cannot lock ref '[^']+':/i.test(error.message)
-    && /(?:file exists|another git process|reference already locked)/i.test(error.message)
+export declare const isGitLockContention: (error: {
+    readonly message: string;
+}) => boolean;
+export {};

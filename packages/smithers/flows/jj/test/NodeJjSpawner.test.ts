@@ -31,8 +31,8 @@ import { execFileSync, spawn } from "node:child_process"
 import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { Jj } from "../src/Jj.ts"
-import * as NodeJj from "../src/node/NodeJj.ts"
+import { Jj } from "../src/Jj.vibe"
+import * as NodeJj from "../src/node/NodeJj.vibe"
 import { budgeted } from "./budgeted.ts"
 
 const script = `#!/bin/sh

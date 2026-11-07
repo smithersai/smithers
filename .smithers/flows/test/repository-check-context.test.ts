@@ -6,7 +6,7 @@ import { chmod, mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } fro
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
+import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.vibe"
 import { captureCheckContext, contextFailure, rulePaths, sourceImports } from "../repository/check-context.ts"
 import { assessSemantic, captureChecks, type Comparison, selectedComparison } from "../repository/checks.ts"
 import type { Work } from "../repository/jobs.ts"

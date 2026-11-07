@@ -6,7 +6,7 @@ import { mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test, type TestContext } from "node:test"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { NativeCoding, type NativeRevision } from "../coding/native.ts"
 import { captureRepository } from "../repository/inspection.ts"
 

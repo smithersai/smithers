@@ -1,6 +1,6 @@
 import { describe, expect, it } from "@effect/vitest"
 import { readFileSync } from "node:fs"
-import { JjErrorCode } from "../src/Jj.ts"
+import { JjErrorCode } from "../src/Jj.vibe"
 import { overrideVariables } from "../src/node/resolveJjBinary.ts"
 
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), "utf8")

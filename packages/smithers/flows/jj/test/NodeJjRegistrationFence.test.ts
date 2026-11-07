@@ -19,8 +19,8 @@ import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { chmod, mkdir, mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import { isJjError, Jj } from "../src/Jj.ts"
-import * as NodeJj from "../src/node/NodeJj.ts"
+import { isJjError, Jj } from "../src/Jj.vibe"
+import * as NodeJj from "../src/node/NodeJj.vibe"
 import { budgeted } from "./budgeted.ts"
 
 const realJj = (() => {

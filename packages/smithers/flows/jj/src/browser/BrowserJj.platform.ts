@@ -22,23 +22,21 @@
  * @since 0.1.0
  */
 
+// The platform code of BrowserJj.vibe, which a .vibe file does not import as a value (EK4402).
+
 import { isRecord } from "@smthrs/canonical/Record"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
-import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import { JjInternalFault } from "../internal/JjInternalFault.vibe"
-import { Jj, JjError, jjErrorCause, JjErrorCode } from "../Jj.ts"
+import { Jj, JjError, jjErrorCause, JjErrorCode } from "../Jj.vibe"
 import type { SyncFsLike } from "./WasiFs.ts"
-import * as WasiPreview1 from "./WasiPreview1.ts"
+import * as WasiPreview1 from "./WasiPreview1.vibe"
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()
-
 /** The `module` every failure this adapter produces names. */
 const MODULE = "BrowserJj"
-
 /**
  * How much of an unusable ABI response an error message quotes.
  *
@@ -46,10 +44,8 @@ const MODULE = "BrowserJj"
  * journaled, so the diagnosis carries a prefix rather than the whole payload.
  */
 const excerptLimit = 256
-
 /** The ellipsis is part of the budget, so an excerpt never exceeds the limit it names. */
 const excerpt = (text: string): string => text.length > excerptLimit ? `${text.slice(0, excerptLimit - 1)}…` : text
-
 /**
  * The exports the frozen `flows_jj.wasm` ABI guarantees: a reactor
  * initializer, an allocator pair, and one call entrypoint taking UTF-8 JSON
@@ -62,9 +58,7 @@ interface AbiExports {
   readonly flows_jj_free: (ptr: number, size: number) => void
   readonly flows_jj_call: (ptr: number, len: number) => bigint
 }
-
 const REQUIRED_EXPORTS = ["memory", "_initialize", "flows_jj_alloc", "flows_jj_free", "flows_jj_call"] as const
-
 /**
  * One live reactor: the ABI exports and the WASI host they were instantiated
  * over. The two are disposed together, because the host's fd table is the
@@ -74,7 +68,6 @@ interface Reactor {
   readonly abi: AbiExports
   readonly wasi: WasiPreview1.WasiPreview1
 }
-
 /**
  * What the browser `Jj` layer needs to run jj in a page: the wasm reactor, and
  * the synchronous filesystem the repository lives on.
@@ -93,7 +86,7 @@ interface Reactor {
  * @category models
  * @since 0.1.0
  */
-export interface BrowserJjOptions {
+interface BrowserJjOptions {
   /**
    * The `flows_jj.wasm` reactor, precompiled or as raw bytes. The layer never
    * fetches; hand it the module the page already loaded.
@@ -117,17 +110,12 @@ export interface BrowserJjOptions {
   /** Receives anything jj-lib writes to stderr — Rust panics arrive here. */
   readonly onStderr?: (text: string) => void
 }
-
 const isJjErrorCode = Schema.is(JjErrorCode)
-
 const messageOf = (cause: unknown): string => cause instanceof Error ? cause.message : String(cause)
-
 /** A realm-independent test for raw, non-shared wasm bytes. */
 const isArrayBuffer = (value: unknown): value is ArrayBuffer =>
   Object.prototype.toString.call(value) === "[object ArrayBuffer]"
-
 type OkPayload = Record<string, unknown>
-
 /**
  * One serialized ABI exchange: encode the request into wasm memory through the
  * module's allocator, call, copy the response out, and free both buffers (the
@@ -177,7 +165,6 @@ const exchange = (abi: AbiExports, request: Record<string, unknown>): string => 
     }
   }
 }
-
 /**
  * `{"ok":…}` or `{"err":…}` decoded onto the frozen `JjError` codes. An error
  * code outside the frozen set, or a response that is neither shape, degrades
@@ -223,7 +210,6 @@ const decodeResponse = (method: string, command: string, text: string): Effect.E
   }
   return malformed()
 }
-
 /** A string the operation's response payload is required to carry. */
 const stringField = (
   method: string,
@@ -244,7 +230,6 @@ const stringField = (
       })
     )
 }
-
 /**
  * Compile (when handed bytes), instantiate over a fresh WASI shim, check the
  * frozen export surface, bind memory, and run the reactor initializer —
@@ -303,7 +288,6 @@ const instantiate = async (
     throw cause
   }
 }
-
 /**
  * The shipped WASI reactor reads real symlinks as target bytes. Refuse them
  * before any operation that snapshots, including implicit snapshots on reads.
@@ -316,7 +300,6 @@ const symlinksUnsupported = (): JjInternalFault =>
     code: "reactor_symlinks_unsupported",
     message: "real symlinks are unsupported by the browser reactor; remove them before snapshotting"
   })
-
 const assertNoSymlinks = (fs: SyncFsLike, root: string): void => {
   const pending = [root]
   while (pending.length > 0) {
@@ -338,26 +321,6 @@ const assertNoSymlinks = (fs: SyncFsLike, root: string): void => {
     }
   }
 }
-
-/**
- * Creates a `Jj` backed by a `flows_jj.wasm` module over a synchronous
- * filesystem slice.
- *
- * Instantiation is lazy — the first operation pays for it — and every
- * operation runs under a single-permit semaphore: the wasm instance is
- * single-threaded mutable state, so concurrent fibers serialize rather than
- * interleave inside it.
- *
- * A reactor that traps is discarded, not reused: its host descriptors are
- * closed at once and the next operation instantiates a fresh one. A `Jj` from
- * `make` has no explicit end of life beyond that; {@link layerScoped} closes
- * the live reactor when its scope closes.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const make = (options: BrowserJjOptions): Jj => create(options).jj
-
 /**
  * A `Jj` together with the disposal `make` keeps private: closes the live
  * reactor's host descriptors and refuses every later operation.
@@ -684,43 +647,6 @@ const create = (options: BrowserJjOptions): {
   })
   return { jj, dispose }
 }
-
-/**
- * Provides the `Jj` service backed by a `flows_jj.wasm` module.
- *
- * The service outlives whatever consumed the layer: a reactor that is still
- * live when the program ends keeps its host descriptors until the page does.
- * {@link layerScoped} is the layer to use when that matters.
- *
- * @category layers
- * @since 0.1.0
- */
-export const layer = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.succeed(Jj)(make(options))
-
-/**
- * Provides the `Jj` service backed by a `flows_jj.wasm` module, and closes
- * the live reactor's host descriptors when the layer's scope closes. Every
- * operation after that fails in the error channel, so a service that escaped
- * its scope answers rather than reviving a reactor nobody will close.
- *
- * @category layers
- * @since 0.1.0
- */
-export const layerScoped = (options: BrowserJjOptions): Layer.Layer<Jj> => Layer.effect(Jj)(makeScoped(options))
-
-/**
- * The scoped form of {@link make}: the `Jj` is released, closing the live
- * reactor's host descriptors, when the scope it was acquired in closes.
- *
- * @category constructors
- * @since 0.1.0
- */
-export const makeScoped = (options: BrowserJjOptions): Effect.Effect<Jj, never, Scope.Scope> =>
-  Effect.map(
-    Effect.acquireRelease(Effect.sync(() => create(options)), (created) => created.dispose),
-    (created) => created.jj
-  )
-
 /**
  * A namespace path reduced to its meaning: `.` and empty segments drop, `..`
  * pops, and `..` of the root is the root. Comparing raw strings accepted
@@ -738,7 +664,6 @@ const normalize = (path: string): string => {
   }
   return `/${segments.join("/")}`
 }
-
 /** Whether a namespace path lies inside the slice the layer was given. */
 const contains = (root: string, from: string): boolean => {
   if (!from.startsWith("/")) return false
@@ -746,7 +671,6 @@ const contains = (root: string, from: string): boolean => {
   const target = normalize(from)
   return target === base || target.startsWith(base === "/" ? "/" : `${base}/`)
 }
-
 const fail = (method: string, command: string) =>
   Effect.fail(
     new JjError({
@@ -758,25 +682,4 @@ const fail = (method: string, command: string) =>
     })
   )
 
-/**
- * Provides a `Jj` service whose every operation fails with `not_installed`:
- * the layer for hosts that have no `flows_jj.wasm` to hand to {@link layer}.
- * It is the same code the node implementation reports when the binary is
- * absent, which keeps callers from needing a browser-specific branch.
- *
- * @category layers
- * @since 0.1.0
- */
-export const layerUnsupported: Layer.Layer<Jj> = Layer.succeed(Jj)({
-  // The commands named are the ones `layer` reports for the same operation,
-  // so a refused operation journals the same command with or without wasm.
-  snapshot: () => fail("snapshot", "jj snapshot"),
-  restore: () => fail("restore", "jj restore"),
-  diff: () => fail("diff", "jj diff"),
-  workspaceAdd: () => fail("workspaceAdd", "jj workspace add"),
-  workspaceForget: () => fail("workspaceForget", "jj workspace forget"),
-  status: () => fail("status", "jj status"),
-  root: () => fail("root", "jj root"),
-  revert: () => fail("revert", "jj revert"),
-  opRestore: () => fail("opRestore", "jj op restore")
-})
+export { create, fail }

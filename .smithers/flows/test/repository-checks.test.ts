@@ -7,7 +7,7 @@ import { mkdir, mkdtemp, readFile, realpath, rm, symlink, writeFile } from "node
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
+import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.vibe"
 import {
   assessSemantic,
   CaptureChecks,

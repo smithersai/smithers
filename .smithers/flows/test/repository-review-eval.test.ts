@@ -7,7 +7,7 @@ import { chmod, mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { test, type TestContext } from "node:test"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import type { ImmutableSourceOptions } from "../coding/immutable-source.ts"
 import { CodingError } from "../coding/schema.ts"
 import {

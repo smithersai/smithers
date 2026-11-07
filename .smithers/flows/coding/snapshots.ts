@@ -3,8 +3,8 @@
  */
 import { Cause, Effect, Layer, Schema, Stream } from "effect"
 import { ChildProcess, ChildProcessSpawner } from "effect/process"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
-import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
+import * as NodeJj from "../../../packages/smithers/flows/jj/src/node/NodeJj.vibe"
 import { helperPath } from "./helper.ts"
 import type { NativeOptions } from "./native.ts"
 

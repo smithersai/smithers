@@ -1,0 +1,91 @@
+/**
+ * Node.js `Jj` layer for programs that snapshot and restore workspace state.
+ *
+ * The exported layers satisfy the platform-independent `Jj` service by shelling
+ * out to the `jj` CLI. There are two, and the difference between them is who
+ * owns the child process:
+ *
+ * - {@link layer} spawns through `node:child_process` directly. `jj`
+ *   invocations are argv arrays with no shell interpretation, and a host must
+ *   be able to checkpoint work even where a spawner is unavailable, sandboxed,
+ *   or gated behind a `proc:spawn` grant the user has not given.
+ * - {@link layerSpawner} spawns through Effect's `ChildProcessSpawner`, so a
+ *   host that decorates that service decorates jj as well. That is what puts a
+ *   jj child in its own process group, in `@smthrs/kernel`'s `ProcessLedger`,
+ *   and within reach of the reaper that sweeps a crashed incarnation: a
+ *   `jj snapshot` that hangs is otherwise a process no host can account for.
+ *   `@smthrs/platform-node`'s contained host bundle uses this one.
+ *
+ * Both bind the executable when the layer is built and spawn nothing then, so
+ * a host without jj starts. The first operation awaits a version probe through
+ * the operation runner, sharing a supported result per absolute executable
+ * path and runner; a failed probe is retried by the next operation. Every
+ * operation uses the path bound at build time, independent of later repository
+ * cwd or PATH changes.
+ *
+ * Errors are classified from `jj`'s own stderr vocabulary onto the stable
+ * `JjError` codes, the same way `NodeFileSystem` classifies errno, and both
+ * layers share that classification.
+ *
+ * @since 1.0.0
+ */
+import * as Layer from "effect/Layer";
+import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner";
+import { Jj, RepositoryMutation } from "../Jj.vibe";
+export { RepositoryMutationTimeoutMs, StartupTimeoutMs, layerAt, layerSpawnerAt, minimumVersion, withRepositoryMutation } from "../../../../src/node/NodeJj.vibe.platform.js";
+/**
+ * Provides {@link withRepositoryMutation} as the `RepositoryMutation` service,
+ * which `@smthrs/sandbox`'s `SandboxMerge.apply` requires to land work.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export declare const layerRepositoryMutation: Layer.Layer<RepositoryMutation>;
+/**
+ * Provides the `Jj` service backed by the `jj` CLI, spawning its own children.
+ *
+ * Building it never fails and spawns nothing. The first operation checks the
+ * jj version and fails with `not_installed` or `unsupported_version` when the
+ * host has no usable jj, so a program that never calls `Jj` runs without one.
+ *
+ * This is the layer for a program that has no spawner to offer, so it starts
+ * its children outside whatever kill policy a host has decided on: a `jj` this
+ * layer starts leads no process group the host recorded, appears in no
+ * `ProcessLedger`, and is not reaped by a later incarnation of a host that
+ * died holding it.
+ *
+ * That is a bounded exposure rather than a leak, and the bound is what makes
+ * this layer usable at all. Every command below is short-lived and starts no
+ * long-lived children of its own: each one writes to a pipe, so jj starts no
+ * pager, and no command opens an editor, because `snapshot` either passes
+ * `-m` or runs no `describe` at all (`jj describe` without `-m` starts
+ * `$JJ_EDITOR` and waits for it, which is exactly the child this bound
+ * denies). The invocation holds the handle it started, so cancelling a flow
+ * signals the process rather than losing it
+ * (`packages/smithers/flows/jj/test/NodeJjLifetime.test.ts`,
+ * `packages/smithers/flows/jj/test/NodeJj.test.ts`). A host that wants the process GROUP
+ * contained, and a record a crash leaves behind, composes
+ * {@link layerSpawner} under a contained spawner instead;
+ * `@smthrs/platform-node`'s `NodeHost.layerContained` does exactly that.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export declare const layer: Layer.Layer<Jj>;
+/**
+ * Provides the `Jj` service backed by the `jj` CLI, spawning through the host's
+ * `ChildProcessSpawner`.
+ *
+ * Like {@link layer}, it builds without jj and checks the version on the first
+ * operation, through the same spawner.
+ *
+ * Use this one wherever the host contains what it starts. A jj child spawned
+ * around the spawner leads no process group the host recorded, appears in no
+ * `ProcessLedger`, and is never reaped, so a `jj` that hangs after the host
+ * dies is a process nothing on the machine can account for. Routing it through
+ * the spawner puts it under whatever policy the host has already decided on.
+ *
+ * @category layers
+ * @since 1.0.0
+ */
+export declare const layerSpawner: Layer.Layer<Jj, never, ChildProcessSpawner>;

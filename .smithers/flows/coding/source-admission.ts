@@ -2,7 +2,7 @@ import { sourceRefusal } from "./source-refusal.ts"
 /** Request admission uses captured JJ source facts, never a silently refreshed tip. */
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { Effect, Schema } from "effect"
-import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
+import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.vibe"
 import { NativeCoding, NativeCodingError, requestIdFor } from "./native.ts"
 import { sameCode } from "./planning.ts"
 import { CodingError, Plan, Revision, validatePlan } from "./schema.ts"

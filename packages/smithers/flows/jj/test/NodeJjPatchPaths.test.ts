@@ -5,9 +5,9 @@ import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSyn
 import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import type { Jj as JjService, Snapshot } from "../src/Jj.ts"
-import { Jj } from "../src/Jj.ts"
-import * as NodeJj from "../src/node/NodeJj.ts"
+import type { Jj as JjService, Snapshot } from "../src/Jj.vibe"
+import { Jj } from "../src/Jj.vibe"
+import * as NodeJj from "../src/node/NodeJj.vibe"
 import { budgeted } from "./budgeted.ts"
 
 const packageRoot = fileURLToPath(new URL("../", import.meta.url))
@@ -60,8 +60,8 @@ const applyAndCheck = (patch: string, before: Files, after: Files): void => {
 const bunOperation = (root: string, expression: string): Snapshot | string => {
   const script = `
     import * as Effect from "effect/Effect";
-    import { Jj } from "./src/Jj.ts";
-    import * as BunJj from "./src/bun/BunJj.ts";
+    import { Jj } from "./src/Jj.vibe";
+    import * as BunJj from "./src/bun/BunJj.vibe";
     const jj = await Effect.runPromise(Effect.provide(Jj, BunJj.layerAt(${JSON.stringify(root)})));
     const result = await Effect.runPromise(${expression});
     process.stdout.write(JSON.stringify(result));
