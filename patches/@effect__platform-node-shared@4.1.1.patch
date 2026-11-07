@@ -1,0 +1,46 @@
+diff --git a/dist/NodeChildProcessSpawner.js b/dist/NodeChildProcessSpawner.js
+index 08d50b16dfe564551f1bffc7cae2d3b53805e172..8da83329cc3dd0f052d0b8ad3864951f938c1d0f 100644
+--- a/dist/NodeChildProcessSpawner.js
++++ b/dist/NodeChildProcessSpawner.js
+@@ -105,7 +105,7 @@ const make = /*#__PURE__*/Effect.gen(function* () {
+       ...globalThis.process.env
+     } : {};
+     for (const [key, value] of Object.entries(options.env)) {
+-      if (value === undefined) delete env[key];else env[key] = unwrap(value);
++      if (value === undefined) delete env[key];else Object.defineProperty(env, key, { value: unwrap(value), enumerable: true, configurable: true, writable: true });
+     }
+     return env;
+   };
+diff --git a/dist/NodeWS.js b/dist/NodeWS.js
+index e29eb7dae33882898922845f57a3ac21cbc41181..7e686f2ccc6dff421aa5285c6db4595bf3807deb 100644
+--- a/dist/NodeWS.js
++++ b/dist/NodeWS.js
+@@ -11,4 +11,5 @@
+  * @since 4.1.0
+  */
+ export * from "ws";
++export { WebSocket, WebSocketServer, createWebSocketStream, Receiver, Sender } from "ws";
+ //# sourceMappingURL=NodeWS.js.map
+\ No newline at end of file
+diff --git a/src/NodeChildProcessSpawner.ts b/src/NodeChildProcessSpawner.ts
+index a3ead25b72db5b07e95cabe056c644b242be3393..80ec929494d2531471a3ed32f805b600427f9e44 100644
+--- a/src/NodeChildProcessSpawner.ts
++++ b/src/NodeChildProcessSpawner.ts
+@@ -183,7 +183,7 @@ const make = Effect.gen(function*() {
+     const env: Record<string, string | undefined> = options.extendEnv === true ? { ...globalThis.process.env } : {}
+     for (const [key, value] of Object.entries(options.env)) {
+       if (value === undefined) delete env[key]
+-      else env[key] = unwrap(value)
++      else Object.defineProperty(env, key, { value: unwrap(value), enumerable: true, configurable: true, writable: true })
+     }
+     return env
+   }
+diff --git a/src/NodeWS.ts b/src/NodeWS.ts
+index 29ce62ea7842511c6873f4f599a5162e34231306..0165970714f69f83eec4bd082feb268c225ad7f1 100644
+--- a/src/NodeWS.ts
++++ b/src/NodeWS.ts
+@@ -12,3 +12,4 @@
+  * @since 4.1.0
+  */
+ export * from "ws"
++export { WebSocket, WebSocketServer, createWebSocketStream, Receiver, Sender } from "ws"

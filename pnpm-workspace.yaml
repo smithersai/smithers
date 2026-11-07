@@ -75,6 +75,8 @@ overrides:
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
+  '@opentelemetry/otlp-transformer@0.222.0': patches/@opentelemetry__otlp-transformer@0.222.0.patch
+  vibelang-runtime@0.0.12: patches/vibelang-runtime@0.0.12.patch
   # beta.85 lib/Local/LocalProvider.js still strips build plugins in diff/reconcile;
   # lib/Local/RpcSerialization.js still drops functions and has no deferred-module rehydration.
   # Port the existing local-dev fix after inspecting both beta.85 sources.
@@ -100,6 +102,7 @@ patchedDependencies:
   "@tanstack/db-sqlite-persistence-core@0.4.11": patches/@tanstack__db-sqlite-persistence-core@0.4.11.patch
   # Audited 0.2.36 dist/esm/wa-sqlite-driver.js: driver has execute/transaction but no batch/transactionBatch.
   "@tanstack/browser-db-sqlite-persistence@0.2.36": patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch
+  '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
 
 minimumReleaseAgeExclude:
   # VibeLang is ours (smithersai/vibelang), so its releases need no waiting
