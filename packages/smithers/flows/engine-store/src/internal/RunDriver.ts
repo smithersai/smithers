@@ -14,9 +14,11 @@ import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
 import type * as Crypto from "effect/Crypto"
+import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
+import type * as Fiber from "effect/Fiber"
 import * as Metric from "effect/Metric"
 import * as Option from "effect/Option"
 import * as Result from "effect/Result"
@@ -297,6 +299,7 @@ export interface Service {
 }
 
 interface Registration {
+  readonly drives: Set<Drive>
   readonly flow: Flow.Any
   readonly execute: (
     payload: object,
@@ -2608,6 +2611,9 @@ interface DrivenRound {
  * handlers act on.
  */
 interface Drive {
+  readonly owner: Fiber.Fiber<unknown, unknown>
+  readonly done: Deferred.Deferred<void>
+  registration: Registration | undefined
   readonly executionId: string
   /** The state the run was read with; an interruption settles against it. */
   state: RunState | undefined
@@ -2624,6 +2630,12 @@ interface Drive {
   lapsedMs: number | undefined
 }
 
+// Inherited by the round's body and its children. A registration closed from
+// its own drive must interrupt itself without waiting on its ancestor.
+const CurrentDrive = Context.Reference<Drive | undefined>("@smthrs/engine-store/RunDriver/CurrentDrive", {
+  defaultValue: () => undefined
+})
+
 /**
  * Drives one run: reads it, takes it, and executes and settles one round.
  *
@@ -2632,8 +2644,11 @@ interface Drive {
  * before the claim.
  */
 const drive = (driver: Driver, executionId: string): Effect.Effect<void, never, Crypto.Crypto> =>
-  Effect.suspend(() => {
+  Effect.withFiber((owner) => {
     const attempt: Drive = {
+      owner,
+      done: Deferred.makeUnsafe<void>(),
+      registration: undefined,
       executionId,
       state: undefined,
       round: undefined,
@@ -2647,6 +2662,13 @@ const drive = (driver: Driver, executionId: string): Effect.Effect<void, never, 
       // correctly refuses to steal from the still-live PID forever.
       Effect.onInterrupt(() => releaseInterrupted(driver, attempt)),
       Effect.onExit(() => endDrive(driver, attempt)),
+      // Release this registration only after ownership and retained scopes have
+      // been cleaned up. A coordinator fiber can serve another drive afterward.
+      Effect.ensuring(Effect.sync(() => {
+        attempt.registration?.drives.delete(attempt)
+        Deferred.doneUnsafe(attempt.done, Exit.void)
+      })),
+      Effect.provideService(CurrentDrive, attempt),
       Effect.annotateLogs({ runId: executionId })
     )
   })
@@ -2660,6 +2682,10 @@ const driveRun = (driver: Driver, attempt: Drive): Effect.Effect<void, never, Cr
     attempt.state = state
     const registration = driver.registrations.get(state.flowName)?.at(-1)
     if (registration === undefined) return yield* driveUnregistered(driver, executionId, initial, state)
+    // Selection and ownership are one synchronous operation, before claim can
+    // yield to registration teardown.
+    attempt.registration = registration
+    registration.drives.add(attempt)
     if (!(yield* claimAndActivate(driver, initial))) return
     yield* Effect.logDebug("run activated", { flowName: state.flowName })
     const activeState = yield* enterRunning(driver, executionId, initial, state)
@@ -4509,29 +4535,41 @@ const register = Effect.fn("FlowEngine.register")((
   flow: Flow.Any,
   handler: Registration["execute"]
 ) =>
-  Effect.acquireRelease(
-    Effect.sync(() => {
-      const registration = { flow, execute: handler }
-      const entries = driver.registrations.get(flow._tag) ?? []
-      entries.push(registration)
-      driver.registrations.set(flow._tag, entries)
-      driver.pendingCycles.delete(flow._tag)
-      driver.warnedUnregistered.clear()
-      return { registration, entries }
-    }),
-    ({ registration, entries }) =>
-      Effect.sync(() => {
-        const wasLatest = entries.at(-1) === registration
-        entries.splice(entries.indexOf(registration), 1)
-        if (entries.length === 0) driver.registrations.delete(flow._tag)
-        if (wasLatest) {
-          driver.pendingCycles.delete(flow._tag)
-          // Restoring a live predecessor changes which handler may
-          // drive pending work, just like a fresh registration does.
-          if (entries.length > 0) driver.warnedUnregistered.clear()
-        }
-      })
-  ).pipe(Effect.asVoid)
+  Effect.uninterruptible(Effect.gen(function*() {
+    const scope = yield* Scope.Scope
+    const registration: Registration = { flow, execute: handler, drives: new Set() }
+    const entries = driver.registrations.get(flow._tag) ?? []
+    entries.push(registration)
+    driver.registrations.set(flow._tag, entries)
+    driver.pendingCycles.delete(flow._tag)
+    driver.warnedUnregistered.clear()
+    // The closing fiber's CurrentDrive identifies self-close. acquireRelease
+    // captures the registering fiber's context, which can be another drive.
+    yield* Scope.addFinalizerExit(scope, () =>
+      Effect.withFiber((closer) =>
+        Effect.gen(function*() {
+          const wasLatest = entries.at(-1) === registration
+          entries.splice(entries.indexOf(registration), 1)
+          if (entries.length === 0) driver.registrations.delete(flow._tag)
+          if (wasLatest) {
+            driver.pendingCycles.delete(flow._tag)
+            // Restoring a live predecessor changes which handler may
+            // drive pending work, just like a fresh registration does.
+            if (entries.length > 0) driver.warnedUnregistered.clear()
+          }
+          const drives = [...registration.drives]
+          const current = closer.getRef(CurrentDrive)
+          for (const attempt of drives) attempt.owner.interruptUnsafe(closer.id)
+          if (current !== undefined && registration.drives.has(current)) closer.interruptUnsafe(closer.id)
+          // Teardown owns these exact drives, never a successor using a restored
+          // registration. Self-close cannot await the ancestor driving this body.
+          for (const attempt of drives) {
+            if (attempt !== current) yield* Deferred.await(attempt.done)
+          }
+          yield* Effect.logDebug("flow.registration.released", { flowName: flow._tag, activeDrives: drives.length })
+        })
+      ))
+  }))
 )
 
 /**

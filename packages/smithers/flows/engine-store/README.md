@@ -114,6 +114,14 @@ approval, timer, or event wait. This lets a replacement engine in the same
 process resume with a new owner nonce without weakening the PID liveness
 check. Only a persisted operator cancellation closes the run as `cancelled`.
 
+A scoped flow registration owns every drive that selected its handler, including
+work still waiting to claim a run. Closing that registration first removes it
+from dispatch, interrupts those drives, and waits for their ownership and scope
+cleanup before releasing the implementation. Other live registrations and their
+runs keep running. A drive closing its own registration is interrupted without
+waiting on itself. The debug event `flow.registration.released` records the flow
+name and the number of drives stopped, without payloads.
+
 ## Browser imports and native durable execution
 
 The entry point bundles for a browser. The two host reads it once made
