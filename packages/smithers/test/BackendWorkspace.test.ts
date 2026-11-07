@@ -18,35 +18,33 @@ vi.mock(
   "../src/internal/backend/SSH.ts",
   async (original) => ({ ...await original<object>(), remote: vi.fn() })
 )
-vi.mock("@effect/platform-node/NodeSocket", async () => {
+vi.mock("@effect/platform-node/NodeWS", async () => {
   const { EventEmitter } = await import("node:events")
   return {
-    NodeWS: {
-      WebSocket: class extends EventEmitter {
-        closed = false
-        constructor(url: string, options: unknown) {
-          super()
-          state.url = url
-          state.options = options
-          queueMicrotask(() => {
-            if (state.terminal === "error") {
-              this.emit("error", new Error("socket failed"))
-              return
-            }
-            this.emit("open")
-            this.emit("message", Buffer.from("hello"), true)
-            this.emit("message", Buffer.from("not json"), false)
-            this.emit("message", Buffer.from(JSON.stringify({ type: "status", status: state.terminal })), false)
-          })
-        }
-        send(value: unknown) {
-          state.sent.push(value)
-        }
-        close() {
-          if (!this.closed) {
-            this.closed = true
-            this.emit("close")
+    WebSocket: class extends EventEmitter {
+      closed = false
+      constructor(url: string, options: unknown) {
+        super()
+        state.url = url
+        state.options = options
+        queueMicrotask(() => {
+          if (state.terminal === "error") {
+            this.emit("error", new Error("socket failed"))
+            return
           }
+          this.emit("open")
+          this.emit("message", Buffer.from("hello"), true)
+          this.emit("message", Buffer.from("not json"), false)
+          this.emit("message", Buffer.from(JSON.stringify({ type: "status", status: state.terminal })), false)
+        })
+      }
+      send(value: unknown) {
+        state.sent.push(value)
+      }
+      close() {
+        if (!this.closed) {
+          this.closed = true
+          this.emit("close")
         }
       }
     }
