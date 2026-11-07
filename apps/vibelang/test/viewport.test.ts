@@ -1,6 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { init, Message, update } from "../src/web/main.vibe"
-import { transcriptViewport } from "../src/web/viewport.ts"
+import { transcriptViewport } from "../src/web/viewport.vibe"
 
 describe("native transcript scroll permission", () => {
   beforeEach(() => {

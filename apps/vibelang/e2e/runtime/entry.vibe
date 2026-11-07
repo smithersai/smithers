@@ -1,0 +1,39 @@
+// Built only in e2e mode. It runs the real app with a faulty transport layer and exposes read-only observations.
+import { Runtime } from "foldkit"
+import { ExperimentalBrowserServices } from "vibelang-runtime/experimental/platform-browser"
+import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
+import { application } from "../../test/support/application.vibe"
+import { init } from "../../src/web/main.vibe"
+import { stylesheet } from "../../src/web/styles.vibe"
+import { canonical } from "./probe.vibe"
+
+/** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
+function faultOf(search: string) {
+  const requested = new URLSearchParams(search).get("fault")
+  return requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
+}
+
+/** The app over the faulty Factory, with `window.recovery` reading the rendered model and the transport's trace. */
+export effect function main() {
+  const window = try (try Experimental.Window.Window).current
+  const document = try (try Experimental.Document.Document).current
+  const css = try stylesheet()
+  const root = try Effect.try(() => {
+    const style = document.createElement("style")
+    style.textContent = css
+    document.head.append(style)
+    return document.getElementById("root")!
+  })
+  const observation = trace()
+  let model = init({ session: "browser", mode: "mock", name: "Guest" }).model
+  const program = application(root, faultyFactory(faultOf(window.location.search), observation), (value) => { model = value })
+  window.recovery = {
+    snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map((event) => event.seq) }),
+    canonical: () => runPromise(canonical(observation)),
+  }
+  return program
+}
+
+Runtime.run(await runPromise(Effect.provide(main(), ExperimentalBrowserServices.layer) |> Effect.orDie(%)), {
+  flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest" }),
+})

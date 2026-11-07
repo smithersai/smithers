@@ -4,7 +4,7 @@ import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.ts"
 import { hasConversation, type Message as AppMessage, Message, type Model, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
-import { render } from "./markdown.ts"
+import { render } from "./markdown.vibe"
 
 type H = HtmlBuilder<AppMessage>
 

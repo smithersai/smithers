@@ -2,7 +2,7 @@
 // and the budget its days: plain functions the workerd suites reach only through HTTP.
 import { describe, expect, it } from "vitest"
 import { conversationPath, MAX_CONVERSATION, routeOf } from "../src/core/wire.vibe"
-import { failureOf } from "../src/web/view.ts"
+import { failureOf } from "../src/web/view.vibe"
 import { afterOf } from "../worker/Http.vibe"
 import { dayOf, REASONS } from "../worker/Reply.vibe"
 import { replyIdOf } from "../worker/Sequencer.vibe"

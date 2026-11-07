@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { blocks, inline } from "../src/web/markdown.ts"
+import { blocks, inline } from "../src/web/markdown.vibe"
 
 describe("reply Markdown", () => {
   it("accepts an info string and keeps prose after its closing fence", () => {

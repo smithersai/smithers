@@ -3,7 +3,7 @@ import { Command, click, expect, given, placeholder, role, scene, Subscription, 
 import { describe, test } from "vitest"
 import { newClient } from "../src/core/conversation.ts"
 import { ShowPalette, ClosePalette, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
-import { view } from "../src/web/view.ts"
+import { view } from "../src/web/view.vibe"
 
 const home: Model = {
   surface: "splash",

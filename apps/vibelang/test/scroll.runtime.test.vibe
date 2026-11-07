@@ -3,7 +3,7 @@ import { vi } from "vitest"
 import { Dom, Runtime, Subscription } from "foldkit"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { init, Message, Model, Flags, subscriptions, update } from "../src/web/main.vibe"
-import { view } from "../src/web/view.ts"
+import { view } from "../src/web/view.vibe"
 import { scrollHost } from "./support/scrollHost.ts"
 
 for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {

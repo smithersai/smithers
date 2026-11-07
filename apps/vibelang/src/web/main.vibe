@@ -1,4 +1,4 @@
-// The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.ts`. Every
+// The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.ts`); this file only adds what a
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
 //
@@ -8,7 +8,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.ts"
 import { EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
-import { transcriptViewport } from "./viewport.ts"
+import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
 
