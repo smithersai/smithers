@@ -12,6 +12,9 @@
  * @since 1.0.0
  */
 
+import { TaggedError as $ErrorTaggedError } from "vibelang-runtime"
+import { $schemaErrorMatcher as $ErrorMatcher } from "vibelang-runtime"
+
 import { ERROR_REFERENCE_URL, type SmithersErrorCode } from "./ErrorCode.ts"
 
 /**
@@ -44,26 +47,29 @@ export interface SmithersErrorOptions {
  * @category errors
  * @since 1.0.0
  */
-export error SmithersError {
-  /** The Effect tag: `"SmithersError"`, or a subclass's own name. */
-  _tag: string
-  /** The summary with the documentation URL appended, unless left out. */
-  message: string
-  /** The machine-readable classification. */
-  code: SmithersErrorCode
-  /** The message without the appended documentation URL. */
-  summary: string
-  /** Where the code is documented. */
-  docsUrl: string
-  /**
-   * Caller-supplied context. The top-level record is copied and frozen at
-   * construction, so adding, removing, or replacing a top-level key on the
-   * caller's object afterwards cannot change it. Nested values are shared by
-   * reference and are not deep-frozen, so a caller must not mutate an attached
-   * nested record. Callers must redact credentials. Absent as an own property
-   * when the caller supplies none.
-   */
-  details?: Readonly<Record<string, unknown>>
+export class SmithersError extends $ErrorTaggedError("SmithersError" as string)<{
+    /** The Effect tag: `"SmithersError"`, or a subclass's own name. */
+    readonly _tag: string;
+    /** The summary with the documentation URL appended, unless left out. */
+    readonly message: string;
+    /** The machine-readable classification. */
+    readonly code: SmithersErrorCode;
+    /** The message without the appended documentation URL. */
+    readonly summary: string;
+    /** Where the code is documented. */
+    readonly docsUrl: string;
+    /**
+     * Caller-supplied context. The top-level record is copied and frozen at
+     * construction, so adding, removing, or replacing a top-level key on the
+     * caller's object afterwards cannot change it. Nested values are shared by
+     * reference and are not deep-frozen, so a caller must not mutate an attached
+     * nested record. Callers must redact credentials. Absent as an own property
+     * when the caller supplies none.
+     */
+    readonly details?: Readonly<Record<string, unknown>>;
+}> {
+static { $ErrorMatcher(this, "SmithersError") }
+
 
   /**
    * Constructs a tagged integration failure with a frozen shallow context copy.
@@ -109,6 +115,7 @@ export error SmithersError {
       Object.defineProperty(this, "cause", { value: cause, enumerable: false, writable: true, configurable: true })
     }
   }
+
 
   /**
    * Returns enumerable own fields without adding the message, stack, or cause.
