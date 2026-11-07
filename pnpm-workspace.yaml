@@ -75,6 +75,9 @@ overrides:
 # @vitest/coverage-v8 5.0.0 remaps native-loader hits against code Vite did not run.
 # Remove when an upstream Vitest release fixes coverage of natively loaded copies.
 patchedDependencies:
+  # otlp-transformer 0.222.0 sends every JS integer as intValue, even Number.MAX_VALUE, which int64 cannot hold.
+  # The patch sends integers outside int64 as doubleValue, as Effect 4.1's OTLP exporter does, and unsafe ones inside
+  # it as decimal strings (observability/test/NodeOtelBudget.test.ts). Delete it when OpenTelemetry bounds intValue.
   '@opentelemetry/otlp-transformer@0.222.0': patches/@opentelemetry__otlp-transformer@0.222.0.patch
   # vibelang-runtime 0.0.12 matches a schema error class by its own _tag only, so a family base rejects its real
   # subclasses (packages/errors/test/TaggedFailures.test.vibe). This patch mirrors the upstream VibeLang fix;
@@ -105,6 +108,9 @@ patchedDependencies:
   "@tanstack/db-sqlite-persistence-core@0.4.11": patches/@tanstack__db-sqlite-persistence-core@0.4.11.patch
   # Audited 0.2.36 dist/esm/wa-sqlite-driver.js: driver has execute/transaction but no batch/transactionBatch.
   "@tanstack/browser-db-sqlite-persistence@0.2.36": patches/@tanstack__browser-db-sqlite-persistence@0.2.36.patch
+  # platform-node-shared 4.1.1 assigns a child's env entries into {}, so an own __proto__ entry is lost
+  # (kernel/test/ChildProcessSpawner.integration.test.ts), and NodeWS's `export * from "ws"` hides WebSocket from
+  # esbuild's split bundles (smithers/test/TuiRuntimes.test.ts). Delete it when an Effect release fixes both.
   '@effect/platform-node-shared@4.1.1': patches/@effect__platform-node-shared@4.1.1.patch
 
 minimumReleaseAgeExclude:
