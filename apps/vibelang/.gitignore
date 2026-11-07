@@ -1,6 +1,8 @@
 node_modules/
 dist/
+dist-factory/
 test-results*/
 playwright-report/
 .alchemy/
-dist-factory/
+# VibeLang writes declaration sidecars beside each .vibe file when it emits; they are build output.
+*.d.vibe.ts
