@@ -1,4 +1,4 @@
-import { Cause, Effect, Exit, Stream } from "effect"
+import { Cause, Effect, Exit, Redacted, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import * as Native from "node:child_process"
 import NativeMutable from "node:child_process"
@@ -140,9 +140,9 @@ describe("native pipe adapter", () => {
       ]
       const result = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
         const handle = yield* PipedProcess.spawn(
-          ChildProcess.make(process.execPath, args, {
+          ChildProcess.make(process.execPath, [args[0]!, args[1]!, Redacted.make(args[2]!), ...args.slice(3)], {
             cwd: directory,
-            env: { ONLY: "value" },
+            env: { ONLY: Redacted.make("value") },
             extendEnv: false,
             stdin: "pipe"
           }),
@@ -182,23 +182,32 @@ describe("native pipe adapter", () => {
     }
   })
 
-  it("inherits the native environment only when requested and merges stdout/stderr", async () => {
-    const output = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
-      const handle = yield* PipedProcess.spawn(
-        ChildProcess.make(process.execPath, [
-          "-e",
-          "process.stdout.write('out:'+process.env.EXTRA);process.stderr.write('err:'+typeof process.env.PATH)"
-        ], { env: { EXTRA: "yes" }, extendEnv: true, stdin: "ignore", detached: false, windowsHide: false }),
-        false
-      )
-      yield* Stream.make(new Uint8Array([1])).pipe(Stream.run(handle.stdin))
-      const [output, code] = yield* Effect.all([text(handle.all), handle.exitCode], { concurrency: "unbounded" })
-      expect(code).toBe(0)
-      return output
-    })))
-    expect(output).toContain("out:yes")
-    expect(output).toContain("err:string")
-  })
+  it.each([false, true])(
+    "inherits the native environment and merges stdout/stderr (overrides: %s)",
+    async (overrides) => {
+      const output = await Effect.runPromise(Effect.scoped(Effect.gen(function*() {
+        const handle = yield* PipedProcess.spawn(
+          ChildProcess.make(process.execPath, [
+            "-e",
+            "process.stdout.write('out:'+process.env.EXTRA);process.stderr.write('err:'+typeof process.env.PATH)"
+          ], {
+            env: overrides ? { EXTRA: "yes" } : undefined,
+            extendEnv: true,
+            stdin: "ignore",
+            detached: false,
+            windowsHide: false
+          }),
+          false
+        )
+        yield* Stream.make(new Uint8Array([1])).pipe(Stream.run(handle.stdin))
+        const [output, code] = yield* Effect.all([text(handle.all), handle.exitCode], { concurrency: "unbounded" })
+        expect(code).toBe(0)
+        return output
+      })))
+      expect(output).toContain(overrides ? "out:yes" : "out:undefined")
+      expect(output).toContain("err:string")
+    }
+  )
 
   it("preserves the native spawn errno", async () => {
     const error = await Effect.runPromise(Effect.scoped(Effect.flip(PipedProcess.spawn(

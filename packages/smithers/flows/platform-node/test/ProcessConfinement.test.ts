@@ -136,7 +136,10 @@ describe("native ProcessConfinement", () => {
 
   it.each([true, "/bin/bash", false, undefined] as const)("confines shell=%s inside the mechanism", async (shell) => {
     const f = fixture()
-    const command = ChildProcess.make("printf", ["hello", ">", "out.txt"], { cwd: f.workspaceRoot, shell })
+    const command = ChildProcess.make("printf", [Redacted.make("hello"), ">", "out.txt"], {
+      cwd: f.workspaceRoot,
+      shell
+    })
     const wrapped = await run(ProcessConfinement.make(f).confine(command, f.profile))
     expect(wrapped.command).toBe("/usr/bin/sandbox-exec")
     expect(wrapped.options.shell).toBe(false)

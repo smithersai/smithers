@@ -69,7 +69,7 @@ const argvOf = (command: ChildProcess.StandardCommand): ReadonlyArray<string> =>
   const args = command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg)
   const shell = command.options.shell
   if (shell === undefined || shell === false) return [command.command, ...args]
-  return [shell === true ? "/bin/sh" : shell, "-c", shellLine(command)]
+  return [shell === true ? "/bin/sh" : shell, "-c", [command.command, ...args].join(" ")]
 }
 
 const failure = (
