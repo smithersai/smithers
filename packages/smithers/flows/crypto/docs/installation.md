@@ -65,14 +65,14 @@ const address = Crypto.digestSync("hello")
 `digest` returns an Effect that requires `EffectDigest.Digest`. Choose the
 implementation that matches where the code runs:
 
-| Implementation                           | Provide it with                                    | Use it for                                                                                                                                          |
-| ---------------------------------------- | -------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `@effect/platform-node/NodeCrypto`       | `NodeCrypto.layer`                                 | A Node process. [`@smthrs/platform-node`](/api/platform-node) re-exports it as `NodeHost.NodeCrypto`.                                               |
-| `@effect/platform-bun/BunCrypto`         | `BunCrypto.layer`                                  | A Bun process.                                                                                                                                      |
-| `@effect/platform-browser/BrowserCrypto` | The layer that module exports                      | A browser tab. Add `@effect/platform-browser` yourself: [`@smthrs/platform-browser`](/api/platform-browser) leaves `Crypto` out of its host bundle. |
-| `WebCrypto` from this package            | `WebCrypto.layer`                                  | Any host with the global WebCrypto: Node, Bun, a browser, or a Cloudflare Worker. It reads randomness only on demand.                               |
-| `syncCrypto` from this package           | `Effect.provideService(EffectDigest.Digest, syncCrypto)` | Synchronous code and tests. It answers SHA-256 only; provide SecureRandom separately.                                                                         |
-| Your own                                 | `EffectDigest.Digest.of({ digest, digestHex })`             | A custom host, a hardware module, or a fault-injecting test.                                                                                        |
+| Implementation                           | Provide it with                                          | Use it for                                                                                                                                          |
+| ---------------------------------------- | -------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `@effect/platform-node/NodeCrypto`       | `NodeCrypto.layer`                                       | A Node process. [`@smthrs/platform-node`](/api/platform-node) re-exports it as `NodeHost.NodeCrypto`.                                               |
+| `@effect/platform-bun/BunCrypto`         | `BunCrypto.layer`                                        | A Bun process.                                                                                                                                      |
+| `@effect/platform-browser/BrowserCrypto` | The layer that module exports                            | A browser tab. Add `@effect/platform-browser` yourself: [`@smthrs/platform-browser`](/api/platform-browser) leaves `Crypto` out of its host bundle. |
+| `WebCrypto` from this package            | `WebCrypto.layer`                                        | Any host with the global WebCrypto: Node, Bun, a browser, or a Cloudflare Worker. It reads randomness only on demand.                               |
+| `syncCrypto` from this package           | `Effect.provideService(EffectDigest.Digest, syncCrypto)` | Synchronous code and tests. It answers SHA-256 only; provide SecureRandom separately.                                                               |
+| Your own                                 | `EffectDigest.Digest.of({ digest, digestHex })`          | A custom host, a hardware module, or a fault-injecting test.                                                                                        |
 
 ```bash
 pnpm add @effect/platform-node @effect/platform-node-shared

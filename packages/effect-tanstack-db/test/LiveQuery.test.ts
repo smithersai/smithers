@@ -433,7 +433,6 @@ test("a failed lazy demand withdraws the downstream display until its read scope
   )
 })
 
-
 test("synchronous observation records publications in its captured context and stops at scope close", async () => {
   class Receipt extends Context.Service<Receipt, { readonly prefix: string }>()("test/LiveQuery/Receipt") {}
   await run(Effect.gen(function*() {
@@ -442,10 +441,11 @@ test("synchronous observation records publications in its captured context and s
     yield* query.preload
     const scope = yield* Scope.make()
     const receipts: string[] = []
-    yield* LiveQuery.observeSync(query, (rows) => Effect.gen(function*() {
-      const receipt = yield* Receipt
-      receipts.push(`${receipt.prefix}:${ids(rows).join(",")}`)
-    })).pipe(Effect.provideService(Receipt, { prefix: "tab" }), Scope.provide(scope))
+    yield* LiveQuery.observeSync(query, (rows) =>
+      Effect.gen(function*() {
+        const receipt = yield* Receipt
+        receipts.push(`${receipt.prefix}:${ids(rows).join(",")}`)
+      })).pipe(Effect.provideService(Receipt, { prefix: "tab" }), Scope.provide(scope))
     expect(receipts.at(-1)).toBe("tab:a")
     yield* source.insert(note("b", 2))
     expect(ids(query.tanstack.toArray)).toEqual(["a", "b"])

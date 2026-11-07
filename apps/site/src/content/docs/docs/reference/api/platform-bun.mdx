@@ -65,13 +65,13 @@ implementation identities, and platform module re-exports.
 
 ### Layers
 
-| Export             | Signature                                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Export             | Signature                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
 | `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
 | `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
 | `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
-| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
+| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                                                        |
 
 `layer` provides all five Host services, including the runtime-independent
 `Path`. `Jj` is bound to the process working directory.

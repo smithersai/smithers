@@ -25,7 +25,7 @@ composition error to handle.
 | `OwnerIdentity`      | this package                            | Mints the `OwnerId` this incarnation fences with.  |
 | `StepBoundary`       | this package                            | Measures each step's declared read and write sets. |
 | `Jj`                 | [`@smthrs/kernel`](/api/kernel)         | Compensable snapshots for the snapshot boundary.   |
-| `Crypto`             | `effect/crypto/Digest`                         | Digests the step keys and mints the owner nonce.   |
+| `Crypto`             | `effect/crypto/Digest`                  | Digests the step keys and mints the owner nonce.   |
 | `Scope`              | `effect`                                | Registrations and active fibers are scoped.        |
 
 The [Quickstart](../quickstart.md) builds all of them over one SQLite file.

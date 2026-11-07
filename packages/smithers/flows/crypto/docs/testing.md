@@ -39,8 +39,8 @@ purpose:
 ```ts
 import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
-import * as PlatformError from "effect/PlatformError"
 import * as Hex from "effect/encoding/Hex"
+import * as PlatformError from "effect/PlatformError"
 
 type DigestService = typeof EffectDigest.Digest.Service
 const host = (operation: DigestService["digest"]): DigestService =>

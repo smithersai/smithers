@@ -301,7 +301,6 @@ registration's services. Use it for receipts such as counters that must be
 recorded in the same turn as the publication. Closing the scope unsubscribes.
 The callback must not suspend; use the query's `rows` stream for asynchronous work.
 
-
 ## `Query`
 
 ```ts

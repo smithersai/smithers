@@ -82,7 +82,8 @@ export const provideSync = <A, E>(
   effect: Effect.Effect<A, E, EffectDigest.Digest>
 ): Effect.Effect<A, E> => Effect.provideService(effect, EffectDigest.Digest, syncCrypto)
 
-export const runSync = <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>): A => Effect.runSync(provideSync(effect))
+export const runSync = <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>): A =>
+  Effect.runSync(provideSync(effect))
 ```
 
 One derivation then serves both callers. The asynchronous path provides a

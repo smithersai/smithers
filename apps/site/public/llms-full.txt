@@ -7238,7 +7238,9 @@ the catalog fails with `assembly_failed`.
 
 ```ts
 const clock: (
-  services: Context.Context<(EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options?: { readonly maxSeconds?: number | undefined }
 ) => FlowBinding.Source
 ```
@@ -7420,11 +7422,19 @@ runs. It touches three services and no more: `FlowRuntime`, `RunStore`, and
 ```ts
 const make: (
   options: Options
-) => Effect.Effect<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Effect.Effect<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 
 const layer: (
   options: Options
-) => Layer.Layer<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Layer.Layer<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 ```
 
 Builds or provides the durable child port:
@@ -8004,7 +8014,11 @@ the walkthrough, see [A durable model call](https://github.com/smithersai/smithe
 ```ts
 const run: (
   options: Options
-) => Effect.Effect<Result, Failure, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Result,
+  Failure,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 Calls the model once, as one step of the running flow.
@@ -8043,7 +8057,11 @@ failure, with the route's `prepare` error, or with an `engine_failed`
 ```ts
 const model: (
   options: Omit<Options, "request" | "onEvent">
-) => Effect.Effect<Model.Model, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Model.Model,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 A `Model` whose every call is one `run` of the running flow, keyed, sealed and
@@ -9264,28 +9282,28 @@ const layer = PackageManager.layerPnpm({
 })
 ```
 
-| Export                                                                                                                       | What it is                                                                                                                                                                                             |
-| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                                                      |
-| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`.                                       |
-| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                                                                    |
-| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                                                          |
-| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                                                           |
-| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                                                              |
-| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                                                                   |
-| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                                                                   |
-| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                                                                |
-| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                                                              |
-| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                                                              |
-| `Diagnostic`                                                                                                                 | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description.                                                                                                            |
-| `Digest`                                                                                                                     | SHA-256 content digest schema/type.                                                                                                                                                                    |
-| `StoreManifest`                                                                                                              | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes.                                                                            |
-| `pnpmfileNames`                                                                                                              | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected.                                                                                                     |
-| `pnpmfileOf`                                                                                                                 | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook.                                               |
-| `defaultCredentialHosts`                                                                                                     | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent.                                                                                     |
-| `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.        |
-| `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                          |
-| `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                |
+| Export                                                                                                                       | What it is                                                                                                                                                                                                   |
+| ---------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `PackageManager`                                                                                                             | The service tag, `smithers-build/PackageManager`.                                                                                                                                                            |
+| `Service`                                                                                                                    | The contract: `name`, `projectRoot`, `storeDirectory`, `lockfileName`, `platformSensitive`, `requirement`, `version`, `verify`, `fetch`, `link`, `linkManifest`.                                             |
+| `Options`                                                                                                                    | Layer options: `projectRoot`, `requirement`, and optional `environment`, `timeoutMs`, `executable`.                                                                                                          |
+| `makePnpm`, `layerPnpm`                                                                                                      | The live pnpm implementation.                                                                                                                                                                                |
+| `makeBun`, `layerBun`                                                                                                        | The Bun seam for tool-running targets. It resolves, then refuses with `code: "unsupported"`.                                                                                                                 |
+| `bunInstallUnsupportedMessage`, `bunInstallUnsupported`                                                                      | The refusal text, and the typed `unsupported` error, every install entry point returns for a Bun manager.                                                                                                    |
+| `makeNoop`, `layerNoop`                                                                                                      | A service that satisfies the tag without touching a host, for tests.                                                                                                                                         |
+| `PackageManagerError`, `ErrorCode`                                                                                           | The tagged error and its code union.                                                                                                                                                                         |
+| `Name`                                                                                                                       | The manager union, `"pnpm"` or `"bun"`.                                                                                                                                                                      |
+| `storeRoot`                                                                                                                  | `".flows/store"`, the fixed store parent.                                                                                                                                                                    |
+| `maximumNpmrcBytes`, `maximumLockfileBytes`, `maximumPackageJsonBytes`, `defaultCommandTimeoutMs`, `maximumCommandTimeoutMs` | The bounds every read and every child process is held to.                                                                                                                                                    |
+| `Diagnostic`                                                                                                                 | Schema/type alias of `Runtime.Diagnostic`, a bounded serializable host-failure description.                                                                                                                  |
+| `Digest`                                                                                                                     | SHA-256 content digest schema/type.                                                                                                                                                                          |
+| `StoreManifest`                                                                                                              | Schema/type: manager name, exact managerVersion, nullable platform and digest; describes fetch inputs, never package bytes.                                                                                  |
+| `pnpmfileNames`                                                                                                              | Readonly default hook order: `.pnpmfile.mjs`, `.pnpmfile.cjs`; only the first present is selected.                                                                                                           |
+| `pnpmfileOf`                                                                                                                 | `(projectRoot: string) => Effect<(typeof pnpmfileNames)[number] \| null, PackageManagerError, FileSystem.FileSystem>`; locates the first supported hook.                                                     |
+| `defaultCredentialHosts`                                                                                                     | Readonly registry-host allowlist, default `["registry.npmjs.org"]`, used when `Options.credentialHosts` is absent.                                                                                           |
+| `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.              |
+| `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                                |
+| `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                      |
 | `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
 | `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; bounded lockfile read and digest.                                        |
 | `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; bounded root package.json read and digest.                                                     |
@@ -26830,11 +26848,11 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 
 `compactMessages` captures the full `sourceMessages` rows and verifies them inside the write transaction before inserting or deleting. Missing or changed sources fail with `compaction_conflict`. An existing summary id fails with `idempotency_conflict`, including identical retries.
 
-| Export      | Signature                                                                      | Behavior                                                                                                                                                                                                                                                                                                    |
-| ----------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Export      | Signature                                                                                  | Behavior                                                                                                                                                                                                                                                                                                    |
+| ----------- | ------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `make`      | `Effect<Service, MemoryError, SecureRandom.SecureRandom \| DurableWriter \| SqlClient>`    | Builds the SQL-backed service and applies the package's idempotent migrations. Every operation runs in a span named `MemoryStore.<method>` carrying shape attributes only (namespace kind, limit, row count), and counts its outcome on the `smithers_memory_operations` counter by `method` and `outcome`. |
-| `makeNoop`  | `(overrides?: Partial<Service>) => Service`                                    | An unavailable stub: every operation fails `store`, optionally overridden per method.                                                                                                                                                                                                                       |
-| `layerNoop` | `(overrides?: Partial<Service>) => Layer<MemoryStore>`                         | Provides the unavailable stub.                                                                                                                                                                                                                                                                              |
+| `makeNoop`  | `(overrides?: Partial<Service>) => Service`                                                | An unavailable stub: every operation fails `store`, optionally overridden per method.                                                                                                                                                                                                                       |
+| `layerNoop` | `(overrides?: Partial<Service>) => Layer<MemoryStore>`                                     | Provides the unavailable stub.                                                                                                                                                                                                                                                                              |
 | `layer`     | `Layer<MemoryStore, MemoryError, SecureRandom.SecureRandom \| DurableWriter \| SqlClient>` | Provides the authoritative SQL store over the SQL client and the durable writer.                                                                                                                                                                                                                            |
 
 ### `@smthrs/memory/MemoryTrellis`
@@ -34083,13 +34101,13 @@ implementation identities, and platform module re-exports.
 
 ### Layers
 
-| Export             | Signature                                                                                                   |
-| ------------------ | ----------------------------------------------------------------------------------------------------------- |
+| Export             | Signature                                                                                                                                        |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
 | `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
 | `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
 | `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
-| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
+| `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                                                        |
 
 `layer` provides all five Host services, including the runtime-independent
 `Path`. `Jj` is bound to the process working directory.
@@ -43642,7 +43660,11 @@ could not run a single interrupt pin against the engine that ships.
 ### FlowEngineLike.make
 
 ```ts
-const make: () => Effect.Effect<EngineSubject, never, Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+const make: () => Effect.Effect<
+  EngineSubject,
+  never,
+  Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 ```
 
 Constructs an `EngineSubject` over the flow engine in the ambient
@@ -43653,7 +43675,11 @@ it settles as completed, aborted, failed, or suspended.
 ### FlowEngineLike.layer
 
 ```ts
-const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+const layer: () => Layer.Layer<
+  EngineSubject,
+  never,
+  FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 ```
 
 ### FlowEngineLike.layerOver

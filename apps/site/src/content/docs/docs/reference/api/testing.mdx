@@ -835,7 +835,11 @@ could not run a single interrupt pin against the engine that ships.
 ### FlowEngineLike.make
 
 ```ts
-const make: () => Effect.Effect<EngineSubject, never, Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+const make: () => Effect.Effect<
+  EngineSubject,
+  never,
+  Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 ```
 
 Constructs an `EngineSubject` over the flow engine in the ambient
@@ -846,7 +850,11 @@ it settles as completed, aborted, failed, or suspended.
 ### FlowEngineLike.layer
 
 ```ts
-const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+const layer: () => Layer.Layer<
+  EngineSubject,
+  never,
+  FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 ```
 
 ### FlowEngineLike.layerOver

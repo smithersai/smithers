@@ -1885,7 +1885,9 @@ the catalog fails with `assembly_failed`.
 
 ```ts
 const clock: (
-  services: Context.Context<(EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+  >,
   options?: { readonly maxSeconds?: number | undefined }
 ) => FlowBinding.Source
 ```
@@ -2067,11 +2069,19 @@ runs. It touches three services and no more: `FlowRuntime`, `RunStore`, and
 ```ts
 const make: (
   options: Options
-) => Effect.Effect<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Effect.Effect<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 
 const layer: (
   options: Options
-) => Layer.Layer<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Layer.Layer<
+  ChildFlows.Children,
+  never,
+  Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore
+>
 ```
 
 Builds or provides the durable child port:
@@ -2651,7 +2661,11 @@ the walkthrough, see [A durable model call](./guides/durable-model-call.md).
 ```ts
 const run: (
   options: Options
-) => Effect.Effect<Result, Failure, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Result,
+  Failure,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 Calls the model once, as one step of the running flow.
@@ -2690,7 +2704,11 @@ failure, with the route's `prepare` error, or with an `engine_failed`
 ```ts
 const model: (
   options: Omit<Options, "request" | "onEvent">
-) => Effect.Effect<Model.Model, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<
+  Model.Model,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+>
 ```
 
 A `Model` whose every call is one `run` of the running flow, keyed, sealed and
