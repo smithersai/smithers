@@ -85,7 +85,7 @@
       "default": "./.vibelang/js/src/FixtureStore.js"
     },
     "./FlowEngineLike": {
-      "types": "./.vibe/declarations/FlowEngineLike.d.vibe.ts",
+      "types": "./.vibe/declarations/src/FlowEngineLike.d.vibe.ts",
       "vibelang-source": "./src/FlowEngineLike.vibe",
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
@@ -100,7 +100,7 @@
       "default": "./.vibelang/js/src/JournalAssertions.js"
     },
     "./MemoryEngine": {
-      "types": "./.vibe/declarations/MemoryEngine.d.vibe.ts",
+      "types": "./.vibe/declarations/src/MemoryEngine.d.vibe.ts",
       "vibelang-source": "./src/MemoryEngine.vibe",
       "default": "./.vibelang/js/src/MemoryEngine.js"
     },
