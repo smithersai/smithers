@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * Permission-aware process spawning.
  *
@@ -51,14 +52,17 @@ const optionalData = (value: object, name: PropertyKey): unknown => {
   return descriptor.value
 }
 
-const snapshotRecord = (
-  value: Readonly<Record<string, string | undefined>> | undefined
-): Record<string, string | undefined> | undefined => {
+const snapshotRecord = <A extends string | Redacted.Redacted<string>>(
+  value: Readonly<Record<string, A | undefined>> | undefined
+): Record<string, A | undefined> | undefined => {
   if (value === undefined) return undefined
-  const snapshot: Record<string, string | undefined> = Object.create(null)
+  const snapshot: Record<string, A | undefined> = Object.create(null)
   for (const [name, descriptor] of Object.entries(Object.getOwnPropertyDescriptors(value))) {
     if (!descriptor.enumerable) continue
-    if (!("value" in descriptor) || (descriptor.value !== undefined && typeof descriptor.value !== "string")) {
+    if (
+      !("value" in descriptor) ||
+      (descriptor.value !== undefined && typeof descriptor.value !== "string" && !Redacted.isRedacted(descriptor.value))
+    ) {
       throw new TypeError("command environment must contain string data properties")
     }
     snapshot[name] = descriptor.value
@@ -139,7 +143,12 @@ const snapshotCommand = (command: ChildProcess.Command): ChildProcess.Command =>
     const executable = data(command, "command")
     const args = data(command, "args")
     const options = data(command, "options")
-    if (typeof executable !== "string" || !Array.isArray(args) || !args.every((arg) => typeof arg === "string")) {
+    if (
+      typeof executable !== "string" || !Array.isArray(args) ||
+      !args.every((arg): arg is string | Redacted.Redacted<string> =>
+        typeof arg === "string" || (Redacted.isRedacted(arg) && typeof Redacted.value(arg) === "string")
+      )
+    ) {
       throw new TypeError("standard command executable and arguments are invalid")
     }
     if (typeof options !== "object" || options === null) throw new TypeError("command options are invalid")

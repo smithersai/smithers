@@ -22,7 +22,7 @@ const store = (checks: Array<Capability.Capability>, allowed = true) =>
       checks.push(capability)
       return allowed
         ? Effect.void
-        : Effect.fail(new PermissionDenied({ code: "permission_denied", capability, reason: "denied by test" }))
+        : Effect.fail(PermissionDenied.new({ code: "permission_denied", capability, reason: "denied by test" }))
     },
     reply: () => Effect.die("not used by HTTP decorator tests"),
     list: Effect.succeed([]),
@@ -328,7 +328,7 @@ describe("HttpClient", () => {
             checks.push(capability)
             return capability.resource === "first.test"
               ? Effect.void
-              : Effect.fail(new PermissionDenied({ code: "permission_denied", capability, reason: "denied by test" }))
+              : Effect.fail(PermissionDenied.new({ code: "permission_denied", capability, reason: "denied by test" }))
           },
           reply: () => Effect.die("unused"),
           list: Effect.succeed([]),
@@ -347,7 +347,7 @@ describe("HttpClient", () => {
         checks.push(capability)
         return capability.resource === "first.test"
           ? Effect.void
-          : Effect.fail(new PermissionDenied({ code: "permission_denied", capability, reason: "off-limits host" }))
+          : Effect.fail(PermissionDenied.new({ code: "permission_denied", capability, reason: "off-limits host" }))
       },
       reply: () => Effect.die("not used by HTTP decorator tests"),
       list: Effect.succeed([]),

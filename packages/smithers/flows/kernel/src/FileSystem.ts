@@ -567,15 +567,6 @@ export const confined = (
         copyFile: (from) => refuse("copyFile", from),
         chmod: (value, mode) => run({ operation: "chmod", path: normalize(value), options: { mode } }),
         chown: (value, uid, gid) => run({ operation: "chown", path: normalize(value), options: { uid, gid } }),
-        glob: (pattern, options) => {
-          const base = options?.root === undefined ? logicalRoot : normalize(options.root)
-          return run({
-            operation: "glob",
-            pattern: path.resolve(base, pattern),
-            root: base,
-            options: options === undefined ? undefined : { exclude: options.exclude ?? [] }
-          })
-        },
         link: (from) => refuse("link", from),
         makeDirectory: (value, options) =>
           run({
@@ -605,6 +596,7 @@ export const confined = (
           }),
         rename: (from, to) => run({ operation: "rename", from: normalize(from), to: normalize(to) }),
         stat: (value) => run({ operation: "stat", path: normalize(value) }),
+        lstat: (value) => run({ operation: "stat", path: normalize(value) }),
         symlink: (_from, to) => refuse("symlink", to),
         truncate: (value) => refuse("truncate", value),
         utimes: (value) => refuse("utimes", value),
@@ -625,8 +617,19 @@ export const confined = (
             data: Base64.encode(data),
             options
           })
-        }
+        },
+        readDirectoryEntries: (value) =>
+          Effect.map(view.readDirectory(value), (names) => names.map((name) => ({ name, type: "Unknown" as const })))
       }),
+      glob: (pattern, options) => {
+        const base = options?.root === undefined ? logicalRoot : normalize(options.root)
+        return run({
+          operation: "glob",
+          pattern: path.resolve(base, pattern),
+          root: base,
+          options: options === undefined ? undefined : { exclude: options.exclude ?? [] }
+        })
+      },
       exists: (value) => run({ operation: "exists", path: normalize(value) }),
       readFileString: (value, encoding) => run({ operation: "readFileString", path: normalize(value), encoding }),
       writeFileString: (value, data, options) =>
@@ -1268,17 +1271,6 @@ export const layer: Layer.Layer<
             options: { uid, gid }
           })
         ),
-        glob: Effect.fn("FileSystem.glob")((pattern, options) => {
-          const captured = snapshotOptions(options)
-          const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
-          const normalizedPattern = normalizeFrom(root, pattern)
-          return atomicOne("fs:read", normalizedPattern, "glob", {
-            operation: "glob",
-            pattern: normalizedPattern,
-            root,
-            options: captured === undefined ? undefined : { exclude: captured.exclude ?? [] }
-          })
-        }),
         link: Effect.fn("FileSystem.link")((from, to) =>
           isolatedTwo(["fs:read", from], ["fs:write", to], "link", (host) => host.link(normalize(from), normalize(to)))
         ),
@@ -1412,6 +1404,12 @@ export const layer: Layer.Layer<
             path: normalize(value)
           })
         ),
+        lstat: Effect.fn("FileSystem.lstat")((value) =>
+          atomicOne("fs:read", value, "stat", {
+            operation: "stat",
+            path: normalize(value)
+          })
+        ),
         symlink: Effect.fn("FileSystem.symlink")((from, to) =>
           isolatedOne("fs:write", to, "symlink", (host) => host.symlink(from, normalize(to)))
         ),
@@ -1465,6 +1463,19 @@ export const layer: Layer.Layer<
             data: Base64.encode(bytes),
             options: captured
           })
+        }),
+        readDirectoryEntries: (value) =>
+          Effect.map(guarded.readDirectory(value), (names) => names.map((name) => ({ name, type: "Unknown" as const })))
+      }),
+      glob: Effect.fn("FileSystem.glob")((pattern, options) => {
+        const captured = snapshotOptions(options)
+        const root = captured?.root === undefined ? workspace.root : normalize(captured.root)
+        const normalizedPattern = normalizeFrom(root, pattern)
+        return atomicOne("fs:read", normalizedPattern, "glob", {
+          operation: "glob",
+          pattern: normalizedPattern,
+          root,
+          options: captured === undefined ? undefined : { exclude: captured.exclude ?? [] }
         })
       }),
       exists: Effect.fn("FileSystem.exists")((value) =>

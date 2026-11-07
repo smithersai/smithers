@@ -1,3 +1,5 @@
+import * as Redacted from "effect/Redacted"
+
 /**
  * Least-authority environment construction for child processes.
  *
@@ -61,7 +63,7 @@ export const isInheritedName = (name: string): boolean => {
   return inherited.has(canonical) || canonical.startsWith("LC_")
 }
 
-const remove = (environment: Record<string, string>, name: string): void => {
+const remove = (environment: Record<string, string | Redacted.Redacted<string>>, name: string): void => {
   const canonical = name.toUpperCase()
   for (const present of Object.keys(environment)) {
     if (present.toUpperCase() === canonical) delete environment[present]
@@ -82,11 +84,11 @@ const remove = (environment: Record<string, string>, name: string): void => {
  * @category constructors
  * @since 1.0.0-rc.0
  */
-export const make = (
+export const make = <A extends string | Redacted.Redacted<string> = string>(
   ambient: Readonly<Record<string, string | undefined>>,
-  declared: Readonly<Record<string, string | undefined>> = {}
-): Record<string, string> => {
-  const environment = Object.create(null) as Record<string, string>
+  declared: Readonly<Record<string, A | undefined>> = {}
+): Record<string, string | A> => {
+  const environment = Object.create(null) as Record<string, string | A>
   for (const [name, value] of Object.entries(ambient)) {
     if (value !== undefined && isInheritedName(name) && !isCredentialName(name)) environment[name] = value
   }

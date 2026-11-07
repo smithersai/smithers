@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -32,7 +32,7 @@ The
 [installation page](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/kernel/docs/installation.md)
 covers the import forms and the two test helpers.
 
-It needs Node.js 22.19.0 or later and `effect` `4.0.5`. It carries no
+It needs Node.js 22.19.0 or later and `effect` `4.1.1`. It carries no
 platform implementations of its own, so a composition that reaches a real
 machine also adds a bundle such as
 [`@smthrs/platform-node`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/platform-node/docs).

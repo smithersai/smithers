@@ -4,6 +4,7 @@
  * disagree, so the rendering rules get their own cases.
  */
 import * as ChildProcess from "effect/process/ChildProcess"
+import * as Redacted from "effect/Redacted"
 import { describe, expect, it } from "vitest"
 import * as CommandLine from "../src/CommandLine.ts"
 
@@ -242,4 +243,17 @@ describe("CommandLine.resource", () => {
       third
     ])
   })
+})
+
+it("reveals protected arguments only when rendering for an interpreter", () => {
+  const standard = ChildProcess.make("printf", [Redacted.make("secret value")])
+  expect(CommandLine.render(standard)).toBe("printf '<redacted>'")
+  expect(CommandLine.renderForExecution(standard)).toBe("printf 'secret value'")
+  expect(CommandLine.renderForExecution(ChildProcess.make("echo", [Redacted.make("a b")], { shell: true })))
+    .toBe("echo a b")
+  expect(CommandLine.renderForExecution(ChildProcess.make("echo", [Redacted.make("a b")], { shell: "/bin/sh" })))
+    .toBe("/bin/sh -c 'echo a b'")
+  const pipeline = standard.pipe(ChildProcess.pipeTo(ChildProcess.make("grep", [Redacted.make("value")])))
+  expect(CommandLine.renderForExecution(pipeline)).toBe("printf 'secret value' | grep value")
+  expect(CommandLine.render(pipeline)).not.toContain("secret")
 })

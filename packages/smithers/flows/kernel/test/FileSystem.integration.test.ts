@@ -230,3 +230,15 @@ describe("FileSystem real host confinement", () => {
       expect(yield* Effect.promise(() => readFile(moved, "utf8"))).toBe("inside-original")
     }))
 })
+
+it.effect("guards Effect 4.1 directory entries and non-following stat on a real filesystem", () =>
+  Effect.gen(function*() {
+    const workspace = yield* Effect.promise(() => temporaryDirectory())
+    yield* Effect.promise(() => writeFile(join(workspace, "entry.txt"), "entry"))
+    yield* withGuardedFileSystem(workspace, workspaceRules(workspace), () =>
+      Effect.gen(function*() {
+        const fs = yield* EffectFileSystem.FileSystem
+        expect(yield* fs.readDirectoryEntries(workspace)).toEqual([{ name: "entry.txt", type: "Unknown" }])
+        expect((yield* fs.lstat(join(workspace, "entry.txt"))).type).toBe("File")
+      }))
+  }))
