@@ -7,7 +7,9 @@ brick                                   state         proof
 1a  splash, ⌘K, chat, mock agent        done          e2e/chat.spec.ts (dark, light, phone); 25 unit/property/scene tests
 1b  live agent on Cloudflare            next          a Durable Object per conversation runs the sequencer; the reply is an
                                                       @smthrs/agent flow step (VL-11); LiveFactory replaces MockFactory
-1c  dogfooding surfaces                 next          CLI, MCP server and skill over Factory (VL-10, VL-26)
+1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
+                                                      25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
+                                                      Live dogfooding awaits 1b; local and deployed browser suites pass.
 1d  formal proofs in CI                 in progress   LemmaScript contracts on conversation.ts, `pnpm verify` (VL-9)
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
@@ -24,7 +26,7 @@ brick                                   state         proof
   Alchemy beta.85 needs `^4.1.0` and `vibelang-runtime` 0.0.12 pins 4.1.1, while the monorepo pins 4.0.5. Until that
   lands, this app installs on its own (`pnpm run setup`, excluded in the root `pnpm-workspace.yaml`)
   and links `@smthrs/ui-css` and `@smthrs/ui-styleguide` with `link:`. After it lands: join the workspace, switch to
-  `workspace:*`, delete the `setup` script and the `resolve.alias` and `paths` entries for the style guide.
+  `workspace:*`, delete the standalone pnpm-workspace.yaml and `setup` script and the `resolve.alias` and `paths` entries for the style guide.
 - **Alchemy's state store.** Alchemy beta.85 keeps state in format v8; apps/mvp's beta.83 keeps the account's default
   store at v7. This stack uses its own store, `smithers-vibelang-state` (infra/Stack.vibe). Moving apps/mvp to beta.85
   migrates the default store, so that deploy and the migration happen together.

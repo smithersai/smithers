@@ -21,12 +21,15 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0006](decisions/0006-hosting.md) | A Cloudflare Worker with static assets; the domain comes from the deployment |
 | [0007](decisions/0007-multiplayer.md) | Multiplayer is the sequencer's event stream; no CRDTs |
 | [0008](decisions/0008-testing.md) | Suites: property, scene, integration, browser e2e, then benchmarks and fuzzing |
+| [0009](decisions/0009-surfaces.md) | One Schema command registry derives the Factory CLI, MCP tools and agent manifest |
 
 ## Layout
 
 ```
 apps/vibelang/
   src/core/       the state machine (conversation.ts) and the Effect API (Factory.vibe, MockFactory.vibe)
+  src/surfaces/   the shared command registry, CLI, MCP server and discovery manifest
+  skills/         agent instructions for the Factory CLI
   src/web/        the Foldkit program (main.vibe), its view (view.ts) and styles
   worker/         the Cloudflare Worker
   infra/          the Alchemy stack (Stack.vibe; alchemy.run.ts re-exports it)
