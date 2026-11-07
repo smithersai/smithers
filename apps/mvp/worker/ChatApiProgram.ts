@@ -615,12 +615,12 @@ const configuredProgram = (options: ProgramOptions, { repoFlows, repositories, h
     Effect.provide(BranchSandboxes.live(
       DatabaseRoutes.route(pools, "SandboxObject"),
       socketChecks(options),
-      DatabaseRoutes.route(pools, "SocketChecks")
+      DatabaseRoutes.route(pools, "SocketChecks"),
     )),
     Effect.provide(BranchSandboxes.gateLive(
       DatabaseRoutes.route(pools, "GateObject"),
       socketChecks(options),
-      DatabaseRoutes.route(pools, "SocketChecks")
+      DatabaseRoutes.route(pools, "SocketChecks"),
     )),
     Effect.provide(BranchRooms.live(DatabaseRoutes.route(pools, "RoomObject"), socketChecks(options))),
     Effect.provide(RunContent.live(DatabaseRoutes.route(pools, "RunContent"), socketChecks(options))),
