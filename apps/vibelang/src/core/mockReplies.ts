@@ -20,6 +20,11 @@ VibeLang pins Effect to exactly 4.1.1. Check mixed \`.vibe\` and \`.ts\` source 
 const FUNCTIONS = `\`effect\` goes where \`async\` goes. Calling an effect function returns its Effect unrun, and \`try\` runs one:
 
 \`\`\`vibe
+error UserNotFound { id: string }
+service Users {
+  find(id: string): string!UserNotFound
+}
+
 effect function greet(id: string) {
   const users = try Users
   const name = users.find(id) catch () => "guest"
@@ -39,7 +44,9 @@ effect function find(id: string) {
   return "Ada"
 }
 
-const name = find("7") catch () => "Guest"
+effect function main() {
+  return find("7") catch () => "Guest"
+}
 \`\`\`
 
 A \`throw\` in a plain function is a compile error (EK0401): synchronous VibeLang code never throws.`
@@ -79,6 +86,13 @@ service Users {
   find(id: string): string!UserNotFound
 }
 
+const UsersLive = Layer.succeed(Users, {
+  effect find(id: string) {
+    if (id !== "42") throw new UserNotFound({ id })
+    return "Ada"
+  }
+})
+
 export effect function main() {
   provide UsersLive {
     const users = try Users
@@ -100,6 +114,9 @@ const SCRIPTS: ReadonlyArray<Script> = [
   { words: ["service", "provide", "layer", "dependency", "dependencies"], reply: SERVICES },
   { words: ["effect function", "function", "try", "async", "await"], reply: FUNCTIONS },
 ]
+
+/** Every answer the scripted agent can choose, including the fallback; each fenced example is compiler checked. */
+export const scriptedReplies: ReadonlyArray<string> = [...SCRIPTS.map((script) => script.reply), DEFAULT]
 
 /**
  * The mock agent's whole answer to `prompt`.
