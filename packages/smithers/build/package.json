@@ -40,7 +40,7 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./Install": {
-      "types": "./.vibe/declarations/Install.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Install.d.vibe.ts",
       "vibelang-source": "./src/Install.vibe",
       "default": "./.vibelang/js/src/Install.js"
     },

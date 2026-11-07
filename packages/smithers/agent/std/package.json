@@ -78,12 +78,12 @@
       "default": "./.vibelang/js/src/Fetch.js"
     },
     "./Glob": {
-      "types": "./.vibe/declarations/Glob.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Glob.d.vibe.ts",
       "vibelang-source": "./src/Glob.vibe",
       "default": "./.vibelang/js/src/Glob.js"
     },
     "./Grep": {
-      "types": "./.vibe/declarations/Grep.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Grep.d.vibe.ts",
       "vibelang-source": "./src/Grep.vibe",
       "default": "./.vibelang/js/src/Grep.js"
     },
@@ -103,7 +103,7 @@
       "default": "./.vibelang/js/src/Ls.js"
     },
     "./Lsp": {
-      "types": "./.vibe/declarations/Lsp.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Lsp.d.vibe.ts",
       "vibelang-source": "./src/Lsp.vibe",
       "default": "./.vibelang/js/src/Lsp.js"
     },
@@ -198,7 +198,7 @@
       "default": "./.vibelang/js/src/WebSearch.js"
     },
     "./Write": {
-      "types": "./.vibe/declarations/Write.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Write.d.vibe.ts",
       "vibelang-source": "./src/Write.vibe",
       "default": "./.vibelang/js/src/Write.js"
     },

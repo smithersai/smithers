@@ -182,14 +182,14 @@
       }
     },
     "./app-operations/wiki": {
-      "types": "./.vibe/declarations/app-operations/wiki.d.vibe.ts",
+      "types": "./.vibe/declarations/src/app-operations/wiki.d.vibe.ts",
       "import": {
-        "types": "./.vibe/declarations/app-operations/wiki.d.vibe.ts",
+        "types": "./.vibe/declarations/src/app-operations/wiki.d.vibe.ts",
         "vibelang-source": "./src/app-operations/wiki.vibe",
         "default": "./.vibelang/js/src/app-operations/wiki.js"
       },
       "default": {
-        "types": "./.vibe/declarations/app-operations/wiki.d.vibe.ts",
+        "types": "./.vibe/declarations/src/app-operations/wiki.d.vibe.ts",
         "vibelang-source": "./src/app-operations/wiki.vibe",
         "default": "./.vibelang/js/src/app-operations/wiki.js"
       }
