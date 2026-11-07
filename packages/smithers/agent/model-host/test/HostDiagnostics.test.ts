@@ -293,7 +293,7 @@ describe("the guest runtime a turn reports", () => {
     )
     // One record per turn that RAN: building the Effect writes nothing.
     const unrun = collector()
-    runDurableChatTurn(
+    const _unrunTurn = runDurableChatTurn(
       Model.make({ stream: () => Stream.never }),
       grant,
       { modelId: "m" },

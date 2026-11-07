@@ -697,7 +697,7 @@ describe("a failed call's reading", () => {
     expect(error).toBe(frozen)
     expect((error as ModelError).timing).toBeUndefined()
 
-    const denied = new Permission.PermissionDenied({
+    const denied = Permission.PermissionDenied.new({
       capability: Capability.make("model:call", "provider.test/test-model"),
       reason: "denied by policy"
     })

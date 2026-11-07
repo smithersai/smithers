@@ -724,9 +724,20 @@ const redactedRequest = (
   request: HttpClientRequest.HttpClientRequest,
   redactedNames: ReadonlyArray<string | RegExp>
 ): HttpClientRequest.HttpClientRequest =>
-  HttpClientRequest.make(request.method)(redactedRequestUrl(request), {
-    headers: redactHeaders(request.headers, redactedNames)
-  })
+  (() => {
+    const sanitized = HttpClientRequest.get(redactedRequestUrl(request), {
+      headers: redactHeaders(request.headers, redactedNames)
+    })
+    return HttpClientRequest.makeWith(
+      request.method,
+      sanitized.url,
+      sanitized.urlParams,
+      sanitized.hash,
+      sanitized.headers,
+      sanitized.body
+    )
+  })()
+
 
 /**
  * The tracer a request opens its HTTP span on: the caller's own, with the
