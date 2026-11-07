@@ -636,7 +636,11 @@ export const make = <R = never>(
           bytes,
           outcome: Exit.isSuccess(exit) ? "complete" : Exit.hasInterrupts(exit) ? "aborted" : "failed"
         }).pipe(Effect.provideContext(context))
-      )
+      ),
+      // A bounded lookahead lets a finite upstream reply finish and release its
+      // connection even while the downstream holds its final chunk. Cancellation
+      // still interrupts the producer; larger replies keep backpressure.
+      Stream.buffer({ capacity: 1 })
     )
     return HttpServerResponse.stream(body, {
       status,
