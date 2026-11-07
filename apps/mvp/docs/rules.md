@@ -609,6 +609,9 @@ in-flight lookup for another request to await (2026-10-25 About incident).
 `Cache.make/makeWith`, `Deferred.make/makeUnsafe`,
 `Effect.cached/cachedWithTTL/cachedInvalidateWithTTL`, `ScopedCache.make/makeWith`,
 `RcMap.make`, `RcRef.make` and `Pool.make/makeWithTTL/makeWithStrategy` in production Worker sources. It
+checks both `.ts` and `.vibe` Worker modules through their native parsers.
+Unshadowed VibeLang prelude names have the same meaning as Effect imports; local
+bindings and imports from other packages retain their own meaning. The rule
 resolves import aliases, forward-declared local aliases, assignment and
 destructuring aliases, including pipe-form calls. Factory
 functions are checked too: a function can be called once during layer construction.

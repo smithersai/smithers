@@ -914,4 +914,24 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+/**
+ * Worker ownership rules retain native VibeLang source coverage.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const workerVibePolicy = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/worker-vibe-policy.test.mjs")]),
+  srcs: [
+    Smithers.file("//apps/mvp/eslint.config.js"),
+    Smithers.file("//apps/mvp/eslint.worker-inflight.js"),
+    Smithers.file("//apps/mvp/eslint.worker-inflight.test.mjs"),
+    Smithers.file("//apps/mvp/eslint.worker-prelude.test.mjs"),
+    Smithers.file("//apps/mvp/PACKAGE.ts"),
+    Smithers.file("//apps/mvp/package.json"),
+    Smithers.file("//packages/repo-targets/contracts/corpus/smithers-worker-prelude.json")
+  ],
+  deps: [repositoryInputs]
+})
+
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

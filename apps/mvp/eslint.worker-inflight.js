@@ -28,6 +28,7 @@ const modules = new RegExp(`^effect/(${[...Object.keys(factories), "Ref"].join("
 // Types and namespaces whose values are pending work another request could await.
 const pendingTypes = new Set(["Effect", "Promise", "PromiseLike", "Deferred", "Fiber"])
 const pendingCalls = new Set(["Effect", "Deferred", "Fiber"])
+const prelude = new Set([...Object.keys(factories), "Ref", ...pendingCalls])
 const property = (node) => node.computed ? node.property.value : node.property.name
 const pure = (node) => node?.type === "Literal" ||
   (node?.type === "ArrayExpression" && node.elements.every(pure)) ||
@@ -42,6 +43,7 @@ export const noSharedInflight = {
   },
   create(context) {
     const aliases = new Map()
+    const isVibe = context.filename.endsWith(".vibe")
     const declarations = []
     const calls = []
     const references = []
@@ -52,7 +54,10 @@ export const noSharedInflight = {
         let scope = context.sourceCode.getScope(node)
         while (scope && !scope.set.has(node.name)) scope = scope.upper
         const binding = variable ?? scope?.set.get(node.name)
-        return aliases.get(binding)
+        if (binding) return aliases.get(binding)
+        // Native VibeLang scope analysis hides synthesized prelude imports.
+        // Only an unshadowed prelude name in a VibeLang file has this meaning.
+        return isVibe && prelude.has(node.name) ? node.name : undefined
       }
       if (node?.type === "MemberExpression") {
         const parent = nameOf(node.object)
