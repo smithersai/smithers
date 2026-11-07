@@ -969,7 +969,9 @@ const restoreJsonExit = (value: unknown): unknown => {
   if (record["_tag"] !== "Failure") return value
   const cause = record["cause"]
   if (typeof cause !== "object" || cause === null) return value
-  const failures = (cause as Record<string, unknown>)["failures"]
+  // Effect 4.1 calls the serialized list reasons; retain 4.0 persisted exits.
+  const encodedCause = cause as Record<string, unknown>
+  const failures = encodedCause["reasons"] ?? encodedCause["failures"]
   if (!Array.isArray(failures)) return value
   const reasons: Array<Cause.Reason<unknown>> = []
   for (const failure of failures) {
