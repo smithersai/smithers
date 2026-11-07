@@ -36,8 +36,8 @@ const layer: Layer.Layer<CloudflareHost>
 ```
 
 Provides `FileSystem`, `Path`, `ChildProcessSpawner`, `Jj`, `HttpClient`,
-`Crypto` and `OwnerIdentity`. `Crypto` is `WebCrypto.layer` from
-`@smthrs/crypto`. See [the Cloudflare Host surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md) for what each one does.
+`Digest`, `SecureRandom` and `OwnerIdentity`. `Digest` and `SecureRandom` are
+`WebCrypto.layer` from `@smthrs/crypto`. See [the Cloudflare Host surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md) for what each one does.
 
 A Worker's `fetch` goes through Cloudflare's network, which a Worker cannot pin
 to checked addresses, and a Worker has no name resolver. So the web tools in
@@ -54,7 +54,7 @@ type CloudflareHost =
   | ChildProcessSpawner
   | Jj.Jj
   | HttpClient
-  | Crypto.Crypto
+  | (EffectDigest.Digest \| SecureRandom.SecureRandom)
   | OwnerIdentity.OwnerIdentity
 ```
 

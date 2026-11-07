@@ -1109,7 +1109,7 @@ The Bazel-style file glob vocabulary. `Glob` is a `Schema.TaggedStruct` of `incl
 
 ### `Action.idempotencyKey`
 
-- **Signature:** `idempotencyKey(name: string, options?: { readonly includeAttempt?: boolean | undefined; readonly parentScope?: string | undefined }): Effect.Effect<string, never, FlowInstance | Crypto.Crypto>`
+- **Signature:** `idempotencyKey(name: string, options?: { readonly includeAttempt?: boolean | undefined; readonly parentScope?: string | undefined }): Effect.Effect<string, never, FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Computes the run-local invocation key of an internal durable operation. The key is scoped by the caller's declaration name and declared `parentScope`.
@@ -1210,14 +1210,14 @@ Reports one dispatch to the node that drove it, and does nothing where no node d
 
 ### `Action.allocationScope`
 
-- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives the ordinal allocation scope of a durable operation from its declaration material.
 
 ### `Action.invocationKey`
 
-- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives an invocation key from engine-generated input.
@@ -1233,7 +1233,7 @@ A directory output captured and replayed as one tree artifact.
 
 ### `Deadline.start`
 
-- **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | Crypto.Crypto>`
+- **Signature:** `start(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `1.0.0`
 
 Starts the current execution's deadline: the lineage deadline the round inherited from a handoff, or `deadline` counted from the execution's journaled first start (or from `startedAtMs`, when the host holds a durable start of its own), with a durable clock armed at it. Answers `undefined` when neither applies. Dies with a `RangeError` when `deadline` is not a positive finite duration, `startedAtMs` is not finite, or the deadline would expire after epoch millisecond `Number.MAX_SAFE_INTEGER`. Start at most one deadline per execution.
@@ -1254,7 +1254,7 @@ Races `body` against a started deadline and settles it with `Flow.DeadlineExceed
 
 ### `Deadline.bound`
 
-- **Signature:** `bound(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R | FlowRuntime | FlowInstance | Crypto.Crypto>`
+- **Signature:** `bound(options: { readonly flowName: string; readonly deadline?: Duration.Input | undefined; readonly startedAtMs?: number | undefined }): <A, E, R>(body: Effect.Effect<A, E, R>) => Effect.Effect<A, E, R | FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `1.0.0`
 
 `start`, then `within`. The engine applies it to every execution of a flow that declares `deadline`.
@@ -1277,7 +1277,7 @@ Declares one durable clock. Throws a `RangeError` when the duration is malformed
 
 ### `DurableClock.sleep`
 
-- **Signature:** `sleep(options: { readonly name: string; readonly duration: Duration.Input; readonly inMemoryThreshold?: Duration.Input | undefined }): Effect.Effect<void, never, Crypto.Crypto | FlowRuntime | FlowInstance>`
+- **Signature:** `sleep(options: { readonly name: string; readonly duration: Duration.Input; readonly inMemoryThreshold?: Duration.Input | undefined }): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance>`
 - **Default:** `inMemoryThreshold` is 60 seconds
 - **Since:** `0.1.0`
 
@@ -1384,7 +1384,7 @@ Creates a token from an explicit flow and execution id, for a resolver outside t
 
 ### `DurableDeferred.tokenFromPayload`
 
-- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>`
+- **Signature:** `tokenFromPayload(self: DurableDeferred<Success, Error>, options: { readonly flow: W; readonly payload: Flow.PayloadSchema<W>["~type.make.in"] }): Effect.Effect<Token, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]>`
 - **Since:** `0.1.0`
 
 Creates a token by deriving the execution id from the flow payload. Declare an `idempotencyKey` or install the opt-in derived source for stable payload identity. The default fresh source mints a new id on each call; use `tokenFromExecutionId` with a saved id to address an existing execution.
@@ -1443,7 +1443,7 @@ Creates a durable queue that waits for persisted items to finish processing thro
 
 ### `DurableQueue.process`
 
-- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | Crypto.Crypto | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
+- **Signature:** `process(self: DurableQueue<Payload, Success, Error>, payload: Payload["~type.make.in"], options?: { readonly retrySchedule?: Schedule.Schedule<any, PersistedQueue.PersistedQueueError> | undefined }): Effect.Effect<Success["Type"], Error["Type"], FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom) | PersistedQueue.PersistedQueueFactory | Payload["EncodingServices"] | Payload["DecodingServices"] | Success["DecodingServices"] | Error["DecodingServices"]>`
 - **Default:** `retrySchedule` is unbounded, with exponential delays capped at one minute
 - **Since:** `0.1.0`
 
@@ -2274,7 +2274,7 @@ The declared `system/human-task` step. `name` addresses the question, so two cal
 
 ### `HumanTask.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The human-task implementation: park, validate, re-ask, settle. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -2344,7 +2344,7 @@ What one interpretation produced: the root's value, every node that settled with
 
 ### `Interpreter.childExecutionId`
 
-- **Signature:** `childExecutionId(parentExecutionId: string, nodeId: string, calleeTag: string, payload: unknown): Effect.Effect<string, never, Crypto.Crypto>`
+- **Signature:** `childExecutionId(parentExecutionId: string, nodeId: string, calleeTag: string, payload: unknown): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 The execution id a `child` boundary runs its child under, derived from the parent execution id, the node id, the callee tag, and the payload digest.
@@ -2476,7 +2476,7 @@ Declares a durable poller and returns an ordinary flow. Its body is one attempt:
 
 ### `Poll.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The exhaustion implementation, provided beside the other action layers a poll's rounds call.
@@ -2653,7 +2653,7 @@ The declared `system/sleep` step: a relative `millis` from now, or an absolute `
 
 ### `Sleep.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The sleep implementation: arm the durable clock, park under `timer`, wake. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -2761,14 +2761,14 @@ The declaration material an allocation scope is derived from. `kind` is `"action
 
 ### `StepIdentity.allocationScope`
 
-- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `allocationScope(identity: AllocationIdentity): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives the ordinal allocation scope of a durable operation.
 
 ### `StepIdentity.invocationKey`
 
-- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto>`
+- **Signature:** `invocationKey(input: { readonly runId: string; readonly parentScope?: string | undefined; readonly ordinal: number; readonly tier: "unsealed" | "compensable" | "irreversible" }): Effect.Effect<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>`
 - **Since:** `0.1.0`
 
 Derives an invocation key from engine-generated input.
@@ -2805,7 +2805,7 @@ The declared `system/wait-for` step: a rendezvous with something outside the run
 
 ### `WaitFor.layer`
 
-- **Type:** `Layer.Layer<never, never, Crypto.Crypto | FlowRuntime>`
+- **Type:** `Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime>`
 - **Since:** `0.1.0`
 
 The wait implementation: park under `event` with the wake token, and settle with the value that resolved the wait. Provide it beside the other action implementation layers, over `Action.layerImplementations`.
@@ -3175,14 +3175,14 @@ Returns the round a lineage starts at: ordinal zero, under the caller's executio
 
 #### `FlowEngine.Round.executionId`
 
-- **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto>`
+- **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, EffectDigest.Digest>`
 - **Since:** `0.1.0`
 
 Returns `rootExecutionId` unchanged for ordinal zero after validation, so `executionId(initial(id))` returns `id`. For later rounds, derives the execution id from `(rootExecutionId, ordinal)` alone through the injected SHA-256. It is therefore the same id in every process and after every restart, which is what makes a handoff at-most-once. The preimage is `["flow-round/v2", rootExecutionId, ordinal]`, and it is part of the package's durable contract: a lineage opened under one release derives the same round ids under the next.
 
 #### `FlowEngine.Round.next`
 
-- **Signature:** `next(round: Round, options: { readonly flowName: string; readonly maxRounds: number \| undefined }): Effect.Effect<{ readonly round: Round; readonly executionId: string }, Flow.MaxRoundsExceeded \| InvalidRound, Crypto.Crypto>`
+- **Signature:** `next(round: Round, options: { readonly flowName: string; readonly maxRounds: number \| undefined }): Effect.Effect<{ readonly round: Round; readonly executionId: string }, Flow.MaxRoundsExceeded \| InvalidRound, EffectDigest.Digest>`
 - **Since:** `0.1.0`
 
 Advances a round and derives the execution id the next one runs under. The budget counts rounds, not handoffs: a lineage bounded at `n` may open ordinals `0` through `n - 1`, and the request for ordinal `n` fails with `Flow.MaxRoundsExceeded`. An absent `maxRounds` is unbounded. A `maxRounds` that is not a positive safe integer, and an ordinal already at `Number.MAX_SAFE_INTEGER`, fail with `InvalidRound`.
@@ -4735,7 +4735,7 @@ directly. Both packages are on npm under the `next` tag.
   "devDependencies": {
     "@smthrs/build-cli": "1.0.0-rc.16",
     "@smthrs/targets": "1.0.0-rc.16",
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }
 ```
@@ -4752,7 +4752,7 @@ The `exports` map publishes the index, every module under `src` through the `./*
 
 The second row stands for every public module. The subpaths `./internal/*` and
 `./index` map to `null`, so neither resolves. Registry installs use the built
-ESM/CommonJS distribution, and `effect` is a peer at exactly `4.0.5`.
+ESM/CommonJS distribution, and `effect` is a peer at exactly `4.1.1`.
 
 ## Artifact test lifecycle
 
@@ -5639,7 +5639,7 @@ const make: (
 Constructs the production executor. It must be built in a scope: the scope owns
 the registered agent flow, every forked run driver, and the resume bridge that
 follows the journal. Its requirements are `Agent`, `ControlRuntime`,
-`Crypto.Crypto`, `DurableEngineState`, `FlowRuntime`, `Journal`,
+`(EffectDigest.Digest | SecureRandom.SecureRandom)`, `DurableEngineState`, `FlowRuntime`, `Journal`,
 `NotificationQueue`, `Registry`, `RunStore`, and `SeatResolver`.
 
 ### AgentSession.layer
@@ -5990,7 +5990,7 @@ interface AgentAction<Tag, Payload, Output> extends Action.Declared<Tag, Payload
 
 A declared model-backed action, plus the layer that implements it. The layer's
 requirements are `Agent`, `FlowRuntime`, `Host`, `Sandbox.Sandbox`,
-`SeatResolver`, `Steering.Source`, `Crypto.Crypto`, `Budget.Budget`, and
+`SeatResolver`, `Steering.Source`, `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `Budget.Budget`, and
 `QuotaPolicy.QuotaClassifier`.
 
 ### AgentAction.Host
@@ -7238,7 +7238,7 @@ the catalog fails with `assembly_failed`.
 
 ```ts
 const clock: (
-  services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<(EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
   options?: { readonly maxSeconds?: number | undefined }
 ) => FlowBinding.Source
 ```
@@ -7420,11 +7420,11 @@ runs. It touches three services and no more: `FlowRuntime`, `RunStore`, and
 ```ts
 const make: (
   options: Options
-) => Effect.Effect<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Effect.Effect<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
 
 const layer: (
   options: Options
-) => Layer.Layer<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Layer.Layer<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
 ```
 
 Builds or provides the durable child port:
@@ -7814,7 +7814,7 @@ const make: (
 ) => Effect.Effect<
   EngineLike.EngineLike,
   never,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
 >
 
 const layer: (options: Options) => Layer.Layer<EngineLike.EngineLike, never, ...>
@@ -7914,7 +7914,7 @@ const sandboxed: (
   sandbox: WorkspaceSandbox.Service,
   runner: WorkspaceCallRunner,
   options?: { readonly layers?: ReadonlyArray<string> | undefined }
-) => Effect.Effect<CallRunner, never, Crypto.Crypto>
+) => Effect.Effect<CallRunner, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 Runs every cell call inside an outer workspace transaction. A call's declared
@@ -8004,7 +8004,7 @@ the walkthrough, see [A durable model call](https://github.com/smithersai/smithe
 ```ts
 const run: (
   options: Options
-) => Effect.Effect<Result, Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<Result, Failure, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
 ```
 
 Calls the model once, as one step of the running flow.
@@ -8043,7 +8043,7 @@ failure, with the route's `prepare` error, or with an `engine_failed`
 ```ts
 const model: (
   options: Omit<Options, "request" | "onEvent">
-) => Effect.Effect<Model.Model, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<Model.Model, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
 ```
 
 A `Model` whose every call is one `run` of the running flow, keyed, sealed and
@@ -9286,9 +9286,9 @@ const layer = PackageManager.layerPnpm({
 | `storeManifestText`                                                                                                          | `(input) => string`; canonical versioned tuple text. Input: manager, managerVersion, nullable platform, lockfileDigest, nullable npmrcDigest, optional nullable pnpmfileDigest/workspaceDigest.        |
 | `storeManifest`                                                                                                              | Same input as storeManifestText; returns `Effect<StoreManifest, never, Crypto>`, hashing that canonical text.                                                                                          |
 | `linkedTreeManifest`                                                                                                         | `({ storeDigest, packageJsonDigest, managerEvidence }: digest fields) => Effect<Digest, never, Crypto>`; hashes metadata identity, not installed bytes.                                                |
-| `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
-| `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded lockfile read and digest.                                        |
-| `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| Crypto.Crypto>`; bounded root package.json read and digest.                                                     |
+| `npmrcDigest`                                                                                                                | `(projectRoot: string) => Effect<Digest \| null, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; hashes the complete project .npmrc, refusing literal credentials. No file yields null. |
+| `lockfileDigest`                                                                                                             | `(projectRoot: string, lockfileName: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; bounded lockfile read and digest.                                        |
+| `packageJsonDigest`                                                                                                          | `(projectRoot: string) => Effect<Digest, PackageManagerError, FileSystem.FileSystem \| EffectDigest.Digest>`; bounded root package.json read and digest.                                                     |
 
 The Bun refusal is deliberate. Bun has no fetch-only or offline install
 command, so no install accepts it: the `Install` target, the planner,
@@ -10335,7 +10335,7 @@ const Canonical: Schema.decodeTo<
 ```
 
 The same serialization as an [`effect/Schema`](https://effect.website) codec,
-built against Effect 4: the package declares `effect@4.0.5` as a peer
+built against Effect 4: the package declares `effect@4.1.1` as a peer
 dependency.
 
 **Decoding** takes any value, canonicalizes it, and returns the document
@@ -10633,7 +10633,7 @@ Every export is a value, a schema, or a pure function. Enforcement, the
 `GrantStore`, the decorating layers, and the journal live in
 [`@smthrs/kernel`](/docs/reference/api/kernel/). This package's one runtime dependency is
 [`@smthrs/canonical`](/docs/reference/api/canonical/), which itself depends only on the shared
-`effect@4.0.5` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
+`effect@4.1.1` peer. Both the kernel and [`@smthrs/jj`](/docs/reference/api/jj/) can
 therefore depend on it without a cycle, and a protected service names
 permission failures in its own interface.
 
@@ -14506,7 +14506,7 @@ the bytes match the `Canonical` schema's decode.
 ### Digest.provideSync
 
 ```ts
-const provideSync: <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => Effect.Effect<A, E>
+const provideSync: <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>) => Effect.Effect<A, E>
 ```
 
 Provides the synchronous SHA-256 service to an Effect. The caller runs the
@@ -14554,7 +14554,7 @@ const sameAddress = digestSync("hello")
 ### digest
 
 ```ts
-const digest: (input: string | Uint8Array) => Effect.Effect<Digest, Sha256Error, Crypto.Crypto>
+const digest: (input: string | Uint8Array) => Effect.Effect<Digest, Sha256Error, EffectDigest.Digest>
 ```
 
 Hashes text or bytes through the injected Effect `Crypto` service. This is the
@@ -14563,8 +14563,8 @@ normal operational API.
 - `input`: a well-formed JavaScript string, or a `Uint8Array`. The string is
   encoded as UTF-8; the array is copied and hashed exactly as viewed.
 - Returns the digest as 64 lowercase hexadecimal characters, branded as `Digest`.
-- Requires `Crypto.Crypto`. A missing service stays an unsatisfied Effect
-  requirement and surfaces as `Service not found: effect/Crypto`, which is a
+- Requires `EffectDigest.Digest`. A missing service stays an unsatisfied Effect
+  requirement and surfaces as `Service not found: effect/crypto/Digest`, which is a
   composition defect rather than a `Sha256Error`.
 - Fails with [`Sha256Error`](#sha256error) under any of the five codes.
 
@@ -14617,7 +14617,7 @@ The expected-value message is
 ### Sha256
 
 ```ts
-const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
+const Sha256: Schema.Codec<Digest, string | Uint8Array, EffectDigest.Digest> & {
   readonly Digest: typeof Digest
   readonly digest: typeof digest
   readonly digestSync: typeof digestSync
@@ -14627,7 +14627,7 @@ const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
 The one-way schema transformation from text or bytes to a `Digest`: the
 schema-composition face of [`digest`](#digest).
 
-- Decoding runs `digest`, so `Crypto.Crypto` is the codec's decoding
+- Decoding runs `digest`, so `EffectDigest.Digest` is the codec's decoding
   requirement, the third type argument above. Decode with
   `Schema.decodeUnknownEffect` and provide the service. There is no
   synchronous decode.
@@ -14717,7 +14717,7 @@ accept, are ordinary `SchemaError` validation failures rather than
 ### syncCrypto
 
 ```ts
-const syncCrypto: Crypto.Crypto
+const syncCrypto: typeof EffectDigest.Digest.Service
 ```
 
 A synchronous, SHA-256-only Effect `Crypto` service backed by the same
@@ -14725,18 +14725,15 @@ package-owned implementation as `digestSync`. It exists for synchronous code
 that already consumes a `Crypto` service, and for tests that want real hashing
 with no platform layer.
 
-- `digest("SHA-256", input)` snapshots the input and returns the 32 raw bytes.
-- Every other algorithm fails with a `PlatformError.badArgument` whose
+- `digest(EffectDigest.sha256, input)` snapshots the input and returns the 32 raw bytes.
+- Every other algorithm dies with a `PlatformError.badArgument` whose
   description is `syncCrypto supports only SHA-256, not <algorithm>`, with
   `module: "@smthrs/crypto"` and `method: "digest"`.
-- An input whose buffer cannot be copied fails with a `badArgument` described
+- An input whose buffer cannot be copied dies with a `badArgument` described
   as `syncCrypto could not snapshot SHA-256 input`, with the original
   `TypeError` as `cause`.
-- `randomBytes` throws a `PlatformError.badArgument` with
-  `module: "@smthrs/crypto"` and `method: "randomBytes"`, described as
-  `@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness`.
-  Because `Crypto.make` derives random numbers, UUIDs, and shuffling from
-  `randomBytes`, every random operation fails the same way.
+- `digestHex(EffectDigest.sha256, input)` returns lowercase hexadecimal.
+- Randomness belongs to the separate `SecureRandom` service; this adapter exposes only digest operations.
 
 Normal application code should provide its platform `Crypto` layer, or
 [`WebCrypto.layer`](#webcryptolayer), instead.
@@ -14744,35 +14741,22 @@ Normal application code should provide its platform `Crypto` layer, or
 ### WebCrypto.make
 
 ```ts
-const make: () => Crypto.Crypto
+const make: () => Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>
 ```
 
-Effect's `Crypto` over the global WebCrypto object, `globalThis.crypto`, which
-Node, Bun, browsers, and Cloudflare Workers all provide. It is the one
-WebCrypto-backed `Crypto` in Smithers: `@smthrs/platform-cloudflare`'s host
-bundle and `@smthrs/platform-node`'s sandboxed-flow guest both provide it.
-
-- `randomBytes(size)` fills any size, at most 65,536 bytes per
-  `crypto.getRandomValues` call. That is the Web Crypto limit; one larger call
-  throws `QuotaExceededError`. Effect derives random numbers, UUIDs, ULIDs, and
-  shuffling from it.
-- `digest(algorithm, data)` copies `data` and calls `crypto.subtle.digest`. A
-  rejection fails with a `PlatformError` whose reason is `Unknown`, with
-  `module: "Crypto"`, `method: "digest"`, the description
-  `WebCrypto could not compute <algorithm>`, and WebCrypto's own error as
-  `cause`.
-- Randomness is read only when a caller asks for it, never while the module
-  evaluates or while `make` builds the service. Cloudflare refuses to deploy a
-  script that calls `crypto.getRandomValues` at module scope (upload error
-  10021).
+Constructs Effect 4.1's standard WebCrypto layers for message digests and secure
+randomness. Hosts provide both services independently. Randomness is drawn only
+when a program runs, so constructing the layers is safe at Cloudflare module scope.
+Digest algorithms are values such as `EffectDigest.sha256`; WebCrypto rejections
+are defects. MD5 uses Effect's pure implementation.
 
 ### WebCrypto.layer
 
 ```ts
-const layer: Layer.Layer<Crypto.Crypto>
+const layer: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>
 ```
 
-[`WebCrypto.make()`](#webcryptomake) as a layer.
+The standard layers constructed by [`WebCrypto.make()`](#webcryptomake).
 
 ```ts
 import { digest, WebCrypto } from "@smthrs/crypto"
@@ -14786,7 +14770,7 @@ const address = await Effect.runPromise(digest("hello").pipe(Effect.provide(WebC
 ### Uuid.v5
 
 ```ts
-const v5: (namespace: string, name: string) => Effect.Effect<string, PlatformError, Crypto.Crypto>
+const v5: (namespace: string, name: string) => Effect.Effect<string, never, EffectDigest.Digest>
 ```
 
 The RFC 9562 version 5 UUID of `name` in `namespace`, in lowercase: SHA-1 of
@@ -19382,7 +19366,7 @@ https://smithers.sh/docs/reference/api/gateway/
 
 > **Related APIs:** [`@smthrs/control`](/docs/reference/api/control/) · [`@smthrs/engine-store`](/docs/reference/api/engine-store/) · [`@smthrs/flow`](/docs/reference/api/flow/) · [`@smthrs/journal`](/docs/reference/api/journal/) · [`@smthrs/registry`](/docs/reference/api/registry/) · [`@smthrs/sync`](/docs/reference/api/sync/)
 
-The gateway requires `effect` at exactly `4.0.5` as its only peer. Node and Bun adapters are bundled privately, built from 4.0.5; hosts need no separate adapter install.
+The gateway requires `effect` at exactly `4.1.1` as its only peer. Node and Bun adapters are bundled privately, built from 4.1.1; hosts need no separate adapter install.
 
 The root entry point exports one namespace per module, and every local module is
 also importable from `@smthrs/gateway/<Module>`.
@@ -25829,7 +25813,7 @@ import { DerivedKey, deriveKey, digest, KeyDerivationError, KeyV1, StoredKey } f
 
 Both entry points perform the same three steps: canonicalize with
 [`@smthrs/canonical`](/docs/reference/api/canonical/), hash the canonical UTF-8 document with
-SHA-256 through the injected Effect `Crypto` service that
+SHA-256 through the injected Effect `Digest` service that
 [`@smthrs/crypto`](/docs/reference/api/crypto/) wraps, and prefix the lowercase digest with
 `key1_`. Neither validates an existing key. See
 [Key derivation](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/concepts/key-derivation.md).
@@ -25837,7 +25821,7 @@ SHA-256 through the injected Effect `Crypto` service that
 ### deriveKey
 
 ```ts
-const deriveKey: (input: unknown) => Effect.Effect<KeyV1, KeyDerivationError, Crypto.Crypto>
+const deriveKey: (input: unknown) => Effect.Effect<KeyV1, KeyDerivationError, EffectDigest.Digest>
 ```
 
 Derives the current key format from structured input.
@@ -25845,7 +25829,7 @@ Derives the current key format from structured input.
 - `input`: any value with a canonical form. Values without one fail; see
   [Key material](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/keys/docs/concepts/key-material.md).
 - Returns a branded `KeyV1`, always 69 characters.
-- Requires `Crypto.Crypto` from `effect/Crypto`. A missing service is an
+- Requires `EffectDigest.Digest` from `effect/crypto/Digest`. A missing service is an
   unsatisfied Effect requirement and therefore a configuration defect, not a
   `KeyDerivationError`.
 - Fails with `KeyDerivationError`.
@@ -25866,11 +25850,11 @@ const key = await Effect.runPromise(
 ### DerivedKey
 
 ```ts
-const DerivedKey: Schema.Codec<KeyV1, unknown, Crypto.Crypto, never>
+const DerivedKey: Schema.Codec<KeyV1, unknown, EffectDigest.Digest, never>
 ```
 
 The same derivation as a schema transformation, for composing inside a decode.
-Decoding requires the `Crypto` service; encoding requires none.
+Decoding requires the `Digest` service; encoding requires none.
 
 - Decoding derives a fresh key from whatever it is given. Decoding the text
   `key1_...` hashes that text into a different key; it does not parse it. Use
@@ -25901,7 +25885,7 @@ See [Derive a key inside a schema](https://github.com/smithersai/smithers/blob/m
 ## Validation
 
 Validation returns the input text unchanged, performs no hashing, and requires
-no `Crypto` service.
+no `Digest` service.
 
 ### StoredKey
 
@@ -26011,7 +25995,7 @@ type KeyDerivationErrorCode = typeof KeyDerivationErrorCode.Type
 | `canonicalization_failed` | The input has no accepted canonical form.                            |
 | `digest_failed`           | The injected SHA-256 operation failed or returned an invalid digest. |
 
-A missing `Crypto.Crypto` service is deliberately not a member. It remains an
+A missing `EffectDigest.Digest` service is deliberately not a member. It remains an
 unsatisfied Effect requirement, which is a configuration defect rather than a
 provided host failing an operation.
 
@@ -26848,10 +26832,10 @@ The service tag is `MemoryStore`, `Context.Service` tag `flows/memory/MemoryStor
 
 | Export      | Signature                                                                      | Behavior                                                                                                                                                                                                                                                                                                    |
 | ----------- | ------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `make`      | `Effect<Service, MemoryError, Crypto.Crypto \| DurableWriter \| SqlClient>`    | Builds the SQL-backed service and applies the package's idempotent migrations. Every operation runs in a span named `MemoryStore.<method>` carrying shape attributes only (namespace kind, limit, row count), and counts its outcome on the `smithers_memory_operations` counter by `method` and `outcome`. |
+| `make`      | `Effect<Service, MemoryError, SecureRandom.SecureRandom \| DurableWriter \| SqlClient>`    | Builds the SQL-backed service and applies the package's idempotent migrations. Every operation runs in a span named `MemoryStore.<method>` carrying shape attributes only (namespace kind, limit, row count), and counts its outcome on the `smithers_memory_operations` counter by `method` and `outcome`. |
 | `makeNoop`  | `(overrides?: Partial<Service>) => Service`                                    | An unavailable stub: every operation fails `store`, optionally overridden per method.                                                                                                                                                                                                                       |
 | `layerNoop` | `(overrides?: Partial<Service>) => Layer<MemoryStore>`                         | Provides the unavailable stub.                                                                                                                                                                                                                                                                              |
-| `layer`     | `Layer<MemoryStore, MemoryError, Crypto.Crypto \| DurableWriter \| SqlClient>` | Provides the authoritative SQL store over the SQL client and the durable writer.                                                                                                                                                                                                                            |
+| `layer`     | `Layer<MemoryStore, MemoryError, SecureRandom.SecureRandom \| DurableWriter \| SqlClient>` | Provides the authoritative SQL store over the SQL client and the durable writer.                                                                                                                                                                                                                            |
 
 ### `@smthrs/memory/MemoryTrellis`
 
@@ -27511,7 +27495,7 @@ below is `Mapping.rows` rendered, so it cannot fall behind the code.
 | `openSmithersBackend`                    | none                                                                                         | none                                                                            | unsafe    |
 | `openSmithersStore`                      | none                                                                                         | none                                                                            | unsafe    |
 | `outputs.<key>`                          | `The planned value in scope`                                                                 | `@smthrs/plan/Node`                                                             | automatic |
-| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.0.5`                                | none                                                                            | automatic |
+| `package.json`                           | `@smthrs/* at the migrator's own version and effect at 4.1.1`                                | none                                                                            | automatic |
 | `parseNamespace`                         | `@smthrs/memory`                                                                             | `@smthrs/memory`                                                                | guided    |
 | `partitionDelegationV2AuthorFuel`        | none                                                                                         | none                                                                            | unsafe    |
 | `prometheusContentType`                  | `The kernel's telemetry and the OTLP layer`                                                  | `@smthrs/kernel, @smthrs/observability`                                         | guided    |
@@ -27698,9 +27682,9 @@ refuses to `apply` a plan built over one (`scan` and `plan` still report it).
   Every `effect` declaration in every manifest is kept in `effectDeclarations`
   with its file and field, and each one that is not what a migrated project
   declares raises `effect-pin-conflict` naming it. A field that installs
-  `effect` ends on exactly `4.0.5`, the version this release is tested on: a
+  `effect` ends on exactly `4.1.1`, the version this release is tested on: a
   range resolves to whatever is newest on install day, and two manifests that
-  disagree install two Effects. A `peerDependencies` entry ends on `4.0.5`,
+  disagree install two Effects. A `peerDependencies` entry ends on `4.1.1`,
   the exact version the published libraries require. `Detect.resolvedEffectVersions(lock)` reads what a pnpm, bun, npm,
   or yarn lockfile resolved `effect` to, and a resolution other than the pin
   raises the same warning against the lockfile.
@@ -28517,7 +28501,7 @@ drives its implementation.
 | `withoutComments`                                       | `(text: string) => string`                                                                                    | JSONC without its comments, for parsing.                                                                              |
 | `pinFor`                                                | `(name: string) => string \| undefined`                                                                       | The version this release pins a package to.                                                                           |
 | `dependencyFields`                                      | `["dependencies", "devDependencies", "peerDependencies", "optionalDependencies", "overrides", "resolutions"]` | The six fields a postcondition checks.                                                                                |
-| `effectVersion`                                         | `"4.0.5"`                                                                                                     | The `effect` version this release was built against.                                                                  |
+| `effectVersion`                                         | `"4.1.1"`                                                                                                     | The `effect` version this release was built against.                                                                  |
 | `smithersVersion`                                       | the package's own version                                                                                     | The `@smthrs/*` version it adds: the release that ran the migration.                                                  |
 | `ManifestRewrite`, `ScriptRewrite`, `UnsupportedScript` | `interface` or `Schema.Struct`                                                                                | The rewrite inputs and what could not be rewritten.                                                                   |
 
@@ -30266,7 +30250,7 @@ OpenTelemetry SDK. `@smthrs/observability/package.json` is exported.
 | `@smthrs/observability/NodeOtel`    | [src/NodeOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/NodeOtel.ts)       | Node     |
 | `@smthrs/observability/BrowserOtel` | [src/BrowserOtel.ts](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/observability/src/BrowserOtel.ts) | browser  |
 
-The package is tested with `effect@4.0.5` and accepts `4.0.5`. Layers, services, and schemas
+The package is tested with `effect@4.1.1` and accepts `4.1.1`. Layers, services, and schemas
 are Effect constructs: a `Layer` provides services, a scoped layer releases on
 scope close, and a schema decodes to an `Effect`.
 
@@ -32117,7 +32101,7 @@ validate the entire shape, reject unknown fields, and return typed
 ```ts
 const environmentIdentity: (
   environment?: EnvironmentIdentity
-) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 A fingerprint for binding a durable execution to its runtime environment,
@@ -32174,8 +32158,8 @@ interface DigestMemo {
   readonly digest: (
     from: string,
     path: ReadonlyArray<string>,
-    compute: Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
-  ) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+    compute: Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
+  ) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 }
 ```
 
@@ -32194,7 +32178,7 @@ Creates an empty memo.
 ```ts
 const content: (
   identity: ContentIdentity
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a cross-run reusable key. Set-like declarations are normalized before serialization; write declarations remain part of the identity even when the step writes nothing.
@@ -32204,7 +32188,7 @@ Produces a cross-run reusable key. Set-like declarations are normalized before s
 ```ts
 const ordinal: (
   identity: OrdinalIdentity
-) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a run-local key for compensable, irreversible, or unsealed work. These keys intentionally cannot be reused across runs.
@@ -32215,7 +32199,7 @@ Produces a run-local key for compensable, irreversible, or unsealed work. These 
 const planIdentity: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The declaration fingerprint used by `Plan.compile`, `append`, and `verify`.
@@ -32229,7 +32213,7 @@ to own string-valued properties, as with `fromKeyMaterial`.
 const fromKeyMaterial: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The sealed plan key: resolves graph-local references against `dependencyDigests`, which must hold an own string-valued property for every node the material names, then builds a content key. Fails `non_content_material` unless `material.kind` is `sealed`. Use `planIdentity` for a tier-independent compiler.
@@ -32243,7 +32227,7 @@ const dispatchIdentity: (options: {
   readonly hermetic: NonNullable<ContentIdentity["hermetic"]>
   readonly environment?: EnvironmentIdentity | undefined
   readonly digestMemo?: DigestMemo | undefined
-}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The key a dispatch is _cached_ under, as distinct from the plan key a node is _identified_ by.
@@ -32391,7 +32375,7 @@ const compile: (options: {
   readonly planId: string
   readonly flow: string
   readonly nodes: ReadonlyArray<NodeDraft>
-}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Compiles drafts into a plan: topological order of material dependencies, dependency-digest substitution, overlap annotation, reader-after-writer ordering, and the plan digest. No I/O. The options are snapshotted before anything else happens, and the result is deep-frozen at generation 0 with `baseDigest` equal to `digest`. Array order follows material dependencies; scheduling follows the complete `dependsOn` graph.
@@ -32404,7 +32388,7 @@ Traversal uses explicit stacks. Because the conflict and reader-after-writer pas
 const append: (
   plan: Plan,
   drafts: ReadonlyArray<NodeDraft>
-) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Appends an elaborated subgraph at the next generation. Nodes already in the plan keep their id, key, edges, and generation byte for byte, and the new nodes arrive pre-keyed against them. `baseDigest` does not move; `digest` does. New nodes retain material-dependency order after the recorded prefix, including when inferred edges point to later entries. An append with no drafts fails as `invalid_node`.
@@ -32415,7 +32399,7 @@ Appends an elaborated subgraph at the next generation. Nodes already in the plan
 const verify: (input: unknown) => Effect.Effect<
   Plan,
   PlanError | StepKey.KeyMaterialError | Schema.SchemaError,
-  Crypto.Crypto
+  EffectDigest.Digest
 >
 ```
 
@@ -32434,7 +32418,7 @@ Whether a value is a compiler-owned immutable snapshot that already passed `veri
 ```ts
 const prefixDigest: (
   plan: Plan
-) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The approval digest of every generation before the newest: the digest the plan carried before its last append. `PlanStore.append` matches it against the stored envelope, so an append proves the recorded prefix is the caller's from the already-verified prefix instead of decoding and re-verifying every stored row.
@@ -32839,9 +32823,9 @@ type RepresentationIdentityVersion = 2 | 1
 
 `flowCall` and `actionCall` validate nothing: an unknown tag becomes a call node the graph keeps as a leaf. `declaration`, `continuation`, `mapper`, `predicate`, and `catchFilter` answer `undefined` for the wrong variant and for an AST rehydrated from JSON, whose side tables did not survive serialization. `functionIdentity` throws a `TypeError` when handed anything but a function.
 
-`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.0.5` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
+`schemaIdentity` returns the document a schema contributes to a step key: what the callee of a call accepts and produces, and what a `catch` filters on. The document has the shape of `Schema.toJsonSchemaDocument(schema, options)`, and this package prints it. `onExcessProperty` has the meaning and the default it has there; a step key takes the identity under `"error"`, which closes every object over the keys it declares. The installed `effect` does not, because a later Effect release can print a different document for the same schema: for a string, `effect@4.1.1` prints `minLength: 3` for `isMinLength(5)` where `effect@4.0.0-rc.115` printed `minLength: 5`, adds a `minimum` and a `maximum` to `Schema.Int`, and prints an `isPattern` pattern only when the expression has the `u` flag. A document that moved with the dependency would re-key every recorded step. `schemaIdentity` prints what `effect@4.0.0-rc.115` printed, under every release this package supports. Use it for identity only. A JSON Schema you show to a model or a person comes from `Schema.toJsonSchemaDocument`.
 
-The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.0.5`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
+The identity has three limits. A built-in check such as `Schema.isMinLength` contributes the constraint its name and arguments state, so a `toJsonSchema` annotation passed to a built-in check is not read; one on a `Schema.makeFilter` check is. `Schema.brand` contributes nothing, because a brand is not part of the schema in `effect@4.1.1`: a declaration that uses one schema with an `identifier`, or one recursive schema, both with and without a brand got two definitions under `effect@4.0.0-rc.115` and gets one now, so it re-keys once. And a codec's behavior contributes nothing, so an author who changes what a transformation does renames the declaration to re-key its calls. `schemaIdentity` throws `Node.SchemaIdentityError`, tagged `@smthrs/plan/SchemaIdentityError`, for a schema that has no JSON Schema form, such as a record keyed by a number.
 
 `representationIdentity` returns what a sealed action's step key folds in for its success and error schemas: `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))` as `effect@4.0.0-rc.115` wrote it. A later release renamed six built-in checks, `isStartsWith`, `isEndsWith`, `isIncludes`, `isLengthBetween`, `isSizeBetween` and `isPropertiesLengthBetween`; the identity writes their rc.115 ids back. `representationIdentity` throws for a schema that has no representation, such as one with a `Schema.makeFilter` check.
 
@@ -33474,7 +33458,7 @@ interface Service {
 }
 ```
 
-`createdAtMs` comes from the caller's clock. Constructing the store requires `Crypto.Crypto` alongside SQL and the durable writer; individual operations use that captured implementation.
+`createdAtMs` comes from the caller's clock. Constructing the store requires `EffectDigest.Digest` alongside SQL and the durable writer; individual operations use that captured implementation.
 
 ### PlanStore.RecordResult
 
@@ -33498,7 +33482,7 @@ The service tag.
 ### PlanStore.make
 
 ```ts
-const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
+const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | EffectDigest.Digest>
 ```
 
 Builds the SQL-backed store.
@@ -33506,7 +33490,7 @@ Builds the SQL-backed store.
 ### PlanStore.layer
 
 ```ts
-const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
+const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | EffectDigest.Digest>
 ```
 
 Provides `make`.
@@ -34058,7 +34042,7 @@ const program = Effect.gen(function*() {
 
 This barrel and `BunHost` import `@effect/platform-bun` at module load. It
 and the Effect Node platform packages are bundled privately, built from
-`effect@4.0.5`. `effect` is a required peer at exactly `4.0.5`.
+`effect@4.1.1`. `effect` is a required peer at exactly `4.1.1`.
 
 :::warning
 This entry point is Node-only in the browser-bundle sense: it falls back to the
@@ -34101,10 +34085,10 @@ implementation identities, and platform module re-exports.
 
 | Export             | Signature                                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto>`                                                                     |
-| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto>`                                                   |
-| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>`               |
-| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>` |
+| `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
+| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
+| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
+| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
 | `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
 
 `layer` provides all five Host services, including the runtime-independent
@@ -34390,8 +34374,8 @@ const layer: Layer.Layer<CloudflareHost>
 ```
 
 Provides `FileSystem`, `Path`, `ChildProcessSpawner`, `Jj`, `HttpClient`,
-`Crypto` and `OwnerIdentity`. `Crypto` is `WebCrypto.layer` from
-`@smthrs/crypto`. See [the Cloudflare Host surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md) for what each one does.
+`Digest`, `SecureRandom` and `OwnerIdentity`. `Digest` and `SecureRandom` are
+`WebCrypto.layer` from `@smthrs/crypto`. See [the Cloudflare Host surface](https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/platform-cloudflare/docs/concepts/host-surface.md) for what each one does.
 
 A Worker's `fetch` goes through Cloudflare's network, which a Worker cannot pin
 to checked addresses, and a Worker has no name resolver. So the web tools in
@@ -34408,7 +34392,7 @@ type CloudflareHost =
   | ChildProcessSpawner
   | Jj.Jj
   | HttpClient
-  | Crypto.Crypto
+  | (EffectDigest.Digest \| SecureRandom.SecureRandom)
   | OwnerIdentity.OwnerIdentity
 ```
 
@@ -38461,7 +38445,7 @@ without registering anything twice.
 ### Executable.Registration
 
 ```ts
-type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
+type Registration = FlowRuntime | Action.Implementations | (EffectDigest.Digest | SecureRandom.SecureRandom)
 ```
 
 What a registration layer still needs from its host: the flow runtime it
@@ -43658,7 +43642,7 @@ could not run a single interrupt pin against the engine that ships.
 ### FlowEngineLike.make
 
 ```ts
-const make: () => Effect.Effect<EngineSubject, never, Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto>
+const make: () => Effect.Effect<EngineSubject, never, Scope.Scope | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 Constructs an `EngineSubject` over the flow engine in the ambient
@@ -43669,7 +43653,7 @@ it settles as completed, aborted, failed, or suspended.
 ### FlowEngineLike.layer
 
 ```ts
-const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | Crypto.Crypto>
+const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 ### FlowEngineLike.layerOver
@@ -43677,7 +43661,7 @@ const layer: () => Layer.Layer<EngineSubject, never, FlowRuntime.FlowRuntime | C
 ```ts
 const layerOver: <E, R>(
   runtime: Layer.Layer<FlowRuntime.FlowRuntime, E, R>
-) => Layer.Layer<EngineSubject | Crypto.Crypto, E, R>
+) => Layer.Layer<EngineSubject | (EffectDigest.Digest | SecureRandom.SecureRandom), E, R>
 ```
 
 Provides an `EngineSubject` over any `FlowRuntime` implementation, and supplies
@@ -43693,7 +43677,7 @@ on and must not. Supplying that layer is the whole connection.
 ### FlowEngineLike.layerMemory
 
 ```ts
-const layerMemory: Layer.Layer<EngineSubject | Crypto.Crypto>
+const layerMemory: Layer.Layer<EngineSubject | (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 `layerOver(FlowEngine.layerMemory)`: the engine's in-memory implementation,

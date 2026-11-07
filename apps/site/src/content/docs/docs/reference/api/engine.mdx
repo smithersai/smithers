@@ -264,14 +264,14 @@ Returns the round a lineage starts at: ordinal zero, under the caller's executio
 
 #### `FlowEngine.Round.executionId`
 
-- **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto>`
+- **Signature:** `executionId(round: Round): Effect.Effect<string, InvalidRound, EffectDigest.Digest>`
 - **Since:** `0.1.0`
 
 Returns `rootExecutionId` unchanged for ordinal zero after validation, so `executionId(initial(id))` returns `id`. For later rounds, derives the execution id from `(rootExecutionId, ordinal)` alone through the injected SHA-256. It is therefore the same id in every process and after every restart, which is what makes a handoff at-most-once. The preimage is `["flow-round/v2", rootExecutionId, ordinal]`, and it is part of the package's durable contract: a lineage opened under one release derives the same round ids under the next.
 
 #### `FlowEngine.Round.next`
 
-- **Signature:** `next(round: Round, options: { readonly flowName: string; readonly maxRounds: number \| undefined }): Effect.Effect<{ readonly round: Round; readonly executionId: string }, Flow.MaxRoundsExceeded \| InvalidRound, Crypto.Crypto>`
+- **Signature:** `next(round: Round, options: { readonly flowName: string; readonly maxRounds: number \| undefined }): Effect.Effect<{ readonly round: Round; readonly executionId: string }, Flow.MaxRoundsExceeded \| InvalidRound, EffectDigest.Digest>`
 - **Since:** `0.1.0`
 
 Advances a round and derives the execution id the next one runs under. The budget counts rounds, not handoffs: a lineage bounded at `n` may open ordinals `0` through `n - 1`, and the request for ordinal `n` fails with `Flow.MaxRoundsExceeded`. An absent `maxRounds` is unbounded. A `maxRounds` that is not a positive safe integer, and an ordinal already at `Number.MAX_SAFE_INTEGER`, fail with `InvalidRound`.

@@ -1376,7 +1376,7 @@ without registering anything twice.
 ### Executable.Registration
 
 ```ts
-type Registration = FlowRuntime | Action.Implementations | Crypto.Crypto
+type Registration = FlowRuntime | Action.Implementations | (EffectDigest.Digest | SecureRandom.SecureRandom)
 ```
 
 What a registration layer still needs from its host: the flow runtime it
