@@ -20,7 +20,7 @@ export const BROWSER_SAFE = [
   { name: "@smthrs/chain", entry: "packages/smithers/agent/chain/src/index.ts" },
   { name: "@smthrs/crypto", entry: "packages/smithers/flows/crypto/src/index.ts" },
   { name: "@smthrs/jj", entry: "packages/smithers/flows/jj/src/index.ts" },
-  { name: "@smthrs/jj/browser/BrowserJj", entry: "packages/smithers/flows/jj/src/browser/BrowserJj.ts" },
+  { name: "@smthrs/jj/browser/BrowserJj", entry: "packages/smithers/flows/jj/src/browser/BrowserJj.vibe" },
   { name: "@smthrs/platform-browser", entry: "packages/smithers/flows/platform-browser/src/index.ts" },
   {
     name: "@smthrs/platform-browser/BrowserHost",
@@ -94,13 +94,13 @@ export const NODE_ONLY = [
   },
   {
     name: "@smthrs/jj/node/NodeJj",
-    entry: "packages/smithers/flows/jj/src/node/NodeJj.ts",
+    entry: "packages/smithers/flows/jj/src/node/NodeJj.vibe",
     expect: "node:child_process",
     reason: "the Node jj adapter spawns the jj CLI"
   },
   {
     name: "@smthrs/jj/bun/BunJj",
-    entry: "packages/smithers/flows/jj/src/bun/BunJj.ts",
+    entry: "packages/smithers/flows/jj/src/bun/BunJj.vibe",
     expect: "node:child_process",
     reason: "the Bun jj adapter reuses the Node child-process implementation"
   },

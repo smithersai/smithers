@@ -18,6 +18,8 @@ the `next` tag unless it is marked *private*. Every library takes `effect`
 4.1.1 as a peer dependency. Each package's `README.md` and `docs/` hold the
 full API; the name in each table links to the best starting page.
 
+The browser entrypoint catalogue is checked against the source tree, including `.vibe` modules.
+
 ## Which library for which job
 
 | Job | Library | Call |
