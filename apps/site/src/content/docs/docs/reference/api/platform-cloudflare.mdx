@@ -318,6 +318,52 @@ Each `cloudflare.execution.alarm` line and span also says what the alarm cost:
 | `lockWaitMs`    | How long those transactions waited for the lock in total, in whole milliseconds.                                              |
 | `maxLockWaitMs` | Longest individual client-side acquisition, including transaction open, retries and network time.                             |
 
+## ObjectDatabase
+
+The durable engine's `SqlClient` in a SQLite-backed Durable Object's own
+storage, through Effect's `@effect/sql-sqlite-do` client: a host whose
+executions each run on one object needs no database server.
+
+### `ObjectDatabase.layer`
+
+```ts
+layer(storage: ObjectDatabase.Storage): Layer.Layer<SqlClient.SqlClient>
+```
+
+Pass the object's `ctx.storage`, and provide the layer to
+`CloudflareRuntime.layer` in the alarm that drives the execution:
+
+```ts
+ExecutionObject.alarm(storage, {
+  flows: [Reply],
+  runtime: (intent) =>
+    CloudflareRuntime.layer({ hostId: ctx.id.toString(), executionId: intent.executionId }, registration).pipe(
+      Layer.provide(ObjectDatabase.layer(ctx.storage))
+    ),
+  router
+})
+```
+
+- Statements run one at a time, as the object's storage does.
+- SQLite in a Durable Object refuses `BEGIN` and `SAVEPOINT`, so every
+  transaction runs in `storage.transaction()`, which holds the object's input
+  gate until it ends. The engine's read transactions run there too, registered
+  with `@smthrs/database`'s `Dialect.registerReadTransaction`; unlike SQLite's
+  deferred `BEGIN`, one excludes writers, so never wait inside one for a
+  write.
+- Each execution's journal stays on its own object. A child flow or a handoff
+  round runs on an object of its own, whose store its parent cannot read: use
+  the shared Postgres for flows that start children.
+
+`test/ObjectDatabaseWorkerd.test.ts` (with `FLOWS_WORKERD_SMOKE=1`) runs a
+flow from real alarms on the real storage, including a reset inside a step
+that a new incarnation finishes.
+
+### `ObjectDatabase.Storage`
+
+`ctx.storage` of a SQLite-backed Durable Object: its `sql` and its
+`transaction`.
+
 ## EdgeCache
 
 `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API. Use it for
