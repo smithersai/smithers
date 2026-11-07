@@ -1,3 +1,5 @@
+import * as EffectDigest from "effect/crypto/Digest"
+import * as Hex from "effect/encoding/Hex"
 /**
  * In-memory SQLite memory layer for tests.
  *
@@ -8,16 +10,15 @@
  */
 
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import * as Crypto from "effect/Crypto"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as MemoryStore from "../MemoryStore.ts"
 
-const crypto = Layer.sync(Crypto.Crypto)(() => {
+const random = Layer.sync(SecureRandom.SecureRandom)(() => {
   // A counter, not entropy: generated ids must stay distinct within one build.
   let nonce = 0
-  return Crypto.make({
-    randomBytes: (size) => {
+  return SecureRandom.make((size) => {
       nonce += 1
       const bytes = new Uint8Array(size)
       let remaining = nonce
@@ -26,10 +27,14 @@ const crypto = Layer.sync(Crypto.Crypto)(() => {
         remaining = Math.floor(remaining / 0x100)
       }
       return bytes
-    },
-    digest: (_algorithm, data) => Effect.succeed(data)
-  })
+    })
 })
+
+const digestBytes: typeof EffectDigest.Digest.Service["digest"] = (_algorithm, data) => Effect.succeed(new Uint8Array(data))
+const crypto = Layer.merge(random, Layer.succeed(EffectDigest.Digest)({
+  digest: digestBytes,
+  digestHex: (algorithm, data) => Effect.map(digestBytes(algorithm, data), Hex.encode)
+}))
 
 /**
  * Provides the authoritative memory store over a fresh in-memory database with

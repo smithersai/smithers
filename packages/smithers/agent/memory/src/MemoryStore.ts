@@ -8,7 +8,7 @@
 
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -484,11 +484,11 @@ export class MemoryStore extends Context.Service<MemoryStore, Service>()("flows/
  * @category constructors
  * @since 0.1.0
  */
-export const make: Effect.Effect<Service, MemoryError, Crypto.Crypto | DurableWriter | SqlClient.SqlClient> = Effect
+export const make: Effect.Effect<Service, MemoryError, SecureRandom.SecureRandom | DurableWriter | SqlClient.SqlClient> = Effect
   .gen(function*() {
     const sql = yield* Effect.service(SqlClient.SqlClient)
     const writer = yield* DurableWriter
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* SecureRandom.SecureRandom
     const database: DatabaseService = { sql, write: writer.write }
     yield* Migrations.run.pipe(Effect.mapError(storeError("memory migration failed")))
     const facts = Facts.make(database)
@@ -557,7 +557,7 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<MemoryS
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<MemoryStore, MemoryError, Crypto.Crypto | DurableWriter | SqlClient.SqlClient> = Layer
+export const layer: Layer.Layer<MemoryStore, MemoryError, SecureRandom.SecureRandom | DurableWriter | SqlClient.SqlClient> = Layer
   .effect(
     MemoryStore
   )(make)

@@ -1,15 +1,18 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 import * as MemoryStore from "@smthrs/memory/MemoryStore"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { createHash, randomBytes } from "node:crypto"
 
 const [operation, filename] = process.argv.slice(2)
 if (filename === undefined) throw new Error("A database filename is required")
-const crypto = Layer.succeed(Crypto.Crypto)(Crypto.make({
-  randomBytes,
-  digest: (algorithm, data) => Effect.succeed(createHash(algorithm.replaceAll("-", "")).update(data).digest())
-}))
+const crypto = Layer.succeed(EffectDigest.Digest)(EffectDigest.Digest.of({
+digest: (algorithm, data) => Effect.succeed(createHash(algorithm.name.replaceAll("-", "")).update(data).digest()),
+digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
+})).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 const database = Layer.provideMerge(DurableWriter.layer(), NodeDatabase.layer({ filename }))
 const memory = MemoryStore.layer.pipe(Layer.provide([database, crypto]))
 const namespace = { kind: "global", id: "release" } as const

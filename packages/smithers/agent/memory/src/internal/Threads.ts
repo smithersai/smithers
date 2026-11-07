@@ -1,3 +1,5 @@
+import * as Cause from "effect/Cause"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Thread and message operations of the SQL memory store.
  *
@@ -6,7 +8,7 @@
 
 import * as Dialect from "@smthrs/database/Dialect"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type { DatabaseService } from "../Database.ts"
 import type { Service } from "../MemoryStore.ts"
@@ -38,7 +40,7 @@ const DELETE_MESSAGES_CHUNK_SIZE = 900
  * @category constructors
  * @since 0.1.0
  */
-export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
+export const make = (database: DatabaseService, random: typeof SecureRandom.SecureRandom.Service): Pick<
   Service,
   | "createThread"
   | "getThread"
@@ -70,8 +72,8 @@ export const make = (database: DatabaseService, crypto: Crypto.Crypto): Pick<
   const createThread: Service["createThread"] = (input) =>
     Effect.gen(function*() {
       const { namespace } = yield* resolveNamespace(input.namespace)
-      const id = input.id ?? (yield* crypto.randomUUIDv4().pipe(
-        Effect.mapError((cause) => error("store", "could not generate memory thread id", cause))
+      const id = input.id ?? (yield* random.uuidV4().pipe(
+        Effect.catchCause((cause) => Effect.fail(error("store", "could not generate memory thread id", Cause.squash(cause))))
       ))
       yield* validateNonEmpty(id, "threadId", ["id"])
       const metadataJson = input.metadata === undefined

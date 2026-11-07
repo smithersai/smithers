@@ -1,8 +1,11 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 import * as Pg from "@effect/sql-pg"
 import { TestSchemas } from "@smthrs/database"
 import { DurableWriter, PostgresDatabase } from "@smthrs/database"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import { createHash, randomBytes } from "node:crypto"
 import { expect, it } from "vitest"
@@ -12,10 +15,10 @@ import * as Migrations from "../src/Migrations.ts"
 const url = process.env.SMITHERS_TEST_PG_URL
 
 // Unset SMITHERS_TEST_PG_URL: the default unit suite needs no PostgreSQL service.
-const crypto = Layer.succeed(Crypto.Crypto)(Crypto.make({
-  randomBytes,
-  digest: (algorithm, data) => Effect.succeed(createHash(algorithm.replaceAll("-", "")).update(data).digest())
-}))
+const crypto = Layer.succeed(EffectDigest.Digest)(EffectDigest.Digest.of({
+digest: (algorithm, data) => Effect.succeed(createHash(algorithm.name.replaceAll("-", "")).update(data).digest()),
+digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
+})).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 it.skipIf(!url)(
   "backfills PostgreSQL FTS and upgrades legacy accents without losing namespace or phrase filtering (requires SMITHERS_TEST_PG_URL)",

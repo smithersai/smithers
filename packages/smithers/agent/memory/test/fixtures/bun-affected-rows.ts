@@ -1,16 +1,13 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
 // Runs under real Bun (spawned by NativeBunAffectedRows.test.ts): no shim or Node SQLite.
 import * as BunDatabase from "@smthrs/database/bun/BunDatabase"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { createHash, randomBytes } from "node:crypto"
 import * as MemoryStore from "../../src/MemoryStore.ts"
 
-const crypto = Layer.succeed(Crypto.Crypto)(Crypto.make({
-  randomBytes: (size) => new Uint8Array(randomBytes(size)),
-  digest: (algorithm, data) =>
-    Effect.succeed(new Uint8Array(createHash(algorithm.replace("-", "").toLowerCase()).update(data).digest()))
-}))
+const crypto = Layer.succeed(SecureRandom.SecureRandom)(SecureRandom.make((size) => new Uint8Array(randomBytes(size))))
 
 const program = Effect.gen(function*() {
   const sql = yield* SqlClient.SqlClient
