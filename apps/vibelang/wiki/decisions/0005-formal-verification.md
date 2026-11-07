@@ -24,8 +24,8 @@ accepts a saved `.dfy` proof. All eight exported transitions/queries and both ty
 mapped back to TypeScript function names and declaration lines; raw generated locations remain in the diagnostic.
 Summaries, SHA-256 source identities, raw logs and Dafny CSV timings are retained under that run directory.
 
-A measured Linux run on nyc-01 took **46.308 s** including extraction and strict checking (**21 verified, 0 errors**;
-44.804 s for extraction plus Dafny). A preceding run took 34.504 s. These exclude first-time installation and vary
+A measured Linux run on nyc-01 took **17.240 s** including extraction and strict checking (**21 verified, 0 errors**;
+16.367 s for extraction plus Dafny). Preceding runs on the identical source took 46.308 s and 56.577 s under contention. These exclude first-time installation and vary
 with contention on the shared server. `nice` is used by the scripts; `CHECK_JOBS` defaults to one for multiple files.
 
 ## Proven contracts and their domain
@@ -70,10 +70,14 @@ fixing these direct-event cases needs an explicit change in the reducer's invali
 
 ## Able to fail
 
+The final Linux selftest rejected **36/36** executable mutations in **360.292 s** with two workers; every copy
+strictly typechecked and reached a failed Dafny obligation in its intended function.
+
 `pnpm verify:broken` checks the committed executable mutations in `verify/broken/`. Its generator checks that all
 `//@` contracts and assertions are byte-identical to production and that the copies have not drifted. Every copy
 must strictly typecheck, reach Dafny, and fail an obligation in its intended function; parser errors, backend type
-errors, timeouts and tool failures do not count. Individual failures are reproducible with
+errors, timeouts and tool failures do not count. The selftest selects the intended function in each unchanged-contract
+copy; a direct `pnpm verify` on that copy checks every function. The selftest defaults to two workers. Individual failures are reproducible with
 `pnpm verify verify/broken/<name>.ts`. `verify/broken/manifest.json` describes the mutations. These mutations are
 separate from the unchanged-code findings above.
 

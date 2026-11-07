@@ -17,9 +17,12 @@ config=APP/('.verify-'+run.name+'.config.json')
 config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-library':'local','proof-dir':str(run.relative_to(APP)),'run-log':False}))
 atexit.register(lambda: config.unlink(missing_ok=True))
 
+commands=[]
 def command(args, cwd):
+ t=time.monotonic()
  try:
   p=subprocess.run(args,cwd=cwd,stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,timeout=180)
+  commands.append({'argv':args,'cwd':str(cwd),'exit':p.returncode,'seconds':round(time.monotonic()-t,3),'last_lines':p.stdout.splitlines()[-8:]})
   return p.returncode,p.stdout
  except subprocess.TimeoutExpired as e:
   out=e.stdout or b''
@@ -40,13 +43,32 @@ def verify(item):
   shutil.copyfile(dfy.with_suffix('.dfy.gen'),dfy)
  if code==0:
   text=dfy.read_text() if dfy.exists() else ''
+  marked=[]
+  before=''
+  for n,line in enumerate(lines):
+   m=re.search(r'\bfunction\s+(\w+)',line)
+   if m:
+    if '//@ verify' in before: marked.append(m.group(1))
+    before=''
+   elif line.lstrip().startswith('//') or not line.strip(): before+='\n'+line
+   else: before=''
+  for name in marked:
+   if not re.search(r'\b(?:function|method)\s+'+re.escape(name)+r'\(',text):
+    code=2;out+=f'ERROR: marked function {name} was not emitted\n'
+  if code: dfy.write_text(text);text='' 
   if not re.search(r'\b(?:ensures|assert)\b',text):
    code=2;out+='ERROR: no proof obligations emitted (selective mode / missing annotations)\n'
   else:
    flags=['--unicode-char:false','--allow-deprecation'] if 'string-semantics=javascript-utf16' in text else ['--unicode-char:true']
    if 'Std.' in text: flags.append('--standard-libraries')
+   if os.environ.get('VERIFY_MUTATION_TARGETS') == '1':
+    if ts.parent != ROOT/'broken': raise SystemExit('Mutation symbol filter only applies to broken copies')
+    target=json.loads((ROOT/'broken/manifest.json').read_text())[ts.stem]['function']
+    flags.extend(['--filter-symbol',target])
    c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','1','--verification-time-limit','30','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work)
    code=c;out+=o
+ if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
+  code=2;out+='ERROR: source changed after strict typechecking started\n'
  if ts.read_bytes() != original:
   code=2;out+='ERROR: source changed during verification\n'
  elapsed=time.monotonic()-t
@@ -66,6 +88,8 @@ def verify(item):
      if name==fn: mapped.append(f'{ts}:{n}: function {fn} [{sym}; generated line {line}]')
  log=work/(ts.stem+'.output.log');log.write_text(out)
  return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(ts),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy)}
+
+initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
 tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),str(source)],ROOT)
 print(tc_output,end='')
@@ -87,7 +111,7 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
    for line in r['output'].splitlines():
     if 'finished with' in line: print('  '+line)
   sys.stdout.flush()
-summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'results':results}
+summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'results':results,'commands':commands}
 (run/'summary.json').write_text(json.dumps(summary,indent=2))
 print(f"{summary['passed']}/{len(results)} files verified in {summary['seconds']:.3f}s; results: {run/'summary.json'}")
 raise SystemExit(0 if summary['passed']==len(results) else 1)

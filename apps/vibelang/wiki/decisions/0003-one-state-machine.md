@@ -20,10 +20,11 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
 **Why.** poteto's pstack ("Model the Domain"): a state machine or reducer instead of scattered conditionals, so
 invalid states can't be represented and the rules live in one module that tests and provers read directly.
 
-**Invariants** (0005 proves them): `seq` counts up by one with no gaps; the agent is `working` exactly when a reply is
-open, and only that reply is unfinished; entries are ordered by `seq`; entry ids are nonempty and unique; a client id
-appears at most once; an event preserves every unrelated entry. The property suite checks these after every accepted
-intent, with a retained regression for a reply reusing a person's or a finished reply's id.
+**Invariants** (0005 proves them for every input; replay convergence is property-tested): `seq` counts up by one
+with no gaps; the agent is `working` exactly when a reply is open, and only that reply is unfinished; entries are
+ordered by `seq`; entry ids are nonempty and unique; a client id appears at most once; an event preserves every
+unrelated entry. The property suite checks these after every accepted intent, with a retained regression for a reply
+reusing a person's or a finished reply's id.
 
 **Gap recovery property.** Deliveries may duplicate, reorder or omit events, with the final numbered event eventually
 delivered. Only `receive` setting `gap` requests replay from the client's last applied `seq`; the harness never forces
