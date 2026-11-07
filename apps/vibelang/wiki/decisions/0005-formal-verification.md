@@ -20,3 +20,10 @@ reply at a time" guard from `decide` fails "gives every event it numbers the ful
 
 **Not covered yet.** The ordering between the Durable Object, its WebSocket clients and the agent's flow (roadmap 1b)
 is a protocol question for a model checker (TLA+ with TLC, as in `~/Desktop/fv-report.md`), added with that brick.
+
+**App toolchain (lane vl-proofs).** `pnpm verify` installs the pinned verification-only npm tree and checksum-verified
+Dafny archive into `verify/.tools` when absent, then strictly typechecks the input, generates fresh Dafny and proves
+it with one solver core. Linux x86_64 and macOS Apple Silicon are supported; macOS installation is not tested on the
+Linux lane. Both the npm lock and the Dafny checksums are committed. Generated output is ignored. Nothing is added
+to the app's runtime dependencies. `pnpm verify verify/broken/<name>.ts` checks a negative fixture directly;
+`pnpm verify:broken` requires every fixture to reach Dafny and fail its intended function's contract.

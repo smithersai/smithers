@@ -16,7 +16,9 @@
     "deploy": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy deploy --stage prod",
     "build:surfaces": "vibelang -p tsconfig.surfaces.json && chmod +x dist-factory/surfaces/*-entry.js",
     "cli": "pnpm build:surfaces && node dist-factory/surfaces/cli-entry.js",
-    "mcp": "pnpm build:surfaces >&2 && node dist-factory/surfaces/mcp-entry.js"
+    "mcp": "pnpm build:surfaces >&2 && node dist-factory/surfaces/mcp-entry.js",
+    "verify": "bash verify/check.sh",
+    "verify:broken": "bash verify/broken.sh"
   },
   "dependencies": {
     "@effect/platform-browser": "4.1.1",
