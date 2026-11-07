@@ -21,7 +21,7 @@ const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheck
   // examples/ is type-checked and formatted with the tests, and run by
   // test/examples/; each example is documentation users copy, so it is not
   // held to the library lint rules.
-  testSources: Smithers.glob("{test,examples}/**/*.ts")
+  testSources: Smithers.glob("{test,examples}/**/*.{ts,vibe}")
 })
 
 /**
