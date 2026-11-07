@@ -5,7 +5,7 @@
 // configuration has no model, so every reply fails saying so, and a spent budget refuses before any model call. The
 // opt-in case asks the real model when `CEREBRAS_API_KEY` is set. Run with `pnpm test:workerd`.
 import { describe, expect, it } from "@effect/vitest"
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 import { afterAll, beforeAll } from "vitest"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
@@ -24,6 +24,16 @@ effect function healthOf(origin: string) {
     return try health(origin)
   }
 }
+
+/** The runs of `conversation`'s engine, oldest first, from the test host's window into its SQLite. */
+effect function runsOf(origin: string, conversation: string) {
+  provide FetchHttpClient.layer {
+    const response = try HttpClient.get(`${origin}/runs/${encodeURIComponent(conversation)}`)
+    return try HttpClientResponse.schemaBodyJson(Schema.Array(Run))(response)
+  }
+}
+
+schema Run { readonly run_id: string; readonly status: string }
 
 /** Every event of `conversation` after `after`, up to the one that settles its `replies`-th reply. */
 effect function untilSettled(conversation: string, replies: number, after = 0) {
@@ -59,6 +69,24 @@ describe("the live Factory in local workerd, with no model key", () => {
           { type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unconfigured },
         ])
         expect(snapshot).toEqual({ seq: 3, entries: events.reduce(apply, empty).entries })
+      })
+    }
+  })
+
+  it.live("runs every post as a vibelang/Post flow in the conversation's engine, refused ones included", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = try room("post-flows")
+      try factory.post(conversation, "a", "Ada", "first")
+      const refused = factory.post(conversation, "a", "Ada", "again") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      try untilSettled(conversation, 1)
+      const runs = try runsOf(origin, conversation)
+      const posts = runs.filter((run) => run.run_id.startsWith("post/"))
+      try Effect.try(() => {
+        expect(refused).toBe("duplicate")
+        expect(posts.map((run) => run.status)).toEqual(["completed", "completed"])
+        expect(runs.map((run) => run.run_id)).toContain("reply/m1")
       })
     }
   })

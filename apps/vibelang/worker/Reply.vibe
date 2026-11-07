@@ -5,12 +5,12 @@
 // becomes `FailReply` with a reason the person reads.
 import { ModelStep } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
-import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { type ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
-import { Node } from "@smthrs/plan"
+import { Reply, replyIdOf } from "../src/core/flows.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
-import { replyIdOf, Turn, type Answer } from "./Sequencer.vibe"
+import { Turn, type Answer } from "./Sequencer.vibe"
 import { Unreachable } from "./Unreachable.vibe"
 
 /** Another reply streams in this conversation; starting waits for it. */
@@ -57,14 +57,6 @@ export const MAX_TURNS = 24
 
 /** A step that waits on the budget's object, or on another reply: it retries until it can, at most a minute apart. */
 const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
-
-export const Reply = Flow.make("vibelang/Reply", {
-  description: "The VibeLang agent answers one person's post in its conversation.",
-  modelInvocable: false,
-  payload: { post: Schema.String },
-  success: Schema.Null,
-  body: () => Node.succeed(null),
-})
 
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {

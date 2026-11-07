@@ -64,10 +64,16 @@ export class Conversation {
     }
     const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number }
     if (url.pathname === "/post") {
-      const refusal = await Effect.runPromise(sequencer.post(args.clientId, args.name, args.text))
-      return json({ refusal: refusal ?? null })
+      const refusal = await Effect.runPromise(
+        Objects.post(this.state.id.toString(), this.state.storage, sequencer, args.clientId, args.name, args.text),
+      )
+      return json({ refusal })
     }
     if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
+    // The engine's runs in this object's SQLite, so the suite sees every post and reply ran as a flow (0011).
+    if (url.pathname === "/runs") {
+      return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
+    }
     return HttpServerResponse.toWeb(HttpServerResponse.text("Not found", { status: 404 }))
   }
 
@@ -105,6 +111,9 @@ export class Budget {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    // The suite's window into a conversation object's engine: /runs/<conversation>.
+    const runs = new URL(request.url).pathname.match(/^\/runs\/(.+)$/)
+    if (runs !== null) return json(await call(env.CONVERSATION, decodeURIComponent(runs[1]!), "runs", {}))
     const conversations: Conversations = {
       post: (conversation, body) =>
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),

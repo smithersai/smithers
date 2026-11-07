@@ -2,17 +2,22 @@
 // ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
 // caller, so they run the same code.
 //
-//   Conversation (one per conversation)   the sequencer, and the reply flow of the post it answers now: its intent
-//                                         and alarm (`ExecutionObject`), its journal in the object's SQLite
+//   Conversation (one per conversation)   the sequencer; each post's flow, run in the request that posts it; and the
+//                                         reply flow of the post it answers now: its intent and alarm
+//                                         (`ExecutionObject`). Every journal lives in the object's SQLite.
 //   Budget (one per UTC day)              the day's token ledger
 //
 // A conversation answers one post at a time, so one execution per object is enough, and the flow's steps reach the
 // sequencer in the same object. When a reply settles its execution is forgotten at the next alarm, which then starts
 // the next unanswered post's.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { SecureRandom } from "effect/crypto"
+import { Post, postRegistration, Posts, Reply } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
-import { ChatModel, registration, Replies, Reply, Spend } from "./Reply.vibe"
+import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
 import * as Sequencer from "./Sequencer.vibe"
 
 /** A conversation object's storage: key-value for the log and the execution's intent, SQLite for the engine. */
@@ -68,6 +73,44 @@ export function conversation(storage: KeyValue) {
 /** The day's budget over its object's storage. */
 export function budget(storage: KeyValue, limit: number) {
   return Budget.make(ledgerOver(storage), limit)
+}
+
+/** The sequencer as a post flow's steps reach it: record the post, then dispatch its reply. */
+export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
+  return { record: sequencer.post, dispatch: sequencer.ensureDispatched }
+}
+
+/** A post flow's execution: one per request, so a repeated client id meets the sequencer's `duplicate` as before. */
+export effect function postExecutionId() {
+  provide WebCrypto.layer {
+    return `post/${try (try SecureRandom.SecureRandom).uuidV4()}`
+  }
+}
+
+/**
+ * Runs a person's post as a `vibelang/Post` execution on the engine in the object's SQLite, in the request that
+ * posts it (0011): it answers once the post is recorded and its reply dispatched, never after the model. `null` once
+ * recorded, else the sequencer's refusal.
+ */
+export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string) {
+  const executionId = try postExecutionId()
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag }, postRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)),
+    Layer.provide(Layer.succeed(Posts, postsOf(sequencer))),
+  )
+  // The engine's store failing to open is a defect, as the log failing to write is: the post was not answered.
+  return try Effect.orDie(execute(runtime, executionId, { clientId, name, text }))
+}
+
+effect function execute<E>(
+  runtime: Layer.Layer<FlowRuntime.FlowRuntime, E>,
+  executionId: string,
+  payload: { readonly clientId: string; readonly name: string; readonly text: string },
+) {
+  provide runtime {
+    const engine = try FlowRuntime.FlowRuntime
+    return try engine.execute(Post, { executionId, payload })
+  }
 }
 
 /** The sequencer as the reply flow's steps reach it. */

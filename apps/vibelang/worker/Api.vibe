@@ -60,7 +60,7 @@ const ConversationLive = Conversation.make(effect {
     const sequencer = try Objects.conversation(state.raw.storage)
     return {
       post: (clientId: string, name: string, text: string) =>
-        Effect.map(sequencer.post(clientId, name, text), (refusal) => refusal ?? null),
+        Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text),
       read: sequencer.read,
       // The event stream of the request the API Worker forwarded, from its `after` cursor.
       fetch: effect {

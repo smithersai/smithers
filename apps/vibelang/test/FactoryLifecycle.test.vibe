@@ -20,6 +20,19 @@ class TrackingScheduler extends Scheduler.MixedScheduler {
   }
 }
 
+// The mock runs its flows on the engine in memory, which journals each step across several scheduler turns. Under the
+// test clock, time moves one reply delay at a time, and the engine finishes what is due before it moves again.
+effect function drain() {
+  for (let turn = 0; turn < 200; turn++) try Effect.yieldNow
+}
+
+effect function advance(delays: number) {
+  for (let delay = 0; delay < delays; delay++) {
+    try TestClock.adjust("25 millis")
+    try drain()
+  }
+}
+
 effect function concurrentTranscript() {
   provide MockFactory {
     const factory = try Factory
@@ -69,7 +82,8 @@ describe("Factory concurrency", () => {
       try TestClock.adjust("0 millis")
       for (let index = 0; index < 3; index++) try factory.post("busy", `p${index}`, "Ada", "errors")
       try factory.post("fast", "a", "Grace", "install")
-      try TestClock.adjust(`${chunks(mockReply("install")).length * 25} millis`)
+      try drain()
+      try advance(chunks(mockReply("install")).length)
       const [busyEvents, fastEvents] = try.all [Ref.get(busy), Ref.get(fast)]
       try Effect.try(() => {
         expect(fastEvents.filter((event) => event.type === "ReplyFinished")).toHaveLength(1)
@@ -122,7 +136,7 @@ describe("Factory disposal", () => {
       try TestClock.adjust("0 millis")
       try factory.post("disposed", "a", "Ada", "install")
       try factory.post("disposed", "b", "Grace", "errors")
-      try TestClock.adjust("25 millis")
+      try advance(1)
       const workers = Array.from(scheduler.fibers).filter((fiber) => fiber.id !== current && fiber.id !== follower.id && fiber.pollUnsafe() === undefined)
       try Scope.close(world, Exit.void)
       const activeAfterClose = workers.filter((fiber) => fiber.pollUnsafe() === undefined)

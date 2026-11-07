@@ -2,14 +2,15 @@
 
 **Status:** accepted, 2026-11-07. **Ruling:** VL-13 (an invariant for all development).
 
-**Decision.** `MockFactory` is a `Factory` layer with no backend and no model. It runs the real sequencer (`decide`,
-`apply`) in memory, publishes events to every follower, and answers each post with a scripted reply streamed in
-pieces (`src/core/mockReplies.vibe`), one reply at a time per conversation. Independent conversations answer in parallel.
-Acceptance, publication and enqueueing are one uninterruptible operation under that conversation's sequencer lock.
-A FIFO queue receives each accepted prompt before the lock releases; callers never launch reply fibers. One
-`forkIn` consumer per room belongs to the layer's scope, as do its queue and the shared PubSub. Scope closure waits
-for in-flight acceptance, interrupts workers, shuts down queues and subscriptions, and refuses further calls. The page
-shows a **Mock** pill whenever it runs.
+**Decision.** `MockFactory` is a `Factory` layer with no backend and no model. It runs the live factory's flows
+(0011) on `@smthrs/engine`'s engine in memory, one engine per conversation: each post is a `vibelang/Post` execution
+whose steps record it through the real sequencer (`decide`, `apply`) and dispatch its reply, and each reply is a
+`vibelang/Reply` execution whose steps stream the scripted answer in pieces (`src/core/mockReplies.vibe`), oldest
+unanswered post first, one at a time per conversation. Independent conversations answer in parallel. Acceptance and
+publication are one uninterruptible operation under that conversation's sequencer lock. One `forkIn` worker per room
+starts the replies; it, the engines and the shared PubSub belong to the layer's scope. Scope closure waits for
+in-flight acceptance, interrupts workers, shuts down engines and subscriptions, and refuses further calls. The page
+loads the mock's module only when it runs the mock, and shows a **Mock** pill whenever it does.
 
 **Rules.**
 - Every new feature ships its mock layer in the same change, and its browser test runs against the mock first.

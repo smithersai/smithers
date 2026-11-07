@@ -1,7 +1,14 @@
-// The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). Each conversation commits, publishes
-// and queues accepted prompts in one short critical section; its scoped worker answers in that same order.
+// The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
+// (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
+// conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
+// reply is a `vibelang/Reply` execution, the scripted agent's (mockReplies.vibe), started oldest post first.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { Digest } from "effect/crypto"
+import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
+import { Post, postRegistration, Posts, Reply, replyIdOf, unanswered } from "./flows.vibe"
 import { chunks, mockReply } from "./mockReplies.vibe"
 
 /** One conversation's sequencer state and every event it numbered. */
@@ -10,11 +17,10 @@ interface State {
   readonly log: ReadonlyArray<Event>
 }
 
-/** A room owns its acceptance lock and ordered reply queue; other conversations can answer independently. */
+/** A room owns its acceptance lock, its engine and the signal its reply worker waits on. */
 interface Room {
   readonly state: Ref.Ref<State>
-  readonly gate: Semaphore.Semaphore
-  readonly prompts: Queue.Queue<Extract<Event, { type: "Posted" }>>
+  readonly engine: FlowRuntime.FlowRuntime["Service"]
 }
 
 /** A numbered event and the conversation it belongs to. */
@@ -26,13 +32,41 @@ interface Published {
 /** How long the scripted agent waits between the pieces of its reply. */
 export const MOCK_DELTA_DELAY = "25 millis"
 
+/** The scripted agent's reply to `post`, `vibelang/Reply`'s mock body: every record is a step. */
+effect function scripted(state: Ref.Ref<State>, record: (intent: Intent) => Decision!!, post: string) {
+  const id = replyIdOf(post)
+  const started = try Action.make({
+    name: "vibelang/reply/start",
+    success: Schema.Boolean,
+    execute: Effect.map(record({ type: "StartReply", id, inReplyTo: post }), (decision) => decision.ok),
+  })
+  if (!started) return null
+  const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
+  const pieces = chunks(mockReply(prompt))
+  for (let index = 0; index < pieces.length; index++) {
+    try sleep(MOCK_DELTA_DELAY)
+    try Action.make({ name: `vibelang/reply/append/${index}`, execute: Effect.asVoid(record({ type: "AppendReply", id, text: pieces[index]! })) })
+  }
+  try Action.make({ name: "vibelang/reply/finish", execute: Effect.asVoid(record({ type: "FinishReply", id })) })
+  return null
+}
+
+effect function digestOf() {
+  provide WebCrypto.layer {
+    return try Digest.Digest
+  }
+}
+
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
 export const MockFactory = Layer.effect(Factory, effect {
   const scope = try Effect.scope
   const rooms = try Ref.make(new Map<string, Room>())
   const published = try acquireRelease(PubSub.unbounded<Published>(), PubSub.shutdown)
   const ids = try Ref.make(0)
-  // This lock only creates rooms. Acceptance and replies use each room's own lock and queue.
+  const executions = try Ref.make(0)
+  // The engine digests what it journals, with the platform's Web Crypto.
+  const digest = try digestOf()
+  // This lock only creates rooms. Acceptance and replies use each room's own lock and engine.
   const registry = try Semaphore.make(1)
   try Scope.addFinalizer(scope, Semaphore.withPermits(registry, 1)(Effect.void))
 
@@ -41,38 +75,30 @@ export const MockFactory = Layer.effect(Factory, effect {
     return `${prefix}${n}`
   }
 
-  effect function record(room: Room, conversation: string, intent: Intent) {
-    return try Semaphore.withPermits(room.gate, 1)(Effect.uninterruptible(effect {
-      if (scope.state._tag === "Closed") throw new Unavailable({ reason: "Factory closed" })
-      const decision = try Ref.modify(room.state, (state): readonly [Decision, State] => {
-        const decided = decide(state.conversation, intent)
-        if (!decided.ok) return [decided, state]
-        return [decided, { conversation: apply(state.conversation, decided.event), log: [...state.log, decided.event] }]
+  /** The conversation's sequencer: `decide` and `apply` under the room's lock, then publish. */
+  function recorder(state: Ref.Ref<State>, gate: Semaphore.Semaphore, conversation: string) {
+    return (intent: Intent) => Semaphore.withPermits(gate, 1)(Effect.uninterruptible(effect {
+      const decision = try Ref.modify(state, (current): readonly [Decision, State] => {
+        const decided = decide(current.conversation, intent)
+        if (!decided.ok) return [decided, current]
+        return [decided, { conversation: apply(current.conversation, decided.event), log: [...current.log, decided.event] }]
       })
-      if (decision.ok) {
-        try PubSub.publish(published, { conversation, event: decision.event })
-        // Enqueue before releasing the sequencer: caller scheduling cannot reorder accepted prompts.
-        if (decision.event.type === "Posted") try Queue.offer(room.prompts, decision.event)
-      }
+      if (decision.ok) try PubSub.publish(published, { conversation, event: decision.event })
       return decision
     }))
   }
 
-  effect function reply(room: Room, conversation: string, prompt: Extract<Event, { type: "Posted" }>) {
-    const id = try nextId("r")
-    const started = try record(room, conversation, { type: "StartReply", id, inReplyTo: prompt.id })
-    if (!started.ok) return
-    for (const piece of chunks(mockReply(prompt.text))) {
-      try sleep(MOCK_DELTA_DELAY)
-      try record(room, conversation, { type: "AppendReply", id, text: piece })
-    }
-    try record(room, conversation, { type: "FinishReply", id })
-  }
-
-  effect function consume(room: Room, conversation: string) {
+  /** Answers every unanswered post, oldest first, each in its own `vibelang/Reply` execution, at most once. */
+  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>) {
+    const dispatched = new Set<string>()
     while (true) {
-      const prompt = try Queue.take(room.prompts)
-      try reply(room, conversation, prompt)
+      try Queue.take(wake)
+      while (true) {
+        const post = unanswered((try Ref.get(state)).conversation).find((id) => !dispatched.has(id))
+        if (post === undefined) break
+        dispatched.add(post)
+        try Effect.orDie(engine.execute(Reply, { executionId: `reply/${post}`, payload: { post } }))
+      }
     }
   }
 
@@ -84,11 +110,28 @@ export const MockFactory = Layer.effect(Factory, effect {
       if (existing !== undefined) return existing
       const state = try Ref.make<State>({ conversation: empty, log: [] })
       const gate = try Semaphore.make(1)
-      const prompts = try Scope.provide(scope)(acquireRelease(Queue.unbounded<Extract<Event, { type: "Posted" }>>(), Queue.shutdown))
-      const room: Room = { state, gate, prompts }
+      const wake = try Scope.provide(scope)(acquireRelease(Queue.sliding<void>(1), Queue.shutdown))
+      const record = recorder(state, gate, conversation)
+      const posts: Posts.Shape = {
+        record: effect (clientId: string, name: string, text: string) => {
+          const id = try nextId("m")
+          const decision = try record({ type: "Post", id, clientId, name, text })
+          return decision.ok ? null : decision.refusal
+        },
+        dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
+      }
+      const flows = Layer.mergeAll(
+        postRegistration,
+        Layer.effectDiscard(effect {
+          const engine = try FlowRuntime.FlowRuntime
+          try engine.register(Reply, (payload) => scripted(state, record, payload.post))
+        }),
+      ).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(Posts, posts)), Layer.provide(Layer.succeed(Digest.Digest, digest)))
+      const engine = Context.get(try Layer.buildWithScope(flows, scope), FlowRuntime.FlowRuntime)
+      const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
-      try Effect.forkIn(consume(room, conversation), scope)
-      // Wait for any already-accepted commit/publish/enqueue before disposal completes. New calls see Closed.
+      try Effect.forkIn(answer(state, engine, wake), scope)
+      // Wait for any already-accepted commit/publish before disposal completes. New calls see Closed.
       try Scope.addFinalizer(scope, Semaphore.withPermits(gate, 1)(Effect.void))
       return room
     }))
@@ -99,9 +142,9 @@ export const MockFactory = Layer.effect(Factory, effect {
     mode,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
       const room = try openRoom(conversation)
-      const id = try nextId("m")
-      const decision = try record(room, conversation, { type: "Post", id, clientId, name, text })
-      if (!decision.ok) throw new Refused({ refusal: decision.refusal })
+      const executionId = `post/${try Ref.updateAndGet(executions, (value) => value + 1)}`
+      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name, text } }))
+      if (refusal !== null) throw new Refused({ refusal })
     },
     read: effect (conversation: string, after: number) => {
       // Reading never opens a room: a conversation nobody posted to or followed is empty.

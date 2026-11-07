@@ -1,12 +1,13 @@
-// One conversation's sequencer (wiki/decisions/0003-one-state-machine.md, 0010-live-agent.md): the only writer of its
-// numbered events. Every intent, a person's post or a step of the agent's reply flow, goes through `decide` and
-// `apply` under one lock, is written to the conversation's log before anyone sees it, and is then published to every
-// follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
+// One conversation's sequencer (wiki/decisions/0003-one-state-machine.md, 0010-live-agent.md, 0011-post-flow.md): the
+// only writer of its numbered events. Every intent, a step of a person's post flow or of the agent's reply flow, goes
+// through `decide` and `apply` under one lock, is written to the conversation's log before anyone sees it, and is then
+// published to every follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
 // Cloudflare.
 import {
-  apply, canReplyTo, decide, empty, isReplying,
-  type Conversation, type Entry, type Event, type Intent,
+  apply, decide, empty, isReplying,
+  type Conversation, type Entry, type Event, type Intent, type Refusal,
 } from "../src/core/conversation.vibe"
+import { replyIdOf, unanswered } from "../src/core/flows.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
@@ -25,19 +26,6 @@ export type Answer = "done" | "busy" | "refused"
 
 /** One turn of the conversation as the model reads it. */
 export schema Turn { readonly author: "person" | "agent"; readonly text: string }
-
-/** The reply that answers `post`: the sequencer chooses both ids, so each post has exactly one possible reply. */
-export function replyIdOf(post: string): string {
-  return `r${post.slice(1)}`
-}
-
-/** The person posts no reply targets, oldest first, when the agent isn't replying: the ones to answer next. */
-export function unanswered(conversation: Conversation): ReadonlyArray<string> {
-  if (conversation.agent === "working") return []
-  return conversation.entries
-    .filter((entry) => entry.author === "person" && canReplyTo(conversation.entries, entry.id))
-    .map((entry) => entry.id)
-}
 
 interface State {
   readonly conversation: Conversation
@@ -107,15 +95,17 @@ export effect function make(log: Log, dispatch: Dispatch) {
   return {
     ensureDispatched,
 
-    /** Records a person's post, then makes sure its reply flow runs. The refusal when the sequencer refuses it. */
+    /**
+     * Records a person's post: `null` once its event is stored, else the sequencer's refusal. The `vibelang/Post`
+     * flow's record step (src/core/flows.vibe); its next step dispatches the reply.
+     */
     post: effect (clientId: string, name: string, text: string) => {
       const decision = try locked(effect {
         const seq = (try state()).conversation.seq + 1
         return try record({ type: "Post", id: `m${seq}`, clientId, name, text })
       })
-      if (!decision.ok) return decision.refusal
-      try ensureDispatched()
-      return undefined
+      const answer: Refusal | null = decision.ok ? null : decision.refusal
+      return answer
     },
 
     /** Current copies of the entries touched by an event after `after`, and the cursor. */

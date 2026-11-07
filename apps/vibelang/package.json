@@ -24,6 +24,7 @@
   "dependencies": {
     "@smthrs/agent": "workspace:*",
     "@smthrs/crypto": "workspace:*",
+    "@smthrs/engine": "workspace:*",
     "@smthrs/flow": "workspace:*",
     "@smthrs/model": "workspace:*",
     "@smthrs/model-host": "workspace:*",

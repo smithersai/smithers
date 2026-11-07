@@ -19,6 +19,8 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
   always advances `seq`.
 - `receive` adds a client's view: posts it sent that no event has confirmed (`pending`), and `gap` when an event
   arrives ahead of the next one, after which it replays from its last `seq`.
+- Every intent reaches `decide` from a durable flow step (0011): a person's post from `vibelang/Post`'s record step,
+  the agent's reply from `vibelang/Reply`'s steps (0010). The flows call this module; nothing duplicates it.
 - The Foldkit Model holds a `Client`; its `update` only calls these functions plus screen state (splash, prompt).
 
 **Why.** poteto's pstack ("Model the Domain"): a state machine or reducer instead of scattered conditionals, so

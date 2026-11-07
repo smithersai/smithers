@@ -1,0 +1,123 @@
+// The `vibelang/Post` flow (src/core/flows.vibe, wiki/decisions/0011-post-flow.md) on the engine in memory, over the
+// live sequencer (worker/Sequencer.vibe) with an in-memory log: the record step runs `decide` and `apply`, the dispatch
+// step runs only for an accepted post, a refusal answers at once, and a replayed execution answers from its journal.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import type { Event } from "../src/core/conversation.vibe"
+import { Post, postRegistration, Posts } from "../src/core/flows.vibe"
+import { postsOf } from "../worker/Objects.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+
+interface World {
+  readonly engine: FlowRuntime.FlowRuntime["Service"]
+  readonly log: Ref.Ref<ReadonlyArray<Event>>
+  readonly dispatches: Ref.Ref<number>
+  readonly records: Ref.Ref<number>
+  readonly lines: Ref.Ref<ReadonlyArray<string>>
+}
+
+/** A sequencer over an in-memory log, counting its dispatches and records, and the engine that runs Post over it. */
+effect function world() {
+  const log = try Ref.make<ReadonlyArray<Event>>([])
+  const dispatches = try Ref.make(0)
+  const records = try Ref.make(0)
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const sequencer = try Sequencer.make(
+    { read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) },
+    { start: () => Ref.update(dispatches, (count) => count + 1) },
+  )
+  const live = postsOf(sequencer)
+  const posts: Posts.Shape = {
+    record: (clientId, name, text) => Effect.andThen(Ref.update(records, (count) => count + 1), live.record(clientId, name, text)),
+    dispatch: live.dispatch,
+  }
+  const flows = postRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.succeed(Posts, posts)),
+    Layer.provide(WebCrypto.layer),
+  )
+  const context = try Layer.build(flows)
+  const world: World = { engine: Context.get(context, FlowRuntime.FlowRuntime), log, dispatches, records, lines }
+  return world
+}
+
+/** Every log line the flow writes, message and annotations, as one string each. */
+function capture(lines: Ref.Ref<ReadonlyArray<string>>) {
+  return Logger.layer([Logger.make((options) => {
+    Effect.runSync(Ref.update(lines, (all) => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+}
+
+effect function post(world: World, executionId: string, clientId: string, text: string) {
+  provide capture(world.lines) {
+    return try Effect.orDie(world.engine.execute(Post, { executionId, payload: { clientId, name: "Ada", text } }))
+  }
+}
+
+describe("the vibelang/Post flow", () => {
+  it.live("records an accepted post as the next event, then dispatches its reply", () => scoped(effect {
+    const w = try world()
+    const first = try post(w, "post/1", "a", "  How do services work?  ")
+    const second = try post(w, "post/2", "b", "And layers?")
+    const log = try Ref.get(w.log)
+    const dispatches = try Ref.get(w.dispatches)
+    try Effect.try(() => {
+      expect([first, second]).toEqual([null, null])
+      expect(log).toEqual([
+        { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "How do services work?" },
+        { type: "Posted", seq: 2, id: "m2", clientId: "b", name: "Ada", text: "And layers?" },
+      ])
+      // One dispatch step per accepted post; the dispatcher starts at most one reply flow at a time (Objects.vibe).
+      expect(dispatches).toBe(2)
+    })
+  }))
+
+  for (const [name, clientId, text, refusal] of [
+    ["a blank post", "b", "   ", "empty"],
+    ["an oversized post", "c", "x".repeat(8001), "too-long"],
+    ["a repeated client id", "a", "again", "duplicate"],
+  ] as const) {
+    it.live(`refuses ${name} at once, records nothing and dispatches nothing`, () => scoped(effect {
+      const w = try world()
+      try post(w, "post/1", "a", "hi")
+      const before = try Ref.get(w.dispatches)
+      const answer = try post(w, "post/2", clientId, text)
+      const log = try Ref.get(w.log)
+      const after = try Ref.get(w.dispatches)
+      try Effect.try(() => {
+        expect(answer).toBe(refusal)
+        expect(log).toHaveLength(1)
+        expect(after).toBe(before)
+      })
+    }))
+  }
+
+  it.live("answers a replayed execution from its journal, without recording again", () => scoped(effect {
+    const w = try world()
+    const first = try post(w, "post/1", "a", "hi")
+    const replayed = try post(w, "post/1", "a", "hi")
+    const records = try Ref.get(w.records)
+    const log = try Ref.get(w.log)
+    try Effect.try(() => {
+      expect(replayed).toBe(first)
+      expect(records).toBe(1)
+      expect(log).toHaveLength(1)
+    })
+  }))
+
+  it.live("logs each post's outcome and nothing a person wrote", () => scoped(effect {
+    const w = try world()
+    try post(w, "post/1", "secret-client", "secret text")
+    try post(w, "post/2", "other", "   ")
+    const lines = (try Ref.get(w.lines)).filter((line) => line.includes("vibelang.post"))
+    try Effect.try(() => {
+      expect(lines.map((line) => JSON.parse(line).annotations.outcome)).toEqual(["accepted", "empty"])
+      for (const line of lines) {
+        expect(line).not.toContain("secret")
+        expect(line).not.toContain("Ada")
+      }
+    })
+  }))
+})

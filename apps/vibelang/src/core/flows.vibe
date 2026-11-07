@@ -1,0 +1,81 @@
+// The conversation's durable flows (rulings VL-11; wiki/decisions/0011-post-flow.md): every action the factory takes on
+// a conversation is a `@smthrs/flow` step. Both backends register these same declarations: the live one on the engine
+// in each conversation's Durable Object (worker/Objects.vibe), the mock one on the engine in memory (MockFactory.vibe).
+//
+//   vibelang/Post    record ──▶ dispatch        a person's post; its caller answers once the flow settles
+//   vibelang/Reply   the agent's answer to one post, started by a Post's dispatch step (worker/Reply.vibe)
+//
+// The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` service; nothing here
+// decides anything.
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { canReplyTo, type Conversation, type Refusal } from "./conversation.vibe"
+import { RefusalReason } from "./schemas.vibe"
+
+/** A post's answer: `null` once the sequencer recorded it, else why it refused. */
+export const PostAnswer = Schema.NullOr(RefusalReason)
+
+export const Post = Flow.make("vibelang/Post", {
+  description: "Records a person's post in its conversation, then makes sure the agent answers it.",
+  modelInvocable: false,
+  payload: { clientId: Schema.String, name: Schema.String, text: Schema.String },
+  success: PostAnswer,
+  body: () => Node.succeed(null),
+})
+
+export const Reply = Flow.make("vibelang/Reply", {
+  description: "The VibeLang agent answers one person's post in its conversation.",
+  modelInvocable: false,
+  payload: { post: Schema.String },
+  success: Schema.Null,
+  body: () => Node.succeed(null),
+})
+
+/** The reply that answers `post`: the sequencer chooses both ids, so each post has exactly one possible reply. */
+export function replyIdOf(post: string): string {
+  return `r${post.slice(1)}`
+}
+
+/** The person posts no reply targets, oldest first, when the agent isn't replying: the ones to answer next. */
+export function unanswered(conversation: Conversation): ReadonlyArray<string> {
+  if (conversation.agent === "working") return []
+  return conversation.entries
+    .filter((entry) => entry.author === "person" && canReplyTo(conversation.entries, entry.id))
+    .map((entry) => entry.id)
+}
+
+/** The conversation's sequencer, as a Post's steps reach it. */
+export service Posts {
+  /** Runs `decide` and `apply` on the post and stores its event: `null` once recorded, else the refusal. */
+  record(clientId: string, name: string, text: string): (Refusal | null)!!
+  /** Starts the reply flow of the oldest post with no reply, unless one runs. */
+  dispatch(): void!!
+}
+
+/** Posts by outcome: `accepted` or the refusal. */
+export const posts = Metric.counter("vibelang_posts", {
+  description: "Person posts, by outcome",
+  incremental: true,
+})
+
+/** A Post's body: record the post; once recorded, dispatch its reply. The answer is the record step's. */
+export effect function posted(payload: { readonly clientId: string; readonly name: string; readonly text: string }) {
+  const sequencer = try Posts
+  const answer = try Action.make({
+    name: "vibelang/post/record",
+    success: PostAnswer,
+    execute: sequencer.record(payload.clientId, payload.name, payload.text),
+  })
+  if (answer === null) try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
+  const outcome = answer ?? "accepted"
+  try Metric.update(Metric.withAttributes(posts, { outcome }), 1)
+  // The outcome only: never the post's text, its client id or its author's name.
+  try Effect.logInfo("vibelang.post").pipe(Effect.annotateLogs({ outcome }))
+  return answer
+}
+
+/** Registers `Post` with the engine; its steps reach the sequencer through `Posts`. */
+export const postRegistration = Layer.effectDiscard(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  try engine.register(Post, (payload) => withSpan(posted(payload), "vibelang.post"))
+})

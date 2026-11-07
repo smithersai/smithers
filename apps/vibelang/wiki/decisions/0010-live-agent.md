@@ -1,6 +1,6 @@
 # 0010. The live agent on Cloudflare
 
-**Status:** accepted, 2026-11-07. **Rulings:** VL-4, VL-7, VL-10, VL-11, VL-12, VL-13. **Roadmap:** brick 1b.
+**Status:** accepted, 2026-11-07; posts are flows since 0011. **Rulings:** VL-4, VL-7, VL-10, VL-11, VL-12, VL-13. **Roadmap:** brick 1b.
 
 **Decision.** The live Factory is an Effect-native Alchemy Worker, `VibelangApi` (`worker/Api.vibe`), that the site
 Worker hands `/api/*` over a service binding, and two Durable Object classes it hosts:
@@ -14,7 +14,8 @@ browser / CLI / MCP ── LiveFactory (HttpClient) ──▶ site Worker ──
 
 - **The sequencer** (`worker/Sequencer.vibe`) is the conversation's only writer. Every intent runs `decide` and
   `apply` from `src/core/conversation.vibe` under one lock; an accepted event is written to the object's storage
-  (`event/<seq>`), then published to every follower. A new incarnation replays the log. Post ids are `m<seq>`; a
+  (`event/<seq>`), then published to every follower. A person's post reaches it as the record step of a
+  `vibelang/Post` flow run in the posting request, whose next step dispatches the reply (0011). A new incarnation replays the log. Post ids are `m<seq>`; a
   post's reply is `r<seq>`, so each post has exactly one possible reply.
 - **The reply is a durable flow.** `vibelang/Reply` (`worker/Reply.vibe`) is an `@smthrs/flow` flow whose steps are
   journaled actions: start the reply, admit against the day's budget, read the history, call the model with

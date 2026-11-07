@@ -5,7 +5,7 @@ import { conversationPath, MAX_CONVERSATION, routeOf } from "../src/core/wire.vi
 import { failureOf } from "../src/web/view.vibe"
 import { afterOf } from "../worker/Http.vibe"
 import { dayOf, REASONS } from "../worker/Reply.vibe"
-import { replyIdOf } from "../worker/Sequencer.vibe"
+import { replyIdOf } from "../src/core/flows.vibe"
 
 describe("the API's routes", () => {
   it("round-trips any conversation id as one path segment", () => {

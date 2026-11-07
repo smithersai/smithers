@@ -4,6 +4,9 @@
 /** A safe, nonnegative event cursor, shared by every wire/state/surface schema. */
 export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 
+/** Why the sequencer refused an intent (`Refusal` in conversation.vibe). */
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying"])
+
 export schema Entry {
   readonly id: string
   readonly seq: Seq

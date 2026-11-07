@@ -4,7 +4,7 @@
 
 **Decision.** vibelang.smithers.sh is `apps/vibelang` in the Smithers monorepo. Its runtime dependencies are `effect`
 4.1.1, `foldkit` 0.170.0 (and Foldkit's own `parse5`), `vibelang-runtime` 0.0.12 and
-Smithers packages (`@smthrs/flow`, `agent`, `model`, `model-host`, `platform-cloudflare`, `crypto`, `plan`, `ui-css`,
+Smithers packages (`@smthrs/flow`, `engine` (its in-memory engine, for the mock: 0011), `agent`, `model`, `model-host`, `platform-cloudflare`, `crypto`, `plan`, `ui-css`,
 `ui-styleguide`; the live agent, 0010). Build and test tools are `vibelang`, `vibelang-vite`, `vite`, `vitest`,
 `@effect/vitest`, `happy-dom`, `@playwright/test` and `alchemy`, and for the workerd suites `miniflare`, `esbuild`
 and `vibelang-unplugin`, the versions apps/mvp pins.

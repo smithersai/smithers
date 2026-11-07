@@ -929,6 +929,9 @@ importers:
       '@smthrs/crypto':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/crypto
+      '@smthrs/engine':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/engine
       '@smthrs/flow':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/flow
