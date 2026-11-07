@@ -1,12 +1,12 @@
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
-import { Factory, EntrySchema } from "../core/Factory.vibe"
+import { Factory } from "../core/Factory.vibe"
+import { Entry, Seq } from "../core/schemas.vibe"
 
 export schema error CommandError { readonly message: string }
 
 const Conversation = Schema.String.check(Schema.isMinLength(1))
-const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
 const conversation = Conversation.pipe(Schema.withDecodingDefaultKey(succeed("home")))
 const after = Seq.pipe(Schema.withDecodingDefaultKey(succeed(0)))
 export schema AskInput { readonly text: string; readonly conversation: conversation }
@@ -19,7 +19,7 @@ export schema AskOutput {
 export schema ReadOutput {
   readonly conversation: string
   readonly seq: Seq
-  readonly entries: ReadonlyArray<EntrySchema>
+  readonly entries: ReadonlyArray<Entry>
 }
 
 effect function ask(input: AskInput) {

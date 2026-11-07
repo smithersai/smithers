@@ -2,6 +2,8 @@
 // (wiki/decisions/0002-core-is-an-effect-api.md). Two layers provide it: `MockFactory` (no backend, no model) and the
 // live one that talks to vibelang.smithers.sh.
 import type { Event } from "./conversation.ts"
+import { ReadSnapshot } from "./schemas.vibe"
+export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
 
 /** Which backend a `Factory` talks to. */
 export type Mode = "mock" | "live"
@@ -11,37 +13,6 @@ export error Unavailable { reason: string }
 
 /** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy` or `not-replying`. */
 export error Refused { refusal: string }
-
-/** The wire form of a conversation's events, as `conversation.ts` defines them. */
-export schema Posted {
-  readonly type: "Posted"
-  readonly seq: number
-  readonly id: string
-  readonly clientId: string
-  readonly name: string
-  readonly text: string
-}
-export schema ReplyStarted { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string; readonly inReplyTo: string }
-export schema ReplyDelta { readonly type: "ReplyDelta"; readonly seq: number; readonly id: string; readonly text: string }
-export schema ReplyFinished { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
-export schema ReplyFailed { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
-
-/** Decodes one event off the wire. */
-export const EventSchema = Schema.Union([Posted, ReplyStarted, ReplyDelta, ReplyFinished, ReplyFailed])
-
-/** A finite read: current copies of entries touched after `after`, and the event cursor. */
-export schema EntrySchema {
-  readonly id: string
-  readonly seq: Schema.Int
-  readonly clientId: string
-  readonly inReplyTo: string
-  readonly author: "person" | "agent"
-  readonly name: string
-  readonly text: string
-  readonly done: boolean
-  readonly error: string
-}
-export schema ReadSnapshot { readonly seq: Schema.Int; readonly entries: ReadonlyArray<EntrySchema> }
 
 /**
  * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every
