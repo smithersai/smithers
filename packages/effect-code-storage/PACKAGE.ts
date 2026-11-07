@@ -7,7 +7,7 @@ const cwd = "packages/effect-code-storage"
 
 const { check, circular, docs, docsFiles, fmt, lib, lint, test } = BuildAndCheckTypeScriptPackage({
   deps: [],
-  sources: Input.glob("src/**/*.{ts,vibe}"),
+  sources: Input.glob("src/**/*.ts"),
   cwd
 })
 
@@ -43,7 +43,7 @@ const securityReview = Smithers.SecurityReview({
       lookFor: [
         "A problem body's detail, title or error field, or a response body, copied into CodeStorageError or GitRemoteError."
       ],
-      paths: ["src/CodeStorage.ts", "src/GitRemote.vibe"]
+      paths: ["src/CodeStorage.ts", "src/GitRemote.ts"]
     },
     {
       id: "bounded-reads",
@@ -53,7 +53,7 @@ const securityReview = Smithers.SecurityReview({
         "readFile reading past maxBytes, or trusting a missing Content-Length.",
         "GitRemote.head reading the whole ref advertisement instead of stopping after the first ref line and a fixed byte cap."
       ],
-      paths: ["src/CodeStorage.ts", "src/GitRemote.vibe"]
+      paths: ["src/CodeStorage.ts", "src/GitRemote.ts"]
     }
   ]
 })
