@@ -13,11 +13,11 @@ import * as Stall from "@smthrs/flow/Stall";
 import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
-import * as Compose from "#vibelang/emitted/src/internal/Compose";
+import * as Compose from "./internal/Compose.js";
 import { call as callMember } from "./internal/Member.js";
-import { OpaqueInput } from "#vibelang/emitted/src/internal/Payload";
+import { OpaqueInput } from "./internal/Payload.js";
 import * as Stalling from "./internal/Stalling.js";
-import { PatternError } from "#vibelang/emitted/src/PatternError";
+import { PatternError } from "./PatternError.js";
 // Own properties only: an inherited `allDone` or `retriable` is not the
 // review's verdict.
 const done = (value) => value === true || Compose.ownTrue(value, "allDone");

@@ -13,7 +13,10 @@
 
 import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
+import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
+import * as Exit from "effect/Exit"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.vibe"
 import type { Member } from "./internal/Member.ts"
@@ -77,10 +80,10 @@ export interface RuntimeStep<I, A, E, R, E2, R2> {
   readonly id: string
   readonly action: (
     input: { readonly input: I; readonly completed: Readonly<Record<string, A>> }
-  ) => A!E!R
+  ) => Effect.Effect<A, E, R>
   readonly compensation: (
     input: { readonly id: string; readonly input: I; readonly value: A }
-  ) => unknown!E2!R2
+  ) => Effect.Effect<unknown, E2, R2>
 }
 
 /**
@@ -143,7 +146,7 @@ interface Unwind {
   readonly residue: ReadonlyArray<{ readonly id: string; readonly error: unknown }>
 }
 
-schema CleanUnwind { readonly failure: Schema.Unknown; readonly residue: readonly [] }
+const CleanUnwind = Schema.Struct({ failure: Schema.Unknown, residue: Schema.Tuple([]) })
 
 /**
  * The declared form of a saga.
@@ -240,7 +243,7 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
     compensation: step.compensation
   }))
   const refusal = stepsRefusal(steps) ?? declarationRefusal(steps)
-  if (refusal !== undefined) $raise(refusal)
+  if (refusal !== undefined) throw refusal
   const policy = options.onFailure ?? "compensate"
   const { name, description } = Compose.label(
     "saga",
@@ -365,7 +368,7 @@ export const make = <R = never>(options: MakeOptions<R>): SagaFlow<R> => {
 export const run = <I, A, E, R, E2, R2>(
   input: I,
   options: RuntimeOptions<I, A, E, R, E2, R2>
-): Settled<A, E>!(E | PatternError)!(R | R2) => {
+): Effect.Effect<Settled<A, E>, E | PatternError, R | R2> => {
   // Snapshots taken at the call, ahead of the suspend: the effect may run
   // later, and a caller's edit to the array, a step record, or the option
   // object in between must not reach it.
@@ -379,36 +382,31 @@ export const run = <I, A, E, R, E2, R2>(
     const refusal = stepsRefusal(steps)
     if (refusal !== undefined) return Effect.fail(refusal)
     const residue: Array<{ readonly id: string; readonly error: unknown }> = []
-    const forward = effect {
+    const forward = Effect.gen(function*() {
       const completed = new Map<string, A>()
       for (const step of steps) {
-        const value = try step.action({
+        const value = yield* step.action({
           input,
           completed: Object.fromEntries(completed)
         })
         completed.set(step.id, value)
         if (policy === "fail") continue
-        try Effect.addFinalizer((exit) =>
+        yield* Effect.addFinalizer((exit) =>
           Exit.isSuccess(exit)
             ? Effect.void
-            : Effect.matchCause(
-              effect {
-                return try step.compensation({ id: step.id, input, value })
+            : Effect.matchCause(Effect.suspend(() => step.compensation({ id: step.id, input, value })), {
+              onFailure: (cause) => {
+                residue.push({ id: step.id, error: Cause.squash(cause) })
               },
-              {
-                onFailure: (cause) => {
-                  residue.push({ id: step.id, error: Cause.squash(cause) })
-                },
-                onSuccess: () => {}
-              }
-            )
+              onSuccess: () => {}
+            })
         )
       }
       return Object.fromEntries(completed)
-    }
+    })
     const settle = (
       exit: Exit.Exit<Readonly<Record<string, A>>, E>
-    ): Settled<A, E>!(E | PatternError)! => {
+    ): Effect.Effect<Settled<A, E>, E | PatternError> => {
       const failure = Exit.findErrorOption(exit)
       if (residue.length > 0) {
         const sorted = [...residue].sort((left, right) => left.id.localeCompare(right.id))
@@ -433,10 +431,3 @@ export const run = <I, A, E, R, E2, R2>(
     return Effect.flatMap(Effect.exit(Effect.scoped(forward)), settle)
   })
 }
-
-module $throw$ts {
-  export function raise(value: unknown): never {
-    throw value
-  }
-}
-import { raise as $raise } from $throw$ts

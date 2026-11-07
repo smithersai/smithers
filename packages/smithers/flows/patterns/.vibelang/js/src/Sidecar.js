@@ -20,10 +20,10 @@ import * as Cause from "effect/Cause";
 import * as Effect from "effect/Effect";
 import * as Exit from "effect/Exit";
 import * as Schema from "effect/Schema";
-import * as Compose from "#vibelang/emitted/src/internal/Compose";
+import * as Compose from "./internal/Compose.js";
 import { call as callMember } from "./internal/Member.js";
-import { OpaqueInput } from "#vibelang/emitted/src/internal/Payload";
-import { PatternError } from "#vibelang/emitted/src/PatternError";
+import { OpaqueInput } from "./internal/Payload.js";
+import { PatternError } from "./PatternError.js";
 // Reads one field of a joined value. During planning the value is symbolic and
 // the read answers a reference the plan records; during execution it answers
 // the field. Both directions matter: the plan must show which half of the join

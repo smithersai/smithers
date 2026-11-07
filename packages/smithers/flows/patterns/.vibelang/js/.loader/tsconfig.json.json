@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/patterns"
   },
-  "compiler": "x5y8jz9TKpawYsDL2Z-KM1OQtWUAuhDggfRr2TmaMIo",
+  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
   "configs": [
    {
     "path": {
@@ -54,7 +54,7 @@
      "relative": "packages/smithers/flows/patterns/src"
     },
     null,
-    "I_Ezrkz8XI6itfbLKTzjZuPIq2HVExw36mDj5bMarUU",
+    "YDWvGZr4tCUBNosbqryLy1VRYHu1iCUbOXwP6kNLCvg",
     [],
     {
      "recursive": true,
@@ -283,8 +283,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 5846,
-    "hash": "i6JJi0lsEiBkd2vdaB53mnhAjKPmVi4S4kHtRpnAF88"
+    "size": 5792,
+    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
    },
    {
     "path": {
@@ -318,8 +318,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 19740,
-    "hash": "OEQ0LjSkjTQyCXtc2NWxxFd-Qfmuf7P_91WfryGWTCE"
+    "size": 15173,
+    "hash": "W4ZYTA6WZd7ZNkzvvcEyD5K4g8N7aNTt9n8GgfEDmlc"
    },
    {
     "path": {
@@ -2187,10 +2187,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
+     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
     },
-    "size": 3364,
-    "hash": "Vt245oY5GzEJWu0aI_2ozleaQdo77LyMCMUIsz7JCSY"
+    "size": 3466,
+    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
    },
    {
     "path": {
@@ -2210,8 +2210,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/src/index.vibe"
     },
-    "size": 1666,
-    "hash": "Hd8vMVI2OlcM02QkrsWnSKituLfroBIUHlrp6QcyUGs"
+    "size": 1664,
+    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
    },
    {
     "path": {
@@ -2427,8 +2427,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29135,
-    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
+    "size": 29125,
+    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
    },
    {
     "path": {
@@ -2602,15 +2602,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2764,
-    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
+    "size": 2762,
+    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6391,
-    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
+    "size": 6389,
+    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
    },
    {
     "path": {
@@ -2763,15 +2763,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23089,
-    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
+    "size": 23051,
+    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1725,
-    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
+    "size": 1723,
+    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
    },
    {
     "path": {
@@ -2805,8 +2805,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5612,
-    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
+    "size": 5610,
+    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
    },
    {
     "path": {
@@ -3043,8 +3043,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14148,
-    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
+    "size": 14134,
+    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
    },
    {
     "path": {
@@ -3064,15 +3064,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4653,
-    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
+    "size": 4649,
+    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10288,
-    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
+    "size": 10284,
+    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
    },
    {
     "path": {
@@ -3155,8 +3155,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 22016,
-    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
+    "size": 21996,
+    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
    },
    {
     "path": {
@@ -3204,8 +3204,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/Burndown.ts"
     },
-    "size": 53978,
-    "hash": "N2ndFoG1o7N8-G77FKCEbZ4PeLKONXrbpxCCs4Mq5kc"
+    "size": 53948,
+    "hash": "X9u_2SID3wFLf76kcvq1IhCuAV_szKVyMsZ6CnnEeqY"
    },
    {
     "path": {
@@ -3813,8 +3813,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/internal/Stalling.ts"
     },
-    "size": 4572,
-    "hash": "7vUqRMNDpf9K1WiHn5HKofQ2ZroWrN1aBXGXVKMsgvg"
+    "size": 4558,
+    "hash": "nrGKcq-ZWca_3yVJBRZJeF0vmhThsxsqnAdY4IBfvQA"
    },
    {
     "path": {
@@ -3834,8 +3834,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/Trellis.ts"
     },
-    "size": 28249,
-    "hash": "DSpaqa_fN-bitwYh5MD9uZmxDKBUY7tK52gE6WQP9CM"
+    "size": 28219,
+    "hash": "X3ABU3i_1BU_MhZTyBNgFA7AXWobCcX1GtJ8BtLCWYk"
    },
    {
     "path": {
@@ -3855,8 +3855,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/internal/Approval.ts"
     },
-    "size": 1677,
-    "hash": "R3w8HytlOLxSB072UbwmntXWAcJkn9HCfN51RebS_Ok"
+    "size": 1663,
+    "hash": "FQ4nq9d91Q6lcj0sJxKxrQklNI9mvoWUgxkvi6f0z6k"
    },
    {
     "path": {
@@ -3904,8 +3904,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/Optimizer.ts"
     },
-    "size": 11455,
-    "hash": "Kco4o23w6sad_KibH5WTebT6Ebf7HKXfnJGVtIpI0PU"
+    "size": 11410,
+    "hash": "819ypCSbp3JVtQHaIjwjrS5o53Ofz1gz6dbg7KRvHOE"
    },
    {
     "path": {
@@ -3923,38 +3923,38 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
+     "relative": "packages/smithers/flows/patterns/src/Saga.ts"
     },
-    "size": 16966,
-    "hash": "zzojJFaIcZSkJUhP9VmIGSUhr0BGE7b50-sH3Yw1rEQ"
+    "size": 16949,
+    "hash": "6BNJLFxLvPGQ3xSf4v8OnY7MkWP7koKGOc9nWH70CQQ"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.ts"
     },
-    "size": 9516,
-    "hash": "fUBMqt4uilZ1CyC6-iuumKGOoF3AShNYjXYq5rU3O7E"
+    "size": 9471,
+    "hash": "rkyljUDStJzMw42jDS0EXLA5NLJ8gI93c_ZT0IhahTw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/src/Sidecar.ts"
     },
-    "size": 12986,
-    "hash": "S0Z7SDb4Qb5poOdd69LqqIjZr2rMlefNgjdDr2nGmBA"
+    "size": 12941,
+    "hash": "Q25SNCZQFEocreRxU9Pe_QrV-ORxOGy7xD6ukLE9ei4"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/src/Supervisor.ts"
     },
-    "size": 27623,
-    "hash": "uBz594E_7z4vGxONacp4DlT_ilu_yglOxv6YfkHacy4"
+    "size": 27578,
+    "hash": "g9B8ybHgYBIU7ySdQaEog-L7TOdCiSZxrJgCCSDcROI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/patterns/src/index.ts"
     },
-    "size": 2681,
-    "hash": "B9z_jO8NvSCsQZZr81T5vwvzqXPtqWjNrwFLGc4scrs"
+    "size": 2409,
+    "hash": "6vXV6wASLy8q7VJSZjeOubYWGM19mkFwBst4DMiWT-c"
    },
    {
     "path": {
@@ -5017,7 +5017,7 @@
     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
    },
    {
-    "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
+    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
@@ -5434,7 +5434,7 @@
     "relative": "packages/smithers/flows/patterns/src/Runbook.vibe"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
+    "relative": "packages/smithers/flows/patterns/src/Saga.ts"
    },
    {
     "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.ts"
@@ -5900,46 +5900,6 @@
      ],
      "names": [],
      "mappings": "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"
-    }
-   },
-   {
-    "paths": [
-     {
-      "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
-     }
-    ],
-    "code": "/**\n * Forward steps with compensations that unwind in reverse.\n *\n * A saga is the answer to \"the third call failed and the first two already\n * changed the world\". Each step registers the call that undoes it, and a\n * failure walks those calls backwards, most recent first.\n *\n * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md\n * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership\n *\n * @since 0.1.0\n */\nimport * as Cause from \"effect/Cause\";\nimport * as Exit from \"effect/Exit\";\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Schema_1 from \"effect/Schema\";\nimport * as Flow from \"@smthrs/flow/Flow\";\nimport * as Node from \"@smthrs/plan/Node\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Compose from \"./internal/Compose.js\";\nimport { call as callMember } from \"./internal/Member.js\";\nimport { OpaqueInput } from \"./internal/Payload.js\";\nimport { PatternError } from \"./PatternError.js\";\nconst CleanUnwind = Schema_1.Struct({\n    failure: Schema.Unknown, residue: Schema_1.Tuple([]),\n});\n// The refusal is minted once, as a value. `make` throws it, because a\n// declaration is built eagerly and a broken one is a programming error. `run`\n// FAILS with it, because `PatternError` is in its declared error channel and a\n// caller composing it must be able to claim the refusal with `Effect.catchTag`.\n// A thrown refusal inside `Effect.suspend` would be a defect no handler claims.\nconst stepsRefusal = (steps) => {\n    if (steps.length === 0) {\n        return new PatternError({ code: \"invalid_decorator\", message: \"Saga requires at least one step\" });\n    }\n    const ids = new Set(steps.map((step) => step.id));\n    if (ids.size !== steps.length) {\n        return new PatternError({ code: \"invalid_decorator\", message: \"Saga step ids must be unique\" });\n    }\n    return undefined;\n};\n// `make` builds topology out of the two members a step names, so a value that\n// cannot record a call is refused here rather than left to fail inside\n// `Graph.build` with a TypeError naming nothing a caller can act on. A member\n// is a flow or an action, and both record a call through their own `.call`, so\n// that is what is checked. `run` takes effect functions instead and has nothing\n// to check.\n// Every function already inherits `Function.prototype.call`, so \"has a `call`\"\n// alone would admit a bare arrow. A member's own `call` shadows it: a flow's\n// comes from the flow prototype, an action's from the action prototype, and a\n// test fixture's is its own property.\nconst callable = (member) => {\n    if (member === null || (typeof member !== \"object\" && typeof member !== \"function\"))\n        return false;\n    const record = member;\n    return typeof record.call === \"function\" && record.call !== Function.prototype.call;\n};\nconst declarationRefusal = (steps) => {\n    for (const step of steps) {\n        if (!callable(step.action)) {\n            return new PatternError({\n                code: \"invalid_decorator\",\n                message: `Saga step \"${step.id}\" action must be a flow or an action`\n            });\n        }\n        if (!callable(step.compensation)) {\n            return new PatternError({\n                code: \"invalid_decorator\",\n                message: `Saga step \"${step.id}\" compensation must be a flow or an action`\n            });\n        }\n    }\n    return undefined;\n};\n/**\n * Declares the forward chain and its compensation arms.\n *\n * Each step's continuation is wrapped in a `Node.catch` whose arm calls that\n * step's compensation and re-raises, so a failure deeper in the chain unwinds\n * one step at a time, most recent first. Under `compensate`, the default, an\n * outer arm turns the re-raised failure into a settled {@link Compensated}\n * value only when every compensation succeeds; under `fail` no arm is declared\n * at all. Failed compensations are collected without stopping earlier undos.\n * Both compensation policies fail with `compensation_failed`, preserving the\n * original failure and the residue sorted by step id.\n *\n * A step whose action or compensation is not a flow is refused here, because\n * the declaration cannot be built out of anything else.\n *\n * `make` snapshots `steps` and each step's `id`, `action`, and\n * `compensation` at the call, so a later edit to the caller's array or\n * records does not change the declaration.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (options) => {\n    // The body runs when the graph builds, later than this call, so it reads\n    // this snapshot and never the caller's steps again.\n    const steps = options.steps.map((step) => ({\n        id: step.id,\n        action: step.action,\n        compensation: step.compensation\n    }));\n    const refusal = stepsRefusal(steps) ?? declarationRefusal(steps);\n    if (refusal !== undefined)\n        $raise(refusal);\n    const policy = options.onFailure ?? \"compensate\";\n    const { name, description } = Compose.label(\"saga\", { steps: steps.map((step) => step.id), onFailure: policy }, options);\n    const body = ({ input }) => {\n        const visit = (index, completed) => {\n            const step = steps[index];\n            if (step === undefined)\n                return Node.succeed({ _tag: \"Completed\", values: completed });\n            const action = callMember(step.action, { input, completed });\n            const guarded = policy === \"fail\" ? action : Node.catch(action, {\n                onFailure: Node.capture({ step: step.id, forward: true }, (failure) => Node.fail({ failure, residue: [] }))\n            });\n            return Node.bindPlanned(guarded, Node.capture({ step: step.id }, (value) => {\n                const rest = visit(index + 1, { ...completed, [step.id]: value });\n                if (policy === \"fail\")\n                    return rest;\n                return Node.catch(rest, {\n                    onFailure: Node.capture({ step: step.id }, (error) => {\n                        const unwind = error;\n                        // The unwind is a planned reference until the run produces it,\n                        // so the compensation is SEQUENCED ahead of a node that hands\n                        // that reference back. A mapper closing over the reference\n                        // would return the placeholder instead of the unwind.\n                        const undo = Node.catch(Node.andThen(callMember(step.compensation, { id: step.id, input, value }), Node.succeed(unwind)), {\n                            onFailure: Node.capture({ step: step.id, residue: true }, (undoError) => Node.map(Node.succeed({ unwind, undoError }), Node.capture({ step: step.id, residue: true }, ({ unwind, undoError }) => ({\n                                failure: unwind.failure,\n                                residue: [...unwind.residue, { id: step.id, error: undoError }]\n                            }))))\n                        });\n                        return Node.bindPlanned(undo, Node.capture({ step: step.id }, (failure) => Node.fail(failure)));\n                    })\n                });\n            }));\n        };\n        const chain = visit(0, {});\n        if (policy === \"fail\")\n            return chain;\n        const reported = Node.catch(chain, {\n            onFailure: Node.capture({ residue: true }, (error) => Node.bindPlanned(Node.map(Node.succeed(error), Node.capture({ residue: true }, (unwind) => {\n                if (unwind.residue.length === 0)\n                    return unwind;\n                const residue = [...unwind.residue].sort((left, right) => left.id.localeCompare(right.id));\n                return new PatternError({\n                    code: \"compensation_failed\",\n                    message: `Saga compensation failed for: ${residue.map((entry) => entry.id).join(\", \")}`,\n                    cause: { failure: unwind.failure, residue }\n                });\n            })), Node.capture({ residue: true }, (failure) => Node.fail(failure))))\n        });\n        // A schema selects the clean arm at execution time; branching on a\n        // symbolic error while building the graph would hide the dirty arm.\n        return Node.catch(reported, {\n            error: CleanUnwind,\n            onFailure: Node.capture({ settled: true, onFailure: policy }, (unwind) => policy === \"compensate\"\n                ? Node.succeed({ _tag: \"Compensated\", failure: unwind.failure })\n                : Node.fail(unwind.failure))\n        });\n    };\n    return Flow.make(name, {\n        ...(description === undefined ? {} : { description }),\n        payload: OpaqueInput,\n        success: Schema.Unknown,\n        // `@smthrs/core` carried its error type as a phantom parameter and declared\n        // no error schema. `@smthrs/flow` needs a real one, because the engine\n        // encodes a typed failure through it, and a saga fails with whatever the\n        // step it called failed with.\n        error: Schema.Unknown,\n        body: Node.capture({ steps: steps.map((step) => step.id), onFailure: policy }, body)\n    });\n};\n/**\n * Runs the forward chain, unwinding completed steps on a failure or an\n * interruption.\n *\n * The policy defaults to `compensate`. Both outcomes are tagged: a chain that\n * ran to the end returns {@link Completed} with its step values nested under\n * `values`, and a clean unwind under `compensate` returns\n * {@link Compensated}.\n *\n * Each completed step registers a scope finalizer, so the unwind is LIFO and\n * runs on interruption as well as on failure. A compensation that fails does\n * not stop the ones behind it; every failing step id is collected and the run\n * fails `PatternError { code: \"compensation_failed\" }` naming them, because\n * state left dirty outranks the failure that started the unwind.\n *\n * A compensation that DIES counts as a failed compensation, not as a defect\n * the run raises: the undo did not happen, so the step belongs in the residue\n * with the typed failures. This includes a synchronous throw while constructing\n * the compensation effect. Letting the defect escape would lose both the\n * residue and the failure that started the unwind.\n *\n * @category combinators\n * @since 0.1.0\n */\nexport const run = (input, options) => {\n    // Snapshots taken at the call, ahead of the suspend: the effect may run\n    // later, and a caller's edit to the array, a step record, or the option\n    // object in between must not reach it.\n    const steps = options.steps.map((step) => ({\n        id: step.id,\n        action: step.action,\n        compensation: step.compensation\n    }));\n    const policy = options.onFailure ?? \"compensate\";\n    return Effect.suspend(() => {\n        const refusal = stepsRefusal(steps);\n        if (refusal !== undefined)\n            return Effect.fail(refusal);\n        const residue = [];\n        const forward = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* forward() {\n            const completed = new Map();\n            {\n                let pending_1 = runtime.$normal;\n                try {\n                    for (const step of steps) {\n                        try {\n                            {\n                                const value = yield* step.action({\n                                    input,\n                                    completed: Object.fromEntries(completed)\n                                });\n                                completed.set(step.id, value);\n                                if (policy === \"fail\")\n                                    continue;\n                                yield* Effect.addFinalizer((exit) => Exit.isSuccess(exit)\n                                    ? Effect.void\n                                    : Effect.matchCause(Effect_1.suspend(() => step.compensation({ id: step.id, input, value })), {\n                                        onFailure: (cause) => {\n                                            residue.push({ id: step.id, error: Cause.squash(cause) });\n                                        },\n                                        onSuccess: () => { }\n                                    }));\n                            }\n                        }\n                        catch (thrown_1) {\n                            pending_1 = thrown_1;\n                            break;\n                        }\n                    }\n                }\n                catch (thrown_2) {\n                    throw runtime.$finallyFailure(pending_1, thrown_2);\n                }\n                if (pending_1 !== runtime.$normal)\n                    throw pending_1;\n            }\n            return Object.fromEntries(completed);\n        })));\n        const settle = (exit) => {\n            const failure = Exit.findErrorOption(exit);\n            if (residue.length > 0) {\n                const sorted = [...residue].sort((left, right) => left.id.localeCompare(right.id));\n                return Effect.fail(new PatternError({\n                    code: \"compensation_failed\",\n                    message: `Saga compensation failed for: ${sorted.map((entry) => entry.id).join(\", \")}`,\n                    cause: {\n                        ...(Option.isSome(failure) ? { failure: failure.value } : {}),\n                        residue: sorted\n                    }\n                }));\n            }\n            if (!Exit.isSuccess(exit) && policy === \"compensate\" && Option.isSome(failure)) {\n                return Effect.succeed({ _tag: \"Compensated\", failure: failure.value });\n            }\n            // A failure exit short-circuits the map and re-raises; a success exit\n            // becomes the completed envelope.\n            return Effect.map(exit, (values) => ({ _tag: \"Completed\", values }));\n        };\n        return Effect.flatMap(Effect.exit(Effect.scoped(forward)), settle);\n    });\n};\nimport { raise as $raise } from \"./Saga.vibe.$throw$ts.js\";\n",
-    "map": {
-     "version": 3,
-     "file": "Saga.js",
-     "sourceRoot": "",
-     "sources": [
-      {
-       "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
-      }
-     ],
-     "names": [],
-     "mappings": "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"
-    }
-   },
-   {
-    "paths": [
-     {
-      "relative": "packages/smithers/flows/patterns/src/Saga.vibe.$throw$ts.js"
-     }
-    ],
-    "code": "export function raise(value) {\n    throw value;\n}\n",
-    "map": {
-     "version": 3,
-     "file": "Saga.vibe.$throw$ts.js",
-     "sourceRoot": "",
-     "sources": [
-      {
-       "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
-      }
-     ],
-     "names": [],
-     "mappings": "AAqbE,MAAM,UAAU,KAAK,CAAC,KAAc;IAClC,MAAM,KAAK,CAAA;AACb,CAAC"
     }
    }
   ]

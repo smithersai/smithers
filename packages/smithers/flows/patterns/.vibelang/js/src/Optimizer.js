@@ -20,10 +20,10 @@
 import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Schema from "effect/Schema";
-import * as Compose from "#vibelang/emitted/src/internal/Compose";
+import * as Compose from "./internal/Compose.js";
 import { call as callMember } from "./internal/Member.js";
-import { OpaqueInput } from "#vibelang/emitted/src/internal/Payload";
-import { PatternError } from "#vibelang/emitted/src/PatternError";
+import { OpaqueInput } from "./internal/Payload.js";
+import { PatternError } from "./PatternError.js";
 const defaultOnMaxReached = "return-last";
 const validate = (options) => {
     if (options.targetScore !== undefined && !Number.isFinite(options.targetScore)) {

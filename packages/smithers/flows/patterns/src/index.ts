@@ -10,67 +10,67 @@
  * @category errors
  * @since 0.1.0
  */
-export * as PatternError from "#vibelang/emitted/src/PatternError"
+export * as PatternError from "./PatternError.vibe"
 
 /**
  * @category builders
  * @since 0.1.0
  */
-export * as Pattern from "#vibelang/emitted/src/Pattern"
+export * as Pattern from "./Pattern.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Debate from "#vibelang/emitted/src/Debate"
+export * as Debate from "./Debate.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Panel from "#vibelang/emitted/src/Panel"
+export * as Panel from "./Panel.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Escalation from "#vibelang/emitted/src/Escalation"
+export * as Escalation from "./Escalation.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as ReviewLoop from "#vibelang/emitted/src/ReviewLoop"
+export * as ReviewLoop from "./ReviewLoop.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as MapReduce from "#vibelang/emitted/src/MapReduce"
+export * as MapReduce from "./MapReduce.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Recursion from "#vibelang/emitted/src/Recursion"
+export * as Recursion from "./Recursion.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Bounded from "#vibelang/emitted/src/Bounded"
+export * as Bounded from "./Bounded.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Quarantine from "#vibelang/emitted/src/Quarantine"
+export * as Quarantine from "./Quarantine.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Saga from "#vibelang/emitted/src/Saga"
+export * as Saga from "./Saga.ts"
 
 /**
  * @category patterns
@@ -82,37 +82,37 @@ export * as Trellis from "./Trellis.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as DelegationChain from "#vibelang/emitted/src/DelegationChain"
+export * as DelegationChain from "./DelegationChain.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as CheckSuite from "#vibelang/emitted/src/CheckSuite"
+export * as CheckSuite from "./CheckSuite.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as DriftDetector from "#vibelang/emitted/src/DriftDetector"
+export * as DriftDetector from "./DriftDetector.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Intervene from "#vibelang/emitted/src/Intervene"
+export * as Intervene from "./Intervene.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Kanban from "#vibelang/emitted/src/Kanban"
+export * as Kanban from "./Kanban.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as MergeQueue from "#vibelang/emitted/src/MergeQueue"
+export * as MergeQueue from "./MergeQueue.vibe"
 
 /**
  * @category patterns
@@ -130,7 +130,7 @@ export * as Optimizer from "./Optimizer.ts"
  * @category patterns
  * @since 0.1.0
  */
-export * as Runbook from "#vibelang/emitted/src/Runbook"
+export * as Runbook from "./Runbook.vibe"
 
 /**
  * @category patterns
