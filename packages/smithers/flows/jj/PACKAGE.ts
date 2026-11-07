@@ -111,7 +111,7 @@ const securityReview = Smithers.SecurityReview({
         "String interpolation of a revision into a revset expression such as `--revision=parents(${pinned})` without validating it as a hex commit id or reverse-hex change id.",
         "requireRevision accepting anything beyond non-empty, so `x) | all() | (x` or `root()` reaches jj restore --from."
       ],
-      paths: ["src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe"]
+      paths: ["src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe", "src/browser/BrowserJj.platform.ts"]
     },
     {
       id: "jj-binary-resolution",
@@ -174,7 +174,7 @@ const securityReview = Smithers.SecurityReview({
         "settle treating exit code 0 as success while stderr reports refused snapshot files.",
         "snapshot using an empty commitId from a malformed jj log line as a restore target."
       ],
-      paths: ["src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe"]
+      paths: ["src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe", "src/browser/BrowserJj.platform.ts"]
     },
     {
       id: "jj-error-leakage",
@@ -185,7 +185,7 @@ const securityReview = Smithers.SecurityReview({
         "A JjError constructed with an unbounded message or command instead of commandOf/jjErrorCause truncation.",
         "A cause projection that copies an Error's stack, env, or spawnargs into the journal."
       ],
-      paths: ["src/Jj.vibe", "src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe"]
+      paths: ["src/Jj.vibe", "src/node/NodeJj.vibe", "src/browser/BrowserJj.vibe", "src/browser/BrowserJj.platform.ts"]
     },
     {
       id: "jj-lock-and-restore-safety",
