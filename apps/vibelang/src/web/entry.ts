@@ -27,4 +27,4 @@ const application = Runtime.makeApplication({
   devTools: { Message },
 })
 
-Runtime.run(application, { flags: Effect.sync(() => ({ session: crypto.randomUUID().slice(0, 8), mode, name: "Guest" })) })
+Runtime.run(application, { flags: Effect.sync(() => ({ session: crypto.randomUUID().slice(0, 8), mode, name: "Guest", reducedMotion: matchMedia("(prefers-reduced-motion: reduce)").matches })) })

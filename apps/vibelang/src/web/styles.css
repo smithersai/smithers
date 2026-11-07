@@ -92,6 +92,7 @@ button { font: inherit; }
 ::view-transition-group(splash), ::view-transition-group(prompt) { animation-duration: .38s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
 ::view-transition-old(splash), ::view-transition-new(splash) { height: 100%; object-fit: cover; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
+  .vl-dots, .vl-palette-scrim { animation: none !important; }
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
 

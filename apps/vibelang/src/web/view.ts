@@ -19,7 +19,7 @@ export function view(model: Model, h: H): Document {
       [h.Class("vl-app"), h.DataAttribute("surface", model.surface), h.DataAttribute("mode", model.mode)],
       [
         top(model, h),
-        model.surface === "splash" ? splash(h) : chat(model, h),
+        model.surface === "splash" ? splash(model, h) : chat(model, h),
         palette(model, h),
         h.div([h.Id("vl-announcements")], [
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
@@ -56,7 +56,7 @@ function top(model: Model, h: H): Html {
 
 // ── splash ───────────────────────────────────────────────────────────────────────────────────────────────────────
 
-function splash(h: H): Html {
+function splash(model: Model, h: H): Html {
   return h.main([h.Class("vl-splash"), h.Style({ viewTransitionName: "splash" })], [
     h.section([h.Class("vl-hero")], [
       h.div([h.Class("vl-eyebrow")], ["Effect, as a language"]),
@@ -74,7 +74,7 @@ function splash(h: H): Html {
     ]),
     h.figure([h.Class("vl-media")], [
       h.video(
-        [h.Src("/media/contract.mp4"), h.Poster("/media/contract-poster.jpg"), h.Autoplay(true), h.Muted(true), h.Loop(true), h.Playsinline(true), h.AriaLabel("A!E!R: what a function returns, how it fails, what it needs")],
+        [h.Src("/media/contract.mp4"), h.Poster("/media/contract-poster.jpg"), h.Autoplay(!model.reducedMotion), h.Controls(true), h.Muted(true), h.Loop(true), h.Playsinline(true), h.AriaLabel("A!E!R: what a function returns, how it fails, what it needs")],
         [],
       ),
     ]),

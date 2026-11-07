@@ -11,6 +11,7 @@ const home: Model = {
   draft: "",
   session: "s1",
   name: "Ada",
+  reducedMotion: false,
   sent: 0,
   conversation: HOME_CONVERSATION,
   client: newClient,

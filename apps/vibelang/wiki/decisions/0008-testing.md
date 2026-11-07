@@ -85,3 +85,19 @@ Native upward intent invalidates follow permission before queued scroll work; th
 guards paused transcripts. Native scroll anchoring is disabled because the app owns following. Splash and palette
 scrolling do not change chat follow state. Playwright keeps the original three-browser concurrency as files are added,
 so streamed render assertions run under the same browser load; assertion thresholds and timeouts are unchanged.
+
+**Fable review 3–12.** Reply correlation has direct target guards and an out-of-order/skip transport fixture over the
+real sequencer. The shared entry codec is identical across snapshots and client state; all cursors use the same safe
+nonnegative integer schema. Markdown tests cover info strings, unclosed fences and odd inline backticks. Scripted
+examples use the full compiler with bad syntax/types as negative controls. Worker route tests run as JavaScript so
+Worker globals remain in `worker/tsconfig.json`, separately checked by `pnpm typecheck`; they cannot pollute the
+browser's DOM globals.
+
+Scenes cover product refusal labels, Retry and session-specific `You` labels. Browser recovery also closes a real
+stream normally mid-answer, then checks reconnect from the last applied cursor. A one-shot refusal tests Retry
+through the real runtime with the same post id and neutral wire author. The Mock pill has no explanatory tooltip;
+answer failure is shown once on the message, with a concise accessible completion announcement.
+
+The splash video has native playback controls and disables autoplay when the browser requests reduced motion at
+initialization. That media preference also disables the thinking dots and palette fade in CSS. `e2e/motion.spec.ts`
+checks controls and paused state, then the reduced-motion poster, fade and real thinking indicator in every viewport.

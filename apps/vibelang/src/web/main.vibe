@@ -17,6 +17,7 @@ export schema Flags {
   readonly session: string
   readonly mode: "mock" | "live"
   readonly name: string
+  readonly reducedMotion?: boolean
 }
 
 // MODEL
@@ -29,6 +30,7 @@ export schema Model {
   readonly draft: string
   readonly session: string
   readonly name: string
+  readonly reducedMotion: boolean
   /** How many posts this tab has sent; the next one's client id is `<session>-<sent + 1>`. */
   readonly sent: number
   readonly conversation: string
@@ -84,6 +86,7 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       draft: "",
       session: flags.session,
       name: flags.name,
+      reducedMotion: flags.reducedMotion ?? false,
       sent: 0,
       conversation: HOME_CONVERSATION,
       client: Machine.newClient,
