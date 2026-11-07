@@ -3,7 +3,7 @@
 // by route and status, never a body: posts are people's words.
 import * as Sse from "effect/encoding/Sse"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
-import type { Event } from "../src/core/conversation.ts"
+import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"
 import type { Unreachable } from "./Unreachable.vibe"

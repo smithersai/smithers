@@ -2,11 +2,15 @@
 
 **Status:** accepted, 2026-11-07. **Rulings:** VL-9, VL-15.
 
-**Decision.** Two independent layers check the actual `src/core/conversation.ts`:
+**Decision.** Two independent layers check the actual `src/core/conversation.vibe`:
 
 1. [LemmaScript](https://github.com/midspiral/lemmascript), by **Midspiral** (MIT), reads its normal `//@` contracts;
-   Dafny proves them. This is verification tooling, not a runtime dependency. VibeLang's VIP-43 has not landed; move
-   these contracts into its syntax when it does.
+   Dafny proves them. LemmaScript reads TypeScript, and the module stays in its verifiable subset, which is plain
+   TypeScript syntax: `pnpm verify` proves an exact `.ts` copy of the file's text, staged under the ignored
+   `verify/.checks/`. (`vibelang --ts-projection` keeps the text and all 83 `//@` comments but appends an import of
+   `vibelang-ts-mapper/prelude`, which the proof's strict typecheck can't resolve, TS2307.) This is verification
+   tooling, not a runtime dependency. VibeLang's VIP-43 has not landed; move these contracts into its syntax when it
+   does.
 2. Effect 4.1.1's `Arbitrary` runs random intent sequences through the real sequencer, then delivers events to clients
    duplicated, reordered and with gaps (`test/conversation.test.vibe`, 400 runs per property).
 
@@ -72,12 +76,13 @@ more are proved: entry ids stay nonempty and unique. `test/conversation.test.vib
 The preceding Linux selftest rejected **40/40** executable mutations in **400.308 s** with two workers; every copy
 strictly typechecked and reached a failed Dafny obligation in its intended function.
 
-`pnpm verify:broken` checks the committed executable mutations in `verify/broken/`. Its generator checks that all
-`//@` contracts and assertions are byte-identical to production and that the copies have not drifted. Every copy
+`pnpm verify:broken` generates its executable mutations from the production module at run time, under
+`verify/.checks/`; `verify/mutations.py` holds the cases. The generator checks that each change matches exactly once
+in its function and that all `//@` contracts and assertions stay byte-identical to production. Every copy
 must strictly typecheck, reach Dafny, and fail an obligation in its intended function; parser errors, backend type
 errors, timeouts and tool failures do not count. The selftest selects the intended function in each unchanged-contract
 copy; a direct `pnpm verify` on that copy checks every function. The selftest defaults to two workers. Individual failures are reproducible with
-`pnpm verify verify/broken/<name>.ts`. `verify/broken/manifest.json` describes the mutations.
+`pnpm verify:broken <name>`; each run writes the mutations it checked to its `manifest.json`.
 
 The verification subset keeps readonly records, string-tagged unions, spread appends and indexed `forall`
 contracts. Lookup loops use an explicit index with loop invariants **inside the loop body**. Decision construction

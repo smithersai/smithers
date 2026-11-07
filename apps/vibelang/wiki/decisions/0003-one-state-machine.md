@@ -2,7 +2,7 @@
 
 **Status:** accepted, 2026-11-07. **Rulings:** VL-8, VL-12.
 
-**Decision.** A conversation is one state machine (`src/core/conversation.ts`), plain TypeScript with no Effect:
+**Decision.** A conversation is one state machine (`src/core/conversation.vibe`), VibeLang with no Effect code:
 
 ```
 intent ──decide──▶ event #seq ──apply──▶ conversation        the sequencer (one per conversation)

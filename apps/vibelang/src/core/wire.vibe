@@ -5,7 +5,7 @@
 //   POST /api/conversations/<id>/posts                 PostBody → 200 {} | 409 Refusal
 //   GET  /api/conversations/<id>?after=<seq>           ReadSnapshot
 //   GET  /api/conversations/<id>/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <EventSchema JSON>`
-import { MAX_TEXT } from "./conversation.ts"
+import { MAX_TEXT } from "./conversation.vibe"
 import { Seq } from "./schemas.vibe"
 
 export const HEALTH_PATH = "/api/health"

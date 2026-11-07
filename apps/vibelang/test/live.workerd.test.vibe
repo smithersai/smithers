@@ -7,7 +7,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { FetchHttpClient } from "effect/http"
 import { afterAll, beforeAll } from "vitest"
-import { apply, empty, type Event } from "../src/core/conversation.ts"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
 import { REASONS } from "../worker/Reply.vibe"

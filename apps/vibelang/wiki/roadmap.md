@@ -13,7 +13,7 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
-1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.ts; `pnpm verify:broken`: 48/48
+1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.vibe; `pnpm verify:broken`: 48/48
                                                       mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)

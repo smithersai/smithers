@@ -1,9 +1,9 @@
 // Regressions for review findings 1, 2 and 4. These call the real Factory under cooperative preemption.
 import { describe, expect, it } from "@effect/vitest"
-import { type Event } from "../src/core/conversation.ts"
+import { type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { chunks, mockReply } from "../src/core/mockReplies.ts"
+import { chunks, mockReply } from "../src/core/mockReplies.vibe"
 
 class PeriodicScheduler extends Scheduler.MixedScheduler {
   private n = 0

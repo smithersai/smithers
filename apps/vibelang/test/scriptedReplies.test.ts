@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from "node:fs"
 import { resolve, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterAll, describe, expect, it } from "vitest"
-import { scriptedReplies } from "../src/core/mockReplies.ts"
+import { scriptedReplies } from "../src/core/mockReplies.vibe"
 
 const compiler = fileURLToPath(new URL("../node_modules/vibelang/bin/vibelang", import.meta.url))
 const cache = resolve("node_modules/.cache")

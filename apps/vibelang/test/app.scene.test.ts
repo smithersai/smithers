@@ -1,7 +1,7 @@
 // The web app's real view and update, driven the way a person drives them, with Foldkit scenes (no browser).
 import { Command, click, expect, given, placeholder, role, scene, Subscription, text, type } from "foldkit/scene"
 import { describe, test } from "vitest"
-import { newClient } from "../src/core/conversation.ts"
+import { newClient } from "../src/core/conversation.vibe"
 import { ShowPalette, ClosePalette, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 

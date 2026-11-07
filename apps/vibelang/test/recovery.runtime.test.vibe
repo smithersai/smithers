@@ -1,10 +1,10 @@
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
-import { apply, empty } from "../src/core/conversation.ts"
+import { apply, empty } from "../src/core/conversation.vibe"
 import { init } from "../src/web/main.vibe"
 import { application } from "./support/application.vibe"
-import { mockReply } from "../src/core/mockReplies.ts"
+import { mockReply } from "../src/core/mockReplies.vibe"
 import { faultyFactory, trace } from "./support/FaultyFactory.vibe"
 import { activeId, clickAsk, container, focusComposer, hasAsk, reconnect, remove, send } from "./support/browser.ts"
 

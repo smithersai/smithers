@@ -10,8 +10,8 @@ as its code (VL-23).
   `node_modules/vibelang/skills/vibelang/SKILL.md` first). Files with no Effect code stay `.ts`. A new dependency needs
   Will's approval, recorded in [0001](wiki/decisions/0001-app-and-stack.md).
 - **One state machine** ([0003](wiki/decisions/0003-one-state-machine.md)). Conversation state changes only through
-  `src/core/conversation.ts` (`decide`, `apply`, `receive`). Keep it plain TypeScript in LemmaScript's verifiable
-  subset ([0005](wiki/decisions/0005-formal-verification.md)); a new transition comes with its contract and property.
+  `src/core/conversation.vibe` (`decide`, `apply`, `receive`). Keep it in LemmaScript's verifiable subset, plain
+  TypeScript syntax with no Effect code ([0005](wiki/decisions/0005-formal-verification.md)); a new transition comes with its contract and property.
 - **The core is the `Factory` service** ([0002](wiki/decisions/0002-core-is-an-effect-api.md)). Every surface (web,
   CLI, MCP server, skill) calls it; none reaches the network another way.
 - **Mock mode always works** (VL-13, [0004](wiki/decisions/0004-mock-mode.md)). A feature lands with its mock layer

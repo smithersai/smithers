@@ -118,11 +118,7 @@ const SCRIPTS: ReadonlyArray<Script> = [
 /** Every answer the scripted agent can choose, including the fallback; each fenced example is compiler checked. */
 export const scriptedReplies: ReadonlyArray<string> = [...SCRIPTS.map((script) => script.reply), DEFAULT]
 
-/**
- * The mock agent's whole answer to `prompt`.
- *
- * @throws {never}
- */
+/** The mock agent's whole answer to `prompt`. */
 export function mockReply(prompt: string): string {
   const words = prompt.toLowerCase()
   for (const script of SCRIPTS) {
@@ -131,11 +127,7 @@ export function mockReply(prompt: string): string {
   return DEFAULT
 }
 
-/**
- * `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`.
- *
- * @throws {never}
- */
+/** `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`. */
 export function chunks(text: string, size = 24): ReadonlyArray<string> {
   const pieces: Array<string> = []
   for (let start = 0; start < text.length; start += size) pieces.push(text.slice(start, start + size))

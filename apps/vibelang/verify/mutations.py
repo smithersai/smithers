@@ -1,8 +1,16 @@
 #!/usr/bin/env python3
-"""Checked-in broken copies differ from production only in executable code. --check never writes."""
+"""Write executable mutations of the production module, generated at run time and never committed.
+
+  python3 verify/mutations.py OUT [NAME ...]
+
+writes OUT/<name>.ts for every case below (or only the named ones) and OUT/manifest.json. Each copy is the text of
+src/core/conversation.vibe, which LemmaScript reads as TypeScript, changed in executable code only: every `//@`
+contract and assertion stays byte-identical, and each case must match exactly once inside its function.
+"""
 import json, pathlib, re, sys
 root=pathlib.Path(__file__).resolve().parent
-source=(root.parent/'src/core/conversation.ts').read_text()
+source=(root.parent/'src/core/conversation.vibe').read_text()
+# The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
 ('apply-advance','apply','seq: event.seq }','seq: event.seq + 1 }','seq changes by at most one; next event advances exactly once'),
 ('apply-ignore','apply','if (event.seq !== conversation.seq + 1) return conversation','if (event.seq === conversation.seq + 1) return conversation','ignore every event except the next'),
@@ -55,9 +63,16 @@ cases=[
 ('apply-restart-text','apply','{ ...entry, text: "" }','{ ...entry, text: entry.text }','a restart empties the streaming reply and keeps every entry'),
 ('decide-restart-guard','decide','      if (!isReplying(conversation, intent.id)) return refused("not-replying")\n      return accepted({ type: "ReplyRestarted"','      return accepted({ type: "ReplyRestarted"','an accepted restart names the reply that streams'),
 ]
+if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...]')
+out=pathlib.Path(sys.argv[1]).resolve()
+selected=set(sys.argv[2:])
+unknown=selected-{name for name,*_ in cases}
+if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))
+contracts=lambda text:[line for line in text.splitlines() if line.lstrip().startswith('//@')]
+out.mkdir(parents=True,exist_ok=True)
 manifest={}
-check='--check' in sys.argv
 for name,fn,old,new,claim in cases:
+    if selected and name not in selected: continue
     match=re.search(r'^(?:export )?function '+fn+r'\(',source,re.M)
     if not match: raise SystemExit(f'Missing function {fn}')
     start=match.start(); following=re.search(r'^(?:export )?function \w+\(',source[match.end():],re.M)
@@ -65,17 +80,8 @@ for name,fn,old,new,claim in cases:
     body=source[start:end]
     if body.count(old)!=1: raise SystemExit(f'{name}: expected 1 executable match, found {body.count(old)}')
     broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+body.replace(old,new)+source[end:]
-    contracts=lambda text:[line for line in text.splitlines() if line.lstrip().startswith('//@')]
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
-    path=root/'broken'/f'{name}.ts'
-    if check:
-        if not path.exists() or path.read_text()!=broken: raise SystemExit(f'{name}: fixture drift; regenerate with python3 verify/mutations.py')
-    else:
-        path.parent.mkdir(exist_ok=True);path.write_text(broken)
+    (out/f'{name}.ts').write_text(broken)
     manifest[name]={'function':fn,'claim':claim,'before':old,'after':new}
-path=root/'broken/manifest.json'
-if check:
-    if json.loads(path.read_text())!=manifest: raise SystemExit('Manifest drift')
-    if {p.stem for p in path.parent.glob('*.ts')} != set(manifest): raise SystemExit('Unexpected broken files')
-else: path.write_text(json.dumps(manifest,indent=2)+'\n')
-print(f'{len(manifest)} executable-only mutations '+('match production' if check else 'written'))
+(out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
+print(f'{len(manifest)} executable-only mutations written to {out}')

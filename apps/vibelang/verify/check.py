@@ -6,13 +6,19 @@ source=pathlib.Path(sys.argv[1]).resolve()
 if not source.exists(): raise SystemExit(f'Not found: {source}')
 APP=ROOT.parent
 if not source.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
-files=sorted(p for p in ([source] if source.is_file() else source.rglob('*.ts')) if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(source).parts))
-if not files: raise SystemExit(f'No TypeScript files under {source}')
 started=time.monotonic()
 # A run owns its artifacts and cannot use a previously successful proof.
-run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks')) if (ROOT/'.checks').exists() else None
-if run is None:
- (ROOT/'.checks').mkdir(exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks'))
+(ROOT/'.checks').mkdir(exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks'))
+# LemmaScript reads TypeScript. A `.vibe` module written in its verifiable subset is TypeScript syntax, so the run
+# proves an exact `.ts` copy of its text, staged with this run's artifacts; reports name the `.vibe` file and line.
+shown={}
+if source.is_file() and source.suffix=='.vibe':
+ staged=run/'source'/source.relative_to(APP).with_suffix('.ts')
+ staged.parent.mkdir(parents=True); staged.write_bytes(source.read_bytes())
+ shown[staged]=source; files=[staged]
+else:
+ files=sorted(p for p in ([source] if source.is_file() else source.rglob('*.ts')) if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(source).parts))
+if not files: raise SystemExit(f'No TypeScript files under {source}')
 config=APP/('.verify-'+run.name+'.config.json')
 config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-library':'local','proof-dir':str(run.relative_to(APP)),'run-log':False}))
 atexit.register(lambda: config.unlink(missing_ok=True))
@@ -30,10 +36,10 @@ def command(args, cwd):
  except OSError as e: return 127,str(e)+'\n'
 
 def verify(item):
- idx,ts=item; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines()
+ idx,ts=item; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
  # Report function declarations and contract lines even for extraction failures.
  funcs=[(n+1,re.search(r'\bfunction\s+(\w+)',s).group(1)) for n,s in enumerate(lines) if re.search(r'\bfunction\s+(\w+)',s)]
- loc=', '.join(f'{ts}:{n} function {name}' for n,name in funcs) or str(ts)
+ loc=', '.join(f'{origin}:{n} function {name}' for n,name in funcs) or str(origin)
  work=run/ts.relative_to(APP).parent; work.mkdir(parents=True,exist_ok=True)
  dfy=work/ts.with_suffix('.dfy').name
  # Preseed a fresh generated-only destination, never reuse neighboring proof files.
@@ -61,15 +67,17 @@ def verify(item):
   else:
    flags=['--unicode-char:false','--allow-deprecation'] if 'string-semantics=javascript-utf16' in text else ['--unicode-char:true']
    if 'Std.' in text: flags.append('--standard-libraries')
-   if os.environ.get('VERIFY_MUTATION_TARGETS') == '1':
-    if ts.parent != ROOT/'broken': raise SystemExit('Mutation symbol filter only applies to broken copies')
-    target=json.loads((ROOT/'broken/manifest.json').read_text())[ts.stem]['function']
+   mutations=os.environ.get('VERIFY_MUTATION_MANIFEST')
+   if mutations:
+    mutations=pathlib.Path(mutations).resolve()
+    if ts.parent != mutations.parent: raise SystemExit('Mutation symbol filter only applies to generated mutants')
+    target=json.loads(mutations.read_text())[ts.stem]['function']
     flags.extend(['--filter-symbol',target])
    c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','1','--verification-time-limit','30','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work)
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'
- if ts.read_bytes() != original:
+ if ts.read_bytes() != original or origin.read_bytes() != original:
   code=2;out+='ERROR: source changed during verification\n'
  elapsed=time.monotonic()-t
  # Dafny emits generated locations. Identify enclosing generated symbol, then
@@ -85,13 +93,13 @@ def verify(item):
    if sym:
     name=re.sub(r'_ensures$', '', sym)
     for n,fn in funcs:
-     if name==fn: mapped.append(f'{ts}:{n}: function {fn} [{sym}; generated line {line}]')
+     if name==fn: mapped.append(f'{origin}:{n}: function {fn} [{sym}; generated line {line}]')
  log=work/(ts.stem+'.output.log');log.write_text(out)
- return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(ts),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy)}
+ return {'sha256':hashlib.sha256(original).hexdigest(),'file':str(origin),'exit':code,'seconds':round(elapsed,3),'locations':loc,'mapped':list(dict.fromkeys(mapped)),'output':out,'log':str(log),'dfy':str(dfy)}
 
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
-tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),str(source)],ROOT)
+tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),str(files[0] if shown else source)],ROOT)
 print(tc_output,end='')
 if tc_code:
  (run/'typecheck.log').write_text(tc_output)

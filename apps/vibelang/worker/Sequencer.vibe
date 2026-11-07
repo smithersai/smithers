@@ -6,7 +6,7 @@
 import {
   apply, canReplyTo, decide, empty, isReplying,
   type Conversation, type Entry, type Event, type Intent,
-} from "../src/core/conversation.ts"
+} from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */

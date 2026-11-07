@@ -3,7 +3,7 @@ import { Ask, AskOutput, Read } from "../src/surfaces/commands.vibe"
 import { backend, unreachable } from "../src/surfaces/backend.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { mockReply } from "../src/core/mockReplies.ts"
+import { mockReply } from "../src/core/mockReplies.vibe"
 
 describe("Factory commands", () => {
   it.live("reads an empty conversation immediately and waits for a whole reply", () => effect {

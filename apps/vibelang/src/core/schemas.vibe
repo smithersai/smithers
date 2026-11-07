@@ -1,5 +1,5 @@
-// Schemas for the conversation machine's state (`conversation.ts`), so a Foldkit Model, the wire and the tests can
-// decode and encode it. Each one matches the TypeScript type of the same name in `conversation.ts`.
+// Schemas for the conversation machine's state (`conversation.vibe`), so a Foldkit Model, the wire and the tests can
+// decode and encode it. Each one matches the TypeScript type of the same name in `conversation.vibe`.
 
 /** A safe, nonnegative event cursor, shared by every wire/state/surface schema. */
 export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -35,7 +35,7 @@ export schema Client {
   readonly gap: boolean
 }
 
-/** The wire form of a conversation's events, as `conversation.ts` defines them. */
+/** The wire form of a conversation's events, as `conversation.vibe` defines them. */
 export schema Posted {
   readonly type: "Posted"
   readonly seq: Seq

@@ -1,7 +1,7 @@
 // The factory's API: one Effect service every surface calls, the web app, the CLI, the MCP server and the skill
 // (wiki/decisions/0002-core-is-an-effect-api.md). Two layers provide it: `MockFactory` (no backend, no model) and the
 // live one that talks to vibelang.smithers.sh.
-import type { Event } from "./conversation.ts"
+import type { Event } from "./conversation.vibe"
 import { ReadSnapshot } from "./schemas.vibe"
 export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
 

@@ -6,7 +6,7 @@
  * Each runs the package script a person runs from `apps/vibelang`, so a
  * target and `pnpm <script>` cannot disagree. `verify` installs LemmaScript
  * and Dafny into the ignored `verify/.tools` on its first run;
- * `verifyBroken` checks every committed mutation fails its proof, which takes
+ * `verifyBroken` checks every mutation it generates fails its proof, which takes
  * minutes, so it sits in the exclusive tier.
  *
  * @since 1.0.0
@@ -33,8 +33,7 @@ const sources = [
 /** The proof harness and the state machine it proves. */
 const proofs = [
   Smithers.glob("//apps/vibelang/verify/*.{sh,py,cjs,json}"),
-  Smithers.glob("//apps/vibelang/verify/broken/**/*"),
-  Smithers.file("//apps/vibelang/src/core/conversation.ts")
+  Smithers.file("//apps/vibelang/src/core/conversation.vibe")
 ]
 
 /**
@@ -78,7 +77,7 @@ const workerd = Smithers.Shell.Test({
 })
 
 /**
- * `pnpm verify`: LemmaScript's contracts on `src/core/conversation.ts`, proven by Dafny.
+ * `pnpm verify`: LemmaScript's contracts on `src/core/conversation.vibe`, proven by Dafny.
  *
  * @since 1.0.0
  * @category test
@@ -91,13 +90,13 @@ const verify = Smithers.Shell.Test({
 })
 
 /**
- * `pnpm verify:broken`: every committed mutation must fail its proof in its intended function.
+ * `pnpm verify:broken`: every generated mutation must fail its proof in its intended function.
  *
  * @since 1.0.0
  * @category test
  */
 const verifyBroken = Smithers.Shell.Test({
-  summary: "Check that every committed mutation of the state machine fails a proof obligation.",
+  summary: "Check that every generated mutation of the state machine fails a proof obligation.",
   shell: "cd apps/vibelang && pnpm verify:broken",
   data: proofs,
   timeout: "60m",

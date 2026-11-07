@@ -16,7 +16,7 @@ import {
   receive,
   resume,
   retryPost,
-} from "../src/core/conversation.ts"
+} from "../src/core/conversation.vibe"
 
 // Small domains, so ids, client ids and texts collide often.
 const Id = Schema.Literals(["", "r1", "r2", "m1", "m2"])

@@ -47743,13 +47743,8 @@
         "exclude": []
       },
       {
-        "kind": "glob",
-        "pattern": "apps/vibelang/verify/broken/**/*",
-        "exclude": []
-      },
-      {
         "kind": "file",
-        "path": "apps/vibelang/src/core/conversation.ts"
+        "path": "apps/vibelang/src/core/conversation.vibe"
       }
     ],
     "outputs": [],
@@ -47766,7 +47761,7 @@
     "kinds": [
       "test"
     ],
-    "summary": "Check that every committed mutation of the state machine fails a proof obligation.",
+    "summary": "Check that every generated mutation of the state machine fails a proof obligation.",
     "exclusive": true,
     "cacheable": false,
     "inputs": [
@@ -47776,13 +47771,8 @@
         "exclude": []
       },
       {
-        "kind": "glob",
-        "pattern": "apps/vibelang/verify/broken/**/*",
-        "exclude": []
-      },
-      {
         "kind": "file",
-        "path": "apps/vibelang/src/core/conversation.ts"
+        "path": "apps/vibelang/src/core/conversation.vibe"
       }
     ],
     "outputs": [],

@@ -1,10 +1,10 @@
 // The mock factory through the `Factory` service, as every surface calls it: the real sequencer, the scripted agent,
 // and two clients following one conversation (wiki/decisions/0007-multiplayer.md).
 import { describe, expect, it } from "@effect/vitest"
-import { apply, empty, type Event } from "../src/core/conversation.ts"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { mockReply } from "../src/core/mockReplies.ts"
+import { mockReply } from "../src/core/mockReplies.vibe"
 
 /** Every event of `conversation` up to and including the one that finishes its `replies`-th reply. */
 effect function untilReplies(conversation: string, replies: number) {

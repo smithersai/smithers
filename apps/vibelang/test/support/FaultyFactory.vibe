@@ -1,5 +1,5 @@
 // A transport fault over the product's real MockFactory: posts, replies, replay and live delivery stay real.
-import type { Event } from "../../src/core/conversation.ts"
+import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 

@@ -1,5 +1,5 @@
 import { expect, test } from "@playwright/test"
-import type { Client, Conversation } from "../src/core/conversation.ts"
+import type { Client, Conversation } from "../src/core/conversation.vibe"
 
 declare global {
   interface Window {

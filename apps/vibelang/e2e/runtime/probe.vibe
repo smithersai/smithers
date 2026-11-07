@@ -1,4 +1,4 @@
-import { apply, empty } from "../../src/core/conversation.ts"
+import { apply, empty } from "../../src/core/conversation.vibe"
 import type { Trace } from "../../test/support/FaultyFactory.vibe"
 
 export effect function canonical(observation: Trace) {

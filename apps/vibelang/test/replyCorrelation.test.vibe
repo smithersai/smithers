@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { apply, decide, empty, type Conversation, type Intent, type Event } from "../src/core/conversation.ts"
+import { apply, decide, empty, type Conversation, type Intent, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { Ask } from "../src/surfaces/commands.vibe"
 

@@ -4,7 +4,7 @@ import { readFileSync } from "node:fs"
 import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { serverPath } from "./surface-host.ts"
-import { mockReply } from "../src/core/mockReplies.ts"
+import { mockReply } from "../src/core/mockReplies.vibe"
 import { unreachable } from "../src/surfaces/backend.vibe"
 
 /** Nothing listens on the discard port: the live Factory there is unreachable. test/live.workerd.test.ts serves one. */

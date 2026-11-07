@@ -13,7 +13,7 @@ browser / CLI / MCP ── LiveFactory (HttpClient) ──▶ site Worker ──
 ```
 
 - **The sequencer** (`worker/Sequencer.vibe`) is the conversation's only writer. Every intent runs `decide` and
-  `apply` from `src/core/conversation.ts` under one lock; an accepted event is written to the object's storage
+  `apply` from `src/core/conversation.vibe` under one lock; an accepted event is written to the object's storage
   (`event/<seq>`), then published to every follower. A new incarnation replays the log. Post ids are `m<seq>`; a
   post's reply is `r<seq>`, so each post has exactly one possible reply.
 - **The reply is a durable flow.** `vibelang/Reply` (`worker/Reply.vibe`) is an `@smthrs/flow` flow whose steps are

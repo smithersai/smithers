@@ -4,7 +4,7 @@
 
 **Decision.** `MockFactory` is a `Factory` layer with no backend and no model. It runs the real sequencer (`decide`,
 `apply`) in memory, publishes events to every follower, and answers each post with a scripted reply streamed in
-pieces (`src/core/mockReplies.ts`), one reply at a time per conversation. Independent conversations answer in parallel.
+pieces (`src/core/mockReplies.vibe`), one reply at a time per conversation. Independent conversations answer in parallel.
 Acceptance, publication and enqueueing are one uninterruptible operation under that conversation's sequencer lock.
 A FIFO queue receives each accepted prompt before the lock releases; callers never launch reply fibers. One
 `forkIn` consumer per room belongs to the layer's scope, as do its queue and the shared PubSub. Scope closure waits

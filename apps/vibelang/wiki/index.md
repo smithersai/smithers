@@ -28,7 +28,7 @@ next. Every decision lands here in the same change as the code it shapes.
 
 ```
 apps/vibelang/
-  src/core/       the state machine (conversation.ts), the Effect API (Factory.vibe, MockFactory.vibe, LiveFactory.vibe)
+  src/core/       the state machine (conversation.vibe), the Effect API (Factory.vibe, MockFactory.vibe, LiveFactory.vibe)
                   and the HTTP protocol (wire.vibe)
   src/surfaces/   the shared command registry, CLI, MCP server and discovery manifest
   skills/         agent instructions for the Factory CLI

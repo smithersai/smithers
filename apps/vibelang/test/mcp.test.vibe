@@ -4,7 +4,7 @@ import { McpClient, McpProtocol } from "effect/ai"
 import { ChildProcess } from "effect/process"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { AskOutput, ReadOutput } from "../src/surfaces/commands.vibe"
-import { mockReply } from "../src/core/mockReplies.ts"
+import { mockReply } from "../src/core/mockReplies.vibe"
 import { nodePath, serverPath, cliManifest } from "./surface-host.ts"
 
 const clientLayer = McpClient.layerStdio({

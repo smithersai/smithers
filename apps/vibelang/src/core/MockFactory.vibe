@@ -1,8 +1,8 @@
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). Each conversation commits, publishes
 // and queues accepted prompts in one short critical section; its scoped worker answers in that same order.
-import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.ts"
+import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
-import { chunks, mockReply } from "./mockReplies.ts"
+import { chunks, mockReply } from "./mockReplies.vibe"
 
 /** One conversation's sequencer state and every event it numbered. */
 interface State {
