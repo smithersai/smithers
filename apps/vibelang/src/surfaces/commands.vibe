@@ -42,6 +42,7 @@ effect function ask(input: AskInput) {
     if (event.id !== replyId) return true
     numbers.push(event.seq)
     if (event.type === "ReplyDelta") text += event.text
+    if (event.type === "ReplyRestarted") text = ""
     if (event.type === "ReplyFailed") failure = event.reason
     if (event.type === "ReplyFinished") finished = true
     return event.type !== "ReplyFinished" && event.type !== "ReplyFailed"

@@ -286,5 +286,17 @@
     "claim": "retry clears only the matching pending failure",
     "before": "error: \"\"",
     "after": "error: \"failed\""
+  },
+  "apply-restart-text": {
+    "function": "apply",
+    "claim": "a restart empties the streaming reply and keeps every entry",
+    "before": "{ ...entry, text: \"\" }",
+    "after": "{ ...entry, text: entry.text }"
+  },
+  "decide-restart-guard": {
+    "function": "decide",
+    "claim": "an accepted restart names the reply that streams",
+    "before": "      if (!isReplying(conversation, intent.id)) return refused(\"not-replying\")\n      return accepted({ type: \"ReplyRestarted\"",
+    "after": "      return accepted({ type: \"ReplyRestarted\""
   }
 }

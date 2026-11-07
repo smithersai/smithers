@@ -99,3 +99,9 @@ JS number/UTF-16 model; it is not a proof of those toolchains. macOS installers 
 **Retry (Fable 7).** The pending recovery transition adds a frame and an exact clearing contract, plus two executable mutations. The current production proof has **28 verified, 0 errors** across thirteen marked functions; the mutation suite contains **48** unchanged-contract copies.
 
 **Fable final receipt.** Fresh production verification: **28 verified, 0 errors** in **17.321 s**. `pnpm verify:broken` rejected **48/48** executable mutations in **303.372 s** with two workers, each strictly typechecked and failed a Dafny obligation in its intended function. The eight new mutations cover reply targeting/correlation and pending retry; all forty prior copies were regenerated and rejected again.
+
+**Restart (live agent, 2026-11-07).** `RestartReply` and its event `ReplyRestarted` (decision 0010) add two contracts:
+an applied restart of the streaming reply keeps every entry and empties that reply's text, and `decide` accepts a
+restart only for the reply that streams. Every existing invariant covers the new case. Two executable mutations prove
+both can fail (`apply-restart-text`, `decide-restart-guard`). Linux receipts on nyc-01: `pnpm verify` **28 verified, 0
+errors** in 27.9 s; `pnpm verify:broken` rejected **50/50** mutations in 480.1 s with two workers.

@@ -28,6 +28,7 @@ const IntentSchema = Schema.Union([
   Schema.Struct({ type: Schema.Literal("Post"), id: Id, clientId: ClientId, name: Schema.Literal("Ada"), text: Text }),
   Schema.Struct({ type: Schema.Literal("StartReply"), id: Id, inReplyTo: Id }),
   Schema.Struct({ type: Schema.Literal("AppendReply"), id: Id, text: Text }),
+  Schema.Struct({ type: Schema.Literal("RestartReply"), id: Id }),
   Schema.Struct({ type: Schema.Literal("FinishReply"), id: Id }),
   Schema.Struct({ type: Schema.Literal("FailReply"), id: Id, reason: Schema.Literals(["", "timeout"]) }),
 ])
@@ -83,6 +84,8 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
       return grew && after.agent === "working" && after.replying === event.id && reply?.inReplyTo === event.inReplyTo
     case "ReplyDelta":
       return reply !== undefined && reply.text.endsWith(event.text) && after.agent === "working"
+    case "ReplyRestarted":
+      return reply !== undefined && reply.text === "" && !reply.done && after.agent === "working" && after.replying === event.id
     case "ReplyFinished":
       return reply !== undefined && reply.done && after.agent === "idle" && after.replying === ""
     case "ReplyFailed":
@@ -159,6 +162,24 @@ describe("the sequencer", () => {
     expect(decide(finished, { type: "Post", id: "reply", clientId: "b", name: "Grace", text: "new" }).ok).toBe(false)
     const attacked = run([original, { type: "StartReply", id: "same", inReplyTo: "m1" }, { type: "AppendReply", id: "same", text: " agent reply" }, { type: "FailReply", id: "same", reason: "oops" }])
     expect(attacked.state.entries).toEqual(state.entries)
+  })
+
+  it("restarts only the reply that streams, which then streams again from nothing", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(decide(one, { type: "RestartReply", id: "r1" })).toEqual({ ok: false, refusal: "not-replying" })
+    const started = apply(one, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+    const partial = apply(started, { type: "ReplyDelta", seq: 3, id: "r1", text: "Hal" })
+    expect(decide(partial, { type: "RestartReply", id: "r2" })).toEqual({ ok: false, refusal: "not-replying" })
+    const restart = decide(partial, { type: "RestartReply", id: "r1" })
+    expect(restart).toEqual({ ok: true, event: { type: "ReplyRestarted", seq: 4, id: "r1" } })
+    const restarted = apply(partial, { type: "ReplyRestarted", seq: 4, id: "r1" })
+    expect(restarted.entries[1]).toMatchObject({ id: "r1", text: "", done: false })
+    expect(restarted.entries[0]).toBe(partial.entries[0])
+    const finished = apply(apply(restarted, { type: "ReplyDelta", seq: 5, id: "r1", text: "Hello" }), { type: "ReplyFinished", seq: 6, id: "r1" })
+    expect(finished.entries[1]).toMatchObject({ text: "Hello", done: true })
+    expect(decide(finished, { type: "RestartReply", id: "r1" })).toEqual({ ok: false, refusal: "not-replying" })
+    // A restart nobody is streaming only advances the cursor.
+    expect(apply(finished, { type: "ReplyRestarted", seq: 7, id: "r1" })).toEqual({ ...finished, seq: 7 })
   })
 
   it("takes one reply at a time", () => {

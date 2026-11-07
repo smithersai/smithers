@@ -49,6 +49,7 @@ export type Event =
   }
   | { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string; readonly inReplyTo: string }
   | { readonly type: "ReplyDelta"; readonly seq: number; readonly id: string; readonly text: string }
+  | { readonly type: "ReplyRestarted"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
   | { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
 
@@ -95,6 +96,7 @@ export const AGENT_NAME = "VibeLang agent"
 //@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" && event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != event.id) && event.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == event.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != event.inReplyTo) ==> \result.entries.length == conversation.entries.length + 1 && \result.entries[conversation.entries.length].name == AGENT_NAME && \result.entries[conversation.entries.length].inReplyTo == event.inReplyTo
 //@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[j].author == "person" ==> conversation.entries[i].clientId != conversation.entries[j].clientId))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "person" && \result.entries[j].author == "person" ==> \result.entries[i].clientId != \result.entries[j].clientId)))
 //@ ensures (forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" ==> conversation.entries[i].clientId != "")) ==> (forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].author == "person" ==> \result.entries[i].clientId != ""))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyRestarted" && conversation.agent == "working" && conversation.replying == event.id && event.id != "" ==> \result.entries.length == conversation.entries.length && forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].id == event.id ==> \result.entries[i].text == "")
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq + 1 }
@@ -136,6 +138,13 @@ export function apply(conversation: Conversation, event: Event): Conversation {
     case "ReplyDelta": {
       if (!isReplying(conversation, event.id)) return next
       const entries = conversation.entries.map((entry) => entry.id === event.id ? { ...entry, text: entry.text + event.text } : entry)
+      //@ assert forall(i, 0 <= i && i < conversation.entries.length ==> entries[i].done == conversation.entries[i].done)
+      return { ...next, entries }
+    }
+    case "ReplyRestarted": {
+      // The agent's model call is retrying: what streamed so far is discarded and the reply streams again.
+      if (!isReplying(conversation, event.id)) return next
+      const entries = conversation.entries.map((entry) => entry.id === event.id ? { ...entry, text: "" } : entry)
       //@ assert forall(i, 0 <= i && i < conversation.entries.length ==> entries[i].done == conversation.entries[i].done)
       return { ...next, entries }
     }
@@ -222,11 +231,15 @@ export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
 
 // ── decide: the sequencer ──────────────────────────────────────────────────────────────────────────────────────────
 
-/** What the sequencer is asked to record. A person posts; the agent's flow starts, extends, ends or fails a reply. */
+/**
+ * What the sequencer is asked to record. A person posts; the agent's flow starts, extends, ends or fails a reply, and
+ * restarts it when its model call retries, discarding what streamed so far.
+ */
 export type Intent =
   | { readonly type: "Post"; readonly id: string; readonly clientId: string; readonly name: string; readonly text: string }
   | { readonly type: "StartReply"; readonly id: string; readonly inReplyTo: string }
   | { readonly type: "AppendReply"; readonly id: string; readonly text: string }
+  | { readonly type: "RestartReply"; readonly id: string }
   | { readonly type: "FinishReply"; readonly id: string }
   | { readonly type: "FailReply"; readonly id: string; readonly reason: string }
 
@@ -265,6 +278,7 @@ function refused(refusal: Refusal): Decision {
 //@ ensures \result.ok && \result.event.type == "Posted" ==> forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].clientId != \result.event.clientId)
 //@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> \result.event.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == \result.event.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != \result.event.inReplyTo)
 //@ ensures intent.type == "StartReply" && \result.ok ==> \result.event.type == "ReplyStarted" && \result.event.inReplyTo == intent.inReplyTo
+//@ ensures \result.ok && \result.event.type == "ReplyRestarted" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != ""
 export function decide(conversation: Conversation, intent: Intent): Decision {
   const seq = conversation.seq + 1
   switch (intent.type) {
@@ -287,6 +301,9 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
     case "AppendReply":
       if (!isReplying(conversation, intent.id)) return refused("not-replying")
       return accepted({ type: "ReplyDelta", seq, id: intent.id, text: intent.text })
+    case "RestartReply":
+      if (!isReplying(conversation, intent.id)) return refused("not-replying")
+      return accepted({ type: "ReplyRestarted", seq, id: intent.id })
     case "FinishReply":
       if (!isReplying(conversation, intent.id)) return refused("not-replying")
       return accepted({ type: "ReplyFinished", seq, id: intent.id })

@@ -13,6 +13,8 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
   `StartReply` require a nonempty entry id that has never appeared in this conversation, including finished replies.
   `StartReply.inReplyTo` must name an existing person post with no reply, including finished or failed replies.
   `ReplyStarted` and its projected entry preserve that post id; malformed starts only advance the replay cursor.
+- `RestartReply` (event `ReplyRestarted`) empties the streaming reply's text when the agent's model call retries, so
+  the next attempt streams from nothing; only the reply that streams can restart (0010).
 - `apply` is shared: every copy applies the same numbered events in order. A stale event changes nothing; the next one
   always advances `seq`.
 - `receive` adds a client's view: posts it sent that no event has confirmed (`pending`), and `gap` when an event

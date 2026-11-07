@@ -52,6 +52,8 @@ cases=[
 ('apply-reply-correlation','apply','inReplyTo: event.inReplyTo','inReplyTo: event.id','the projected reply preserves its target'),
 ('retry-post-frame','retryPost','...client, pending:','...client, gap: !client.gap, pending:','retry preserves conversation and gap'),
 ('retry-post-clear','retryPost','error: ""','error: "failed"','retry clears only the matching pending failure'),
+('apply-restart-text','apply','{ ...entry, text: "" }','{ ...entry, text: entry.text }','a restart empties the streaming reply and keeps every entry'),
+('decide-restart-guard','decide','      if (!isReplying(conversation, intent.id)) return refused("not-replying")\n      return accepted({ type: "ReplyRestarted"','      return accepted({ type: "ReplyRestarted"','an accepted restart names the reply that streams'),
 ]
 manifest={}
 check='--check' in sys.argv
