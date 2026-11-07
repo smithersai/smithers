@@ -1,8 +1,8 @@
 ---
 title: Effect 4.1 landing validation
-status: blocked
+status: done
 area: mvp
-owner: Codex
+owner: claude-e41land
 updated: 2026-11-07
 links: []
 ---
@@ -11,4 +11,4 @@ Restored persisted pending conversation acts before exposing the store, so a pre
 
 Preserved the reviewed sandbox database-route call forms after upgrade formatting. Both unchanged database-route tests pass. No tests or coverage thresholds changed.
 
-The dependency upgrade remains blocked by regressions reproduced against the previous dependency cohort. Landing validation retains paired baseline and upgrade results for every reported red gate and the complete app suite.
+The upgrade lands with no red only on the upgrade; [the repair note](effect-41-fixes.md) lists each repair and the paired validation against `main`.

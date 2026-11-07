@@ -1,26 +1,50 @@
 ---
 title: Effect 4.1 introduced regression repairs
-status: in-progress
+status: done
 area: dependencies
-owner: Codex
+owner: claude-e41land
 updated: 2026-11-07
 links: []
 ---
 
-Repair introduced failures by shared cause, retaining existing tests and coverage thresholds. Baseline is a fresh independently installed main@origin source-swap workspace. Detailed incremental receipts: ~/vl/vl-e41fix.REPORT.md. No push or main movement.
+The move to Effect 4.1.1, VibeLang 0.0.12 and Alchemy 2.0.0-beta.85 lands with no
+test, typecheck, check or lint red only on the upgrade. Every comparison ran the
+upgrade against a source-swap workspace of the `main` it lands on, each with its own
+install and its own PostgreSQL, Electric and PgBouncer fixture.
 
-Library catalog entries: existing @smthrs/integrations for GitHub; @smthrs/effect-electric for Electric shapes; Effect typed error handling at public domain boundaries. No new library or app retry mechanism.
+Library catalog entries: existing @smthrs/integrations for GitHub; @smthrs/effect-electric
+for Electric shapes; @smthrs/effect-tanstack-db for the spend receipt; Effect typed error
+handling at public domain boundaries. No new library or app retry mechanism.
 
 ## Repairs
 
-- `pwxqurxw`: the atomic filesystem promises native Node glob parity. Effect 4.1 deliberately replaces its Node adapter glob with shared Glob (saved changelog lines 248–252), so compare directly with Node's actual glob; preserve every case and pinned assertion. 48/48 pass.
-- `vnoxwvvx`: the installed quickstart uses published rc.16 with its compatible Effect 4.0.5 cohort. The unchanged install/replay test passes.
-- `yqnylpxq`: patch upstream implementations for own __proto__ environment entries, statically visible NodeWS exports (all eight preserved), signed-int64 OTLP serialization, and VibeLang real error-subclass matching. Existing kernel, error, resource-budget and TUI files pass: 6, 7, 7 and 4 cases.
-- `qssnpmpq`: fresh typed domain failures at GitHub, coedit and runner Jobs boundaries; Effect 4.1's eager error mapper now preserves Cause annotations. All seven originally red annotated assertions pass unchanged, in a 13-case focused run.
-- `kpknpzpo`: a one-element Effect stream buffer lets finite upstream shape responses observe EOF and release their resource while preserving downstream backpressure and interruption. All 15 worker ShapeProxy and 150 real Podman-backed SDK proxy cases pass unchanged.
+- `pwxqurxw`: the atomic filesystem promises native Node glob parity. Effect 4.1 deliberately
+  replaces its Node adapter glob with shared Glob (4.1 changelog, PR 8829, commit d2b6bc7), so
+  the test compares with Node's own glob; every case and pinned assertion stays.
+- `vnoxwvvx`: the published rc.16 quickstart installs its Effect 4.0.5 cohort.
+- `yqnylpxq`: pnpm patches for own `__proto__` child environment entries and statically visible
+  NodeWS exports (`@effect/platform-node-shared`), signed-int64 OTLP numbers
+  (`@opentelemetry/otlp-transformer`) and VibeLang base-error subclass matching
+  (`vibelang-runtime`, which mirrors the upstream VibeLang fix and goes with 0.0.13).
+- `qssnpmpq`: GitHub, coedit and runner Jobs fail with fresh typed domain errors; Effect 4.1's
+  eager `mapError` keeps the transport failure's cause annotations.
+- `kpknpzpo`: a one-element stream buffer lets a finite Electric reply observe its end and
+  release its connection while the downstream holds the last chunk.
+- `qnvllrmt`: `LiveQuery.observeSync` records the spend tab's shown alerts in the publication's
+  own turn.
+- `yllmpyst`, `srlorpop`, `rqkkvmyz`, `lrtqltlk`: package lint. The upgrade put imports above
+  61 module headers, left unused and value-only imports, and left docs unformatted; ESLint
+  also read VibeLang 0.0.12's generated `*.d.vibe.ts` declarations.
 
-Recursive typecheck and check pass, and the patched lockfile installs frozen. Astra reviewed the changes; its NodeWS export-preservation finding is fixed and verified. Fable is unavailable in this session.
+## Validation
 
-## Full-suite control
-
-The inherited launcher shared a 100-connection PostgreSQL between six two-worker shards. Both trees exhausted that fixture (91/132 too-many-client errors observed before stopping). The paired rerun retains tests, six shards, two workers, coverage and 100% thresholds, with 500 fixture connections. No product timeout or coverage threshold was changed. Complete assertion comparison and remaining upgrade-only failures will be recorded in ~/vl/vl-e41fix.REPORT.md before a landing decision. No push, GitHub write or main movement.
+- Full apps/mvp suite, six coverage-enabled shards per tree, 10,273 tests in 672 files each:
+  `main` 77 failing names, upgrade 80, 74 shared. Of the six red only on the upgrade, five
+  (attention panel, repo clone, terminal panel, timeline summary refusal, tab imports) pass
+  on both trees in three paired reruns of their files (221 of 221 each) and in both earlier
+  full upgrade runs; the sixth, `embeds.test.ts`'s route listener race, fails on `main` with
+  the same `TypeError` at the same line in an earlier full run.
+- The e41land non-MVP files pair test for test, except the TUI's Bun case, which timed out
+  under load and passes on rerun.
+- Recursive lint: only apps/mvp fails, with the same 18 errors on both trees.
+- Frozen install, recursive typecheck and check, `pnpm docs:check`: pass.
