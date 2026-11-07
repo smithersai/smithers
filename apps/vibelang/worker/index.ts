@@ -6,9 +6,15 @@ interface Env {
 }
 
 export default {
-  fetch: (request, env) => {
+  fetch: async (request, env) => {
     const url = new URL(request.url)
     if (url.pathname === "/api/health") return Response.json({ ok: true, agent: "mock" })
-    return env.ASSETS.fetch(request)
+    // Only home and built assets exist today. Reject before the asset service's SPA fallback can turn a miss into 200.
+    const home = url.pathname === "/" || url.pathname === "/index.html"
+    const asset = /^\/(?:assets|media)\/[^?]+\.[^/]+$/.test(url.pathname)
+    if (!home && !asset) return new Response("Not found", { status: 404 })
+    const response = await env.ASSETS.fetch(request)
+    if (asset && response.headers.get("Content-Type")?.includes("text/html")) return new Response("Not found", { status: 404 })
+    return response
   },
 } satisfies ExportedHandler<Env>

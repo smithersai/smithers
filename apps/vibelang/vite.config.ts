@@ -16,7 +16,7 @@ export default defineConfig(({ mode }) => ({
   server: { port: 5178 },
   test: {
     environment: "happy-dom",
-    include: ["test/**/*.test.{ts,vibe}"],
+    include: ["test/**/*.test.{ts,vibe,mjs}"],
     // Foldkit ships ESM that Vitest must transform with the app.
     server: { deps: { inline: ["foldkit"] } },
   },

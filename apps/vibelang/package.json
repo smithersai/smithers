@@ -9,7 +9,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview --port 4173 --strictPort",
-    "typecheck": "vibelang -p tsconfig.json --noEmit",
+    "typecheck": "vibelang -p tsconfig.json --noEmit && vibelang -p worker/tsconfig.json --noEmit",
     "test": "pnpm build:surfaces && vitest run",
     "e2e": "playwright test",
     "plan": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy plan --stage prod",
