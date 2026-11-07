@@ -115,7 +115,7 @@ describe("umbrella lint target", () => {
       const path of [
         "src/Install.vibe",
         "test/Docs.test.ts",
-        "examples/check-runtime.ts",
+        "examples/check-runtime.vibe",
         "terraform/modules/cache/service/storage.js"
       ]
     ) {

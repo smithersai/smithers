@@ -6,7 +6,6 @@
  * `test/Examples.test.ts` runs it.
  */
 import * as Runtime from "@smthrs/build/Runtime"
-import * as Effect from "effect/Effect"
 
 const platform = { os: "linux", arch: "x64", libc: "glibc" }
 
@@ -24,11 +23,10 @@ export const compareVersions = () => ({
  */
 export const verifyHost = (version: string) =>
   Effect.runPromise(
-    Effect.gen(function*() {
-      const runtime = yield* Runtime.Runtime
-      return yield* runtime.verify
-    }).pipe(
-      Effect.catchTag("smithers-build/RuntimeError", (error) => Effect.succeed(error.code)),
-      Effect.provide(Runtime.layerNoop("node", { requirement: ">=26.4.0", platform, version }))
-    )
+    (effect {
+      const runtime = try Runtime.Runtime
+      return try runtime.verify
+    })
+      |> Effect.catchTag(%, "smithers-build/RuntimeError", (error) => Effect.succeed(error.code))
+      |> Effect.provide(%, Runtime.layerNoop("node", { requirement: ">=26.4.0", platform, version }))
   )

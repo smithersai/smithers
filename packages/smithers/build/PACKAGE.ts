@@ -64,7 +64,7 @@ const lint = Smithers.EsLint({
   sources: [
     Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.ts"),
-    Smithers.glob("examples/**/*.ts"),
+    Smithers.glob("examples/**/*.{ts,vibe}"),
     Smithers.glob("terraform/modules/cache/service/**/*.js")
   ],
   deps: [],
@@ -101,7 +101,7 @@ const test = Smithers.Vitest({
   tests: [Smithers.glob("test/**/*.test.ts")],
   sources: [
     Smithers.glob("src/**/*.{ts,vibe}"),
-    Smithers.glob("examples/**/*.ts"),
+    Smithers.glob("examples/**/*.{ts,vibe}"),
     Smithers.file("package.json"),
     Smithers.file("../flows/platform-node/src/ProcessSandbox.ts"),
     Smithers.file("README.md"),

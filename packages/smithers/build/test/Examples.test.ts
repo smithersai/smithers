@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { compareVersions, verifyHost } from "../examples/check-runtime.ts"
+import { compareVersions, verifyHost } from "../examples/check-runtime.vibe"
 import { digestNpmrc } from "../examples/digest-npmrc.ts"
 
 describe("examples/check-runtime", () => {
