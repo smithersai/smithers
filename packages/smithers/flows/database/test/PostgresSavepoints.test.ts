@@ -128,8 +128,8 @@ describe.skipIf(!url)("nested writes on PostgreSQL", () => {
   it("a failure outside a read-only nested write still rolls back what ran before it", () =>
     withWriter((sql, writer) =>
       Effect.gen(function*() {
-        yield* writer.write(Effect.gen(function*() {
-          yield* writer.write(Effect.gen(function*() {
+        return yield* writer.write(Effect.gen(function*() {
+          return yield* writer.write(Effect.gen(function*() {
             yield* put(sql, "undone")
             yield* writer.write(sql.unsafe(`SELECT v FROM t`), { readOnly: true })
             return yield* Effect.fail("no" as const)

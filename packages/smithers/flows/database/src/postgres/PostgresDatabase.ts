@@ -527,6 +527,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
       }
       Object.defineProperty(compiler, "withoutTransform", { value: compiler })
       const sql = yield* SqlClient.make({
+        driver: "pg",
         acquirer: Effect.map(reserve, statements),
         compiler,
         spanAttributes: [["db.system.name", "postgresql"]]
@@ -535,13 +536,7 @@ export const layer = (options: PostgresDatabaseOptions): Layer.Layer<SqlClient.S
         SqlClient.makeWithTransaction({
           transactionService: sql.transactionService,
           spanAttributes: [["db.system.name", "postgresql"]],
-          acquireConnection: Effect.gen(function*() {
-            const reservation = yield* Scope.make()
-            const conn = yield* Scope.provide(reserve, reservation).pipe(
-              Effect.onExit((exit) => exit._tag === "Failure" ? Scope.close(reservation, exit) : Effect.void)
-            )
-            return [reservation, tracked(conn)] as const
-          }),
+          acquireConnection: (restore) => Effect.map(restore(reserve), tracked),
           begin: start,
           savepoint,
           commit,

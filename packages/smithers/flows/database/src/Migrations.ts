@@ -192,7 +192,7 @@ interface ZeroMigration {
  *
  * The loader runs inside the migrator's transaction, so this application
  * commits and rolls back with the rest of the run. Failures follow the
- * migrator's own convention for a failed migration: they die with a `Failed`
+ * migrator's own convention for a failed migration: they fail with a `Failed`
  * `MigrationError` that keeps the cause, so a transient lock conflict stays
  * classifiable by {@link run}'s retry while a real failure surfaces loudly.
  *
@@ -205,7 +205,7 @@ const applyZero = (zero: ZeroMigration) =>
     yield* sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: 0, name: zero.name }])}`.withoutTransform
   }).pipe(
     Effect.catch((cause) =>
-      Effect.die(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))
+      Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "0_${zero.name}" failed` }))
     )
   )
 
@@ -301,7 +301,7 @@ const finish = (
         yield* migration
         yield* sql`INSERT INTO ${sql(table)} ${sql.insert([{ migration_id: id, name }])}`.withoutTransform
       }).pipe(Effect.catch((cause) =>
-        Effect.die(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))
+        Effect.fail(new Migrator.MigrationError({ cause, kind: "Failed", message: `Migration "${id}_${name}" failed` }))
       ))
       applied.add(id)
       installed.set(block, id)

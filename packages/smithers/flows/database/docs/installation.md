@@ -14,7 +14,7 @@ npm install @smthrs/database@next effect
 The `next` tag carries the 1.0 release candidates. The storage packages listed
 below are the worked examples of everything on this page.
 
-`effect` is a required peer at exactly `4.0.5`. The SQLite adapter is an
+`effect` is a required peer at exactly `4.1.1`. The SQLite adapter is an
 optional peer, needed by `node/NodeDatabase` and
 `test/TestDatabase`, including the verification example below. Install it,
 at the same version as your `effect`, when selecting either subpath:
@@ -34,7 +34,7 @@ one copy cannot see a client provided from the other.
 | Requirement | Value               | Why                                                                                                                       |
 | ----------- | ------------------- | ------------------------------------------------------------------------------------------------------------------------- |
 | Node.js     | 22.19.0 or later    | `NodeDatabase` opens the database through the built-in `node:sqlite` module.                                              |
-| Bun         | 1.4.0 or later      | Select `BunDatabase` and the tested `@effect/sql-sqlite-bun@4.0.5` peer. NodeDatabase deliberately refuses use under Bun. |
+| Bun         | 1.4.0 or later      | Select `BunDatabase` and the tested `@effect/sql-sqlite-bun@4.1.1` peer. NodeDatabase deliberately refuses use under Bun. |
 | Database    | SQLite / PostgreSQL | SQLite is the default; PostgreSQL uses the optional `@effect/sql-pg` adapter.                                             |
 
 ## Import subpaths

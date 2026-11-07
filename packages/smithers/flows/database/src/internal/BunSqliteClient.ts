@@ -145,6 +145,7 @@ const make = (
       isTransaction: (conn) => conn.isTransaction()
     })
     return yield* Client.make({
+      driver: "sqlite-bun",
       acquirer,
       compiler: Statement.makeCompilerSqlite(options.transformQueryNames),
       transactionAcquirer,

@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -24,7 +24,7 @@ service, and the writer never wraps them.
 npm install @smthrs/database@next effect
 ```
 
-`effect` is a required peer at exactly `4.0.5`. The optional peer
+`effect` is a required peer at exactly `4.1.1`. The optional peer
 `@effect/sql-sqlite-node` is required by `node/NodeDatabase` and
 `test/TestDatabase`, including the example below. Install it at the same
 version as your `effect`:

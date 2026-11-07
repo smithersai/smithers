@@ -160,7 +160,7 @@ describe("composed migrations", () => {
 
       expect(Exit.isFailure(result.failed)).toBe(true)
       if (Exit.isFailure(result.failed)) {
-        const defect = Cause.findDefect(result.failed.cause)
+        const defect = Cause.findError(result.failed.cause)
         expect(Result.isSuccess(defect)).toBe(true)
         if (Result.isSuccess(defect)) {
           expect(defect.success).toBeInstanceOf(Migrator.MigrationError)
@@ -408,7 +408,7 @@ describe("composed migrations", () => {
 
       expect(Exit.isFailure(result.failed)).toBe(true)
       if (Exit.isFailure(result.failed)) {
-        const defect = Cause.findDefect(result.failed.cause)
+        const defect = Cause.findError(result.failed.cause)
         expect(Result.isSuccess(defect)).toBe(true)
         if (Result.isSuccess(defect)) {
           expect(defect.success).toBeInstanceOf(Migrator.MigrationError)
