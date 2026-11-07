@@ -40,16 +40,16 @@ import type * as Scope from "effect/Scope"
 import type * as Stream from "effect/Stream"
 import * as Elections from "./internal/elections.ts"
 import { errorName } from "./internal/errorName.ts"
-import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "#vibelang/emitted/src/internal/model"
-import { oneWriter } from "#vibelang/emitted/src/internal/oneWriter"
+import { type Change, type Key, LoadFailed, type MutationRefused, type Transaction } from "./internal/model.ts"
+import { oneWriter } from "./internal/oneWriter.ts"
 import { awaitRow, changes, mutate, preload, receipt, release, toArray } from "./internal/readers.ts"
 import { wholeTransactions } from "./internal/wholeTransactions.ts"
 import { declared } from "./Migrations.ts"
 import type { Lock } from "./Outbox.ts"
 import { Persistence, restoreFailures, restoreMs, syncRoles, writeFailures } from "./Persistence.ts"
 
-export { LoadFailed, MutationRefused, TransactionFailed } from "#vibelang/emitted/src/internal/model"
-export type { Change, Key, Transaction } from "./internal/model.vibe"
+export { LoadFailed, MutationRefused, TransactionFailed } from "./internal/model.ts"
+export type { Change, Key, Transaction } from "./internal/model.ts"
 
 /**
  * The schema every row of a collection must satisfy. It checks rows and never

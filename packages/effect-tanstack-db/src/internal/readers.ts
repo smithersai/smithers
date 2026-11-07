@@ -8,7 +8,7 @@ import type { ChangeMessage, Collection as TanStackCollection, Transaction as Ta
 import * as Effect from "effect/Effect"
 import * as Queue from "effect/Queue"
 import * as Stream from "effect/Stream"
-import { type Change, type Key, LoadFailed, MutationRefused, type Transaction, TransactionFailed } from "#vibelang/emitted/src/internal/model"
+import { type Change, type Key, LoadFailed, MutationRefused, type Transaction, TransactionFailed } from "./model.ts"
 
 type Readable<A extends object, K extends Key> = Pick<
   TanStackCollection<A, K, any>,

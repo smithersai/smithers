@@ -25,6 +25,7 @@
 
 import type { SyncConfig } from "@tanstack/db"
 import * as Effect from "effect/Effect"
+import * as Option from "effect/Option"
 import type { Lock } from "../Outbox.ts"
 import { wholeTransactions } from "./wholeTransactions.ts"
 
@@ -55,9 +56,9 @@ export const oneWriter = <C extends { readonly sync: (params: never) => unknown 
   options: {
     readonly lock: Lock
     readonly name: string
-    readonly fork: (turn: void!!) => () => void
+    readonly fork: (turn: Effect.Effect<void>) => () => void
     readonly became: (role: Role) => void
-    readonly failed: (error: unknown) => void!!
+    readonly failed: (error: unknown) => Effect.Effect<void>
   }
 ): C => {
   const writing = wholeTransactions(config).sync as (params: Params) => unknown
@@ -98,23 +99,19 @@ export const oneWriter = <C extends { readonly sync: (params: never) => unknown 
       // The program's turn: write once it holds the lock, watching until then; stolen, watch and wait again. A writer
       // lets the lock go only once the database has stored what it committed, so none of its commits lands after the
       // next writer's: the finalizer runs before the lock's own release.
-      const turn = do {
-        const catchProgram = Effect.scoped(effect {
-          const free = try options.lock.tryHold(options.name)
-          const held = Option.isSome(free)
-            ? free.value
-            : try Effect.andThen(start("watcher"), options.lock.hold(options.name))
-          try Effect.addFinalizer(() => Effect.promise(() => Promise.all(unstored)))
-          try start("writer")
-          try held.lost
-          try Effect.sync(stopSession)
-        })
-          |> Effect.forever(%)
-        effect {
-          return catchProgram catch effect (error) =>
-            try Effect.andThen(options.failed(error), Effect.sync(() => params.markError(error)))
-        }
-      }
+      const turn = Effect.scoped(Effect.gen(function*() {
+        const free = yield* options.lock.tryHold(options.name)
+        const held = Option.isSome(free)
+          ? free.value
+          : yield* Effect.andThen(start("watcher"), options.lock.hold(options.name))
+        yield* Effect.addFinalizer(() => Effect.promise(() => Promise.all(unstored)))
+        yield* start("writer")
+        yield* held.lost
+        yield* Effect.sync(stopSession)
+      })).pipe(
+        Effect.forever,
+        Effect.catch((error) => Effect.andThen(options.failed(error), Effect.sync(() => params.markError(error))))
+      )
       const stop = options.fork(turn)
       return {
         // The source stops first, so it commits nothing more while the lock waits for what it committed.

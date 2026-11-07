@@ -8,7 +8,7 @@
 
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
-import type { Role } from "./oneWriter.vibe"
+import type { Role } from "./oneWriter.ts"
 
 /**
  * How many of a program's persisted synced collections first took each role.

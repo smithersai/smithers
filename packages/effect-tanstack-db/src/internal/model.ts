@@ -5,6 +5,7 @@
  * @since 0.1.0
  */
 
+import * as Data from "effect/Data"
 import type * as Effect from "effect/Effect"
 
 /**
@@ -39,7 +40,7 @@ export interface Change<A, K extends Key = Key> {
 export interface Transaction {
   readonly id: string
   /** Succeeds once the mutation is persisted; fails with `TransactionFailed` when it rolled back. */
-  readonly persisted: void!TransactionFailed
+  readonly persisted: Effect.Effect<void, TransactionFailed>
 }
 
 /**

@@ -16,7 +16,7 @@ export * as Collection from "./Collection.ts"
  * @category queries
  * @since 0.1.0
  */
-export * as LiveQuery from "#vibelang/emitted/src/LiveQuery"
+export * as LiveQuery from "./LiveQuery.ts"
 
 /**
  * @category queries

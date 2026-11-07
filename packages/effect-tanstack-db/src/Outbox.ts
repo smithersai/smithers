@@ -57,7 +57,7 @@ import * as SubscriptionRef from "effect/SubscriptionRef"
 import * as Tracer from "effect/Tracer"
 import type { Collection } from "./Collection.ts"
 import { errorName } from "./internal/errorName.ts"
-import { type MutationRefused, TransactionFailed } from "#vibelang/emitted/src/internal/model"
+import { type MutationRefused, TransactionFailed } from "./internal/model.ts"
 import type { OutboxUpgrade } from "./Migrations.ts"
 
 /**
