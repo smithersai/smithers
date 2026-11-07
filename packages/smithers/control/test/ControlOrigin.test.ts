@@ -23,7 +23,7 @@ const request = (url: string, origin?: string, forwardedProto?: string) =>
 
 describe("control browser origin", () => {
   it.each([undefined, "https:"] as const)(
-    "guards direct TLS with a relative request URL and scheme %s",
+    "guards the absolute TLS transport URL with external scheme %s",
     async (scheme) => {
       const server = HttpRouter.serve(
         ControlServer.layerHttp.pipe(Layer.provide([
@@ -67,7 +67,7 @@ describe("control browser origin", () => {
               )
               return Effect.sync(() => outgoing.destroy())
             })
-            expect([originScheme, status]).toEqual([originScheme, scheme === originScheme ? 200 : 403])
+            expect([originScheme, status]).toEqual([originScheme, (scheme ?? "https:") === originScheme ? 200 : 403])
           }
         }).pipe(Effect.provide(server), Effect.scoped)
       )

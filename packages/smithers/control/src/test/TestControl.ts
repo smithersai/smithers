@@ -1,5 +1,4 @@
 import * as SecureRandom from "effect/crypto/SecureRandom"
-import * as Hex from "effect/encoding/Hex"
 /**
  * Deterministic in-memory Control stack for package and consumer tests.
  *
@@ -9,24 +8,13 @@ import * as Hex from "effect/encoding/Hex"
 import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
-import { Effect, Layer } from "effect"
+import { Layer } from "effect"
 import * as EffectDigest from "effect/crypto/Digest"
 import * as ControlExecutor from "../ControlExecutor.ts"
 import * as ControlLive from "../ControlLive.ts"
 import * as ControlRuntime from "../ControlRuntime.ts"
 
-const browserCrypto = Layer.succeed(
-  EffectDigest.Digest,
-  EffectDigest.Digest.of({
-    digest: (algorithm, data) =>
-      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm.name, data.slice().buffer)).pipe(
-        Effect.map((buffer) => new Uint8Array(buffer))
-      ),
-    digestHex(algorithm, data) {
-      return Effect.map(this.digest(algorithm, data), Hex.encode)
-    }
-  })
-).pipe(Layer.merge(SecureRandom.layerWebCrypto))
+const browserCrypto = Layer.merge(EffectDigest.layerWebCrypto, SecureRandom.layerWebCrypto)
 
 /**
  * Provides Control, ControlRuntime, the in-memory journal bundle, and an empty

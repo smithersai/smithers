@@ -1,3 +1,4 @@
+import { NodeWS } from "@effect/platform-node"
 import * as NodeHttpClient from "@effect/platform-node/NodeHttpClient"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
 import * as NodeSocket from "@effect/platform-node/NodeSocket"
@@ -193,14 +194,14 @@ describe("ControlClient", () => {
       const compiled = ts.transpileModule(source, { compilerOptions: { target: ts.ScriptTarget.ES2022 } }).outputText
       const guideClient: ReturnType<typeof client> = new Function(
         "NodeHttpClient",
-        "NodeSocket",
+        "NodeWS",
         "ControlClient",
         "Layer",
         "RpcSerialization",
         "Socket",
         "process",
         `${compiled}\nreturn client`
-      )(NodeHttpClient, NodeSocket, ControlClient, Layer, RpcSerialization, Socket, {
+      )(NodeHttpClient, NodeWS, ControlClient, Layer, RpcSerialization, Socket, {
         env: { SMITHERS_CONTROL_TOKEN: token }
       })
       return yield* Effect.gen(function*() {
