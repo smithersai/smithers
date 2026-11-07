@@ -11,7 +11,7 @@ description: >
 
 A flow is ordinary TypeScript built from `Flow.make`, `Action.make`, and
 Effect. Completed actions are recorded; recovery resumes at the frontier.
-Use Effect 4 (`effect@4.0.5`) and the Smithers 1.0 APIs. Read the owning package's
+Use Effect 4 (`effect@4.1.1`) and the Smithers 1.0 APIs. Read the owning package's
 README and docs before authoring. Never use JSX or 0.x APIs.
 
 ## Rule 0: if you are already inside a run, do not use Smithers

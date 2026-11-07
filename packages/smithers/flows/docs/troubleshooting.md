@@ -32,7 +32,7 @@ package, is the first section. The full schemas are in the
 imported from an `@smthrs/*` package such as `@smthrs/artifacts`.
 
 **Cause.** The project has `@smthrs/flows` 1.0.0-rc.5 or earlier beside
-`effect` 4.0.5, and those releases import a module that `effect` 4.0.5 does not
+`effect` 4.1.1, and those releases import a module that `effect` 4.1.1 does not
 ship. pnpm 11 can install such a release when you ask for `@smthrs/flows@next`:
 its `minimumReleaseAge` skips every version younger than 24 hours, so `next`
 resolves to the newest candidate older than a day, which can be more than one
