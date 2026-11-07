@@ -10,4 +10,13 @@ export effect function main() {
   try mcp(args.includes("--mock"), Option.getOrUndefined(environment))
 }
 
-NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer), { disableErrorReporting: true })
+/**
+ * Warnings and errors go to stderr: stdout carries the protocol. A step's routine lines (`vibelang.post`, the engine's) are
+ * for a server's operators, not a person at a terminal.
+ */
+const logs = Layer.mergeAll(
+  Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)]),
+  Layer.succeed(References.MinimumLogLevel, "Warn"),
+)
+
+NodeRuntime.runMain(Effect.provide(main(), Layer.mergeAll(NodeServices.layer, logs)), { disableErrorReporting: true })

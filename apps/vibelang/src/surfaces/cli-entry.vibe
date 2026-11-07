@@ -15,4 +15,13 @@ export effect function main() {
   if ((try cli(args, Option.getOrUndefined(environment))) !== 0) throw new CommandFailed()
 }
 
-NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))
+/**
+ * Warnings and errors go to stderr: stdout carries the command's answer, `--json` included. A step's routine lines (`vibelang.post`, the engine's) are
+ * for a server's operators, not a person at a terminal.
+ */
+const logs = Layer.mergeAll(
+  Logger.layer([Logger.withConsoleError(Logger.formatLogFmt)]),
+  Layer.succeed(References.MinimumLogLevel, "Warn"),
+)
+
+NodeRuntime.runMain(Effect.provide(main(), Layer.mergeAll(NodeServices.layer, logs)))
