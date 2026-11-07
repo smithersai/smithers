@@ -16,8 +16,10 @@ export function transcriptViewport(page?: Document) {
     page.querySelector("#vl-palette[data-state='open']") === null
   )
   const position = () => page?.defaultView?.scrollY ?? 0
+  const scrollable = () => !page || page.documentElement.scrollHeight > page.documentElement.clientHeight
   const pause = () => {
-    if (!active()) return undefined
+    // An upward gesture on a page too short to scroll moves nothing, so it is no reason to stop following.
+    if (!active() || !scrollable()) return undefined
     paused = true
     previousY = position()
     return { bottom: false, intent: ++intent }

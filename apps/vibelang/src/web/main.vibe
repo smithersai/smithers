@@ -166,6 +166,8 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
       draft: "",
       sent: model.sent + 1,
       client: Machine.post(model.client, clientId, text),
+      // Sending shows the new post and its answer, wherever the reader had scrolled.
+      following: true,
       stream: model.stream === "closed" ? "open" : model.stream,
       connection: model.stream === "closed" ? "Connecting" : model.connection,
     },
