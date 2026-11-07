@@ -50,7 +50,8 @@ import * as Dialect from "@smthrs/database/Dialect"
 import { DurableWriter } from "@smthrs/database/DurableWriter"
 import * as DurableWrites from "@smthrs/database/DurableWriter"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import { Clock, Crypto, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Clock, Effect, Fiber, Layer, Option, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
 import * as ApprovalAuthority from "./ApprovalAuthority.ts"
@@ -470,7 +471,7 @@ const makeRuntime = (
 ): Effect.Effect<
   Service,
   PersistenceError,
-  Crypto.Crypto | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
+  EffectDigest.Digest | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
 > => {
   // Snapshot before the Effect starts: construction options are caller-owned
   // and may be mutated while migrations or service acquisition are suspended.
@@ -486,7 +487,7 @@ const makeRuntime = (
   const authorizeLaunch = options.authorizeLaunch
 
   return Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
     const writer = yield* DurableWriter
     const runStore = yield* RunStore.RunStore
     yield* migrate
@@ -1710,7 +1711,7 @@ const makeRuntime = (
           executionDigest: flow.executionDigest,
           handoff,
           idempotencyKey: input.idempotencyKey
-        }).pipe(Effect.provideService(Crypto.Crypto, crypto))
+        }).pipe(Effect.provideService(EffectDigest.Digest, crypto))
         const identity = approvalIdentity(card.approval.target)
         // The key row is claimed FIRST, and the claim is a conditional insert
         // followed by a read of whoever holds it. `idempotency_key` is the
@@ -2566,7 +2567,7 @@ export const layer = (
 ): Layer.Layer<
   ControlRuntime,
   PersistenceError,
-  Crypto.Crypto | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
+  EffectDigest.Digest | DurableWriter | SqlClient.SqlClient | RunStore.RunStore
 > => Layer.effect(ControlRuntime)(makeRuntime(options))
 
 /**
@@ -2581,7 +2582,7 @@ export const layerWithStore = (
 ): Layer.Layer<
   ControlRuntime,
   PersistenceError,
-  Crypto.Crypto | DurableWriter | SqlClient.SqlClient
+  EffectDigest.Digest | DurableWriter | SqlClient.SqlClient
 > => layer(options).pipe(Layer.provideMerge(RunStore.layer))
 
 /**

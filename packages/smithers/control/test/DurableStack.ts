@@ -1,4 +1,5 @@
 import * as DatabaseMigrations from "@smthrs/database/Migrations"
+import * as EffectDigest from "effect/crypto/Digest"
 /**
  * A complete durable `ControlLive` stack over one in-memory SQLite database.
  *
@@ -17,7 +18,7 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, type Ownership, RunStore } from "@smthrs/run-store"
-import type { Crypto } from "effect"
+import type {} from "effect"
 import { Layer } from "effect"
 import type * as SqlClient from "effect/sql/SqlClient"
 import type * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
@@ -80,7 +81,7 @@ export type DurableStack =
   | RunStore.RunStore
   | DurableWriter
   | SqlClient.SqlClient
-  | Crypto.Crypto
+  | EffectDigest.Digest
 
 /** Everything the control plane needs a database and a journal to supply. */
 export type DurableStackDependencies =
@@ -88,7 +89,7 @@ export type DurableStackDependencies =
   | RunStore.RunStore
   | DurableWriter
   | SqlClient.SqlClient
-  | Crypto.Crypto
+  | EffectDigest.Digest
 
 /**
  * The control plane over a database somebody else provides.

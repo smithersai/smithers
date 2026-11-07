@@ -16,7 +16,8 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as EngineMigrations from "@smthrs/engine-store/Migrations"
 import { Migrations } from "@smthrs/journal"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
-import { type Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import {
@@ -66,7 +67,7 @@ const withRuntime = <A, E>(
   use: (
     runtime: ControlRuntimeService,
     sql: SqlClient.SqlClient
-  ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | DurableWriter | Crypto.Crypto>,
+  ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | DurableWriter | EffectDigest.Digest>,
   options: SqlControlRuntime.Options = { flows }
 ): Promise<A> =>
   Effect.runPromise(
@@ -814,7 +815,7 @@ describe("SqlControlRuntime when the run store answers about another row", () =>
     override: (store: RunStore.Service) => Partial<RunStore.Service>,
     use: (
       runtime: ControlRuntimeService
-    ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | Crypto.Crypto>
+    ) => Effect.Effect<A, E, RunStore.RunStore | SqlClient.SqlClient | EffectDigest.Digest>
   ): Promise<A> =>
     Effect.runPromise(
       Effect.gen(function*() {

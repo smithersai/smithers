@@ -13,7 +13,8 @@
 
 import * as Fault from "@smthrs/flow/Fault"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
-import { Context, Crypto, Effect, Fiber, Layer, Option, Schema } from "effect"
+import { Context, Effect, Fiber, Layer, Option, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as ApprovalAuthority from "./ApprovalAuthority.ts"
 import type { ApprovalTarget, PlanInput } from "./Control.ts"
 import {
@@ -922,11 +923,11 @@ const approvalToken = (token: MutableToken): ApprovalToken => ({
  * @category layers
  * @since 0.1.0
  */
-export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRuntime, never, Crypto.Crypto> =>
+export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRuntime, never, EffectDigest.Digest> =>
   Layer.effect(
     ControlRuntime,
     Effect.gen(function*() {
-      const crypto = yield* Crypto.Crypto
+      const crypto = yield* EffectDigest.Digest
       const now = options.now ?? Date.now
       // The in-memory adapter stamps `memory`/`test` on a caller that names no
       // principal, so its default policy delegates that identity as well as
@@ -1077,7 +1078,7 @@ export const layerMemory = (options: MemoryOptions = {}): Layer.Layer<ControlRun
               executionDigest: flow.executionDigest,
               handoff,
               idempotencyKey: submitted.idempotencyKey
-            }).pipe(Effect.provideService(Crypto.Crypto, crypto))
+            }).pipe(Effect.provideService(EffectDigest.Digest, crypto))
           )
           // Decoding, planning and hashing may yield to another keyed plan.
           // Recheck immediately before publication, with no yield between a

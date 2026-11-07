@@ -1,3 +1,5 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 /**
  * Stack builders for the control-plane edge suites.
  *
@@ -11,7 +13,8 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import type * as Descriptor from "@smthrs/registry/Descriptor"
-import { Crypto, Effect, Layer } from "effect"
+import { Effect, Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import type { Control } from "../src/Control.ts"
 import * as ControlExecutor from "../src/ControlExecutor.ts"
 import * as ControlLive from "../src/ControlLive.ts"
@@ -20,15 +23,17 @@ import * as DispatchReader from "../src/DispatchReader.ts"
 
 /** The same host-free crypto `TestControl` uses, without a Node import. */
 export const browserCrypto = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => globalThis.crypto.getRandomValues(new Uint8Array(size)),
+  EffectDigest.Digest,
+  EffectDigest.Digest.of({
     digest: (algorithm, data) =>
-      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm, data.slice().buffer)).pipe(
+      Effect.promise(() => globalThis.crypto.subtle.digest(algorithm.name, data.slice().buffer)).pipe(
         Effect.map((buffer) => new Uint8Array(buffer))
-      )
+      ),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
-)
+).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 /**
  * The deterministic in-memory runtime, already carrying its crypto.

@@ -13,19 +13,8 @@ import * as Journal from "@smthrs/journal/Journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, Ownership, RunStore } from "@smthrs/run-store"
-import {
-  ConfigProvider,
-  Context,
-  type Crypto,
-  Deferred,
-  Effect,
-  Exit,
-  Fiber,
-  Layer,
-  Logger,
-  References,
-  Stream
-} from "effect"
+import { ConfigProvider, Context, Deferred, Effect, Exit, Fiber, Layer, Logger, References, Stream } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import * as Statement from "effect/sql/Statement"
 import { mkdtempSync, rmSync } from "node:fs"
@@ -70,7 +59,7 @@ const durable = (
       | Layer.Layer<DurableWriter | SqlClient.SqlClient | RunStore.RunStore, unknown>
       | undefined
   } = {}
-): Layer.Layer<Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | Crypto.Crypto> => {
+): Layer.Layer<Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | EffectDigest.Digest> => {
   const journal = options.database ?? durableJournal
   const runtime = SqlControlRuntime.layer(
     { owner: options.owner, approvalAuthority: delegateApproval({ id: "reviewer", kind: "test" }) }
@@ -87,7 +76,7 @@ const durable = (
       Registry.layerNoop()
     )
   ).pipe(Layer.provideMerge(Layer.merge(journal, NodeCrypto.layer))) as Layer.Layer<
-    Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | Crypto.Crypto
+    Stack | DurableWriter | SqlClient.SqlClient | RunStore.RunStore | EffectDigest.Digest
   >
 }
 
