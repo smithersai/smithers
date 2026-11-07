@@ -30,24 +30,26 @@ for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
       // Vary the host ordering without yielding between intent, commit and delta. The old follow's scroll event
       // still reports the bottom before the native upward movement; it must not undo the reader's intent.
       try sync(() => {
+        // A reply answers a post (finding 3 of the Fable review), so the conversation starts with one.
+        host.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "other-1", name: "Guest", text: "question" } }))
         if (ordering === "commit-first") host.frame()
         if (ordering === "delta-first") {
-          host.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 1, id: "r1" } }))
-          host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 2, id: "r1", text: "new piece" } }))
+          host.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" } }))
+          host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "r1", text: "new piece" } }))
         }
         host.markIntent()
         host.up(input)
         host.scrolled()
         if (ordering !== "delta-first") {
-          host.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 1, id: "r1" } }))
-          host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 2, id: "r1", text: "new piece" } }))
+          host.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" } }))
+          host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "r1", text: "new piece" } }))
         }
         if (ordering !== "commit-first") host.frame()
       })
       try promise(() => vi.waitFor(() => {
         host.frame()
         expect(latest.following).toBe(false)
-        expect(latest.client.conversation.seq).toBe(2)
+        expect(latest.client.conversation.seq).toBe(3)
       }))
       try Effect.try(() => expect(host.scrollsAfterIntent()).toBe(0))
       // Further deltas cannot follow. Going back through the splash cannot resume either.
@@ -55,11 +57,11 @@ for (const input of ["wheel", "touch", "PageUp", "Home", "ArrowUp"] as const) {
         host.moveTo(0)
         host.emit(Message.ClickedSplash())
         host.emit(Message.ClickedChat())
-        host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "r1", text: " and another" } }))
+        host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 4, id: "r1", text: " and another" } }))
       })
       try promise(() => vi.waitFor(() => {
         host.frame()
-        expect(latest.client.conversation.seq).toBe(3)
+        expect(latest.client.conversation.seq).toBe(4)
         expect(latest.following).toBe(false)
       }))
       try Effect.try(() => expect(host.scrollsAfterIntent()).toBe(0))

@@ -100,7 +100,8 @@ describe("native transcript scroll permission", () => {
       const nativeScroll = vi.spyOn(Element.prototype, "scrollIntoView")
       const model = { ...init({ session: "scope", name: "Ada", mode: "mock" }).model, surface: "chat" as const }
       // The model moves first; the held render still exposes chat to the native input handler.
-      let next = update(model, Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 1, id: "r1" } })).model
+      let next = update(model, Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "other-1", name: "Guest", text: "question" } })).model
+      next = update(next, Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" } })).model
       next = update(next, surface === "palette" ? Message.PressedCommandK() : Message.ClickedSplash()).model
       const intent = viewport.wheel(new WheelEvent("wheel", { deltaY: -1 }))!
       next = update(next, Message.ScrolledTranscript(intent)).model

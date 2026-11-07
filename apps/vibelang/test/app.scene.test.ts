@@ -20,6 +20,7 @@ const home: Model = {
   epoch: 0,
   from: 0,
   following: true,
+  followIntent: 0,
   answer: "",
   announced: 0,
   connection: "",
