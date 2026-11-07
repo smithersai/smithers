@@ -33,7 +33,11 @@
     "scorers",
     "std",
     "triggers",
-    "**/*.d.vibe.ts"
+    "**/*.d.vibe.ts",
+    "**/*.d.vibex.ts",
+    "**/*.vibe.*.d.ts",
+    "**/*.vibex.*.d.ts",
+    "**/.vibelang/js/**"
   ],
   "plugins": [
     "https://plugins.dprint.dev/typescript-0.93.4.wasm@cdbf74066391bdb11ddaef9ea95299636a97d637f5a9bf7f121d584875647c7a",
