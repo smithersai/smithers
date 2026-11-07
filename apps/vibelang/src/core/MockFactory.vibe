@@ -1,14 +1,20 @@
-// The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the real sequencer
-// (`decide`, `apply`) in memory and answers every post with the scripted agent, so the app, its tests and its demos
-// behave as they do against vibelang.smithers.sh, without a network.
+// The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). Each conversation commits, publishes
+// and queues accepted prompts in one short critical section; its scoped worker answers in that same order.
 import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.ts"
-import { Factory, type Mode, Refused } from "./Factory.vibe"
+import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import { chunks, mockReply } from "./mockReplies.ts"
 
-/** One conversation's sequencer state: the conversation and every event it numbered. */
-interface Room {
+/** One conversation's sequencer state and every event it numbered. */
+interface State {
   readonly conversation: Conversation
   readonly log: ReadonlyArray<Event>
+}
+
+/** A room owns its acceptance lock and ordered reply queue; other conversations can answer independently. */
+interface Room {
+  readonly state: Ref.Ref<State>
+  readonly gate: Semaphore.Semaphore
+  readonly prompts: Queue.Queue<string>
 }
 
 /** A numbered event and the conversation it belongs to. */
@@ -20,64 +26,98 @@ interface Published {
 /** How long the scripted agent waits between the pieces of its reply. */
 export const MOCK_DELTA_DELAY = "25 millis"
 
-/** The mock factory. Each layer build is its own empty world. */
+/** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
 export const MockFactory = Layer.effect(Factory, effect {
+  const scope = try Effect.scope
   const rooms = try Ref.make(new Map<string, Room>())
-  const published = try PubSub.unbounded<Published>()
+  const published = try acquireRelease(PubSub.unbounded<Published>(), PubSub.shutdown)
   const ids = try Ref.make(0)
-  // One reply at a time per world, the way the live agent's flow takes posts in order.
-  const agent = try Semaphore.make(1)
+  // This lock only creates rooms. Acceptance and replies use each room's own lock and queue.
+  const registry = try Semaphore.make(1)
+  try Scope.addFinalizer(scope, Semaphore.withPermits(registry, 1)(Effect.void))
 
   effect function nextId(prefix: string) {
     const n = try Ref.updateAndGet(ids, (value) => value + 1)
     return `${prefix}${n}`
   }
 
-  effect function record(conversation: string, intent: Intent) {
-    const decision = try Ref.modify(rooms, (all): readonly [Decision, Map<string, Room>] => {
-      const room = all.get(conversation) ?? { conversation: empty, log: [] }
-      const decided = decide(room.conversation, intent)
-      if (!decided.ok) return [decided, all]
-      const next = new Map(all)
-      next.set(conversation, { conversation: apply(room.conversation, decided.event), log: [...room.log, decided.event] })
-      return [decided, next]
-    })
-    if (decision.ok) try PubSub.publish(published, { conversation, event: decision.event })
-    return decision
+  effect function record(room: Room, conversation: string, intent: Intent) {
+    return try Semaphore.withPermits(room.gate, 1)(Effect.uninterruptible(effect {
+      if (scope.state._tag === "Closed") throw new Unavailable({ reason: "Factory closed" })
+      const decision = try Ref.modify(room.state, (state): readonly [Decision, State] => {
+        const decided = decide(state.conversation, intent)
+        if (!decided.ok) return [decided, state]
+        return [decided, { conversation: apply(state.conversation, decided.event), log: [...state.log, decided.event] }]
+      })
+      if (decision.ok) {
+        try PubSub.publish(published, { conversation, event: decision.event })
+        // Enqueue before releasing the sequencer: caller scheduling cannot reorder accepted prompts.
+        if (decision.event.type === "Posted") try Queue.offer(room.prompts, decision.event.text)
+      }
+      return decision
+    }))
   }
 
-  effect function reply(conversation: string, prompt: string) {
+  effect function reply(room: Room, conversation: string, prompt: string) {
     const id = try nextId("r")
-    const started = try record(conversation, { type: "StartReply", id })
+    const started = try record(room, conversation, { type: "StartReply", id })
     if (!started.ok) return
     for (const piece of chunks(mockReply(prompt))) {
       try sleep(MOCK_DELTA_DELAY)
-      try record(conversation, { type: "AppendReply", id, text: piece })
+      try record(room, conversation, { type: "AppendReply", id, text: piece })
     }
-    try record(conversation, { type: "FinishReply", id })
+    try record(room, conversation, { type: "FinishReply", id })
+  }
+
+  effect function consume(room: Room, conversation: string) {
+    while (true) {
+      const prompt = try Queue.take(room.prompts)
+      try reply(room, conversation, prompt)
+    }
+  }
+
+  effect function openRoom(conversation: string) {
+    return try Semaphore.withPermits(registry, 1)(Effect.uninterruptible(effect {
+      if (scope.state._tag === "Closed") throw new Unavailable({ reason: "Factory closed" })
+      const all = try Ref.get(rooms)
+      const existing = all.get(conversation)
+      if (existing !== undefined) return existing
+      const state = try Ref.make<State>({ conversation: empty, log: [] })
+      const gate = try Semaphore.make(1)
+      const prompts = try Scope.provide(scope)(acquireRelease(Queue.unbounded<string>(), Queue.shutdown))
+      const room: Room = { state, gate, prompts }
+      try Ref.set(rooms, new Map(all).set(conversation, room))
+      try Effect.forkIn(consume(room, conversation), scope)
+      // Wait for any already-accepted commit/publish/enqueue before disposal completes. New calls see Closed.
+      try Scope.addFinalizer(scope, Semaphore.withPermits(gate, 1)(Effect.void))
+      return room
+    }))
   }
 
   const mode: Mode = "mock"
   return {
     mode,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
+      const room = try openRoom(conversation)
       const id = try nextId("m")
-      const decision = try record(conversation, { type: "Post", id, clientId, name, text })
+      const decision = try record(room, conversation, { type: "Post", id, clientId, name, text })
       if (!decision.ok) throw new Refused({ refusal: decision.refusal })
-      try Effect.forkDetach(Semaphore.withPermits(agent, 1)(reply(conversation, text)))
     },
     read: effect (conversation: string, after: number) => {
-      const all = try Ref.get(rooms)
-      const room = all.get(conversation) ?? { conversation: empty, log: [] }
-      const touched = new Set(room.log.filter((event) => event.seq > after).map((event) => event.id))
-      return { seq: room.conversation.seq, entries: room.conversation.entries.filter((entry) => touched.has(entry.id)) }
+      // Reading never opens a room: a conversation nobody posted to or followed is empty.
+      const room = (try Ref.get(rooms)).get(conversation)
+      if (room === undefined) return { seq: 0, entries: [] }
+      const state = try Ref.get(room.state)
+      const touched = new Set(state.log.filter((event) => event.seq > after).map((event) => event.id))
+      return { seq: state.conversation.seq, entries: state.conversation.entries.filter((entry) => touched.has(entry.id)) }
     },
     events: (conversation: string, after: number) =>
       Stream.unwrap(effect {
+        const room = try openRoom(conversation)
         // Subscribe before reading the log, so no event falls between the replay and the live tail.
         const live = try PubSub.subscribe(published)
-        const all = try Ref.get(rooms)
-        const log = (all.get(conversation)?.log ?? []).filter((event) => event.seq > after)
+        const state = try Ref.get(room.state)
+        const log = state.log.filter((event) => event.seq > after)
         const replayedTo = log.length === 0 ? after : log[log.length - 1]!.seq
         return Stream.concat(
           Stream.fromIterable(log),
