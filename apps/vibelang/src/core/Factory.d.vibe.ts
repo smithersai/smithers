@@ -81,9 +81,36 @@ export declare const EventSchema: Schema.Union<readonly [Schema.Struct<{
     readonly id: Schema.String;
     readonly reason: Schema.String;
 }>]>;
+/** A finite read: current copies of entries touched after `after`, and the event cursor. */
+export declare const EntrySchema: Schema.Struct<{
+    readonly id: Schema.String;
+    readonly seq: Schema.Int;
+    readonly clientId: Schema.String;
+    readonly author: Schema.Literals<readonly ["person", "agent"]>;
+    readonly name: Schema.String;
+    readonly text: Schema.String;
+    readonly done: Schema.Boolean;
+    readonly error: Schema.String;
+}>;
+export type EntrySchema = typeof EntrySchema.Type;
+export declare const ReadSnapshot: Schema.Struct<{
+    readonly seq: Schema.Int;
+    readonly entries: Schema.$Array<Schema.Struct<{
+        readonly id: Schema.String;
+        readonly seq: Schema.Int;
+        readonly clientId: Schema.String;
+        readonly author: Schema.Literals<readonly ["person", "agent"]>;
+        readonly name: Schema.String;
+        readonly text: Schema.String;
+        readonly done: Schema.Boolean;
+        readonly error: Schema.String;
+    }>>;
+}>;
+export type ReadSnapshot = typeof ReadSnapshot.Type;
 type Factory_shape = {
     readonly mode: Mode;
     post(conversation: string, clientId: string, name: string, text: string): Effect.Effect<void, Unavailable | Refused>;
+    read(conversation: string, after: number): Effect.Effect<ReadSnapshot, Unavailable>;
     events(conversation: string, after: number): Stream.Stream<Event, Unavailable>;
 };
 declare const Factory_base: Context.ServiceClass<Factory, "@smthrs/vibelang-site/src/core/Factory#Factory", Factory_shape>;

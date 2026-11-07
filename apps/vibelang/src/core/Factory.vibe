@@ -29,6 +29,19 @@ export schema ReplyFailed { readonly type: "ReplyFailed"; readonly seq: number; 
 /** Decodes one event off the wire. */
 export const EventSchema = Schema.Union([Posted, ReplyStarted, ReplyDelta, ReplyFinished, ReplyFailed])
 
+/** A finite read: current copies of entries touched after `after`, and the event cursor. */
+export schema EntrySchema {
+  readonly id: string
+  readonly seq: Schema.Int
+  readonly clientId: string
+  readonly author: "person" | "agent"
+  readonly name: string
+  readonly text: string
+  readonly done: boolean
+  readonly error: string
+}
+export schema ReadSnapshot { readonly seq: Schema.Int; readonly entries: ReadonlyArray<EntrySchema> }
+
 /**
  * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every
  * client sees the answer through `events`. `events(conversation, after)` replays the conversation's events numbered
@@ -37,5 +50,6 @@ export const EventSchema = Schema.Union([Posted, ReplyStarted, ReplyDelta, Reply
 export service Factory {
   readonly mode: Mode
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
+  read(conversation: string, after: number): ReadSnapshot!Unavailable
   events(conversation: string, after: number): Stream.Stream<Event, Unavailable>
 }

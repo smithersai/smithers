@@ -1,0 +1,12 @@
+import { Factory } from "../core/Factory.vibe"
+import { MockFactory } from "../core/MockFactory.vibe"
+
+export schema error LiveBackendNotDeployed { readonly message: string }
+export const LIVE_BACKEND_MESSAGE = "The live Factory backend is not deployed yet. Use --mock or VIBELANG_FACTORY=mock."
+
+/** Backend choice belongs to the host. Replace this layer and add its flag when 1b arrives. */
+export function backend(mock: boolean, environment: string | undefined) {
+  return mock || environment === "mock" ? MockFactory : Layer.effect(Factory, effect {
+    throw new LiveBackendNotDeployed({ message: LIVE_BACKEND_MESSAGE })
+  })
+}

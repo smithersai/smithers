@@ -1,0 +1,97 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Ask, AskOutput, Read } from "../src/surfaces/commands.vibe"
+import { backend, LIVE_BACKEND_MESSAGE } from "../src/surfaces/backend.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { mockReply } from "../src/core/mockReplies.ts"
+
+describe("Factory commands", () => {
+  it.live("reads an empty conversation immediately and waits for a whole reply", () => effect {
+    provide MockFactory {
+      const before = try Read.run({})
+      const answer = try Ask.run({ text: "How do I install it?" })
+      const snapshot = try Read.run({})
+      const after = try Read.run({ after: answer.events.at(-1)! })
+      const updated = try Read.run({ after: 2 })
+      try Effect.try(() => {
+        expect(before).toEqual({ conversation: "home", seq: 0, entries: [] })
+        expect(Schema.is(AskOutput)(answer)).toBe(true)
+        expect(answer.text).toBe(mockReply("install"))
+        expect(answer.events).toEqual(Array.from({ length: answer.events.length }, (_, i) => i + 1))
+        expect(snapshot.seq).toBe(answer.events.at(-1))
+        expect(snapshot.entries.map((entry) => entry.author)).toEqual(["person", "agent"])
+        expect(snapshot.entries[1]).toMatchObject({ text: answer.text, done: true })
+        expect(after.entries).toEqual([])
+        expect(updated.entries).toEqual([snapshot.entries[1]])
+      })
+    }
+  })
+
+  it.live("correlates overlapping asks and keeps conversations apart", () => effect {
+    provide MockFactory {
+      const [install, errors, other] = try.all [
+        Ask.run({ text: "install" }), Ask.run({ text: "errors" }), Ask.run({ text: "services", conversation: "other" }),
+      ]
+      const home = try Read.run({})
+      const away = try Read.run({ conversation: "other" })
+      try Effect.try(() => {
+        expect(install.text).toBe(mockReply("install"))
+        expect(errors.text).toBe(mockReply("errors"))
+        expect(other.text).toBe(mockReply("services"))
+        expect(install.events.filter((n) => errors.events.includes(n))).toEqual([])
+        expect(home.entries).toHaveLength(4)
+        expect(away.entries).toHaveLength(2)
+      })
+    }
+  })
+
+  it.live("validates schemas and reports sequencer refusals", () => effect {
+    provide MockFactory {
+      const programs: ReadonlyArray<unknown!import("../src/surfaces/commands.vibe").CommandError!Factory> = [
+        Ask.run({ text: "   " }), Ask.run({ text: "x".repeat(8001) }), Ask.run({ text: 7 }),
+        Read.run({ after: -1 }), Read.run({ after: 0.5 }), Read.run({ conversation: "" }),
+      ]
+      const failures = try forEach(programs, (program) => exit(program))
+      try Effect.try(() => {
+        for (const result of failures) expect(Exit.isFailure(result)).toBe(true)
+      })
+      const refused = Ask.run({ text: "" }) catch (error) => error.message
+      try Effect.try(() => expect(refused).toBe("The message was refused: empty"))
+    }
+  })
+
+  it.live("preserves the cursor for a read beyond the end and returns current updates", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("home", "direct", "Ada", "install")
+      const posted = try Read.run({})
+      try Stream.runDrain(factory.events("home", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+      const updated = try Read.run({ after: posted.seq })
+      const future = try Read.run({ after: 999 })
+      try Effect.try(() => {
+        expect(posted.entries[0]).toMatchObject({ author: "person", text: "install" })
+        expect(updated.entries).toHaveLength(1)
+        expect(updated.entries[0]).toMatchObject({ author: "agent", done: true, text: mockReply("install") })
+        expect(future.seq).toBe(updated.seq)
+        expect(future.entries).toEqual([])
+      })
+    }
+  })
+
+  it.live("chooses a backend only at the edge, refusing live access explicitly", () => effect {
+    const live = withBackend(false, undefined) catch (error) => ({ _tag: error._tag, message: error.message })
+    const env = try withBackend(false, "mock")
+    const flag = try withBackend(true, "live")
+    try Effect.try(() => {
+      expect(live).toMatchObject({ _tag: "LiveBackendNotDeployed", message: LIVE_BACKEND_MESSAGE })
+      expect(env.entries).toEqual([])
+      expect(flag.entries).toEqual([])
+    })
+  })
+})
+
+effect function withBackend(mock: boolean, environment: string | undefined) {
+  provide backend(mock, environment) {
+    return try Read.run({})
+  }
+}

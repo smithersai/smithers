@@ -66,6 +66,12 @@ export const MockFactory = Layer.effect(Factory, effect {
       if (!decision.ok) throw new Refused({ refusal: decision.refusal })
       try Effect.forkDetach(Semaphore.withPermits(agent, 1)(reply(conversation, text)))
     },
+    read: effect (conversation: string, after: number) => {
+      const all = try Ref.get(rooms)
+      const room = all.get(conversation) ?? { conversation: empty, log: [] }
+      const touched = new Set(room.log.filter((event) => event.seq > after).map((event) => event.id))
+      return { seq: room.conversation.seq, entries: room.conversation.entries.filter((entry) => touched.has(entry.id)) }
+    },
     events: (conversation: string, after: number) =>
       Stream.unwrap(effect {
         // Subscribe before reading the log, so no event falls between the replay and the live tail.
