@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * What a resumed run's replay costs. A run parked after its steps and woken
  * by a new incarnation, as a Cloudflare Durable Object's next alarm wakes it,
@@ -20,7 +21,7 @@ import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import { AttemptStore, type Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -192,8 +193,9 @@ const resume = (steps: number, seeding: Seeding = "whole") =>
     )
   })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
 
 describe("a resumed run's replay", () => {
   it("costs the same whatever the number of steps it replays", () =>

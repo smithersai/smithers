@@ -1,4 +1,5 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { executeUntilParked } from "./ExecuteUntilParked.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
@@ -21,7 +22,7 @@ import * as Notifying from "@smthrs/journal/test/Notifying"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import type * as Layer from "effect/Layer"
@@ -61,7 +62,7 @@ type Services =
   | Jj.Jj
   | TestClock.TestClock
   | Layer.Success<ReturnType<typeof Action.layerCacheEnvironment>>
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 const provide = <A, E>(effect: Effect.Effect<A, E, Services>, state: DurableEngineState.Service) =>
   withCrypto(

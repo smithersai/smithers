@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Issue #3898: a run reclaimed from a SIGKILLed owner re-ran a step that the
  * step cache could already answer.
@@ -24,7 +25,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -125,7 +126,7 @@ const resultOf = (engine: FlowRuntime.FlowRuntime["Service"], runId: string) =>
 /** The survivor's view of one case, handed to its observation. */
 interface Survivor {
   readonly engine: FlowRuntime.FlowRuntime["Service"]
-  readonly execute: (runId: string) => Effect.Effect<string, never, Crypto.Crypto>
+  readonly execute: (runId: string) => Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /** What the survivor's bodies have done so far. */
   readonly ran: Ran
   /** Every span the survivor opened, so a case can see a dispatch begin. */
@@ -165,7 +166,11 @@ const survive = <A>(
   bodies: (ran: Ran) => ReclaimedAttemptFlow.Bodies,
   observe: (
     survivor: Survivor
-  ) => Effect.Effect<A, unknown, RunStore.RunStore | Journal.Journal | Scope.Scope | Crypto.Crypto>,
+  ) => Effect.Effect<
+    A,
+    unknown,
+    RunStore.RunStore | Journal.Journal | Scope.Scope | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >,
   host: SurvivorHost = {
     hostId: ReclaimedAttemptFlow.hostId,
     // The pid probe on the real process table: the child's pid is gone, so

@@ -5,7 +5,7 @@ import { KeyMaterial, Plan, StepKey } from "@smthrs/plan"
 import { PlanStore } from "@smthrs/plan-store"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -138,15 +138,15 @@ describe("merge recovery across independent SQLite openings", () => {
         Effect.gen(function*() {
           yield* activate
           yield* service().record(base)
-          const real = yield* Crypto.Crypto
-          const refusing: Crypto.Crypto = {
+          const real = yield* EffectDigest.Digest
+          const refusing: typeof EffectDigest.Digest.Service = {
             ...real,
             digest: (algorithm, bytes) =>
               new TextDecoder().decode(bytes).includes("stopped")
                 ? Effect.succeed(new Uint8Array(0))
                 : real.digest(algorithm, bytes)
           }
-          expect(yield* Effect.flip(service().run(base).pipe(Effect.provideService(Crypto.Crypto, refusing))))
+          expect(yield* Effect.flip(service().run(base).pipe(Effect.provideService(EffectDigest.Digest, refusing))))
             .toMatchObject({ code: "elaboration_failed" })
           const sql = yield* SqlClient.SqlClient
           expect(yield* sql`SELECT generation FROM flows_plans`).toEqual([{ generation: 0 }])

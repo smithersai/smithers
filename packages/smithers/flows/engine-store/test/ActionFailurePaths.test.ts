@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Failure and hard-boundary-violation paths of the action executor
  * (issue #21): failed execute, prepare/settle boundary failures, suspended
@@ -13,7 +14,7 @@ import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -63,7 +64,7 @@ type Services =
   | RunStore.RunStore
   | StepBoundary.Service
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 const run = <A, E>(
   effect: Effect.Effect<A, E, Services | Scope.Scope>,

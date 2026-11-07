@@ -6,7 +6,8 @@ import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -58,7 +59,7 @@ const run = <A, E>(
     | StepBoundary.Service
     | Jj.Jj
     | Scope.Scope
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
 ) =>
   withCrypto(
@@ -109,7 +110,7 @@ interface Executor {
     | RunStore.RunStore
     | StepBoundary.Service
     | Jj.Jj
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
 }
 

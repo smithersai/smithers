@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A store that defers recovery (`Options.deferRecovery`) across a restart: a
  * run that parked on a durable clock under an engine that went away still
@@ -11,7 +12,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { DurableClock, Flow, FlowRuntime } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Ownership, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
@@ -95,8 +96,9 @@ const sleeper = (owner: Ownership.OwnerId, options: { readonly deferRecovery: bo
     )
   )
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
 
 const statusOf = (executionId: string) =>
   Effect.flatMap(RunStore.RunStore, (runs) => Effect.map(runs.get(executionId), (row) => row.status))

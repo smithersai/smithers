@@ -1,7 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Sha256 } from "@smthrs/crypto"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
-import { Crypto, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 
 /** Hashes test fixtures with the concrete Node crypto layer. */
 export const sha256 = (input: string | Uint8Array): string =>
@@ -13,16 +15,18 @@ export const sha256 = (input: string | Uint8Array): string =>
   )
 
 /** Provides concrete Node cryptography to a test Effect. */
-export const withCrypto = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> =>
-  Effect.provide(effect, NodeCrypto.layer)
+export const withCrypto = <A, E>(
+  effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+): Effect.Effect<A, E> => Effect.provide(effect, NodeCrypto.layer)
 
 /** Runs a synchronous test Effect with concrete Node cryptography. */
-export const runSync = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): A =>
+export const runSync = <A, E>(effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>): A =>
   Effect.runSync(Effect.provide(effect, NodeCrypto.layer))
 
 /** Runs an asynchronous test Effect with concrete Node cryptography. */
-export const runPromise = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Promise<A> =>
-  Effect.runPromise(Effect.provide(effect, NodeCrypto.layer))
+export const runPromise = <A, E>(
+  effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+): Promise<A> => Effect.runPromise(Effect.provide(effect, NodeCrypto.layer))
 
 /** Derives a canonical key with concrete test cryptography. */
 export const key = (input: unknown): StoredKey =>

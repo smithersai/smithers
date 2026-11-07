@@ -6,7 +6,8 @@ import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -43,7 +44,7 @@ type Services =
   | StepBoundary.Service
   | DurableEngineState.DurableEngineState
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 const withRestart = <A, E>(

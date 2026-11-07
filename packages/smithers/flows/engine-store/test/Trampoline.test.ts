@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The trampoline against the durable store: what a lineage leaves behind, and
  * what survives a process that dies in the middle of one.
@@ -21,7 +22,7 @@ import { Node } from "@smthrs/plan"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -228,8 +229,9 @@ const invalidRoundStore = (
 type DurableServices = Layer.Success<typeof services>
 
 /** Runs one body against a fresh database and the real durable stores. */
-const durable = <A, E>(body: Effect.Effect<A, E, DurableServices | Crypto.Crypto | Scope.Scope>) =>
-  withCrypto(body.pipe(Effect.scoped, Effect.provide(services)))
+const durable = <A, E>(
+  body: Effect.Effect<A, E, DurableServices | (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope>
+) => withCrypto(body.pipe(Effect.scoped, Effect.provide(services)))
 
 const roundId = (lineageId: string, ordinal: number) => sha256(JSON.stringify(["flow-round/v2", lineageId, ordinal]))
 

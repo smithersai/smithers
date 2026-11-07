@@ -1,4 +1,5 @@
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
  * Pins issue #31: the production park path must be able to record `approval`
@@ -13,7 +14,7 @@ import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthr
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -42,7 +43,7 @@ type Services =
   | StepBoundary.Service
   | DurableEngineState.DurableEngineState
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 const withEngine = <A, E>(

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Pins issue #10: every engine-store lifecycle journal write must go through
  * the journal's durable (undroppable) channel, fenced to the owning process
@@ -10,7 +11,7 @@ import { Jj } from "@smthrs/kernel"
 import { AttemptStore, Ownership, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -61,7 +62,7 @@ const run = <A, E>(
     | StepBoundary.Service
     | Jj.Jj
     | Scope.Scope
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
 ) =>
   withCrypto(

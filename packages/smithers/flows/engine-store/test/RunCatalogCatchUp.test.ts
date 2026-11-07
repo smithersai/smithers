@@ -1,3 +1,4 @@
+import * as Arr from "effect/Array"
 import { tempDirectory } from "./TempDirectory.ts"
 /**
  * The catch-up read behind a workspace follower's run catalog.
@@ -122,9 +123,9 @@ describe("run catalog catch-up", () => {
         const sql = yield* SqlClient.SqlClient
         const catalog = yield* RunCatalogOps.make()
         for (let offset = 0; offset < RunCatalogOps.defaultLimit + 1; offset += 250) {
-          const rows = Array.from(
-            { length: Math.min(250, RunCatalogOps.defaultLimit + 1 - offset) },
-            (_, index) => ({
+          const rows = Arr.makeBy(
+            Math.min(250, RunCatalogOps.defaultLimit + 1 - offset),
+            (index) => ({
               run_id: `run-${String(offset + index).padStart(5, "0")}`,
               status: "pending",
               created_at_ms: offset + index,

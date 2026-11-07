@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Owner-fenced scheduler decisions, distinct from action failure evidence and
  * redacted journal projections. Intent survives before a merge is appended.
@@ -9,7 +10,7 @@ import { DurableWriter } from "@smthrs/database/DurableWriter"
 import { Plan } from "@smthrs/plan"
 import { OwnerId } from "@smthrs/run-store/Ownership"
 import { Context, Effect, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as SqlClient from "effect/sql/SqlClient"
 
 const Natural = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
@@ -136,11 +137,15 @@ const unique = (names: ReadonlyArray<string>, code: "invalid_input" | "corrupt_s
  * @since 1.0.0
  * @category constructors
  */
-export const make: Effect.Effect<Service, never, SqlClient.SqlClient | DurableWriter | Crypto.Crypto> = Effect.gen(
+export const make: Effect.Effect<
+  Service,
+  never,
+  SqlClient.SqlClient | DurableWriter | (EffectDigest.Digest | SecureRandom.SecureRandom)
+> = Effect.gen(
   function*() {
     const sql = yield* SqlClient.SqlClient
     const writer = yield* DurableWriter
-    const crypto = yield* Effect.context<Crypto.Crypto>()
+    const crypto = yield* Effect.context<(EffectDigest.Digest | SecureRandom.SecureRandom)>()
     const hash = (value: string) => Schema.decodeUnknownEffect(Sha256)(value).pipe(Effect.provide(crypto))
     const fence = (identity: Identity, owner: OwnerId, requireHead: boolean) =>
       Effect.gen(function*() {
@@ -326,5 +331,9 @@ export const make: Effect.Effect<Service, never, SqlClient.SqlClient | DurableWr
  * @since 1.0.0
  * @category layers
  */
-export const layer: Layer.Layer<PlanMergeStore, never, SqlClient.SqlClient | DurableWriter | Crypto.Crypto> = Layer
+export const layer: Layer.Layer<
+  PlanMergeStore,
+  never,
+  SqlClient.SqlClient | DurableWriter | (EffectDigest.Digest | SecureRandom.SecureRandom)
+> = Layer
   .effect(PlanMergeStore)(make)

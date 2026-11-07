@@ -4,7 +4,9 @@ import { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
-import { Crypto, Effect, Layer, Option, Schema, Scope } from "effect"
+import { Effect, Layer, Option, Schema, Scope } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import * as SqlClient from "effect/sql/SqlClient"
 import { TestClock } from "effect/testing"
 import { createHash } from "node:crypto"
@@ -44,7 +46,7 @@ type Services =
   | Layer.Success<ReturnType<typeof TestStores.layerAt>>
   | Jj.Jj
   | StepBoundary.Service
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
   | TestClock.TestClock
 const onDatabase = <A, E>(file: string, boundary: StepBoundary.Service, body: Effect.Effect<A, E, Services>) =>

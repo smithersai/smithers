@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** Faults and ownership races at pending cancellation discovery, over matrix-selected production stores. */
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
@@ -5,7 +6,7 @@ import { Flow, FlowRuntime } from "@smthrs/flow"
 import { Journal, SqlJournal } from "@smthrs/journal"
 import { Ownership, RunStore } from "@smthrs/run-store"
 import { Effect, Fiber, Latch, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Layer from "effect/Layer"
 import type * as Scope from "effect/Scope"
 import { SqlClient } from "effect/sql/SqlClient"
@@ -44,7 +45,7 @@ const stores = Layer.mergeAll(
 ).pipe(
   Layer.provideMerge(TestStores.database)
 )
-type Services = Layer.Success<typeof stores> | Crypto.Crypto | Scope.Scope
+type Services = Layer.Success<typeof stores> | (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope
 const run = <A, E>(effect: Effect.Effect<A, E, Services>) =>
   withCrypto(effect.pipe(Effect.scoped, Effect.provide(stores)))
 const request = (runs: RunStore.Service, id: string) =>

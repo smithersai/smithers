@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * An engine whose host wakes it from outside, `sweep: { host: executionId }`,
  * such as a Cloudflare Durable Object alarm that drives one execution per
@@ -14,7 +15,7 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -79,8 +80,9 @@ const engine = (filename: string, owner: Ownership.OwnerId, sweep: EngineStore.S
 const first: Ownership.OwnerId = { hostId: "durable-object", pid: 1, nonce: "first" }
 const second: Ownership.OwnerId = { hostId: "durable-object", pid: 2, nonce: "second" }
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
 
 let directory: string
 let filename: string

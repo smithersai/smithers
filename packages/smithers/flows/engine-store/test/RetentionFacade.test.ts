@@ -1,4 +1,5 @@
 import * as Dialect from "@smthrs/database/Dialect"
+import * as Arr from "effect/Array"
 /**
  * `Retention.collect`, the host-facing pass `smithers gc` runs over one file.
  *
@@ -317,7 +318,7 @@ describe("Retention.collect", () => {
     migrated(Effect.gen(function*() {
       const sql = yield* SqlClient.SqlClient
       for (let offset = 0; offset < 1_001; offset += 200) {
-        const rows = Array.from({ length: Math.min(200, 1_001 - offset) }, (_, index) => ({
+        const rows = Arr.makeBy(Math.min(200, 1_001 - offset), (index) => ({
           run_id: `aged-${String(offset + index).padStart(4, "0")}`,
           status: "completed",
           created_at_ms: 1,

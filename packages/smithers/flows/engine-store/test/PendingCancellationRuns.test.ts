@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as Dialect from "@smthrs/database/Dialect"
 import { Cause, Effect, Exit, Layer, Option } from "effect"
+import * as Arr from "effect/Array"
 import { SqlClient } from "effect/sql/SqlClient"
 import * as DurableEngineState from "../src/DurableEngineState.ts"
 import * as TestStores from "../src/test/TestStores.ts"
@@ -102,7 +103,7 @@ describe("indexed pending cancellation discovery", () => {
       const sql = yield* SqlClient
       for (let offset = 0; offset < 5_000; offset += 500) {
         yield* sql`INSERT INTO flows_runs ${
-          sql.insert(Array.from({ length: 500 }, (_, index) => ({
+          sql.insert(Arr.makeBy(500, (index) => ({
             run_id: `history-${offset + index}`,
             status: "cancelled",
             created_at_ms: 0,

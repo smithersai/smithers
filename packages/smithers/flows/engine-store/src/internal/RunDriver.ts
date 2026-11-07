@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Claim-gated durable flow run lifecycle.
  *
@@ -13,7 +14,7 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -549,7 +550,7 @@ interface Driver {
   /** Which registered flow the pending-admission sweep starts from next tick. */
   pendingFlowOffset: number
   /** The driver's own `Crypto`, which a child's admission derives boundary ids with. */
-  readonly crypto: Context.Context<Crypto.Crypto>
+  readonly crypto: Context.Context<(EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * Each running round's retry seed, read once when the round first admits
    * a child: `null` for a round of a run that is no retry. A child opened at a
@@ -2580,7 +2581,10 @@ const refuseChangedPayload = (
  * The handoff seam: the one place a round's terminal settlement and its
  * successor are decided together.
  */
-const handOff = (driver: Driver, seam: HandoffSeam): Effect.Effect<void, never, Crypto.Crypto> =>
+const handOff = (
+  driver: Driver,
+  seam: HandoffSeam
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   FlowEngine.Round.next(
     {
       // The row's lineage_id was written from a round's rootExecutionId,
@@ -2643,7 +2647,10 @@ const CurrentDrive = Context.Reference<Drive | undefined>("@smthrs/engine-store/
  * drive, an interruption included, goes through the cleanup it installs
  * before the claim.
  */
-const drive = (driver: Driver, executionId: string): Effect.Effect<void, never, Crypto.Crypto> =>
+const drive = (
+  driver: Driver,
+  executionId: string
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.withFiber((owner) => {
     const attempt: Drive = {
       owner,
@@ -2673,7 +2680,10 @@ const drive = (driver: Driver, executionId: string): Effect.Effect<void, never, 
     )
   })
 
-const driveRun = (driver: Driver, attempt: Drive): Effect.Effect<void, never, Crypto.Crypto> =>
+const driveRun = (
+  driver: Driver,
+  attempt: Drive
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const executionId = attempt.executionId
     const initial = yield* findRun(driver, executionId)
@@ -2848,7 +2858,7 @@ const runRound = (
   registration: Registration,
   activeState: RunState,
   payload: unknown
-): Effect.Effect<void, never, Crypto.Crypto> =>
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const executionId = attempt.executionId
     // A previous round of this run may have parked and retained its flow
@@ -3037,7 +3047,7 @@ const settleRound = (
   activeState: RunState,
   instance: FlowRuntime.FlowInstance["Service"],
   result: Flow.Result<unknown, unknown> | CancelRequested
-): Effect.Effect<void, never, Crypto.Crypto> =>
+): Effect.Effect<void, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const executionId = attempt.executionId
     if (result._tag === "CancelRequested") return yield* cancelOwned(driver, executionId, activeState)
@@ -4704,7 +4714,7 @@ export const make = (
 ): Effect.Effect<
   Service,
   never,
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | DurableEngineState.DurableEngineState
   | DurableWriter
   | Journal.Journal
@@ -4717,10 +4727,10 @@ export const make = (
     const store = yield* RunStore.RunStore
     const engineState = yield* DurableEngineState.DurableEngineState
     const lineLevel = yield* RunMetrics.LineLevel
-    const crypto = yield* Effect.context<Crypto.Crypto>()
+    const crypto = yield* Effect.context<(EffectDigest.Digest | SecureRandom.SecureRandom)>()
     const retainedScopes = new Map<string, Scope.Closeable>()
     yield* Effect.addFinalizer(() => releaseRetainedScopes(retainedScopes))
-    const coordinator = yield* RunCoordinator.make<string, never, Crypto.Crypto>({
+    const coordinator = yield* RunCoordinator.make<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>({
       drain: (executionId) => drive(driver, executionId),
       resumeConcurrency: dependencies.resumeConcurrency
     })

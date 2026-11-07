@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Hermetic step boundary contracts, the filesystem-backed production
  * implementation, and the deterministic test implementation.
@@ -14,7 +15,7 @@ import { Workspace as KernelWorkspace } from "@smthrs/kernel/Workspace"
 import { DerivedKey } from "@smthrs/keys"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Base64 from "effect/encoding/Base64"
 import * as FileSystem from "effect/FileSystem"
@@ -347,17 +348,21 @@ export class MissingArtifact extends Schema.TaggedError<MissingArtifact>()(
 export interface Service {
   readonly prepare: (
     descriptor: FileBoundary
-  ) => Effect.Effect<PreparedBoundary, UnsupportedBoundary, Crypto.Crypto>
+  ) => Effect.Effect<PreparedBoundary, UnsupportedBoundary, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   readonly settle: (
     prepared: PreparedBoundary
   ) => Effect.Effect<
     BoundaryEvidence,
     UndeclaredWrite | MissingDeclaredOutput | SurvivingDeclaredRemoval | UnsupportedBoundary | BoundaryCorruption,
-    Crypto.Crypto
+    (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
   readonly replayOutputs: (
     evidence: BoundaryEvidence
-  ) => Effect.Effect<void, UnsupportedBoundary | BoundaryCorruption | MissingArtifact, Crypto.Crypto>
+  ) => Effect.Effect<
+    void,
+    UnsupportedBoundary | BoundaryCorruption | MissingArtifact,
+    (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
 }
 
 /**
@@ -635,7 +640,7 @@ export const makeFileSystem = (
   const measure = (
     path: string,
     host: FileSystem.FileSystem = fs
-  ): Effect.Effect<string, UnsupportedBoundary, Crypto.Crypto> =>
+  ): Effect.Effect<string, UnsupportedBoundary, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
     readDigestFrom(host, path).pipe(
       Effect.map((measured) => measured.digest),
       Effect.catchReason("PlatformError", "NotFound", () => Effect.succeed(absentDigest)),

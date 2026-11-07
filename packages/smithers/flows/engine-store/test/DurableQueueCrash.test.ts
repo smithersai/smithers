@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * `DurableQueue` workers on the durable engine: each item runs as a durable execution whose first step records the
  * handler's exit and whose second records it against the caller's deferred, retried by the engine without a limit.
@@ -16,7 +17,7 @@ import { Action, DurableQueue, Flow, FlowRuntime, Interpreter } from "@smthrs/fl
 import { Jj } from "@smthrs/kernel"
 import { Ownership } from "@smthrs/run-store"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -70,7 +71,7 @@ afterEach(async () => {
   await rm(directory, { recursive: true, force: true })
 })
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | Crypto.Crypto>) =>
+const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | (EffectDigest.Digest | SecureRandom.SecureRandom)>) =>
   Effect.runPromise(withCrypto(Effect.scoped(effect)))
 
 const Queue = DurableQueue.make({

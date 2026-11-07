@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Cancelling a child is a terminal settlement, so it wakes every durable parent
  * already parked on it without an explicit parent resume (#2758): parents
@@ -12,7 +13,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { Flow, FlowRuntime } from "@smthrs/flow"
 import { RunStore } from "@smthrs/run-store"
 import { Cause, Effect, Exit, Layer, Schema, Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -26,7 +27,10 @@ const Child = Flow.make("CancelWake/child", { payload: {}, success: Schema.Strin
 const Next = Flow.make("CancelWake/next", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
 const Parent = Flow.make("CancelWake/parent", { payload: {}, success: Schema.String, body: opaqueHandlerBody })
 
-type TestServices = Layer.Success<ReturnType<typeof TestStores.layerAt>> | Scope.Scope | Crypto.Crypto
+type TestServices =
+  | Layer.Success<ReturnType<typeof TestStores.layerAt>>
+  | Scope.Scope
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 const onDisk = <A, E>(body: Effect.Effect<A, E, TestServices>) =>
   Effect.acquireUseRelease(

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The two-tier artifact protocol the step cache rides on: publish before the
  * entry, fetch on demand after it.
@@ -34,7 +35,7 @@
 import * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import * as RemoteArtifacts from "@smthrs/artifacts/RemoteArtifacts"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -105,7 +106,7 @@ export interface Service {
    */
   readonly publish: (
     digests: ReadonlyArray<string>
-  ) => Effect.Effect<void, ArtifactPublicationFailed, Crypto.Crypto>
+  ) => Effect.Effect<void, ArtifactPublicationFailed, (EffectDigest.Digest | SecureRandom.SecureRandom)>
   /**
    * Fetches the digests this host is missing from the shared tier and writes
    * them into the local store, reporting whether every digest is now locally
@@ -117,7 +118,7 @@ export interface Service {
    */
   readonly hydrate: (
     digests: ReadonlyArray<string>
-  ) => Effect.Effect<boolean, never, Crypto.Crypto>
+  ) => Effect.Effect<boolean, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 }
 
 /**

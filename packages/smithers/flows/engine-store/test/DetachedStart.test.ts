@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** Regression for detached admission (issue #2932). */
 import { describe, expect, it } from "@effect/vitest"
 import { FlowEngine } from "@smthrs/engine"
@@ -5,7 +6,7 @@ import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -33,7 +34,7 @@ type Services =
   | Layer.Success<ReturnType<typeof TestStores.layer>>
   | StepBoundary.Service
   | Jj.Jj
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 const withEngine = <A, E>(
@@ -65,7 +66,7 @@ for (const runtime of runtimes) {
   const run = <A, E>(
     body: (
       engine: FlowRuntime.FlowRuntime["Service"]
-    ) => Effect.Effect<A, E, Crypto.Crypto | Scope.Scope | FlowRuntime.FlowRuntime>
+    ) => Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom) | Scope.Scope | FlowRuntime.FlowRuntime>
   ) =>
     runtime === "durable"
       ? withEngine((engine) => body(engine).pipe(Effect.provideService(FlowRuntime.FlowRuntime, engine)))

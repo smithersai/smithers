@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The two-tier step-cache protocol, extracted out of `ActionPersistence`.
  *
@@ -38,7 +39,7 @@
 
 import type { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as ArtifactSync from "../ArtifactSync.ts"
@@ -83,7 +84,7 @@ export interface Unshareable {
  */
 export const publishArtifacts = (
   evidence: StepBoundary.BoundaryEvidence | undefined
-): Effect.Effect<Unshareable | undefined, never, Crypto.Crypto> =>
+): Effect.Effect<Unshareable | undefined, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     if (evidence === undefined) return undefined
     const digests = StepBoundary.referencedDigests(evidence)
@@ -124,7 +125,7 @@ export const publishEntry = (
  */
 export const hydrateArtifacts = (
   evidence: StepBoundary.BoundaryEvidence
-): Effect.Effect<boolean, never, Crypto.Crypto> =>
+): Effect.Effect<boolean, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const digests = StepBoundary.referencedDigests(evidence)
     if (digests.length === 0) return false

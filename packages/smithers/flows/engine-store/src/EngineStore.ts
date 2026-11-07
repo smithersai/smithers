@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Durable `FlowEngine.Encoded` composition over `@smthrs/journal`.
  *
@@ -21,7 +22,7 @@ import { CacheStore } from "@smthrs/step-cache"
 import * as Cause from "effect/Cause"
 import * as Clock from "effect/Clock"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -432,7 +433,7 @@ type PublicRequirements =
   // (lineage, ordinal) with the injected SHA-256, on the coordinator's own
   // fiber rather than a caller's, so hashing is a construction-time
   // requirement of the composition (`packages/smithers/flows/engine/docs/api.md`).
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | DurableEngineState.DurableEngineState
   | DurableWriter
   | Journal.Journal
@@ -922,7 +923,10 @@ const actionExecute = Effect.fn("FlowEngine.actionExecute")(
     // action's own instance, exactly as the engine would run it itself.
     const snapshot = input.snapshot === undefined
       ? undefined
-      : Effect.provideContext(input.snapshot, yield* Effect.context<FlowRuntime.FlowInstance | Crypto.Crypto>())
+      : Effect.provideContext(
+        input.snapshot,
+        yield* Effect.context<FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>()
+      )
     const result = yield* persistAction(store, input, parent, cacheAgeVerdict, seed, snapshot, logContext).pipe(
       Flow.intoResult,
       Effect.provideService(FlowRuntime.FlowInstance, instance),

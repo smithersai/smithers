@@ -7,7 +7,7 @@
  */
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import * as Crypto from "effect/Crypto"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Random from "effect/Random"
 import * as OwnerIdentity from "../src/OwnerIdentity.ts"
@@ -16,7 +16,7 @@ const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 
 /** Builds the incarnation source over the node `Crypto` implementation. */
 const incarnation = (pid: number | undefined) =>
-  Effect.map(Crypto.Crypto, (crypto) => OwnerIdentity.makeIncarnation(pid, crypto)).pipe(
+  Effect.map(SecureRandom.SecureRandom, (crypto) => OwnerIdentity.makeIncarnation(pid, crypto)).pipe(
     Effect.provide(NodeCrypto.layer)
   )
 

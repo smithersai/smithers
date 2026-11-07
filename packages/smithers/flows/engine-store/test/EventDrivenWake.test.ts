@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { executeUntilParked } from "./ExecuteUntilParked.ts"
 import { opaqueHandlerBody } from "./fixtures/OpaqueHandlerBody.ts"
 /**
@@ -14,7 +15,7 @@ import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { DurableDeferred, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Jj } from "@smthrs/kernel"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -56,7 +57,7 @@ type Services =
   | Jj.Jj
   | TestClock.TestClock
   | WakeBus.WakeBus
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Scope.Scope
 
 const withEngine = <A, E>(

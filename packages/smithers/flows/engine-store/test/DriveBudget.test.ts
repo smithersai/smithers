@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A hosted drive's budget, `EngineStore.drive`'s `budgetMs`: once it is spent
  * the drive starts no new step, lets the steps already running finish and
@@ -15,7 +16,7 @@ import type { Journal } from "@smthrs/journal"
 import { Jj } from "@smthrs/kernel"
 import { type Ownership, RunStore } from "@smthrs/run-store"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
@@ -54,8 +55,9 @@ const jj = Layer.succeed(
   })
 )
 
-const run = <A, E>(effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | Crypto.Crypto>) =>
-  Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
+const run = <A, E>(
+  effect: Effect.Effect<A, E, Scope.Scope | TestClock.TestClock | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => Effect.runPromise(withCrypto(Effect.scoped(effect).pipe(Effect.provide(TestClock.layer()))))
 
 let directory: string
 let filename: string
@@ -93,7 +95,11 @@ const fiveSteps = (ran: Array<string>) =>
   })
 
 /** What `Work` runs: its steps, yielded under the runtime that registers it. */
-type Body = Effect.Effect<number, never, FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Crypto.Crypto>
+type Body = Effect.Effect<
+  number,
+  never,
+  FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+>
 
 /**
  * One incarnation of the execution's host, as a Durable Object alarm builds

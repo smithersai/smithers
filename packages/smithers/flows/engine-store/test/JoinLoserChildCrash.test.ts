@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A join journals its decision and then, in the same uninterruptible step,
  * cancels the child executions its losing members opened. A process that dies
@@ -20,7 +21,7 @@ import { Jj } from "@smthrs/kernel"
 import { Node } from "@smthrs/plan"
 import { RunStore } from "@smthrs/run-store"
 import { Deferred, Effect, Exit, Fiber, Layer, Schema, type Scope } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -67,7 +68,13 @@ const process_ = <A, E>(
   phase: string,
   body: (
     engine: FlowRuntime.FlowRuntime["Service"]
-  ) => Effect.Effect<A, E, Layer.Success<ReturnType<typeof TestStores.layerAt>> | Scope.Scope | Crypto.Crypto>
+  ) => Effect.Effect<
+    A,
+    E,
+    | Layer.Success<ReturnType<typeof TestStores.layerAt>>
+    | Scope.Scope
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
 ) =>
   withCrypto(
     Effect.scoped(Effect.gen(function*() {

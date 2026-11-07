@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Injectable, scope-safe step sandboxing over the workspace transaction.
  *
@@ -7,7 +8,7 @@
 import type * as ArtifactStore from "@smthrs/artifacts/ArtifactStore"
 import type * as KernelWorkspace from "@smthrs/kernel/Workspace"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -88,7 +89,7 @@ export const layer: Layer.Layer<
  */
 export const layerTest = (
   initialFiles: WorkspaceSandbox.InitialFiles = {}
-): Layer.Layer<Service, WorkspaceSandbox.WorkspaceError, Crypto.Crypto> =>
+): Layer.Layer<Service, WorkspaceSandbox.WorkspaceError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Layer.effect(StepSandbox, Effect.map(WorkspaceSandbox.makeMemory(initialFiles), (sandbox) => make(sandbox.service)))
 
 const unsupported = new StepBoundary.UnsupportedBoundary({

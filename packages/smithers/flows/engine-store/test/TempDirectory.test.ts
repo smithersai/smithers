@@ -12,7 +12,7 @@ for (const fails of [false, true]) {
         path = yield* tempDirectory("flows-temp-cleanup-")
         mkdirSync(join(path, "nested"))
         writeFileSync(join(path, "nested", "state.sqlite"), "state")
-        if (fails) yield* Effect.fail("test failure")
+        if (fails) return yield* Effect.fail("test failure")
       })).pipe(Effect.exit)
       expect(path).not.toBe("")
       expect(existsSync(path)).toBe(false)
@@ -25,7 +25,7 @@ it.effect("removes the directory when its owner is interrupted", () =>
     const fiber = yield* Effect.scoped(Effect.gen(function*() {
       const path = yield* tempDirectory("flows-temp-cleanup-")
       yield* Deferred.succeed(ready, path)
-      yield* Effect.never
+      return yield* Effect.never
     })).pipe(Effect.forkChild)
     const path = yield* Deferred.await(ready)
     expect(existsSync(path)).toBe(true)
