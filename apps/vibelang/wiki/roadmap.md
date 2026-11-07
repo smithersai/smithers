@@ -10,7 +10,8 @@ brick                                   state         proof
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live dogfooding awaits 1b; local and deployed browser suites pass.
-1d  formal proofs in CI                 in progress   LemmaScript contracts on conversation.ts, `pnpm verify` (VL-9)
+1d  formal proofs in CI                 in progress   local `pnpm verify` proves conversation.ts; `pnpm verify:broken` checks mutations;
+                                                      CI wiring remains (0005, VL-9)
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       later         VL-20

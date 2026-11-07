@@ -73,6 +73,23 @@ export const AGENT_NAME = "VibeLang agent"
  * advances `seq`, even when its content doesn't fit the state, so one bad event can't stall every later one; the
  * sequencer never numbers such an event (`decide`).
  */
+// Invariant preservation is stated as implication, so sequence checks cover arbitrary records.
+// Empty external reply/client ids are counterexamples to unrestricted preservation (verify/findings).
+//@ verify
+//@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
+//@ ensures \result.seq == conversation.seq || \result.seq == conversation.seq + 1
+//@ ensures event.seq != conversation.seq + 1 ==> \result == conversation
+//@ ensures event.seq == conversation.seq + 1 ==> \result.seq == event.seq
+//@ ensures (forall(i, 0 < i && i < conversation.entries.length ==> conversation.entries[i - 1].seq < conversation.entries[i].seq)) && (forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].seq <= conversation.seq)) ==> (forall(i, 0 < i && i < \result.entries.length ==> \result.entries[i - 1].seq < \result.entries[i].seq))
+//@ ensures (forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].seq <= conversation.seq)) ==> (forall(i, 0 <= i && i < \result.entries.length ==> \result.entries[i].seq <= \result.seq))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[j].author == "person" && conversation.entries[i].clientId != "" ==> conversation.entries[i].clientId != conversation.entries[j].clientId))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "person" && \result.entries[j].author == "person" && \result.entries[i].clientId != "" ==> \result.entries[i].clientId != \result.entries[j].clientId)))
+//@ ensures ((conversation.agent == "working") == (conversation.replying != "")) && (event.type != "ReplyStarted" || event.id != "") ==> ((\result.agent == "working") == (\result.replying != ""))
+//@ ensures (forall(i, 0 <= i && i < conversation.entries.length && !conversation.entries[i].done ==> conversation.agent == "working" && conversation.entries[i].id == conversation.replying && conversation.entries[i].author == "agent")) ==> (forall(i, 0 <= i && i < \result.entries.length && !\result.entries[i].done ==> \result.agent == "working" && \result.entries[i].id == \result.replying && \result.entries[i].author == "agent"))
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length ==> conversation.entries[i].done || conversation.entries[j].done))) && (forall(i, 0 <= i && i < conversation.entries.length && !conversation.entries[i].done ==> conversation.agent == "working" && conversation.entries[i].id == conversation.replying && conversation.entries[i].author == "agent")) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length ==> \result.entries[i].done || \result.entries[j].done)))
+//@ ensures (conversation.agent == "working" ==> exists(i, 0 <= i && i < conversation.entries.length && !conversation.entries[i].done)) ==> (\result.agent == "working" ==> exists(i, 0 <= i && i < \result.entries.length && !\result.entries[i].done))
+//@ ensures event.seq == conversation.seq + 1 && event.type == "ReplyStarted" && conversation.agent != "working" ==> \result.entries.length == conversation.entries.length + 1 && \result.entries[conversation.entries.length].name == AGENT_NAME
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[j].author == "person" ==> conversation.entries[i].clientId != conversation.entries[j].clientId))) && (event.type != "Posted" || event.clientId != "") ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.entries.length && \result.entries[i].author == "person" && \result.entries[j].author == "person" ==> \result.entries[i].clientId != \result.entries[j].clientId)))
+//@ ensures (forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" ==> conversation.entries[i].clientId != "")) && (event.type != "Posted" || event.clientId != "") ==> (forall(i, 0 <= i && i < \result.entries.length && \result.entries[i].author == "person" ==> \result.entries[i].clientId != ""))
 export function apply(conversation: Conversation, event: Event): Conversation {
   if (event.seq !== conversation.seq + 1) return conversation
   const next = { ...conversation, seq: event.seq }
@@ -89,7 +106,9 @@ export function apply(conversation: Conversation, event: Event): Conversation {
         done: true,
         error: "",
       }
-      return { ...next, entries: [...conversation.entries, entry] }
+      const entries = [...conversation.entries, entry]
+      //@ assert forall(i, 0 <= i && i < conversation.entries.length ==> entries[i] == conversation.entries[i])
+      return { ...next, entries }
     }
     case "ReplyStarted": {
       if (conversation.agent === "working") return next
@@ -103,11 +122,15 @@ export function apply(conversation: Conversation, event: Event): Conversation {
         done: false,
         error: "",
       }
-      return { ...next, entries: [...conversation.entries, entry], agent: "working", replying: event.id }
+      const entries = [...conversation.entries, entry]
+      //@ assert !entries[conversation.entries.length].done
+      return { ...next, entries, agent: "working", replying: event.id }
     }
     case "ReplyDelta": {
       if (!isReplying(conversation, event.id)) return next
-      return { ...next, entries: conversation.entries.map((entry) => entry.id === event.id ? { ...entry, text: entry.text + event.text } : entry) }
+      const entries = conversation.entries.map((entry) => entry.id === event.id ? { ...entry, text: entry.text + event.text } : entry)
+      //@ assert forall(i, 0 <= i && i < conversation.entries.length ==> entries[i].done == conversation.entries[i].done)
+      return { ...next, entries }
     }
     case "ReplyFinished": {
       if (!isReplying(conversation, event.id)) return next
@@ -133,14 +156,41 @@ export function apply(conversation: Conversation, event: Event): Conversation {
 }
 
 /** Whether a reply with this id streams now. */
+//@ verify
+//@ ensures \result == (conversation.agent == "working" && conversation.replying == id && id != "")
 export function isReplying(conversation: Conversation, id: string): boolean {
   return conversation.agent === "working" && conversation.replying === id && id !== ""
 }
 
 /** Whether a person's entry already carries `clientId`. `""` never matches. */
+//@ verify
+//@ ensures \result == (clientId != "" && exists(i, 0 <= i && i < entries.length && entries[i].clientId == clientId))
 export function hasClientId(entries: ReadonlyArray<Entry>, clientId: string): boolean {
   if (clientId === "") return false
-  for (const entry of entries) if (entry.clientId === clientId) return true
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> entries[j].clientId != clientId)
+    //@ decreases entries.length - i
+    if (entries[i]!.clientId === clientId) return true
+    i++
+  }
+  return false
+}
+
+/** Whether an entry already has `id`. `""` always counts as taken, so no entry is created without an id. */
+//@ verify
+//@ ensures \result == (id == "" || exists(i, 0 <= i && i < entries.length && entries[i].id == id))
+export function hasEntryId(entries: ReadonlyArray<Entry>, id: string): boolean {
+  if (id === "") return true
+  let i = 0
+  while (i < entries.length) {
+    //@ invariant 0 <= i && i <= entries.length
+    //@ invariant forall(j, 0 <= j && j < i ==> entries[j].id != id)
+    //@ decreases entries.length - i
+    if (entries[i]!.id === id) return true
+    i++
+  }
   return false
 }
 
@@ -162,41 +212,58 @@ export type Decision =
   | { readonly ok: true; readonly event: Event }
   | { readonly ok: false; readonly refusal: Refusal }
 
+// Typed constructors keep nested union construction explicit for LemmaScript.
+//@ verify
+//@ ensures \result.ok && \result.event == event
+function accepted(event: Event): Decision {
+  return { ok: true, event }
+}
+
+//@ verify
+//@ ensures !\result.ok && \result.refusal == refusal
+function refused(refusal: Refusal): Decision {
+  return { ok: false, refusal }
+}
+
 /**
  * The event that records `intent` as the next one, or a refusal. Every event it returns is one `apply` takes as is:
  * applying it changes the conversation the way its type says.
  */
+//@ verify
+//@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
+//@ ensures \result.ok ==> \result.event.seq == conversation.seq + 1
+//@ ensures \result.ok && \result.event.type == "ReplyStarted" ==> conversation.agent != "working" && \result.event.id != ""
+//@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.clientId != "" && \result.event.text != ""
+//@ ensures \result.ok && \result.event.type == "Posted" ==> \result.event.text.length <= MAX_TEXT
+//@ ensures \result.ok && (\result.event.type == "Posted" || \result.event.type == "ReplyStarted") ==> \result.event.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != \result.event.id)
+//@ ensures \result.ok && \result.event.type == "Posted" ==> forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].clientId != \result.event.clientId)
 export function decide(conversation: Conversation, intent: Intent): Decision {
   const seq = conversation.seq + 1
   switch (intent.type) {
     case "Post": {
       const text = intent.text.trim()
-      if (text === "") return { ok: false, refusal: "empty" }
-      if (text.length > MAX_TEXT) return { ok: false, refusal: "too-long" }
-      if (intent.id === "") return { ok: false, refusal: "duplicate" }
-      for (const entry of conversation.entries) if (entry.id === intent.id) return { ok: false, refusal: "duplicate" }
+      if (text === "") return refused("empty")
+      if (text.length > MAX_TEXT) return refused("too-long")
+      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")
       if (intent.clientId === "" || hasClientId(conversation.entries, intent.clientId)) {
-        return { ok: false, refusal: "duplicate" }
+        return refused("duplicate")
       }
-      return {
-        ok: true,
-        event: { type: "Posted", seq, id: intent.id, clientId: intent.clientId, name: intent.name, text },
-      }
+      return accepted({ type: "Posted", seq, id: intent.id, clientId: intent.clientId, name: intent.name, text })
     }
     case "StartReply":
-      if (conversation.agent === "working") return { ok: false, refusal: "busy" }
-      if (intent.id === "") return { ok: false, refusal: "not-replying" }
-      for (const entry of conversation.entries) if (entry.id === intent.id) return { ok: false, refusal: "duplicate" }
-      return { ok: true, event: { type: "ReplyStarted", seq, id: intent.id } }
+      if (conversation.agent === "working") return refused("busy")
+      if (intent.id === "") return refused("not-replying")
+      if (hasEntryId(conversation.entries, intent.id)) return refused("duplicate")
+      return accepted({ type: "ReplyStarted", seq, id: intent.id })
     case "AppendReply":
-      if (!isReplying(conversation, intent.id)) return { ok: false, refusal: "not-replying" }
-      return { ok: true, event: { type: "ReplyDelta", seq, id: intent.id, text: intent.text } }
+      if (!isReplying(conversation, intent.id)) return refused("not-replying")
+      return accepted({ type: "ReplyDelta", seq, id: intent.id, text: intent.text })
     case "FinishReply":
-      if (!isReplying(conversation, intent.id)) return { ok: false, refusal: "not-replying" }
-      return { ok: true, event: { type: "ReplyFinished", seq, id: intent.id } }
+      if (!isReplying(conversation, intent.id)) return refused("not-replying")
+      return accepted({ type: "ReplyFinished", seq, id: intent.id })
     case "FailReply":
-      if (!isReplying(conversation, intent.id)) return { ok: false, refusal: "not-replying" }
-      return { ok: true, event: { type: "ReplyFailed", seq, id: intent.id, reason: intent.reason } }
+      if (!isReplying(conversation, intent.id)) return refused("not-replying")
+      return accepted({ type: "ReplyFailed", seq, id: intent.id, reason: intent.reason })
   }
 }
 
@@ -221,15 +288,34 @@ export interface Client {
 export const newClient: Client = { conversation: empty, pending: [], gap: false }
 
 /** The client after it sends a post, shown as pending until its event arrives. A blank post changes nothing. */
+//@ verify
+//@ ensures \result.conversation == client.conversation && \result.gap == client.gap
+//@ ensures \result.pending.length == client.pending.length || \result.pending.length == client.pending.length + 1
+//@ ensures forall(i, 0 <= i && i < client.pending.length ==> \result.pending[i] == client.pending[i])
+//@ ensures (forall(i, forall(j, 0 <= i && i < j && j < client.pending.length ==> client.pending[i].clientId != client.pending[j].clientId))) ==> (forall(i, forall(j, 0 <= i && i < j && j < \result.pending.length ==> \result.pending[i].clientId != \result.pending[j].clientId)))
+//@ ensures exists(i, 0 <= i && i < client.pending.length && client.pending[i].clientId == clientId) ==> \result == client
 export function post(client: Client, clientId: string, text: string): Client {
   const trimmed = text.trim()
   if (trimmed === "" || clientId === "") return client
-  for (const waiting of client.pending) if (waiting.clientId === clientId) return client
+  let i = 0
+  while (i < client.pending.length) {
+    //@ invariant 0 <= i && i <= client.pending.length
+    //@ invariant forall(j, 0 <= j && j < i ==> client.pending[j].clientId != clientId)
+    //@ decreases client.pending.length - i
+    if (client.pending[i]!.clientId === clientId) return client
+    i++
+  }
   if (hasClientId(client.conversation.entries, clientId)) return client
   return { ...client, pending: [...client.pending, { clientId, text: trimmed, error: "" }] }
 }
 
 /** The client after sending its post failed; the post stays, marked with why. */
+//@ verify
+//@ ensures \result.conversation == client.conversation && \result.gap == client.gap
+//@ ensures \result.pending.length == client.pending.length
+//@ ensures forall(i, 0 <= i && i < client.pending.length ==> \result.pending[i].clientId == client.pending[i].clientId && \result.pending[i].text == client.pending[i].text)
+//@ ensures forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != clientId ==> \result.pending[i] == client.pending[i])
+//@ ensures forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId == clientId ==> \result.pending[i].error == (reason == "" ? "failed" : reason))
 export function failPost(client: Client, clientId: string, reason: string): Client {
   return {
     ...client,
@@ -241,6 +327,10 @@ export function failPost(client: Client, clientId: string, reason: string): Clie
  * The client after an event arrives. One it already has changes nothing; one past the next marks a gap and changes
  * nothing else; the next one is applied, and a post it confirms leaves `pending`.
  */
+//@ verify
+//@ requires 0 <= client.conversation.seq && client.conversation.seq < 9007199254740991
+//@ ensures event.seq <= client.conversation.seq ==> \result == client
+//@ ensures event.seq > client.conversation.seq + 1 ==> \result.gap
 export function receive(client: Client, event: Event): Client {
   const seq = client.conversation.seq
   if (event.seq <= seq) return client
@@ -253,6 +343,9 @@ export function receive(client: Client, event: Event): Client {
 }
 
 /** The client after it replays from `conversation.seq`: the gap closes so the replay's events apply. */
+//@ verify
+//@ ensures !\result.gap
+//@ ensures \result.conversation == client.conversation && \result.pending == client.pending
 export function resume(client: Client): Client {
   return client.gap ? { ...client, gap: false } : client
 }
