@@ -13,43 +13,13 @@
 
 import * as Context from "effect/Context"
 import * as Digest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 
-module throwing {
-  const maxTimestamp = 2 ** 48 - 1
-  export const clampTimestamp = (timestampMillis: number) =>
-    Math.min(Math.max(0, Math.trunc(timestampMillis)), maxTimestamp)
-  const base32Chars = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
-  export const ulidString = (timestampMillis: number, bytes: Uint8Array) => {
-    if (bytes.length !== 10) {
-      throw new Error(`ULID randomness must be exactly 10 bytes, received ${bytes.length}`)
-    }
-    const timestamp = clampTimestamp(timestampMillis)
-    let out = ""
-    for (let shift = 45; shift >= 0; shift -= 5) {
-      // The low 5 bits; a NaN time reads as zero, as UUIDv7's bytes do.
-      out += base32Chars[Math.floor(timestamp / 2 ** shift) & 0x1f]
-    }
-    let accumulator = 0
-    let bits = 0
-    for (const byte of bytes) {
-      accumulator = (accumulator << 8) | byte
-      bits += 8
-      while (bits >= 5) {
-        bits -= 5
-        out += base32Chars[(accumulator >>> bits) & 0x1f]
-      }
-      accumulator &= (1 << bits) - 1
-    }
-    return out
-  }
-}
-
-import { clampTimestamp, ulidString } from throwing
-
 const TypeId = "~effect/Crypto"
+
 /**
  * A digest algorithm that {@link Crypto.digest} accepts.
  *
@@ -57,6 +27,7 @@ const TypeId = "~effect/Crypto"
  * @since 1.0.0
  */
 export type DigestAlgorithm = "SHA-1" | "SHA-256" | "SHA-384" | "SHA-512"
+
 /**
  * Cryptographically secure randomness and digests.
  *
@@ -70,46 +41,47 @@ export interface Crypto {
   /** A uniformly distributed number in `[0, 1)`, read now. */
   nextDoubleUnsafe(): number
   /** `size` random bytes; a size that is not a non-negative safe integer fails with `BadArgument`. */
-  randomBytes(size: number): Uint8Array!PlatformError.PlatformError
+  randomBytes(size: number): Effect.Effect<Uint8Array, PlatformError.PlatformError>
   /** The digest of `data` under `algorithm`. */
-  digest(algorithm: DigestAlgorithm, data: Uint8Array): Uint8Array!PlatformError.PlatformError
+  digest(algorithm: DigestAlgorithm, data: Uint8Array): Effect.Effect<Uint8Array, PlatformError.PlatformError>
   /** A number in `[0, 1)`. */
-  readonly random: number!!
+  readonly random: Effect.Effect<number>
   /** A random boolean. */
-  readonly randomBoolean: boolean!!
+  readonly randomBoolean: Effect.Effect<boolean>
   /** A safe integer. */
-  readonly randomInt: number!!
+  readonly randomInt: Effect.Effect<number>
   /** A number in `[min, max)`. */
-  randomBetween(min: number, max: number): number!!
+  randomBetween(min: number, max: number): Effect.Effect<number>
   /** An integer in `[min, max]`, or `[min, max)` when `halfOpen` is true. */
   randomIntBetween(min: number, max: number, options?: {
     readonly halfOpen?: boolean | undefined
-  }): number!!
+  }): Effect.Effect<number>
   /** The elements in a random order. */
-  randomShuffle<A>(elements: Iterable<A>): Array<A>!!
+  randomShuffle<A>(elements: Iterable<A>): Effect.Effect<Array<A>>
   /** A version 4 UUID, as text or as its 16 bytes. */
   randomUUIDv4(options?: {
     readonly format?: "hex" | undefined
-  }): string!PlatformError.PlatformError
+  }): Effect.Effect<string, PlatformError.PlatformError>
   randomUUIDv4<Format extends "hex" | "bytes">(options: {
     readonly format: Format
-  }): (Format extends "bytes" ? Uint8Array : string)!PlatformError.PlatformError
+  }): Effect.Effect<Format extends "bytes" ? Uint8Array : string, PlatformError.PlatformError>
   randomUUIDv4(options?: {
     readonly format?: "hex" | "bytes" | undefined
-  }): (string | Uint8Array)!PlatformError.PlatformError
+  }): Effect.Effect<string | Uint8Array, PlatformError.PlatformError>
   /** A version 7 UUID stamped with the `Clock`'s time, as text or as its 16 bytes. */
   randomUUIDv7(options?: {
     readonly format?: "hex" | undefined
-  }): string!PlatformError.PlatformError
+  }): Effect.Effect<string, PlatformError.PlatformError>
   randomUUIDv7<Format extends "hex" | "bytes">(options: {
     readonly format: Format
-  }): (Format extends "bytes" ? Uint8Array : string)!PlatformError.PlatformError
+  }): Effect.Effect<Format extends "bytes" ? Uint8Array : string, PlatformError.PlatformError>
   randomUUIDv7(options?: {
     readonly format?: "hex" | "bytes" | undefined
-  }): (string | Uint8Array)!PlatformError.PlatformError
+  }): Effect.Effect<string | Uint8Array, PlatformError.PlatformError>
   /** A ULID stamped with the `Clock`'s time. */
-  readonly randomULID: string!PlatformError.PlatformError
+  readonly randomULID: Effect.Effect<string, PlatformError.PlatformError>
 }
+
 /**
  * The `Crypto` service key, `"effect/Crypto"` as in Effect 4.0.
  *
@@ -117,16 +89,24 @@ export interface Crypto {
  * @since 1.0.0
  */
 export const Crypto: Context.Service<Crypto, Crypto> = Context.Service("effect/Crypto")
+
 const hex = (byte: number) => byte.toString(16).padStart(2, "0")
+
 const stringify = (bytes: Uint8Array) =>
   [bytes.subarray(0, 4), bytes.subarray(4, 6), bytes.subarray(6, 8), bytes.subarray(8, 10), bytes.subarray(10, 16)]
     .map((segment) => Array.from(segment, hex).join(""))
     .join("-")
+
 const v4Bytes = (bytes: Uint8Array) => {
   bytes[6] = (bytes[6]! & 0x0f) | 0x40
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   return bytes
 }
+
+const maxTimestamp = 2 ** 48 - 1
+
+const clampTimestamp = (timestampMillis: number) => Math.min(Math.max(0, Math.trunc(timestampMillis)), maxTimestamp)
+
 const v7Bytes = (timestampMillis: number, bytes: Uint8Array) => {
   const timestamp = clampTimestamp(timestampMillis)
   bytes[0] = Math.floor(timestamp / 2 ** 40)
@@ -139,6 +119,33 @@ const v7Bytes = (timestampMillis: number, bytes: Uint8Array) => {
   bytes[8] = (bytes[8]! & 0x3f) | 0x80
   return bytes
 }
+
+const base32Chars = "0123456789ABCDEFGHJKMNPQRSTVWXYZ"
+
+const ulidString = (timestampMillis: number, bytes: Uint8Array) => {
+  if (bytes.length !== 10) {
+    throw new Error(`ULID randomness must be exactly 10 bytes, received ${bytes.length}`)
+  }
+  const timestamp = clampTimestamp(timestampMillis)
+  let out = ""
+  for (let shift = 45; shift >= 0; shift -= 5) {
+    // The low 5 bits; a NaN time reads as zero, as UUIDv7's bytes do.
+    out += base32Chars[Math.floor(timestamp / 2 ** shift) & 0x1f]
+  }
+  let accumulator = 0
+  let bits = 0
+  for (const byte of bytes) {
+    accumulator = (accumulator << 8) | byte
+    bits += 8
+    while (bits >= 5) {
+      bits -= 5
+      out += base32Chars[(accumulator >>> bits) & 0x1f]
+    }
+    accumulator &= (1 << bits) - 1
+  }
+  return out
+}
+
 const nextBetween = (min: number, max: number, draw: number) => {
   const value = draw * (max - min) + min
   if (value !== max || min >= max || !Number.isFinite(max)) return value
@@ -148,12 +155,14 @@ const nextBetween = (min: number, max: number, draw: number) => {
   const view = new DataView(new ArrayBuffer(8))
   view.setFloat64(0, max)
   const bits = view.getBigUint64(0)
-  view.setBigUint64(0, max > 0 ? bits - $invoke(BigInt, 1) : bits + $invoke(BigInt, 1))
+  view.setBigUint64(0, max > 0 ? bits - BigInt(1) : bits + BigInt(1))
   return view.getFloat64(0)
 }
+
 const readUint53 = (bytes: Uint8Array) =>
   (bytes[0]! & 0x1f) * 2 ** 48 + bytes[1]! * 2 ** 40 + bytes[2]! * 2 ** 32 + bytes[3]! * 2 ** 24 +
   bytes[4]! * 2 ** 16 + bytes[5]! * 2 ** 8 + bytes[6]!
+
 /**
  * Builds the `Crypto` service from a source of random bytes and a digest, as
  * Effect 4.0's `Crypto.make` did. Every random member reads `randomBytes`;
@@ -167,7 +176,7 @@ export const make = (impl: {
   readonly digest: (
     algorithm: DigestAlgorithm,
     data: Uint8Array
-  ) => Uint8Array!PlatformError.PlatformError
+  ) => Effect.Effect<Uint8Array, PlatformError.PlatformError>
 }): Crypto => {
   const randomBytesUnsafe = impl.randomBytes
   const nextDoubleUnsafe = () => readUint53(randomBytesUnsafe(7)) / 2 ** 53
@@ -193,9 +202,7 @@ export const make = (impl: {
     [TypeId]: TypeId,
     randomBytes: (size) =>
       Number.isSafeInteger(size) && size >= 0
-        ? effect {
-          return randomBytesUnsafe(size)
-        }
+        ? Effect.sync(() => randomBytesUnsafe(size))
         : Effect.fail(PlatformError.badArgument({
           module: "Crypto",
           method: "randomBytes",
@@ -204,16 +211,10 @@ export const make = (impl: {
     nextDoubleUnsafe,
     nextIntUnsafe,
     digest: impl.digest,
-    random: effect {
-      return nextDoubleUnsafe()
-    },
-    randomBoolean: effect {
-      return nextDoubleUnsafe() > 0.5
-    },
-    randomInt: effect {
-      return nextIntUnsafe()
-    },
-    randomBetween: effect (min, max) => nextBetween(min, max, nextDoubleUnsafe()),
+    random: Effect.sync(() => nextDoubleUnsafe()),
+    randomBoolean: Effect.sync(() => nextDoubleUnsafe() > 0.5),
+    randomInt: Effect.sync(() => nextIntUnsafe()),
+    randomBetween: (min, max) => Effect.sync(() => nextBetween(min, max, nextDoubleUnsafe())),
     randomIntBetween(min, max, options) {
       const extra = options?.halfOpen === true ? 0 : 1
       return Effect.sync(() => {
@@ -240,12 +241,14 @@ export const make = (impl: {
     )
   })
 }
+
 const digestAlgorithms: Readonly<Record<DigestAlgorithm, Digest.Algorithm>> = {
   "SHA-1": Digest.sha1,
   "SHA-256": Digest.sha256,
   "SHA-384": Digest.sha384,
   "SHA-512": Digest.sha512
 }
+
 /**
  * Provides `Crypto` over a host's Effect 4.1 `Digest` layer: what Effect 4.0's
  * `NodeCrypto.layer` and `BunCrypto.layer` provided is
@@ -259,8 +262,8 @@ const digestAlgorithms: Readonly<Record<DigestAlgorithm, Digest.Algorithm>> = {
 export const layerFromDigest = <E, R>(digest: Layer.Layer<Digest.Digest, E, R>): Layer.Layer<Crypto, E, R> =>
   Layer.effect(
     Crypto,
-    effect {
-      const service = try Digest.Digest
+    Effect.gen(function*() {
+      const service = yield* Digest.Digest
       return make({
         randomBytes: SecureRandom.randomBytesUnsafe,
         digest: (algorithm, data) => {
@@ -274,15 +277,5 @@ export const layerFromDigest = <E, R>(digest: Layer.Layer<Digest.Digest, E, R>):
             : service.digest(known, data)
         }
       })
-    }
+    })
   ).pipe(Layer.provide(digest))
-
-module $call$ts {
-  export function invoke<T extends Function>(
-    target: T,
-    arg0: Parameters<Extract<T, (...args: any[]) => any>>[0]
-  ): ReturnType<Extract<T, (...args: any[]) => any>> {
-    return target(arg0)
-  }
-}
-import { invoke as $invoke } from $call$ts
