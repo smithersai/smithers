@@ -1,13 +1,16 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import * as Effect from "effect/Effect"
+import * as Hex from "effect/encoding/Hex"
 import * as Exit from "effect/Exit"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import { createHash, webcrypto } from "node:crypto"
+import { expectTypeOf } from "vitest"
 import {
   Action,
   EngineStore as EngineStorePackage,
@@ -30,16 +33,18 @@ const { PlanStore } = PlanStorePackage
 const { AttemptStore, RunStore } = RunStorePackage
 const { CacheStore } = StepCache
 
-const hostCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => webcrypto.getRandomValues(new Uint8Array(size)),
+const hostCrypto: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom> = Layer.succeed(
+  EffectDigest.Digest,
+  EffectDigest.Digest.of({
     digest: (algorithm, data) =>
       Effect.succeed(
-        new Uint8Array(createHash(algorithm.replace("-", "").toLowerCase()).update(data).digest())
-      )
+        new Uint8Array(createHash(algorithm.name.replace("-", "").toLowerCase()).update(data).digest())
+      ),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
-)
+).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 const jj = Jj.make({
   snapshot: () => Effect.succeed({ commitId: "authoring-errors" as never, changeId: "authoring-errors" as never }),
@@ -66,8 +71,9 @@ const services = Layer.mergeAll(
 
 type DurableServices = Layer.Success<typeof services>
 
-const durable = <A, E>(body: Effect.Effect<A, E, DurableServices | Crypto.Crypto | Scope.Scope>) =>
-  Effect.scoped(body.pipe(Effect.provide(services), Effect.provide(hostCrypto)))
+const durable = <A, E>(
+  body: Effect.Effect<A, E, DurableServices | EffectDigest.Digest | SecureRandom.SecureRandom | Scope.Scope>
+) => Effect.scoped(body.pipe(Effect.provide(services), Effect.provide(hostCrypto)))
 
 /** A flow registration provides nothing; its cast erases only schema inputs. */
 type Registration = Layer.Layer<never, never, Action.Implementations | FlowRuntime.FlowRuntime>
@@ -235,9 +241,9 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 
 /** Never called; tsc checks it (#2347). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error the durable stores do not provide Unprovided
-  durable(Effect.map(Unprovided, (service) => service.value))
-  durable(Effect.succeed(1))
+  const unmet = Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof durable>[0]>()
+  const _program241 = durable(Effect.succeed(1))
 }
 
 describe("unprovided service compile probe", () => {

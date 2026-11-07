@@ -8,6 +8,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Scope from "effect/Scope"
 import { TestClock } from "effect/testing"
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -114,8 +115,8 @@ const engine = (fault: (args: ReadonlyArray<string>) => Response | undefined = (
           "", (text, bytes) =>
           text + new TextDecoder().decode(bytes))
         : ""
-      calls.push({ file: command.command, input, args: command.args })
-      const injected = fault(command.args)
+      calls.push({ file: command.command, input, args: command.args.map(plainWord) })
+      const injected = fault(command.args.map(plainWord))
       if (injected?.failSpawn === true) {
         return yield* Effect.fail(
           PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "engine gone" })
@@ -124,7 +125,7 @@ const engine = (fault: (args: ReadonlyArray<string>) => Response | undefined = (
       if (injected !== undefined) {
         return canned(injected)
       }
-      const args = [...command.args]
+      const args = [...command.args.map(plainWord)]
       if (args[0] === "create") {
         const name = args[args.indexOf("--name") + 1]!
         if (containers.has(name)) {
@@ -429,7 +430,7 @@ describe("ContainerSandbox", () => {
             expect(Array.from(yield* session.readFile(`${workdir}/canary.bin`))).toEqual(Array.from(bytes))
           })
       )
-      const argv = fake.calls.flatMap((call) => call.args).join("\n")
+      const argv = fake.calls.flatMap((call) => call.args.map(plainWord)).join("\n")
       for (
         const value of [
           boot,
@@ -450,7 +451,7 @@ describe("ContainerSandbox", () => {
     Effect.gen(function*() {
       const fake = engine()
       yield* acquired(ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }), Effect.succeed)
-      expect(fake.calls[0]!.args.slice(0, 7)).toEqual([
+      expect(fake.calls[0]!.args.map(plainWord).slice(0, 7)).toEqual([
         "create",
         "--name",
         expect.stringMatching(/^smthrs-sbx-run-1-/),
@@ -476,7 +477,7 @@ describe("ContainerSandbox", () => {
         ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir, network: "none" }),
         Effect.succeed
       )
-      expect(fake.calls[0]!.args.slice(5, 7)).toEqual(["--network", "none"])
+      expect(fake.calls[0]!.args.map(plainWord).slice(5, 7)).toEqual(["--network", "none"])
     }))
 
   it.effect("maps the neutral `open` network to the engine's bridge network, never a network named open", () =>
@@ -486,7 +487,7 @@ describe("ContainerSandbox", () => {
         ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir, network: "open" }),
         Effect.succeed
       )
-      expect(fake.calls[0]!.args.slice(5, 7)).toEqual(["--network", "bridge"])
+      expect(fake.calls[0]!.args.map(plainWord).slice(5, 7)).toEqual(["--network", "bridge"])
     }))
 
   it.effect("hands exec the cwd `Sandbox.fileSystem` would name for a relative path", () =>
@@ -498,9 +499,11 @@ describe("ContainerSandbox", () => {
           yield* output(session, "true", { cwd: ".//sub" })
         }))
       const exec = fake.calls.filter((call) =>
-        call.args[0] === "exec" && call.args.includes("--workdir")
+        call.args.map(plainWord)[0] === "exec" && call.args.map(plainWord).includes("--workdir")
       )
-      expect(exec.map(({ args }) => args[args.indexOf("--workdir") + 1])).toEqual([workdir, `${workdir}/sub`])
+      expect(exec.map(({ args }) =>
+        args[args.indexOf("--workdir") + 1]
+      )).toEqual([workdir, `${workdir}/sub`])
     }))
 
   it.effect("forwards neutral limits to create and fingerprints them", () =>
@@ -518,11 +521,11 @@ describe("ContainerSandbox", () => {
         }),
         Effect.succeed
       )
-      const create = limited.calls[0]!.args
+      const create = limited.calls[0]!.args.map(plainWord)
       expect(create.slice(7, 11)).toEqual(["--cpus", "1.5", "--memory", "512m"])
       expect(create.slice(-3)).toEqual(["img", "sleep", "90"])
-      expect(unlimited.calls[0]!.args).not.toContain("--cpus")
-      expect(labelOf(create)).not.toBe(labelOf(unlimited.calls[0]!.args))
+      expect(unlimited.calls[0]!.args.map(plainWord)).not.toContain("--cpus")
+      expect(labelOf(create)).not.toBe(labelOf(unlimited.calls[0]!.args.map(plainWord)))
     }))
 
   it("refuses createArgs that would override a neutral ceiling when make is called", () => {
@@ -576,7 +579,7 @@ describe("ContainerSandbox", () => {
       expect(session.remoteId.startsWith("t-run-1-")).toBe(true)
       expect(session.workdir).toBe(spaced)
       expect(calls.map((call) => call.file)).toEqual(["podman", "podman", "podman", "podman"])
-      expect(calls[0]!.args).toEqual([
+      expect(calls[0]!.args.map(plainWord)).toEqual([
         "create",
         "--name",
         session.remoteId,
@@ -594,15 +597,15 @@ describe("ContainerSandbox", () => {
         "sleep",
         "infinity"
       ])
-      expect(calls[1]!.args).toEqual(["start", session.remoteId])
-      expect(calls[2]!.args).toEqual([
+      expect(calls[1]!.args.map(plainWord)).toEqual(["start", session.remoteId])
+      expect(calls[2]!.args.map(plainWord)).toEqual([
         "exec",
         session.remoteId,
         "/bin/sh",
         "-c",
         `mkdir -p '${spaced}' && rm -rf /tmp/.smthrs-sbx && mkdir -p /tmp/.smthrs-sbx`
       ])
-      expect(calls[3]!.args).toEqual(["rm", "--force", session.remoteId])
+      expect(calls[3]!.args.map(plainWord)).toEqual(["rm", "--force", session.remoteId])
     }))
 
   it.effect("uses /bin/sh for every provider-owned helper", () =>
@@ -624,12 +627,12 @@ describe("ContainerSandbox", () => {
         }))
       // A container-wide PATH can omit `sh`, so every provider-owned shell
       // argv must use the absolute path before that environment can apply.
-      const helpers = fake.calls.filter((call) => call.args.includes("-c"))
+      const helpers = fake.calls.filter((call) => call.args.map(plainWord).includes("-c"))
       expect(helpers.length).toBeGreaterThan(0)
       for (const helper of helpers) {
-        const shell = helper.args[helper.args.indexOf("-c") - 1]
+        const shell = helper.args.map(plainWord)[helper.args.map(plainWord).indexOf("-c") - 1]
         expect(shell).toBe("/bin/sh")
-        expect(helper.args).not.toContain("sh")
+        expect(helper.args.map(plainWord)).not.toContain("sh")
       }
     }), 30_000)
 
@@ -648,7 +651,7 @@ describe("ContainerSandbox", () => {
         }), "resume")
       expect(resumed.remoteId).toBe(first.remoteId)
       expect(resumed.text).toBe("still here")
-      expect(fake.calls.filter((call) => call.args[0] === "create")).toHaveLength(2)
+      expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "create")).toHaveLength(2)
       // The reacquire's release already removed the container; closing the
       // leaked scope must tolerate that.
       expect(Exit.isSuccess(yield* Effect.exit(Scope.close(leaked, Exit.void)))).toBe(true)
@@ -661,7 +664,7 @@ describe("ContainerSandbox", () => {
       )
       expect(refusal).toBeInstanceOf(ProviderError)
       expect((refusal as ProviderError).message).toContain("no such image")
-      expect(refusing.calls[0]!.args).toContain("/workspace")
+      expect(refusing.calls[0]!.args.map(plainWord)).toContain("/workspace")
 
       // A conflict the engine words in some other language is still a
       // conflict. The reattach asks the engine whether the container is there
@@ -683,7 +686,7 @@ describe("ContainerSandbox", () => {
       const held = yield* Effect.provideService(podmanProvider.acquire("localized"), Scope.Scope, leakedTwice)
       const reattached = yield* acquired(podmanProvider, (session) => Effect.succeed(session.remoteId), "localized")
       expect(reattached).toBe(held.remoteId)
-      expect(podman.calls.map((call) => call.args.slice(0, 2))).toContainEqual(["container", "inspect"])
+      expect(podman.calls.map((call) => call.args.map(plainWord).slice(0, 2))).toContainEqual(["container", "inspect"])
       expect(Exit.isSuccess(yield* Effect.exit(Scope.close(leakedTwice, Exit.void)))).toBe(true)
     }), 30_000)
 
@@ -697,7 +700,7 @@ describe("ContainerSandbox", () => {
       fake.containers.get(name!)!.removing = 2
       const before = fake.calls.length
       yield* acquired(provider, (session) => output(session, "true"), "reuse")
-      const verbs = fake.calls.slice(before).map((call) => call.args.slice(0, 2).join(" "))
+      const verbs = fake.calls.slice(before).map((call) => call.args.map(plainWord).slice(0, 2).join(" "))
       // Refused create, the conflict inspect sees `removing`, two polls
       // (removing, gone), then the replacement is created and started.
       expect(verbs.slice(0, 5)).toEqual([
@@ -729,8 +732,8 @@ describe("ContainerSandbox", () => {
       const failure = yield* Fiber.join(attempt)
       expect(failure).toMatchObject({ code: "unavailable" })
       expect((failure as ProviderError).message).toContain("still being removed after 30000 ms")
-      expect(fake.calls.filter((call) => call.args[0] === "create")).toHaveLength(2)
-      expect(fake.calls.filter((call) => call.args[0] === "start")).toHaveLength(1)
+      expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "create")).toHaveLength(2)
+      expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "start")).toHaveLength(1)
     }))
 
   it.effect("retries a create once when the conflicting container vanished before inspection", () =>
@@ -745,14 +748,14 @@ describe("ContainerSandbox", () => {
         ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }),
         (session) => output(session, "true")
       )
-      expect(fake.calls.filter((call) => call.args[0] === "create")).toHaveLength(2)
+      expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "create")).toHaveLength(2)
 
       const refusing = engine((args) => args[0] === "create" ? { exitCode: 125, stderr: "no such image" } : undefined)
       const failure = yield* Effect.flip(
         acquired(ContainerSandbox.make({ spawner: refusing.spawner, image: "img", workdir }), Effect.succeed)
       )
       expect((failure as ProviderError).message).toContain("could not be created from img: no such image")
-      expect(refusing.calls.filter((call) => call.args[0] === "create")).toHaveLength(2)
+      expect(refusing.calls.filter((call) => call.args.map(plainWord)[0] === "create")).toHaveLength(2)
     }))
 
   it.effect("gives up when the name keeps coming back mid-removal", () =>
@@ -779,7 +782,7 @@ describe("ContainerSandbox", () => {
         acquired(ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir }), Effect.succeed)
       )
       expect((failure as ProviderError).message).toContain("still being removed after 5 attempts")
-      expect(fake.calls.filter((call) => call.args[0] === "create")).toHaveLength(5)
+      expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "create")).toHaveLength(5)
     }))
 
   it.effect("fails acquisition when the container cannot start or be prepared", () =>
@@ -804,10 +807,10 @@ describe("ContainerSandbox", () => {
       // still be removed. Folding those steps into the acquire left them
       // outside the finalizer's protection and leaked a machine per failure.
       for (const failed of [unstartable, unpreparable]) {
-        const created = failed.calls.find((call) => call.args[0] === "create")
-        const removed = failed.calls.find((call) => call.args[0] === "rm")
+        const created = failed.calls.find((call) => call.args.map(plainWord)[0] === "create")
+        const removed = failed.calls.find((call) => call.args.map(plainWord)[0] === "rm")
         expect(created).toBeDefined()
-        expect(removed?.args).toEqual(["rm", "--force", created!.args[2]!])
+        expect(removed?.args.map(plainWord)).toEqual(["rm", "--force", created!.args.map(plainWord)[2]!])
         expect(failed.containers.size).toBe(0)
       }
     }))
@@ -834,29 +837,31 @@ describe("ContainerSandbox", () => {
           expect(copied).toEqual({ stdout: "", code: 0 })
           expect(Array.from(yield* session.readFile(`${workdir}/stdin-copy.bin`))).toEqual(Array.from(bytes))
         }))
-      const spawns = calls.filter((call) => call.args[1] === "--workdir" || call.args[1] === "--interactive")
-      expect(spawns[0]!.args).toEqual([
+      const spawns = calls.filter((call) =>
+        call.args.map(plainWord)[1] === "--workdir" || call.args.map(plainWord)[1] === "--interactive"
+      )
+      expect(spawns[0]!.args.map(plainWord)).toEqual([
         "exec",
         "--interactive",
         "--workdir",
         workdir,
-        spawns[0]!.args[4]!,
+        spawns[0]!.args.map(plainWord)[4]!,
         "/bin/sh",
         "-c",
         "echo $$ > /tmp/.smthrs-sbx/0.pid; if [ -e /tmp/.smthrs-sbx/0.pid.cancel ]; then exit 143; fi; "
         + `eval "$(IFS= read -r smthrs_env && smthrs_env=$(printf %s "$smthrs_env" | base64 -d) && printf 'set -- %s' "$smthrs_env" || printf 'exit 125')" || exit 125; `
         + `exec env "$@" /bin/sh -c 'printf '\\''hello from %s'\\'' "$WHO"'`
       ])
-      expect(spawns[0]!.args).not.toContain("--env")
+      expect(spawns[0]!.args.map(plainWord)).not.toContain("--env")
       expect(Buffer.from(spawns[0]!.input.trim(), "base64").toString()).toBe("-u DROP KEEP=1 WHO=guest")
-      expect(spawns[1]!.args.slice(0, 3)).toEqual(["exec", "--workdir", workdir])
+      expect(spawns[1]!.args.map(plainWord).slice(0, 3)).toEqual(["exec", "--workdir", workdir])
       // The rooting rule keeps a trailing slash, as `Sandbox.fileSystem` does;
       // the `pwd` above shows it names the same directory.
-      expect(spawns[3]!.args.slice(1, 3)).toEqual(["--workdir", `${workdir}/sub/nested/`])
-      const fed = spawns.find((call) => call.args.at(-1)?.includes("cat > stdin-copy.bin"))!
-      expect(fed.args.slice(0, 4)).toEqual(["exec", "--interactive", "--workdir", workdir])
+      expect(spawns[3]!.args.map(plainWord).slice(1, 3)).toEqual(["--workdir", `${workdir}/sub/nested/`])
+      const fed = spawns.find((call) => call.args.map(plainWord).at(-1)?.includes("cat > stdin-copy.bin"))!
+      expect(fed.args.map(plainWord).slice(0, 4)).toEqual(["exec", "--interactive", "--workdir", workdir])
       // Both environment operands and command stdin use the input channel.
-      expect(spawns.filter((call) => call.args.includes("--interactive"))).toHaveLength(2)
+      expect(spawns.filter((call) => call.args.map(plainWord).includes("--interactive"))).toHaveLength(2)
     }), 30_000)
 
   it.effect(
@@ -907,10 +912,11 @@ describe("ContainerSandbox", () => {
           }))
         // Every wrapper in the chain names its shell absolutely, whether or
         // not the caller supplied an environment for the command.
-        const wrapped = fake.calls.filter((call) => call.args.at(-1)?.includes("exec ") === true)
+        const wrapped = fake.calls.filter((call) => call.args.map(plainWord).at(-1)?.includes("exec ") === true)
         expect(wrapped.length).toBeGreaterThan(0)
-        expect(wrapped.every((call) => /exec (?:env .+ )?\/bin\/sh -c/.test(call.args.at(-1) ?? ""))).toBe(true)
-        expect(wrapped.some((call) => /exec (?:env .+ )?sh -c/.test(call.args.at(-1) ?? ""))).toBe(false)
+        expect(wrapped.every((call) => /exec (?:env .+ )?\/bin\/sh -c/.test(call.args.map(plainWord).at(-1) ?? "")))
+          .toBe(true)
+        expect(wrapped.some((call) => /exec (?:env .+ )?sh -c/.test(call.args.map(plainWord).at(-1) ?? ""))).toBe(false)
       }),
     30_000
   )
@@ -923,7 +929,8 @@ describe("ContainerSandbox", () => {
         const provider = ContainerSandbox.make({ spawner: fake.spawner, image: "img", workdir })
         yield* acquired(provider, (session) =>
           Effect.gen(function*() {
-            const kills = () => fake.calls.filter((call) => call.args.at(-1)?.includes("kids()") === true).length
+            const kills = () =>
+              fake.calls.filter((call) => call.args.map(plainWord).at(-1)?.includes("kids()") === true).length
             yield* Effect.scoped(Effect.asVoid(session.spawn(sleeps, {})))
             expect(kills()).toBe(1)
             expect((yield* output(session, survivor)).code).not.toBe(0)
@@ -950,15 +957,15 @@ describe("ContainerSandbox", () => {
           expect(signalled).toBe(143)
           expect((yield* output(session, survivor)).code).not.toBe(0)
         }))
-      const killCall = calls.find((call) => call.args.at(-1)?.includes("kids()") === true)
+      const killCall = calls.find((call) => call.args.map(plainWord).at(-1)?.includes("kids()") === true)
       expect(killCall).toBeDefined()
-      expect(killCall!.args.at(-1)).toContain("cat /tmp/.smthrs-sbx/0.pid")
+      expect(killCall!.args.map(plainWord).at(-1)).toContain("cat /tmp/.smthrs-sbx/0.pid")
       // The script waits for a pid a just-started command has not written yet,
       // instead of reporting a delivered signal it never sent.
-      expect(killCall!.args.at(-1)).toContain("while [ ! -s /tmp/.smthrs-sbx/0.pid ]")
+      expect(killCall!.args.map(plainWord).at(-1)).toContain("while [ ! -s /tmp/.smthrs-sbx/0.pid ]")
       // One batch delivery to the collected set: killing children one at a
       // time before the parent lets a respawning parent replace them.
-      expect(killCall!.args.at(-1)).toContain(`kill -s TERM "$@"`)
+      expect(killCall!.args.map(plainWord).at(-1)).toContain(`kill -s TERM "$@"`)
 
       const refusing = engine((args) =>
         args.at(-1)?.includes("kids()") === true ? { exitCode: 1, stderr: "no exec" } : undefined
@@ -1014,16 +1021,18 @@ describe("ContainerSandbox", () => {
         }))
       // The test root's path is made of shell-safe characters, so the quoter
       // leaves it bare; the lifecycle test's spaced workdir proves quoting.
-      const writes = calls.filter((call) => call.args.includes("--interactive"))
-      expect(writes[0]!.args.slice(0, 2)).toEqual(["exec", "--interactive"])
-      expect(writes[0]!.args.at(-1)).toBe(`mkdir -p ${workdir}/deep/tree && cat > ${workdir}/deep/tree/out.bin`)
+      const writes = calls.filter((call) => call.args.map(plainWord).includes("--interactive"))
+      expect(writes[0]!.args.map(plainWord).slice(0, 2)).toEqual(["exec", "--interactive"])
+      expect(writes[0]!.args.map(plainWord).at(-1)).toBe(
+        `mkdir -p ${workdir}/deep/tree && cat > ${workdir}/deep/tree/out.bin`
+      )
       const rootWrite = engine()
       yield* acquired(
         ContainerSandbox.make({ spawner: rootWrite.spawner, image: "img", workdir }),
         (session) => session.writeFile("rootless.bin", new Uint8Array([9]))
       )
       // A path with no parent to create takes the bare write.
-      expect(rootWrite.calls.some((call) => call.args.at(-1) === "cat > rootless.bin")).toBe(true)
+      expect(rootWrite.calls.some((call) => call.args.map(plainWord).at(-1) === "cat > rootless.bin")).toBe(true)
     }), 30_000)
 
   it.effect("answers pings from the engine and reports a dead container", () =>
@@ -1031,7 +1040,10 @@ describe("ContainerSandbox", () => {
       const { calls, spawner } = engine()
       const alive = ContainerSandbox.make({ spawner, image: "img", workdir })
       yield* acquired(alive, (session) => session.ping!)
-      expect(calls.some((call) => call.args.length === 3 && call.args[0] === "exec" && call.args[2] === "true"))
+      expect(calls.some((call) =>
+        call.args.map(plainWord).length === 3 && call.args.map(plainWord)[0] === "exec" &&
+        call.args.map(plainWord)[2] === "true"
+      ))
         .toBe(true)
 
       const dead = engine((args) =>
@@ -1084,3 +1096,6 @@ describe("ContainerSandbox", () => {
       expect(violations).toEqual([])
     }), 120_000)
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

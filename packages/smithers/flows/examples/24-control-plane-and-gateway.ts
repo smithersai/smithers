@@ -10,7 +10,7 @@
  * bearer credential. Exact Host and Origin checks protect the loopback listener;
  * binding to loopback alone does not authenticate callers.
  */
-import { NodeHttpServer, NodeSocket } from "@effect/platform-node"
+import { NodeHttpServer, NodeWS } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as NodeFileSystem from "@effect/platform-node/NodeFileSystem"
 import * as NodePath from "@effect/platform-node/NodePath"
@@ -27,7 +27,7 @@ import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import { Executable, Registry } from "@smthrs/registry"
 import { Migrations as RunStoreMigrations, RunStore } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Fiber from "effect/Fiber"
@@ -98,11 +98,11 @@ const launch = (
   executable: Executable.Executable,
   input: Schema.Json,
   executionId: string
-): Effect.Effect<string, never, FlowRuntime.FlowRuntime | Crypto.Crypto> =>
+): Effect.Effect<string, never, FlowRuntime.FlowRuntime | EffectDigest.Digest> =>
   (executable.flow.execute({ input }, { executionId, discard: true }) as Effect.Effect<
     string,
     unknown,
-    FlowRuntime.FlowRuntime | Crypto.Crypto
+    FlowRuntime.FlowRuntime | EffectDigest.Digest
   >).pipe(
     Effect.orDie,
     Effect.tap(() =>
@@ -277,7 +277,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
         const plane = yield* ControlRuntime.ControlRuntime
         const services = yield* Effect.context<
           | FlowRuntime.FlowRuntime
-          | Crypto.Crypto
+          | EffectDigest.Digest
           | Registry.Registry
           | RunStore.RunStore
           | FileSystem.FileSystem
@@ -360,7 +360,7 @@ export const main = (root: string): Effect.Effect<Summary> =>
                       const protocols = configured === undefined
                         ? options as string | Array<string> | undefined
                         : undefined
-                      return new NodeSocket.NodeWS.WebSocket(url, protocols, {
+                      return new NodeWS.WebSocket(url, protocols, {
                         ...configured,
                         headers: { ...configured?.headers, authorization: `Bearer ${credential}` }
                       }) as unknown as globalThis.WebSocket

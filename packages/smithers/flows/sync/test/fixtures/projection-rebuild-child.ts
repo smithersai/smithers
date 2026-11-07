@@ -259,7 +259,7 @@ const program = Effect.gen(function*() {
               (mode === "crash-workspace" && identity.projection === "sum")
             ) {
               yield* emit({ phase: "uncommitted-rebuild", runId: identity.runId, snapshotSeq: snapshot.seq })
-              yield* Effect.never
+              return yield* Effect.never
             }
             store(value, snapshot.seq)
             consumer.exec("COMMIT")

@@ -30,7 +30,7 @@ import * as WaitFor from "@smthrs/flow/WaitFor"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Cause from "effect/Cause"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -783,14 +783,14 @@ type Attempt<W> =
 interface Engine {
   readonly instance: FlowRuntime.FlowInstance["Service"]
   readonly runtime: FlowRuntime.FlowRuntime["Service"]
-  readonly crypto: Crypto.Crypto
+  readonly crypto: typeof EffectDigest.Digest.Service
 }
 
 const engineOf: Effect.Effect<Engine | undefined> = Effect.map(
   Effect.all([
     Effect.serviceOption(FlowRuntime.FlowInstance),
     Effect.serviceOption(FlowRuntime.FlowRuntime),
-    Effect.serviceOption(Crypto.Crypto)
+    Effect.serviceOption(EffectDigest.Digest)
   ]),
   ([instance, runtime, crypto]) =>
     Option.isSome(instance) && Option.isSome(runtime) && Option.isSome(crypto)
@@ -869,7 +869,7 @@ const journaled = <R>(
       ),
       Effect.provideService(FlowRuntime.FlowInstance, engine.instance),
       Effect.provideService(FlowRuntime.FlowRuntime, engine.runtime),
-      Effect.provideService(Crypto.Crypto, engine.crypto)
+      Effect.provideService(EffectDigest.Digest, engine.crypto)
     )
     : run
   const settled = (outcome: FlowRuntime.NodeOutcome, value: unknown) =>

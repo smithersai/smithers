@@ -492,7 +492,7 @@ export const execute = (
 
     const client = yield* HttpClient.HttpClient
     const init = yield* Effect.serviceOption(FetchHttpClient.RequestInit)
-    const outgoing = HttpClientRequest.make(method)(Result.getOrThrow(url), { headers, body: request.body })
+    const outgoing = requestWithMethod(method, Result.getOrThrow(url), headers, request.body)
     const sent = yield* client.execute(outgoing).pipe(
       Effect.provideService(FetchHttpClient.RequestInit, { ...Option.getOrUndefined(init), redirect: "manual" }),
       Effect.provideService(HttpClient.TracerDisabledWhen, constTrue),
@@ -545,7 +545,7 @@ export const forward = (
   const body = method === "GET" || method === "HEAD"
     ? HttpBody.empty
     : HttpBody.stream(request.stream, request.headers["content-type"])
-  const outgoing = HttpClientRequest.make(method)(request.originalUrl, { headers: request.headers, body })
+  const outgoing = requestWithMethod(method, request.originalUrl, request.headers, body)
   return execute(outgoing, policy).pipe(
     Effect.map((answer) =>
       method === "HEAD" || bodiless.has(answer.status)
@@ -558,5 +558,23 @@ export const forward = (
       "@smthrs/secrets/Egress/Unavailable": (failed) =>
         Effect.succeed(HttpServerResponse.text(failed.code, { status: failed.code === "upstream" ? 502 : 503 }))
     })
+  )
+}
+
+/** Preserves extension methods while normalizing request components through Effect. */
+const requestWithMethod = (
+  method: string,
+  url: string,
+  headers: Readonly<Record<string, string>>,
+  body: HttpBody.HttpBody
+) => {
+  const normalized = HttpClientRequest.get(url, { headers, body })
+  return HttpClientRequest.makeWith(
+    method,
+    normalized.url,
+    normalized.urlParams,
+    normalized.hash,
+    normalized.headers,
+    normalized.body
   )
 }

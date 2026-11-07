@@ -3,6 +3,7 @@ import { afterAll, describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Layer, Logger, Path, PlatformError, Sink, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make as makeSpawner, makeHandle } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Scope from "effect/Scope"
 import {
   chmodSync,
@@ -347,10 +348,10 @@ const fakeCli = (faults: CliFaults = {}) => {
           PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "no pipelines" })
         )
       }
-      const remoteIndex = command.args.indexOf("--command")
+      const remoteIndex = command.args.map(plainWord).indexOf("--command")
       // Guest pids live under a fixed guest path; on this host they live
       // under the test's own root instead.
-      const requested = command.args[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
+      const requested = command.args.map(plainWord)[remoteIndex + 1]!.replaceAll("/tmp/.smthrs-sbx", `${root}/.pids`)
       // Adapt only Linux's PID/PPID enumeration to the real host process
       // table; keep the product's awk traversal and STOP/TERM/CONT sequence.
       // The gated regression exercises this portable transport on Linux too.
@@ -365,7 +366,7 @@ const fakeCli = (faults: CliFaults = {}) => {
         : undefined
       const stdinBytes = chunks === undefined ? undefined : Buffer.concat([...chunks])
       const input = stdinBytes === undefined ? "" : new TextDecoder().decode(stdinBytes)
-      calls.push({ file: command.command, input, args: command.args, remote })
+      calls.push({ file: command.command, input, args: command.args.map(plainWord), remote })
       const sessionId = `ecs-execute-command-${calls.length}`
       const wait = faults.wait?.(remote)
       if (
@@ -855,7 +856,7 @@ describe("AwsSandbox", () => {
           yield* output(session, "cat > stdin-canary.bin", { env: { TOKEN: secret }, stdin })
           expect(Array.from(yield* session.readFile(`${root}/stdin-canary.bin`))).toEqual(Array.from(stdin))
         }))
-      const argv = cli.calls.flatMap((call) => call.args).join("\n")
+      const argv = cli.calls.flatMap((call) => call.args.map(plainWord)).join("\n")
       for (
         const value of [
           "ARGV_ENV_CANARY",
@@ -997,7 +998,7 @@ describe("AwsSandbox", () => {
           expect(signalled).toBe(143)
         }))
 
-      const shapes = cli.calls.map((call) => call.args)
+      const shapes = cli.calls.map((call) => call.args.map(plainWord))
       for (const args of shapes) {
         expect(args.slice(0, 12)).toEqual([
           "--profile",
@@ -1032,8 +1033,8 @@ describe("AwsSandbox", () => {
       const cli = fakeCli()
       yield* acquired(transportProvider(fake, cli), (session) => output(session, "true"))
       expect(cli.calls[0]!.file).toBe("aws")
-      expect(cli.calls[0]!.args.slice(0, 2)).toEqual(["--region", "us-west-2"])
-      expect(cli.calls[0]!.args).not.toContain("--container")
+      expect(cli.calls[0]!.args.map(plainWord).slice(0, 2)).toEqual(["--region", "us-west-2"])
+      expect(cli.calls[0]!.args.map(plainWord)).not.toContain("--container")
     }), 30_000)
 
   it.effect("reports transport failures as what they are", () =>
@@ -1724,15 +1725,15 @@ describe("AwsSandbox", () => {
         const framing = (command: string): string =>
           command.replaceAll(root, "<workdir>").replace(/__smthrs_exit_[0-9a-f]{32}_/, "__smthrs_exit_<nonce>_")
         const first = cli.calls[0]!
-        expect(first.args.at(-2)).toBe("--command")
-        expect(framing(first.args.at(-1)!)).toBe(
+        expect(first.args.map(plainWord).at(-2)).toBe("--command")
+        expect(framing(first.args.map(plainWord).at(-1)!)).toBe(
           "/bin/sh -c '( mkdir -p <workdir> && rm -rf /tmp/.smthrs-sbx && mkdir -p /tmp/.smthrs-sbx ); "
             + "printf '\\''\\n__smthrs_exit_<nonce>_%s__\\n'\\'' \"$?\"'"
         )
         // A spawned command records its pid, honors a cancellation left before
         // it started, and prints the same sentinel with its own nonce.
-        const spawned = cli.calls.find((call) => call.args.at(-1)?.includes("echo framed") === true)!
-        expect(framing(spawned.args.at(-1)!)).toBe(
+        const spawned = cli.calls.find((call) => call.args.map(plainWord).at(-1)?.includes("echo framed") === true)!
+        expect(framing(spawned.args.map(plainWord).at(-1)!)).toBe(
           "/bin/sh -c 'if [ -e /tmp/.smthrs-sbx/0.pid.cancel ]; then c=143; "
             + "elif cd <workdir>; then /bin/sh -c '\\''echo framed; exit 4'\\'' & p=$!; "
             + "echo \"$p\" > /tmp/.smthrs-sbx/0.pid; if [ -e /tmp/.smthrs-sbx/0.pid.cancel ]; "
@@ -1887,3 +1888,6 @@ describe("AwsSandbox", () => {
       ])
     }))
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

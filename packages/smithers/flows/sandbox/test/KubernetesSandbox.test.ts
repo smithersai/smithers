@@ -9,6 +9,7 @@ import {
   makeHandle,
   ProcessId
 } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import * as Scope from "effect/Scope"
 import { createHmac } from "node:crypto"
 import { chmodSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "node:fs"
@@ -123,8 +124,8 @@ const cluster = (fault: (args: ReadonlyArray<string>) => Response | undefined = 
           "", (text, bytes) =>
           text + new TextDecoder().decode(bytes))
         : ""
-      calls.push({ file: command.command, input, args: command.args })
-      const injected = fault(command.args)
+      calls.push({ file: command.command, input, args: command.args.map(plainWord) })
+      const injected = fault(command.args.map(plainWord))
       if (injected?.failSpawn === true) {
         return yield* Effect.fail(
           PlatformError.badArgument({ module: "ChildProcess", method: "spawn", description: "kubectl missing" })
@@ -133,7 +134,7 @@ const cluster = (fault: (args: ReadonlyArray<string>) => Response | undefined = 
       if (injected !== undefined) {
         return canned(injected)
       }
-      const args = [...command.args]
+      const args = [...command.args.map(plainWord)]
       while (["--context", "--namespace", "--kubeconfig"].includes(args[0] ?? "")) {
         args.splice(0, 2)
       }
@@ -469,7 +470,7 @@ describe("KubernetesSandbox", () => {
           KubernetesSandbox.make({ spawner: fake.spawner, image: "img", workdir, env: { TOKEN: "secret" } }),
           () => Effect.void
         )
-        const manifest = JSON.parse(fake.calls.find((call) => call.args[0] === "create")!.input)
+        const manifest = JSON.parse(fake.calls.find((call) => call.args.map(plainWord)[0] === "create")!.input)
         expect(manifest.spec.containers).toEqual([
           { name: "sidecar" },
           { name: expect.any(String), env: [{ name: "KEPT", value: "base" }, { name: "TOKEN", value: "secret" }] }
@@ -486,7 +487,7 @@ describe("KubernetesSandbox", () => {
           )
           expect(error).toBeInstanceOf(ProviderError)
           expect(error.code).toBe(response.exitCode === 1 ? "unavailable" : "spawn_error")
-          expect(broken.calls.some((call) => call.args[0] === "create")).toBe(false)
+          expect(broken.calls.some((call) => call.args.map(plainWord)[0] === "create")).toBe(false)
         }
       }),
     30_000
@@ -516,7 +517,7 @@ describe("KubernetesSandbox", () => {
             expect(Array.from(yield* session.readFile(`${workdir}/canary.bin`))).toEqual(Array.from(bytes))
           })
       )
-      const argv = fake.calls.flatMap((call) => call.args).join("\n")
+      const argv = fake.calls.flatMap((call) => call.args.map(plainWord)).join("\n")
       for (
         const value of [
           boot,
@@ -589,9 +590,9 @@ describe("KubernetesSandbox", () => {
       ]
       for (const call of fake.calls) {
         expect(call.file).toBe("k")
-        expect(call.args.slice(0, globals.length)).toEqual(globals)
+        expect(call.args.map(plainWord).slice(0, globals.length)).toEqual(globals)
       }
-      const localCalls = fake.calls.map((call) => call.args.slice(globals.length))
+      const localCalls = fake.calls.map((call) => call.args.map(plainWord).slice(globals.length))
       const created = localCalls.find((args) => args[0] === "run")!
       expect(created.slice(0, 10)).toEqual([
         "run",
@@ -671,9 +672,11 @@ describe("KubernetesSandbox", () => {
       )
       expect(resumed.remoteId).toBe(first.remoteId)
       expect(Array.from(resumed.bytes)).toEqual([0, 255, 1])
-      expect(fake.calls.filter((call) => call.args[0] === "run")).toHaveLength(2)
+      expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "run")).toHaveLength(2)
       // A live leftover is adopted, so its phase was inspected, not assumed.
-      expect(fake.calls.some((call) => call.args[0] === "get" && call.args.at(-1) === "json"))
+      expect(
+        fake.calls.some((call) => call.args.map(plainWord)[0] === "get" && call.args.map(plainWord).at(-1) === "json")
+      )
         .toBe(true)
       expect(yield* Scope.close(leaked, Exit.void)).toBeUndefined()
     }), 30_000)
@@ -719,7 +722,7 @@ describe("KubernetesSandbox", () => {
               expect(current).not.toBe(squatter)
               expect(current.manifest.metadata.uid).not.toBe("squatter-uid")
             }), "victim")
-          const verbs = fake.calls.map((call) => call.args[0])
+          const verbs = fake.calls.map((call) => call.args.map(plainWord)[0])
           // The squatter was deleted before the replacement was created, and
           // nothing was exec'd while it still held the name.
           const deleted = verbs.indexOf("delete")
@@ -752,7 +755,7 @@ describe("KubernetesSandbox", () => {
             () => Effect.sync(() => expect(fake.pods.get(firstSession.remoteId)).not.toBe(leftover)),
             "fresh"
           )
-          expect(fake.calls.filter((call) => call.args[0] === "run")).toHaveLength(3)
+          expect(fake.calls.filter((call) => call.args.map(plainWord)[0] === "run")).toHaveLength(3)
           yield* Scope.close(leaked, Exit.void)
         }
       }),
@@ -774,7 +777,7 @@ describe("KubernetesSandbox", () => {
             // The replacement is a usable machine, not the corpse.
             expect(yield* output(session, "printf 'reborn'")).toEqual({ stdout: "reborn", code: 0 })
           }), "finished")
-        const verbs = fake.calls.map((call) => call.args[0])
+        const verbs = fake.calls.map((call) => call.args.map(plainWord)[0])
         expect(verbs.filter((verb) => verb === "run")).toHaveLength(3)
         // The finished Pod was deleted between the refused create and the
         // fresh one, and the release deleted the replacement at the end.
@@ -806,7 +809,7 @@ describe("KubernetesSandbox", () => {
         const recreateFailure = yield* Effect.flip(acquired(refusingProvider, Effect.succeed, "quota"))
         expect((recreateFailure as ProviderError).message).toContain("could not be recreated")
         expect(refusing.pods.size).toBe(0)
-        expect(refusing.calls.filter((call) => call.args[0] === "delete")).toHaveLength(1)
+        expect(refusing.calls.filter((call) => call.args.map(plainWord)[0] === "delete")).toHaveLength(1)
         yield* Scope.close(leakedThrice, Exit.void)
       }),
     30_000
@@ -819,7 +822,7 @@ describe("KubernetesSandbox", () => {
         acquired(KubernetesSandbox.make({ spawner: notReady.spawner, image: "img", workdir }), Effect.succeed)
       )
       expect((waitError as ProviderError).message).toContain("did not become Ready")
-      expect(notReady.calls.some((call) => call.args[0] === "delete")).toBe(true)
+      expect(notReady.calls.some((call) => call.args.map(plainWord)[0] === "delete")).toBe(true)
       expect(notReady.pods.size).toBe(0)
 
       const noWorkspace = cluster((args) =>
@@ -831,7 +834,7 @@ describe("KubernetesSandbox", () => {
         acquired(KubernetesSandbox.make({ spawner: noWorkspace.spawner, image: "img", workdir }), Effect.succeed)
       )
       expect((setupError as ProviderError).message).toContain("could not be prepared")
-      expect(noWorkspace.calls.some((call) => call.args[0] === "delete")).toBe(true)
+      expect(noWorkspace.calls.some((call) => call.args.map(plainWord)[0] === "delete")).toBe(true)
       expect(noWorkspace.pods.size).toBe(0)
     }))
 
@@ -851,10 +854,10 @@ describe("KubernetesSandbox", () => {
           code: "unavailable",
           message: expect.stringContaining("reported no uid to seal")
         })
-        const name = fake.calls[0]!.args[1]!
+        const name = fake.calls[0]!.args.map(plainWord)[1]!
         expect(fake.calls.map(({ args }) => args[0])).toEqual(["run", "get", "delete"])
-        expect(fake.calls[1]!.args).toEqual(["get", "pod", name, "-o", "jsonpath={.metadata.uid}"])
-        expect(fake.calls[2]!.args).toEqual(["delete", `pod/${name}`, "--force", "--grace-period=0"])
+        expect(fake.calls[1]!.args.map(plainWord)).toEqual(["get", "pod", name, "-o", "jsonpath={.metadata.uid}"])
+        expect(fake.calls[2]!.args.map(plainWord)).toEqual(["delete", `pod/${name}`, "--force", "--grace-period=0"])
         expect(fake.pods.size).toBe(0)
       }
     }))
@@ -878,12 +881,12 @@ describe("KubernetesSandbox", () => {
         }))
       // A Pod-wide PATH can omit `sh`, so every provider-owned shell argv
       // must use the absolute path before that environment can apply.
-      const helpers = fake.calls.filter((call) => call.args.includes("-c"))
+      const helpers = fake.calls.filter((call) => call.args.map(plainWord).includes("-c"))
       expect(helpers.length).toBeGreaterThan(0)
       for (const helper of helpers) {
-        const shell = helper.args[helper.args.indexOf("-c") - 1]
+        const shell = helper.args.map(plainWord)[helper.args.map(plainWord).indexOf("-c") - 1]
         expect(shell).toBe("/bin/sh")
-        expect(helper.args).not.toContain("sh")
+        expect(helper.args.map(plainWord)).not.toContain("sh")
       }
     }), 30_000)
 
@@ -899,7 +902,7 @@ describe("KubernetesSandbox", () => {
       )
       expect((deniedError as ProviderError).code).toBe("unavailable")
       expect((deniedError as ProviderError).message).toContain("Forbidden")
-      expect(denied.calls.some((call) => call.args[0] === "delete")).toBe(false)
+      expect(denied.calls.some((call) => call.args.map(plainWord)[0] === "delete")).toBe(false)
 
       const missing = cluster((args) => args[0] === "run" ? { failSpawn: true } : undefined)
       const spawnError = yield* Effect.flip(
@@ -958,10 +961,10 @@ describe("KubernetesSandbox", () => {
             expect((yield* output(session, "cat > stdin-copy.bin", { stdin: bytes })).code).toBe(0)
             expect(Array.from(yield* session.readFile(`${workdir}/stdin-copy.bin`))).toEqual(Array.from(bytes))
           }))
-        const spawns = fake.calls.filter((call) => call.args.at(-1)?.includes("exec ") === true)
-        expect(spawns[0]!.args).toEqual([
+        const spawns = fake.calls.filter((call) => call.args.map(plainWord).at(-1)?.includes("exec ") === true)
+        expect(spawns[0]!.args.map(plainWord)).toEqual([
           "exec",
-          spawns[0]!.args[1]!,
+          spawns[0]!.args.map(plainWord)[1]!,
           "--",
           "/bin/sh",
           "-c",
@@ -969,20 +972,20 @@ describe("KubernetesSandbox", () => {
           + " && if [ -e /tmp/.smthrs-sbx/0.pid.cancel ]; then exit 143; fi"
           + " && exec /bin/sh -c pwd"
         ])
-        const withEnv = spawns.find((call) => call.args.at(-1)?.includes("env ") === true)!
+        const withEnv = spawns.find((call) => call.args.map(plainWord).at(-1)?.includes("env ") === true)!
         // Every `-u` before every assignment: `env` stops reading options at
         // the first operand, so `env KEEP=1 -u DROP prog` would run `-u`.
-        expect(withEnv.args.at(-1)).toContain("exec env \"$@\" /bin/sh -c")
+        expect(withEnv.args.map(plainWord).at(-1)).toContain("exec env \"$@\" /bin/sh -c")
         expect(Buffer.from(withEnv.input.trim(), "base64").toString()).toBe(
           "-u DROP 'KEEP=two words' PRESENT=delivered"
         )
-        expect(withEnv.args.at(-1)).not.toContain("export")
+        expect(withEnv.args.map(plainWord).at(-1)).not.toContain("export")
         // The refused spawn never reached the cluster at all.
-        expect(fake.calls.some((call) => call.args.at(-1)?.includes("WITH-DASH") === true)).toBe(false)
-        const fed = spawns.find((call) => call.args.at(-1)?.includes("cat > stdin-copy.bin") === true)!
-        expect(fed.args.slice(0, 2)).toEqual(["exec", "--stdin"])
+        expect(fake.calls.some((call) => call.args.map(plainWord).at(-1)?.includes("WITH-DASH") === true)).toBe(false)
+        const fed = spawns.find((call) => call.args.map(plainWord).at(-1)?.includes("cat > stdin-copy.bin") === true)!
+        expect(fed.args.map(plainWord).slice(0, 2)).toEqual(["exec", "--stdin"])
         // Only a command with input asks for the input channel.
-        expect(spawns.filter((call) => call.args.includes("--stdin"))).toHaveLength(2)
+        expect(spawns.filter((call) => call.args.map(plainWord).includes("--stdin"))).toHaveLength(2)
       }),
     30_000
   )
@@ -995,7 +998,8 @@ describe("KubernetesSandbox", () => {
         const provider = KubernetesSandbox.make({ spawner: fake.spawner, image: "img", workdir })
         yield* acquired(provider, (session) =>
           Effect.gen(function*() {
-            const kills = () => fake.calls.filter((call) => call.args.at(-1)?.includes("kids()") === true).length
+            const kills = () =>
+              fake.calls.filter((call) => call.args.map(plainWord).at(-1)?.includes("kids()") === true).length
             yield* Effect.scoped(Effect.asVoid(session.spawn(sleeps, {})))
             expect(kills()).toBe(1)
             expect((yield* output(session, survivor)).code).not.toBe(0)
@@ -1022,11 +1026,11 @@ describe("KubernetesSandbox", () => {
           expect(signalled).toBe(143)
           expect((yield* output(session, survivor)).code).not.toBe(0)
         }))
-      const kill = fake.calls.find((call) => call.args.at(-1)?.includes("kids()") === true)
-      expect(kill!.args.at(-1)).toContain("while [ ! -s /tmp/.smthrs-sbx/0.pid ]")
+      const kill = fake.calls.find((call) => call.args.map(plainWord).at(-1)?.includes("kids()") === true)
+      expect(kill!.args.map(plainWord).at(-1)).toContain("while [ ! -s /tmp/.smthrs-sbx/0.pid ]")
       // One batch delivery to the collected set: killing children one at a
       // time before the parent lets a respawning parent replace them.
-      expect(kill!.args.at(-1)).toContain(`kill -s TERM "$@"`)
+      expect(kill!.args.map(plainWord).at(-1)).toContain(`kill -s TERM "$@"`)
 
       const refused = cluster((args) =>
         args.at(-1)?.includes("kids()") === true ? { exitCode: 1, stderr: "exec refused" } : undefined
@@ -1066,11 +1070,13 @@ describe("KubernetesSandbox", () => {
           const unwritable = yield* Effect.flip(session.writeFile(`${workdir}/blocker/child`, new Uint8Array([1])))
           expect((unwritable as ProviderError).code).toBe("unknown")
         }))
-      const writes = fake.calls.filter((call) => call.args.includes("-i"))
-      expect(writes[0]!.args.slice(0, 2)).toEqual(["exec", "-i"])
-      expect(writes[0]!.args.at(-1)).toBe(`mkdir -p ${workdir}/deep && base64 -d > ${workdir}/deep/out.bin`)
+      const writes = fake.calls.filter((call) => call.args.map(plainWord).includes("-i"))
+      expect(writes[0]!.args.map(plainWord).slice(0, 2)).toEqual(["exec", "-i"])
+      expect(writes[0]!.args.map(plainWord).at(-1)).toBe(
+        `mkdir -p ${workdir}/deep && base64 -d > ${workdir}/deep/out.bin`
+      )
       // Redirected, not positional: BSD `base64` takes no file operand.
-      const reads = fake.calls.filter((call) => call.args.at(-1)?.includes("base64 < ") === true)
+      const reads = fake.calls.filter((call) => call.args.map(plainWord).at(-1)?.includes("base64 < ") === true)
       expect(reads.length).toBeGreaterThan(0)
 
       const badRead = cluster((args) =>
@@ -1133,7 +1139,7 @@ describe("KubernetesSandbox", () => {
           limits: { cpus: 1.5, memoryMib: 512, timeoutSecs: 3600 }
         }).acquire("limits")
       )
-      const overrides = overridesOf(limited.calls[0]!.args)
+      const overrides = overridesOf(limited.calls[0]!.args.map(plainWord))
       expect(overrides.spec.activeDeadlineSeconds).toBe(3600)
       expect(overrides.spec.containers[0].resources).toEqual({
         requests: { cpu: "250m" },
@@ -1144,27 +1150,31 @@ describe("KubernetesSandbox", () => {
         KubernetesSandbox.make({ spawner: lifetimeOnly.spawner, image: "img", workdir, limits: { timeoutSecs: 60 } })
           .acquire("limits")
       )
-      expect(overridesOf(lifetimeOnly.calls[0]!.args).spec).toEqual({ activeDeadlineSeconds: 60 })
+      expect(overridesOf(lifetimeOnly.calls[0]!.args.map(plainWord)).spec).toEqual({ activeDeadlineSeconds: 60 })
       const cpuOnly = cluster()
       yield* Effect.scoped(
         KubernetesSandbox.make({ spawner: cpuOnly.spawner, image: "img", workdir, limits: { cpus: 2 } })
           .acquire("limits")
       )
-      expect(overridesOf(cpuOnly.calls[0]!.args).spec.containers[0].resources).toEqual({ limits: { cpu: "2" } })
+      expect(overridesOf(cpuOnly.calls[0]!.args.map(plainWord)).spec.containers[0].resources).toEqual({
+        limits: { cpu: "2" }
+      })
       const memoryOnly = cluster()
       yield* Effect.scoped(
         KubernetesSandbox.make({ spawner: memoryOnly.spawner, image: "img", workdir, limits: { memoryMib: 256 } })
           .acquire("limits")
       )
-      expect(overridesOf(memoryOnly.calls[0]!.args).spec.containers[0].resources).toEqual({
+      expect(overridesOf(memoryOnly.calls[0]!.args.map(plainWord)).spec.containers[0].resources).toEqual({
         limits: { memory: "256Mi" }
       })
       const unlimited = cluster()
       yield* Effect.scoped(
         KubernetesSandbox.make({ spawner: unlimited.spawner, image: "img", workdir }).acquire("limits")
       )
-      expect(unlimited.calls[0]!.args).not.toContain("--overrides")
-      expect(labelOf(lifetimeOnly.calls[0]!.args)).not.toBe(labelOf(unlimited.calls[0]!.args))
+      expect(unlimited.calls[0]!.args.map(plainWord)).not.toContain("--overrides")
+      expect(labelOf(lifetimeOnly.calls[0]!.args.map(plainWord))).not.toBe(
+        labelOf(unlimited.calls[0]!.args.map(plainWord))
+      )
     }))
 
   it("refuses a neutral limit that collides with the Kubernetes-named one", () => {
@@ -1231,7 +1241,7 @@ describe("KubernetesSandbox", () => {
       }
       expect(session.remoteId).toMatch(/^[a-z0-9-]+$/)
       expect(session.remoteId).toHaveLength(63)
-      const create = fake.calls[0]!.args
+      const create = fake.calls[0]!.args.map(plainWord)
       const overrides = JSON.parse(create[create.indexOf("--overrides") + 1]!)
       expect(overrides.spec.containers[0].resources).toEqual({})
     }))
@@ -1246,3 +1256,6 @@ describe("KubernetesSandbox", () => {
       expect(violations).toEqual([])
     }), 120_000)
 })
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

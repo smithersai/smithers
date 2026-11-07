@@ -16,7 +16,7 @@ import { Action, Flow, type FlowRuntime, Graph, Interpreter } from "@smthrs/flow
 import { Journal, type JournalEvent } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Executable, Registry } from "@smthrs/registry"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -75,11 +75,11 @@ const start = (
   executable: Executable.Executable,
   target: string,
   executionId: string
-): Effect.Effect<string, never, FlowRuntime.FlowRuntime | Crypto.Crypto> =>
+): Effect.Effect<string, never, FlowRuntime.FlowRuntime | EffectDigest.Digest> =>
   (executable.flow.execute({ input: { target } }, { executionId }) as Effect.Effect<
     string,
     unknown,
-    FlowRuntime.FlowRuntime | Crypto.Crypto
+    FlowRuntime.FlowRuntime | EffectDigest.Digest
   >).pipe(Effect.orDie)
 
 /** What one run of the gate the project declared observed. */
