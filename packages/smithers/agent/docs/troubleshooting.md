@@ -183,9 +183,12 @@ demand records say which one and why.
 often because the runtime refuses to compile WebAssembly from bytes, as
 Cloudflare's workerd does.
 
-**What to change.** Use `Agent.layerDefaultsWithVariant` over the QuickJS build
-the host names, and provide `QuickJSSandbox.layerVariant(variant)` beneath it,
-building the variant from a `.wasm` module import.
+**What to change.** Use `Agent.layerDefaultsWithVariant` (or
+`Agent.layerSandboxWithVariant`) over the QuickJS build the host names. On
+workerd, provide `@smthrs/harness/QuickJSWorkerd`'s `variant` beneath it: it
+imports the build's `.wasm` as a module the bundler compiles. Elsewhere,
+provide `QuickJSSandbox.layerVariant(variant)` over a variant you build from a
+`.wasm` module import.
 
 ## ChildError
 

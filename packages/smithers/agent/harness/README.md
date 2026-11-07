@@ -107,7 +107,19 @@ Every module and every export it publishes is listed in the
 
 `QuickJSSandbox.Variant` is that seam. `layerVariantLive` provides the single-file default and `layerVariant(variant)` provides a build the host names; `layerWithVariant` and `makeWithVariant` are the sandbox over whichever one is in context. `@smthrs/agent/Agent` carries the same pair: `layerDefaults` is unchanged and `layerDefaultsWithVariant` takes the build from context.
 
-A worker names its build with the `.wasm` module its bundler compiled:
+`@smthrs/harness/QuickJSWorkerd` is that build, packaged: `variant` imports the separate-file build's `.wasm` as `#quickjs.wasm` (this package's `imports`), which Cloudflare's bundlers upload as a compiled module, so a Worker depends on no QuickJS package itself:
+
+```ts
+import * as QuickJSSandbox from "@smthrs/harness/QuickJSSandbox"
+import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
+import { Layer } from "effect"
+
+const layer = QuickJSSandbox.layerWithVariant.pipe(Layer.provide(QuickJSWorkerd.variant))
+```
+
+`QuickJSWorkerd.variantFrom(load)` takes another source of the compiled module; a load that fails is `SandboxError` with code `runtime_failed`. The module is a subpath of its own, never the root entry, so browser and Node bundles never meet the `.wasm` import.
+
+A worker can also name its build by hand, with the `.wasm` module its bundler compiled:
 
 ```ts
 import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
