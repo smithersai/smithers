@@ -4,7 +4,7 @@ import { describe, expect, it, vi } from "vitest"
 import { Unauthorized } from "../src/ControlError.vibe"
 import { anyAuthenticator, bearerAuthenticator, ControlRpcs, layerAuth } from "../src/ControlRpcs.vibe"
 import * as ControlServer from "../src/ControlServer.vibe"
-import * as ScopedToken from "../src/ScopedToken.ts"
+import * as ScopedToken from "../src/ScopedToken.vibe"
 import * as TestControl from "../src/test/TestControl.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 

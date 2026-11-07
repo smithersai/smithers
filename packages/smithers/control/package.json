@@ -138,8 +138,8 @@
       "default": "./.vibelang/js/src/Monitor.js"
     },
     "./ScopedToken": {
-      "types": "./src/ScopedToken.ts",
-      "vibelang-source": "./src/ScopedToken.ts",
+      "types": "./.vibe/declarations/src/ScopedToken.d.vibe.ts",
+      "vibelang-source": "./src/ScopedToken.vibe",
       "default": "./.vibelang/js/src/ScopedToken.js"
     },
     "./SqlControlRuntime": {
@@ -205,7 +205,8 @@
     "src/ApprovalAuthority.vibe",
     "src/Control.vibe",
     "src/ControlError.vibe",
-    "src/ControlExecutor.vibe"
+    "src/ControlExecutor.vibe",
+    "src/ScopedToken.vibe"
   ],
   "publishConfig": {
     "access": "public",

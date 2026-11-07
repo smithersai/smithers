@@ -124,7 +124,7 @@
      "relative": "packages/smithers/control/src"
     },
     null,
-    "8l0HZy2f0K_aVfo6VIqcFC0kpQp5R_yl6taYLuw_F9M",
+    "v39PpMyKSo2HuiLtbMXkBXRMnhtHRL9soWcpEP42KzE",
     [],
     {
      "recursive": true,
@@ -256,8 +256,8 @@
     "path": {
      "relative": "pnpm-lock.yaml"
     },
-    "size": 1032990,
-    "hash": "JWXHDc5FqtoaD_7kBZtDp_c1gN0Pv_YzpXJiGdIsulM"
+    "size": 1033342,
+    "hash": "ToTWzvSj2LGhxHYgS1D9GQlopt_P9dNN_CeEzD6D5n4"
    },
    {
     "path": {
@@ -352,8 +352,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11258,
-    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
+    "size": 11620,
+    "hash": "eLJMZl6jaonWcgTs6guIIEaV-VxrLMo48ooX5dtL648"
    },
    {
     "path": {
@@ -394,8 +394,8 @@
     "path": {
      "relative": "packages/smithers/control/package.json"
     },
-    "size": 18076,
-    "hash": "mRDWIPEV8Bx4oUiQH1NpiOQ7TlbMQCGMKrT8hgZqxyI"
+    "size": 18148,
+    "hash": "w2PDHJLTnbEgAW3gjHugta4fPE7hLCe5REjEV5TuwKE"
    },
    {
     "path": {
@@ -569,8 +569,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7128,
-    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
+    "size": 7188,
+    "hash": "tn4RcBxIeShNMXTfH8LxoPn_iminrBnO2FV2R3DeZ24"
    },
    {
     "path": {
@@ -3614,10 +3614,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
+     "relative": "packages/smithers/flows/journal/src/JournalGeneration.vibe"
     },
-    "size": 3448,
-    "hash": "hs9V74OzFZsvig3_-H5R6VTXMod0o-0HDSAt0J2MZUw"
+    "size": 3344,
+    "hash": "Xd5B5_cKqa2DY5--jlJ2B5C5HrloIhY7uDbM7lsTI0Y"
    },
    {
     "path": {
@@ -3628,10 +3628,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
     },
-    "size": 75096,
-    "hash": "_mlxwRw7wGsrbBEnDv7Ax92E2tL4beu8b6ukLyYN6WA"
+    "size": 75215,
+    "hash": "MM4UCJtf8cRyW2GgCmq22HbCztw4V6vwqyZDDuacmdo"
    },
    {
     "path": {
@@ -3644,22 +3644,526 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
     },
-    "size": 133667,
-    "hash": "NE5CzGudJwrdNZk506DZ_yPIro2DQFsSje3EqpwVMWI"
+    "size": 133671,
+    "hash": "NRnskCCkDnPEkKmFdhZo3P5R_k8yeEZLgi0FIm8QomY"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/CircuitBreaker.d.ts"
     },
-    "size": 20719,
-    "hash": "fkywAhB33uzprw3HWRluZ53hNVTI1xAfZ-zVA8pVkGY"
+    "size": 33620,
+    "hash": "6lhkdbKkvmHsFcEYaxi7l-MtqCVefo5yXZBZx54b9qk"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/RateLimiter.d.ts"
     },
-    "size": 21223,
-    "hash": "CCWOAsQ-VlpL7CoYjPcDQm913MhWxnYhTszJHjYePJE"
+    "size": 18574,
+    "hash": "wbXgpG6F_3Xxxb6Aws5Pv8mTZVD1uRHg-CoiUlpX1lI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClient.d.ts"
+    },
+    "size": 77125,
+    "hash": "8XWJj0yFd5XRIPmcVJDeuu7bNbmhYqtG_poV5zdlnM8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/Worker.d.ts"
+    },
+    "size": 4507,
+    "hash": "udCtK1jcKQg7UN5IUYnqHUdyRVOuaqT6lb_7LjngNYM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcGroup.d.ts"
+    },
+    "size": 7176,
+    "hash": "5jQTytNuEo9vIbVif5NN6INed4m9RSztxolusGwKZYs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcSerialization.d.ts"
+    },
+    "size": 8120,
+    "hash": "ljDibX2ilce9qwNCwJk__lwCeIa7ZXbdBPzqNPjyFEM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/Utils.d.ts"
+    },
+    "size": 1163,
+    "hash": "pPgDmwekbYwVy8juL_LacRERQsKq_oVuEOBxPDHCHOE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcClient.d.ts"
+    },
+    "size": 19359,
+    "hash": "L5VPLDeP1_tp1KeqlI4SvqRRzs46gzJuaeE9rWEtTcE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityId.d.ts"
+    },
+    "size": 1452,
+    "hash": "8G6KvjvryXqT0lOzLVz0ddBd34nYGeX5PJ-TUXgxZLw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityType.d.ts"
+    },
+    "size": 1688,
+    "hash": "Pr9kw3NwirstIvug3uhdyEJcxyd3UcZJi_h3_qb_qYk"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardId.d.ts"
+    },
+    "size": 3452,
+    "hash": "IRZYtpZiXKDE-crBMSrm0iKOcZS-aoL3MT5s66Ybqng"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityAddress.d.ts"
+    },
+    "size": 3010,
+    "hash": "SZDSwm7j3-YI_9Eh0kkQZVeFTOZr2-lQDTPLmcOrzNo"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerAddress.d.ts"
+    },
+    "size": 3040,
+    "hash": "yrFRicKdgra5vnhnDh1zXykc_uaeqp5wmkoGMP0Xfbs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MachineId.d.ts"
+    },
+    "size": 1460,
+    "hash": "bSsSmAAMdM0qkQqMlCis3_mAuVUCx7_mi5YoSxSSVeg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Snowflake.d.ts"
+    },
+    "size": 6636,
+    "hash": "2VBrV_inJwvsXHU3OeEyArFJpjeFrVtkStxHYbLVjYg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterError.d.ts"
+    },
+    "size": 7433,
+    "hash": "HJuVgbkR2eLkp8af7NmcCYHV_lwNlHYdEbfvF8RKdRM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Envelope.d.ts"
+    },
+    "size": 11771,
+    "hash": "1stqdRL93Op15owECroyNwBVzcmXoST5dTEWDkQoHfY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Message.d.ts"
+    },
+    "size": 9872,
+    "hash": "X1umrjOArFnumH98ibH25OmdXXPqYq6ySwge6hJI8c4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Reply.d.ts"
+    },
+    "size": 10360,
+    "hash": "Y8xeHUmrlthiwICskWsLXc9t4OoJ_Pa8_YMyIyzyHX8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingConfig.d.ts"
+    },
+    "size": 18524,
+    "hash": "HL_NI8Jc-1XjO6o0UGXJz3eDhUaIhDQf2Ve2hyyWA4M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Entity.d.ts"
+    },
+    "size": 13096,
+    "hash": "iRHq5o8OmWj3pKEvtSKALC8zQ2mT1MBznsLDOV77j20"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/MessageStorage.d.ts"
+    },
+    "size": 34555,
+    "hash": "mKDYRuaIlnF7LPrnOFL2AgOip1mz8lGwGJvzQcneaNQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sTypes.d.ts"
+    },
+    "size": 167852,
+    "hash": "MzaOsujXKwE01wYSdIB_9cJURiZPT6_ZPQRTE3eTq2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/K8sHttpClient.d.ts"
+    },
+    "size": 3629,
+    "hash": "5Pgx_v1Grrxhdl4IwxaedajTCDYRjx359m6zWULPA1k"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runners.d.ts"
+    },
+    "size": 9902,
+    "hash": "i5zZdlh1sG2cuVK0Oy-J9-7Ct2Rug1wG5jJT6oNo-ps"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerHealth.d.ts"
+    },
+    "size": 3568,
+    "hash": "DGmZ-CMQIQW-6ZY-_NaaF8lfdHYoTtR6HKO2NaDpWT0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Runner.d.ts"
+    },
+    "size": 3783,
+    "hash": "69XynDbyEGfcXTm_2YEpnkcPG3XNzv76QSfA0iCGKxI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerStorage.d.ts"
+    },
+    "size": 8502,
+    "hash": "k-BpEYMaDbHwjb6RrCmgQt92Pcl88BfX6ylYMQCi9jc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingletonAddress.d.ts"
+    },
+    "size": 1606,
+    "hash": "Jvz0RpNd6mtglj8ut8Cqf8pNg5m2wpcSWVlerpRw1l0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ShardingRegistrationEvent.d.ts"
+    },
+    "size": 2625,
+    "hash": "DzqEGkDybRTSmzt2XBdXczG5cuVaMYl19Z1zPChvEFw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Sharding.d.ts"
+    },
+    "size": 6566,
+    "hash": "mAf9eV5VDjHayYpFIJB69aAJ_OCZWsn9jmq9tmhbMfg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterCron.d.ts"
+    },
+    "size": 3266,
+    "hash": "6oXHUEEOMyMmhYOL1_oUIMZtkuOWQwL95-sxXFdIHsU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterMetrics.d.ts"
+    },
+    "size": 8365,
+    "hash": "mgieQocV1C9i_XWkiaaLX8TI9OV5nTjE7ApoNJhdtxA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterSchema.d.ts"
+    },
+    "size": 6172,
+    "hash": "Xko8-BfThlGviTI6FW7SvVh_4hKZH4-SqWE-IdlNhws"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Workflow.d.ts"
+    },
+    "size": 18929,
+    "hash": "T9ym1nDkGu9D_4BX1TVD2t4tpo9nrcTDwbE4dOaXBTg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableDeferred.d.ts"
+    },
+    "size": 17080,
+    "hash": "0HYeLXjSxTYk2VxmgCR8lsaA7Bq82UNrkpMNKZc0kXg"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/DurableClock.d.ts"
+    },
+    "size": 1683,
+    "hash": "acpDCCT8b7Nx7nC7nWDNGg6pktVOgOR57nNFEur5P64"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/WorkflowEngine.d.ts"
+    },
+    "size": 12971,
+    "hash": "4iB3RMXpMelb_0M-FV7m_hX1LXYhTrUzjNOWE7ejhu0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workflow/Activity.d.ts"
+    },
+    "size": 6644,
+    "hash": "O94vksRKgyrgx3OpMnXkXv-ze3pAieV5454TvoG64YA"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/ClusterWorkflowEngine.d.ts"
+    },
+    "size": 4850,
+    "hash": "QmHx8o8GTlbXU_8dolLMcz9IuE0FNXzEvM3sCRv9H8s"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/DeliverAt.d.ts"
+    },
+    "size": 1543,
+    "hash": "Ibq4ocbdh2IG6-2ubhgLC-7utULf4uXp_F5y__Ili5M"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/FindMyWay.d.ts"
+    },
+    "size": 1436,
+    "hash": "fdwoJ026HvwjkQpEiItoxczvPPWH43-bx6_O4kep-uw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Etag.d.ts"
+    },
+    "size": 3128,
+    "hash": "AS0UWTIxeRt6Xa-ICSZ3sqhSVCN6VGFqkxiQJNrdVz8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Template.d.ts"
+    },
+    "size": 3960,
+    "hash": "Wm7noB81RvWB84TiuPKTuyBlo63oCjmp2uLBEtoCpII"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerResponse.d.ts"
+    },
+    "size": 30228,
+    "hash": "GDUnuBZN5HGLP5511aOG0N59NPFhXbR4WFPI0TIFDtw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpPlatform.d.ts"
+    },
+    "size": 6165,
+    "hash": "r6DXDt7e8zKiqCefoGqiwoXUUGSAYWtKZyIdYEOyzo4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerRespondable.d.ts"
+    },
+    "size": 2316,
+    "hash": "t0wiP48I8Lw5hSveNycd1vy9VX7Ar_B9pMgDKg-nZts"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerError.d.ts"
+    },
+    "size": 9564,
+    "hash": "leWqb-hiW3MBjgqJ5J6XdKhLYgclPg4NbHeq1j5VqbM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/MultipartParser/HeadersParser.d.ts"
+    },
+    "size": 1389,
+    "hash": "GWtXBb7ZMUK2fIjXnUHRQ-dHSzT-4kosvKeLRtL3SYI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/MultipartParser.d.ts"
+    },
+    "size": 2914,
+    "hash": "iDsVCbD_2AIiI65Oz94jd58hf5inqK-8-Tf4Wo3gZlw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Multipart.d.ts"
+    },
+    "size": 15243,
+    "hash": "WXk8TnEBtt0zU9bfoVrEcQ6hIJ12zaHZGy7N7_h0KrM"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerRequest.d.ts"
+    },
+    "size": 13221,
+    "hash": "U3_APm6cAObv03PwRmBTIlDsm8aHIihD1k5zzLTzS2c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpMiddleware.d.ts"
+    },
+    "size": 15492,
+    "hash": "odNgYIVk5SDNDD-dENFfAePwM0Ym-sx6w_bRlhAosPI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServer.d.ts"
+    },
+    "size": 10896,
+    "hash": "TkWOPZWGGP1F62gI--LOvAt2oQlErRHxKECYParzH6Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpRouter.d.ts"
+    },
+    "size": 31828,
+    "hash": "SMLbLUZmmGJXtvvbKHzM6mMw_hT-TkIWvmCp5jpDH1I"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
+    },
+    "size": 3210,
+    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSchema.d.ts"
+    },
+    "size": 33776,
+    "hash": "oRRMtbP_t1NtFNCBVNcTlHmPIiYNmBd58ezmpza039c"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiError.d.ts"
+    },
+    "size": 22439,
+    "hash": "Etkv-dnkktQNseuaNP54LHQ72o8ZJHTkp1wHM2AzQ_Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiSecurity.d.ts"
+    },
+    "size": 6440,
+    "hash": "q2tAUGBZ_DdM4mtHAL9RI9iNXBdHoUffIzvFbHlvi08"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiMiddleware.d.ts"
+    },
+    "size": 17256,
+    "hash": "EbqaZWiaGwcb7UjXGnqHoS01JqeohAEfBL9GUdFauEY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiGroup.d.ts"
+    },
+    "size": 10492,
+    "hash": "A_KkgwnU5rqDsuZK4IFZ56-mqixiK3W_3mnbcG4ZuFQ"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApiEndpoint.d.ts"
+    },
+    "size": 52343,
+    "hash": "c2mJ-w9tv2gSGS3KkbRh_MVxsAYMtEIijtJ5TvgqLZs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxy.d.ts"
+    },
+    "size": 6091,
+    "hash": "KxDdcwmF-ZTCWCwOTdF6iDpL5VSaHb2J44AsdW9DuMU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http-api/HttpApi.d.ts"
+    },
+    "size": 11453,
+    "hash": "FGfWY8p54kEiztH4A3Wx-ERRwxrfWAG8B4eP1c2sQz0"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityProxyServer.d.ts"
+    },
+    "size": 2133,
+    "hash": "bmMHlqj_ihcpQEXaCF3kgP7FAwzNKVbLoZhfVS-XmxE"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/EntityResource.d.ts"
+    },
+    "size": 3871,
+    "hash": "mXP4oDVO_i9Z2XGGVEFoEOeAHSoR6LijEePcguUn1XY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/HttpRunner.d.ts"
+    },
+    "size": 7605,
+    "hash": "7IROn5E5L336j0R3t8Z6Wf9pbt2jijPO911OeEy7ff4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/socket/SocketServer.d.ts"
+    },
+    "size": 4068,
+    "hash": "9iPFiG2Y8CfYqbEsesbm0DXSVUTUDFCR4hvO33yZ6wU"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/WorkerRunner.d.ts"
+    },
+    "size": 2044,
+    "hash": "dl1B5AbgAlD0W0SwH4LlrHS2ZJNdzIk6vzhXNTZxa9Q"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcServer.d.ts"
+    },
+    "size": 18536,
+    "hash": "SLvivVFrpm6fGl1TpikzHlXm6nGwlZ2I5BkAZhi0yWs"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/RunnerServer.d.ts"
+    },
+    "size": 2766,
+    "hash": "VIRLTgOJbKvN-uKw4a678tWL_BEBXh_N-mbt1RozfE4"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SingleRunner.d.ts"
+    },
+    "size": 2868,
+    "hash": "dZihTYTMszQrGTTdK09ZbcE861r7u-4aRGLWZ0Xpz6U"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/Singleton.d.ts"
+    },
+    "size": 1982,
+    "hash": "-cmWeYzA3_N5yknjp7BQxpXTMRB4a_1aNizeMA7BidY"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SocketRunner.d.ts"
+    },
+    "size": 2388,
+    "hash": "jgMC7JfEhtM9wsz0RZGvsYwaGkbRfz8IWOKsC_lUBjg"
    },
    {
     "path": {
@@ -3667,6 +4171,48 @@
     },
     "size": 4293,
     "hash": "U-MK1zwSqANvTD08iperVLajOJ6q8N3nxU7pxs9nghI"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlMessageStorage.d.ts"
+    },
+    "size": 5399,
+    "hash": "4IhxmO3kZYtbzvxbnUmY5NeXG1izrpH82KGob9Yvpzw"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/SqlRunnerStorage.d.ts"
+    },
+    "size": 4301,
+    "hash": "QRDzqXBCqRCTVozYpCJLHrQmtSf8oN6M5XFkd37yaIc"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/TestRunner.d.ts"
+    },
+    "size": 1023,
+    "hash": "S7Jp3TeumNcJNeTal7pDVdhK_FHlK5iBI8NKfdbmqA8"
+   },
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/cluster/index.d.ts"
+    },
+    "size": 3870,
+    "hash": "TCw4mrTHA5ASw2V2ECEmcvSyCaTQphcrVWlaD_pOQ0Q"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/RedactedLogger.vibe"
+    },
+    "size": 20510,
+    "hash": "OOLS2Q13ASnoZkp_puunp2bC28e_fYMddKfGuQlgUY0"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
+    },
+    "size": 21225,
+    "hash": "dIxDun9aC5C5HQHC9kbpBz2DUXxlUIMIZNHZdr5F8Q0"
    },
    {
     "path": {
@@ -3719,7 +4265,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+     "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
     },
     "size": 2042,
     "hash": "wb2hLivujMZ5mMsu7b9K4k-9eiklIGlniDCH9JUftnE"
@@ -3728,8 +4274,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/index.ts"
     },
-    "size": 2240,
-    "hash": "0gUWEzql0RZDvjoOTSrz7cYZJgeP0Gt7-meBfeBvdT8"
+    "size": 2246,
+    "hash": "J6nvuoYNungVB15kqAUx8Bp9MGEGX-SEHKqY8KTQHlQ"
    },
    {
     "path": {
@@ -4237,115 +4783,10 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Etag.d.ts"
-    },
-    "size": 3128,
-    "hash": "AS0UWTIxeRt6Xa-ICSZ3sqhSVCN6VGFqkxiQJNrdVz8"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/CircuitBreaker.d.ts"
-    },
-    "size": 33620,
-    "hash": "6lhkdbKkvmHsFcEYaxi7l-MtqCVefo5yXZBZx54b9qk"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/persistence/RateLimiter.d.ts"
-    },
-    "size": 18574,
-    "hash": "wbXgpG6F_3Xxxb6Aws5Pv8mTZVD1uRHg-CoiUlpX1lI"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpClient.d.ts"
-    },
-    "size": 77125,
-    "hash": "8XWJj0yFd5XRIPmcVJDeuu7bNbmhYqtG_poV5zdlnM8"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/FetchHttpClient.d.ts"
     },
     "size": 4524,
     "hash": "Ff1pvEgbHCmcfW2hOA4eeQiO-1bByT22FdR-DUXTJ5o"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/FindMyWay.d.ts"
-    },
-    "size": 1436,
-    "hash": "fdwoJ026HvwjkQpEiItoxczvPPWH43-bx6_O4kep-uw"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Template.d.ts"
-    },
-    "size": 3960,
-    "hash": "Wm7noB81RvWB84TiuPKTuyBlo63oCjmp2uLBEtoCpII"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerResponse.d.ts"
-    },
-    "size": 30228,
-    "hash": "GDUnuBZN5HGLP5511aOG0N59NPFhXbR4WFPI0TIFDtw"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpPlatform.d.ts"
-    },
-    "size": 6165,
-    "hash": "r6DXDt7e8zKiqCefoGqiwoXUUGSAYWtKZyIdYEOyzo4"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerRespondable.d.ts"
-    },
-    "size": 2316,
-    "hash": "t0wiP48I8Lw5hSveNycd1vy9VX7Ar_B9pMgDKg-nZts"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerError.d.ts"
-    },
-    "size": 9564,
-    "hash": "leWqb-hiW3MBjgqJ5J6XdKhLYgclPg4NbHeq1j5VqbM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/MultipartParser/HeadersParser.d.ts"
-    },
-    "size": 1389,
-    "hash": "GWtXBb7ZMUK2fIjXnUHRQ-dHSzT-4kosvKeLRtL3SYI"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/MultipartParser.d.ts"
-    },
-    "size": 2914,
-    "hash": "iDsVCbD_2AIiI65Oz94jd58hf5inqK-8-Tf4Wo3gZlw"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/Multipart.d.ts"
-    },
-    "size": 15243,
-    "hash": "WXk8TnEBtt0zU9bfoVrEcQ6hIJ12zaHZGy7N7_h0KrM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServerRequest.d.ts"
-    },
-    "size": 13221,
-    "hash": "U3_APm6cAObv03PwRmBTIlDsm8aHIihD1k5zzLTzS2c"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpMiddleware.d.ts"
-    },
-    "size": 15492,
-    "hash": "odNgYIVk5SDNDD-dENFfAePwM0Ym-sx6w_bRlhAosPI"
    },
    {
     "path": {
@@ -4356,31 +4797,10 @@
    },
    {
     "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpServer.d.ts"
-    },
-    "size": 10896,
-    "hash": "TkWOPZWGGP1F62gI--LOvAt2oQlErRHxKECYParzH6Q"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpRouter.d.ts"
-    },
-    "size": 31828,
-    "hash": "SMLbLUZmmGJXtvvbKHzM6mMw_hT-TkIWvmCp5jpDH1I"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStaticServer.d.ts"
     },
     "size": 3531,
     "hash": "FqWhp40GL-Nid--8HsGhRiDv7lP5CmD6JXu65-k2o34"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/http/HttpStatus.d.ts"
-    },
-    "size": 3210,
-    "hash": "Rm3ULiRjM_JPPOBlrnCzVFmuPHq4e2yHtMfYnqF5dwY"
    },
    {
     "path": {
@@ -4458,62 +4878,6 @@
     },
     "size": 18917,
     "hash": "VnMClKzQb4t-4gMHvCZ-gtlutSja8XuWiqhs_6V5I0A"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/Worker.d.ts"
-    },
-    "size": 4507,
-    "hash": "udCtK1jcKQg7UN5IUYnqHUdyRVOuaqT6lb_7LjngNYM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcGroup.d.ts"
-    },
-    "size": 7176,
-    "hash": "5jQTytNuEo9vIbVif5NN6INed4m9RSztxolusGwKZYs"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcSerialization.d.ts"
-    },
-    "size": 8120,
-    "hash": "ljDibX2ilce9qwNCwJk__lwCeIa7ZXbdBPzqNPjyFEM"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/Utils.d.ts"
-    },
-    "size": 1163,
-    "hash": "pPgDmwekbYwVy8juL_LacRERQsKq_oVuEOBxPDHCHOE"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcClient.d.ts"
-    },
-    "size": 19359,
-    "hash": "L5VPLDeP1_tp1KeqlI4SvqRRzs46gzJuaeE9rWEtTcE"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/socket/SocketServer.d.ts"
-    },
-    "size": 4068,
-    "hash": "9iPFiG2Y8CfYqbEsesbm0DXSVUTUDFCR4hvO33yZ6wU"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/workers/WorkerRunner.d.ts"
-    },
-    "size": 2044,
-    "hash": "dl1B5AbgAlD0W0SwH4LlrHS2ZJNdzIk6vzhXNTZxa9Q"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/rpc/RpcServer.d.ts"
-    },
-    "size": 18536,
-    "hash": "SLvivVFrpm6fGl1TpikzHlXm6nGwlZ2I5BkAZhi0yWs"
    },
    {
     "path": {
@@ -6036,10 +6400,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/control/src/ScopedToken.ts"
+     "relative": "packages/smithers/control/src/ScopedToken.vibe"
     },
-    "size": 11560,
-    "hash": "w-RYPLoYm_r5c-_jR2aua87rIoO53FdKPWpN9d9Kjhk"
+    "size": 12130,
+    "hash": "4yTxLysR0n4j-VxZEg6S_p7GSdSFSxaGbS2f_fOdg2c"
    },
    {
     "path": {
@@ -6248,8 +6612,8 @@
     "path": {
      "relative": "packages/smithers/control/src/index.ts"
     },
-    "size": 3617,
-    "hash": "1IzfQpcXEkh4Ib-4Rx-xp54GEElHbuIlz9bDlNLd9ao"
+    "size": 3619,
+    "hash": "i_jVCuLHi14Fo0NaK7jYZf_7AXlDg1xiU6tCuCtDHFk"
    },
    {
     "path": {
@@ -6395,8 +6759,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/test/TestJournal.ts"
     },
-    "size": 2083,
-    "hash": "_xf17zC4g1H7x7qDmbBBkEKxfMN35kmN6BJ2h6Ddy2I"
+    "size": 2085,
+    "hash": "e9apMQP-w_fxc7l-tjooNT_gEWx7yblLCRzJb5kamT8"
    },
    {
     "path": {
@@ -7859,13 +8223,13 @@
     "relative": "packages/smithers/flows/journal/src/internal/JournalInternalFault.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/JournalGeneration.ts"
+    "relative": "packages/smithers/flows/journal/src/JournalGeneration.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/JournalMetrics.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+    "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
@@ -7874,7 +8238,7 @@
     "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
+    "relative": "packages/smithers/flows/journal/src/RedactedLogger.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
@@ -7901,7 +8265,7 @@
     "relative": "packages/smithers/flows/journal/src/migrations/0006_consensus.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+    "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
    },
    {
     "relative": "packages/smithers/flows/journal/src/index.ts"
@@ -8333,7 +8697,7 @@
     "relative": "packages/smithers/control/src/Monitor.vibe"
    },
    {
-    "relative": "packages/smithers/control/src/ScopedToken.ts"
+    "relative": "packages/smithers/control/src/ScopedToken.vibe"
    },
    {
     "relative": "packages/smithers/flows/observability/src/Metric.vibe"
@@ -9652,6 +10016,46 @@
      ],
      "names": [],
      "mappings": "AAAA;;;;;;;;;;;;;;;;;GAiBG;;;;AAEH,OAAO,EAAE,OAAO,EAAE,YAAY,EAAE,MAAM,iBAAiB,CAAA;AACvD,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAC/B,OAAO,EAAE,OAAO,EAAE,MAAM,cAAgB,CAAA;AAExC,OAAO,EAAE,YAAY,EAAE,gBAAgB,EAAE,MAAM,mBAAqB,CAAA;AAEpE,OAAO,KAAK,aAAa,MAAM,aAAe,CAAA;AAE9C;;;;;;;;GAQG;AACH,MAAM,CAAC,MAAM,uBAAuB,GAAG,8BAA8B,CAAA;AAErE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,wBAAwB,GAAG,+BAA+B,CAAA;AAEvE;;;;;GAKG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,sBAAsB,CAAA;AAEnD;;;;;;;;;;;;GAYG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,wBAAwB,CAAA;AAEvD;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,aAAa,CAAC,WAAW,CAAA;AAqC/C,+EAA+E;AAC/E,MAAM,iBAAiB,GAAG,EAAE,CAAA;AAO5B,MAAM,WAAW,GAAG,CAAC,KAAmB,EAAE,KAAmB,EAAQ,EAAE;IACrE,IAAI,KAAK,CAAC,IAAI,KAAK,uBAAuB;QAAE,KAAK,CAAC,IAAI,IAAI,CAAC,CAAA;IAC3D,IAAI,KAAK,CAAC,IAAI,KAAK,wBAAwB,EAAE,CAAC;QAC5C,KAAK,CAAC,IAAI,IAAI,CAAC,CAAA;QACf,MAAM,OAAO,GAAG,KAAK,CAAC,OAAO,CAAA;QAC7B,KAAK,CAAC,MAAM,GAAG,OAAO,OAAO,KAAK,QAAQ,IAAI,OAAO,KAAK,IAAI,IAAI,CAAC,KAAK,CAAC,OAAO,CAAC,OAAO,CAAC;YACtF,OAAwC,CAAC,OAAO,CAAC,KAAK,QAAQ,CAAA;IACnE,CAAC;AACH,CAAC,CAAA;AAED;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GAgCG;AACH,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,WAAwB,EAAU,EAAE;IAC3D,MAAM,QAAQ,GAAiB,EAAE,IAAI,EAAE,CAAC,EAAE,MAAM,EAAE,KAAK,EAAE,CAAA;IACzD,KAAK,MAAM,KAAK,IAAI,WAAW,CAAC,MAAM;QAAE,WAAW,CAAC,QAAQ,EAAE,KAAK,CAAC,CAAA;IACpE,OAAO,aAAa,CAAC,WAAW,EAAE,QAAQ,CAAC,CAAA;AAC7C,CAAC,CAAA;AAED,MAAM,aAAa,GAAG,CAAC,WAAwC,EAAE,QAAsB,EAAU,EAAE;IACjG,MAAM,OAAO,GAAG,WAAW,CAAC,OAAO,CAAA;IACnC,IAAI,OAAO,KAAK,SAAS;QAAE,OAAO,SAAS,CAAA;IAC3C,IAAI,OAAO,CAAC,MAAM,KAAK,QAAQ;QAAE,OAAO,SAAS,CAAA;IACjD,IAAI,OAAO,CAAC,MAAM,KAAK,WAAW,IAAI,OAAO,CAAC,MAAM,KAAK,WAAW;QAAE,OAAO,SAAS,CAAA;IACtF,IAAI,OAAO,CAAC,MAAM,KAAK,kBAAkB;QAAE,OAAO,gBAAgB,CAAA;IAClE,IAAI,OAAO,CAAC,MAAM,KAAK,QAAQ,IAAI,CAAC,OAAO,CAAC,aAAa,KAAK,UAAU,IAAI,OAAO,CAAC,aAAa,KAAK,SAAS,CAAC,EAAE,CAAC;QACjH,OAAO,gBAAgB,CAAA;IACzB,CAAC;IACD,IAAI,aAAa,CAAC,UAAU,CAAC,OAAO,CAAC,MAAM,EAAE,OAAO,CAAC,aAAa,CAAC,KAAK,SAAS;QAAE,OAAO,SAAS,CAAA;IACnG,MAAM,KAAK,GAAG,WAAW,CAAC,UAAU,IAAI,iBAAiB,CAAA;IACzD,IAAI,OAAO,CAAC,YAAY,KAAK,SAAS,IAAI,OAAO,CAAC,YAAY,IAAI,KAAK;QAAE,OAAO,cAAc,CAAA;IAC9F,IAAI,QAAQ,CAAC,MAAM;QAAE,OAAO,SAAS,CAAA;IACrC,IAAI,CAAC,WAAW,CAAC,gBAAgB,IAAI,WAAW,CAAC,oBAAoB,IAAI,WAAW,CAAC,UAAU,EAAE,CAAC;QAChG,OAAO,QAAQ,CAAC,IAAI,GAAG,CAAC,CAAC,CAAC,CAAC,aAAa,CAAC,CAAC,CAAC,SAAS,CAAA;IACtD,CAAC;IACD,OAAO,SAAS,CAAA;AAClB,CAAC,CAAA;AAUD;;;;;;;;;;GAUG;AACH,MAAM,CAAC,MAAM,SAAS,GAAG,CAAC,MAAc,EAAU,EAAE;IAClD,QAAQ,MAAM,EAAE,CAAC;QACf,KAAK,SAAS,CAAC;QACf,KAAK,aAAa;YAChB,OAAO,QAAQ,CAAA;QACjB,KAAK,SAAS,CAAC;QACf,KAAK,cAAc;YACjB,OAAO,QAAQ,CAAA;QACjB;YACE,OAAO,MAAM,CAAA;IACjB,CAAC;AACH,CAAC,CAAA;AAyFD,MAAM,SAAS,GAAG,CAAC,KAAY,EAAiD,EAAE,CAChF,MAAM,CAAC,OAAO,CAAC,OAAO,EAAE,CAAC,OAAO,EAAE,EAAE,CAE/B,MAAM,CAAC,GAAG,CADb,OAAO,CAAC,IAAI,CAAC,EAAE,IAAI,EAAE,MAAM,EAAE,OAAO,EAAE,EAAE,KAAK,EAAE,EAAE,CAAC,EACjC,CAAC,MAAM,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,KAAK,MAAM,CAAC,CAAC,CAAC,MAAM,CAAC,KAAK,CAAC,CAAC,CAAC,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAA;AAEvF,MAAM,QAAQ,GAAG,CAAC,OAA+B,EAAW,EAAE,CAC5D,OAAO,KAAK,SAAS;IACrB,CAAC,OAAO,CAAC,MAAM,KAAK,WAAW,IAAI,OAAO,CAAC,MAAM,KAAK,QAAQ,IAAI,OAAO,CAAC,MAAM,KAAK,WAAW,CAAC,CAAA;AAEnG;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;GA+BG;AACH,MAAM,CAAC,MAAM,GAAG,GAAG,kCACjB,OAAgB;IAEhB,MAAM,UAAU,GAAG,OAAO,CAAC,UAAU,IAAI,OAAO,CAAC,WAAW,EAAE,MAAM,CAAC,UAAU,IAAI,KAAK,CAAA;IACxF,MAAM,SAAS,GAAG,OAAO,CAAC,SAAS,IAAI,EAAE,CAAA;IACzC,MAAM,UAAU,GAAG,OAAO,CAAC,UAAU,IAAI,CAAC,CAAA;IAC1C,mEAAmE;IACnE,2EAA2E;IAC3E,yEAAyE;IACzE,MAAM,OAAO,GAAG,CAAC,CAAC,MAAM,CAAC,QAAQ,CAAC,UAAU,CAAC,IAAI,UAAU,IAAI,CAAC,CAAC;QAC/D,CAAC,CAAC,iDAAiD;QACnD,CAAC,CAAC,CAAC,CAAC,SAAS,IAAI,CAAC,CAAC;YACnB,CAAC,CAAC,yCAAyC;YAC3C,CAAC,CAAC,CAAC,CAAC,MAAM,CAAC,aAAa,CAAC,UAAU,CAAC,IAAI,UAAU,IAAI,CAAC,CAAC;gBACxD,CAAC,CAAC,uCAAuC;gBACzC,CAAC,CAAC,OAAO,CAAC,UAAU,KAAK,SAAS,IAAI,CAAC,CAAC,MAAM,CAAC,aAAa,CAAC,OAAO,CAAC,UAAU,CAAC,IAAI,OAAO,CAAC,UAAU,IAAI,CAAC,CAAC;oBAC5G,CAAC,CAAC,uCAAuC;oBACzC,CAAC,CAAC,OAAO,CAAC,WAAW,KAAK,SAAS,IAAI,CAAC,CAAC,MAAM,CAAC,aAAa,CAAC,OAAO,CAAC,WAAW,CAAC,IAAI,OAAO,CAAC,WAAW,IAAI,CAAC,CAAC;wBAC/G,CAAC,CAAC,wCAAwC;wBAC1C,CAAC,CAAC,SAAS,CAAA;IACb,IAAI,OAAO,KAAK,SAAS;QAAE,4BAAM,IAAI,YAAY,CAAC,EAAE,KAAK,EAAE,gBAAgB,OAAO,EAAE,EAAE,CAAC,EAAA;IACvF,MAAM,OAAO,UAAO,OAAO,CAAA;IAC3B,MAAM,OAAO,UAAO,OAAO,CAAC,OAAO,CAAA;IACnC,IAAI,wBAAwB,GAAG,CAAC,CAAA;IAChC,IAAI,aAA0D,CAAA;IAC9D,MAAM,QAAQ,GAAG,OAAO,CAAC,QAAQ,IAAI,EAAE,CAAA;IACvC,MAAM,SAAS,GAAG,OAAO,CAAC,SAAS,IAAI,SAAS,CAAA;IAChD,MAAM,IAAI,GAAG,OAAO,CAAC,IAAI,IAAI,CAAC,CAAC,KAAK,EAAE,EAAE,CACtC,KAAK,CAAC,MAAM,KAAK,QAAQ;QACvB,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC;YACf,KAAK,EAAE,KAAK,CAAC,KAAK;YAClB,cAAc,EAAE,WAAW,SAAS,WAAW,KAAK,CAAC,KAAK,IAAI,KAAK,CAAC,IAAI,EAAE;SAC3E,CAAC;QACF,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC;YACf,KAAK,EAAE,KAAK,CAAC,KAAK;YAClB,MAAM,EAAE,WAAW,KAAK,CAAC,MAAM,EAAE;YACjC,cAAc,EAAE,WAAW,SAAS,WAAW,KAAK,CAAC,KAAK,IAAI,KAAK,CAAC,IAAI,EAAE;SAC3E,CAAC,CAAC,CAAA;IAEP,MAAM,IAAI,GAAG,CACX,SAAiB,EACjB,OAAgC,EAChC,SAAiB,EACE,EAAE;QACrB,MAAM,UAAU,GAAG,CAAC,KAAc,EAAE,EAAE,CACpC,IAAI,gBAAgB,CAAC;YACnB,SAAS,EAAE,SAAS;YACpB,OAAO,EAAE,oBAAoB,SAAS,QAAQ,OAAO,CAAC,KAAK,EAAE;YAC7D,KAAK;SACN,CAAC,CAAA;QACJ,iEAAiE;QACjE,wEAAwE;QACxE,yEAAyE;QACzE,yEAAyE;QACzE,uEAAuE;QACvE,0EAA0E;QAC1E,qEAAqE;QACrE,kEAAkE;QAClE,OAWK,MAAM,CAAC,MAAM,CADb,MAAM,CAAC,OAAO,CAVZ,MAAM,CAAC,GAAG,CAAC;YAChB,GAAG,EAAE,GAAG,EAAE,CACR,IAAI,YAAY,CAAC,KAAK,CAAC;gBACrB,KAAK,EAAE,YAAY,CAAC,KAAK,CAAC,IAAI,CAAC,OAAO,CAAC,KAAK,CAAC;gBAC7C,QAAQ,EAAE,YAAY,CAAC,QAAQ,CAAC,IAAI,CAAC,oBAAoB,SAAS,EAAE,CAAC;gBACrE,SAAS;gBACT,OAAO,EAAE,EAAE,KAAK,EAAE,OAAO,CAAC,KAAK,EAAE,SAAS,EAAE,GAAG,OAAO,EAAE;aACzD,CAAC;YACJ,KAAK,EAAE,UAAU;SAClB,CAAC,EACqB,CAAC,KAAK,EAAE,EAAE,CAAC,MAAM,CAAC,QAAQ,CAAC,OAAO,CAAC,mBAAmB,CAAC,KAAK,CAAC,EAAE,UAAU,CAAC,CAAC,CAC7E,CAAA;IACvB,CAAC,CAAA;IAED,8DAA8D;IAC9D,MAAM,MAAM,GAAG,CAAC,IAAU,EAAE,MAAc,EAAqB,EAAE,CAC/D,IAAI,CACF,aAAa,EACb;QACE,IAAI,EAAE,IAAI,CAAC,IAAI;QACf,MAAM,EAAE,IAAI,CAAC,MAAM;QACnB,QAAQ,EAAE,IAAI,CAAC,QAAQ;QACvB,GAAG,CAAC,MAAM,KAAK,MAAM,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,MAAM,EAAE,CAAC;KACzC,EACD,gBAAgB,IAAI,CAAC,IAAI,EAAE,CAC5B,CAAA;IAEH,6CAA6C;IAC7C,MAAM,YAAY,GAAG,CACnB,IAAU,EACV,MAAc,EACd,OAAgB,EACG,EAAE,CACrB,IAAI,CACF,eAAe,EACf,EAAE,IAAI,EAAE,IAAI,CAAC,IAAI,EAAE,MAAM,EAAE,IAAI,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,EAAE,OAAO,EAAE,OAAO,CAAC,IAAI,EAAE,EAC/E,gBAAgB,IAAI,CAAC,IAAI,EAAE,CAC5B,CAAA;IAEH,MAAM,KAAK,GAAgB,EAAE,CAAA;IAC7B,IAAI,oBAAoB,GAAG,CAAC,CAAA;IAC5B,IAAI,YAAY,GAAG,CAAC,CAAC,CAAA;IACrB,IAAI,UAAU,GAAuD,EAAE,CAAA;IACvE,MAAM,QAAQ,GAAiB,EAAE,IAAI,EAAE,CAAC,EAAE,MAAM,EAAE,KAAK,EAAE,CAAA;IACzD,IAAI,QAAQ,GAAG,CAAC,CAAC,CAAA;IACjB,KAAK,IAAI,IAAI,GAAG,CAAC,EAAE,IAAI,GAAG,SAAS,EAAE,IAAI,IAAI,CAAC,EAAE,CAAC;QAC/C,IAAI,IAAI,GAAG,CAAC,IAAI,UAAU,GAAG,CAAC,EAAE,CAAC;YAC/B,OAAI,MAAM,CAAC,KAAK,CAAC,QAAQ,CAAC,MAAM,CAC9B,OAAO,CAAC,WAAW,KAAK,SAAS;gBAC/B,CAAC,CAAC,UAAU;gBACZ,CAAC,CAAC,aAAa,CAAC,SAAS,CAAC,OAAO,CAAC,WAAW,CAAC,MAAM,EAAE,wBAAwB,CAAC,CAClF,CAAC,CAAA;QACJ,CAAC;QACD,MAAM,OAAO,UAAO,SAAS,CAAC,OAAO,CAAC,KAAK,CAAC,CAAA;QAC5C,MAAM,SAAS,GAAwB,EAAE,CAAA;QACzC,MAAM,WAAW,GAAG,IAAI,CAAC,GAAG,CAAC,CAAC,EAAE,QAAQ,CAAC,CAAA;QACzC,OAAI,OAAO,CAAC,KAAK,CAAC,EAAE,KAAK,EAAE,OAAO,CAAC,KAAK,EAAE,MAAM,EAAE,KAAK,EAAE,GAAG,UAAU,EAAE,CAAC,CAAC,IAAI,CAC5E,MAAM,CAAC,UAAU,CAAC,+BAAQ,KAAK;YAC7B,oEAAoE;YACpE,UAAU,GAAG,KAAK,CAAC,MAAM,KAAK,SAAS;gBACrC,CAAC,CAAC,EAAE,aAAa,EAAE,KAAK,CAAC,QAAQ,EAAE;gBACnC,CAAC,CAAC,EAAE,WAAW,EAAE,KAAK,CAAC,MAAM,EAAE,CAAA;YACjC,IAAI,kBAAkB,CAAC,KAAK,CAAC,IAAI,CAAC;gBAAE,OAAM;YAC1C,SAAS,CAAC,IAAI,CAAC,KAAK,CAAC,CAAA;YACrB,IAAI,SAAS,CAAC,MAAM,GAAG,GAAG;gBAAE,SAAS,CAAC,KAAK,EAAE,CAAA;YAC7C,QAAQ,GAAG,KAAK,CAAC,QAAQ,CAAA;YACzB,WAAW,CAAC,QAAQ,EAAE,KAAK,CAAC,CAAA;QAC9B,CAAC,CAAA,CAAC,CACH,CAAA;QACD,oBAAoB,GAAG,QAAQ,KAAK,YAAY,CAAC,CAAC,CAAC,oBAAoB,GAAG,CAAC,CAAC,CAAC,CAAC,CAAC,CAAA;QAC/E,YAAY,GAAG,QAAQ,CAAA;QACvB,MAAM,MAAM,GAAG,aAAa,CAAC;YAC3B,GAAG,CAAC,OAAO,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,OAAO,EAAE,CAAC;YAC7C,oBAAoB;YACpB,UAAU;YACV,GAAG,CAAC,OAAO,CAAC,UAAU,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,UAAU,EAAE,OAAO,CAAC,UAAU,EAAE,CAAC;SAChF,EAAE,QAAQ,CAAC,CAAA;QACZ,IAAI,OAAO,CAAC,WAAW,KAAK,SAAS,IAAI,OAAO,KAAK,SAAS,EAAE,CAAC;YAC/D,MAAM,KAAK,GAAG,OAAO,CAAC,WAAW,CAAA;YACjC,MAAM,SAAS,GAAG,OAAO,OAAO,CAAC,KAAK,EAAE,CAAA;YACxC,MAAM,WAAW,GAAG,aAAa,CAAC,cAAc,CAAC,OAAO,CAAC,CAAA;YACzD,MAAM,KAAK,G,CAAA,yB,CAAA,KACE,aAAa,CAAC,QAAQ,CAAC,KAAK,EAAE;oBACvC,SAAS;oBACT,KAAK,EAAE,OAAO,CAAC,MAAM;oBACrB,OAAO;oBACP,MAAM,EAAE,SAAS;oBACjB,WAAW;iBACZ,EAAE,EAAE,SAAS,EAAE,WAAW,EAAE,WAAW,EAAE,IAAI,CAAC,GAAG,CAAC,CAAC,EAAE,QAAQ,CAAC,EAAE,CAAC,SACnE,CAAA;YACD,IAAI,WAAW,UAAO,CAAC,OAAO,CAAC,eAAe,EAAE,CAAC,KAAK,CAAC,IAAI,KAAK,CAAC,CAAA;YACjE,MAAM,OAAO,UAAO,SAAS,CAAC,OAAO,CAAC,KAAK,CAAC,CAAA;YAC5C,IAAI,OAAO,KAAK,SAAS,IAAI,aAAa,CAAC,cAAc,CAAC,OAAO,CAAC,KAAK,WAAW,EAAE,CAAC;gBACnF,WAAW,GAAG,EAAE,GAAG,WAAW,EAAE,OAAO,EAAE,WAAW,EAAE,MAAM,EAAE,SAAS,EAAE,MAAM,EAAE,eAAe,EAAE,CAAA;YACpG,CAAC;YACD,wBAAwB,GAAG,WAAW,CAAC,OAAO,KAAK,IAAI,CAAC,CAAC,CAAC,CAAC,CAAC,CAAC,CAAC,wBAAwB,GAAG,CAAC,CAAA;YAC1F,MAAM,gBAAgB,GAAG,WAAW,CAAC,OAAO,KAAK,IAAI,IAAI,WAAW,CAAC,MAAM,EAAE,QAAQ,KAAK,SAAS,CAAA;YACnG,MAAM,UAAU,GAAG,aAAa,CAAC;gBAC/B,OAAO;gBACP,oBAAoB;gBACpB,UAAU;gBACV,UAAU,EAAE,OAAO,CAAC,UAAU;gBAC9B,gBAAgB;aACjB,EAAE,QAAQ,CAAC,CAAA;YACZ,WAAW,GAAG,EAAE,GAAG,WAAW,EAAE,UAAU,EAAE,CAAA;YAC5C,MAAM,MAAM,GAAG,aAAa,CAAC,MAAM,CAAC;gBAClC,SAAS;gBACT,KAAK,EAAE,OAAO,CAAC,MAAM;gBACrB,WAAW;gBACX,aAAa,EAAE,OAAO,CAAC,aAAa;gBACpC,UAAU;gBACV,MAAM,EAAE,EAAE,WAAW,EAAE,QAAQ,EAAE,CAAC,EAAE;gBACpC,GAAG,EAAE,WAAW,CAAC,UAAU;gBAC3B,SAAS,EAAE,OAAO,CAAC,SAAS;aAC7B,CAAC,CAAA;YACF,MAAM,OAAO,GAAG,aAAa,KAAK,SAAS,IAAI,aAAa,CAAC,WAAW,KAAK,WAAW,CAAC,WAAW;gBAClG,aAAa,CAAC,OAAO,KAAK,WAAW,CAAC,OAAO,IAAI,aAAa,CAAC,UAAU,KAAK,WAAW,CAAC,UAAU;gBACpG,aAAa,CAAC,WAAW,KAAK,WAAW,CAAC,WAAW;gBACrD,IAAI,CAAC,SAAS,CAAC,aAAa,CAAC,MAAM,CAAC,KAAK,IAAI,CAAC,SAAS,CAAC,WAAW,CAAC,MAAM,CAAC;gBAC3E,aAAa,CAAC,MAAM,KAAK,WAAW,CAAC,MAAM,CAAA;YAC7C,qFAAqF;YACrF,IAAI,OAAO,IAAI,WAAW,CAAC,UAAU,IAAI,aAAc,CAAC,UAAU,GAAG,KAAK,CAAC,MAAM,CAAC,KAAK,GAAG,CAAC,EAAE,CAAC;gBAC5F,OAAI,IAAI,CAAC,aAAa,CAAC,uBAAuB,EAAE;oBAC9C,GAAG,WAAW;oBACd,MAAM,EAAE,OAAO,CAAC,MAAM;oBACtB,MAAM,EAAE,MAAM,CAAC,MAAM;oBACrB,QAAQ,EAAE,MAAM,CAAC,QAAQ;oBACzB,SAAS,EAAE,MAAM,CAAC,SAAS;oBAC3B,SAAS,EAAE,MAAM,CAAC,SAAS;oBAC3B,aAAa,EAAE,OAAO,CAAC,aAAa,IAAI,EAAE;iBAC3C,EAAE,oBAAoB,CAAC,CAAA;gBACxB,aAAa,GAAG,WAAW,CAAA;YAC7B,CAAC;QACH,CAAC;QACD,kFAAkF;QAClF,MAAM,MAAM,GAAG,QAAQ,CAAC,QAAQ,CAAC,MAAM,CAAC,CAAC,CAAC,CAAC,SAAS,CAAC,MAAM,CAAC,CAAC,CAAC,CAAC,MAAM,CAAA;QACrE,MAAM,QAAQ,GAAS,EAAE,IAAI,EAAE,MAAM,EAAE,QAAQ,EAAE,CAAA;QACjD,IAAI,OAAO,CAAC,WAAW,KAAK,KAAK;YAAE,OAAI,MAAM,CAAC,QAAQ,EAAE,MAAM,CAAC,CAAA;QAC/D,IAAI,MAAM,KAAK,MAAM,EAAE,CAAC;YACtB,KAAK,CAAC,IAAI,CAAC,QAAQ,CAAC,CAAA;QACtB,CAAC;aAAM,CAAC;YACN,MAAM,OAAO,UAAO,CAOf,MAAM,CAAC,KAAK,CAPI,IAAI,CAAC,EAAE,KAAK,EAAE,OAAO,CAAC,KAAK,EAAE,MAAM,EAAE,MAAM,EAAE,IAAI,EAAE,CAAC;YACvE,mEAAmE;YACnE,iEAAiE;YACjE,iEAAiE;YACjE,oEAAoE;YACpE,kEAAkE;YAClE,sCAAsC;cACnB,CAAC,OAAO,EAAE,EAAE,CAIxB,MAAM,CAAC,EAAE,CAHd,MAAM,CAAC,YAAY,CACjB,MAAM,CAAC,UAAU,CAAC,yCAAyC,CAAC,EAC5D,EAAE,KAAK,EAAE,OAAO,CAAC,KAAK,EAAE,IAAI,EAAE,MAAM,EAAE,MAAM,EAAE,KAAK,EAAE,MAAM,CAAC,OAAO,CAAC,EAAE,CACvE,EAAiB,SAAS,CAAC,CAAC,CAAC,CAAA;YAClC,IAAI,OAAO,KAAK,SAAS,EAAE,CAAC;gBAC1B,oEAAoE;gBACpE,mEAAmE;gBACnE,kDAAkD;gBAClD,KAAK,CAAC,IAAI,CAAC,QAAQ,CAAC,CAAA;YACtB,CAAC;iBAAM,CAAC;gBACN,sEAAsE;gBACtE,sEAAsE;gBACtE,sEAAsE;gBACtE,qEAAqE;gBACrE,iEAAiE;gBACjE,iEAAiE;gBACjE,MAAM,OAAO,GAAG,OAAO,CAAC,IAAI,KAAK,UAAU,IAAI,OAAO,CAAC,IAAI,KAAK,gBAAgB,CAAA;gBAChF,IAAI,OAAO,EAAE,CAAC;oBACZ,mEAAmE;oBACnE,uEAAuE;oBACvE,OAAI,YAAY,CAAC,QAAQ,EAAE,MAAM,EAAE,OAAO,CAAC,CAAA;oBAC3C,kEAAkE;oBAClE,mEAAmE;oBACnE,qDAAqD;oBACrD,oBAAoB,GAAG,CAAC,CAAA;gBAC1B,CAAC;gBACD,KAAK,CAAC,IAAI,CAAC,OAAO,CAAC,CAAC,CAAC,EAAE,GAAG,QAAQ,EAAE,MAAM,EAAE,MAAM,EAAE,OAAO,EAAE,CAAC,CAAC,CAAC,EAAE,GAAG,QAAQ,EAAE,OAAO,EAAE,CAAC,CAAA;gBACzF,sEAAsE;gBACtE,uEAAuE;gBACvE,0CAA0C;gBAC1C,IAAI,OAAO,CAAC,IAAI,KAAK,UAAU;oBAAE,MAAK;YACxC,CAAC;QACH,CAAC;QACD,IAAI,OAAO,CAAC,WAAW,KAAK,SAAS,IAAI,KAAK,CAAC,MAAM,GAAG,OAAO,CAAC,WAAW,EAAE,CAAC;YAC5E,KAAK,CAAC,MAAM,CAAC,CAAC,EAAE,KAAK,CAAC,MAAM,GAAG,OAAO,CAAC,WAAW,CAAC,CAAA;QACrD,CAAC;QACD,IAAI,QAAQ,CAAC,OAAO,CAAC,EAAE,CAAC;YACtB,MAAK;QACP,CAAC;IACH,CAAC;IACD,OAAO;QACL,KAAK,EAAE,OAAO,CAAC,KAAK;QACpB,KAAK;QACL,MAAM,EAAE,KAAK,CAAC,KAAK,CAAC,MAAM,GAAG,CAAC,CAAC,EAAE,MAAM,IAAI,SAAS;KACrD,CAAA;AACH,CAAC,CAAA,CAAA;AAED;;;GAGG;AACH,MAAM,CAAC,MAAM,kBAAkB,GAAG,CAAC,IAAY,EAAW,EAAE,CAC1D,IAAI,CAAC,UAAU,CAAC,kBAAkB,CAAC,IAAI,IAAI,CAAC,UAAU,CAAC,iBAAiB,CAAC;IACzE,IAAI,CAAC,UAAU,CAAC,eAAe,CAAC,IAAI,IAAI,CAAC,UAAU,CAAC,sBAAsB,CAAC,IAAI,IAAI,CAAC,UAAU,CAAC,qBAAqB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/ScopedToken.vibe"
+     }
+    ],
+    "code": "/**\n * Scoped, expiring gateway tokens.\n *\n * A gateway's configured bearer credential grants everything the gateway\n * serves, for as long as it is configured. A scoped token is a grant the\n * holder of that credential mints for someone else: a closed list of\n * procedures, optionally confined to one run or one flow, and an expiry. It\n * is signed with HMAC-SHA256 under the bearer credential, so a gateway\n * verifies it with the key it already holds and stores nothing; rotating the\n * bearer credential revokes every token minted under it.\n *\n * The wire form is `smt1.<claims>.<signature>`, both parts unpadded base64url,\n * the claims a canonical JSON document. A token names procedures rather than\n * scope words so that what it authorizes is readable off the token itself and\n * does not change when a scope grows.\n *\n * Web Crypto does the signing, so the same module runs on Node, Bun, and in a\n * browser that holds a token.\n *\n * @since 1.0.0\n */\nimport * as Base64Url from \"effect/encoding/Base64Url\";\nimport * as Effect from \"effect/Effect\";\nimport * as Result from \"effect/Result\";\nimport * as Schema from \"effect/Schema\";\nimport { Unauthorized } from \"./ControlError.js\";\nimport { bearerCredential } from \"./ControlRpcs.js\";\nimport { Claims, encoder as encoder$platform, hmacKey, prefix, scopes, subtle } from \"./ScopedToken.vibe.platform.js\";\nexport { Claims, mint, prefix, procedures, scopes } from \"./ScopedToken.vibe.platform.js\";\nconst encoder = encoder$platform;\n/**\n * Every scope name, in the order {@link scopes} declares them.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const scopeNames = Object.keys(scopes);\nconst decodeClaims = Schema.decodeUnknownResult(Claims);\n/**\n * Whether a bearer credential is spelled as a scoped token.\n *\n * @category predicates\n * @since 1.0.0\n */\nexport const isScopedToken = (credential) => credential.startsWith(`${prefix}.`);\nconst refused = (message) => Effect.fail(new Unauthorized({ message }));\n/**\n * Verifies a token's signature and expiry under the key and returns its\n * claims. Every malformation, a wrong key, and an expired token all fail with\n * the same `Unauthorized`, so the token is not a parsing oracle.\n *\n * @param now the moment to judge `exp` against, in milliseconds\n * @category verification\n * @since 1.0.0\n */\nexport const verify = (key, token, now) => Effect.suspend(() => {\n    const parts = token.split(\".\");\n    if (key.length === 0 || parts.length !== 3 || parts[0] !== prefix || parts[1].length === 0) {\n        return refused(\"A valid scoped token is required\");\n    }\n    const signature = Base64Url.decode(parts[2]);\n    if (Result.isFailure(signature))\n        return refused(\"A valid scoped token is required\");\n    return Effect.flatMap(Effect.promise(async () => {\n        const hmac = await hmacKey(key, \"verify\");\n        return subtle().verify(\"HMAC\", hmac, new Uint8Array(signature.success), encoder.encode(`${prefix}.${parts[1]}`));\n    }), (valid) => {\n        if (!valid)\n            return refused(\"A valid scoped token is required\");\n        const text = Base64Url.decodeString(parts[1]);\n        if (Result.isFailure(text))\n            return refused(\"A valid scoped token is required\");\n        let parsed;\n        try {\n            parsed = JSON.parse(text.success);\n        }\n        catch {\n            return refused(\"A valid scoped token is required\");\n        }\n        const claims = decodeClaims(parsed);\n        if (Result.isFailure(claims))\n            return refused(\"A valid scoped token is required\");\n        if (!(now < claims.success.exp))\n            return refused(\"The scoped token has expired\");\n        return Effect.succeed(claims.success);\n    });\n});\nconst field = (value, name) => typeof value === \"object\" && value !== null ? value[name] : undefined;\n/**\n * The filters a payload names, unless the server ignores them: a `List` of\n * the flow catalog returns every flow whatever its free-form filters say, so\n * they confine nothing.\n */\nconst honoredFilters = (payload) => field(payload, \"_tag\") === \"flows\" ? undefined : field(payload, \"filters\");\n/** The run a payload names, wherever the control and gateway schemas put it. */\nconst namedRun = (payload) => field(payload, \"runId\") ??\n    field(field(payload, \"target\"), \"runId\") ??\n    field(field(payload, \"selector\"), \"runId\") ??\n    field(honoredFilters(payload), \"runId\");\n/** The flow a payload names. */\nconst namedFlow = (payload) => field(payload, \"flowId\") ?? field(honoredFilters(payload), \"flowId\");\n/**\n * Whether verified claims authorize one call.\n *\n * The procedure must be named. A token confined to a run authorizes only a\n * call that names that run, and one confined to a flow only a call that names\n * that flow: a call that names neither, such as an unfiltered `List`, is\n * refused rather than widened. A flow-catalog `List` never names a run or\n * flow, because the server ignores its filters.\n *\n * @category verification\n * @since 1.0.0\n */\nexport const authorizes = (claims, call) => claims.procedures.includes(call.rpc) &&\n    (claims.runId === undefined || namedRun(call.payload) === claims.runId) &&\n    (claims.flowId === undefined || namedFlow(call.payload) === claims.flowId);\n/**\n * Authenticates a bearer credential spelled as a scoped token: the signature\n * and expiry always, and the procedure plus run or flow confinement whenever\n * the boundary knows which call it is guarding. An edge that authenticates an\n * upgrade knows no call, so it admits the socket and leaves each frame to the\n * in-band check.\n *\n * A credential that is not a scoped token is refused here; compose with\n * `ControlRpcs.bearerAuthenticator` through `ControlRpcs.anyAuthenticator`\n * to accept both.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const authenticator = (options) => ({\n    authenticate: (headers, call) => {\n        const credential = bearerCredential(headers);\n        if (credential === undefined || !isScopedToken(credential))\n            return refused(\"A valid scoped token is required\");\n        const now = options.now?.() ?? Date.now();\n        return Effect.flatMap(verify(options.key, credential, now), (claims) => call !== undefined && !authorizes(claims, call)\n            ? refused(`The scoped token does not authorize ${call.rpc}`)\n            : Effect.succeed({ ...options.principal, stampedAt: now }));\n    }\n});\n",
+    "map": {
+     "version": 3,
+     "file": "ScopedToken.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/ScopedToken.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/control/src/ScopedToken.vibe.platform.js"
+     }
+    ],
+    "code": "import { Effect, Schema } from \"effect\";\nimport { Base64Url, Hex } from \"effect/encoding\";\n/**\n * The version prefix every scoped token starts with.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const prefix = \"smt1\";\n/**\n * The scopes `smthrs token mint --scope` accepts, and the procedures each\n * one names.\n *\n * `read:runs` covers every read the control plane and the gateway serve.\n * `write:runs` covers the mutations that start, steer, signal, cancel, and\n * resume a run, and the gateway's `Run.Fork` and `Run.Verify`, which branch a\n * run or drive the project's flow code over a copy of it. `approve:runs` covers the approval decisions on both mounts.\n * A token holding `approve:runs` still needs the host's `ApprovalAuthority`\n * to delegate to its principal, exactly as the bearer does.\n *\n * @category constants\n * @since 1.0.0\n */\nexport const scopes = {\n    \"read:runs\": [\"List\", \"Watch\", \"Projection.Snapshot\", \"Projection.Subscribe\"],\n    \"write:runs\": [\"Plan\", \"Run\", \"Steer\", \"Signal\", \"Cancel\", \"Resume\", \"Run.Fork\", \"Run.Verify\"],\n    \"approve:runs\": [\"Approve\", \"Deny\", \"Approval.Submit\"]\n};\n/**\n * What a token grants, as signed.\n *\n * @category models\n * @since 1.0.0\n */\nexport const Claims = Schema.Struct({\n    v: Schema.Literal(1),\n    /** A random identifier, so two tokens with the same grant differ. */\n    id: Schema.String,\n    procedures: Schema.Array(Schema.String),\n    runId: Schema.optional(Schema.String),\n    flowId: Schema.optional(Schema.String),\n    /** Minted at, milliseconds since the epoch. */\n    iat: Schema.Number,\n    /** Expires at, milliseconds since the epoch; refused once `now >= exp`. */\n    exp: Schema.Number\n});\nconst encodeClaims = Schema.encodeUnknownSync(Claims);\nexport const encoder = new TextEncoder();\nexport const subtle = () => {\n    const available = globalThis.crypto?.subtle;\n    if (available === undefined)\n        throw new Error(\"Web Crypto is not available on this host\");\n    return available;\n};\nexport const hmacKey = (key, usage) => subtle().importKey(\"raw\", encoder.encode(key), { name: \"HMAC\", hash: \"SHA-256\" }, false, [usage]);\n/**\n * The procedures a list of scopes names, each once, in scope order.\n *\n * @category getters\n * @since 1.0.0\n */\nexport const procedures = (names) => [...new Set(names.flatMap((name) => scopes[name]))];\n/**\n * Mints one token under the key.\n *\n * An empty key, no scopes, or a non-positive lifetime is a caller defect: it\n * cannot produce a token anyone should hold, so it dies rather than signs.\n *\n * @category constructors\n * @since 1.0.0\n */\nexport const mint = (options) => Effect.suspend(() => {\n    if (options.key.length === 0)\n        return Effect.die(new Error(\"A scoped token needs a non-empty signing key\"));\n    if (options.scopes.length === 0)\n        return Effect.die(new Error(\"A scoped token needs at least one scope\"));\n    if (!Number.isFinite(options.ttlMillis) || options.ttlMillis <= 0) {\n        return Effect.die(new Error(\"A scoped token needs a positive lifetime\"));\n    }\n    const now = options.now?.() ?? Date.now();\n    const id = Hex.encode(crypto.getRandomValues(new Uint8Array(12)));\n    const claims = {\n        v: 1,\n        id,\n        procedures: procedures(options.scopes),\n        ...(options.runId === undefined ? {} : { runId: options.runId }),\n        ...(options.flowId === undefined ? {} : { flowId: options.flowId }),\n        iat: now,\n        exp: now + Math.floor(options.ttlMillis)\n    };\n    const body = Base64Url.encode(JSON.stringify(encodeClaims(claims)));\n    return Effect.promise(async () => {\n        const key = await hmacKey(options.key, \"sign\");\n        const signature = new Uint8Array(await subtle().sign(\"HMAC\", key, encoder.encode(`${prefix}.${body}`)));\n        return { token: `${prefix}.${body}.${Base64Url.encode(signature)}`, claims };\n    });\n});\n",
+    "map": {
+     "version": 3,
+     "file": "ScopedToken.vibe.platform.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/control/src/ScopedToken.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    },
    {

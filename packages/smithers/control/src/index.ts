@@ -162,7 +162,7 @@ export * as SqlControlRuntime from "./SqlControlRuntime.ts"
  * @category authentication
  * @since 1.0.0
  */
-export * as ScopedToken from "./ScopedToken.ts"
+export * as ScopedToken from "./ScopedToken.vibe"
 
 /**
  * @category migrations
