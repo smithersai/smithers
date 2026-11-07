@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { Deferred, Effect, Exit, Fiber, PlatformError, Ref, Sink, Stream } from "effect"
+import { Deferred, Effect, Exit, Fiber, PlatformError, Redacted, Ref, Sink, Stream } from "effect"
 import { ChildProcess } from "effect/process"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Scope from "effect/Scope"
@@ -51,6 +51,7 @@ describe("RemoteChildProcessSpawner", () => {
         TMPDIR: "/guest/tmp",
         LANG: host.LANG ?? "C",
         FEATURE: "on",
+        SECRET: Redacted.make("guest-secret"),
         DROPPED: undefined
       }
       yield* Effect.flatMap(
@@ -62,7 +63,7 @@ describe("RemoteChildProcessSpawner", () => {
       for (const name of ["PATH", "HOME", "LANG"]) {
         expect(Object.hasOwn(received, name), name).toBe(host[name] === undefined)
       }
-      expect(received).toMatchObject({ TMPDIR: "/guest/tmp", FEATURE: "on" })
+      expect(received).toMatchObject({ TMPDIR: "/guest/tmp", FEATURE: "on", SECRET: "guest-secret" })
       expect(Object.hasOwn(received, "DROPPED") && received.DROPPED === undefined).toBe(true)
       yield* Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.string(ChildProcess.make("probe"))).pipe(
         Effect.provide(RemoteChildProcessSpawner.layer(provider))
