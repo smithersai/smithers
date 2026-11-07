@@ -6,7 +6,7 @@
  * compact badge. The Open and Closed tabs read as GitHub's: the current one
  * in the foreground, the other muted.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const issuesViewCss = `
 .sui-issues-view { min-width:0; display:grid; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; }

@@ -3,7 +3,7 @@
  * an example's code card, card grids, a stats strip, releases, the ask band, and the live blocks' counts and panels.
  * It reflows by the home's own width (a container query), so a narrow column reads like a phone.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 const soft = (color: string, percent = 10) => `color-mix(in srgb, ${color} ${percent}%, ${t.card})`;
 

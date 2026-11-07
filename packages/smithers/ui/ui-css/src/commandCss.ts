@@ -1,4 +1,4 @@
-import { tokens as t } from "./tokens";
+import { tokens as t } from "./tokens.ts";
 
 /** The house interaction speed, as in uiCss.ts. */
 const interaction = "transition:background-color .12s ease, border-color .12s ease, color .12s ease;";

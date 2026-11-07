@@ -3,7 +3,7 @@ import { afterEach, describe, expect, test } from "bun:test";
 import { act, type ReactElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { JSXPreview } from "../src/sandbox/JSXPreview";
-import { sandboxCss } from "../src/sandbox/sandboxCss";
+import { sandboxCss } from "@smthrs/ui-css";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

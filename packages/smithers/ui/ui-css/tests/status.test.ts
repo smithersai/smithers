@@ -6,7 +6,7 @@ import {
   statusClass,
   statusColor,
   statusColors,
-} from "../src/status";
+} from "../src/index.ts";
 
 describe("normalizeStatus", () => {
   test("lowercases, trims, and normalizes underscores", () => {

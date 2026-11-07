@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { VAULT_CSS_ID, vaultCss } from "../src/vault/vaultCss";
-import { smithersUiCss } from "../src/uiCss";
+import { VAULT_CSS_ID, vaultCss } from "../src/index.ts";
+import { uiCss as smithersUiCss } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

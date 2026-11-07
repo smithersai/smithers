@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { cn, newNonce, themeRegistry, useNearScreen, useResolvedPalette } from "@smthrs/ui";
+import { newNonce, themeRegistry, useNearScreen, useResolvedPalette } from "@smthrs/ui";
+import { cn } from "@smthrs/ui-css";
 import { ViewCsp } from "@smthrs/views";
 import { type ComponentProps, type Ref, useEffect, useImperativeHandle, useMemo, useRef, useState } from "react";
 import { terminalFrameCss } from "./frameCss";

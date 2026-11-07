@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "../src/agentic/reasoningToolsCss";
+import { REASONING_TOOLS_CSS_ID, reasoningToolsCss } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

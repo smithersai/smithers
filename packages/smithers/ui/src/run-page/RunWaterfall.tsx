@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { STEP_WORDS, stepDuration, stepElapsed, type StepRow, waterfallAxis, waterfallBars } from "./runPage";
 

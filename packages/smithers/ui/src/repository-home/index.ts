@@ -1,5 +1,5 @@
 export { RepositoryHome, type RepositoryHomeFile, type RepositoryHomeProps } from "./RepositoryHome";
-export { repositoryHomeCss } from "./repositoryHomeCss";
+export { repositoryHomeCss } from "@smthrs/ui-css";
 export type {
   RepositoryHomeEntry,
   RepositoryHomeFlow,

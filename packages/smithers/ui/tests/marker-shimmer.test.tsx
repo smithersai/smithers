@@ -7,7 +7,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Marker, Shimmer } from "../src/index";
-import { chatScrollerCss } from "../src/uiCss";
+import { chatScrollerCss } from "@smthrs/ui-css";
 import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 
 afterEach(() => {

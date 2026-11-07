@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { workflowUiThemeCss } from "@smthrs/ui-styleguide";
-import { SANDBOX_CSS_ID, sandboxCss } from "../src/sandbox/sandboxCss";
+import { SANDBOX_CSS_ID, sandboxCss } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

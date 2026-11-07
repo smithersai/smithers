@@ -1,4 +1,4 @@
-import { tokens as t } from "./tokens";
+import { tokens as t } from "./tokens.ts";
 
 /** Each lane's color, as `.sui-avatar[data-lane]` paints it, so a person's caret matches their avatar. */
 const laneCss = [t.destructive, t.info, t.mutedForeground, t.warning, t.primary, t.success]

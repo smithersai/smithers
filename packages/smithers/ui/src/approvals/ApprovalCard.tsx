@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useId, useRef, useState, type ComponentProps, type ReactNode } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { safeHref } from "../internal/safeHref";
 import {

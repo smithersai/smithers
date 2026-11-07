@@ -2,7 +2,7 @@
 import type { ComponentProps } from "react";
 import { Badge } from "../badge";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import {
   PENDING_WORDS,
   TRIAGE_VARIANTS,

@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useState, type ComponentProps, type KeyboardEvent, type MouseEvent, type ReactNode } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { StatusPill } from "./status-pill";
 import { useInjectUiCss } from "./styles";
 

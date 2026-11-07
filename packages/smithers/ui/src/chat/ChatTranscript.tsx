@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { Children, type ComponentProps, type ReactNode, useLayoutEffect, useRef } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { ChatMessage } from "./ChatMessage";
 import {

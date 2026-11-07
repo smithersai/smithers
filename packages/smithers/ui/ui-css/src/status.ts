@@ -9,7 +9,7 @@
  * constructor, which is truthy (so `??` cannot catch it) and throws
  * "Functions are not valid as a React child" the moment it is rendered.
  */
-import { tokens } from "./tokens";
+import { tokens } from "./tokens.ts";
 
 /** A lookup table that cannot resolve a key through `Object.prototype`. */
 function table<T>(entries: Readonly<Record<string, T>>): Readonly<Record<string, T>> {

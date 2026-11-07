@@ -1,13 +1,13 @@
 /** @jsxImportSource react */
 import { useEffect, useInsertionEffect, useRef, useState, type ComponentProps } from "react";
 import type { IDisposable, ITheme, Terminal as XTerminal } from "@xterm/xterm";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useResolvedTheme } from "../internal/useResolvedTheme";
 import { useResolvedPalette } from "../internal/useResolvedPalette";
 import type { ResolvedPalette } from "../internal/resolvePalette";
 import { observeReducedMotion, prefersReducedMotion, themeRegistry } from "../styles";
-import { tokens as t } from "../tokens";
-import { xtermBaseCss } from "./xtermCss";
+import { tokens as t } from "@smthrs/ui-css";
+import { xtermBaseCss } from "@smthrs/ui-css";
 
 /**
  * `<Terminal>` — a generic xterm.js render surface for any Smithers workflow UI.

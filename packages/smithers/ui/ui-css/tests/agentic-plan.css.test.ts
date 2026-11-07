@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reducedMotionCss } from "@smthrs/ui-styleguide";
-import { agenticPlanCss, smithersUiCss } from "../src/uiCss";
+import { agenticPlanCss, uiCss as smithersUiCss } from "../src/index.ts";
 
 describe("agentic plan css", () => {
   test("relies on the shared screen-reader utility, defined exactly once", () => {

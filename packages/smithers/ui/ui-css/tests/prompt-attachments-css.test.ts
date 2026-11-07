@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { PROMPT_ATTACHMENTS_CSS_ID, promptAttachmentsCss } from "../src/prompt/promptAttachmentsCss";
+import { PROMPT_ATTACHMENTS_CSS_ID, promptAttachmentsCss } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

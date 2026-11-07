@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reducedMotionCss, workflowUiThemeCss } from "@smthrs/ui-styleguide";
-import { agenticResponseCss, smithersUiCss } from "../src/uiCss";
+import { agenticResponseCss, uiCss as smithersUiCss } from "../src/index.ts";
 
 describe("agentic response CSS", () => {
   test("ships caret animation under the shared reduced-motion policy", () => {

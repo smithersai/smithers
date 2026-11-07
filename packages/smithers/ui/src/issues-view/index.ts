@@ -8,5 +8,5 @@ export {
   type IssuesViewTriage,
   TRIAGE_WORDS,
 } from "./IssuesView";
-export { issuesViewCss } from "./issuesViewCss";
+export { issuesViewCss } from "@smthrs/ui-css";
 export { ITEM_STATE_VARIANTS, ItemStateIcon, type ItemStateIconProps, type ItemStateKind, type ItemStatus } from "./ItemStateIcon";

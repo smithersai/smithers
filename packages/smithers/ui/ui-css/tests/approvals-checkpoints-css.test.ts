@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss } from "../src/approvals/approvalsCss";
+import { APPROVALS_CHECKPOINTS_CSS_ID, approvalsCss } from "../src/index.ts";
 
 /** The four css-contract predicates, scoped to this lane's fragment. */
 function stripVarFallbacks(css: string): string {

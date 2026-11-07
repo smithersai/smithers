@@ -1,5 +1,6 @@
 /** @jsxImportSource react */
-import { cn, isPlainNavigationClick } from "@smthrs/ui";
+import { isPlainNavigationClick } from "@smthrs/ui";
+import { cn } from "@smthrs/ui-css";
 import { type KeyboardEvent, useState } from "react";
 import type { RepoViewLocation } from "./RepoView";
 import { useInjectRepoViewCss } from "./styles";

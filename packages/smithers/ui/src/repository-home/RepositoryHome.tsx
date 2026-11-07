@@ -2,7 +2,7 @@
 import type { Home } from "@smthrs/views";
 import { type ComponentProps, type MouseEvent, type ReactNode, useEffect, useRef } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { isPlainNavigationClick } from "../internal/navigationClick";
 import { safeHref } from "../internal/safeHref";
 import { useCopyFeedback } from "../internal/useCopyFeedback";

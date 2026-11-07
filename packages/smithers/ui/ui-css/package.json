@@ -1,0 +1,28 @@
+{
+  "name": "@smthrs/ui-css",
+  "version": "1.0.0-rc.0",
+  "smthrs": {
+    "group": "agent"
+  },
+  "private": true,
+  "description": "Framework-free Smithers component CSS, tokens and class helpers.",
+  "type": "module",
+  "sideEffects": false,
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts",
+      "default": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src/"
+  ],
+  "scripts": {
+    "check": "vibelang -p tsconfig.json --noEmit",
+    "test": "bun test tests"
+  },
+  "dependencies": {
+    "@smthrs/ui-styleguide": "workspace:*"
+  }
+}

@@ -11,7 +11,7 @@ import {
   sandboxStateToStatus,
   type SandboxState,
 } from "../src/sandbox/AgentSandbox";
-import { sandboxCss } from "../src/sandbox/sandboxCss";
+import { sandboxCss } from "@smthrs/ui-css";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

@@ -1,5 +1,5 @@
-import { chatTimelineCss } from "./chat/chatTimelineCss";
-import { flowGraphCss } from "./flow-graph/flowGraphCss";
+import { chatTimelineCss } from "./chat/chatTimelineCss.ts";
+import { flowGraphCss } from "./flow-graph/flowGraphCss.ts";
 /**
  * The complete stylesheet for @smthrs/ui, as a plain string.
  *
@@ -31,40 +31,40 @@ import { flowGraphCss } from "./flow-graph/flowGraphCss";
  *   with 700 reserved for KPI numerals.
  */
 import { reducedMotionCss } from "@smthrs/ui-styleguide";
-import { LOADING_DELAY_MS } from "./loading-delay";
-import { tokens as t } from "./tokens";
-import { statusColors } from "./status";
-import { conversationFoundationCss } from "./chat/conversationFoundationCss";
-import { promptAttachmentsCss } from "./prompt/promptAttachmentsCss";
-import { reasoningToolsCss } from "./agentic/reasoningToolsCss";
-import { plansTasksQueuesCss } from "./agentic/plansTasksQueuesCss";
-import { approvalsCss } from "./approvals/approvalsCss";
-import { sourcesCitationsCss } from "./agentic/sourcesCitationsCss";
-import { agentsCss } from "./agents/agentsCss";
-import { artifactsCss } from "./artifacts/artifactsCss";
-import { sandboxCss } from "./sandbox/sandboxCss";
-import { canvasCss } from "./canvas/canvasCss";
-import { calendarCss } from "./calendar/calendarCss";
-import { vaultCss } from "./vault/vaultCss";
-import { wordmarkCss } from "./wordmark/wordmarkCss";
-import { breadcrumbsCss, directoryListingCss, generatedChipCss, popoverCss, refPickerCss, repoAboutCss } from "./repositoryCss";
-import { flowFormViewCss } from "./flow-form-view/flowFormViewCss";
-import { generatedViewCss } from "./generated-view/generatedViewCss";
-import { issuesViewCss } from "./issues-view/issuesViewCss";
-import { itemConversationCss } from "./item-conversation/itemConversationCss";
-import { triageControlCss } from "./triage-control/triageControlCss";
-import { webPageCss } from "./web-page/webPageCss";
-import { docsPageCss } from "./docs-page/docsPageCss";
-import { agentStatusCss } from "./agent-status/agentStatusCss";
-import { jsonValueCss } from "./json-value/jsonValueCss";
-import { runPageCss } from "./run-page/runPageCss";
-import { flowDraftViewCss } from "./flow-draft-view/flowDraftViewCss";
-import { repositoryHomeCss } from "./repository-home/repositoryHomeCss";
-import { todoDraftCardCss } from "./stack/todoDraftCardCss";
-import { actionMenuCss } from "./action-menu/actionMenuCss";
-import { avatarStackCss, shareDialogCss } from "./sharingCss";
-import { collaboratorsCss } from "./collaboratorsCss";
-import { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss";
+import { LOADING_DELAY_MS } from "./loading-delay.ts";
+import { tokens as t } from "./tokens.ts";
+import { statusColors } from "./status.ts";
+import { conversationFoundationCss } from "./chat/conversationFoundationCss.ts";
+import { promptAttachmentsCss } from "./prompt/promptAttachmentsCss.ts";
+import { reasoningToolsCss } from "./agentic/reasoningToolsCss.ts";
+import { plansTasksQueuesCss } from "./agentic/plansTasksQueuesCss.ts";
+import { approvalsCss } from "./approvals/approvalsCss.ts";
+import { sourcesCitationsCss } from "./agentic/sourcesCitationsCss.ts";
+import { agentsCss } from "./agents/agentsCss.ts";
+import { artifactsCss } from "./artifacts/artifactsCss.ts";
+import { sandboxCss } from "./sandbox/sandboxCss.ts";
+import { canvasCss } from "./canvas/canvasCss.ts";
+import { calendarCss } from "./calendar/calendarCss.ts";
+import { vaultCss } from "./vault/vaultCss.ts";
+import { wordmarkCss } from "./wordmark/wordmarkCss.ts";
+import { breadcrumbsCss, directoryListingCss, generatedChipCss, popoverCss, refPickerCss, repoAboutCss } from "./repositoryCss.ts";
+import { flowFormViewCss } from "./flow-form-view/flowFormViewCss.ts";
+import { generatedViewCss } from "./generated-view/generatedViewCss.ts";
+import { issuesViewCss } from "./issues-view/issuesViewCss.ts";
+import { itemConversationCss } from "./item-conversation/itemConversationCss.ts";
+import { triageControlCss } from "./triage-control/triageControlCss.ts";
+import { webPageCss } from "./web-page/webPageCss.ts";
+import { docsPageCss } from "./docs-page/docsPageCss.ts";
+import { agentStatusCss } from "./agent-status/agentStatusCss.ts";
+import { jsonValueCss } from "./json-value/jsonValueCss.ts";
+import { runPageCss } from "./run-page/runPageCss.ts";
+import { flowDraftViewCss } from "./flow-draft-view/flowDraftViewCss.ts";
+import { repositoryHomeCss } from "./repository-home/repositoryHomeCss.ts";
+import { todoDraftCardCss } from "./stack/todoDraftCardCss.ts";
+import { actionMenuCss } from "./action-menu/actionMenuCss.ts";
+import { avatarStackCss, shareDialogCss } from "./sharingCss.ts";
+import { collaboratorsCss } from "./collaboratorsCss.ts";
+import { commandPaletteCss, kbdCss, segmentedControlCss } from "./commandCss.ts";
 
 const shadowCard = t.shadow2;
 const shadowOverlay = t.shadow3;
@@ -766,7 +766,7 @@ export const agenticReasoningCss = `
 `;
 
 /** All component sheets, composed in a stable order. */
-export const smithersUiCss = [
+export const uiCss = [
   sharedCss,
   buttonCss,
   badgeCss,

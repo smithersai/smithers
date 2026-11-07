@@ -2,7 +2,7 @@
  * `TodoDraftCard`'s sheet: a card whose dashed border marks it as not on the
  * stack yet; its chips are the compact badge the issue list uses.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const todoDraftCardCss = `
 .sui-todo-draft { min-width:0; display:grid; gap:12px; padding:14px 16px; border:1px dashed ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; }

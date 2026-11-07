@@ -13,7 +13,7 @@
  * after 600 ms, so a page that loads at once never flashes it; the wait is
  * its `--motion-hold`, which reduced motion keeps (`reducedMotionCss`).
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const webPageCss = `
 .sui-web-page-view { margin:0; min-width:0; width:100%; display:flex; flex-direction:column; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; overflow:hidden; }

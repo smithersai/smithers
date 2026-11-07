@@ -1,5 +1,5 @@
 /** The flow-draft card's sheet: key-value rows, questions with their default, the files and the check chips. */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const flowDraftViewCss = `
 .sui-flow-draft { min-width:0; }

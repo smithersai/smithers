@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Separator as SeparatorPrimitive } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 /** Hairline divider (horizontal by default), Radix separator semantics. */

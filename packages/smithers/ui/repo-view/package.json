@@ -41,7 +41,8 @@
     "@milkdown/crepe": "7.22.1",
     "@milkdown/kit": "7.22.1",
     "@pierre/diffs": "1.5.2",
-    "@smthrs/ui": "workspace:*"
+    "@smthrs/ui": "workspace:*",
+    "@smthrs/ui-css": "workspace:*"
   },
   "peerDependencies": {
     "react": "^19.2.8",

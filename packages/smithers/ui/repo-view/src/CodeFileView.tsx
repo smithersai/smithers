@@ -1,7 +1,8 @@
 /** @jsxImportSource react */
 import { getFiletypeFromFileName, type FileOptions, type LineAnnotation } from "@pierre/diffs";
 import { File, WorkerPoolContext, useStableCallback } from "@pierre/diffs/react";
-import { cn, type ResolvedPalette, tokens as t, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
+import { type ResolvedPalette, useResolvedPalette, useResolvedTheme } from "@smthrs/ui";
+import { cn, tokens as t } from "@smthrs/ui-css";
 import { type FocusEvent as ReactFocusEvent, type KeyboardEvent as ReactKeyboardEvent, useId, useMemo, useRef, useSyncExternalStore, type ReactNode } from "react";
 import { diffsThemeForMode, type PierreDiffMode } from "./PierreDiffView";
 import { useInjectRepoViewCss } from "./styles";

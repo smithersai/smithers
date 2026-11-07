@@ -5,7 +5,7 @@
  * fallbacks, tints only via color-mix(in srgb, ...). Composed into
  * smithersUiCss, which every component in this lane injects.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const PROMPT_ATTACHMENTS_CSS_ID = "prompt-attachments";
 

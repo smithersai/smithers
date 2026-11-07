@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { useCallback, useId, useRef, useState, type ComponentProps } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { STEP_WORDS, STEP_GLYPHS } from "../run-page/runPage";
 import { useInjectUiCss } from "../styles";
 import { fitGraph, graphNeighbour, type GraphEdge, type GraphNode } from "./graphLayout";

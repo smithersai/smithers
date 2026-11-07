@@ -4,7 +4,7 @@
  * scrolls in the remaining height of its container. The prose keeps a
  * readable measure.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const docsPageCss = `
 .sui-docs-page-view { margin:0; min-width:0; width:100%; display:flex; flex-direction:column; border:1px solid ${t.border}; border-radius:${t.radius}; background:${t.card}; color:${t.cardForeground}; overflow:hidden; }

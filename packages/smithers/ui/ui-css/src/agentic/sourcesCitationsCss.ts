@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const SOURCES_CITATIONS_CSS_ID = "sources-citations";
 

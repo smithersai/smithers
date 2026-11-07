@@ -3,7 +3,7 @@
  * highlighted item takes the hover fill; a destructive item reads in the
  * danger color.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const actionMenuCss = `
 .sui-action-menu-trigger { flex:none; width:28px; min-height:28px; height:28px; padding:0; color:${t.mutedForeground}; }

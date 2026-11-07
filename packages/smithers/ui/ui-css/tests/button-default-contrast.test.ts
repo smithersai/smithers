@@ -4,9 +4,8 @@
 // styleguide's exact-channel relative-luminance formula, not estimated.
 import { describe, expect, test } from "bun:test";
 import { contrastRatioOf, mixChannels, themeRegistry } from "@smthrs/ui-styleguide";
-import { rgbChannels as rgbChannelsOf } from "../ui-styleguide/src/rgbChannels";
-import { buttonCss } from "../src/uiCss";
-import { tokens as t } from "../src/tokens";
+import { buttonCss } from "@smthrs/ui-css";
+import { tokens as t } from "@smthrs/ui-css";
 
 const AA_MINIMUM = 4.5;
 const SOFT_TINT_PERCENT = 10;
@@ -46,7 +45,7 @@ describe("default Button text contrast", () => {
   test.each(cases)("%s %s %s keeps brand text at or above 4.5:1", (key, mode, state) => {
     const variant = themeRegistry[key as keyof typeof themeRegistry][mode];
     const background = mixChannels(variant.brand, variant.surface, brandTintPercent(state) / 100);
-    const ratio = contrastRatioOf(rgbChannelsOf(variant.brand), background);
+    const ratio = contrastRatioOf(mixChannels(variant.brand, variant.surface, 1), background);
     expect(ratio).toBeGreaterThanOrEqual(AA_MINIMUM);
   });
 

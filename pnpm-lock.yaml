@@ -519,6 +519,9 @@ importers:
       '@smthrs/ui':
         specifier: workspace:*
         version: link:../../packages/smithers/ui
+      '@smthrs/ui-css':
+        specifier: workspace:*
+        version: link:../../packages/smithers/ui/ui-css
       '@smthrs/views':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/views
@@ -6230,6 +6233,9 @@ importers:
       '@lezer/highlight':
         specifier: 1.2.3
         version: 1.2.3
+      '@smthrs/ui-css':
+        specifier: workspace:*
+        version: link:ui-css
       '@smthrs/ui-styleguide':
         specifier: workspace:*
         version: link:ui-styleguide
@@ -6245,9 +6251,6 @@ importers:
       class-variance-authority:
         specifier: ^0.7.1
         version: 0.7.1
-      clsx:
-        specifier: ^2.1.1
-        version: 2.1.1
       d3-force:
         specifier: 3.0.0
         version: 3.0.0
@@ -6345,6 +6348,9 @@ importers:
       '@smthrs/ui':
         specifier: workspace:*
         version: link:..
+      '@smthrs/ui-css':
+        specifier: workspace:*
+        version: link:../ui-css
     devDependencies:
       '@happy-dom/global-registrator':
         specifier: ^20.13.2
@@ -6376,6 +6382,9 @@ importers:
       '@smthrs/ui':
         specifier: workspace:*
         version: link:..
+      '@smthrs/ui-css':
+        specifier: workspace:*
+        version: link:../ui-css
       '@smthrs/views':
         specifier: workspace:*
         version: link:../views
@@ -6416,6 +6425,12 @@ importers:
       typescript:
         specifier: ~5.9.3
         version: 5.9.3
+
+  packages/smithers/ui/ui-css:
+    dependencies:
+      '@smthrs/ui-styleguide':
+        specifier: workspace:*
+        version: link:../ui-styleguide
 
   packages/smithers/ui/ui-styleguide:
     devDependencies:

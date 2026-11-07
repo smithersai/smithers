@@ -1,2 +1,2 @@
 export { TodoDraftCard, type TodoDraftCardProps } from "./TodoDraftCard";
-export { todoDraftCardCss } from "./todoDraftCardCss";
+export { todoDraftCardCss } from "@smthrs/ui-css";

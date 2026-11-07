@@ -1,4 +1,4 @@
-import { tokens as t } from "./tokens";
+import { tokens as t } from "./tokens.ts";
 
 /**
  * The six lanes a person's avatar paints with. A host that defines the lane

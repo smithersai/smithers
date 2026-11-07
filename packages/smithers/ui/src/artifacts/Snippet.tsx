@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { canCopyText, type CopyFailureCode } from "../internal/copyToClipboard";
 import { useCopyFeedback } from "../internal/useCopyFeedback";
 import { useInjectUiCss } from "../styles";

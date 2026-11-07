@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { workflowUiThemeCss } from "@smthrs/ui-styleguide";
-import { statusClass, type StatusClass } from "../src/status";
+import { statusClass, type StatusClass } from "../src/index.ts";
 
 /**
  * The status color must not depend on which surface renders it: a status

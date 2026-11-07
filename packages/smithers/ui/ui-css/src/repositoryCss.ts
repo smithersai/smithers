@@ -6,7 +6,7 @@
  * the file tree, the code view and the Markdown editor, ships its own sheet in
  * `@smthrs/repo-view`.
  */
-import { tokens as t } from "./tokens";
+import { tokens as t } from "./tokens.ts";
 
 const focusRing = `outline:none; border-color:${t.ringBorder}; box-shadow:0 0 0 3px ${t.ring};`;
 const interaction = "transition:background-color .12s ease, border-color .12s ease, color .12s ease;";

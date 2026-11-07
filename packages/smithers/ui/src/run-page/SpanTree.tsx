@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { type ComponentProps, type CSSProperties, type KeyboardEvent, useRef } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { STEP_GLYPHS, STEP_WORDS, stepDuration, stepElapsed, type StepRow } from "./runPage";
 

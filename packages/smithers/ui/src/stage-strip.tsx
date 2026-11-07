@@ -1,8 +1,8 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
 import { Badge, type BadgeProps } from "./badge";
-import { cn } from "./cn";
-import { isTerminalRunStatus, normalizeStatus, statusClass } from "./status";
+import { cn } from "@smthrs/ui-css";
+import { isTerminalRunStatus, normalizeStatus, statusClass } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 /** One phase/stage in a pipeline: a label plus a status string. */

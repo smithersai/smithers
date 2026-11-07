@@ -2,7 +2,7 @@
 import type { ComponentProps } from "react";
 import { Button } from "../button";
 import { Card } from "../card";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { Kbd } from "../kbd";
 import { useInjectUiCss } from "../styles";

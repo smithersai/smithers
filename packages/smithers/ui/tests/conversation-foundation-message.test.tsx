@@ -24,7 +24,7 @@ import {
 import { Bubble, BubbleActions, BubbleContent, BubbleReactions } from "../src/chat/Bubble";
 import { CompactGroup } from "../src/chat/CompactGroup";
 import { ConversationCheckpoint } from "../src/chat/ConversationCheckpoint";
-import { conversationFoundationCss } from "../src/chat/conversationFoundationCss";
+import { conversationFoundationCss } from "@smthrs/ui-css";
 import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

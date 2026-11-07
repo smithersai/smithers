@@ -37,6 +37,7 @@
   },
   "dependencies": {
     "@smthrs/ui": "workspace:*",
+    "@smthrs/ui-css": "workspace:*",
     "@smthrs/views": "workspace:*"
   },
   "peerDependencies": {

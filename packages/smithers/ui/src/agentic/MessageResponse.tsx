@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Markdown, type MarkdownLinkClick } from "../primitives/markdown";
 import { useInjectUiCss } from "../styles";
 

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { canvasCss, WORKFLOW_CANVAS_CSS_ID } from "../src/canvas/canvasCss";
+import { canvasCss, WORKFLOW_CANVAS_CSS_ID } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { conversationFoundationCss, CONVERSATION_FOUNDATION_CSS_ID } from "../src/chat/conversationFoundationCss";
+import { conversationFoundationCss, CONVERSATION_FOUNDATION_CSS_ID } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

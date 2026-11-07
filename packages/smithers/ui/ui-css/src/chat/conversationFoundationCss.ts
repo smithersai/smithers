@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 const focusRing = `outline:none; border-color:${t.ringBorder}; box-shadow:0 0 0 3px ${t.ring};`;
 

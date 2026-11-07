@@ -27,7 +27,7 @@ export {
   type VaultGraphEdge,
   type VaultGraphNode,
 } from "./graphModel";
-export { VAULT_CSS_ID, vaultCss } from "./vaultCss";
+export { VAULT_CSS_ID, vaultCss } from "@smthrs/ui-css";
 export { useVaultCss } from "./useVaultCss";
 // `KnowledgeGraph` is deliberately absent: it renders over `d3-force` and so
 // ships from `@smthrs/ui/adapters/knowledge-graph`, like every other heavy

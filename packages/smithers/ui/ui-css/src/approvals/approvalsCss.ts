@@ -5,7 +5,7 @@
  * namespace only, no
  * :root, colors only via the tokens bridge or color-mix(in srgb, ...).
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const APPROVALS_CHECKPOINTS_CSS_ID = "approvals-checkpoints";
 

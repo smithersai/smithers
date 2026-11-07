@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps, KeyboardEvent, MouseEvent } from "react";
 import { useLayoutEffect, useRef } from "react";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { isPlainNavigationClick } from "./internal/navigationClick";
 import { useInjectUiCss } from "./styles";
 

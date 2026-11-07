@@ -5,7 +5,7 @@
  * soft/border pairs. Composed into `smithersUiCss` by uiCss.ts, which every
  * calendar component injects; exported for hosts that mount the lane alone.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const CALENDAR_CSS_ID = "calendar";
 

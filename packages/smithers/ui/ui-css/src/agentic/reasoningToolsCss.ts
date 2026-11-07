@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const REASONING_TOOLS_CSS_ID = "reasoning-tools";
 

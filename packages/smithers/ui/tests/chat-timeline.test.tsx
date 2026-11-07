@@ -3,7 +3,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { ChatTimeline, timelineKey, timelineLabel, type ChatTimelineEntry } from "../src/chat/ChatTimeline";
-import { chatTimelineCss } from "../src/chat/chatTimelineCss";
+import { chatTimelineCss } from "@smthrs/ui-css";
 
 test("timeline keys are bounded and leave other keys to the host", () => {
   for (const key of ["ArrowDown", "j"]) { expect(timelineKey(key, 1, 3)).toBe(2); expect(timelineKey(key, 2, 3)).toBe(2); }

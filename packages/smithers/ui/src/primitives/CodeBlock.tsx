@@ -10,7 +10,7 @@ import {
   useState,
 } from "react";
 import { highlight as highlightCode, type TokenKind } from "../repository-home/highlight";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { canCopyText, type CopyFailureCode } from "../internal/copyToClipboard";
 import { useCopyFeedback } from "../internal/useCopyFeedback";
 import { useInjectUiCss } from "../styles";

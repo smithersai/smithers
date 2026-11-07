@@ -10,9 +10,9 @@ import {
   useMemo,
 } from "react";
 import * as RechartsPrimitive from "recharts";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useResolvedTheme } from "../internal/useResolvedTheme";
-import { tokens as t } from "../tokens";
+import { tokens as t } from "@smthrs/ui-css";
 
 /**
  * Chart primitives for Smithers workflow UIs — the shadcn/ui chart contract

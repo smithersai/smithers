@@ -1,10 +1,10 @@
 /** @jsxImportSource react */
 import { Bridge, type Interactions, ViewCsp } from "@smthrs/views";
 import { type ComponentProps, useEffect, useMemo, useRef, useState } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { newNonce, useNearScreen } from "../internal/frameMount";
 import { composeSmithersUiStyles, useInjectUiCss } from "../styles";
-import { frameBaseCss } from "./generatedViewCss";
+import { frameBaseCss } from "@smthrs/ui-css";
 import { frameRuntime } from "./runtime.generated";
 
 /** An interaction the page admitted: a declared `state` or `message` event. */

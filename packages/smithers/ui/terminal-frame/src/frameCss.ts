@@ -1,4 +1,4 @@
-import { xtermBaseCss } from "@smthrs/ui";
+import { xtermBaseCss } from "@smthrs/ui-css";
 
 /**
  * The terminal frame's style sheet: xterm.js's own, and a screen that fills

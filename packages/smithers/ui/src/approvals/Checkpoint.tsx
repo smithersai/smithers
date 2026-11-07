@@ -6,7 +6,7 @@
  */
 import { type ComponentProps, createContext, type ReactNode, useContext } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { dateFromMs } from "../time/dateFromMs";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "../tooltip";

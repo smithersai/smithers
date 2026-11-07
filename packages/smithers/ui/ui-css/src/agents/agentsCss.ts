@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const AGENT_IDENTITY_CONTEXT_CSS_ID = "agent-identity-context";
 

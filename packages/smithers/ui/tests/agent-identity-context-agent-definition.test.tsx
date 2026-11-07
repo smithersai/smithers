@@ -15,7 +15,7 @@ import {
   AgentTools,
 } from "../src/agents/AgentDefinition";
 import { AgentCard } from "../src/agents/AgentCard";
-import { agentsCss } from "../src/agents/agentsCss";
+import { agentsCss } from "@smthrs/ui-css";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;
 

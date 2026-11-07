@@ -2,7 +2,7 @@
 import { cloneElement, isValidElement, type ComponentProps, type KeyboardEvent, type MouseEvent, type ReactElement } from "react";
 import { cva, type VariantProps } from "class-variance-authority";
 import { Slot } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { LoadingBar } from "./loading";
 import { useInjectUiCss } from "./styles";
 

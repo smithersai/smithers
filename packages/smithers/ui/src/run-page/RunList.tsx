@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { Fragment, type ComponentProps, type ReactNode } from "react";
 import { Badge } from "../badge";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { EmptyState } from "../empty-state";
 import { safeHref } from "../internal/safeHref";
 import { useInjectUiCss } from "../styles";

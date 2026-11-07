@@ -1,5 +1,5 @@
 /** The value disclosure's sheet: a quiet summary row and a scrolling monospace body. */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const jsonValueCss = `
 .sui-json-value { min-width:0; border:1px solid ${t.border}; border-radius:${t.radiusControl}; background:${t.card}; }

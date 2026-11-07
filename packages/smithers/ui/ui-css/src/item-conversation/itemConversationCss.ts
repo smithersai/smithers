@@ -7,7 +7,7 @@
  * two columns from 768 pixels, the column 256 pixels wide; narrower, it
  * stacks under the main column.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const itemConversationCss = `
 .sui-item-conv { min-width:0; display:grid; align-content:start; gap:14px; color:${t.foreground}; }

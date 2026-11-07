@@ -4,8 +4,8 @@
  * namespace only, no :root,
  * colors only through the tokens bridge.
  */
-import { tokens as t } from "../tokens";
-import { statusColors } from "../status";
+import { tokens as t } from "../tokens.ts";
+import { statusColors } from "../status.ts";
 
 export const PLANS_TASKS_QUEUES_CSS_ID = "plans-tasks-queues";
 

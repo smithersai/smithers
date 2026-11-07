@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
-import { formatStatus, hasStatusTone, statusClass, statusColor } from "../src/status";
-import { tokens } from "../src/tokens";
+import { formatStatus, hasStatusTone, statusClass, statusColor } from "../src/index.ts";
+import { tokens } from "../src/index.ts";
 
 /**
  * A status string is host data: it arrives from an engine row, a card phase, a

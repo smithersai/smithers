@@ -1,14 +1,6 @@
 /** @jsxImportSource react */
-import {
-  type BreadcrumbItem,
-  Breadcrumbs,
-  cn,
-  DirectoryListing,
-  type DirectoryTarget,
-  FileTree,
-  isPlainNavigationClick,
-  Skeleton
-} from "@smthrs/ui";
+import { type BreadcrumbItem, Breadcrumbs, DirectoryListing, type DirectoryTarget, FileTree, isPlainNavigationClick, Skeleton } from "@smthrs/ui";
+import { cn } from "@smthrs/ui-css";
 import { type ComponentProps, type ReactNode, useMemo, useState } from "react";
 import { CodeFileView, type CodeFileViewProps, type CodeViewMode } from "./CodeFileView";
 import { HtmlPreview } from "./HtmlPreview";

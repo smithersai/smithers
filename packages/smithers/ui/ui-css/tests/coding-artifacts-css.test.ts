@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { workflowUiThemeCss } from "@smthrs/ui-styleguide";
-import { artifactsCss, CODING_ARTIFACTS_CSS_ID } from "../src/artifacts/artifactsCss";
+import { artifactsCss, CODING_ARTIFACTS_CSS_ID } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

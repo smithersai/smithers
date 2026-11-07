@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type ComponentProps, type ReactNode, useState } from "react";
-import { cn } from "./cn";
-import type { DataAttributes } from "./data-attributes";
+import { cn } from "@smthrs/ui-css";
+import type { DataAttributes } from "@smthrs/ui-css";
 import { useInjectUiCss } from "./styles";
 
 /** One entry in the flat list a {@link FileTree} groups into a nested tree. */

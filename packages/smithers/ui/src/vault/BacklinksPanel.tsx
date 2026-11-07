@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { CSSProperties } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Badge } from "../badge";
 import { Eyebrow } from "../section-header";
 import { RowButton } from "../row-button";

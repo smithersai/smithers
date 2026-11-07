@@ -4,7 +4,7 @@
  * ember (`--danger`), live work is brand and holds still: the house loading
  * pattern never pulses a glyph.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const runPageCss = `
 .sui-run-status-glyph { flex:none; font-size:11px; line-height:1; }

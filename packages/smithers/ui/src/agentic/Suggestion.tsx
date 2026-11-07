@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import { useRef, type ComponentProps, type ReactNode, type WheelEvent, type KeyboardEvent } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { prefersReducedMotion, useInjectUiCss } from "../styles";
 
 export type SuggestionProps = Omit<ComponentProps<"button">, "onClick" | "children" | "value"> & {

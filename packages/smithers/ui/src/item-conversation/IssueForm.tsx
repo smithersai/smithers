@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type ComponentProps, type KeyboardEvent, useId } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { Input, Textarea } from "../input";
 import { Field, Label } from "../label";
 import { useInjectUiCss } from "../styles";

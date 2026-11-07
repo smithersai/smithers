@@ -32,7 +32,7 @@
   },
   "entries": [
     {
-      "file": "src/uiCss.ts",
+      "file": "ui-css/src/uiCss.ts",
       "exports": [
         "chatScrollerCss"
       ],
@@ -984,7 +984,7 @@
       ]
     },
     {
-      "file": "src/canvas/canvasCss.ts",
+      "file": "ui-css/src/canvas/canvasCss.ts",
       "exports": [
         "canvasCss",
         "WORKFLOW_CANVAS_CSS_ID"

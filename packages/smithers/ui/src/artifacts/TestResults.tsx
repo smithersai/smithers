@@ -10,7 +10,7 @@ import {
   type ComponentProps,
   type ReactNode,
 } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { useInjectUiCss } from "../styles";
 import { Progress } from "../progress";
 import { StatusPill } from "../status-pill";

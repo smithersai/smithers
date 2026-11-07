@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 export const flowGraphCss = `
 .sui-flow-graph { position:relative; min-width:0; border:1px solid ${t.border}; border-radius:12px; overflow:hidden; background:radial-gradient(${t.border} 1px,transparent 1px) 0 0/18px 18px ${t.background}; }
 .sui-flow-graph-viewport { height:360px; min-width:0; }

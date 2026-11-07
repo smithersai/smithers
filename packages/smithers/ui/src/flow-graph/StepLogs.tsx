@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import type { JsonValueData } from "../json-value/jsonValueText";
 import { useInjectUiCss } from "../styles";
 import { stepLogLines, stepLogTime } from "./stepLogLines";

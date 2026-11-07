@@ -2,7 +2,7 @@
  * The `form` template's sheet. `inline` packs the fields tighter for a
  * message; `full` gives them room on a page.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const flowFormViewCss = `
 .sui-flow-form { min-width:0; display:grid; gap:10px; }

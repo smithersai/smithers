@@ -10,7 +10,7 @@ import {
   WebPreviewToolbar,
   type WebPreviewSandboxToken,
 } from "../src/sandbox/WebPreview";
-import { sandboxCss } from "../src/sandbox/sandboxCss";
+import { sandboxCss } from "@smthrs/ui-css";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/styles";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

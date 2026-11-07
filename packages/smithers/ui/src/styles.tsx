@@ -1,9 +1,9 @@
 /** @jsxImportSource react */
 import { DEFAULT_THEME_KEY, standaloneThemeCss, themeRegistry, workflowUiThemeCss } from "@smthrs/ui-styleguide";
 import { useInsertionEffect } from "react";
-import { smithersUiCss } from "./uiCss";
+import { uiCss as smithersUiCss } from "@smthrs/ui-css";
 
-export { smithersUiCss } from "./uiCss";
+export { uiCss as smithersUiCss } from "@smthrs/ui-css";
 export { standaloneThemeCss };
 export { DEFAULT_THEME_KEY, themeRegistry };
 

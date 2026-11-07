@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { reducedMotionCss, workflowUiThemeCss } from "@smthrs/ui-styleguide";
-import { agentOutputCss, smithersUiCss } from "../src/uiCss";
-import { tokens } from "../src/tokens";
+import { agentOutputCss, uiCss as smithersUiCss } from "../src/index.ts";
+import { tokens } from "../src/index.ts";
 
 /**
  * The theming contract. These invariants are what make every component

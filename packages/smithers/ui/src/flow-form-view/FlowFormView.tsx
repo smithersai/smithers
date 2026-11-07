@@ -2,7 +2,7 @@
 import { type ComponentProps, type FormEvent, useId, useMemo, useRef, useState } from "react";
 import { Button } from "../button";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "../card";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import {
   declaredInput,
   humanTaskForm,

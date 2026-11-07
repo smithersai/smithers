@@ -1,0 +1,8 @@
+[test]
+# Bun enforces the 100% gate with the scalar form (the table form is inert).
+coverage = true
+coverageThreshold = 1
+coverageSkipTestFiles = true
+# Scope coverage to this package, as repo-view and terminal-frame do.
+# ui-styleguide owns a separate 100% gate for its token and color utilities.
+coveragePathIgnorePatterns = ["../**"]

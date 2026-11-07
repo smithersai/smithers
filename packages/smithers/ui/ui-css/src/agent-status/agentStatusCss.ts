@@ -6,8 +6,8 @@
  * Gold is `--warning` and ember is `--danger` (mvp.md §6.4: "Needs you is gold
  * and failures are ember").
  */
-import { LOADING_DELAY_MS } from "../loading-delay";
-import { tokens as t } from "../tokens";
+import { LOADING_DELAY_MS } from "../loading-delay.ts";
+import { tokens as t } from "../tokens.ts";
 
 export const agentStatusCss = `
 button.sui-agent-status { cursor:pointer; font:inherit; font-size:12px; font-weight:650; }

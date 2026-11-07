@@ -1,6 +1,6 @@
 /** @jsxImportSource react */
 import type { ComponentProps, ReactNode } from "react";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { JsonValue } from "../json-value/JsonValue";
 import type { JsonValueData } from "../json-value/jsonValueText";
 import { attemptWords, stepDuration, stepElapsed, type AttemptRow, type StepRow } from "../run-page/runPage";

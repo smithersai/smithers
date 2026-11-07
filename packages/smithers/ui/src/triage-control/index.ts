@@ -1,2 +1,2 @@
 export { TriageControl, type TriageControlProps } from "./TriageControl";
-export { triageControlCss } from "./triageControlCss";
+export { triageControlCss } from "@smthrs/ui-css";

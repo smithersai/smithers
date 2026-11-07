@@ -2,7 +2,7 @@
 import { type ReactNode, useRef, useState } from "react";
 import { DropdownMenu as MenuPrimitive } from "radix-ui";
 import { Button, type ButtonProps } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import {
   Dialog,
   DialogClose,

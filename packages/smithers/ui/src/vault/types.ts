@@ -3,7 +3,7 @@
  * a `VaultAdapter` serves — an Obsidian directory, a gateway extension, a git
  * repo of markdown — without knowing which.
  */
-import type { DataAttributes } from "../data-attributes";
+import type { DataAttributes } from "@smthrs/ui-css";
 
 /** One note in the vault, as metadata (no body content). */
 export type VaultNoteMeta = {

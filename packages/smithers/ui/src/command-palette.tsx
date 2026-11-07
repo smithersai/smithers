@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { type KeyboardEvent, type ReactNode, useId } from "react";
 import { Dialog as DialogPrimitive } from "radix-ui";
-import { cn } from "./cn";
+import { cn } from "@smthrs/ui-css";
 import { Dialog, DialogOverlay, DialogPortal } from "./dialog";
 
 export type CommandPaletteItem = {

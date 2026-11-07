@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss } from "../src/agents/agentsCss";
+import { AGENT_IDENTITY_CONTEXT_CSS_ID, agentsCss } from "../src/index.ts";
 
 /** Strip every var(--x, fallback) expression, including rgba fallbacks. */
 function stripVarFallbacks(css: string): string {

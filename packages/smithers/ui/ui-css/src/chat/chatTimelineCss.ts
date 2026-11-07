@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 // The approved mock's rail (apps/mvp/docs/design/timeline/timeline.html), with Will's single-line entry summaries.
 // `--sui-tl-*` belong to the rail; the `q-` ones are what hover or keyboard focus brings forward.

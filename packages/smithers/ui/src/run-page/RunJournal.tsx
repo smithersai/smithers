@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import type { ComponentProps } from "react";
 import { Button } from "../button";
-import { cn } from "../cn";
+import { cn } from "@smthrs/ui-css";
 import { JsonValue } from "../json-value/JsonValue";
 import type { JsonValueData } from "../json-value/jsonValueText";
 import { useInjectUiCss } from "../styles";

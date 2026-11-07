@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { formatStatus, hasStatusTone, isTerminalRunStatus, statusClass } from "../src/status";
+import { formatStatus, hasStatusTone, isTerminalRunStatus, statusClass } from "../src/index.ts";
 
 /**
  * The rc.0 run vocabulary and the run-card phases a host renders beside it.

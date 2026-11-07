@@ -1,4 +1,4 @@
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 /**
  * Wordmark CSS fragment, composed into `smithersUiCss` by uiCss.ts.

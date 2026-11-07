@@ -154,6 +154,11 @@ const securityReview = Smithers.SecurityReview({
   ]
 })
 
+const sourceFiles = Smithers.Filegroup({
+  srcs: [Smithers.glob("//packages/smithers/ui/ui-styleguide/src/**/*.ts")],
+  cwd
+})
+
 export const Package = Smithers.Package({
-  targets: { check, docsFiles, shikiThemes, unitTests, ...securityReview }
+  targets: { sourceFiles, check, docsFiles, shikiThemes, unitTests, ...securityReview }
 })

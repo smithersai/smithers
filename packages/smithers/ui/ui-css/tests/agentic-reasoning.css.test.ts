@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { reducedMotionCss } from "@smthrs/ui-styleguide";
-import { agenticReasoningCss, sharedCss, smithersUiCss } from "../src/uiCss";
+import { agenticReasoningCss, sharedCss, uiCss as smithersUiCss } from "../src/index.ts";
 
 describe("agentic reasoning CSS", () => {
   test("pins shimmer motion under the shared reduced-motion policy", () => {

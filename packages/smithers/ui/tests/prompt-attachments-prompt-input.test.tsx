@@ -22,7 +22,7 @@ import {
   type PromptInputMessage,
 } from "../src/prompt/PromptInput";
 import { SMITHERS_UI_STYLE_ATTR } from "../src/index";
-import { promptAttachmentsCss } from "../src/prompt/promptAttachmentsCss";
+import { promptAttachmentsCss } from "@smthrs/ui-css";
 import { installDarkThemeStyles, removeDarkThemeStyles } from "./theme-test-utils";
 
 (globalThis as { IS_REACT_ACT_ENVIRONMENT?: boolean }).IS_REACT_ACT_ENVIRONMENT = true;

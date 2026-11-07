@@ -4,7 +4,7 @@
  * this lane injects. Rules follow the css contract:
  * sui- namespace only, colors only through the tokens bridge, no :root.
  */
-import { tokens as t } from "../tokens";
+import { tokens as t } from "../tokens.ts";
 
 export const CODING_ARTIFACTS_CSS_ID = "coding-artifacts";
 

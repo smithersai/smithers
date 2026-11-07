@@ -1,5 +1,5 @@
 /** @jsxImportSource react */
-import { cn } from "@smthrs/ui";
+import { cn } from "@smthrs/ui-css";
 import { type ComponentProps, useRef, useState } from "react";
 
 /**
