@@ -242,7 +242,7 @@ it.effect("guards Effect 4.1 directory entries and non-following stat on a real 
       Effect.gen(function*() {
         const fs = yield* EffectFileSystem.FileSystem
         const entries = yield* fs.readDirectoryEntries(directory)
-        expect(entries.toSorted((left, right) => left.name.localeCompare(right.name))).toEqual([
+        expect([...entries].sort((left, right) => left.name.localeCompare(right.name))).toEqual([
           { name: "entry.txt", type: "Unknown" },
           { name: "link.txt", type: "Unknown" }
         ])
