@@ -141,8 +141,8 @@
       "default": "./.vibelang/js/src/Runbook.js"
     },
     "./Saga": {
-      "types": "./src/Saga.ts",
-      "vibelang-source": "./src/Saga.ts",
+      "types": "./.vibe/declarations/Saga.d.vibe.ts",
+      "vibelang-source": "./src/Saga.vibe",
       "default": "./.vibelang/js/src/Saga.js"
     },
     "./ScanFixVerify": {
@@ -186,7 +186,8 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/Saga.vibe"
   ],
   "publishConfig": {
     "access": "public",
@@ -502,5 +503,112 @@
   },
   "peerDependencies": {
     "effect": "4.1.1"
+  },
+  "imports": {
+    "#vibelang/emitted/src/internal/Compose": {
+      "types": "./.vibe/declarations/src/internal/Compose.d.vibe.ts",
+      "vibelang-source": "./src/internal/Compose.vibe",
+      "default": "./.vibelang/js/src/internal/Compose.js"
+    },
+    "#vibelang/emitted/src/PatternError": {
+      "types": "./.vibe/declarations/src/PatternError.d.vibe.ts",
+      "vibelang-source": "./src/PatternError.vibe",
+      "default": "./.vibelang/js/src/PatternError.js"
+    },
+    "#vibelang/emitted/src/internal/Payload": {
+      "types": "./.vibe/declarations/src/internal/Payload.d.vibe.ts",
+      "vibelang-source": "./src/internal/Payload.vibe",
+      "default": "./.vibelang/js/src/internal/Payload.js"
+    },
+    "#vibelang/emitted/src/internal/Failure": {
+      "types": "./.vibe/declarations/src/internal/Failure.d.vibe.ts",
+      "vibelang-source": "./src/internal/Failure.vibe",
+      "default": "./.vibelang/js/src/internal/Failure.js"
+    },
+    "#vibelang/emitted/src/Pattern": {
+      "types": "./.vibe/declarations/src/Pattern.d.vibe.ts",
+      "vibelang-source": "./src/Pattern.vibe",
+      "default": "./.vibelang/js/src/Pattern.js"
+    },
+    "#vibelang/emitted/src/Debate": {
+      "types": "./.vibe/declarations/src/Debate.d.vibe.ts",
+      "vibelang-source": "./src/Debate.vibe",
+      "default": "./.vibelang/js/src/Debate.js"
+    },
+    "#vibelang/emitted/src/Panel": {
+      "types": "./.vibe/declarations/src/Panel.d.vibe.ts",
+      "vibelang-source": "./src/Panel.vibe",
+      "default": "./.vibelang/js/src/Panel.js"
+    },
+    "#vibelang/emitted/src/Escalation": {
+      "types": "./.vibe/declarations/src/Escalation.d.vibe.ts",
+      "vibelang-source": "./src/Escalation.vibe",
+      "default": "./.vibelang/js/src/Escalation.js"
+    },
+    "#vibelang/emitted/src/ReviewLoop": {
+      "types": "./.vibe/declarations/src/ReviewLoop.d.vibe.ts",
+      "vibelang-source": "./src/ReviewLoop.vibe",
+      "default": "./.vibelang/js/src/ReviewLoop.js"
+    },
+    "#vibelang/emitted/src/MapReduce": {
+      "types": "./.vibe/declarations/src/MapReduce.d.vibe.ts",
+      "vibelang-source": "./src/MapReduce.vibe",
+      "default": "./.vibelang/js/src/MapReduce.js"
+    },
+    "#vibelang/emitted/src/Recursion": {
+      "types": "./.vibe/declarations/src/Recursion.d.vibe.ts",
+      "vibelang-source": "./src/Recursion.vibe",
+      "default": "./.vibelang/js/src/Recursion.js"
+    },
+    "#vibelang/emitted/src/Bounded": {
+      "types": "./.vibe/declarations/src/Bounded.d.vibe.ts",
+      "vibelang-source": "./src/Bounded.vibe",
+      "default": "./.vibelang/js/src/Bounded.js"
+    },
+    "#vibelang/emitted/src/Quarantine": {
+      "types": "./.vibe/declarations/src/Quarantine.d.vibe.ts",
+      "vibelang-source": "./src/Quarantine.vibe",
+      "default": "./.vibelang/js/src/Quarantine.js"
+    },
+    "#vibelang/emitted/src/Saga": {
+      "types": "./.vibe/declarations/src/Saga.d.vibe.ts",
+      "vibelang-source": "./src/Saga.vibe",
+      "default": "./.vibelang/js/src/Saga.js"
+    },
+    "#vibelang/emitted/src/DelegationChain": {
+      "types": "./.vibe/declarations/src/DelegationChain.d.vibe.ts",
+      "vibelang-source": "./src/DelegationChain.vibe",
+      "default": "./.vibelang/js/src/DelegationChain.js"
+    },
+    "#vibelang/emitted/src/CheckSuite": {
+      "types": "./.vibe/declarations/src/CheckSuite.d.vibe.ts",
+      "vibelang-source": "./src/CheckSuite.vibe",
+      "default": "./.vibelang/js/src/CheckSuite.js"
+    },
+    "#vibelang/emitted/src/DriftDetector": {
+      "types": "./.vibe/declarations/src/DriftDetector.d.vibe.ts",
+      "vibelang-source": "./src/DriftDetector.vibe",
+      "default": "./.vibelang/js/src/DriftDetector.js"
+    },
+    "#vibelang/emitted/src/Intervene": {
+      "types": "./.vibe/declarations/src/Intervene.d.vibe.ts",
+      "vibelang-source": "./src/Intervene.vibe",
+      "default": "./.vibelang/js/src/Intervene.js"
+    },
+    "#vibelang/emitted/src/Kanban": {
+      "types": "./.vibe/declarations/src/Kanban.d.vibe.ts",
+      "vibelang-source": "./src/Kanban.vibe",
+      "default": "./.vibelang/js/src/Kanban.js"
+    },
+    "#vibelang/emitted/src/MergeQueue": {
+      "types": "./.vibe/declarations/src/MergeQueue.d.vibe.ts",
+      "vibelang-source": "./src/MergeQueue.vibe",
+      "default": "./.vibelang/js/src/MergeQueue.js"
+    },
+    "#vibelang/emitted/src/Runbook": {
+      "types": "./.vibe/declarations/src/Runbook.d.vibe.ts",
+      "vibelang-source": "./src/Runbook.vibe",
+      "default": "./.vibelang/js/src/Runbook.js"
+    }
   }
 }

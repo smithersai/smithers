@@ -11,7 +11,7 @@
  * @private
  */
 import * as Node from "@smthrs/plan/Node";
-import { PatternError } from "../PatternError.js";
+import { PatternError } from "#vibelang/emitted/src/PatternError";
 const refused = (decision) => new PatternError({
     code: "invalid_input",
     message: "The approval did not answer \"approved\", so the gated step did not run",

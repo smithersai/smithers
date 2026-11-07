@@ -18,10 +18,10 @@
 import * as Flow from "@smthrs/flow/Flow";
 import * as Node from "@smthrs/plan/Node";
 import * as Schema from "effect/Schema";
-import * as Compose from "./internal/Compose.js";
+import * as Compose from "#vibelang/emitted/src/internal/Compose";
 import { call as callMember } from "./internal/Member.js";
-import { OpaqueInput } from "./internal/Payload.js";
-import { PatternError } from "./PatternError.js";
+import { OpaqueInput } from "#vibelang/emitted/src/internal/Payload";
+import { PatternError } from "#vibelang/emitted/src/PatternError";
 /**
  * Reads the signals a verifier uses to report that nothing is left to fix.
  *

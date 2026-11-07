@@ -20,11 +20,11 @@ import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.vibe"
+import * as Compose from "#vibelang/emitted/src/internal/Compose"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.vibe"
-import { PatternError } from "./PatternError.vibe"
+import { OpaqueInput } from "#vibelang/emitted/src/internal/Payload"
+import { PatternError } from "#vibelang/emitted/src/PatternError"
 
 /**
  * The declared form of a sidecar.

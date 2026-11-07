@@ -36,9 +36,9 @@ import * as Exit from "effect/Exit";
 import * as Option from "effect/Option";
 import * as Queue from "effect/Queue";
 import * as Schema from "effect/Schema";
-import * as Compose from "./internal/Compose.js";
+import * as Compose from "#vibelang/emitted/src/internal/Compose";
 import { call as callMember } from "./internal/Member.js";
-import { PatternError } from "./PatternError.js";
+import { PatternError } from "#vibelang/emitted/src/PatternError";
 /**
  * What happened to one item.
  *

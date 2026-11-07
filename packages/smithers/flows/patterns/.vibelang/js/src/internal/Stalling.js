@@ -8,7 +8,7 @@
  */
 import * as Stall from "@smthrs/flow/Stall";
 import * as Node from "@smthrs/plan/Node";
-import { PatternError } from "../PatternError.js";
+import { PatternError } from "#vibelang/emitted/src/PatternError";
 /**
  * Validates the option; `undefined` means no stall breaker.
  *

@@ -14,12 +14,12 @@ import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import * as Compose from "./internal/Compose.vibe"
+import * as Compose from "#vibelang/emitted/src/internal/Compose"
 import type { Member } from "./internal/Member.ts"
 import { call as callMember } from "./internal/Member.ts"
-import { OpaqueInput } from "./internal/Payload.vibe"
+import { OpaqueInput } from "#vibelang/emitted/src/internal/Payload"
 import * as Stalling from "./internal/Stalling.ts"
-import { PatternError } from "./PatternError.vibe"
+import { PatternError } from "#vibelang/emitted/src/PatternError"
 
 /**
  * One unit of delegated work named by the plan.

@@ -12,7 +12,7 @@
 
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import { PatternError } from "../PatternError.vibe"
+import { PatternError } from "#vibelang/emitted/src/PatternError"
 
 const refused = (decision: unknown): PatternError =>
   new PatternError({

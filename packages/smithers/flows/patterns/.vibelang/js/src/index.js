@@ -10,57 +10,57 @@
  * @category errors
  * @since 0.1.0
  */
-export * as PatternError from "./PatternError.js";
+export * as PatternError from "#vibelang/emitted/src/PatternError";
 /**
  * @category builders
  * @since 0.1.0
  */
-export * as Pattern from "./Pattern.js";
+export * as Pattern from "#vibelang/emitted/src/Pattern";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Debate from "./Debate.js";
+export * as Debate from "#vibelang/emitted/src/Debate";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Panel from "./Panel.js";
+export * as Panel from "#vibelang/emitted/src/Panel";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Escalation from "./Escalation.js";
+export * as Escalation from "#vibelang/emitted/src/Escalation";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as ReviewLoop from "./ReviewLoop.js";
+export * as ReviewLoop from "#vibelang/emitted/src/ReviewLoop";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as MapReduce from "./MapReduce.js";
+export * as MapReduce from "#vibelang/emitted/src/MapReduce";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Recursion from "./Recursion.js";
+export * as Recursion from "#vibelang/emitted/src/Recursion";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Bounded from "./Bounded.js";
+export * as Bounded from "#vibelang/emitted/src/Bounded";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Quarantine from "./Quarantine.js";
+export * as Quarantine from "#vibelang/emitted/src/Quarantine";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Saga from "./Saga.js";
+export * as Saga from "#vibelang/emitted/src/Saga";
 /**
  * @category patterns
  * @since 0.1.0
@@ -70,32 +70,32 @@ export * as Trellis from "./Trellis.js";
  * @category patterns
  * @since 0.1.0
  */
-export * as DelegationChain from "./DelegationChain.js";
+export * as DelegationChain from "#vibelang/emitted/src/DelegationChain";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as CheckSuite from "./CheckSuite.js";
+export * as CheckSuite from "#vibelang/emitted/src/CheckSuite";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as DriftDetector from "./DriftDetector.js";
+export * as DriftDetector from "#vibelang/emitted/src/DriftDetector";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Intervene from "./Intervene.js";
+export * as Intervene from "#vibelang/emitted/src/Intervene";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Kanban from "./Kanban.js";
+export * as Kanban from "#vibelang/emitted/src/Kanban";
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as MergeQueue from "./MergeQueue.js";
+export * as MergeQueue from "#vibelang/emitted/src/MergeQueue";
 /**
  * @category patterns
  * @since 1.0.0
@@ -110,7 +110,7 @@ export * as Optimizer from "./Optimizer.js";
  * @category patterns
  * @since 0.1.0
  */
-export * as Runbook from "./Runbook.js";
+export * as Runbook from "#vibelang/emitted/src/Runbook";
 /**
  * @category patterns
  * @since 0.1.0

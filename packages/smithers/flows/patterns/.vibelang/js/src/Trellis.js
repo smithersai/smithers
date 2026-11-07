@@ -22,8 +22,8 @@ import * as Node from "@smthrs/plan/Node";
 import * as Effect from "effect/Effect";
 import * as Schema from "effect/Schema";
 import * as Semaphore from "effect/Semaphore";
-import * as Compose from "./internal/Compose.js";
-import * as FailureSchema from "./internal/Failure.js";
+import * as Compose from "#vibelang/emitted/src/internal/Compose";
+import * as FailureSchema from "#vibelang/emitted/src/internal/Failure";
 import { call as callMember } from "./internal/Member.js";
 /**
  * Stable Trellis failure codes.
