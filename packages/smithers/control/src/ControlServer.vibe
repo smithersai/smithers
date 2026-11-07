@@ -4,8 +4,8 @@
  * @since 0.1.0
  */
 
-import { Control } from "./Control.ts"
-import { Unauthorized } from "./ControlError.ts"
+import { Control } from "./Control.vibe"
+import { Unauthorized } from "./ControlError.vibe"
 import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.vibe"
 
 /**

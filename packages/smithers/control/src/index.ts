@@ -18,19 +18,19 @@
  * @category services
  * @since 0.1.0
  */
-export * as Control from "./Control.ts"
+export * as Control from "./Control.vibe"
 
 /**
  * @category services
  * @since 1.0.0
  */
-export * as ApprovalAuthority from "./ApprovalAuthority.ts"
+export * as ApprovalAuthority from "./ApprovalAuthority.vibe"
 
 /**
  * @category errors
  * @since 0.1.0
  */
-export * as ControlError from "./ControlError.ts"
+export * as ControlError from "./ControlError.vibe"
 
 /**
  * @category models
@@ -72,7 +72,7 @@ export * as ControlRuntime from "./ControlRuntime.ts"
  * @category services
  * @since 0.1.0
  */
-export * as ControlExecutor from "./ControlExecutor.ts"
+export * as ControlExecutor from "./ControlExecutor.vibe"
 
 /**
  * @category services

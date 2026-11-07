@@ -20,7 +20,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
+import { Control } from "../src/Control.vibe"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import * as DurableStack from "./DurableStack.ts"
 

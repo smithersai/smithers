@@ -10,7 +10,7 @@ import { Journal } from "@smthrs/journal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Cause, Effect, Exit, Fiber, type Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import { type ApprovalInput, Control } from "../src/Control.ts"
+import { type ApprovalInput, Control } from "../src/Control.vibe"
 import {
   AlreadyResolved,
   ClaimLost,
@@ -22,8 +22,8 @@ import {
   PlanDigestMismatch,
   PlanNotFound,
   RunNotFound
-} from "../src/ControlError.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
+} from "../src/ControlError.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import type { Envelope, ListResponse, PlanCard, Principal, Receipt } from "../src/ControlSchema.ts"
 import { park } from "./Park.ts"

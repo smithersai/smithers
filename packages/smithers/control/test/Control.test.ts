@@ -4,8 +4,8 @@
  */
 import { Effect, Stream } from "effect"
 import { describe, expect, it } from "vitest"
-import { Control, layerNoop } from "../src/Control.ts"
-import { Unavailable } from "../src/ControlError.ts"
+import { Control, layerNoop } from "../src/Control.vibe"
+import { Unavailable } from "../src/ControlError.vibe"
 
 const envelope = { capabilities: [], flows: [], budget: {} }
 const principal = { id: "operator", kind: "test", stampedAt: 0 }

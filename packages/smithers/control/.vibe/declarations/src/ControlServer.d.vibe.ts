@@ -6,7 +6,7 @@
 import { Cause, Context, Effect, Layer } from "effect";
 import { HttpRouter } from "effect/http";
 import { RpcServer } from "effect/rpc";
-import { Control } from "../../../src/Control.ts";
+import { Control } from "./Control.vibe";
 /**
  * Logs a content-free diagnostic for a failed RPC handler, and nothing for
  * a typed failure or an interruption. Causes may contain credentials or user

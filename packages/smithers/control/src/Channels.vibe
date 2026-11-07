@@ -10,8 +10,8 @@
 
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import { type Schema } from "effect"
-import { Control } from "./Control.ts"
-import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.ts"
+import { Control } from "./Control.vibe"
+import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.vibe"
 import { ControlRuntime } from "./ControlRuntime.ts"
 import type { FlowId, IdempotencyKey, Receipt, RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
 import { alreadyApplied } from "./internal/planning.vibe"

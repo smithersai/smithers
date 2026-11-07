@@ -54,9 +54,9 @@ import { Ownership, RunStore } from "@smthrs/run-store"
 import { Clock, Effect, Fiber, Layer, Option, Schema } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import type * as SqlError from "effect/sql/SqlError"
-import * as ApprovalAuthority from "./ApprovalAuthority.ts"
+import * as ApprovalAuthority from "./ApprovalAuthority.vibe"
 import * as Attribution from "./Cancellation.ts"
-import type { PlanInput } from "./Control.ts"
+import type { PlanInput } from "./Control.vibe"
 import {
   AlreadyResolved,
   ClaimLost,
@@ -70,8 +70,8 @@ import {
   PlanNotFound,
   RunNotFound,
   Unauthorized
-} from "./ControlError.ts"
-import * as ControlExecutor from "./ControlExecutor.ts"
+} from "./ControlError.vibe"
+import * as ControlExecutor from "./ControlExecutor.vibe"
 import type {
   ApprovalToken,
   BulkGrant,

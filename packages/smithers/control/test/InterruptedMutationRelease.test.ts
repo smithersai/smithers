@@ -9,8 +9,8 @@
  */
 import { Cause, Deferred, Effect, Exit, Fiber, Layer } from "effect"
 import { describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import { PersistenceError } from "../src/ControlError.ts"
+import { Control } from "../src/Control.vibe"
+import { PersistenceError } from "../src/ControlError.vibe"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import { live, memoryRuntime } from "./TestStack.ts"
 

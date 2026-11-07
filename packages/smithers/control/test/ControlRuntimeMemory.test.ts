@@ -17,7 +17,7 @@ import {
   PlanDigestMismatch,
   PlanNotFound,
   RunNotFound
-} from "../src/ControlError.ts"
+} from "../src/ControlError.vibe"
 import {
   ControlRuntime,
   type IdPage,

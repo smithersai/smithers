@@ -4,7 +4,7 @@
  */
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import { InvalidInput } from "../src/ControlError.ts"
+import { InvalidInput } from "../src/ControlError.vibe"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import { durable } from "./DurableStack.ts"
 import { memoryRuntime } from "./TestStack.ts"

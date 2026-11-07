@@ -15,8 +15,8 @@ import { Crypto } from "@smthrs/crypto"
 import * as Fault from "@smthrs/flow/Fault"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
 import { Context, Effect, Fiber, Layer, Option, Schema } from "effect"
-import * as ApprovalAuthority from "./ApprovalAuthority.ts"
-import type { ApprovalTarget, PlanInput } from "./Control.ts"
+import * as ApprovalAuthority from "./ApprovalAuthority.vibe"
+import type { ApprovalTarget, PlanInput } from "./Control.vibe"
 import {
   AlreadyResolved,
   ClaimLost,
@@ -30,7 +30,7 @@ import {
   PlanNotFound,
   RunNotFound,
   type Unauthorized
-} from "./ControlError.ts"
+} from "./ControlError.vibe"
 import type {
   Envelope,
   FlowId,

@@ -1,6 +1,6 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
-import * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
+import * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
 
 const envelope = { capabilities: [], flows: [], budget: {} }
 const actor = { id: "agent-with-delegation", kind: "agent" }

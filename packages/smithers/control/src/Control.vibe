@@ -24,8 +24,8 @@ import type {
   TransportError,
   Unauthorized,
   Unavailable
-} from "./ControlError.ts"
-import { Unavailable as UnavailableError } from "./ControlError.ts"
+} from "./ControlError.vibe"
+import { Unavailable as UnavailableError } from "./ControlError.vibe"
 import type {
   ApprovalPayload,
   ControlEvent,
@@ -212,15 +212,10 @@ export interface RunMutationInput {
 export interface Service {
   readonly plan: (
     input: PlanInput
-  ) => Effect.Effect<
-    PlanCard,
-    FlowNotFound | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
-  >
+  ) => PlanCard!(FlowNotFound | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized)
   readonly run: (
     input: RunInput
-  ) => Effect.Effect<
-    Receipt,
-    | RunNotFound
+  ) => Receipt!(| RunNotFound
     | PlanNotFound
     | PlanDenied
     | PlanDigestMismatch
@@ -232,13 +227,10 @@ export interface Service {
     | PersistenceError
     | Unavailable
     | TransportError
-    | Unauthorized
-  >
+    | Unauthorized)
   readonly approve: (
     input: ApprovalInput
-  ) => Effect.Effect<
-    Receipt,
-    | PlanDigestMismatch
+  ) => Receipt!(| PlanDigestMismatch
     | EnvelopeMismatch
     | AlreadyResolved
     | PlanNotFound
@@ -248,13 +240,10 @@ export interface Service {
     | Unauthorized
     | PersistenceError
     | Unavailable
-    | TransportError
-  >
+    | TransportError)
   readonly deny: (
     input: ApprovalInput
-  ) => Effect.Effect<
-    Receipt,
-    | PlanDigestMismatch
+  ) => Receipt!(| PlanDigestMismatch
     | EnvelopeMismatch
     | AlreadyResolved
     | PlanNotFound
@@ -264,33 +253,23 @@ export interface Service {
     | Unauthorized
     | PersistenceError
     | Unavailable
-    | TransportError
-  >
+    | TransportError)
   readonly steer: (
     input: SteerInput
-  ) => Effect.Effect<
-    Receipt,
-    RunNotFound | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized | NotificationError
-  >
+  ) =>
+    Receipt!(RunNotFound | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized | NotificationError)
   readonly signal: (
     input: SignalInput
-  ) => Effect.Effect<
-    Receipt,
-    RunNotFound | NoMatchingWait | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
-  >
+  ) =>
+    Receipt!(RunNotFound | NoMatchingWait | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized)
   readonly cancel: (
     input: RunMutationInput
-  ) => Effect.Effect<
-    Receipt,
-    RunNotFound | ClaimLost | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
-  >
+  ) => Receipt!(RunNotFound | ClaimLost | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized)
   readonly resume: (
     input: RunMutationInput
-  ) => Effect.Effect<
-    Receipt,
-    RunNotFound | ClaimLost | CodeDrift | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized
-  >
-  readonly list: (input: ListInput) => Effect.Effect<ListResponse, ControlError>
+  ) =>
+    Receipt!(RunNotFound | ClaimLost | CodeDrift | InvalidInput | PersistenceError | Unavailable | TransportError | Unauthorized)
+  readonly list: (input: ListInput) => ListResponse!ControlError
   /** Checkpoint `event.cursor` after processing each event and resume with `afterCursor`. */
   readonly watch: (filter: WatchInput) => Stream.Stream<ControlEvent, ControlError>
 }
@@ -301,7 +280,9 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class Control extends Context.Service<Control, Service>()("/control/Control") {}
+export service Control: Service {
+  static readonly key = "/control/Control"
+}
 
 /**
  * Constructs a control service from an implementation record.

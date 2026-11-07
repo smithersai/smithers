@@ -25,7 +25,7 @@ import {
   TransportError,
   Unauthorized,
   Unavailable
-} from "./ControlError.ts"
+} from "./ControlError.vibe"
 import {
   ApprovalInputSchema,
   CancelInputSchema,

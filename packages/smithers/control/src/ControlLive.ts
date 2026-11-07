@@ -23,7 +23,7 @@ import {
   type SignalInput,
   type SteerInput,
   type WatchInput
-} from "./Control.ts"
+} from "./Control.vibe"
 import {
   ClaimLost,
   type CodeDrift,
@@ -39,9 +39,9 @@ import {
   RunNotFound,
   Unauthorized,
   Unavailable
-} from "./ControlError.ts"
-import type { CancelRecord, Launch } from "./ControlExecutor.ts"
-import { ControlExecutor } from "./ControlExecutor.ts"
+} from "./ControlError.vibe"
+import type { CancelRecord, Launch } from "./ControlExecutor.vibe"
+import { ControlExecutor } from "./ControlExecutor.vibe"
 import * as ControlFacts from "./ControlFacts.vibe"
 import { ControlRuntime, type IdPage, type IdPageRequest, launchedByMatches, type RunPage } from "./ControlRuntime.ts"
 import type {

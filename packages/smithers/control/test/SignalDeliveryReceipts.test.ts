@@ -1,8 +1,8 @@
 import { Effect, Layer, Result } from "effect"
 import { describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import { NoMatchingWait } from "../src/ControlError.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
+import { Control } from "../src/Control.vibe"
+import { NoMatchingWait } from "../src/ControlError.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import { live, memoryRuntime } from "./TestStack.ts"
 

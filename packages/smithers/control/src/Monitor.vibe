@@ -19,9 +19,9 @@
 
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Effect } from "effect"
-import { Control } from "./Control.ts"
-import type { ControlError } from "./ControlError.ts"
-import { InvalidInput, PersistenceError } from "./ControlError.ts"
+import { Control } from "./Control.vibe"
+import type { ControlError } from "./ControlError.vibe"
+import { InvalidInput, PersistenceError } from "./ControlError.vibe"
 import type { ControlEvent, Receipt, RunId, RunSummary, WatchFilter } from "./ControlSchema.ts"
 import * as SubjectHealth from "./Health.vibe"
 

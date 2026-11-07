@@ -15,8 +15,8 @@
  * @since 1.0.0
  */
 
-import type { ControlError } from "./ControlError.ts"
-import { InvalidInput } from "./ControlError.ts"
+import type { ControlError } from "./ControlError.vibe"
+import { InvalidInput } from "./ControlError.vibe"
 import type { FireSummary, ListRequest, TriggerSummary } from "./ControlSchema.ts"
 
 /**

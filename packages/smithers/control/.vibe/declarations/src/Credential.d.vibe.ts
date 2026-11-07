@@ -27,7 +27,7 @@
  * @since 0.1.0
  */
 import { Context, Effect, Layer, Option, Redacted } from "effect";
-import { CredentialConflict, InvalidInput, type PersistenceError, Unauthorized, Unavailable } from "../../../src/ControlError.ts";
+import { CredentialConflict, InvalidInput, type PersistenceError, Unauthorized, Unavailable } from "./ControlError.vibe";
 import * as CredentialCipher from "./CredentialCipher.vibe";
 import * as CredentialStore from "./CredentialStore.vibe";
 /**

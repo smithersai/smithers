@@ -6,7 +6,7 @@
 import { Effect, type Redacted, Schema } from "effect";
 import * as HttpServerRequest from "effect/http/HttpServerRequest";
 import { type Channel, Channels, type InboundResult, type RawInbound } from "./Channels.vibe";
-import { InvalidInput, type Unauthorized } from "../../../src/ControlError.ts";
+import { InvalidInput, type Unauthorized } from "./ControlError.vibe";
 import type { IdempotencyKey } from "../../../src/ControlSchema.ts";
 import type { CredentialRef } from "./Credential.vibe";
 /**
@@ -115,4 +115,4 @@ export declare const handler: (channel: string, idempotencyKey: IdempotencyKey, 
     readonly runId?: string | undefined;
     readonly inputConsumed?: boolean | undefined;
     readonly inputBody?: string | undefined;
-}, import("../../../src/ControlError.ts").AlreadyResolved | import("../../../src/ControlError.ts").ClaimLost | import("../../../src/ControlError.ts").CodeDrift | import("../../../src/ControlError.ts").CredentialConflict | import("../../../src/ControlError.ts").EnvelopeMismatch | import("../../../src/ControlError.ts").FlowNotFound | import("effect/http/HttpServerError").HttpServerError | InvalidInput | import("../../../src/ControlError.ts").LaunchFailed | import("../../../src/ControlError.ts").NoMatchingWait | import("@smthrs/notifications/NotificationQueue").NotificationError | import("../../../src/ControlError.ts").PersistenceError | import("../../../src/ControlError.ts").PlanDenied | import("../../../src/ControlError.ts").PlanDigestMismatch | import("../../../src/ControlError.ts").PlanNotFound | import("../../../src/ControlError.ts").RunNotFound | import("../../../src/ControlError.ts").TransportError | Unauthorized | import("../../../src/ControlError.ts").Unavailable, Channels | HttpServerRequest.HttpServerRequest>;
+}, import("./ControlError.vibe").AlreadyResolved | import("./ControlError.vibe").ClaimLost | import("./ControlError.vibe").CodeDrift | import("./ControlError.vibe").CredentialConflict | import("./ControlError.vibe").EnvelopeMismatch | import("./ControlError.vibe").FlowNotFound | import("effect/http/HttpServerError").HttpServerError | InvalidInput | import("./ControlError.vibe").LaunchFailed | import("./ControlError.vibe").NoMatchingWait | import("@smthrs/notifications/NotificationQueue").NotificationError | import("./ControlError.vibe").PersistenceError | import("./ControlError.vibe").PlanDenied | import("./ControlError.vibe").PlanDigestMismatch | import("./ControlError.vibe").PlanNotFound | import("./ControlError.vibe").RunNotFound | import("./ControlError.vibe").TransportError | Unauthorized | import("./ControlError.vibe").Unavailable, Channels | HttpServerRequest.HttpServerRequest>;

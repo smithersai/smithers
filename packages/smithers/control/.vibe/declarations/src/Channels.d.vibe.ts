@@ -8,8 +8,8 @@
  * @since 0.1.0
  */
 import { Context, Effect, Layer, type Schema } from "effect";
-import { Control } from "../../../src/Control.ts";
-import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "../../../src/ControlError.ts";
+import { Control } from "./Control.vibe";
+import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.vibe";
 import { ControlRuntime } from "../../../src/ControlRuntime.ts";
 import type { FlowId, IdempotencyKey, Receipt, RunId, RunSummary, SignalPayload } from "../../../src/ControlSchema.ts";
 /**

@@ -1,8 +1,8 @@
 /** A separate process racing Control.run against the same SQLite database. */
 import { Effect } from "effect"
 import { appendFileSync } from "node:fs"
-import { Control } from "../../src/Control.ts"
-import * as ControlExecutor from "../../src/ControlExecutor.ts"
+import { Control } from "../../src/Control.vibe"
+import * as ControlExecutor from "../../src/ControlExecutor.vibe"
 import type { PlanCard } from "../../src/ControlSchema.ts"
 import { durable, fileBundle } from "../DurableStack.ts"
 

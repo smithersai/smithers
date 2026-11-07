@@ -18,8 +18,8 @@
  */
 import { Journal } from "@smthrs/journal";
 import { Effect } from "effect";
-import { Control } from "../../../src/Control.ts";
-import type { ControlError } from "../../../src/ControlError.ts";
+import { Control } from "./Control.vibe";
+import type { ControlError } from "./ControlError.vibe";
 import type { ControlEvent, Receipt, RunId, RunSummary } from "../../../src/ControlSchema.ts";
 import * as SubjectHealth from "./Health.vibe";
 /**

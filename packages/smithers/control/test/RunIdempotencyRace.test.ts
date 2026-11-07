@@ -4,7 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
+import { Control } from "../src/Control.vibe"
 import type { Receipt } from "../src/ControlSchema.ts"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
 

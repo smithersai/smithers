@@ -4,7 +4,7 @@
  */
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Option, Redacted } from "effect"
 import { describe, expect, it } from "vitest"
-import { Unauthorized } from "../src/ControlError.ts"
+import { Unauthorized } from "../src/ControlError.vibe"
 import * as Credential from "../src/Credential.vibe"
 import * as CredentialCipher from "../src/CredentialCipher.vibe"
 import * as CredentialStore from "../src/CredentialStore.vibe"

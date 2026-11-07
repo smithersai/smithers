@@ -5,7 +5,7 @@
  */
 import { Schema } from "effect"
 import { describe, expect, it } from "vitest"
-import { LaunchFailed, PersistenceError } from "../src/ControlError.ts"
+import { LaunchFailed, PersistenceError } from "../src/ControlError.vibe"
 
 class CircularDriverError extends Error {
   readonly self = this

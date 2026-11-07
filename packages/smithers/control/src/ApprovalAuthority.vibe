@@ -5,8 +5,7 @@
  * @since 1.0.0
  */
 
-import { Effect, Schema } from "effect"
-import { InvalidInput, type PersistenceError, Unauthorized } from "./ControlError.ts"
+import { InvalidInput, type PersistenceError, Unauthorized } from "./ControlError.vibe"
 import { type ApprovalTarget, GrantScope, type Principal } from "./ControlSchema.ts"
 
 /**
@@ -29,7 +28,7 @@ export interface Request {
  * @since 1.0.0
  */
 export interface Service {
-  readonly authorize: (request: Request) => Effect.Effect<void, Unauthorized | PersistenceError>
+  readonly authorize: (request: Request) => void!(Unauthorized | PersistenceError)
 }
 
 const IdentityPart = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(1024))
@@ -92,13 +91,12 @@ const compile = (delegations: ReadonlyArray<Delegation>): Service => {
  */
 export const make = (
   delegations: ReadonlyArray<Delegation>
-): Effect.Effect<Service, InvalidInput> =>
+): Service!InvalidInput =>
   Schema.decodeUnknownEffect(Schema.Array(Delegation).check(Schema.isMaxLength(1024)))(delegations, {
     onExcessProperty: "error"
-  }).pipe(
-    Effect.mapError(() => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" })),
-    Effect.map(compile)
-  )
+  })
+  |> Effect.mapError(%, () => new InvalidInput({ issue: "Invalid approval-authority delegation configuration" }))
+  |> Effect.map(%, compile)
 
 /**
  * Default trusted-local policy. Only the local operator identity is an

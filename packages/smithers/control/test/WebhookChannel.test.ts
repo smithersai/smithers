@@ -10,7 +10,7 @@ import { Cause, Effect, Exit, Layer, Redacted, Schema, Stream } from "effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { describe, expect, it } from "vitest"
 import * as Channels from "../src/Channels.vibe"
-import { InvalidInput, Unauthorized } from "../src/ControlError.ts"
+import { InvalidInput, Unauthorized } from "../src/ControlError.vibe"
 import type { CredentialRef } from "../src/Credential.vibe"
 import * as WebhookChannel from "../src/WebhookChannel.vibe"
 

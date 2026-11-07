@@ -6,7 +6,7 @@
 import { NotificationError } from "@smthrs/notifications/NotificationQueue";
 import { Context, Effect, Layer, Schema } from "effect";
 import { Rpc, RpcGroup, RpcMiddleware } from "effect/rpc";
-import { AlreadyResolved, ClaimLost, CodeDrift, EnvelopeMismatch, FlowNotFound, InvalidInput, LaunchFailed, NoMatchingWait, PersistenceError, PlanDenied, PlanDigestMismatch, PlanNotFound, RunNotFound, TransportError, Unauthorized, Unavailable } from "../../../src/ControlError.ts";
+import { AlreadyResolved, ClaimLost, CodeDrift, EnvelopeMismatch, FlowNotFound, InvalidInput, LaunchFailed, NoMatchingWait, PersistenceError, PlanDenied, PlanDigestMismatch, PlanNotFound, RunNotFound, TransportError, Unauthorized, Unavailable } from "./ControlError.vibe";
 import { type Principal } from "../../../src/ControlSchema.ts";
 declare const ControlPrincipal_base: Context.ServiceClass<ControlPrincipal, "/control/ControlPrincipal", {
     readonly id: string;
@@ -96,7 +96,7 @@ export declare const ControlRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"Watch", Schema.Stru
     readonly runId: Schema.optional<Schema.String>;
     readonly occurredAt: Schema.Number;
     readonly payload: Schema.Codec<Schema.Json, Schema.Json, never, never>;
-}>, Schema.Union<readonly [typeof RunNotFound, typeof PlanNotFound, typeof PlanDenied, typeof FlowNotFound, typeof PlanDigestMismatch, typeof EnvelopeMismatch, typeof ClaimLost, typeof CodeDrift, typeof AlreadyResolved, typeof InvalidInput, typeof Unauthorized, typeof Unavailable, typeof TransportError, typeof PersistenceError, typeof LaunchFailed, typeof NoMatchingWait, typeof import("../../../src/ControlError.ts").CredentialConflict, typeof NotificationError]>>, Schema.Never, typeof ControlAuth, never> | Rpc.Rpc<"Plan", Schema.Struct<{
+}>, Schema.Union<readonly [typeof RunNotFound, typeof PlanNotFound, typeof PlanDenied, typeof FlowNotFound, typeof PlanDigestMismatch, typeof EnvelopeMismatch, typeof ClaimLost, typeof CodeDrift, typeof AlreadyResolved, typeof InvalidInput, typeof Unauthorized, typeof Unavailable, typeof TransportError, typeof PersistenceError, typeof LaunchFailed, typeof NoMatchingWait, typeof import("./ControlError.vibe").CredentialConflict, typeof NotificationError]>>, Schema.Never, typeof ControlAuth, never> | Rpc.Rpc<"Plan", Schema.Struct<{
     readonly flowId: Schema.String;
     readonly input: Schema.Codec<Schema.Json, Schema.Json, never, never>;
     readonly idempotencyKey: Schema.optional<Schema.String>;
@@ -1096,7 +1096,7 @@ export declare const ControlRpcs: RpcGroup.RpcGroup<Rpc.Rpc<"Watch", Schema.Stru
         readonly decision: Schema.Literals<readonly ["pending", "approved", "denied"]>;
     }>>;
     readonly nextCursor: Schema.optional<Schema.String>;
-}>]>, Schema.Union<readonly [typeof RunNotFound, typeof PlanNotFound, typeof PlanDenied, typeof FlowNotFound, typeof PlanDigestMismatch, typeof EnvelopeMismatch, typeof ClaimLost, typeof CodeDrift, typeof AlreadyResolved, typeof InvalidInput, typeof Unauthorized, typeof Unavailable, typeof TransportError, typeof PersistenceError, typeof LaunchFailed, typeof NoMatchingWait, typeof import("../../../src/ControlError.ts").CredentialConflict, typeof NotificationError]>, typeof ControlAuth, never>>;
+}>]>, Schema.Union<readonly [typeof RunNotFound, typeof PlanNotFound, typeof PlanDenied, typeof FlowNotFound, typeof PlanDigestMismatch, typeof EnvelopeMismatch, typeof ClaimLost, typeof CodeDrift, typeof AlreadyResolved, typeof InvalidInput, typeof Unauthorized, typeof Unavailable, typeof TransportError, typeof PersistenceError, typeof LaunchFailed, typeof NoMatchingWait, typeof import("./ControlError.vibe").CredentialConflict, typeof NotificationError]>, typeof ControlAuth, never>>;
 /**
  * The call a boundary is authenticating, when it knows one: the procedure's
  * tag and the payload it was sent. An edge authenticating a socket upgrade

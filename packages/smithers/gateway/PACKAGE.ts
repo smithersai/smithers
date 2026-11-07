@@ -77,11 +77,11 @@ const securityReview = Smithers.SecurityReview({
       authorization: [
         "src/internal/NativeGateway.vibe",
         "//packages/smithers/control/src/ControlRpcs.vibe",
-        "//packages/smithers/control/src/ApprovalAuthority.ts"
+        "//packages/smithers/control/src/ApprovalAuthority.vibe"
       ],
       service: ["//packages/smithers/control/src/ControlServer.vibe", "//packages/smithers/control/src/ControlLive.ts"],
       storageOrEgress: [
-        "//packages/smithers/control/src/ControlExecutor.ts",
+        "//packages/smithers/control/src/ControlExecutor.vibe",
         "//packages/smithers/control/src/ControlRuntime.ts",
         "//packages/smithers/control/src/SqlControlRuntime.ts"
       ]

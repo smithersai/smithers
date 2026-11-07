@@ -17,7 +17,7 @@
 import { DurableWriter } from "@smthrs/database/DurableWriter";
 import { Effect, Layer } from "effect";
 import * as SqlClient from "effect/sql/SqlClient";
-import { Unavailable } from "../../../src/ControlError.ts";
+import { Unavailable } from "./ControlError.vibe";
 import * as CredentialStore from "./CredentialStore.vibe";
 /**
  * Creates the credential table if it does not exist.

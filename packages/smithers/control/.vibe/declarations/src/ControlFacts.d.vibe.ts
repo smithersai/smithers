@@ -410,7 +410,7 @@ export declare const commitRun: <E, R>(journal: Journal.Service, change: Effect.
  * @category facts
  * @since 1.0.0
  */
-export declare const commitApprovalRequest: (journal: Journal.Service, runtime: Pick<ControlRuntime.Service, "registerApproval">, input: Omit<typeof ApprovalRequestFact.Type, "factVersion">, sourceId: string) => Effect.Effect<ControlRuntime.ApprovalToken, import("../../../src/ControlError.ts").EnvelopeMismatch | Journal.JournalError | import("../../../src/ControlError.ts").PersistenceError | import("../../../src/ControlError.ts").PlanDigestMismatch | import("../../../src/ControlError.ts").RunNotFound, never>;
+export declare const commitApprovalRequest: (journal: Journal.Service, runtime: Pick<ControlRuntime.Service, "registerApproval">, input: Omit<typeof ApprovalRequestFact.Type, "factVersion">, sourceId: string) => Effect.Effect<ControlRuntime.ApprovalToken, import("./ControlError.vibe").EnvelopeMismatch | Journal.JournalError | import("./ControlError.vibe").PersistenceError | import("./ControlError.vibe").PlanDigestMismatch | import("./ControlError.vibe").RunNotFound, never>;
 /** Honest coverage of the displayed lifecycle; engine rows are a separate authority.
  * @category facts
  * @since 1.0.0

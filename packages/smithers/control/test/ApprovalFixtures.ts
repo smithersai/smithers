@@ -1,5 +1,5 @@
 import { Effect } from "effect"
-import * as ApprovalAuthority from "../src/ApprovalAuthority.ts"
+import * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
 import type { Principal } from "../src/ControlSchema.ts"
 
 /** Explicit test-host delegation; production defaults remain exercised by the authority suites. */

@@ -1,7 +1,7 @@
 import { Effect, Layer } from "effect"
 import { RpcTest } from "effect/rpc"
 import { describe, expect, it, vi } from "vitest"
-import { Unauthorized } from "../src/ControlError.ts"
+import { Unauthorized } from "../src/ControlError.vibe"
 import { anyAuthenticator, bearerAuthenticator, ControlRpcs, layerAuth } from "../src/ControlRpcs.vibe"
 import * as ControlServer from "../src/ControlServer.vibe"
 import * as ScopedToken from "../src/ScopedToken.ts"

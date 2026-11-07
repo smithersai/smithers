@@ -9,7 +9,7 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { NotificationQueue } from "@smthrs/notifications"
 import { Registry } from "@smthrs/registry"
 import { Effect, Layer } from "effect"
-import * as ControlExecutor from "../ControlExecutor.ts"
+import * as ControlExecutor from "../ControlExecutor.vibe"
 import * as ControlLive from "../ControlLive.ts"
 import * as ControlRuntime from "../ControlRuntime.ts"
 

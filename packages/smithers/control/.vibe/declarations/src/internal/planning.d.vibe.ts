@@ -10,8 +10,8 @@
  */
 import type * as PersistedPlan from "@smthrs/plan/Plan";
 import { Effect } from "effect";
-import type { PlanInput } from "../../../../src/Control.ts";
-import { CodeDrift } from "../../../../src/ControlError.ts";
+import type { PlanInput } from "../Control.vibe";
+import { CodeDrift } from "../ControlError.vibe";
 import type { Envelope, FlowId, IdempotencyKey, PlanGraph, PlanNode, Principal, Receipt, RunId, RunSummary, SignalPayload } from "../../../../src/ControlSchema.ts";
 /**
  * The drift between the code a run recorded and the code that would resume

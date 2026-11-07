@@ -9,7 +9,7 @@
  * @since 0.1.0
  */
 import { Context as EffectContext, Effect, Layer, type Redacted } from "effect";
-import { type PersistenceError, Unavailable } from "../../../src/ControlError.ts";
+import { type PersistenceError, Unavailable } from "./ControlError.vibe";
 /**
  * One encrypted secret: base64 ciphertext and the nonce it was sealed under.
  *

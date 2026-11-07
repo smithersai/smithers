@@ -14,7 +14,7 @@
  * @since 0.1.0
  */
 import { Context, Effect, Layer, Option } from "effect";
-import { CredentialConflict, Unavailable } from "../../../src/ControlError.ts";
+import { CredentialConflict, Unavailable } from "./ControlError.vibe";
 /**
  * One credential at rest: opaque metadata plus the sealed secret.
  *

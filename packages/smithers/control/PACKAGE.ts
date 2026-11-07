@@ -116,11 +116,11 @@ const securityReview = Smithers.SecurityReview({
         "answerableWait treating a caller-chosen Node digest as a HumanTask wait token so an approval for one wait answers another run's wait."
       ],
       paths: [
-        "src/ApprovalAuthority.ts",
+        "src/ApprovalAuthority.vibe",
         "src/ControlLive.ts",
         "src/ControlRuntime.ts",
         "src/SqlControlRuntime.ts",
-        "src/ControlExecutor.ts"
+        "src/ControlExecutor.vibe"
       ]
     },
     {
@@ -148,7 +148,7 @@ const securityReview = Smithers.SecurityReview({
       ],
       paths: [
         "src/ControlLive.ts",
-        "src/ControlExecutor.ts",
+        "src/ControlExecutor.vibe",
         "src/SqlControlRuntime.ts",
         "src/Channels.vibe",
         "src/migrations/0003_signal_commands.vibe"
@@ -225,7 +225,7 @@ const securityReview = Smithers.SecurityReview({
         "src/internal/MutationBoundary.ts",
         "src/ControlLive.ts",
         "src/SqlControlRuntime.ts",
-        "src/ControlExecutor.ts",
+        "src/ControlExecutor.vibe",
         "src/ControlSchema.ts"
       ]
     },
@@ -239,7 +239,7 @@ const securityReview = Smithers.SecurityReview({
         "Health exposing a session outputTail when the binding did not set exposeOutput: true.",
         "A ControlError or Unauthorized message that echoes input values, credential ids, or tokens."
       ],
-      paths: ["src/ControlLive.ts", "src/Steering.ts", "src/Health.vibe", "src/Monitor.vibe", "src/ControlError.ts"]
+      paths: ["src/ControlLive.ts", "src/Steering.ts", "src/Health.vibe", "src/Monitor.vibe", "src/ControlError.vibe"]
     },
     {
       id: "jev-output-injection",

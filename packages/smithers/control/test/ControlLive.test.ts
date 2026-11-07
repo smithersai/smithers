@@ -7,9 +7,9 @@ import * as TestJournal from "@smthrs/journal/test/TestJournal"
 import { Effect, Layer, Logger, References, Schema, Stream } from "effect"
 import { readFileSync } from "fs"
 import { describe, expect, it } from "vitest"
-import { Control } from "../src/Control.ts"
-import { ClaimLost, InvalidInput, PersistenceError } from "../src/ControlError.ts"
-import * as ControlExecutor from "../src/ControlExecutor.ts"
+import { Control } from "../src/Control.vibe"
+import { ClaimLost, InvalidInput, PersistenceError } from "../src/ControlError.vibe"
+import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import { ControlRuntime } from "../src/ControlRuntime.ts"
 import type { WatchFilter } from "../src/ControlSchema.ts"
 import * as TestControl from "../src/test/TestControl.ts"
@@ -376,7 +376,7 @@ describe("ControlLive", () => {
 
   it("owned modules contain no Node or platform-node imports", () => {
     const files = [
-      "src/Control.ts",
+      "src/Control.vibe",
       "src/ControlRuntime.ts",
       "src/ControlLive.ts",
       "src/SqlControlRuntime.ts",

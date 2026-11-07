@@ -15,8 +15,8 @@
  * @since 1.0.0
  */
 import { Context, Effect, Layer } from "effect";
-import type { ControlError } from "../../../src/ControlError.ts";
-import { InvalidInput } from "../../../src/ControlError.ts";
+import type { ControlError } from "./ControlError.vibe";
+import { InvalidInput } from "./ControlError.vibe";
 import type { FireSummary, ListRequest, TriggerSummary } from "../../../src/ControlSchema.ts";
 /**
  * The `triggers` listing request as the port receives it.

@@ -9,8 +9,8 @@
 import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import type { ExecutionFact } from "@smthrs/journal"
-import { Context, Effect, Layer, Option, Schema } from "effect"
-import type { LaunchFailed, PersistenceError } from "./ControlError.ts"
+import { Context, Effect, Layer } from "effect"
+import type { LaunchFailed, PersistenceError } from "./ControlError.vibe"
 import type { StoredPlan } from "./ControlRuntime.ts"
 import type {
   ApprovalTarget,
@@ -319,34 +319,34 @@ export const answerableWait = (
  */
 export interface Service {
   /** Read from the executor's database, never the control coordination copy. */
-  readonly readExecution?: (runId: RunId) => Effect.Effect<ExecutionObservation, PersistenceError>
+  readonly readExecution?: (runId: RunId) => ExecutionObservation!PersistenceError
   /** Exact observations scoped to the authorized control root; unrelated native rows are never exposed. */
   readonly readExecutions?: (input: {
     readonly runId: RunId
     readonly executionIds: ReadonlyArray<string>
-  }) => Effect.Effect<ExecutionBatch, PersistenceError>
-  readonly launch: (input: Launch) => Effect.Effect<Acceptance, LaunchFailed>
+  }) => ExecutionBatch!PersistenceError
+  readonly launch: (input: Launch) => Acceptance!LaunchFailed
   /**
    * Host-only close of a retained run, after its last native module completed.
    * @since 1.0.0
    */
   readonly requestComplete?:
-    | ((input: { readonly runId: RunId; readonly receiptId: string }) => Effect.Effect<Receipt, PersistenceError>)
+    | ((input: { readonly runId: RunId; readonly receiptId: string }) => Receipt!PersistenceError)
     | undefined
   /**
    * Records a cancellation on the engine row, durably, regardless of which
    * process owns the run.
    */
-  readonly requestCancel: (input: CancelRequest) => Effect.Effect<CancelRecord, PersistenceError>
+  readonly requestCancel: (input: CancelRequest) => CancelRecord!PersistenceError
   /**
    * Completes the run's open `WaitFor` wait point with the signal's payload.
    */
-  readonly deliverSignal: (input: Signal) => Effect.Effect<SignalDelivery, PersistenceError>
+  readonly deliverSignal: (input: Signal) => SignalDelivery!PersistenceError
   /**
    * Takes up a resume: claims the control row and re-drives the execution,
    * when this executor is the one hosting it.
    */
-  readonly resumeRun: (input: ResumeRequest) => Effect.Effect<ResumeUptake, PersistenceError>
+  readonly resumeRun: (input: ResumeRequest) => ResumeUptake!PersistenceError
   /**
    * Finishes a PARKED execution whose cancellation is already durable.
    *
@@ -365,7 +365,7 @@ export interface Service {
    * one whose run is not parked, does nothing and leaves the durable request
    * standing for the host that does.
    */
-  readonly settleCancelledPark: (input: CancelRequest) => Effect.Effect<void, PersistenceError>
+  readonly settleCancelledPark: (input: CancelRequest) => void!PersistenceError
 }
 
 /**
@@ -374,9 +374,9 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class ControlExecutor extends Context.Service<ControlExecutor, Service>()(
-  "/control/ControlExecutor"
-) {}
+export service ControlExecutor: Service {
+  static readonly key = "/control/ControlExecutor"
+}
 
 /**
  * Builds a {@link Service} from an implementation of its methods.

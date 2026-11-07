@@ -43,8 +43,8 @@
     "./migrations/*": null,
     "./*/index": null,
     "./ApprovalAuthority": {
-      "types": "./src/ApprovalAuthority.ts",
-      "vibelang-source": "./src/ApprovalAuthority.ts",
+      "types": "./.vibe/declarations/src/ApprovalAuthority.d.vibe.ts",
+      "vibelang-source": "./src/ApprovalAuthority.vibe",
       "default": "./.vibelang/js/src/ApprovalAuthority.js"
     },
     "./Cancellation": {
@@ -58,8 +58,8 @@
       "default": "./.vibelang/js/src/Channels.js"
     },
     "./Control": {
-      "types": "./src/Control.ts",
-      "vibelang-source": "./src/Control.ts",
+      "types": "./.vibe/declarations/src/Control.d.vibe.ts",
+      "vibelang-source": "./src/Control.vibe",
       "default": "./.vibelang/js/src/Control.js"
     },
     "./ControlClient": {
@@ -68,13 +68,13 @@
       "default": "./.vibelang/js/src/ControlClient.js"
     },
     "./ControlError": {
-      "types": "./src/ControlError.ts",
-      "vibelang-source": "./src/ControlError.ts",
+      "types": "./.vibe/declarations/src/ControlError.d.vibe.ts",
+      "vibelang-source": "./src/ControlError.vibe",
       "default": "./.vibelang/js/src/ControlError.js"
     },
     "./ControlExecutor": {
-      "types": "./src/ControlExecutor.ts",
-      "vibelang-source": "./src/ControlExecutor.ts",
+      "types": "./.vibe/declarations/src/ControlExecutor.d.vibe.ts",
+      "vibelang-source": "./src/ControlExecutor.vibe",
       "default": "./.vibelang/js/src/ControlExecutor.js"
     },
     "./ControlLive": {
@@ -201,7 +201,11 @@
     "docs/",
     ".vibelang/js",
     "src/ControlFacts.vibe",
-    "src/internal/planning.vibe"
+    "src/internal/planning.vibe",
+    "src/ApprovalAuthority.vibe",
+    "src/Control.vibe",
+    "src/ControlError.vibe",
+    "src/ControlExecutor.vibe"
   ],
   "publishConfig": {
     "access": "public",

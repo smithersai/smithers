@@ -14,8 +14,8 @@ import { Sha256 } from "@smthrs/crypto"
 import * as Sha256Digest from "@smthrs/crypto/Sha256"
 import type * as PersistedPlan from "@smthrs/plan/Plan"
 import { Effect } from "effect"
-import type { ApprovalTarget, PlanInput } from "../Control.ts"
-import { CodeDrift } from "../ControlError.ts"
+import type { ApprovalTarget, PlanInput } from "../Control.vibe"
+import { CodeDrift } from "../ControlError.vibe"
 import type {
   Envelope,
   FlowId,

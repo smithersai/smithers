@@ -22,7 +22,7 @@
 
 import { Effect, Result, Schema } from "effect"
 import { Base64Url, Hex } from "effect/encoding"
-import { Unauthorized } from "./ControlError.ts"
+import { Unauthorized } from "./ControlError.vibe"
 import { type Authenticator, bearerCredential, type Call } from "./ControlRpcs.vibe"
 import type { Principal } from "./ControlSchema.ts"
 
