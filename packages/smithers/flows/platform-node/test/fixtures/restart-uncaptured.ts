@@ -47,7 +47,7 @@ const flows = Interpreter.layer(flow).pipe(
         appendFileSync(join(directory, "effects.log"), "B\n")
         console.log("EFFECT=B")
       })
-      if (phase === "start") yield* Effect.never
+      if (phase === "start") return yield* Effect.never
       if (variant === "typed-catch") return yield* Effect.fail(new Recoverable({ message: "recover me" }))
       return value
     })

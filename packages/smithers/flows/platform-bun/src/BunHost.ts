@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Aggregate Bun Host bundle.
  *
@@ -35,7 +36,7 @@ import * as EgressHttpClient from "@smthrs/platform-node/EgressHttpClient"
 import * as HostLiveness from "@smthrs/platform-node/HostLiveness"
 import * as ProcessConfinement from "@smthrs/platform-node/ProcessConfinement"
 import * as ProcessReaper from "@smthrs/platform-node/ProcessReaper"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type { FileSystem } from "effect/FileSystem"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
@@ -249,7 +250,7 @@ export const layerHttpClient: Layer.Layer<HttpClient> = EgressHttpClient.layer(p
  * @since 1.0.0-rc.0
  * @slop
  */
-export const layer: Layer.Layer<BunHost | Crypto.Crypto> = Layer.mergeAll(
+export const layer: Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom)> = Layer.mergeAll(
   ProcessConfinement.layer(),
   platform,
   Layer.provide(BunChildProcessSpawner.layer, platform),
@@ -270,7 +271,7 @@ export const layer: Layer.Layer<BunHost | Crypto.Crypto> = Layer.mergeAll(
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto> => {
+export const layerAt = (root: string): Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom)> => {
   const repositoryRoot = absoluteRoot("layerAt", root)
   return Layer.mergeAll(
     ProcessConfinement.layer(),
@@ -301,7 +302,7 @@ export const layerAt = (root: string): Layer.Layer<BunHost | Crypto.Crypto> => {
  */
 export const layerContained = (
   options?: ContainedOptions
-): Layer.Layer<BunHost | Crypto.Crypto, never, ProcessLedger.ProcessLedger> => {
+): Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom), never, ProcessLedger.ProcessLedger> => {
   const spawner = Layer.provide(
     ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),
     Layer.provide(BunChildProcessSpawner.layer, platform)
@@ -330,7 +331,7 @@ export const layerContained = (
 export const layerContainedAt = (
   root: string,
   options?: ContainedOptions
-): Layer.Layer<BunHost | Crypto.Crypto, never, ProcessLedger.ProcessLedger> => {
+): Layer.Layer<BunHost | (EffectDigest.Digest | SecureRandom.SecureRandom), never, ProcessLedger.ProcessLedger> => {
   const repositoryRoot = absoluteRoot("layerContainedAt", root)
   const spawner = Layer.provide(
     ProcessReaper.layerSpawner({ graceMs: options?.graceMs }),

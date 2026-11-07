@@ -1,3 +1,4 @@
+import { expectTypeOf } from "vitest"
 /**
  * `SandboxedFlow` against `DirectorySandbox`: a real bundle, a real guest
  * process, real files, and every failure the host can name.
@@ -1339,8 +1340,8 @@ describe("SandboxedFlow.action on an engine", () => {
       Layer.provideMerge(NodeCrypto.layer)
     )
     const requiresNoServices = <A, E>(_effect: Effect.Effect<A, E>) => {}
-    // @ts-expect-error implementing RunSum must not discharge Other's requirement
-    requiresNoServices(Both.execute({ n: 1 }).pipe(Effect.provide(partial)))
+    const unmet = Both.execute({ n: 1 }).pipe(Effect.provide(partial))
+    expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof requiresNoServices>[0]>()
     requiresNoServices(Both.execute({ n: 1 }).pipe(Effect.provide(complete)))
     const defaultName: "flows/SandboxedFlow/fixtures/Sum/sandboxed" = RunSum.name
     const customName: "custom/OtherSum" = Other.name

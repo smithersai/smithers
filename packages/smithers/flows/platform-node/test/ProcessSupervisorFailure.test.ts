@@ -5,6 +5,7 @@ import { Cause, Effect, Exit, Fiber, Layer, Sink, Stream } from "effect"
 import type * as PlatformError from "effect/PlatformError"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, ExitCode, make, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { EventEmitter, once } from "node:events"
 import * as Fs from "node:fs"
 import * as Net from "node:net"
@@ -159,7 +160,7 @@ const fixture = (settings: Settings = {}) => {
   const spawn = (command: ChildProcess.StandardCommand) =>
     Effect.gen(function*() {
       commands.push(command)
-      const path = command.args.at(-2)!
+      const path = command.args.map(plainWord).at(-2)!
       paths.push(path)
       yield* Effect.addFinalizer(() =>
         Effect.sync(() => {
@@ -173,9 +174,12 @@ const fixture = (settings: Settings = {}) => {
       else {
         yield* Effect.tryPromise({
           try: async () => {
-            peer = Supervisor.connectOwner(path, command.options.env ?? {})
+            peer = Supervisor.connectOwner(path, plainEnvironment(command.options.env) ?? {})
             peer.on("error", () => {})
-            requestPeer = Supervisor.connectOwner(path.replace(/\/s$/, "/r"), command.options.env ?? {})
+            requestPeer = Supervisor.connectOwner(
+              path.replace(/\/s$/, "/r"),
+              plainEnvironment(command.options.env) ?? {}
+            )
             requestPeer.on("error", () => {})
             requestPeer.once("close", () => {
               if (settings.endOnDisconnect !== false) {
@@ -925,7 +929,7 @@ describe("Windows job ownership", () => {
           const second = yield* handle.unref
           yield* reref
           yield* second
-          yield* handle.unref
+          yield* Effect.asVoid(handle.unref)
           yield* handle.kill({ killSignal: "SIGINT", forceKillAfter: 0 })
         }))
       expect(Exit.isSuccess(result.outcome)).toBe(true)
@@ -935,3 +939,14 @@ describe("Windows job ownership", () => {
     }
   )
 })
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+const plainEnvironment = (
+  values: Readonly<Record<string, string | Redacted.Redacted<string> | undefined>> | undefined
+): Record<string, string | undefined> =>
+  Object.fromEntries(
+    Object.entries(values ?? {}).map(([key, value]) => [key, value === undefined ? undefined : plainWord(value)])
+  )

@@ -2,6 +2,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Effect, Exit, Sink, Stream } from "effect"
 import * as PlatformError from "effect/PlatformError"
 import { ExitCode, makeHandle, ProcessId } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { execFileSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { mkdtempSync, readFileSync, rmSync } from "node:fs"
@@ -209,7 +210,7 @@ describe("scoped transient processes", () => {
           spawn(prepared).pipe(Effect.tap((handle) =>
             Effect.sync(() => {
               ownerPid = handle.pid
-              ownerPath = prepared.args.at(-2) ?? ""
+              ownerPath = prepared.args.map(plainWord).at(-2) ?? ""
             })
           )))
       )
@@ -330,3 +331,7 @@ describe("scoped target status", () => {
       expect(yield* ScopedProcess.status(fakeHandle(Effect.fail(error)))).toEqual({ code: null, signal: "SIGINT" })
     }))
 })
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

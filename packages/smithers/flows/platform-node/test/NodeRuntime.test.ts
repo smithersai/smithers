@@ -1,3 +1,5 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
+import * as Hex from "effect/encoding/Hex"
 /**
  * The supported production composition, booted end to end over a real SQLite
  * file.
@@ -47,7 +49,7 @@ import {
 import * as KernelFileSystem from "@smthrs/kernel/FileSystem"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -103,16 +105,18 @@ const stubJj = Layer.succeed(
 )
 
 /** SHA-256 and random bytes from Node's built-in crypto service. */
-const hostCrypto: Layer.Layer<Crypto.Crypto> = Layer.succeed(
-  Crypto.Crypto,
-  Crypto.make({
-    randomBytes: (size) => webcrypto.getRandomValues(new Uint8Array(size)),
+const hostCrypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)> = Layer.succeed(
+  EffectDigest.Digest,
+  EffectDigest.Digest.of({
     digest: (algorithm, data) =>
       Effect.succeed(
-        new Uint8Array(createHash(algorithm.replace("-", "").toLowerCase()).update(data).digest())
-      )
+        new Uint8Array(createHash(algorithm.name.replace("-", "").toLowerCase()).update(data).digest())
+      ),
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
-)
+).pipe(Layer.merge(SecureRandom.layerWebCrypto))
 
 /**
  * The composition itself only needs to create the configured database parent.

@@ -13,11 +13,11 @@ npm install @smthrs/platform-node@next effect
 
 The `next` tag carries the 1.0 release candidates.
 
-`effect` is the one peer dependency, at exactly `4.0.5`, so your project
+`effect` is the one peer dependency, at exactly `4.1.1`, so your project
 picks its version rather than inheriting a second copy.
 
 `@effect/platform-node` and `@effect/platform-node-shared` are bundled
-privately, built from `effect@4.0.5`, so your project installs neither for
+privately, built from `effect@4.1.1`, so your project installs neither for
 this package. The upstream Node adapter uses a caret for its shared adapter,
 which otherwise permits a later shared adapter with an incompatible Effect
 peer. Bundling both keeps the Node implementation on one Effect release.

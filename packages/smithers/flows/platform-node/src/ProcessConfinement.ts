@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The kernel's `ProcessConfinement` seam, filled with this host's native
  * sandbox: bubblewrap on Linux, seatbelt on macOS.
@@ -65,8 +66,9 @@ const shellLine = (command: ChildProcess.StandardCommand): string => [command.co
  * spawned stage no longer asks for one.
  */
 const argvOf = (command: ChildProcess.StandardCommand): ReadonlyArray<string> => {
+  const args = command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg)
   const shell = command.options.shell
-  if (shell === undefined || shell === false) return [command.command, ...command.args]
+  if (shell === undefined || shell === false) return [command.command, ...args]
   return [shell === true ? "/bin/sh" : shell, "-c", shellLine(command)]
 }
 

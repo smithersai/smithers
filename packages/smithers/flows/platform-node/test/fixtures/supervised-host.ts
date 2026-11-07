@@ -70,7 +70,7 @@ await Effect.runPromise(
       graceMs
     }))
     // The scope stays open until the test ends this process the hard way.
-    yield* Effect.never
+    return yield* Effect.never
   }).pipe(
     Effect.provide(contained),
     Effect.provide(ProcessLedger.layerMemory({ hostId: token, ownerPid: process.pid })),

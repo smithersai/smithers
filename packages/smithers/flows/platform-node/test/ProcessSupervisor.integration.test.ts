@@ -7,6 +7,7 @@ import * as ProcessLedger from "@smthrs/kernel/ProcessLedger"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner, make as makeSpawner } from "effect/process/ChildProcessSpawner"
+import * as Redacted from "effect/Redacted"
 import { spawn, spawnSync } from "node:child_process"
 import { randomUUID } from "node:crypto"
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
@@ -70,8 +71,8 @@ describe.skipIf(process.platform === "win32")("prepared POSIX process contract",
       const installed = yield* Deferred.make<void>()
       const owner = yield* Effect.gen(function*() {
         yield* scopedSpy(() => vi.spyOn(Control.prototype, "write"))
-        yield* Deferred.succeed(installed, undefined)
-        yield* Effect.never
+        return yield* Deferred.succeed(installed, undefined)
+        return yield* Effect.never
       }).pipe(Effect.scoped, Effect.forkChild)
       yield* Deferred.await(installed)
       expect(vi.isMockFunction(Control.prototype.write)).toBe(true)
@@ -174,7 +175,7 @@ fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`
       const second = yield* prepared.handle.unref
       yield* first
       yield* second
-      yield* prepared.handle.unref
+      yield* Effect.asVoid(prepared.handle.unref)
       const refused = yield* Effect.exit(prepared.handle.kill({ killSignal: "SIGSTOP" }))
       expect(Exit.isFailure(refused)).toBe(true)
       expect(yield* prepared.handle.isRunning).toBe(true)
@@ -382,7 +383,7 @@ fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`
       expect(helper!.options).toMatchObject({ cwd: "/", extendEnv: false, shell: false })
       expect(helper!.options.env).not.toHaveProperty("NODE_OPTIONS")
       expect(helper!.options.env).not.toHaveProperty("BUN_OPTIONS")
-      expect(existsSync(helper!.args.at(-2)!)).toBe(false)
+      expect(existsSync(plainWord(helper!.args.at(-2)!))).toBe(false)
       yield* prepared.activate
       yield* prepared.activate
       expect(targetPidOf(prepared.handle)).not.toBe(prepared.handle.pid)
@@ -653,7 +654,7 @@ fs.writeFileSync(${JSON.stringify(ready)},'ready');setInterval(()=>{},1000)`
           const prepared = yield* ProcessReaper.processLifecycle(
             ChildProcess.make("/usr/bin/python3", ["-c", program, token], { forceKillAfter: 0 }),
             (owner) => {
-              const args = [...owner.args]
+              const args = [...owner.args.map(plainWord)]
               const programIndex = args.indexOf("-e") + 1
               // Trace native signal calls inside the real helper, forwarding
               // every call unchanged. Group KILL can end the helper before its
@@ -950,3 +951,7 @@ fs.writeFileSync(${JSON.stringify(pidFile)},String(process.pid));setInterval(()=
       }).pipe(Effect.provide(layers), Effect.scoped))
   }
 })
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

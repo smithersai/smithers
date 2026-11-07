@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * Native I/O ownership for transient commands and prepared process owners.
  * @since 1.0.0
@@ -139,15 +140,26 @@ export const spawn = (
             recordExit = resolve
           })
           const options = command.options
-          const child = Native.spawn(command.command, [...command.args], {
-            cwd: options.cwd,
-            env: options.extendEnv ? { ...process.env, ...options.env } : options.env,
-            shell: options.shell,
-            detached: options.detached ?? process.platform !== "win32",
-            windowsHide: options.windowsHide ?? true,
-            windowsVerbatimArguments,
-            stdio
-          })
+          const child = Native.spawn(
+            command.command,
+            command.args.map((arg) => Redacted.isRedacted(arg) ? Redacted.value(arg) : arg),
+            {
+              cwd: options.cwd,
+              env: options.env === undefined ? (options.extendEnv ? process.env : undefined) : {
+                ...(options.extendEnv ? process.env : {}),
+                ...Object.fromEntries(
+                  Object.entries(options.env).map((
+                    [name, value]
+                  ) => [name, Redacted.isRedacted(value) ? Redacted.value(value) : value])
+                )
+              },
+              shell: options.shell,
+              detached: options.detached ?? process.platform !== "win32",
+              windowsHide: options.windowsHide ?? true,
+              windowsVerbatimArguments,
+              stdio
+            }
+          )
           const state = {
             child,
             ready: ready.promise,

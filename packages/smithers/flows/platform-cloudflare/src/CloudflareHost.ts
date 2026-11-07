@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The closed Host surface for a Cloudflare Worker or Durable Object.
  *
@@ -16,7 +17,7 @@
 import { WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type { FileSystem } from "effect/FileSystem"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { HttpClient } from "effect/http/HttpClient"
@@ -38,7 +39,7 @@ export type CloudflareHost =
   | ChildProcessSpawner
   | Jj.Jj
   | HttpClient
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | OwnerIdentity.OwnerIdentity
 
 /** Effect's fetch client, told never to follow a redirect on its own. */

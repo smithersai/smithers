@@ -368,7 +368,7 @@ describe("native pipe adapter", () => {
         expect(yield* handle.isRunning).toBe(true)
         // Refuse the raw finalizer rather than spending another identical
         // timeout; the managed lifecycle owns that refusal in production.
-        yield* handle.unref
+        yield* Effect.asVoid(handle.unref)
         return error
       })))
       expect(result.reason.method).toBe("kill")

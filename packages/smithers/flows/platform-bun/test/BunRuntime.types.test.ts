@@ -1,5 +1,6 @@
 import type * as KernelJj from "@smthrs/kernel/Jj"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
@@ -31,13 +32,13 @@ type _BunCompositionRootsAreComplete = [
   Expect<
     EffectRequirementsAre<
       ReturnType<typeof BunRuntime.make<never, never, never, never, never, never, never>>,
-      Crypto.Crypto | FileSystem.FileSystem | KernelJj.Jj | Scope.Scope
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | KernelJj.Jj | Scope.Scope
     >
   >,
   Expect<
     LayerRequirementsAre<
       ReturnType<typeof BunRuntime.layer<never, never, never, never, never, never, never>>,
-      Crypto.Crypto | FileSystem.FileSystem | KernelJj.Jj
+      (EffectDigest.Digest | SecureRandom.SecureRandom) | FileSystem.FileSystem | KernelJj.Jj
     >
   >,
   Expect<Complete<ReturnType<typeof BunRuntime.layerHost<never, never, never>>>>

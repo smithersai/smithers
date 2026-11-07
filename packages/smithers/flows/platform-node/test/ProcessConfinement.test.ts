@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /** Fake platform facts exercise foreign argv; all preparation uses a real filesystem. */
 import * as KernelConfinement from "@smthrs/kernel/ProcessConfinement"
 import { Deferred, Effect, Fiber, Logger, type Scope, Stream } from "effect"
@@ -142,7 +143,7 @@ describe("native ProcessConfinement", () => {
     const target = shell === true || typeof shell === "string"
       ? [shell === true ? "/bin/sh" : shell, "-c", "printf hello > out.txt"]
       : ["printf", "hello", ">", "out.txt"]
-    expect(wrapped.args.slice(-target.length)).toEqual(target)
+    expect(wrapped.args.map(plainWord).slice(-target.length)).toEqual(target)
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
 
@@ -165,10 +166,10 @@ describe("native ProcessConfinement", () => {
     for (const key of ["cwd", "stdin", "stdout", "stderr", "additionalFds", "detached", "killSignal"] as const) {
       expect(wrapped.options[key]).toBe(command.options[key])
     }
-    expect(wrapped.options.env?.["KEEP"]).toBeUndefined()
-    expect(wrapped.options.env?.["OMIT"]).toBeUndefined()
-    expect(wrapped.options.env?.["HOME"]).toContain("smithers-confinement-")
-    expect(wrapped.options.env?.["HOME"]).not.toBe(process.env.HOME)
+    expect(plainEnvironment(wrapped.options.env)?.["KEEP"]).toBeUndefined()
+    expect(plainEnvironment(wrapped.options.env)?.["OMIT"]).toBeUndefined()
+    expect(plainEnvironment(wrapped.options.env)?.["HOME"]).toContain("smithers-confinement-")
+    expect(plainEnvironment(wrapped.options.env)?.["HOME"]).not.toBe(process.env.HOME)
   })
 
   it("inherits the host environment only inside the sandbox", async () => {
@@ -177,8 +178,8 @@ describe("native ProcessConfinement", () => {
     await run(Effect.gen(function*() {
       const wrapped = yield* ProcessConfinement.make(f).confine(ChildProcess.make("fixture"), f.profile)
       expect(wrapped.options.extendEnv).toBe(false)
-      expect(wrapped.options.env?.["SMITHERS_ENV_TEST"]).toBeUndefined()
-      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
+      expect(plainEnvironment(wrapped.options.env)?.["SMITHERS_ENV_TEST"]).toBeUndefined()
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       const lines = NodeFs.readFileSync(script, "utf8").split("\n")
       expect(lines.some((line) => line === "export SMITHERS_ENV_TEST='inherited fixture'")).toBe(true)
     }))
@@ -227,8 +228,8 @@ describe("native ProcessConfinement", () => {
         reads: ["../outside", "missing", "readable.txt"]
       })
     )
-    expect(wrapped.args[1]).toContain(JSON.stringify(NodePath.join(f.workspaceRoot, "readable.txt")))
-    expect(wrapped.args[1]).not.toContain(NodePath.join(f.base, "outside"))
+    expect(wrapped.args.map(plainWord)[1]).toContain(JSON.stringify(NodePath.join(f.workspaceRoot, "readable.txt")))
+    expect(wrapped.args.map(plainWord)[1]).not.toContain(NodePath.join(f.base, "outside"))
   })
 
   it("refuses an internal read alias without exposing the target", async () => {
@@ -258,9 +259,9 @@ describe("native ProcessConfinement", () => {
         ChildProcess.make("fixture"),
         f.profile
       )
-      const home = wrapped.options.env?.["HOME"]!
+      const home = plainEnvironment(wrapped.options.env)?.["HOME"]!
       expect(NodeFs.realpathSync(home).startsWith(f.temporaryDirectory + NodePath.sep)).toBe(true)
-      expect(wrapped.args[1]).not.toContain(alias)
+      expect(wrapped.args.map(plainWord)[1]).not.toContain(alias)
       expect(NodeFs.statSync(home).isDirectory()).toBe(true)
     }))
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
@@ -292,10 +293,10 @@ describe("native ProcessConfinement", () => {
         writes: ["out/deep"]
       })
       expect(NodeFs.statSync(path).isDirectory()).toBe(true)
-      const home = wrapped.options.env?.["HOME"]!
+      const home = plainEnvironment(wrapped.options.env)?.["HOME"]!
       expect(NodeFs.statSync(home).isDirectory()).toBe(true)
       expect(NodeFs.readdirSync(f.temporaryDirectory)).toHaveLength(1)
-      expect(wrapped.args[1]).toContain(`(subpath ${JSON.stringify(path)})`)
+      expect(wrapped.args.map(plainWord)[1]).toContain(`(subpath ${JSON.stringify(path)})`)
     }))
     expect(NodeFs.readdirSync(f.workspaceRoot)).toEqual(["out"])
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
@@ -503,12 +504,12 @@ describe("Linux native network seccomp", () => {
           const command = ChildProcess.make("fixture", [], { additionalFds: { fd3, fd4 } })
           const wrapped = yield* service.confine(command, f.profile)
           expect(wrapped.command).toBe("/bin/sh")
-          const seccomp = wrapped.args.indexOf("--seccomp")
-          expect(wrapped.args.slice(seccomp, seccomp + 2)).toEqual(["--seccomp", "5"])
+          const seccomp = wrapped.args.map(plainWord).indexOf("--seccomp")
+          expect(wrapped.args.map(plainWord).slice(seccomp, seccomp + 2)).toEqual(["--seccomp", "5"])
           expect(wrapped.options.additionalFds?.fd3).toBe(fd3)
           expect(wrapped.options.additionalFds?.fd4).toBe(fd4)
           expect(wrapped.options.additionalFds?.fd5).toBeUndefined()
-          const filter = wrapped.args[3]!
+          const filter = wrapped.args.map(plainWord)[3]!
           const bytes = NodeFs.readFileSync(filter)
           assertPrivateFile(filter)
           expect(evaluateFilter(bytes, audit, syscall, 1)).toBe(0x00050001)
@@ -525,8 +526,8 @@ describe("Linux native network seccomp", () => {
           expect(evaluateFilter(bytes, audit ^ 1, syscall, 1)).toBe(0x80000000)
           expect(evaluateFilter(bytes, audit, syscall + 0x40000000, 1)).toBe(0x80000000)
           const open = yield* service.confine(command, { ...f.profile, network: "open" })
-          expect(open.args).toContain("--seccomp")
-          const openBytes = NodeFs.readFileSync(open.args[3]!)
+          expect(open.args.map(plainWord)).toContain("--seccomp")
+          const openBytes = NodeFs.readFileSync(open.args.map(plainWord)[3]!)
           expect(evaluateFilter(openBytes, audit, syscall, 1)).toBe(0x00050001)
           for (const domain of [2, 10]) expect(evaluateFilter(openBytes, audit, syscall, domain)).toBe(0x7fff0000)
           expect(evaluateFilter(openBytes, audit, socketpair, 1)).toBe(0x7fff0000)
@@ -585,11 +586,11 @@ describe("target environment isolation", () => {
         ChildProcess.make("fixture", [], { env, extendEnv }),
         f.profile
       )
-      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents.includes("export SMITHERS_HOST_SECRET='inherited private fixture'")).toBe(inherits)
       expect(contents.includes("export CALLER='named value'")).toBe(env !== undefined)
-      expect(wrapped.options.env?.SMITHERS_HOST_SECRET).toBeUndefined()
+      expect(plainEnvironment(wrapped.options.env)?.SMITHERS_HOST_SECRET).toBeUndefined()
     }))
   })
 
@@ -601,7 +602,7 @@ describe("target environment isolation", () => {
         ChildProcess.make("fixture", [], { env: { SMITHERS_ENV_TEST: undefined }, extendEnv: true }),
         f.profile
       )
-      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       expect(NodeFs.readFileSync(script, "utf8")).not.toContain("export SMITHERS_ENV_TEST=")
     }))
   })
@@ -612,7 +613,7 @@ describe("target environment isolation", () => {
     vi.stubEnv("SMITHERS_ENV_TEST", "ordinary inherited value")
     await run(Effect.gen(function*() {
       const wrapped = yield* ProcessConfinement.make(f).confine(ChildProcess.make("fixture"), f.profile)
-      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents).not.toContain("BASH_FUNC_which")
       expect(contents).toContain("export SMITHERS_ENV_TEST='ordinary inherited value'")
@@ -636,16 +637,16 @@ describe("target environment isolation", () => {
       )
       expect(wrapped.options.extendEnv).toBe(false)
       for (const [name, value] of Object.entries(env)) {
-        expect(wrapped.options.env?.[name]).toBeUndefined()
-        expect(wrapped.args.some((arg) => arg.includes(value))).toBe(false)
+        expect(plainEnvironment(wrapped.options.env)?.[name]).toBeUndefined()
+        expect(wrapped.args.map(plainWord).some((arg) => arg.includes(value))).toBe(false)
       }
-      const script = wrapped.args.find((arg) => NodePath.basename(arg) === "environment.sh")!
+      const script = wrapped.args.map(plainWord).find((arg) => NodePath.basename(arg) === "environment.sh")!
       assertPrivateFile(script)
       const contents = NodeFs.readFileSync(script, "utf8")
       expect(contents).toContain("export LD_PRELOAD='/synthetic/fixture.so'")
       expect(contents).toContain("export KEEP='quoted '\\'' value")
       expect(contents).toContain("exec \"$@\"")
-      expect(wrapped.args[1]).toContain(JSON.stringify(script))
+      expect(wrapped.args.map(plainWord)[1]).toContain(JSON.stringify(script))
     }))
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
@@ -678,3 +679,14 @@ describe("target environment isolation", () => {
     expect(NodeFs.readdirSync(f.temporaryDirectory)).toEqual([])
   })
 })
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value
+
+const plainEnvironment = (
+  values: Readonly<Record<string, string | Redacted.Redacted<string> | undefined>> | undefined
+): Record<string, string | undefined> =>
+  Object.fromEntries(
+    Object.entries(values ?? {}).map(([key, value]) => [key, value === undefined ? undefined : plainWord(value)])
+  )

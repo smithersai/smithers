@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The native Node and Bun lifecycle over the shared, injected durable runtime.
  *
@@ -35,7 +36,7 @@ import {
 import type { Ownership } from "@smthrs/run-store"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
@@ -98,7 +99,7 @@ export interface Platform {
   readonly name: string
   readonly database: (filename: string) => Layer.Layer<SqlClient.SqlClient>
   readonly host: Pick<typeof NodeHost, "layerAt" | "layerContainedAt">
-  readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
 }
 
 const RuntimeConfigurationError = Runtime.RuntimeConfigurationError
