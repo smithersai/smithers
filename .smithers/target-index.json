@@ -50944,6 +50944,45 @@
     }
   },
   {
+    "label": "//packages/repo-targets:packageOutputRoutes",
+    "package": "packages/repo-targets",
+    "name": "packageOutputRoutes",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/package-output-routes.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/build-library.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/scripts/private-effect-adapters.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/corpus/smithers-emitted-routes.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/repo-targets:repositoryInputs"
+    ],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/repo-targets:privateEffectAdapters",
     "package": "packages/repo-targets",
     "name": "privateEffectAdapters",

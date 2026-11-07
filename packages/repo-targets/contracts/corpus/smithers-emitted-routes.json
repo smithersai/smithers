@@ -1,0 +1,16 @@
+{
+  "paths": [
+    "src/Flow/Encoded",
+    "src/user",
+    "deep/nested/codec",
+    "名前/模块"
+  ],
+  "extensions": [
+    ".js",
+    ".mjs",
+    ".cjs",
+    ".d.ts",
+    ".d.mts",
+    ".d.cts"
+  ]
+}

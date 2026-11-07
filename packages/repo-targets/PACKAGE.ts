@@ -934,4 +934,21 @@ const workerVibePolicy = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+/**
+ * Private migration routes must not escape into published package output.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const packageOutputRoutes = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/package-output-routes.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/repo-targets/scripts/build-library.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/build-library.d.mts"),
+    Smithers.file("//packages/repo-targets/scripts/private-effect-adapters.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/corpus/smithers-emitted-routes.json")
+  ],
+  deps: [repositoryInputs]
+})
+
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, packageOutputRoutes, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
