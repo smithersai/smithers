@@ -249,6 +249,7 @@ it("reveals protected arguments only when rendering for an interpreter", () => {
   const standard = ChildProcess.make("printf", [Redacted.make("secret value")])
   expect(CommandLine.render(standard)).toBe("printf '<redacted>'")
   expect(CommandLine.renderForExecution(standard)).toBe("printf 'secret value'")
+  expect(CommandLine.renderForExecution(ChildProcess.make("printf", ["plain value"]))).toBe("printf 'plain value'")
   expect(CommandLine.renderForExecution(ChildProcess.make("echo", [Redacted.make("a b")], { shell: true })))
     .toBe("echo a b")
   expect(CommandLine.renderForExecution(ChildProcess.make("echo", [Redacted.make("a b")], { shell: "/bin/sh" })))

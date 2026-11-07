@@ -1405,10 +1405,14 @@ export const layer: Layer.Layer<
           })
         ),
         lstat: Effect.fn("FileSystem.lstat")((value) =>
-          atomicOne("fs:read", value, "stat", {
-            operation: "stat",
-            path: normalize(value)
-          })
+          // Descriptor-relative stat never follows links and refuses them.
+          // An isolated volume supports links, so use its actual lstat.
+          atomic?.isolated === undefined
+            ? atomicOne("fs:read", value, "lstat", {
+              operation: "stat",
+              path: normalize(value)
+            })
+            : isolatedOne("fs:read", value, "lstat", (host) => host.lstat(normalize(value)))
         ),
         symlink: Effect.fn("FileSystem.symlink")((from, to) =>
           isolatedOne("fs:write", to, "symlink", (host) => host.symlink(from, normalize(to)))

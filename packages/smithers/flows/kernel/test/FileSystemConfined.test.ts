@@ -42,7 +42,7 @@ const recordingHost = (ino: Option.Option<number> = Option.some(42)) => {
         exists: true,
         readFile: new Uint8Array([1]),
         readFileString: "text",
-        readDirectory: [],
+        readDirectory: ["a.txt"],
         stat: { type: "File" },
         realPath: "/canonical/x",
         readLink: "x",
@@ -66,8 +66,8 @@ const exercise = (fs: EffectFileSystem.FileSystem) =>
     yield* fs.makeDirectory("dir/sub", { recursive: true })
     yield* fs.remove("dir/a.txt", { force: true })
     yield* fs.rename("dir/b.txt", "dir/c.txt")
-    yield* fs.readDirectory("dir")
-    yield* fs.readDirectoryEntries("dir")
+    expect(yield* fs.readDirectory("dir")).toEqual(["a.txt"])
+    expect(yield* fs.readDirectoryEntries("dir")).toEqual([{ name: "a.txt", type: "Unknown" }])
     yield* fs.stat("dir/c.txt")
     yield* fs.lstat("dir/c.txt")
     yield* fs.chmod("dir/c.txt", 0o600)
