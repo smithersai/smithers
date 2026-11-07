@@ -16,8 +16,8 @@ import * as SqlClient from "effect/sql/SqlClient"
  * @category migrations
  * @since 1.0.0-rc.0
  */
-export const initialize = Effect.gen(function*() {
-  const sql = yield* SqlClient.SqlClient
+export const initialize = effect {
+  const sql = try SqlClient.SqlClient
   // A read-only observer reads the schema it finds and installs nothing.
   if (Dialect.isReadOnly(sql)) return
   const create = sql`
@@ -41,7 +41,7 @@ export const initialize = Effect.gen(function*() {
   const installed = sql<{ readonly found: boolean }>`
     SELECT to_regclass('flows_journal_generations') IS NOT NULL AS found
   `
-  yield* sql.onDialectOrElse({
+  try sql.onDialectOrElse({
     pg: () =>
       Effect.flatMap(
         installed,
@@ -49,7 +49,7 @@ export const initialize = Effect.gen(function*() {
       ),
     orElse: () => Effect.asVoid(create)
   })
-})
+}
 
 const journals = new WeakMap<SqlClient.SqlClient, Set<(runIds: ReadonlyArray<string>) => void>>()
 
@@ -60,23 +60,24 @@ const journals = new WeakMap<SqlClient.SqlClient, Set<(runIds: ReadonlyArray<str
  * @category lifecycle
  * @since 1.0.0-rc.0
  */
-export const onTruncate = (forget: (runIds: ReadonlyArray<string>) => void) =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
-    let listeners = journals.get(sql)
-    if (listeners === undefined) {
-      listeners = new Set()
-      journals.set(sql, listeners)
-    }
-    const registered = listeners
-    yield* Effect.acquireRelease(
-      Effect.sync(() => registered.add(forget)),
-      () =>
-        Effect.sync(() => {
-          registered.delete(forget)
-        })
-    )
-  })
+export const onTruncate = effect (forget: (runIds: ReadonlyArray<string>) => void) => {
+  const sql = try SqlClient.SqlClient
+  let listeners = journals.get(sql)
+  if (listeners === undefined) {
+    listeners = new Set()
+    journals.set(sql, listeners)
+  }
+  const registered = listeners
+  try Effect.acquireRelease(
+    effect {
+      return registered.add(forget)
+    },
+    () =>
+      Effect.sync(() => {
+        registered.delete(forget)
+      })
+  )
+}
 
 /**
  * Forgets cached identities and allocation floors after a committed truncation.
@@ -86,10 +87,9 @@ export const onTruncate = (forget: (runIds: ReadonlyArray<string>) => void) =>
  * @category lifecycle
  * @since 1.0.0-rc.0
  */
-export const forget = (runIds: ReadonlyArray<string>) =>
-  Effect.gen(function*() {
-    const sql = yield* SqlClient.SqlClient
-    yield* Effect.sync(() => {
-      for (const invalidate of journals.get(sql) ?? []) invalidate(runIds)
-    })
+export const forget = effect (runIds: ReadonlyArray<string>) => {
+  const sql = try SqlClient.SqlClient
+  try Effect.sync(() => {
+    for (const invalidate of journals.get(sql) ?? []) invalidate(runIds)
   })
+}

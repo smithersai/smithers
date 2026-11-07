@@ -63,8 +63,8 @@
       "default": "./.vibelang/js/src/JournalMetrics.js"
     },
     "./Migrations": {
-      "types": "./src/Migrations.ts",
-      "vibelang-source": "./src/Migrations.ts",
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
+      "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
     "./OwnerId": {
@@ -78,13 +78,13 @@
       "default": "./.vibelang/js/src/Projection.js"
     },
     "./RedactedLogger": {
-      "types": "./src/RedactedLogger.ts",
-      "vibelang-source": "./src/RedactedLogger.ts",
+      "types": "./.vibe/declarations/src/RedactedLogger.d.vibe.ts",
+      "vibelang-source": "./src/RedactedLogger.vibe",
       "default": "./.vibelang/js/src/RedactedLogger.js"
     },
     "./Redaction": {
-      "types": "./src/Redaction.ts",
-      "vibelang-source": "./src/Redaction.ts",
+      "types": "./.vibe/declarations/src/Redaction.d.vibe.ts",
+      "vibelang-source": "./src/Redaction.vibe",
       "default": "./.vibelang/js/src/Redaction.js"
     },
     "./SqlJournal": {
@@ -102,15 +102,19 @@
       "vibelang-source": "./src/index.ts",
       "default": "./.vibelang/js/src/index.js"
     },
-    "./test/Notifying": "./src/test/Notifying.ts",
+    "./test/Notifying": {
+      "types": "./src/test/Notifying.ts",
+      "vibelang-source": "./src/test/Notifying.ts",
+      "default": "./.vibelang/js/src/test/Notifying.js"
+    },
     "./test/TestJournal": {
       "types": "./src/test/TestJournal.ts",
       "vibelang-source": "./src/test/TestJournal.ts",
       "default": "./.vibelang/js/src/test/TestJournal.js"
     },
     "./JournalGeneration": {
-      "types": "./src/JournalGeneration.ts",
-      "vibelang-source": "./src/JournalGeneration.ts",
+      "types": "./.vibe/declarations/src/JournalGeneration.d.vibe.ts",
+      "vibelang-source": "./src/JournalGeneration.vibe",
       "default": "./.vibelang/js/src/JournalGeneration.js"
     },
     "./Consensus": {
@@ -135,7 +139,11 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/JournalGeneration.vibe",
+    "src/Migrations.vibe",
+    "src/RedactedLogger.vibe",
+    "src/Redaction.vibe"
   ],
   "publishConfig": {
     "access": "public",

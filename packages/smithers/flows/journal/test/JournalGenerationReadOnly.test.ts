@@ -6,7 +6,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
-import * as JournalGeneration from "../src/JournalGeneration.ts"
+import * as JournalGeneration from "../src/JournalGeneration.vibe"
 
 it("installs nothing over a read-only client", async () => {
   const root = mkdtempSync(join(tmpdir(), "journal-generation-readonly-"))

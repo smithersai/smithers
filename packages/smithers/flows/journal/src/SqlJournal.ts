@@ -68,11 +68,11 @@ import {
   type SourceId,
   type SourceSeq
 } from "./JournalEvent.vibe"
-import * as JournalGeneration from "./JournalGeneration.ts"
+import * as JournalGeneration from "./JournalGeneration.vibe"
 import * as JournalMetrics from "./JournalMetrics.vibe"
 import { OwnerId } from "./OwnerId.vibe"
 import type { Projection } from "./Projection.vibe"
-import * as Redaction from "./Redaction.ts"
+import * as Redaction from "./Redaction.vibe"
 import * as SqlConsensus from "./SqlConsensus.ts"
 
 /** JSON text carrying an arbitrary decoded value. */

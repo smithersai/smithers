@@ -27,7 +27,7 @@ import { TestClock } from "effect/testing"
 import { vi } from "vitest"
 import { Journal, type Service as JournalService } from "../src/Journal.ts"
 import { Input, type RunId, type Seq, type SourceId, type SourceSeq } from "../src/JournalEvent.vibe"
-import * as Migrations from "../src/Migrations.ts"
+import * as Migrations from "../src/Migrations.vibe"
 import * as SqlJournal from "../src/SqlJournal.ts"
 import * as Leases from "./fixtures/leases.ts"
 

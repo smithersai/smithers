@@ -4,7 +4,7 @@ import * as Effect from "effect/Effect"
 import * as Logger from "effect/Logger"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
-import * as Redaction from "../src/Redaction.ts"
+import * as Redaction from "../src/Redaction.vibe"
 import * as TelemetryLog from "../src/TelemetryLog.vibe"
 
 const {

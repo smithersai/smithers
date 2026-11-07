@@ -82,13 +82,13 @@ export * as JournalMetrics from "./JournalMetrics.vibe"
  * @category redaction
  * @since 0.1.0
  */
-export * as Redaction from "./Redaction.ts"
+export * as Redaction from "./Redaction.vibe"
 
 /**
  * @category redaction
  * @since 0.1.0
  */
-export * as RedactedLogger from "./RedactedLogger.ts"
+export * as RedactedLogger from "./RedactedLogger.vibe"
 
 /**
  * @category redaction
@@ -112,4 +112,4 @@ export * as OwnerId from "./OwnerId.vibe"
  * @category migrations
  * @since 0.1.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"

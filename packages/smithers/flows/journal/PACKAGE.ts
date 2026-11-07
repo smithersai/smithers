@@ -83,7 +83,7 @@ const securityReview = Smithers.SecurityReview({
         "A redact branch (toJSON, binary views, proxies, __proto__ keys, array species, symbols, functions) that returns caller text without running the rules over it.",
         "redactJsonString returning the original parsed text when the redactor throws."
       ],
-      paths: ["src/Redaction.ts"]
+      paths: ["src/Redaction.vibe"]
     },
     {
       id: "logger-redaction",
@@ -97,7 +97,7 @@ const securityReview = Smithers.SecurityReview({
         "A fallback path (catch block, unrenderable marker) that prints String(value) of the unredacted input.",
         "A Cause reason, StackTrace, or InterruptorStackTrace annotation forwarded to the wrapped logger without redaction."
       ],
-      paths: ["src/RedactedLogger.ts"]
+      paths: ["src/RedactedLogger.vibe"]
     },
     {
       id: "owner-fence",
@@ -121,7 +121,7 @@ const securityReview = Smithers.SecurityReview({
         "A Dialect helper (indexHint, greatest) fed a caller-controlled string rather than a constant.",
         "A LIMIT or cursor value that is not validated as a bounded safe integer before it reaches the query."
       ],
-      paths: ["src/SqlJournal.ts", "src/migrations/**", "src/Migrations.ts"]
+      paths: ["src/SqlJournal.ts", "src/migrations/**", "src/Migrations.vibe"]
     },
     {
       id: "run-isolation",
@@ -134,7 +134,7 @@ const securityReview = Smithers.SecurityReview({
         "An identifier schema that stops rejecting lone surrogates, NUL, or over-length text, letting two decoded ids land on one stored key.",
         "A sourceEvents or sourceSequences cache key built without the run id, or a JournalGeneration.forget that invalidates runs it was not given."
       ],
-      paths: ["src/SqlJournal.ts", "src/JournalEvent.vibe", "src/JournalGeneration.ts", "src/migrations/**"]
+      paths: ["src/SqlJournal.ts", "src/JournalEvent.vibe", "src/JournalGeneration.vibe", "src/migrations/**"]
     },
     {
       id: "journal-resource-bounds",
@@ -146,7 +146,7 @@ const securityReview = Smithers.SecurityReview({
         "A redact or canonicalize walk without the maxDepth cap that recurses on a caller value.",
         "sourceEvents or sourceSequences caches that grow without eviction or truncation cleanup."
       ],
-      paths: ["src/SqlJournal.ts", "src/Redaction.ts"]
+      paths: ["src/SqlJournal.ts", "src/Redaction.vibe"]
     },
     {
       id: "compaction-integrity",
@@ -158,7 +158,7 @@ const securityReview = Smithers.SecurityReview({
         "Compaction that deletes events without recording the producer identities in the dedup table first.",
         "A checkpoint accepted for a seq with no committed entry or at or below the compaction floor."
       ],
-      paths: ["src/SqlJournal.ts", "src/JournalGeneration.ts", "src/migrations/**"]
+      paths: ["src/SqlJournal.ts", "src/JournalGeneration.vibe", "src/migrations/**"]
     },
     {
       id: "docs-redaction-claims",
