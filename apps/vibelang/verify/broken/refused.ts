@@ -353,6 +353,17 @@ export function failPost(client: Client, clientId: string, reason: string): Clie
   }
 }
 
+/** Retry the same pending post identity, preserving the optimistic message until confirmation. */
+//@ verify
+//@ ensures \result.conversation == client.conversation && \result.gap == client.gap
+//@ ensures \result.pending.length == client.pending.length
+//@ ensures forall(i, 0 <= i && i < client.pending.length ==> \result.pending[i].clientId == client.pending[i].clientId && \result.pending[i].text == client.pending[i].text)
+//@ ensures forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != clientId ==> \result.pending[i] == client.pending[i])
+//@ ensures forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId == clientId ==> \result.pending[i].error == "")
+export function retryPost(client: Client, clientId: string): Client {
+  return { ...client, pending: client.pending.map((waiting) => waiting.clientId === clientId ? { ...waiting, error: "" } : waiting) }
+}
+
 /**
  * The client after an event arrives. One it already has changes nothing; one past the next marks a gap and changes
  * nothing else; the next one is applied, and a post it confirms leaves `pending`.

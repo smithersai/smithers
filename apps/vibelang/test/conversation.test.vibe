@@ -15,6 +15,7 @@ import {
   post,
   receive,
   resume,
+  retryPost,
 } from "../src/core/conversation.ts"
 
 // Small domains, so ids, client ids and texts collide often.
@@ -270,6 +271,13 @@ describe("a client", () => {
     const confirmed = receive(sent, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
     expect(confirmed.pending).toEqual([])
     expect(confirmed.conversation.entries[0]!.text).toBe("hi")
+  })
+
+  it("retries a failed pending post without changing its id, text or its neighbors", () => {
+    const client = failPost(post(post(newClient, "a", "one"), "b", "two"), "a", "offline")
+    const retry = retryPost(client, "a")
+    expect(retry).toEqual({ ...client, pending: [{ clientId: "a", text: "one", error: "" }, client.pending[1]] })
+    expect(retryPost(client, "missing")).toEqual(client)
   })
 
   it("marks a gap once and closes it on resume", () => {

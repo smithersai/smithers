@@ -11,12 +11,12 @@ const style = document.createElement("style")
 style.textContent = stylesheet()
 document.head.append(style)
 const observation = trace()
-let model = init({ session: "browser", mode: "mock", name: "You" }).model
+let model = init({ session: "browser", mode: "mock", name: "Guest" }).model
 const requestedFault = new URLSearchParams(location.search).get("fault")
-const fault = requestedFault === "end" ? "end" : requestedFault === "disconnect" ? "disconnect" : "drop"
+const fault = requestedFault === "refuse" ? "refuse" : requestedFault === "end" ? "end" : requestedFault === "disconnect" ? "disconnect" : "drop"
 const program = application(document.getElementById("root")!, faultyFactory(fault, observation), value => { model = value })
 window.recovery = {
   snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map(event => event.seq) }),
   canonical: () => Effect.runPromise(canonical(observation)),
 }
-Runtime.run(program, { flags: Effect.succeed({ session: "browser", mode: "mock", name: "You" }) })
+Runtime.run(program, { flags: Effect.succeed({ session: "browser", mode: "mock", name: "Guest" }) })

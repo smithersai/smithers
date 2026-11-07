@@ -19,7 +19,6 @@ const home: Model = {
   epoch: 0,
   from: 0,
   following: true,
-  followIntent: 0,
   answer: "",
   announced: 0,
   connection: "",
@@ -102,10 +101,10 @@ describe("the chat", () => {
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "r1", text: "partial" } })),
       expect(role("status", { name: "Answer" })).toHaveText(""),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFailed", seq: 4, id: "r1", reason: "interrupted" } })),
-      expect(role("status", { name: "Answer" })).toHaveText("Answer 1: Answer failed: interrupted"),
+      expect(role("status", { name: "Answer" })).toHaveText("Answer 1: Answer failed"),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFailed", seq: 4, id: "r1", reason: "interrupted" } })),
       Command.expectNone(),
-      expect(role("status", { name: "Answer" })).toHaveText("Answer 1: Answer failed: interrupted"),
+      expect(role("status", { name: "Answer" })).toHaveText("Answer 1: Answer failed"),
     )
   })
 
@@ -132,7 +131,13 @@ describe("the chat", () => {
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
       Subscription.emit(Message.FailedPost({ clientId: "s1-1", reason: "too-long" })),
-      expect(text("too-long")).toExist(),
+      expect(text("too-long")).toBeAbsent(),
+      expect(text("Message too long")).toExist(),
+      click(role("button", { name: "Retry" })),
+      Command.expectExact(PostMessage({ conversation: HOME_CONVERSATION, clientId: "s1-1", name: "Ada", text: "hi" }), FocusComposer({})),
+      expect(text("Message too long")).toBeAbsent(),
+      Command.resolve(PostMessage, Message.SucceededPost({ clientId: "s1-1" })),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
     )
   })
 
@@ -159,5 +164,25 @@ describe("the chat", () => {
       click(role("button", { name: "Chat" })),
       expect(text("hi")).toExist(),
     )
+  })
+})
+
+describe("product language and authors", () => {
+  test("labels this tab's posts You and keeps another visitor's neutral name", () => {
+    scene({ update, view }, given({ ...home, surface: "chat", sent: 1 }),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "s1-1", name: "Guest", text: "mine" } })),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 2, id: "m2", clientId: "other-1", name: "Guest", text: "theirs" } })),
+      expect(text("You")).toExist(), expect(text("Guest")).toExist())
+  })
+  for (const [reason, label] of [["empty", "Empty message"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["Factory closed", "Send failed"]]) {
+    test(`a refused post uses product words for ${reason}`, () => {
+      scene({ update, view }, given({ ...home, surface: "chat", client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: reason! }] } }),
+        expect(text(label!)).toExist(), expect(role("button", { name: "Retry" })).toExist())
+    })
+  }
+  test("has no mock explanation tooltip or repeated answer-failure sentence", () => {
+    scene({ update, view }, given({ ...home, surface: "chat", client: { ...newClient, conversation: { ...newClient.conversation, agent: "failed" } } }),
+      expect(text("Mock")).not.toHaveAttr("title", "No backend or model: answers are scripted"),
+      expect(text("The last answer failed")).toBeAbsent())
   })
 })

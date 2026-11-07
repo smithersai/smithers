@@ -64,9 +64,11 @@ for (const earlier of ["skipped", "later"] as const) {
       read: () => succeed({ seq: state.seq, entries: state.entries }),
       events: () => Stream.fromIterable(log),
     })
-    const actual = try Effect.provide(effect {
-      return Ask.run({ text: "my question" }) catch (error) => ({ text: error.message, events: [] })
-    }, layer)
+    const actual = try effect {
+      provide layer {
+        return Ask.run({ text: "my question" }) catch (error) => ({ text: error.message, events: [] })
+      }
+    }
     try Effect.try(() => {
       expect(actual.text).toBe("my answer")
       expect(actual.events).toEqual([2, 3, 4, 5])

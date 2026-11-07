@@ -44,7 +44,7 @@ function top(model: Model, h: H): Html {
   return h.header([h.Class("vl-top")], [
     h.button([h.Class("vl-home"), h.Type("button"), h.AriaLabel("Home"), h.OnClick(Message.ClickedSplash())], [logo(h)]),
     h.nav([h.Class("vl-nav")], [
-      ...(model.mode === "mock" ? [h.span([h.Class("vl-pill"), h.Title("No backend or model: answers are scripted")], ["Mock"])] : []),
+      ...(model.mode === "mock" ? [h.span([h.Class("vl-pill")], ["Mock"])] : []),
       ...(model.surface === "splash" && hasConversation(model)
         ? [h.button([h.Class("vl-link"), h.Type("button"), h.OnClick(Message.ClickedChat())], ["Chat"])]
         : []),
@@ -96,8 +96,8 @@ function chat(model: Model, h: H): Html {
   return h.main([h.Class("vl-chat")], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
-      ...conversation.entries.map((entry) => entryView(entry, h)),
-      ...pending.map((post) => pendingView(post, model.name, h)),
+      ...conversation.entries.map((entry) => entryView(entry, model.session, h)),
+      ...pending.map((post) => pendingView(post, h)),
       ...(model.stream === "failed"
         ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system")], [
           h.div([h.Class("sui-chat-bubble")], [
@@ -112,31 +112,48 @@ function chat(model: Model, h: H): Html {
   ])
 }
 
-function entryView(entry: Entry, h: H): Html {
+function entryView(entry: Entry, session: string, h: H): Html {
   const role = entry.author === "person" ? "user" : "assistant"
   const body = entry.author === "agent" ? render(h, entry.text) : [entry.text]
   return h.article(
-    [h.Class("sui-chat-message"), h.DataAttribute("role", role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id)],
+    [h.Class("sui-chat-message"), h.DataAttribute("role", role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [
-      h.div([h.Class("sui-chat-message-label")], [entry.name]),
+      h.div([h.Class("sui-chat-message-label")], [entry.author === "person" && ownPost(entry.clientId, session) ? "You" : entry.name]),
       h.div(
         [h.Class(entry.text === "" && !entry.done ? "sui-chat-bubble vl-thinking" : "sui-chat-bubble")],
         entry.text === "" && !entry.done ? [h.span([h.Class("vl-dots"), h.Role("status"), h.AriaLabel("Thinking")], [])] : body,
       ),
-      ...(entry.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [entry.error])]),
+      ...(entry.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], ["Answer failed"])]),
     ],
   )
 }
 
-function pendingView(post: Pending, name: string, h: H): Html {
+function pendingView(post: Pending, h: H): Html {
   return h.article(
     [h.Class("sui-chat-message"), h.DataAttribute("role", "user"), h.DataAttribute("pending", "true"), h.Key(post.clientId)],
     [
-      h.div([h.Class("sui-chat-message-label")], [name]),
+      h.div([h.Class("sui-chat-message-label")], ["You"]),
       h.div([h.Class("sui-chat-bubble")], [post.text]),
-      ...(post.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [post.error])]),
+      ...(post.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [postFailure(post.error), h.button([h.Type("button"), h.Class("vl-link"), h.OnClick(Message.ClickedRetry({ clientId: post.clientId }))], ["Retry"])])]),
     ],
   )
+}
+
+/** Names on the wire remain neutral; only this tab calls its own posts You. */
+function ownPost(clientId: string, session: string): boolean {
+  const prefix = `${session}-`
+  return clientId.startsWith(prefix) && /^[1-9]\d*$/.test(clientId.slice(prefix.length))
+}
+
+function postFailure(reason: string): string {
+  switch (reason) {
+    case "empty": return "Empty message"
+    case "too-long": return "Message too long"
+    case "duplicate": return "Already sent"
+    case "busy": return "Agent busy"
+    case "not-replying": return "Answer unavailable"
+    default: return "Send failed"
+  }
 }
 
 function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): Html {
@@ -172,8 +189,7 @@ function composer(model: Model, h: H): Html {
 function statusText(model: Model): string {
   const { conversation } = model.client
   if (model.stream === "failed") return "Disconnected"
-  if (conversation.agent === "working") return "Agent is answering"
-  if (conversation.agent === "failed") return "The last answer failed"
+  if (conversation.agent === "working") return "Answering"
   return ""
 }
 

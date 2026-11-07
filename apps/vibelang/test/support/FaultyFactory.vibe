@@ -3,7 +3,7 @@ import type { Event } from "../../src/core/conversation.ts"
 import { Factory, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "drop" | "disconnect" | "end"
+export type Fault = "drop" | "disconnect" | "end" | "refuse"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -21,14 +21,20 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     try sync(() => { observation.base = base })
     return {
       mode: base.mode,
-      post: base.post,
+      post: effect (conversation, clientId, name, text) => {
+        if (fault === "refuse" && !observation.faulted) {
+          try sync(() => { observation.faulted = true })
+          throw new Unavailable({ reason: "Factory closed" })
+        }
+        try base.post(conversation, clientId, name, text)
+      },
       read: base.read,
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         const ending = fault === "end" && !observation.faulted
         return base.events(conversation, after).pipe(
           Stream.mapEffect(effect (event) => {
-            if (fault !== "end" && !observation.faulted && event.seq === (fault === "drop" ? 3 : 4)) {
+            if ((fault === "drop" || fault === "disconnect") && !observation.faulted && event.seq === (fault === "drop" ? 3 : 4)) {
               try sync(() => { observation.faulted = true })
               if (fault === "disconnect") throw new Unavailable({ reason: "connection interrupted" })
               return Result.failVoid

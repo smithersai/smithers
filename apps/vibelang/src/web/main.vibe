@@ -67,6 +67,7 @@ export const Message = defineMessageUnion({
   ReceivedEvent: { event: EventSchema },
   FailedEvents: { reason: Schema.String },
   ClickedReconnect: {},
+  ClickedRetry: { clientId: Schema.String },
   FocusedPrompt: {},
   ScrolledTranscript: { bottom: Schema.Boolean, intent: Schema.optionalKey(Schema.Number) },
   ClickedLatest: {},
@@ -111,6 +112,14 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
+    ClickedRetry: ({ clientId }) => {
+      const waiting = model.client.pending.find((post) => post.clientId === clientId && post.error !== "")
+      if (!waiting) return { model }
+      return {
+        model: { ...model, client: Machine.retryPost(model.client, clientId) },
+        commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text: waiting.text }), FocusComposer({})],
+      }
+    },
     FailedPost: ({ clientId, reason }) => ({ model: { ...model, client: Machine.failPost(model.client, clientId, reason) } }),
     ReceivedEvent: ({ event }) => {
       const client = Machine.receive(model.client, event)
@@ -124,7 +133,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           ...model,
           client,
           connection: model.stream === "open" ? "Connected" : model.connection,
-          answer: answer ? answer.error === "" ? answer.text : `Answer failed: ${answer.error}` : model.answer,
+          answer: answer ? answer.error === "" ? answer.text : "Answer failed" : model.answer,
           announced: completed ? model.announced + 1 : model.announced,
         },
       }

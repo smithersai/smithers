@@ -50,6 +50,8 @@ cases=[
 ('can-reply-answered','canReplyTo','if (entries[i]!.author === "agent" && entries[i]!.inReplyTo === id) return false','if (false) return false','a post with any existing reply cannot receive a second'),
 ('can-reply-missing','canReplyTo','return found','return true','a missing post cannot be answered'),
 ('apply-reply-correlation','apply','inReplyTo: event.inReplyTo','inReplyTo: event.id','the projected reply preserves its target'),
+('retry-post-frame','retryPost','...client, pending:','...client, gap: !client.gap, pending:','retry preserves conversation and gap'),
+('retry-post-clear','retryPost','error: ""','error: "failed"','retry clears only the matching pending failure'),
 ]
 manifest={}
 check='--check' in sys.argv

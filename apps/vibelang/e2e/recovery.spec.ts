@@ -64,3 +64,27 @@ for (const fault of ["drop", "disconnect", "end"] as const) {
     expect(continued.subscriptions).toEqual(snapshot.subscriptions)
   })
 }
+
+
+test("a failed post offers Retry, preserving its identity and neutral wire name", async ({ page }) => {
+  await page.goto("/e2e/runtime/index.html?fault=refuse")
+  await expect(page.locator(".vl-pill")).not.toHaveAttribute("title")
+  await page.getByRole("button", { name: "Ask the agent" }).click()
+  const prompt = page.getByRole("textbox", { name: "Message" })
+  await expect(prompt).toBeFocused()
+  await prompt.fill("install")
+  await prompt.press("Enter")
+  const pending = page.locator("[data-pending='true']")
+  await expect(pending).toContainText("Send failed")
+  await expect(pending).not.toContainText("Factory closed")
+  const before = await page.evaluate(() => window.recovery.snapshot().client.pending)
+  await pending.getByRole("button", { name: "Retry" }).click()
+  await expect(prompt).toBeFocused()
+  await expect(page.locator("[data-role='assistant'][data-done='true']")).toHaveCount(1)
+  await expect(pending).toHaveCount(0)
+  const entries = await page.evaluate(() => window.recovery.snapshot().client.conversation.entries)
+  expect(entries).toHaveLength(2)
+  expect(entries[0]).toMatchObject({ clientId: before[0]!.clientId, name: "Guest", text: "install" })
+  expect(entries[1]!.inReplyTo).toBe(entries[0]!.id)
+  await expect(page.locator("[data-role='user'] .sui-chat-message-label")).toHaveText("You")
+})

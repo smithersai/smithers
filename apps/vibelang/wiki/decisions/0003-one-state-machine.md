@@ -32,3 +32,8 @@ reusing a person's or a finished reply's id.
 delivered. Only `receive` setting `gap` requests replay from the client's last applied `seq`; the harness never forces
 a final replay. An entirely silent missing tail needs reconnect, covered by the surface/runtime tests. A receive
 mutation that never flags gaps must fail convergence for `Posted #1, ReplyStarted #2` delivered as `[1]`.
+
+**Post recovery and names (Fable 7, 11).** A failed pending post keeps its id and text. Retry clears only its failure
+via `retryPost`, then sends the same id through Factory; it cannot append another optimistic copy. Posts carry
+`Guest` from the browser until sign-in exists. Only the view calls a person post `You`, when its client id has this
+tab's session and numeric post suffix; other people's names remain unchanged.

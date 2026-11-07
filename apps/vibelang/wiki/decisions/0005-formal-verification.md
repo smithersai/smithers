@@ -19,7 +19,7 @@ Node >=18, npm, Python >=3.9, curl and unzip are prerequisites; there is no glob
 
 Every check strictly typechecks the selected source, creates a unique ignored `verify/.checks/run-*` directory,
 generates fresh Dafny, and invokes Dafny with one solver core and a 30-second limit per assertion batch. It never
-accepts a saved `.dfy` proof. All nine exported transitions/queries and both typed decision constructors opt in with
+accepts a saved `.dfy` proof. All eleven exported transitions/queries and both typed decision constructors opt in with
 `//@ verify`. Missing emitted marked functions and source edits during a check fail the harness. Dafny locations are
 mapped back to TypeScript function names and declaration lines; raw generated locations remain in the diagnostic.
 Summaries, SHA-256 source identities, raw logs and Dafny CSV timings are retained under that run directory.
@@ -43,6 +43,7 @@ with contention on the shared server. `nice` is used by the scripts; `CHECK_JOBS
 | `isReplying`, `hasClientId` | Exact equivalence with their reply and indexed existential lookup predicates; the empty client id never matches |
 | `post` | Existing pending ids cause an unchanged client; uniqueness is preserved; old pending entries remain an exact prefix; at most one is appended; conversation/gap are unchanged |
 | `failPost` | Preserves conversation/gap, pending count, ids and text; changes only matching entries and uses the exact reason, defaulting to `failed` |
+| `retryPost` | Preserves conversation/gap, pending length, ids/text and unmatched entries; clears only the matching failure |
 | `receive` | An event at or below the sequence leaves the entire client unchanged (hence repeated delivery is idempotent); an event beyond the next marks a gap |
 | `resume` | Clears gap and preserves conversation/pending |
 | Typed decision constructors | Preserve the exact accepted event or refusal, together with its success tag |
@@ -94,3 +95,5 @@ still pending. The proof trusts TypeScript erasure, LemmaScript's lowering and l
 JS number/UTF-16 model; it is not a proof of those toolchains. macOS installers have not been executed here.
 
 **Fable finding 3.** `canReplyTo` and the start correlation contracts pass a fresh Linux run: **25 verified, 0 errors**. Six additional executable mutations cover missing/non-person/already-answered targets, omitted admission guard, mismatched event target and projected target. Final mutation receipts are in the lane report.
+
+**Retry (Fable 7).** The pending recovery transition adds a frame and an exact clearing contract, plus two executable mutations. The current production proof has **28 verified, 0 errors** across thirteen marked functions; the mutation suite contains **48** unchanged-contract copies.

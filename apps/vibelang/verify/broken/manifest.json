@@ -274,5 +274,17 @@
     "claim": "the projected reply preserves its target",
     "before": "inReplyTo: event.inReplyTo",
     "after": "inReplyTo: event.id"
+  },
+  "retry-post-frame": {
+    "function": "retryPost",
+    "claim": "retry preserves conversation and gap",
+    "before": "...client, pending:",
+    "after": "...client, gap: !client.gap, pending:"
+  },
+  "retry-post-clear": {
+    "function": "retryPost",
+    "claim": "retry clears only the matching pending failure",
+    "before": "error: \"\"",
+    "after": "error: \"failed\""
   }
 }
