@@ -27,14 +27,16 @@ const derivations: ReadonlyArray<
 const failingCrypto = Layer.succeed(
   EffectDigest.Digest,
   EffectDigest.Digest.of({
-digest: () =>
+    digest: () =>
       Effect.die(PlatformError.systemError({
         _tag: "Unknown",
         module: "test-host",
         method: "digest"
       })),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
+  })
 )
 
 // Include issues in annotations/causes and inspect input fields, not just messages.
@@ -263,12 +265,14 @@ describe("key derivation", () => {
     let calls = 0
     // An instrumented host proves ordering without invoking any external service.
     const host = EffectDigest.Digest.of({
-digest: () => {
+      digest: () => {
         calls++
         return Effect.succeed(new Uint8Array(32))
       },
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+      digestHex(algorithm, data) {
+        return Effect.map(this.digest(algorithm, data), Hex.encode)
+      }
+    })
     const error = Effect.runSync(Effect.flip(
       Keys.deriveKey(1n).pipe(Effect.provideService(EffectDigest.Digest, host))
     ))
@@ -282,7 +286,7 @@ digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex
       const failure = new Error("host diagnostic")
       // Deliberately broken hosts exercise failures a real platform should never produce.
       const host = EffectDigest.Digest.of({
-digest: () => {
+        digest: () => {
           calls++
           if (calls === 1) {
             if (mode === "throw") throw failure
@@ -290,8 +294,10 @@ digest: () => {
           }
           return Effect.succeed(new Uint8Array(32))
         },
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+        digestHex(algorithm, data) {
+          return Effect.map(this.digest(algorithm, data), Hex.encode)
+        }
+      })
       const operation = decode({ domain: "test/host-recovery", version: 1 }).pipe(
         Effect.provideService(EffectDigest.Digest, host)
       )
@@ -309,9 +315,11 @@ digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex
   it.each([0, 31, 33, 64])("rejects a host digest of %i bytes and allows a subsequent valid derivation", (size) => {
     // Malformed host output cannot be produced by a conforming platform service.
     const host = EffectDigest.Digest.of({
-digest: () => Effect.succeed(new Uint8Array(size)),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+      digest: () => Effect.succeed(new Uint8Array(size)),
+      digestHex(algorithm, data) {
+        return Effect.map(this.digest(algorithm, data), Hex.encode)
+      }
+    })
     const error = Effect.runSync(Effect.flip(
       Keys.deriveKey({ domain: "test/host-output", version: 1 }).pipe(
         Effect.provideService(EffectDigest.Digest, host)
@@ -332,15 +340,17 @@ digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex
         const started = yield* Deferred.make<void>()
         // A suspended host gives deterministic cancellation with no wall-clock sleeps.
         const host = EffectDigest.Digest.of({
-digest: () =>
+          digest: () =>
             Deferred.succeed(started, undefined).pipe(
               Effect.andThen(Effect.never),
               Effect.ensuring(Effect.sync(() => {
                 cleaned = true
               }))
             ),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
+        })
         const fiber = yield* Effect.forkChild(
           decode({ domain: "test/cancellation", version: 1 }).pipe(
             Effect.provideService(EffectDigest.Digest, host)

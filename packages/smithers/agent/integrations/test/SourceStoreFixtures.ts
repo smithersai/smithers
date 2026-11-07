@@ -1,6 +1,6 @@
-import { expectTypeOf } from "vitest"
 import * as TestDatabase from "@smthrs/database/test/TestDatabase"
 import { Effect, Layer } from "effect"
+import { expectTypeOf } from "vitest"
 import * as Migrations from "../src/core/Migrations.ts"
 import type { SourceRecord } from "../src/core/SourceRecord.ts"
 import * as SourceStore from "../src/core/SourceStore.ts"

@@ -253,7 +253,14 @@ export const make = (
         }
         headers["authorization"] = `Bearer ${credential.token}`
         const target = HttpClientRequest.get(`${upstream}${path}`)
-        const outbound = HttpClientRequest.makeWith(request.method, target.url, target.urlParams, target.hash, target.headers, target.body)
+        const outbound = HttpClientRequest.makeWith(
+          request.method,
+          target.url,
+          target.urlParams,
+          target.hash,
+          target.headers,
+          target.body
+        )
         // The raw body carries no content type of its own, so the caller's,
         // or none, is what GitHub sees.
         const send = http.execute(HttpClientRequest.setHeaders(

@@ -3,10 +3,10 @@
  *
  * @since 0.1.0
  */
-import { Effect, FileSystem, Path } from "effect";
-import * as Descriptor from "@smthrs/registry/Descriptor";
-import { FsError } from "./FsError.vibe";
-import * as Route from "./Route.vibe";
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import { Effect, FileSystem, Path } from "effect"
+import { FsError } from "./FsError.vibe"
+import * as Route from "./Route.vibe"
 /**
  * Configuration for one bounded file-router scan.
  *
@@ -14,7 +14,7 @@ import * as Route from "./Route.vibe";
  * @since 0.1.0
  */
 export interface ScanConfig {
-    root: string;
+  root: string
 }
 /**
  * A non-fatal diagnostic emitted by registry discovery.
@@ -22,7 +22,7 @@ export interface ScanConfig {
  * @category models
  * @since 0.1.0
  */
-export type Warning = Descriptor.DiscoveryWarning;
+export type Warning = Descriptor.DiscoveryWarning
 /**
  * The immutable metadata-only result of scanning a flows tree.
  *
@@ -30,8 +30,8 @@ export type Warning = Descriptor.DiscoveryWarning;
  * @since 0.1.0
  */
 export interface ScanResult {
-    routes: ReadonlyArray<Route.Route>;
-    warnings: ReadonlyArray<Warning>;
+  routes: ReadonlyArray<Route.Route>
+  warnings: ReadonlyArray<Warning>
 }
 /**
  * Scans a flows root without importing or evaluating any flow module.
@@ -43,4 +43,4 @@ export interface ScanResult {
  * @category constructors
  * @since 0.1.0
  */
-export declare function scan(config: ScanConfig): Effect.Effect<ScanResult, FsError, FileSystem.FileSystem | Path.Path>;
+export declare function scan(config: ScanConfig): Effect.Effect<ScanResult, FsError, FileSystem.FileSystem | Path.Path>

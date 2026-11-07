@@ -1,5 +1,5 @@
-import * as Redacted from "effect/Redacted"
 import * as Hex from "effect/encoding/Hex"
+import * as Redacted from "effect/Redacted"
 /**
  * The dumb-HTTP CAS protocol: `GET`/`PUT`/`HEAD /cas/{digest}` and
  * `POST /cas/findMissing`, mirroring
@@ -401,13 +401,15 @@ describe("uploads", () => {
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
       const crypto = EffectDigest.Digest.of({
-digest: (algorithm, snapshot) =>
+        digest: (algorithm, snapshot) =>
           Deferred.succeed(entered, undefined).pipe(
             Effect.andThen(Deferred.await(release)),
             Effect.andThen(syncCrypto.digest(algorithm, snapshot))
           ),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+        digestHex(algorithm, data) {
+          return Effect.map(this.digest(algorithm, data), Hex.encode)
+        }
+      })
       const tier = remote(() => new Response(null, { status: 201 }))
       const input = bytes(artifact)
       const running = yield* Effect.flatMap(tier.store, (store) => store.put(input)).pipe(

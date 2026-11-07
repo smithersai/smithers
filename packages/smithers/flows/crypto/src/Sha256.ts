@@ -211,22 +211,22 @@ export const digestSync = (input: string | Uint8Array): Digest => encodeHex(sha2
  * @since 1.0.0
  */
 const synchronousDigest: typeof EffectDigest.Digest.Service["digest"] = (algorithm, input) =>
-    algorithm.name === "SHA-256"
-      ? Effect.try({
-        try: () => sha256(new Uint8Array(input)),
-        catch: (cause) =>
-          PlatformError.badArgument({
-            module: "@smthrs/crypto",
-            method: "digest",
-            description: "syncCrypto could not snapshot SHA-256 input",
-            cause
-          })
-      }).pipe(Effect.orDie)
-      : Effect.die(PlatformError.badArgument({
-        module: "@smthrs/crypto",
-        method: "digest",
-        description: `syncCrypto supports only SHA-256, not ${algorithm.name}`
-      }))
+  algorithm.name === "SHA-256"
+    ? Effect.try({
+      try: () => sha256(new Uint8Array(input)),
+      catch: (cause) =>
+        PlatformError.badArgument({
+          module: "@smthrs/crypto",
+          method: "digest",
+          description: "syncCrypto could not snapshot SHA-256 input",
+          cause
+        })
+    }).pipe(Effect.orDie)
+    : Effect.die(PlatformError.badArgument({
+      module: "@smthrs/crypto",
+      method: "digest",
+      description: `syncCrypto supports only SHA-256, not ${algorithm.name}`
+    }))
 
 export const syncCrypto: typeof EffectDigest.Digest.Service = EffectDigest.Digest.of({
   digest: synchronousDigest,

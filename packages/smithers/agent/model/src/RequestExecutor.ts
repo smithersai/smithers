@@ -738,7 +738,6 @@ const redactedRequest = (
     )
   })()
 
-
 /**
  * The tracer a request opens its HTTP span on: the caller's own, with the
  * credential values a url can carry kept off the span.

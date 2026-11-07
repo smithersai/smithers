@@ -3,12 +3,12 @@
  *
  * @since 0.1.0
  */
-import { Effect } from "effect";
-import type { Cli as IncurCli } from "incur";
-import * as FlowInvoker from "./FlowInvoker.vibe";
-import { FsError } from "./FsError.vibe";
-import * as Route from "./Route.vibe";
-export { selfSegment } from "./internal/IncurHost.ts";
+import { Effect } from "effect"
+import type { Cli as IncurCli } from "incur"
+import * as FlowInvoker from "./FlowInvoker.vibe"
+import { FsError } from "./FsError.vibe"
+import * as Route from "./Route.vibe"
+export { selfSegment } from "./internal/IncurHost.ts"
 /**
  * Projects routes onto an Incur CLI while preserving metadata-only discovery.
  *
@@ -22,7 +22,11 @@ export { selfSegment } from "./internal/IncurHost.ts";
  * @category constructors
  * @since 0.1.0
  */
-export declare function createCli(name: string, routes: ReadonlyArray<Route.Route>): Effect.Effect<IncurCli.Cli & {
+export declare function createCli(name: string, routes: ReadonlyArray<Route.Route>): Effect.Effect<
+  IncurCli.Cli & {
     /** @throws {never} */
-    close: () => Promise<void>;
-}, FsError, FlowInvoker.FlowInvoker>;
+    close: () => Promise<void>
+  },
+  FsError,
+  FlowInvoker.FlowInvoker
+>

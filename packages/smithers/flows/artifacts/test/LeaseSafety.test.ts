@@ -18,8 +18,9 @@ import * as ArtifactSweep from "../src/ArtifactSweep.ts"
 import * as FileLease from "../src/FileLease.ts"
 import { bytes, sha256 } from "./Crypto.ts"
 
-const onNode = <A, E>(effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | EffectDigest.Digest | Scope.Scope>) =>
-  Effect.scoped(effect).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)))
+const onNode = <A, E>(
+  effect: Effect.Effect<A, E, FileSystem.FileSystem | Path.Path | EffectDigest.Digest | Scope.Scope>
+) => Effect.scoped(effect).pipe(Effect.provide(Layer.mergeAll(NodeFileSystem.layer, NodePath.layer, NodeCrypto.layer)))
 const failure = (cause: unknown) => cause
 const denied = PlatformError.systemError({ _tag: "PermissionDenied", module: "test", method: "fault" })
 const fixture = Effect.gen(function*() {

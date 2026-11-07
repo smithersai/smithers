@@ -295,7 +295,6 @@ describe("composed schema input reporting", () => {
   })
 })
 
-
 it("supports an independently captured synchronous hexadecimal digest function", () => {
   const { digestHex } = syncCrypto
   const input = new TextEncoder().encode("abc")

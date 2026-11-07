@@ -9,10 +9,27 @@
  * @category models
  * @since 0.1.0
  */
-export type Code = "root_missing" | "read_failed" | "invalid_root" | "discovery_failed" | "parse_failed" | "unknown_command" | "duplicate_route" | "invalid_route" | "resource_limit" | "load_failed" | "unsupported_body" | "unsupported_schema" | "decode_failed" | "encode_failed" | "invocation_unavailable";
-declare const FsError_base: new <A extends Record<string, any> = {}>(args: import("effect/Types").VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P]; }>) => import("effect/Cause").YieldableError & {
-    readonly _tag: "FsError";
-} & Readonly<A>;
+export type Code =
+  | "root_missing"
+  | "read_failed"
+  | "invalid_root"
+  | "discovery_failed"
+  | "parse_failed"
+  | "unknown_command"
+  | "duplicate_route"
+  | "invalid_route"
+  | "resource_limit"
+  | "load_failed"
+  | "unsupported_body"
+  | "unsupported_schema"
+  | "decode_failed"
+  | "encode_failed"
+  | "invocation_unavailable"
+declare const FsError_base: new<A extends Record<string, any> = {}>(
+  args: import("effect/Types").VoidIfEmpty<{ readonly [P in keyof A as P extends "_tag" ? never : P]: A[P] }>
+) => import("effect/Cause").YieldableError & {
+  readonly _tag: "FsError"
+} & Readonly<A>
 /**
  * A recoverable file-routing failure.
  *
@@ -24,10 +41,10 @@ declare const FsError_base: new <A extends Record<string, any> = {}>(args: impor
  * @since 0.1.0
  */
 export declare class FsError extends FsError_base<{
-    readonly code: Code;
-    readonly method: string;
-    readonly description: string;
-    readonly path?: string | undefined;
+  readonly code: Code
+  readonly method: string
+  readonly description: string
+  readonly path?: string | undefined
 }> {
 }
-export {};
+export {}

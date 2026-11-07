@@ -73,7 +73,9 @@ export const make = (database: DatabaseService, random: typeof SecureRandom.Secu
     Effect.gen(function*() {
       const { namespace } = yield* resolveNamespace(input.namespace)
       const id = input.id ?? (yield* random.uuidV4().pipe(
-        Effect.catchCause((cause) => Effect.fail(error("store", "could not generate memory thread id", Cause.squash(cause))))
+        Effect.catchCause((cause) =>
+          Effect.fail(error("store", "could not generate memory thread id", Cause.squash(cause)))
+        )
       ))
       yield* validateNonEmpty(id, "threadId", ["id"])
       const metadataJson = input.metadata === undefined

@@ -3,52 +3,52 @@
  *
  * @since 0.1.0
  */
-import { Effect, Option } from "effect";
-import type * as Flow from "@smthrs/core/Flow";
-import * as Descriptor from "@smthrs/registry/Descriptor";
-import { FsError } from "./FsError.vibe";
+import type * as Flow from "@smthrs/core/Flow"
+import * as Descriptor from "@smthrs/registry/Descriptor"
+import { Effect, Option } from "effect"
+import { FsError } from "./FsError.vibe"
 /**
  * Maximum number of path segments in one route.
  *
  * @category constants
  * @since 0.1.0
  */
-export declare const maximumRouteDepth = 64;
+export declare const maximumRouteDepth = 64
 /**
  * Maximum UTF-16 length of one route segment.
  *
  * @category constants
  * @since 0.1.0
  */
-export declare const maximumSegmentLength = 255;
+export declare const maximumSegmentLength = 255
 /**
  * Maximum UTF-16 length of one slash-joined route name.
  *
  * @category constants
  * @since 0.1.0
  */
-export declare const maximumRouteNameLength = 4096;
+export declare const maximumRouteNameLength = 4096
 /**
  * Maximum UTF-16 length of one source or companion path.
  *
  * @category constants
  * @since 0.1.0
  */
-export declare const maximumPathLength = 16384;
+export declare const maximumPathLength = 16384
 /**
  * Maximum number of capabilities declared by one route.
  *
  * @category constants
  * @since 0.1.0
  */
-export declare const maximumCapabilities = 256;
+export declare const maximumCapabilities = 256
 /**
  * How a route's body is stored on disk.
  *
  * @category models
  * @since 0.1.0
  */
-export type Kind = "module" | "markdown" | "skill";
+export type Kind = "module" | "markdown" | "skill"
 /**
  * A path-derived command route.
  *
@@ -59,18 +59,18 @@ export type Kind = "module" | "markdown" | "skill";
  * @since 0.1.0
  */
 export interface Route {
-    name: string;
-    segments: ReadonlyArray<string>;
-    kind: Kind;
-    sourcePath: string;
-    description: Option.Option<string>;
-    input: Descriptor.SchemaRef;
-    output: Descriptor.SchemaRef;
-    capabilities: ReadonlyArray<string>;
-    effects: Descriptor.EffectDeclaration;
-    modelInvocable: boolean;
-    placement: Option.Option<Descriptor.Placement>;
-    ui: Option.Option<string>;
+  name: string
+  segments: ReadonlyArray<string>
+  kind: Kind
+  sourcePath: string
+  description: Option.Option<string>
+  input: Descriptor.SchemaRef
+  output: Descriptor.SchemaRef
+  capabilities: ReadonlyArray<string>
+  effects: Descriptor.EffectDeclaration
+  modelInvocable: boolean
+  placement: Option.Option<Descriptor.Placement>
+  ui: Option.Option<string>
 }
 /**
  * Generated applications augment this map with route-specific input and output
@@ -96,7 +96,7 @@ export interface Manifest {
  * @category models
  * @since 0.1.0
  */
-export type Name = keyof Manifest extends never ? string : Extract<keyof Manifest, string>;
+export type Name = keyof Manifest extends never ? string : Extract<keyof Manifest, string>
 /**
  * The decoded input accepted by Command.call for a named route.
  *
@@ -104,8 +104,10 @@ export type Name = keyof Manifest extends never ? string : Extract<keyof Manifes
  * @since 0.1.0
  */
 export type Input<N extends Name> = N extends keyof Manifest ? Manifest[N] extends {
-    input: infer I;
-} ? I : unknown : unknown;
+    input: infer I
+  } ? I :
+  unknown :
+  unknown
 /**
  * The decoded output returned by Command.call for a named route.
  *
@@ -113,16 +115,18 @@ export type Input<N extends Name> = N extends keyof Manifest ? Manifest[N] exten
  * @since 0.1.0
  */
 export type Output<N extends Name> = N extends keyof Manifest ? Manifest[N] extends {
-    output: infer O;
-} ? O : unknown : unknown;
-declare const copyRoute: (input: Route) => Effect.Effect<Route, FsError>;
+    output: infer O
+  } ? O :
+  unknown :
+  unknown
+declare const copyRoute: (input: Route) => Effect.Effect<Route, FsError>
 /**
  * Copies and validates caller-owned route metadata before asynchronous use.
  *
  * @category constructors
  * @since 0.1.0
  */
-export declare const snapshot: typeof copyRoute;
+export declare const snapshot: typeof copyRoute
 /**
  * True only for routes the agent and Incur command surfaces may execute.
  *
@@ -130,8 +134,8 @@ export declare const snapshot: typeof copyRoute;
  * @since 0.1.0
  * @throws {never}
  */
-export declare const isCommandRoute: (route: Route) => boolean;
-type Loaded = Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>;
+export declare const isCommandRoute: (route: Route) => boolean
+type Loaded = Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.Any, "description">>
 /**
  * Materializes the flow behind a route.
  *
@@ -145,5 +149,5 @@ type Loaded = Pick<Flow.Any, "name" | "input" | "output"> & Partial<Pick<Flow.An
  * @category constructors
  * @since 0.1.0
  */
-export declare function load(input: Route): Effect.Effect<Loaded, FsError>;
-export {};
+export declare function load(input: Route): Effect.Effect<Loaded, FsError>
+export {}

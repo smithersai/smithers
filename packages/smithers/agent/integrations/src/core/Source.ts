@@ -52,7 +52,11 @@ export interface RunOptions {
  * @category models
  * @since 1.0.0
  */
-export type RunContext = CursorStore | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+export type RunContext =
+  | CursorStore
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowRuntime
+  | FlowRuntime.FlowInstance
 
 /**
  * A polling source bound to one cursor. A source must have only one active driver.

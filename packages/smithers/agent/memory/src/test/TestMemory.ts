@@ -19,22 +19,26 @@ const random = Layer.sync(SecureRandom.SecureRandom)(() => {
   // A counter, not entropy: generated ids must stay distinct within one build.
   let nonce = 0
   return SecureRandom.make((size) => {
-      nonce += 1
-      const bytes = new Uint8Array(size)
-      let remaining = nonce
-      for (let index = size - 1; index >= 0 && remaining > 0; index -= 1) {
-        bytes[index] = remaining % 0x100
-        remaining = Math.floor(remaining / 0x100)
-      }
-      return bytes
-    })
+    nonce += 1
+    const bytes = new Uint8Array(size)
+    let remaining = nonce
+    for (let index = size - 1; index >= 0 && remaining > 0; index -= 1) {
+      bytes[index] = remaining % 0x100
+      remaining = Math.floor(remaining / 0x100)
+    }
+    return bytes
+  })
 })
 
-const digestBytes: typeof EffectDigest.Digest.Service["digest"] = (_algorithm, data) => Effect.succeed(new Uint8Array(data))
-const crypto = Layer.merge(random, Layer.succeed(EffectDigest.Digest)({
-  digest: digestBytes,
-  digestHex: (algorithm, data) => Effect.map(digestBytes(algorithm, data), Hex.encode)
-}))
+const digestBytes: typeof EffectDigest.Digest.Service["digest"] = (_algorithm, data) =>
+  Effect.succeed(new Uint8Array(data))
+const crypto = Layer.merge(
+  random,
+  Layer.succeed(EffectDigest.Digest)({
+    digest: digestBytes,
+    digestHex: (algorithm, data) => Effect.map(digestBytes(algorithm, data), Hex.encode)
+  })
+)
 
 /**
  * Provides the authoritative memory store over a fresh in-memory database with

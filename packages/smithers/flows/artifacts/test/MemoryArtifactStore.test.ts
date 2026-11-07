@@ -48,13 +48,15 @@ describe("makeMemory", () => {
       const entered = yield* Deferred.make<void>()
       const release = yield* Deferred.make<void>()
       const crypto = EffectDigest.Digest.of({
-digest: (algorithm, snapshot) =>
+        digest: (algorithm, snapshot) =>
           Deferred.succeed(entered, undefined).pipe(
             Effect.andThen(Deferred.await(release)),
             Effect.andThen(syncCrypto.digest(algorithm, snapshot))
           ),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+        digestHex(algorithm, data) {
+          return Effect.map(this.digest(algorithm, data), Hex.encode)
+        }
+      })
       const artifacts = ArtifactStore.makeMemory()
       const input = bytes(artifact)
       const running = yield* artifacts.put(input).pipe(
@@ -77,19 +79,25 @@ digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex
       })
       const hosts = [
         EffectDigest.Digest.of({
-digest: () => Effect.die(failure),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-}),
+          digest: () => Effect.die(failure),
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
+        }),
         EffectDigest.Digest.of({
-digest: () => {
+          digest: () => {
             throw new Error("host digest throw")
           },
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-}),
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
+        }),
         EffectDigest.Digest.of({
-digest: () => Effect.succeed(new Uint8Array(1)),
-digestHex(algorithm, data) { return Effect.map(this.digest(algorithm, data), Hex.encode) }
-})
+          digest: () => Effect.succeed(new Uint8Array(1)),
+          digestHex(algorithm, data) {
+            return Effect.map(this.digest(algorithm, data), Hex.encode)
+          }
+        })
       ]
       const secret = "artifact-bytes-that-must-not-enter-errors"
       for (const crypto of hosts) {

@@ -29,14 +29,28 @@ export const removeMetadataFixture = async (directory: string) => {
   await rm(directory, { recursive: true, force: true })
 }
 /** Foreign reflection failure used by the existing boundary tests. */
-export const throwingProxy = <A extends object>(target: A): A => new Proxy(target, {
-  ownKeys: () => { throw new Error("trap") }
-})
+export const throwingProxy = <A extends object>(target: A): A =>
+  new Proxy(target, {
+    ownKeys: () => {
+      throw new Error("trap")
+    }
+  })
 /** Runs the real source-loader process used by the structural-path test. */
 export const executeSource = async (script: string): Promise<string> => {
   const { execFileSync } = await import("node:child_process")
-  return execFileSync(process.execPath, ["--import", "vibelang/register", "--experimental-strip-types", "--input-type=module", "-e", script], { encoding: "utf8" })
+  return execFileSync(process.execPath, [
+    "--import",
+    "vibelang/register",
+    "--experimental-strip-types",
+    "--input-type=module",
+    "-e",
+    script
+  ], { encoding: "utf8" })
 }
 
 /** An accessor that throws before a foreign decoder can inspect its input. */
-export const throwingAssembly = () => ({ get value(): unknown { throw new Error("private assembly getter") } })
+export const throwingAssembly = () => ({
+  get value(): unknown {
+    throw new Error("private assembly getter")
+  }
+})

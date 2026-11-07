@@ -4,29 +4,29 @@
  * @private
  * @since 0.1.0
  */
-import { Effect } from "effect";
-import { FsError } from "../FsError.vibe";
+import { Effect } from "effect"
+import { FsError } from "../FsError.vibe"
 /**
  * Maximum UTF-8 bytes accepted in one command string.
  *
  * @private
  * @since 0.1.0
  */
-export declare const maximumCommandBytes: number;
+export declare const maximumCommandBytes: number
 /**
  * Maximum tokens accepted in one command string.
  *
  * @private
  * @since 0.1.0
  */
-export declare const maximumCommandTokens = 4096;
+export declare const maximumCommandTokens = 4096
 /**
  * Maximum UTF-16 length accepted in one token.
  *
  * @private
  * @since 0.1.0
  */
-export declare const maximumTokenLength = 16384;
+export declare const maximumTokenLength = 16384
 /**
  * Positional and named values extracted from an argv tail.
  *
@@ -34,8 +34,8 @@ export declare const maximumTokenLength = 16384;
  * @since 0.1.0
  */
 export interface ParsedFlags {
-    args: ReadonlyArray<string>;
-    options: Readonly<Record<string, unknown>>;
+  args: ReadonlyArray<string>
+  options: Readonly<Record<string, unknown>>
 }
 /**
  * Splits a command string into argv without invoking a shell.
@@ -48,11 +48,11 @@ export interface ParsedFlags {
  * @private
  * @since 0.1.0
  */
-export declare function lex(commandString: string): Effect.Effect<ReadonlyArray<string>, FsError>;
+export declare function lex(commandString: string): Effect.Effect<ReadonlyArray<string>, FsError>
 /**
  * Parses long options from an argv tail using a small deterministic grammar.
  *
  * @private
  * @since 0.1.0
  */
-export declare function parseFlags(input: ReadonlyArray<string>): Effect.Effect<ParsedFlags, FsError>;
+export declare function parseFlags(input: ReadonlyArray<string>): Effect.Effect<ParsedFlags, FsError>

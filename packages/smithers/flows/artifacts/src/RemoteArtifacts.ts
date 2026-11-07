@@ -813,4 +813,3 @@ export const layer = (
   options: Options
 ): Layer.Layer<ArtifactStore.ArtifactStore, ArtifactStore.ArtifactStoreError, HttpClient.HttpClient> =>
   Layer.effect(ArtifactStore.ArtifactStore)(make(options))
-
