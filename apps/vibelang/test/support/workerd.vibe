@@ -13,19 +13,51 @@ error WorkerdFailed { cause: unknown }
 /** The model key the opt-in real-model case uses; unset, that case skips. */
 export const modelKey = Option.getOrUndefined(runSync(Config.option(Config.String("CEREBRAS_API_KEY"))))
 
-/** The module at `relative` (to this file) as one ES module for workerd, its `.vibe` modules compiled, workerd's own
- * modules left to it. */
+/** What a Worker's bundle is: its ES module, and the `.wasm` files it imports, by module name. */
+interface Bundle {
+  readonly module: string
+  readonly wasm: ReadonlyArray<{ readonly name: string; readonly path: string }>
+}
+
+/**
+ * The module at `relative` (to this file) as one ES module for workerd, its `.vibe` modules compiled, workerd's own
+ * modules left to it. A `#quickjs.wasm` import (`@smthrs/harness/QuickJSWorkerd`) stays a module of its own, as
+ * Cloudflare's bundlers upload it: workerd compiles WebAssembly only from a module, never from bytes.
+ */
 effect function bundle(relative: string) {
   const path = try (try Path.Path).fromFileUrl(new URL(relative, import.meta.url))
+  const wasm: Array<{ readonly name: string; readonly path: string }> = []
+  const wasmModules = {
+    name: "wasm-modules",
+    setup(build: { onResolve: Function; resolve: Function }) {
+      build.onResolve({ filter: /^#quickjs\.wasm$/ }, async (args: { path: string; importer: string; resolveDir: string; kind: string; pluginData?: unknown }) => {
+        if (args.pluginData === "inner") return undefined
+        const resolved = await build.resolve(args.path, { importer: args.importer, resolveDir: args.resolveDir, kind: args.kind, pluginData: "inner" })
+        if (!wasm.some((file) => file.path === resolved.path)) wasm.push({ name: "quickjs.wasm", path: resolved.path })
+        return { path: "./quickjs.wasm", external: true }
+      })
+    },
+  }
   const result = try tryPromise({
     try: () => build({
       entryPoints: [path], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
       conditions: ["workerd", "worker", "browser"], external: ["node:*", "cloudflare:*"], logLevel: "silent",
-      plugins: [vibelang()],
+      plugins: [vibelang(), wasmModules as never],
     }),
     catch: (cause) => new WorkerdFailed({ cause }),
   })
-  return result.outputFiles[0]!.text
+  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm }
+  return bundled
+}
+
+/** The bundle as Miniflare's modules: the ES module first, then each `.wasm` as a compiled WebAssembly module. */
+effect function modulesOf(bundled: Bundle) {
+  const fs = try FileSystem.FileSystem
+  const modules: Record<string, { readonly type: string; readonly contents: string | Uint8Array }> = {
+    "worker.js": { type: "esm", contents: bundled.module },
+  }
+  for (const file of bundled.wasm) modules[file.name] = { type: "wasm", contents: try fs.readFile(file.path) }
+  return modules
 }
 
 export interface Served {
@@ -42,17 +74,18 @@ effect function listen(config: Record<string, unknown>) {
 }
 
 /** The API Worker's bundle, built once per suite file. */
-let apiModule: string | undefined
+let apiBundle: Bundle | undefined
 
 /** The API Worker with `env` as its configuration: the deployment's Config, as text bindings. */
 export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
   provide NodeServices.layer {
-    apiModule ??= try bundle("../workerd/worker.vibe")
+    apiBundle ??= try bundle("../workerd/worker.vibe")
+    const modules = try modulesOf(apiBundle)
     return try listen({
       name: "api",
       compatibilityDate: "2026-10-01",
       compatibilityFlags: ["nodejs_compat"],
-      manifest: { mainModule: "worker.js", modules: { "worker.js": { type: "esm", contents: apiModule } } },
+      manifest: { mainModule: "worker.js", modules },
       env: {
         ...Object.fromEntries(Object.entries(env).map(([name, value]) => [name, { type: "text", value }])),
         CONVERSATION: { type: "durable-object", worker: "api", exportName: "Conversation" },
@@ -69,11 +102,11 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
 /** The site Worker with no API Worker bound: the mock deployment. */
 export effect function serveSite() {
   provide NodeServices.layer {
-    const contents = try bundle("../../worker/index.vibe")
+    const modules = try modulesOf(try bundle("../../worker/index.vibe"))
     return try listen({
       name: "site",
       compatibilityDate: "2026-10-01",
-      manifest: { mainModule: "worker.js", modules: { "worker.js": { type: "esm", contents } } },
+      manifest: { mainModule: "worker.js", modules },
     })
   }
 }

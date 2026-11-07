@@ -1,6 +1,6 @@
 # 0010. The live agent on Cloudflare
 
-**Status:** accepted, 2026-11-07; posts are flows since 0011. **Rulings:** VL-4, VL-7, VL-10, VL-11, VL-12, VL-13. **Roadmap:** brick 1b.
+**Status:** accepted, 2026-11-07; posts are flows since 0011; the reply is smithers.sh's agent since 0012. **Rulings:** VL-4, VL-7, VL-10, VL-11, VL-12, VL-13. **Roadmap:** brick 1b.
 
 **Decision.** The live Factory is an Effect-native Alchemy Worker, `VibelangApi` (`worker/Api.vibe`), that the site
 Worker hands `/api/*` over a service binding, and two Durable Object classes it hosts:
@@ -18,8 +18,9 @@ browser / CLI / MCP ── LiveFactory (HttpClient) ──▶ site Worker ──
   `vibelang/Post` flow run in the posting request, whose next step dispatches the reply (0011). A new incarnation replays the log. Post ids are `m<seq>`; a
   post's reply is `r<seq>`, so each post has exactly one possible reply.
 - **The reply is a durable flow.** `vibelang/Reply` (`worker/Reply.vibe`) is an `@smthrs/flow` flow whose steps are
-  journaled actions: start the reply, admit against the day's budget, read the history, call the model with
-  `@smthrs/agent`'s `ModelStep` (never a raw provider call), record the spend, and settle the reply as finished or
+  journaled actions: start the reply, admit against the day's budget, read the history, run smithers.sh's agent
+  (`@smthrs/agent`'s `AgentAction`, 0012; its model calls are its own `ModelStep`s, never a raw provider call),
+  record the spend, and settle the reply as finished or
   failed. Every failure, a missing model, a spent budget, a provider refusal or a defect, becomes `FailReply` with a
   reason the person reads; interruption is the engine's and resumes the flow.
 - **One execution per conversation object.** A conversation answers one post at a time, so its object hosts that
@@ -28,10 +29,9 @@ browser / CLI / MCP ── LiveFactory (HttpClient) ──▶ site Worker ──
   the sequencer in the same object, with no RPC. A settled execution is forgotten at its next alarm, which starts the
   next unanswered post's. A post is started at most once, so a flow that settles without answering can't loop.
   Separate execution objects would need the two namespaces to reach each other, a cycle Alchemy's layers can't build.
-- **Streaming.** The model step's `onEvent` sends each text piece as `AppendReply` with its attempt and offset; the
-  sequencer drops a piece it already has, so a replay changes nothing. A retried model call (`retry` event) sends
-  `RestartReply`, the new transition that empties the streaming reply (proven in 0005). `finish` sets exactly the
-  settled text, whatever pieces arrived.
+- **Streaming.** The agent's events become `AppendReply` pieces with an attempt and offset, and `RestartReply` when
+  the visible answer starts over (0012); the sequencer drops a piece it already has, so a replay changes nothing.
+  `finish` sets exactly the settled text, whatever pieces arrived.
 - **Events stream as Server-Sent Events**: `id: <seq>`, `data: <event JSON>`, a keep-alive comment every 20 s. A
   plain GET that `curl` can read, Effect's `Sse` decoder on the client, and the existing reconnect from the last
   `seq` when it ends. An open stream keeps its object in memory; if idle followers' duration ever costs real money,
@@ -70,5 +70,5 @@ the API says `mock`. `alchemy dev` runs the Alchemy objects themselves; `E2E_LIV
 exec playwright test e2e/live.spec.ts` drives the page against it. With `CEREBRAS_API_KEY` set, the workerd suite also
 asks the real model, and `E2E_LIVE_ANSWERS=1` makes the browser case require an answer. No model is scripted.
 
-**Outside this decision.** Sign-in and per-person limits (brick 2); the agent's tools (it answers from the skill
+**Outside this decision.** Sign-in and per-person limits (brick 2); the agent's tools (0012 lists them; it answers from the skill
 alone); TLA+ of the object protocol (0005's "Outside the proof").

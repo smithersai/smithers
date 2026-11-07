@@ -1,13 +1,18 @@
-// The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md).
-// Every side effect is a journaled step, so a reset Durable Object resumes the reply where it stopped, and the model
-// call is `@smthrs/agent`'s `ModelStep`, never a raw provider call. The reply streams through the conversation's
-// sequencer as `StartReply`, `AppendReply`, `RestartReply` (the model call retried) and `FinishReply`; every failure
+// The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md,
+// 0012-smithers-agent.md). Every side effect is a journaled step, so a reset Durable Object resumes the reply where it
+// stopped. The answer is smithers.sh's agent: `@smthrs/agent`'s `AgentAction`, the codemode loop apps/mvp's chat runs
+// (its cells in QuickJS, here the workerd build), with VibeLang's skill as context; its model calls are the agent's
+// own `ModelStep`s, never a raw provider call. The reply streams through the conversation's sequencer as
+// `StartReply`, `AppendReply`, `RestartReply` (the visible answer started over) and `FinishReply`; every failure
 // becomes `FailReply` with a reason the person reads.
-import { ModelStep } from "@smthrs/agent"
+import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import { type ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
+import { type AgentEvent, DoneText } from "@smthrs/harness"
+import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
+import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
+import { Registry } from "@smthrs/registry"
 import { Reply, replyIdOf } from "../src/core/flows.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
@@ -51,9 +56,24 @@ export const REASONS = {
   failed: "The agent failed. Try again.",
 } as const
 
-/** The most tokens one answer may use, and the most turns of the conversation the model reads. */
+/** The most tokens one model call may write, and the most turns of the conversation the agent reads. */
 export const MAX_ANSWER_TOKENS = 2048
 export const MAX_TURNS = 24
+
+/** The most model turns (frames) one reply takes, as smithers.sh's chat answer (apps/mvp's `MAX_FRAMES`). */
+export const MAX_FRAMES = 8
+
+/** The context window the agent compacts against, as smithers.sh's agents do. */
+export const CONTEXT_WINDOW_TOKENS = 32_768
+
+/** The seat the agent declares; the host answers it with the deployment's chat model. */
+export const AGENT_SEAT = "agent"
+
+/**
+ * One cell's limits: no tool calls (the agent has none in a Worker yet, 0012), a QuickJS heap well inside the
+ * isolate's 128 MiB, and five seconds of evaluation.
+ */
+export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
 /** A step that waits on the budget's object, or on another reply: it retries until it can, at most a minute apart. */
 const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
@@ -63,21 +83,35 @@ export function dayOf(millis: number): string {
   return new Date(millis).toISOString().slice(0, 10)
 }
 
-/** The model request for `turns`: VibeLang's own reference as system context, then the conversation. */
-export function requestFor(modelId: string, turns: ReadonlyArray<Turn>) {
-  return ModelRequest.ModelRequest.make({
-    modelId,
-    system: [ModelRequest.SystemPart.make({ text: AGENT_CONTEXT })],
-    messages: turns.slice(-MAX_TURNS).map((turn) =>
-      turn.author === "person" ? ModelRequest.Message.user(turn.text) : ModelRequest.Message.assistant(turn.text)
-    ),
-    tools: [],
-    params: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
-  })
+/** The agent's task: the conversation so far, then the post it answers, as smithers.sh's chat asks it. */
+export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): string {
+  const turns = payload.turns.slice(-MAX_TURNS)
+  const asked = turns.at(-1)
+  const history = turns.slice(0, -1)
+  if (asked === undefined) return ""
+  if (history.length === 0) return asked.text
+  return [
+    "The conversation so far:",
+    ...history.map((turn) => `${turn.author === "person" ? "Person" : "VibeLang agent"}: ${turn.text}`),
+    "",
+    `The person now asks: ${asked.text}`,
+  ].join("\n")
 }
 
-/** The reason a person reads for a provider error the model step sealed. */
-export function reasonOf(error: ModelError.ModelError): string {
+/** `vibelang/reply/agent`: smithers.sh's agent answers the post, VibeLang's own reference its system context. */
+export const Respond = AgentAction.make("vibelang/reply/agent", {
+  payload: { turns: Schema.Array(Turn) },
+  output: Schema.String,
+  seat: AGENT_SEAT,
+  system: [AGENT_CONTEXT],
+  profile: "conversation",
+  prompt: promptOf,
+  maxFrames: MAX_FRAMES,
+  modelParams: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
+})
+
+/** The reason a person reads for a model call that failed with `code`. */
+export function reasonOf(error: { readonly code: string }): string {
   if (error.code === "content_policy") return REASONS.refused
   // The provider's billing, not this deployment's daily budget (Budget.vibe): a person must not read one as the other.
   if (error.code === "out_of_credit" || error.code === "quota_exceeded") return REASONS.credit
@@ -89,19 +123,125 @@ function tagOf(error: unknown): string {
   return typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : "defect"
 }
 
-function textOf(events: ReadonlyArray<ModelEvent.ModelEvent>): string {
-  return ModelEvent.settledMessage(events).message.content
-    .flatMap((part) => part.type === "text" ? [part.text] : []).join("")
+/** What the agent showed and spent while it answered, folded from its events. */
+export interface Progress {
+  /** The current model call's text so far. */
+  readonly reply: string
+  /** The answer as far as it has arrived: the literal the reply passes to its last `ctx.done(` (`DoneText`). */
+  readonly text: string
+  readonly tokens: number
+  /** The code of the last model call that failed, if one did. */
+  readonly failed: string | undefined
 }
 
-function tokensOf(events: ReadonlyArray<ModelEvent.ModelEvent>): number {
-  const usage = ModelEvent.settledMessage(events).usage
-  return (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
+export const started: Progress = { reply: "", text: "", tokens: 0, failed: undefined }
+
+/** Folds one agent event into the reply's progress. A new model call or a retry starts the reply's text over. */
+export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress {
+  switch (event._tag) {
+    case "model-requested":
+    case "model-retried":
+      return { ...progress, reply: "" }
+    case "model-delta": {
+      if (event.delta.type !== "text-delta") return progress
+      const reply = progress.reply + event.delta.text
+      const text = Option.getOrUndefined(DoneText.project(reply))
+      return { ...progress, reply, text: text ?? progress.text }
+    }
+    case "model-settled":
+      return { ...progress, tokens: progress.tokens + (event.usage.inputTokens ?? 0) + (event.usage.outputTokens ?? 0) }
+    case "model-failed":
+      return { ...progress, failed: event.code }
+    default:
+      return progress
+  }
+}
+
+/** smithers.sh's agent over `model`: no registry, no tools, the cell sandbox on workerd, its events to `sink`. */
+export function agentOf(model: HostModel["Service"], sink: EventSink.Service) {
+  const seat = Seat.make({
+    id: AGENT_SEAT,
+    modelId: model.modelId,
+    model: model.model,
+    route: model.route,
+    contextWindowTokens: CONTEXT_WINDOW_TOKENS,
+  })
+  return Respond.layer.pipe(
+    Layer.provide(Layer.mergeAll(
+      AgentAction.layerHost({
+        registry: Registry.makeNoop(),
+        flows: [],
+        limits: LIMITS,
+        capabilityEnvelope: [],
+        maxFrames: MAX_FRAMES,
+      }),
+      SeatResolver.layer({
+        resolve: (id) => id === AGENT_SEAT
+          ? Effect.succeed(seat)
+          : Effect.fail(new Seat.SeatUnresolved({ seat: id, message: "The VibeLang agent has one seat, agent." })),
+      }),
+      Agent.layer,
+      EventSink.layer(sink),
+    )),
+    Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
+    Layer.provide(Layer.mergeAll(Agent.layerDefaultsWithVariant, Evaluator.layerUnavailable())),
+    Layer.provide(QuickJSWorkerd.variant),
+  )
 }
 
 data Outcome { Answered { text: string }; Failed { reason: string } }
 
-/** Everything between starting the reply and settling it: the budget, the history, the model and the spend. */
+/** The reason a person reads for the agent's failure `tag`, given what its events said. */
+export function failureReason(tag: string, progress: Progress): string {
+  if (tag === "@smthrs/agent/Seat/SeatUnresolved") return REASONS.unconfigured
+  if (tag.endsWith("StructuredOutputFailure")) return REASONS.empty
+  if (progress.failed !== undefined) return reasonOf({ code: progress.failed })
+  return REASONS.failed
+}
+
+/**
+ * Runs the agent on `turns`, streaming its visible answer into `reply`: each event goes on a queue (the sink runs
+ * inside the engine's write, so it never writes storage itself), and a fiber hands the text to the sequencer as
+ * appends, or a restart when the answer started over.
+ */
+effect function respond(reply: string, model: HostModel["Service"], turns: ReadonlyArray<Turn>) {
+  const replies = try Replies
+  const events = try Queue.unbounded<AgentEvent.AgentEvent | undefined>()
+  const progress = try Ref.make(started)
+  const sink: EventSink.Service = { emit: (event) => Effect.asVoid(Queue.offer(events, event)) }
+  const streamer = fork effect {
+    let attempt = 1
+    let shown = ""
+    while (true) {
+      const event = try Queue.take(events)
+      if (event === undefined) return
+      const next = fold(try Ref.get(progress), event)
+      try Ref.set(progress, next)
+      if (next.text === shown) continue
+      if (!next.text.startsWith(shown)) {
+        attempt += 1
+        shown = ""
+        try replies.restart(reply, attempt)
+      }
+      try replies.append(reply, attempt, shown.length, next.text.slice(shown.length))
+      shown = next.text
+    }
+  }
+  const answered = try exit(run(model, sink, turns))
+  try Queue.offer(events, undefined)
+  join streamer
+  return { answered, progress: try Ref.get(progress) }
+}
+
+/** One run of `vibelang/reply/agent`, as the journaled step its declaration makes. */
+effect function run(model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
+  provide agentOf(model, sink), EventSink.EventSink = sink {
+    const implementation = try Respond.requirement
+    return try implementation.action({ turns })
+  }
+}
+
+/** Everything between starting the reply and settling it: the budget, the history, the agent and the spend. */
 effect function compose(post: string, reply: string) {
   const replies = try Replies
   const spend = try Spend
@@ -127,42 +267,19 @@ effect function compose(post: string, reply: string) {
     success: Schema.Array(Turn),
     execute: replies.history(post),
   })
-  // Each piece goes to the sequencer as it streams. `finish` sets the settled text whatever arrived, and a replay
-  // hands the recorded pieces again, which the sequencer already has.
-  let attempt = 1
-  let offset = 0
-  const result = try ModelStep.run({
-    name: "vibelang/reply/model",
-    request: requestFor(model.modelId, turns),
-    model: model.model,
-    route: model.route,
-    onEvent: (event) => {
-      if (event.type === "retry") {
-        attempt = event.attempt
-        offset = 0
-        return replies.restart(reply, attempt)
-      }
-      if (event.type !== "text-delta" || event.text === "") return Effect.void
-      const at = offset
-      offset += event.text.length
-      return replies.append(reply, attempt, at, event.text)
-    },
-  })
-  const tokens = tokensOf(result.events)
+  const { answered, progress } = try respond(reply, model, turns)
   try Action.make({
     name: "vibelang/reply/spend",
     error: Unreachable,
     retryPolicy: patient,
-    execute: spend.spend(admission.day, reply, tokens),
+    execute: spend.spend(admission.day, reply, progress.tokens),
   })
-  try Effect.logInfo("vibelang.reply.model").pipe(Effect.annotateLogs({
-    outcome: result.error === undefined ? "answered" : result.error.code,
-    tokens,
-    replayed: result.replayed,
-  }))
-  if (result.error !== undefined) return Outcome.Failed({ reason: reasonOf(result.error) })
-  const text = textOf(result.events)
-  return text === "" ? Outcome.Failed({ reason: REASONS.empty }) : Outcome.Answered({ text })
+  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
+  const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
+  try Effect.logInfo("vibelang.reply.agent").pipe(Effect.annotateLogs({ outcome: progress.failed ?? tag, tokens: progress.tokens }))
+  if (Exit.isFailure(answered)) return Outcome.Failed({ reason: failureReason(tag, progress) })
+  const text = answered.value
+  return typeof text === "string" && text.trim() !== "" ? Outcome.Answered({ text }) : Outcome.Failed({ reason: REASONS.empty })
 }
 
 /** The reply flow's body: start the reply, compose it, then settle it as finished or failed. */

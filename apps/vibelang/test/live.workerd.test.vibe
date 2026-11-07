@@ -155,6 +155,35 @@ describe("the live Factory in local workerd, with the day's budget spent", () =>
   })
 })
 
+// A model nobody answers: a host under `.invalid`, which never resolves (RFC 2606). The reply reaches smithers.sh's agent (its host, its seat and its workerd
+// sandbox build), whose model call fails as a real connection fails; no model is scripted.
+const UNREACHABLE_MODEL = JSON.stringify({
+  protocol: "openai-chat", baseUrl: "https://model.invalid", modelId: "qwen-3.8-27b", credential: "UNANSWERED",
+})
+
+/** The unanswered model's key and the one origin it may reach, as @smthrs/model-host reads a custom credential. */
+const UNANSWERED = { SMITHERS_MODEL_KEY_UNANSWERED: "unused-key", SMITHERS_MODEL_KEY_UNANSWERED_ORIGIN: "https://model.invalid" }
+
+describe("the live Factory in local workerd, with a model nobody answers", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_MODEL: UNREACHABLE_MODEL, ...UNANSWERED })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("runs the reply on smithers.sh's agent, which fails saying the model is unavailable", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("agent")
+      try factory.post(conversation, "a", "Ada", "How do services work?")
+      const events = try untilSettled(conversation, 1)
+      const runs = try runsOf(api!.origin, conversation)
+      try Effect.try(() => {
+        expect(events.at(-1)).toEqual({ type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unavailable })
+        expect(runs.map((run) => run.run_id)).toContain("reply/m1")
+      })
+    }
+  }, 300_000)
+})
+
 describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
   let api: Served | undefined
   beforeAll(async () => { api = await runPromise(serveApi({ CEREBRAS_API_KEY: modelKey ?? "" })) }, 120_000)

@@ -935,6 +935,9 @@ importers:
       '@smthrs/flow':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/flow
+      '@smthrs/harness':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/harness
       '@smthrs/model':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/model
@@ -947,6 +950,9 @@ importers:
       '@smthrs/platform-cloudflare':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/platform-cloudflare
+      '@smthrs/registry':
+        specifier: workspace:*
+        version: link:../../packages/smithers/agent/registry
       '@smthrs/ui-css':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/ui-css
@@ -2016,6 +2022,9 @@ importers:
       '@jitl/quickjs-singlefile-browser-release-sync':
         specifier: 0.32.0
         version: 0.32.0
+      '@jitl/quickjs-wasmfile-release-sync':
+        specifier: 0.32.0
+        version: 0.32.0
       '@smthrs/canonical':
         specifier: 1.0.0-rc.16
         version: link:../../flows/canonical
@@ -2068,9 +2077,6 @@ importers:
       '@eslint/js':
         specifier: 9.39.5
         version: 9.39.5
-      '@jitl/quickjs-wasmfile-release-sync':
-        specifier: 0.32.0
-        version: 0.32.0
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -2104,6 +2110,9 @@ importers:
       madge:
         specifier: 8.0.0
         version: 8.0.0(supports-color@10.2.2)
+      miniflare:
+        specifier: 5.20261019.0-beta
+        version: 5.20261019.0-beta(@types/node@26.4.1)
       typescript:
         specifier: 5.9.3
         version: 5.9.3
@@ -23584,7 +23593,7 @@ snapshots:
 
   happy-dom@20.14.6:
     dependencies:
-      '@types/node': 26.4.1
+      '@types/node': 26.6.6
       '@types/whatwg-mimetype': 3.0.2
       '@types/ws': 8.18.2
       buffer-image-size: 0.6.4
@@ -26692,7 +26701,7 @@ snapshots:
     dependencies:
       css-tree: 3.2.1
       ohash: 2.0.12
-      undici: 8.11.2
+      undici: 8.12.4
 
   unique-string@2.0.0:
     dependencies:

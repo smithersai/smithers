@@ -24,6 +24,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0009](decisions/0009-surfaces.md) | One Schema command registry derives the Factory CLI, MCP tools and agent manifest |
 | [0010](decisions/0010-live-agent.md) | The live agent: a Durable Object per conversation runs the sequencer and its reply's durable flow; LiveFactory over HTTP and SSE |
 | [0011](decisions/0011-post-flow.md) | A person's post is a durable `vibelang/Post` flow: record, then dispatch the reply; the mock runs the same flows in memory |
+| [0012](decisions/0012-smithers-agent.md) | The reply is smithers.sh's agent: `@smthrs/agent`'s `AgentAction` on a workerd QuickJS sandbox, VibeLang's skill as context |
 
 ## Layout
 
