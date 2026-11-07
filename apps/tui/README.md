@@ -706,3 +706,12 @@ TypeScript roster test. Missing, extra or duplicate logical sources refuse the
 update. Additions and deletions require an explicit manifest change; regeneration
 never prunes the manifest. Declaration companions owned by a native module are
 reported separately from its logical identifier.
+
+
+The inventory treats `<name>.platform.ts` as a runtime part of its adjacent
+`<name>.vibe` module. It keeps that real TypeScript source in the physical roster
+and reports it separately. Generated `<name>.vibe.throwing.d.ts` declarations are
+type companions, like `<name>.vibe.platform.d.ts`. Every part needs its native
+owner; a platform file that was already an original logical source retains its
+own identity. Regeneration refuses to hide a runtime platform file removed from
+the previous physical roster.

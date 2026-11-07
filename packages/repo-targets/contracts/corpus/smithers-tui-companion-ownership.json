@@ -1,0 +1,8 @@
+{
+  "witness": [
+    "src/branch.ts",
+    "src/view.tsx"
+  ],
+  "runtime": "src/branch.platform.ts",
+  "throwing": "src/branch.vibe.throwing.d.ts"
+}

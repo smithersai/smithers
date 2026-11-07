@@ -2,7 +2,7 @@
  * Preserve logical source coverage when a module changes its file extension.
  * @since 0.1.0
  */
-import { readFileSync, readdirSync, writeFileSync } from "node:fs"
+import { existsSync, readFileSync, readdirSync, writeFileSync } from "node:fs"
 import { join, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 
@@ -12,24 +12,32 @@ const sourceFiles = (root, directory = "src") => readdirSync(join(root, director
     entry.isFile() && /\.(?:tsx?|vibe)$/.test(entry.name) ? [path] : []
 }).sort()
 
+const companionOwner = path => path.endsWith(".d.vibe.ts") ? path.replace(/\.d\.vibe\.ts$/, ".vibe") :
+  /\.vibe\.(?:platform|throwing)\.d\.ts$/.test(path) ? path.replace(/\.(?:platform|throwing)\.d\.ts$/, "") :
+  path.endsWith(".platform.ts") ? path.replace(/\.platform\.ts$/, ".vibe") : undefined
+
 /** Physical files, their stable logical identifiers and owned declaration companions. */
 export const sourceInventory = (root, manifest) => {
   const files = sourceFiles(root)
   const actual = new Set(files)
   const original = new Set(manifest)
   const companions = []
+  const platform = []
   const logical = []
   for (const path of files) {
-    const owner = path.endsWith(".d.vibe.ts") ? path.replace(/\.d\.vibe\.ts$/, ".vibe") :
-      path.endsWith(".vibe.platform.d.ts") ? path.slice(0, -".platform.d.ts".length) : undefined
-    if (!original.has(path) && owner !== undefined && actual.has(owner)) companions.push(path)
+    const owner = companionOwner(path)
+    if (!original.has(path) && owner !== undefined && actual.has(owner)) {
+      if (path.endsWith(".platform.ts")) platform.push(path)
+      else companions.push(path)
+    }
     else logical.push(path.endsWith(".vibe") ? path.slice(0, -".vibe".length) + ".ts" : path)
   }
   return {
     typescript: files.filter(path => /\.tsx?$/.test(path)),
     native: files.filter(path => path.endsWith(".vibe")),
     logical: logical.sort(),
-    companions
+    companions,
+    platform
   }
 }
 
@@ -54,7 +62,22 @@ export const checkSourceCoverage = (root, manifest) => {
 /** Rewrite only the physical TypeScript roster after the complete logical inventory passes. */
 export const writeTypeScriptRoster = (root, manifest) => {
   const inventory = checkSourceCoverage(root, manifest)
-  writeFileSync(join(root, "coverage-roster.json"), JSON.stringify(inventory.typescript, null, 2) + "\n")
+  const roster = join(root, "coverage-roster.json")
+  if (existsSync(roster)) {
+    const prior = JSON.parse(readFileSync(roster, "utf8"))
+    if (!Array.isArray(prior) || prior.some(path => typeof path !== "string")) throw new Error("Invalid physical source roster")
+    const current = new Set(inventory.typescript)
+    const native = new Set(inventory.native)
+    const original = new Set(manifest)
+    const removed = prior.filter(path => {
+      if (current.has(path)) return false
+      if (original.has(path) && native.has(path.replace(/\.tsx?$/, ".vibe"))) return false
+      const owner = companionOwner(path)
+      return path.endsWith(".platform.ts") || original.has(path) || owner === undefined || !native.has(owner)
+    })
+    if (removed.length) throw new Error("Missing physical source while regenerating coverage: " + JSON.stringify(removed))
+  }
+  writeFileSync(roster, JSON.stringify(inventory.typescript, null, 2) + "\n")
   return inventory
 }
 
@@ -66,5 +89,5 @@ if (process.argv[1] && resolve(process.argv[1]) === fileURLToPath(import.meta.ur
   const roster = JSON.parse(readFileSync(join(root, "coverage-roster.json"), "utf8"))
   if (JSON.stringify(roster) !== JSON.stringify(inventory.typescript)) throw new Error("The physical TypeScript roster is stale")
   console.log(JSON.stringify({ logical: inventory.logical.length, native: inventory.native.length,
-    typescript: inventory.typescript.length, companions: inventory.companions.length, written: write }))
+    typescript: inventory.typescript.length, companions: inventory.companions.length, platform: inventory.platform.length, written: write }))
 }

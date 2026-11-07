@@ -975,4 +975,22 @@ const targetDeclarationRoutes = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, targetDeclarationRoutes, packageOutputRoutes, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+/**
+ * Preserves coverage ownership of native runtime and declaration companions.
+ * @since 0.1.0
+ * @category test
+ */
+const tuiCompanionInventory = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/tui-companion-inventory.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/repo-targets/contracts/tui-companion-inventory.test.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/corpus/smithers-tui-companion-ownership.json"),
+    Smithers.file("//apps/tui/coverage-inventory.mjs"),
+    Smithers.file("//apps/tui/coverage-inventory.d.mts"),
+    Smithers.file("//apps/tui/coverage-source-manifest.json"),
+    Smithers.file("//apps/tui/coverage-roster.json")
+  ],
+  deps: [repositoryInputs]
+})
+
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, tuiCompanionInventory, targetDeclarationRoutes, packageOutputRoutes, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

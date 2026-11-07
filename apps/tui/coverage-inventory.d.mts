@@ -4,6 +4,7 @@ export interface SourceInventory {
   readonly native: ReadonlyArray<string>
   readonly logical: ReadonlyArray<string>
   readonly companions: ReadonlyArray<string>
+  readonly platform: ReadonlyArray<string>
 }
 export declare const sourceInventory: (root: string, manifest: ReadonlyArray<string>) => SourceInventory
 export declare const checkSourceCoverage: (root: string, manifest: ReadonlyArray<string>) => SourceInventory
