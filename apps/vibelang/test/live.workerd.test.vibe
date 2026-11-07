@@ -1,6 +1,6 @@
 // The live Factory end to end in local workerd (wiki/decisions/0010-live-agent.md, 0008-testing.md): Miniflare runs
 // the API Worker's Durable Objects over the real sequencer, the real `vibelang/Reply` flow on the engine in each
-// conversation's own SQLite, and the real HTTP protocol (test/workerd/worker.ts), and `LiveFactory` talks to it over
+// conversation's own SQLite, and the real HTTP protocol (test/workerd/worker.vibe), and `LiveFactory` talks to it over
 // HTTP from this process, as the CLI and the browser do. No model is scripted: without a key the agent's real
 // configuration has no model, so every reply fails saying so, and a spent budget refuses before any model call. The
 // opt-in case asks the real model when `CEREBRAS_API_KEY` is set. Run with `pnpm test:workerd`.
@@ -11,7 +11,7 @@ import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
 import { REASONS } from "../worker/Reply.vibe"
-import { modelKey, room, serveApi, type Served } from "./support/workerd.ts"
+import { modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
 
 /** The live Factory at `origin`, over this process's fetch. */
 function live(origin: string) {
@@ -38,7 +38,7 @@ effect function untilSettled(conversation: string, replies: number, after = 0) {
 
 describe("the live Factory in local workerd, with no model key", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await serveApi() }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
   afterAll(async () => { await api?.dispose() })
 
   it.live("says it is live, and a post's reply runs as a durable flow that fails, saying the agent has no model", () => effect {
@@ -46,7 +46,7 @@ describe("the live Factory in local workerd, with no model key", () => {
     const answer = try healthOf(origin)
     provide live(origin) {
       const factory = try Factory
-      const conversation = room("unconfigured")
+      const conversation = try room("unconfigured")
       try factory.post(conversation, "a", "Ada", "  How do services work?  ")
       const events = try untilSettled(conversation, 1)
       const snapshot = try factory.read(conversation, 0)
@@ -66,7 +66,7 @@ describe("the live Factory in local workerd, with no model key", () => {
   it.live("answers posts one at a time in order, two followers see the same events, and a cursor resumes", () => effect {
     provide live(api!.origin) {
       const factory = try Factory
-      const conversation = room("queue")
+      const conversation = try room("queue")
       try factory.post(conversation, "a", "Ada", "first")
       try factory.post(conversation, "b", "Grace", "second")
       const [first, second] = try.all [untilSettled(conversation, 2), untilSettled(conversation, 2)]
@@ -92,7 +92,7 @@ describe("the live Factory in local workerd, with no model key", () => {
   it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
     provide live(api!.origin) {
       const factory = try Factory
-      const conversation = room("refusals")
+      const conversation = try room("refusals")
       const refusal = effect (clientId: string, text: string) => {
         return factory.post(conversation, clientId, "Ada", text) catch (error) => error._tag === "Refused" ? error.refusal : error.reason
       }
@@ -111,13 +111,13 @@ describe("the live Factory in local workerd, with no model key", () => {
 
 describe("the live Factory in local workerd, with the day's budget spent", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await serveApi({ CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" }) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" })) }, 120_000)
   afterAll(async () => { await api?.dispose() })
 
   it.live("refuses the reply before any model call, saying the budget is spent", () => effect {
     provide live(api!.origin) {
       const factory = try Factory
-      const conversation = room("budget")
+      const conversation = try room("budget")
       try factory.post(conversation, "a", "Ada", "hi")
       const events = try untilSettled(conversation, 1)
       try Effect.try(() => {
@@ -129,13 +129,13 @@ describe("the live Factory in local workerd, with the day's budget spent", () =>
 
 describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
   let api: Served | undefined
-  beforeAll(async () => { api = await serveApi({ CEREBRAS_API_KEY: modelKey ?? "" }) }, 120_000)
+  beforeAll(async () => { api = await runPromise(serveApi({ CEREBRAS_API_KEY: modelKey ?? "" })) }, 120_000)
   afterAll(async () => { await api?.dispose() })
 
   it.live("streams an answer that finishes with VibeLang in it", () => effect {
     provide live(api!.origin) {
       const factory = try Factory
-      const conversation = room("model")
+      const conversation = try room("model")
       try factory.post(conversation, "a", "Ada", "Show me a VibeLang service with one effect method.")
       const events = try untilSettled(conversation, 1)
       const reply = events.reduce(apply, empty).entries[1]!

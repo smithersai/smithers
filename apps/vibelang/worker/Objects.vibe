@@ -1,5 +1,5 @@
 // What each Durable Object runs, whoever hosts it: the Alchemy objects the API Worker deploys (Api.vibe) and the plain
-// ones the workerd test runs (test/workerd/worker.ts). Both hosts hand it the object's own storage and the budget's
+// ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
 // caller, so they run the same code.
 //
 //   Conversation (one per conversation)   the sequencer, and the reply flow of the post it answers now: its intent

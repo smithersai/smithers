@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { blocks, inline } from "../src/web/markdown.vibe"
 
 describe("reply Markdown", () => {

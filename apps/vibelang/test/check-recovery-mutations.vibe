@@ -1,0 +1,63 @@
+// Retain the review's counterexamples: both suites must reject removal of either recovery mechanism, each failing
+// exactly the cases it breaks (the fault they recover from) while every other case passes.
+// Run with no other build/test process writing this workspace. The source is restored however the run ends.
+//   node --import=vibelang/register test/check-recovery-mutations.vibe [--browser]
+import * as NodeRuntime from "@effect/platform-node/NodeRuntime"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { run } from "./support/processes.vibe"
+
+/** A mutation that no longer matches the recovery code, or a suite that didn't reject exactly the cases it breaks. */
+error Survived { message: string }
+
+/** The cases each mutation breaks, named by their fault: a dropped event needs the gap check, and a disconnect or an
+ * ended stream needs reconnect's new epoch and cursor. */
+const BREAKS: Record<string, ReadonlyArray<RegExp>> = { gap: [/\bdrop\b/], reconnect: [/\bdisconnect\b/, /\bend\b/] }
+
+/** Whether a suite's output failed exactly the cases `breaks` names and passed the rest. Vitest marks a failed case
+ * with ×, Playwright with ✘; either may color its output. */
+function killed(output: string, breaks: ReadonlyArray<RegExp>) {
+  const plain = output.replace(/\x1b\[[0-9;]*m/g, "")
+  const failed = plain.split("\n").filter((line) => /^\s*[×✘]/.test(line))
+  return failed.length === breaks.length && breaks.every((name) => failed.some((line) => name.test(line))) &&
+    /[1-9]\d* passed/.test(plain)
+}
+
+/** `original` without its gap check, or with reconnect no longer starting a new epoch from the client's seq. */
+function mutate(original: string, mutation: string) {
+  return mutation === "gap"
+    ? original.replace(/^      if \(client\.gap\) return .*\n/m, "")
+    : original.replace("epoch: model.epoch + 1, from: model.client.conversation.seq", "epoch: model.epoch, from: model.from")
+}
+
+export effect function main() {
+  const fs = try FileSystem.FileSystem
+  const path = try Path.Path
+  const source = try path.fromFileUrl(new URL("../src/web/main.vibe", import.meta.url))
+  const original = try fs.readFileString(source)
+  const configured = try Config.option(Config.String("VIBELANG_MUTATION_LOG_DIR"))
+  const directory = Option.isSome(configured) ? configured.value : try fs.makeTempDirectory({ prefix: "vl-recovery-" })
+  try fs.makeDirectory(directory, { recursive: true })
+  const suites: Array<readonly [string, ReadonlyArray<string>]> = [["runtime", ["exec", "vitest", "run", "test/recovery.runtime.test.vibe"]]]
+  if ((try (try Stdio.Stdio).args).includes("--browser")) {
+    suites.push(["browser", ["exec", "playwright", "test", "e2e/recovery.spec.ts", "--project=dark", "--workers=1"]])
+  }
+  try ensuring(effect {
+    for (const mutation of ["gap", "reconnect"]) {
+      const broken = mutate(original, mutation)
+      if (broken === original) throw new Survived({ message: `Mutation ${mutation} did not match the recovery code` })
+      try fs.writeFileString(source, broken)
+      for (const [suite, args] of suites) {
+        const result = try timeout(run("pnpm", args), "180 seconds")
+        const output = result.stdout + result.stderr
+        const log = path.join(directory, `${mutation}-${suite}.log`)
+        try fs.writeFileString(log, output)
+        if (result.status !== 1 || !killed(output, BREAKS[mutation]!)) {
+          throw new Survived({ message: `${mutation}/${suite} did not reject exactly its affected behavior: ${log}` })
+        }
+        try Console.log(`Killed ${mutation}/${suite}: its cases failed, the rest passed (${log})`)
+      }
+    }
+  }, Effect.orDie(fs.writeFileString(source, original)))
+}
+
+NodeRuntime.runMain(Effect.provide(main(), NodeServices.layer))

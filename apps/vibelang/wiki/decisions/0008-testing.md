@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | Properties and units | `test/conversation.test.vibe` | `pnpm test` |
 | Integration of the Effect API | `test/MockFactory.test.vibe` | `pnpm test` |
-| Scenes: the real view and update, driven by role and text, no browser | `test/app.scene.test.ts` | `pnpm test` |
+| Scenes: the real view and update, driven by role and text, no browser | `test/app.scene.test.vibe` | `pnpm test` |
 | Browser end to end: dark, light, phone | `e2e/chat.spec.ts` | `pnpm e2e`; `E2E_BASE_URL=https://vibelang.smithers.sh pnpm e2e` |
 | Agent surfaces | `test/{commands,cli,mcp}.test.*`: Factory commands, emitted CLI process, stdio McpClient, skill and schema parity | `pnpm test` |
 | Proofs | `src/core/conversation.vibe` contracts | `pnpm verify` (roadmap 1d) |
@@ -73,9 +73,10 @@ The fault host is an additional HTML entry **only in Vite's e2e build mode**; it
 Playwright always starts that local host, including when `E2E_BASE_URL` sends product tests to a deployment. Fault
 cases explicitly target the local host so test-only fault controls never enter deployed code.
 
-`node test/check-recovery-mutations.mjs --browser` removes the gap branch, then separately removes the reconnect
-epoch/cursor update. Each suite must fail exactly the affected case while its other case passes. It restores the
-source in `finally`; run it with no other build/test process using the workspace. Set `VIBELANG_MUTATION_LOG_DIR` to
+`node --import=vibelang/register test/check-recovery-mutations.vibe --browser` removes the gap branch, then separately removes the reconnect
+epoch/cursor update. Each suite must fail exactly the cases the mutation breaks (drop for the gap branch; disconnect and
+end for reconnect) while its other cases pass. It restores the
+source however the run ends; run it with no other build/test process using the workspace. Set `VIBELANG_MUTATION_LOG_DIR` to
 retain the four failure logs. The browser fix here leaves the shared core and its convergence property to the core
 lane.
 

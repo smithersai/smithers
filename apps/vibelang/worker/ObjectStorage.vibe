@@ -1,5 +1,5 @@
 // A Durable Object's own storage, as the conversation's log and the budget's ledger read and write it. Both Durable
-// Object hosts hand it `ctx.storage`: the Alchemy objects (Api.vibe) and the workerd test's (test/workerd/worker.ts).
+// Object hosts hand it `ctx.storage`: the Alchemy objects (Api.vibe) and the workerd test's (test/workerd/worker.vibe).
 import type { Event } from "../src/core/conversation.vibe"
 import type { Ledger } from "./Budget.vibe"
 import type { Log } from "./Sequencer.vibe"

@@ -14,7 +14,7 @@ shows a **Mock** pill whenever it runs.
 **Rules.**
 - Every new feature ships its mock layer in the same change, and its browser test runs against the mock first.
 - Scripted replies use only current, compiled VibeLang syntax (from the language's skill and the launch kit's verified
-  snippets). `test/scriptedReplies.test.ts` extracts every fenced `vibe` block from every scripted answer, including
+  snippets). `test/scriptedReplies.test.vibe` extracts every fenced `vibe` block from every scripted answer, including
   the fallback, and compiles each independently with the installed compiler. The full `--noEmit` typecheck must exit zero with no diagnostics; malformed syntax and invalid types are negative controls. Examples declare their own services/layers; the test
   supplies no hidden prelude. Recovery runs inside effect code, never at module scope.
 - The mock stays every suite's default backend. A page uses the live agent only when its origin's `/api/health`

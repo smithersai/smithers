@@ -1,6 +1,6 @@
 // The web app's real view and update, driven the way a person drives them, with Foldkit scenes (no browser).
 import { Command, click, expect, given, placeholder, role, scene, Subscription, text, type } from "foldkit/scene"
-import { describe, test } from "vitest"
+import { describe, it } from "@effect/vitest"
 import { newClient } from "../src/core/conversation.vibe"
 import { ShowPalette, ClosePalette, FocusComposer, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
@@ -27,7 +27,7 @@ const home: Model = {
 }
 
 describe("the splash", () => {
-  test("is VibeLang's home page with one action and routes to the docs and the source", () => {
+  it("is VibeLang's home page with one action and routes to the docs and the source", () => {
     scene(
       { update, view },
       given(home),
@@ -39,7 +39,7 @@ describe("the splash", () => {
     )
   })
 
-  test("⌘K opens the prompt; a question turns the page into the chat with the splash as its first pane", () => {
+  it("⌘K opens the prompt; a question turns the page into the chat with the splash as its first pane", () => {
     scene(
       { update, view },
       given(home),
@@ -59,7 +59,7 @@ describe("the splash", () => {
     )
   })
 
-  test("Escape closes the prompt without sending", () => {
+  it("Escape closes the prompt without sending", () => {
     scene(
       { update, view },
       given({ ...home, palette: true }),
@@ -74,7 +74,7 @@ describe("the splash", () => {
 describe("the chat", () => {
   const chatting: Model = { ...home, surface: "chat", stream: "open", sent: 1 }
 
-  test("shows the agent's streamed reply as it arrives and confirms the pending post", () => {
+  it("shows the agent's streamed reply as it arrives and confirms the pending post", () => {
     scene(
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
@@ -94,7 +94,7 @@ describe("the chat", () => {
     )
   })
 
-  test("a failed answer is announced once, without announcing its streamed pieces", () => {
+  it("a failed answer is announced once, without announcing its streamed pieces", () => {
     scene(
       { update, view },
       given({ ...chatting, following: false }),
@@ -110,7 +110,7 @@ describe("the chat", () => {
     )
   })
 
-  test("a failed answer says why, in the agent's words, and live mode shows no Mock pill", () => {
+  it("a failed answer says why, in the agent's words, and live mode shows no Mock pill", () => {
     const reason = "The agent's daily budget is spent. It resets at 00:00 UTC."
     scene(
       { update, view },
@@ -125,7 +125,7 @@ describe("the chat", () => {
     )
   })
 
-  test("scrolling up pauses following; Latest follows the transcript again", () => {
+  it("scrolling up pauses following; Latest follows the transcript again", () => {
     scene(
       { update, view },
       given(chatting),
@@ -143,7 +143,7 @@ describe("the chat", () => {
     )
   })
 
-  test("a refused post stays, marked with why", () => {
+  it("a refused post stays, marked with why", () => {
     scene(
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
@@ -158,7 +158,7 @@ describe("the chat", () => {
     )
   })
 
-  test("a broken event stream offers to reconnect", () => {
+  it("a broken event stream offers to reconnect", () => {
     scene(
       { update, view },
       given(chatting),
@@ -172,7 +172,7 @@ describe("the chat", () => {
     )
   })
 
-  test("the pane maximizes the splash again, and Chat returns to the conversation", () => {
+  it("the pane maximizes the splash again, and Chat returns to the conversation", () => {
     scene(
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
@@ -185,19 +185,19 @@ describe("the chat", () => {
 })
 
 describe("product language and authors", () => {
-  test("labels this tab's posts You and keeps another visitor's neutral name", () => {
+  it("labels this tab's posts You and keeps another visitor's neutral name", () => {
     scene({ update, view }, given({ ...home, surface: "chat", sent: 1 }),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "s1-1", name: "Guest", text: "mine" } })),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 2, id: "m2", clientId: "other-1", name: "Guest", text: "theirs" } })),
       expect(text("You")).toExist(), expect(text("Guest")).toExist())
   })
   for (const [reason, label] of [["empty", "Empty message"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["Factory closed", "Send failed"]]) {
-    test(`a refused post uses product words for ${reason}`, () => {
+    it(`a refused post uses product words for ${reason}`, () => {
       scene({ update, view }, given({ ...home, surface: "chat", client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: reason! }] } }),
         expect(text(label!)).toExist(), expect(role("button", { name: "Retry" })).toExist())
     })
   }
-  test("has no mock explanation tooltip or repeated answer-failure sentence", () => {
+  it("has no mock explanation tooltip or repeated answer-failure sentence", () => {
     scene({ update, view }, given({ ...home, surface: "chat", client: { ...newClient, conversation: { ...newClient.conversation, agent: "failed" } } }),
       expect(text("Mock")).not.toHaveAttr("title", "No backend or model: answers are scripted"),
       expect(text("The last answer failed")).toBeAbsent())

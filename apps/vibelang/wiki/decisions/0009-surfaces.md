@@ -43,7 +43,7 @@ nonzero exit. `--help` and `--llms` need no backend. The app installs with the r
 compact Markdown discovery surface. We use Effect Schema and Effect transports rather than incur's runtime stack.
 
 **Proof.** `test/commands.test.vibe` exercises the commands through Factory with the product mock backend, including
-concurrent asks, separate rooms, incremental reads, invalid input and unavailable live mode. `test/cli.test.ts`
+concurrent asks, separate rooms, incremental reads, invalid input and unavailable live mode. `test/cli.test.vibe`
 spawns the emitted executable and checks complete text, JSON, environment selection, help, errors and exit codes;
 it also validates the shipped skill. `test/mcp.test.vibe` drives the emitted stdio server through Effect's
 `McpClient`, calls both tools across one shared conversation, checks protocol failures, and compares the tool list's

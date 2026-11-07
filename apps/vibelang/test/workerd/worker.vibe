@@ -1,9 +1,9 @@
-// The workerd test's API Worker (test/live.workerd.test.ts): plain Durable Objects over the same code the Alchemy ones
+// The workerd test's API Worker (test/live.workerd.test.vibe): plain Durable Objects over the same code the Alchemy ones
 // in worker/Api.vibe run (worker/Objects.vibe, worker/Http.vibe), so local workerd runs the real sequencer, the real
 // reply flow on the engine in each object's SQLite, and the real HTTP protocol. Alchemy's own bundle can't be loaded
 // here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
-import { ConfigProvider, Effect } from "effect"
+// Its own answers are Effect's HTTP responses, converted to the platform's here.
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
 import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
@@ -30,8 +30,11 @@ interface State {
 }
 
 /** The Worker's env as Effect `Config`, as Alchemy provides it to a deployed Worker. */
-const configured = <A, E>(env: Env, effect: Effect.Effect<A, E>) =>
-  Effect.provide(effect, ConfigProvider.layer(ConfigProvider.fromUnknown(env)))
+const configured = <A, E>(env: Env, program: A!E) =>
+  Effect.provide(program, ConfigProvider.layer(ConfigProvider.fromUnknown(env)))
+
+/** `body` as the platform's JSON response. */
+const json = (body: unknown) => HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(body))
 
 const call = async (namespace: Namespace, name: string, path: string, body: unknown) => {
   const response = await namespace.get(namespace.idFromName(name)).fetch(`https://object/${path}`, {
@@ -62,10 +65,10 @@ export class Conversation {
     const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number }
     if (url.pathname === "/post") {
       const refusal = await Effect.runPromise(sequencer.post(args.clientId, args.name, args.text))
-      return Response.json({ refusal: refusal ?? null })
+      return json({ refusal: refusal ?? null })
     }
-    if (url.pathname === "/read") return Response.json(await Effect.runPromise(sequencer.read(args.after)))
-    return new Response("Not found", { status: 404 })
+    if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
+    return HttpServerResponse.toWeb(HttpServerResponse.text("Not found", { status: 404 }))
   }
 
   async alarm(): Promise<void> {
@@ -94,9 +97,9 @@ export class Budget {
     const budget = await this.budget
     const url = new URL(request.url)
     const args = await request.json() as { readonly reply: string; readonly tokens: number }
-    if (url.pathname === "/admit") return Response.json(await Effect.runPromise(budget.admit()))
+    if (url.pathname === "/admit") return json(await Effect.runPromise(budget.admit()))
     await Effect.runPromise(budget.spend(args.reply, args.tokens))
-    return Response.json(null)
+    return json(null)
   }
 }
 

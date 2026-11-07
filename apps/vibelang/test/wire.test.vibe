@@ -1,6 +1,6 @@
 // The API's routes and cursors (src/core/wire.vibe, worker/Http.vibe) and the names the sequencer gives its replies
 // and the budget its days: plain functions the workerd suites reach only through HTTP.
-import { describe, expect, it } from "vitest"
+import { describe, expect, it } from "@effect/vitest"
 import { conversationPath, MAX_CONVERSATION, routeOf } from "../src/core/wire.vibe"
 import { failureOf } from "../src/web/view.vibe"
 import { afterOf } from "../worker/Http.vibe"
