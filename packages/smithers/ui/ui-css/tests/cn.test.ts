@@ -23,6 +23,18 @@ describe("framework-free root", () => {
     expect(cn({ a: true, "": true, b: true }, "c")).toBe("a  b c");
     expect(cn(" ", ["a", " "])).toBe("  a  ");
   });
+  test("preserves indexed array semantics, including custom iterators and accessors", () => {
+    const names = ["indexed"];
+    names[Symbol.iterator] = function* () { yield "iterator"; };
+    expect(cn(names)).toBe("indexed");
+    let reads = 0;
+    const changing: string[] = [];
+    Object.defineProperty(changing, 0, {
+      get() { reads++; if (reads === 1) changing.push("later"); return reads === 1 ? "first" : "second"; },
+    });
+    expect(cn(changing)).toBe("second");
+    expect(reads).toBe(2);
+  });
   test("accepts a large flat class array without an argument-list limit", () => {
     const names = Array.from({ length: 200_000 }, () => "x");
     expect(cn(names)).toBe(names.join(" "));

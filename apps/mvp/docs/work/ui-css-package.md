@@ -12,8 +12,8 @@ Extract the UI library catalog entry's styles into `@smthrs/ui-css` for Foldkit
 and other frameworks. Keep `@smthrs/ui` exports and stylesheet bytes unchanged.
 The only dependency is the existing catalog entry `@smthrs/ui-styleguide`.
 
-Validation: ui-css has 151 passing tests with 100% coverage; the React UI has
-2,827 passing tests, including stylesheet parity via React's server renderer.
+Validation: ui-css has 152 passing tests with 100% coverage; the React UI has
+2,828 passing tests, including stylesheet parity via React's server renderer.
 All four app typecheck projects pass. Node, Bun, Chromium and Cloudflare workerd
 load the framework-free root. All 35 CSS source modules retain their original
 stylesheet content. Full app-suite receipts and any failures are recorded in
