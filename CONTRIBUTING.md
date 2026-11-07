@@ -25,6 +25,11 @@ later); that floor is what consumers may run, not what this workspace develops
 on. Install the pinned package manager (`pnpm@11.25.0`), then
 dependencies with `pnpm install`.
 
+Local VibeLang package pins use content-addressed archives in `.vibelang-toolchain/`.
+Commit each referenced archive with its manifest and lockfile changes so a fresh
+checkout can run `pnpm install --frozen-lockfile`. The repository contract test suite verifies
+archive availability and checksums across the declared workspace packages.
+
 Before landing on `main`, run every gate:
 
 ```sh

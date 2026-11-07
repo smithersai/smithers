@@ -54052,6 +54052,10 @@
         "path": "packages/repo-targets/contracts/check-toolchain-pins.test.mjs"
       },
       {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/toolchain-archives.test.mjs"
+      },
+      {
         "kind": "glob",
         "pattern": "packages/repo-targets/contracts/**/*.mjs",
         "exclude": []
@@ -54087,10 +54091,31 @@
       {
         "kind": "file",
         "path": ".github/scripts/ci/cloud.sh"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": ".vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+      },
+      {
+        "kind": "file",
+        "path": ".vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+      },
+      {
+        "kind": "file",
+        "path": ".vibelang-toolchain/vibelang-unplugin-0.0.11-45a3600458c6.tgz"
+      },
+      {
+        "kind": "file",
+        "path": ".vibelang-toolchain/vibelang-vite-0.0.11-a43d2b04075f.tgz"
       }
     ],
     "outputs": [],
     "dependencies": [
+      "//packages/repo-targets:repositoryInputs",
       "//packages/repo-targets:workflowSources"
     ],
     "source": {

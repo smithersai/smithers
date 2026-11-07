@@ -1,7 +1,9 @@
 import { Smithers } from "@smthrs/targets"
 import { ReviewDocsAgainstCode, ReviewJsdocAgainstCode } from "./src/index.ts"
 import { listFiles } from "./contracts/check-tracked-hygiene.mjs"
-import { repoRoot } from "./scripts/workspace-packages.mjs"
+import { repoRoot, workspacePackages as listWorkspacePackages } from "./scripts/workspace-packages.mjs"
+import { readFileSync } from "node:fs"
+import { relative, resolve } from "node:path"
 
 const cwd = "packages/repo-targets"
 const sources = Smithers.glob("src/**/*.ts")
@@ -52,6 +54,23 @@ const repositoryPackages = Object.fromEntries(
 )
 const repositoryInputs = Smithers.Filegroup({ srcs: Object.values(repositoryPackages) })
 const workflowSources = Smithers.Filegroup({ cwd: ".github", srcs: [Smithers.glob("workflows/*.yml")] })
+
+// Local package archives are ignored build artifacts unless a manifest pins
+// them. Declare each pinned file explicitly so ignore rules cannot hide it.
+const toolchainPackageNames = new Set(["vibelang", "vibelang-runtime", "vibelang-vite", "vibelang-unplugin"])
+const toolchainArchives = [...new Set([
+  { dir: ".", manifest: JSON.parse(readFileSync(resolve(repoRoot, "package.json"), "utf8")) },
+  ...listWorkspacePackages(repoRoot)
+].flatMap(({ dir, manifest }) =>
+  ["dependencies", "devDependencies", "optionalDependencies", "peerDependencies"].flatMap((field) =>
+    Object.entries(manifest[field] ?? {}).flatMap(([name, specifier]) =>
+      toolchainPackageNames.has(name) && typeof specifier === "string" &&
+        specifier.startsWith("file:") && specifier.endsWith(".tgz")
+        ? [relative(repoRoot, resolve(repoRoot, dir, specifier.slice(5)))]
+        : []
+    )
+  )
+))].sort().map((path) => Smithers.file("//" + path))
 
 /**
  * The repository contract gates under `contracts/`, digested as the input of
@@ -117,7 +136,10 @@ const trackedHygieneUnit = Smithers.NodeTest({
  * @category test
  */
 const toolchainPins = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/check-toolchain-pins.test.mjs")]),
+  runner: Smithers.testRunner([
+    Smithers.file("//packages/repo-targets/contracts/check-toolchain-pins.test.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/toolchain-archives.test.mjs")
+  ]),
   srcs: [
     ...contracts,
     Smithers.file("//.smithers/WORKSPACE.ts"),
@@ -126,9 +148,11 @@ const toolchainPins = Smithers.NodeTest({
     Smithers.file("//.node-version"),
     Smithers.file("//rust-toolchain.toml"),
     Smithers.file("//PACKAGE.ts"),
-    Smithers.file("//.github/scripts/ci/cloud.sh")
+    Smithers.file("//.github/scripts/ci/cloud.sh"),
+    Smithers.file("//pnpm-workspace.yaml"),
+    ...toolchainArchives
   ],
-  deps: [workflowSources]
+  deps: [workflowSources, repositoryInputs]
 })
 
 /**
