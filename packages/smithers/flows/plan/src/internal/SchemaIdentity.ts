@@ -365,6 +365,7 @@ const empty: BuiltinCheck = () => ({})
  * @private
  */
 const builtinChecks: ReadonlyMap<string, BuiltinCheck> = new Map<string, BuiltinCheck>([
+  ["effect/schema/isAscii", pattern("^[\\x00-\\x7F]*$")],
   ["effect/schema/isTrimmed", pattern("^\\S[\\s\\S]*\\S$|^\\S$|^$")],
   ["effect/schema/isPattern", (id, payload) => ({ pattern: field(id, payload, "source", isString) })],
   ["effect/schema/isStringFinite", pattern(`^${finitePattern}$`)],
@@ -807,7 +808,11 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
       case "Never":
         return { not: {} }
       case "String":
-        return { type: "string" }
+        // Effect 4.1 moves fromJsonString's media type out of annotations.
+        // This emitter owns the older durable identity, not runtime validation.
+        return representation.content?.mediaType === "application/json"
+          ? { type: "string", contentMediaType: "application/json" }
+          : { type: "string" }
       case "Number":
         return { anyOf: [{ type: "number" }, { type: "string", enum: ["NaN", "Infinity", "-Infinity"] }] }
       case "Boolean":
@@ -1029,7 +1034,7 @@ export const schemaIdentity = (schema: Schema.Top, options?: Options): Document 
 /**
  * The six built-in checks `effect` renamed after `4.0.0-rc.115`, from the id
  * a later release writes to the id rc.115 wrote. Their payloads and
- * annotations did not change.
+ * payloads did not change. The 4.1 default annotations are projected separately.
  *
  * @private
  */
@@ -1042,12 +1047,56 @@ const rc115CheckIds: ReadonlyMap<string, string> = new Map([
   ["effect/schema/isBetweenProperties", "effect/schema/isPropertiesLengthBetween"]
 ])
 
+/** The default check annotations that changed in 4.1, projected to rc.115 bytes. */
+const rc115CheckPatterns = new Map([
+  ["effect/schema/isStringFinite", {
+    current: "^[+-]?(?:\\d+(?:\\.\\d+)?|\\.\\d+)(?:[Ee][+-]?\\d+)?$",
+    flags: "",
+    previous: `^${finitePattern}$`
+  }],
+  ["effect/schema/isGUID", {
+    current: "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+    flags: "u",
+    previous: "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$"
+  }],
+  ["effect/schema/isULID", {
+    current: "^[0-7][0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{25}$",
+    flags: "u",
+    previous: "^[0-9A-HJKMNP-TV-Za-hjkmnp-tv-z]{26}$"
+  }]
+])
+
+/** Keeps author overrides while restoring only the changed built-in defaults. */
+const withRc115CheckAnnotations = (check: Record<string, unknown>, annotations: Schema.Json): Schema.Json => {
+  const representation = check["representation"]
+  if (!isObject(representation) || typeof representation["id"] !== "string") return annotations
+  const patterns = rc115CheckPatterns.get(representation["id"])
+  if (patterns === undefined || !isObject(annotations)) return annotations
+  const constraint = annotations["arbitraryConstraint"]
+  if (!isObject(constraint) || !Array.isArray(constraint["patterns"])) return annotations
+  const entries = constraint["patterns"]
+  if (
+    entries.length !== 1 || !isObject(entries[0]) || entries[0]["source"] !== patterns.current ||
+    entries[0]["flags"] !== patterns.flags
+  ) return annotations
+  return {
+    ...annotations,
+    ...(annotations["expected"] === `a string matching the RegExp ${patterns.current}`
+      ? { expected: `a string matching the RegExp ${patterns.previous}` }
+      : {}),
+    arbitraryConstraint: {
+      ...constraint as Record<string, Schema.Json>,
+      patterns: [{ ...entries[0] as Record<string, Schema.Json>, source: patterns.previous, flags: "" }]
+    }
+  }
+}
+
 /**
  * A copy of an encoded representation with every renamed check id written
  * back as rc.115 wrote it. Only an element of a `checks` array is a check.
- * `annotations` and `payload` hold an author's data, which may have any
- * shape, so they are copied as they are. Key order is kept, so the bytes
- * match.
+ * Author annotations and payloads are preserved. Known 4.1 built-in pattern
+ * defaults and JSON string content metadata are projected to their older
+ * identity forms. Key order is kept, so the recorded bytes match.
  *
  * @private
  */
@@ -1056,8 +1105,21 @@ const withRc115CheckIds = (value: Schema.Json, isCheck = false): Schema.Json => 
   if (!isObject(value)) return value
   const out: Record<string, Schema.Json> = {}
   for (const [key, member] of Object.entries(value as Readonly<Record<string, Schema.Json>>)) {
+    if (
+      key === "content" && value["_tag"] === "String" && isObject(member) && member["mediaType"] === "application/json"
+    ) {
+      continue
+    }
     if (key === "annotations" || key === "payload") {
-      assignProperty(out, key, member)
+      const annotations = key === "annotations" && value["_tag"] === "String" && isObject(value["content"]) &&
+          value["content"]["mediaType"] === "application/json" && isObject(member)
+        ? { ...member, contentMediaType: "application/json" }
+        : member
+      assignProperty(
+        out,
+        key,
+        key === "annotations" && isCheck ? withRc115CheckAnnotations(value, annotations) : annotations
+      )
       continue
     }
     const renamed = isCheck && key === "representation" && isObject(member) && typeof member["id"] === "string"
@@ -1359,6 +1421,37 @@ const withRc115Brands = (
   return ambiguous ? document : { representation, references: references as Representations }
 }
 
+/** Removes definitions belonging only to 4.1 JSON content metadata. */
+const withReachableReferences = (document: Schema.Json): Schema.Json => {
+  const projected = document as {
+    readonly representation: Schema.Json
+    readonly references: Readonly<Record<string, Schema.Json>>
+  }
+  const reached = new Set<string>()
+  const pending: Array<Schema.Json | undefined> = [projected.representation]
+  while (pending.length > 0) {
+    const value = pending.pop()
+    if (Array.isArray(value)) pending.push(...value)
+    else if (isObject(value)) {
+      if (value["_tag"] === "Reference" && typeof value["$ref"] === "string") {
+        const reference = value["$ref"]
+        if (!reached.has(reference)) {
+          reached.add(reference)
+          pending.push(projected.references[reference])
+        }
+      } else {
+        for (const [key, member] of Object.entries(value)) {
+          if (key !== "annotations" && key !== "payload") pending.push(member as Schema.Json)
+        }
+      }
+    }
+  }
+  return {
+    representation: projected.representation,
+    references: Object.fromEntries(Object.entries(projected.references).filter(([key]) => reached.has(key)))
+  }
+}
+
 /**
  * The representation identity of a schema: what
  * `SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))`
@@ -1368,7 +1461,8 @@ const withRc115Brands = (
  * `effect`.
  *
  * The installed release encodes the representation; this writes back the six
- * check ids renamed after rc.115. From `effect@4.0.4` on `Schema.brand` is not
+ * check ids renamed after rc.115 and projects the 4.1 pattern/content metadata
+ * to the recorded identity without changing runtime validation. From `effect@4.0.4` on `Schema.brand` is not
  * part of the AST, so version 2 omits it, and version 1 restores it from the
  * schema value, where the brand still lives.
  *
@@ -1383,5 +1477,7 @@ export const representationIdentity = (
   version: RepresentationIdentityVersion = representationIdentityVersions[0]
 ): Schema.Json => {
   const document = SchemaRepresentation.toRepresentation(schema.ast)
-  return withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document))
+  return withReachableReferences(
+    withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document))
+  )
 }

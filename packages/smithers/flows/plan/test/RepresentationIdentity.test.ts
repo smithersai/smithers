@@ -218,3 +218,26 @@ describe("representation identity under an effect upgrade", () => {
     expect(JSON.stringify(Node.representationIdentity(schema))).toContain("\"effect/schema/isStartsWith\"")
   })
 })
+
+it("keeps author constraints on built-in checks while projecting their default annotations", () => {
+  for (
+    const constraint of [{}, { patterns: [{ source: "^custom$", flags: "u" }] }, {
+      patterns: [{
+        source: "^([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$",
+        flags: "i"
+      }]
+    }] as const
+  ) {
+    const schema = Schema.String.check(Schema.isGUID({ arbitraryConstraint: constraint }))
+    const current = SchemaRepresentation.toJson(SchemaRepresentation.toRepresentation(schema.ast))
+    expect(Node.representationIdentity(schema)).toEqual(current)
+  }
+})
+
+it("keeps a JSON string's recorded identity when its decoded schema has a named definition", () => {
+  const schema = Schema.fromJsonString(Schema.Struct({ a: Schema.Int.annotate({ identifier: "Count" }) }))
+  for (const version of Node.representationIdentityVersions) {
+    expect(JSON.stringify(Node.representationIdentity(schema, version)))
+      .toBe(fixture.documents["transform/fromJsonString"])
+  }
+})
