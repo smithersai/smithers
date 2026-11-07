@@ -66,11 +66,11 @@ the input, so it is safe to log.
 [digest_failed] Canonical key material could not be hashed
 ```
 
-**Cause.** The input canonicalized, but the injected `Crypto` service could
+**Cause.** The input canonicalized, but the injected `Digest` service could
 not produce a SHA-256 digest. This is a failure of the runtime or of the
 service you provided, not of the key material.
 
-**Fix.** Check the `Crypto` layer in the composition. In a test this usually
+**Fix.** Check the `Digest` layer in the composition. In a test this usually
 means a stub that throws or returns the wrong shape; in a browser it can mean
 the page is not in a secure context, so Web Crypto is unavailable. The
 underlying failure is preserved on `cause`.

@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -20,9 +20,9 @@ npm install @smthrs/keys@next effect
 ```
 
 `@effect/platform-node` provides `NodeCrypto` for the example below and is
-optional if you supply your own `Crypto` implementation.
+optional if you supply your own `Digest` implementation.
 
-`effect` is a peer dependency at exactly `4.0.5`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
+`effect` is a peer dependency at exactly `4.1.1`; [`@smthrs/canonical`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/canonical/docs) and
 [`@smthrs/crypto`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/crypto/docs) install with the package and are
 the only other runtime dependencies. Node.js 22.19.0 or later; the package
 imports no `node:` built-in, so the same code runs under Bun and in a browser.
@@ -48,10 +48,10 @@ const parsed = Schema.decodeUnknownSync(StoredKey)(derived)
 `@smthrs/canonical`, so member order cannot change the result, then hashes that
 exact document with SHA-256 through `@smthrs/crypto` and returns
 `key1_<64 lowercase hex>`. Hashing is host access, so derivation returns an
-Effect that requires `Crypto.Crypto`; you provide the layer.
+Effect that requires `EffectDigest.Digest`; you provide the layer.
 
 `StoredKey` validates a key arriving from a database, an RPC, or a file and
-hands it back unchanged, with no hashing and no `Crypto` service. Keep the two
+hands it back unchanged, with no hashing and no `Digest` service. Keep the two
 apart: hand an existing key to a hash function and you get a different key
 back, silently, and every identity that crosses that boundary is rewritten.
 `DerivedKey` is the derivation as a schema transformation, for the places that
@@ -67,5 +67,5 @@ each protocol's input so two subsystems cannot collide in a shared store.
 Derivation inherits `Canonical` semantics, is one-shot, and imposes no size or
 depth limit of its own, so bound untrusted input before canonicalizing it.
 
-Full documentation, including the `Crypto` layer to provide on Node.js, on Bun,
+Full documentation, including the `Digest` layer to provide on Node.js, on Bun,
 and in a browser, is at https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/keys/docs.

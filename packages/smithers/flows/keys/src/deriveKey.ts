@@ -8,7 +8,7 @@
 
 import { Canonical } from "@smthrs/canonical"
 import { digest as sha256 } from "@smthrs/crypto"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { KeyDerivationError, type KeyDerivationErrorCode } from "./KeyDerivationError.ts"
@@ -18,7 +18,7 @@ const derivationFailure = (
   code: KeyDerivationErrorCode,
   message: string,
   cause: unknown
-): KeyDerivationError => new KeyDerivationError({ code, message, cause })
+): KeyDerivationError => KeyDerivationError.new({ code, message, cause })
 
 /**
  * Derives the current flow-key format from structured input.
@@ -41,7 +41,7 @@ const derivationFailure = (
  */
 export const deriveKey = (
   input: unknown
-): Effect.Effect<KeyV1, KeyDerivationError, Crypto.Crypto> =>
+): Effect.Effect<KeyV1, KeyDerivationError, EffectDigest.Digest> =>
   Effect.gen(function*() {
     const serialized = yield* Schema.decodeUnknownEffect(Canonical)(input, {
       reportInput: false

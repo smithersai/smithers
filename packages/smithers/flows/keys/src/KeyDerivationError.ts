@@ -54,11 +54,12 @@ export class KeyDerivationError extends Schema.TaggedError<KeyDerivationError>()
    * @param options - Schema construction options used to validate the public fields.
    * @since 1.0.0
    */
-  constructor(
+  static new(
     props: { readonly code: KeyDerivationErrorCode; readonly message: string; readonly cause?: unknown },
     options?: Schema.MakeOptions
-  ) {
-    super({ code: props.code, message: props.message }, options)
-    Object.defineProperty(this, "cause", { value: props.cause, configurable: true, writable: true })
+  ): KeyDerivationError {
+    const error = new KeyDerivationError({ code: props.code, message: props.message }, options)
+    Object.defineProperty(error, "cause", { value: props.cause, configurable: true, writable: true })
+    return error
   }
 }

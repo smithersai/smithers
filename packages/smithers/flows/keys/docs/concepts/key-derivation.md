@@ -20,7 +20,7 @@ steps, in this order:
    [`@smthrs/canonical`](/api/canonical). Object keys sort by UTF-16 code unit,
    numbers get one formatting, and strings get one escaping.
 2. Hash that exact canonical document as UTF-8 with SHA-256, through the
-   injected Effect `Crypto` service that [`@smthrs/crypto`](/api/crypto)
+   injected Effect `Digest` service that [`@smthrs/crypto`](/api/crypto)
    wraps. No Unicode normalization is applied.
 3. Prefix the 64 lowercase hexadecimal digest characters with `key1_`.
 
@@ -80,8 +80,8 @@ would rewrite every identity that crossed it, and the corruption would only
 surface later as a cache that never hits or a row that can never be found
 again. The package refuses to offer a single call that could mean either.
 
-Validation therefore does no hashing at all, requires no `Crypto` service, and
-returns the input text unchanged. Derivation requires `Crypto`, so the type
+Validation therefore does no hashing at all, requires no `Digest` service, and
+returns the input text unchanged. Derivation requires `Digest`, so the type
 system tells you which one you are holding.
 
 ## Where this is used

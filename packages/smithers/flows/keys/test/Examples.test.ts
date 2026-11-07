@@ -4,7 +4,7 @@ import { createHash } from "node:crypto"
 import { describe, expect, it } from "vitest"
 import { compileKey, decodeIdentity, example, readIdentity } from "../examples/identities.ts"
 
-const run = <A, E>(program: Effect.Effect<A, E, import("effect/Crypto").Crypto>) =>
+const run = <A, E>(program: Effect.Effect<A, E, import("effect/crypto/Digest").Digest>) =>
   Effect.runPromise(Effect.provide(program, NodeCrypto.layer))
 
 describe("runnable identity examples", () => {
