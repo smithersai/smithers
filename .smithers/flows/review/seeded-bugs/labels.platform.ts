@@ -1,3 +1,9 @@
+import { fileURLToPath as $fileURLToPath } from "node:url"
+import { dirname as $dirname } from "node:path"
+export function $importMetaDirname(url: string): ImportMeta["dirname"] { return (url.startsWith("file:") ? $dirname($fileURLToPath(url)) : undefined) as ImportMeta["dirname"] }
+
+// The platform code of labels.vibe, which a .vibe file does not import as a value (EK4402).
+
 /**
  * The seeded-bug corpus and its labels.
  *
@@ -27,7 +33,6 @@ export const BUG_CLASSES = [
   "tautological-test",
   "cross-file-signature-mismatch",
 ] as const;
-
 /**
  * A finding's severity, in the review's own vocabulary.
  *
@@ -35,7 +40,6 @@ export const BUG_CLASSES = [
  * @category schemas
  */
 export const SeededBugSeverity = Schema.Literals(["critical", "major", "minor", "info"]);
-
 /**
  * The decoded severity.
  *
@@ -43,7 +47,6 @@ export const SeededBugSeverity = Schema.Literals(["critical", "major", "minor", 
  * @category models
  */
 export type SeededBugSeverity = typeof SeededBugSeverity.Type;
-
 /**
  * A finding's category, in the review's own vocabulary.
  *
@@ -60,7 +63,6 @@ export const SeededBugCategory = Schema.Literals([
   "style",
   "other",
 ]);
-
 /**
  * The decoded category.
  *
@@ -68,7 +70,6 @@ export const SeededBugCategory = Schema.Literals([
  * @category models
  */
 export type SeededBugCategory = typeof SeededBugCategory.Type;
-
 /**
  * One of {@link BUG_CLASSES}.
  *
@@ -76,7 +77,6 @@ export type SeededBugCategory = typeof SeededBugCategory.Type;
  * @category schemas
  */
 export const BugClass = Schema.Literals(BUG_CLASSES);
-
 /**
  * The decoded bug class.
  *
@@ -84,7 +84,6 @@ export const BugClass = Schema.Literals(BUG_CLASSES);
  * @category models
  */
 export type BugClass = typeof BugClass.Type;
-
 /**
  * A fixture that plants one defect.
  *
@@ -101,7 +100,6 @@ export const SeededBugLabel = Schema.Struct({
   line: Schema.Number,
   description: Schema.String,
 });
-
 /**
  * The decoded planted-bug label.
  *
@@ -109,7 +107,6 @@ export const SeededBugLabel = Schema.Struct({
  * @category models
  */
 export type SeededBugLabel = typeof SeededBugLabel.Type;
-
 /**
  * A fixture that plants nothing: any finding on it is a false positive.
  *
@@ -121,7 +118,6 @@ export const CleanControlLabel = Schema.Struct({
   clean: Schema.Literal(true),
   description: Schema.String,
 });
-
 /**
  * The decoded clean-control label.
  *
@@ -129,7 +125,6 @@ export const CleanControlLabel = Schema.Struct({
  * @category models
  */
 export type CleanControlLabel = typeof CleanControlLabel.Type;
-
 /**
  * Either kind of label.
  *
@@ -137,7 +132,6 @@ export type CleanControlLabel = typeof CleanControlLabel.Type;
  * @category schemas
  */
 export const PlantedBugLabel = Schema.Union([SeededBugLabel, CleanControlLabel]);
-
 /**
  * The decoded label.
  *
@@ -145,9 +139,7 @@ export const PlantedBugLabel = Schema.Union([SeededBugLabel, CleanControlLabel])
  * @category models
  */
 export type PlantedBugLabel = typeof PlantedBugLabel.Type;
-
 const decodeLabel = Schema.decodeUnknownSync(PlantedBugLabel);
-
 /**
  * Reads every fixture's label, in directory order.
  *
@@ -158,7 +150,7 @@ const decodeLabel = Schema.decodeUnknownSync(PlantedBugLabel);
  * @since 1.0.0
  * @category constructors
  */
-export function loadCorpus(corpusDir = join(import.meta.dirname, "corpus")): PlantedBugLabel[] {
+export function loadCorpus(corpusDir = join($importMetaDirname(import.meta.url), "corpus")): PlantedBugLabel[] {
   return readdirSync(corpusDir, { withFileTypes: true })
     .filter((entry) => entry.isDirectory())
     .map((entry) => entry.name)

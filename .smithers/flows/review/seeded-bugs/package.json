@@ -7,7 +7,7 @@
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
     "test": "bun test score.test.ts deterministicReviewer.test.ts fixtureRepo.test.ts security-completion-score.test.ts",
-    "test:suite": "bun run.ts"
+    "test:suite": "bun run.vibe"
   },
   "dependencies": {
     "@smthrs/agent": "workspace:*",

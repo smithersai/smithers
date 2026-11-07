@@ -1,4 +1,4 @@
-import * as SeatResolver from "../../../../../../packages/smithers/agent/src/SeatResolver.ts";
+import * as SeatResolver from "../../../../../../packages/smithers/agent/src/SeatResolver.vibe";
 import * as Model from "../../../../../../packages/smithers/agent/model/src/Model.vibe";
 import { Layer } from "effect";
 /** What the scripted model was asked, flattened into one searchable string. */

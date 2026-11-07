@@ -41,7 +41,7 @@ const sources = [
  */
 const suite = Smithers.NodeTest({
   runtime: Smithers.Runtime.Bun({ version: ">=1.4.0" }),
-  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/review/seeded-bugs/run.ts")),
+  runner: Smithers.entrypoint(Smithers.file("//.smithers/flows/review/seeded-bugs/run.vibe")),
   srcs: sources,
   deps: [],
   cwd
@@ -129,7 +129,7 @@ const securityReview = Smithers.SecurityReview({
         ".report/ missing from .gitignore.",
         "An error path in main that prints a resolved provider credential or request header."
       ],
-      paths: ["run.ts", ".gitignore"]
+      paths: ["run.vibe", ".gitignore"]
     },
     {
       id: "live-cell-authority",
@@ -140,7 +140,7 @@ const securityReview = Smithers.SecurityReview({
         "run.ts passing layerMemory an environment other than process.env's seat settings, which widens the model-host capability envelope.",
         "The Review.execute payload in runFixture enabling verification or narration aliases that are not bound by the same host."
       ],
-      paths: ["run.ts"]
+      paths: ["run.vibe"]
     },
     {
       id: "gate-integrity",
@@ -151,7 +151,7 @@ const securityReview = Smithers.SecurityReview({
         "loadCorpus accepting a label whose fixture field differs from its directory or whose schema is loosened.",
         "drift in baseline.ts ignoring a changed per-fixture record, or run.ts treating an unreadable baseline as a pass."
       ],
-      paths: ["deterministicReviewer.ts", "labels.ts", "baseline.ts", "run.ts", "baseline.json"]
+      paths: ["deterministicReviewer.ts", "labels.vibe", "baseline.ts", "run.vibe", "baseline.json"]
     }
   ]
 })
