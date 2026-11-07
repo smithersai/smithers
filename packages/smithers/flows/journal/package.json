@@ -63,7 +63,7 @@
       "default": "./.vibelang/js/src/JournalMetrics.js"
     },
     "./Migrations": {
-      "types": "./.vibe/declarations/Migrations.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
       "vibelang-source": "./src/Migrations.vibe",
       "default": "./.vibelang/js/src/Migrations.js"
     },
@@ -83,7 +83,7 @@
       "default": "./.vibelang/js/src/RedactedLogger.js"
     },
     "./Redaction": {
-      "types": "./.vibe/declarations/Redaction.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Redaction.d.vibe.ts",
       "vibelang-source": "./src/Redaction.vibe",
       "default": "./.vibelang/js/src/Redaction.js"
     },
