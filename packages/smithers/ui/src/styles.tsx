@@ -1,7 +1,7 @@
 /** @jsxImportSource react */
 import { DEFAULT_THEME_KEY, standaloneThemeCss, themeRegistry, workflowUiThemeCss } from "@smthrs/ui-styleguide";
 import { useInsertionEffect } from "react";
-import { uiCss as smithersUiCss } from "@smthrs/ui-css";
+import { uiCss as smithersUiCss, SMITHERS_UI_STYLE_ATTR, REDUCED_MOTION_MEDIA_QUERY } from "@smthrs/ui-css";
 
 export { uiCss as smithersUiCss } from "@smthrs/ui-css";
 export { standaloneThemeCss };
@@ -13,8 +13,7 @@ export { DEFAULT_THEME_KEY, themeRegistry };
  * sheet is already present. {@link SmithersUiStyles} cannot dedupe across React
  * or server-rendered trees; the host must render `<SmithersUiStyles/>` exactly once.
  */
-export const SMITHERS_UI_STYLE_ATTR = "data-smithers-ui";
-export const REDUCED_MOTION_MEDIA_QUERY = "(prefers-reduced-motion: reduce)";
+export { SMITHERS_UI_STYLE_ATTR, REDUCED_MOTION_MEDIA_QUERY };
 
 /** Browser motion preference for imperative behavior CSS cannot control. */
 export function prefersReducedMotion(): boolean {

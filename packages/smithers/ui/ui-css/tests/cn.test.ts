@@ -1,11 +1,15 @@
 import { describe, expect, test } from "bun:test";
-import { cn, LOADING_DELAY_MS, smithersUiCss, uiCss, xtermBaseCss } from "../src/index.ts";
+import { cn, LOADING_DELAY_MS, smithersUiCss, uiCss, xtermBaseCss, SMITHERS_UI_STYLE_ATTR, REDUCED_MOTION_MEDIA_QUERY } from "../src/index.ts";
 
 describe("framework-free root", () => {
   test("returns the assembled stylesheet and exports the independent terminal sheet", () => {
     expect(smithersUiCss()).toBe(uiCss);
     expect(xtermBaseCss).toContain(".xterm");
     expect(LOADING_DELAY_MS).toBe(300);
+  });
+  test("exports framework-free stylesheet metadata", () => {
+    expect(SMITHERS_UI_STYLE_ATTR).toBe("data-smithers-ui");
+    expect(REDUCED_MOTION_MEDIA_QUERY).toBe("(prefers-reduced-motion: reduce)");
   });
   test("composes strings, numbers, conditionals and nested arrays in order", () => {
     expect(cn("sui-button", 7, false, null, undefined, 0, "", true, 1n,
