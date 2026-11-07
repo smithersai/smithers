@@ -1,0 +1,35 @@
+import { McpProtocol, McpServer, Toolkit } from "effect/ai"
+import { Factory } from "../core/Factory.vibe"
+import { commands, type CommandError } from "./commands.vibe"
+import { backend } from "./backend.vibe"
+
+export const toolkit = Toolkit.make(...commands.map((command) => command.tool))
+type Handlers = { [C in (typeof commands)[number] as C["name"]]: (input: unknown) => C["output"]["Type"]!CommandError }
+export const registrations = McpServer.toolkit(toolkit).pipe(Layer.provide(toolkit.toLayer(effect {
+  // Capture the backend once when the host builds the registrations, rather than marking it a per-request dependency.
+  const factory = try Factory
+  return Object.fromEntries(commands.map((command) => [command.name, effect (input: unknown) => {
+    provide Factory = factory {
+      return try command.run(input)
+    }
+  }])) as Handlers
+})))
+
+effect function serve(mock: boolean, environment: string | undefined) {
+  provide backend(mock, environment) {
+    try Layer.launch(McpServer.layerStdio({
+      name: "vibelang-factory", version: "0.0.0", protocols: [McpProtocol.v2025_11_25], registrations,
+    }))
+  }
+}
+
+/** Stdio owns stdout; all failure reporting stays on stderr, including runtime defects. */
+export effect function mcp(mock: boolean, environment: string | undefined) {
+  provide Logger.LogToStderr = true {
+    try tapCause(serve(mock, environment), (cause) => {
+      if (Cause.hasInterruptsOnly(cause)) return Effect.void
+      const failure = Cause.findFail(cause)
+      return Console.error(Result.isSuccess(failure) ? failure.success.error.message : Cause.pretty(cause))
+    })
+  }
+}

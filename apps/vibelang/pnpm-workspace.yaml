@@ -1,0 +1,10 @@
+# This app installs independently (0001). Preserve the repository's explicit no-script policy.
+allowBuilds:
+  dprint: false
+  esbuild: false
+  workerd: false
+# Match the owning workspace; setup already exempts these first-party releases (0001).
+verifyDepsBeforeRun: false
+minimumReleaseAgeExclude:
+  - vibelang*
+  - '@smthrs/*'

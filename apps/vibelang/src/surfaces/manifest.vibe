@@ -1,0 +1,25 @@
+import { commands } from "./commands.vibe"
+
+import { Tool } from "effect/ai"
+
+// These nonrecursive struct schemas have inline roots, as MCP requires.
+const jsonSchema = Tool.getJsonSchemaFromSchema
+
+export const manifestCommands = commands.map((command) => ({
+  name: command.name,
+  description: command.description,
+  inputSchema: jsonSchema(command.input),
+  outputSchema: jsonSchema(command.output),
+}))
+
+export const manifest = [
+  "# vibelang-factory",
+  "",
+  "Use --mock (or VIBELANG_FACTORY=mock) until the live backend is deployed. Mock data lasts for one process; MCP calls share it.",
+  "Global flags: --json --mock --help --llms. Conversation defaults to home; after defaults to 0.",
+  "Usage: ask <text> [--conversation <id>]; read [--conversation <id>] [--after <seq>].",
+  ...manifestCommands.flatMap((command) => [
+    "", `## ${command.name}`, command.description,
+    "```json", JSON.stringify({ inputSchema: command.inputSchema, outputSchema: command.outputSchema }), "```",
+  ]),
+].join("\n")

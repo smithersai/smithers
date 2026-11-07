@@ -1,0 +1,74 @@
+// @vitest-environment node
+import { describe, expect, it } from "@effect/vitest"
+import { McpClient, McpProtocol } from "effect/ai"
+import { ChildProcess } from "effect/process"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { AskOutput, ReadOutput } from "../src/surfaces/commands.vibe"
+import { mockReply } from "../src/core/mockReplies.ts"
+import { nodePath, serverPath, cliManifest } from "./surface-host.ts"
+
+const clientLayer = McpClient.layerStdio({
+  name: "Factory surface tests", version: "1", protocol: McpProtocol.v2025_11_25,
+  timeout: "10 seconds", command: ChildProcess.make(nodePath, [serverPath, "--mock"]),
+}).pipe(Layer.provide(NodeServices.layer))
+
+describe("built MCP stdio server through McpClient", () => {
+  it.live("discovers the exact same names and schemas as the CLI manifest", () => effect {
+    provide clientLayer {
+      const client = try McpClient.McpClient
+      const tools = try client.listTools()
+      const markdown = try Effect.try(cliManifest)
+      const sections = markdown.split("\n## ").slice(1)
+      const discovered = try Effect.try(() => sections.map((section) => ({
+        name: section.split("\n")[0], ...JSON.parse(section.split("```json\n")[1]!.split("\n```")[0]!),
+      })))
+      try Effect.try(() => {
+        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read"])
+        expect(discovered).toEqual(tools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema })))
+        expect(markdown.length).toBeLessThan(4000)
+      })
+    }
+  })
+
+  it.live("asks, reads, polls after a cursor, and shares state across tool calls", () => effect {
+    provide clientLayer {
+      const client = try McpClient.McpClient
+      const tools = try client.listTools()
+      const ask = tools.find((tool) => tool.name === "ask")!
+      const read = tools.find((tool) => tool.name === "read")!
+      const empty = try client.callTool({ tool: read, schema: ReadOutput, arguments: {} })
+      const answer = try client.callTool({ tool: ask, schema: AskOutput, arguments: { text: "How do I install it?" } })
+      const snapshot = try client.callTool({ tool: read, schema: ReadOutput, arguments: { after: 0 } })
+      const tail = try client.callTool({ tool: read, schema: ReadOutput, arguments: { after: snapshot.seq } })
+      const other = try client.callTool({ tool: read, schema: ReadOutput, arguments: { conversation: "other" } })
+      try Effect.try(() => {
+        expect(empty.entries).toEqual([])
+        expect(answer.text).toBe(mockReply("install"))
+        expect(snapshot.entries[1]).toMatchObject({ text: answer.text, done: true })
+        expect(snapshot.seq).toBe(answer.events.at(-1))
+        expect(tail.entries).toEqual([])
+        expect(other.entries).toEqual([])
+      })
+    }
+  })
+
+  it.live("returns declared refusals and rejects malformed input through the protocol", () => effect {
+    provide clientLayer {
+      const client = try McpClient.McpClient
+      const tools = try client.listTools()
+      const ask = tools.find((tool) => tool.name === "ask")!
+      const read = tools.find((tool) => tool.name === "read")!
+      const refused = try client.callTool({ tool: ask, arguments: { text: " " } })
+      const invalid = try exit(client.callTool({ tool: read, schema: ReadOutput, arguments: { after: -1 } }))
+      const missing = try exit(client.callTool({ tool: ask, schema: AskOutput, arguments: {} }))
+      try Effect.try(() => {
+        expect(refused.isError).toBe(true)
+        expect(refused.content).toEqual([{ type: "text", text: "The message was refused: empty" }])
+        expect(Exit.isFailure(invalid)).toBe(true)
+        expect(Exit.isFailure(missing)).toBe(true)
+      })
+      const healthy = try client.callTool({ tool: read, schema: ReadOutput, arguments: {} })
+      try Effect.try(() => expect(healthy.entries).toEqual([]))
+    }
+  })
+})
