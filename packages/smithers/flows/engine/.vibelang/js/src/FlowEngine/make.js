@@ -19,7 +19,7 @@ import * as Schema from "effect/Schema";
 import * as Scope from "effect/Scope";
 import * as Semaphore from "effect/Semaphore";
 import { renderDiagnostic } from "../internal/Diagnostic.js";
-import { toJsonExit } from "#vibelang/emitted/src/internal/JsonExit";
+import { toJsonExit } from "../internal/JsonExit.js";
 import { makeActionExecute, resetActionContext } from "./Dispatch.js";
 import { placeExecute, placeInterrupt, placeResume, placeRetryFrom } from "./Placed.js";
 import { makeExecute } from "./Trampoline.js";

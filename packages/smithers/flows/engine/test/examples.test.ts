@@ -1,5 +1,5 @@
 import { expect, it } from "vitest"
-import { runQuickstart } from "../examples/quickstart.vibe"
+import { runQuickstart } from "../examples/quickstart.ts"
 import { runServeRpc } from "../examples/serveRpc.ts"
 
 it("joins a resubmitted execution id and refuses it for a different payload", async () => {

@@ -19,7 +19,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import type * as Scope from "effect/Scope"
 import type { Encoded } from "./Encoded.vibe"
-import * as Round from "#vibelang/emitted/src/FlowEngine/Round"
+import * as Round from "./Round.vibe"
 
 /**
  * A suspended execution spent the caller's resume retry policy.

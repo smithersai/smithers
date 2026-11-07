@@ -16,8 +16,8 @@ import * as Option from "effect/Option";
 import { RpcClientError } from "effect/rpc/RpcClientError";
 import * as Schedule from "effect/Schedule";
 import * as FlowProxy from "../FlowProxy.js";
-import { Hosts } from "#vibelang/emitted/src/Hosts";
-import { requestedAuthority } from "#vibelang/emitted/src/FlowEngine/Authority";
+import { Hosts } from "../Hosts.js";
+import { requestedAuthority } from "./Authority.js";
 /** The binding the table gives `flow`'s placement annotation. */
 const bindingOf = (flow) => Effect.map(Hosts, (hosts) => hosts.resolve(Option.getOrUndefined(Context.getOption(flow.annotations, Flow.Placement))));
 /**

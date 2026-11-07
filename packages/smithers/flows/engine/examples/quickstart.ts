@@ -16,6 +16,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Schema from "effect/Schema"
 import { FlowEngine } from "../src/index.ts"
 
 const Compile = Action.make("build/Compile", {
@@ -48,10 +51,12 @@ export const runQuickstart = (): Promise<{
   let compiles = 0
 
   const BuildLayer = Layer.mergeAll(
-    Compile.toLayer(effect ({ target }) => {
-      compiles = compiles + 1
-      return `${target}.js`
-    }),
+    Compile.toLayer(({ target }) =>
+      Effect.sync(() => {
+        compiles = compiles + 1
+        return `${target}.js`
+      })
+    ),
     Interpreter.layer(Build)
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
@@ -59,15 +64,15 @@ export const runQuickstart = (): Promise<{
     Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
   )
 
-  const program = (effect {
-    const first = try Build.execute({ target: "app" }, { executionId: "build-app-1" })
-    const second = try Build.execute({ target: "app" }, { executionId: "build-app-1" })
-    const conflict = try (Build.execute({ target: "lib" }, { executionId: "build-app-1" }) |> Effect.flip(%))
+  const program = Effect.gen(function*() {
+    const first = yield* Build.execute({ target: "app" }, { executionId: "build-app-1" })
+    const second = yield* Build.execute({ target: "app" }, { executionId: "build-app-1" })
+    const conflict = yield* Build.execute({ target: "lib" }, { executionId: "build-app-1" }).pipe(Effect.flip)
     if (!(conflict instanceof FlowEngine.ExecutionIdentityConflict)) {
-      return try Effect.die(conflict)
+      return yield* Effect.die(conflict)
     }
     return { first, second, compiles, conflictField: conflict.field }
-  }) |> Effect.provide(%, BuildLayer)
+  }).pipe(Effect.provide(BuildLayer))
 
   return Effect.runPromise(program)
 }
