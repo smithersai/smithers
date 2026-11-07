@@ -1,0 +1,222 @@
+// Property tests of the conversation machine with Effect's `Arbitrary` (wiki/decisions/0005-formal-verification.md):
+// random intents run through the real sequencer, then reach clients duplicated, reordered and with gaps.
+import { describe, expect, it } from "@effect/vitest"
+import {
+  apply,
+  type Client,
+  type Conversation,
+  decide,
+  empty,
+  type Event,
+  failPost,
+  type Intent,
+  MAX_TEXT,
+  newClient,
+  post,
+  receive,
+  resume,
+} from "../src/core/conversation.ts"
+
+// Small domains, so ids, client ids and texts collide often.
+const Id = Schema.Literals(["", "r1", "r2", "m1", "m2"])
+const ClientId = Schema.Literals(["", "a", "b", "c"])
+const LONG = "x".repeat(MAX_TEXT + 1)
+const Text = Schema.Literals(["", "   ", "hi", " padded ", "a longer message", LONG])
+
+const IntentSchema = Schema.Union([
+  Schema.Struct({ type: Schema.Literal("Post"), id: Id, clientId: ClientId, name: Schema.Literal("Ada"), text: Text }),
+  Schema.Struct({ type: Schema.Literal("StartReply"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("AppendReply"), id: Id, text: Text }),
+  Schema.Struct({ type: Schema.Literal("FinishReply"), id: Id }),
+  Schema.Struct({ type: Schema.Literal("FailReply"), id: Id, reason: Schema.Literals(["", "timeout"]) }),
+])
+
+const intents = Arbitrary.array(Arbitrary.schema(IntentSchema), { maxLength: 40 })
+
+/** The sequencer's run over `list`: every state it passed through and every event it numbered. */
+function run(list: ReadonlyArray<Intent>) {
+  const states: Array<Conversation> = [empty]
+  const log: Array<Event> = []
+  let state = empty
+  for (const intent of list) {
+    const decision = decide(state, intent)
+    if (!decision.ok) continue
+    log.push(decision.event)
+    state = apply(state, decision.event)
+    states.push(state)
+  }
+  return { state, states, log }
+}
+
+/** The invariants every reachable conversation keeps. */
+function invariant(state: Conversation): boolean {
+  const working = state.agent === "working"
+  if (working !== (state.replying !== "")) return false
+  const open = state.entries.filter((entry) => !entry.done)
+  if (working ? open.length !== 1 || open[0]!.id !== state.replying : open.length !== 0) return false
+  for (let i = 1; i < state.entries.length; i++) if (state.entries[i - 1]!.seq >= state.entries[i]!.seq) return false
+  const clientIds = state.entries.filter((entry) => entry.author === "person").map((entry) => entry.clientId)
+  if (clientIds.some((id) => id === "") || new Set(clientIds).size !== clientIds.length) return false
+  return state.entries.every((entry) => entry.seq <= state.seq)
+}
+
+/** Whether `after` is `before` with `event`'s whole effect: a new entry, a longer reply, or the agent's new phase. */
+function hasEffect(before: Conversation, event: Event, after: Conversation): boolean {
+  const grew = after.entries.length === before.entries.length + 1
+  const reply = after.entries.find((entry) => entry.id === event.id)
+  switch (event.type) {
+    case "Posted":
+      return grew && after.entries[after.entries.length - 1]!.clientId === event.clientId
+    case "ReplyStarted":
+      return grew && after.agent === "working" && after.replying === event.id
+    case "ReplyDelta":
+      return reply !== undefined && reply.text.endsWith(event.text) && after.agent === "working"
+    case "ReplyFinished":
+      return reply !== undefined && reply.done && after.agent === "idle" && after.replying === ""
+    case "ReplyFailed":
+      return reply !== undefined && reply.done && reply.error !== "" && after.agent === "failed"
+  }
+}
+
+effect function holds<A>(arbitrary: Arbitrary.Arbitrary<A>, property: (value: A) => boolean) {
+  const result = try Arbitrary.checkEffect(arbitrary, property, { runs: 400 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+}
+
+describe("the sequencer", () => {
+  it.effect("numbers its events 1, 2, 3, … with no gaps", () =>
+    holds(intents, (list) => run(list).log.every((event, index) => event.seq === index + 1)))
+
+  it.effect("keeps every invariant in every state it reaches", () =>
+    holds(intents, (list) => run(list).states.every(invariant)))
+
+  it.effect("records only what it decided: applying its event advances seq by exactly one", () =>
+    holds(intents, (list) => {
+      let state = empty
+      for (const intent of list) {
+        const decision = decide(state, intent)
+        if (!decision.ok) continue
+        const next = apply(state, decision.event)
+        if (next.seq !== state.seq + 1) return false
+        state = next
+      }
+      return true
+    }))
+
+  it.effect("gives every event it numbers the full effect its type names", () =>
+    holds(intents, (list) => {
+      let state = empty
+      for (const intent of list) {
+        const decision = decide(state, intent)
+        if (!decision.ok) continue
+        const event = decision.event
+        const next = apply(state, event)
+        if (!hasEffect(state, event, next)) return false
+        state = next
+      }
+      return true
+    }))
+
+  it.effect("refuses a second post with the same client id", () =>
+    holds(intents, (list) => {
+      const { state } = run(list)
+      return state.entries.filter((entry) => entry.author === "person").every((entry) =>
+        !decide(state, { type: "Post", id: "m9", clientId: entry.clientId, name: "Ada", text: "again" }).ok
+      )
+    }))
+
+  it("trims a post and refuses blank or overlong ones", () => {
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "  hi  " })).toEqual({
+      ok: true,
+      event: { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" },
+    })
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "   " })).toEqual({ ok: false, refusal: "empty" })
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "a", name: "Ada", text: LONG })).toEqual({ ok: false, refusal: "too-long" })
+    expect(decide(empty, { type: "Post", id: "m1", clientId: "", name: "Ada", text: "hi" })).toEqual({ ok: false, refusal: "duplicate" })
+  })
+
+  it("takes one reply at a time", () => {
+    const started = apply(empty, { type: "ReplyStarted", seq: 1, id: "r1" })
+    expect(decide(started, { type: "StartReply", id: "r2" })).toEqual({ ok: false, refusal: "busy" })
+    expect(decide(started, { type: "AppendReply", id: "r2", text: "x" })).toEqual({ ok: false, refusal: "not-replying" })
+    const finished = apply(apply(started, { type: "ReplyDelta", seq: 2, id: "r1", text: "Hello" }), { type: "ReplyFinished", seq: 3, id: "r1" })
+    expect(finished.entries).toEqual([
+      { id: "r1", seq: 1, clientId: "", author: "agent", name: "VibeLang agent", text: "Hello", done: true, error: "" },
+    ])
+    expect(finished.agent).toBe("idle")
+  })
+})
+
+describe("apply", () => {
+  it("ignores an event that isn't the next one", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(apply(one, { type: "Posted", seq: 1, id: "m2", clientId: "b", name: "Ada", text: "again" })).toBe(one)
+    expect(apply(one, { type: "Posted", seq: 3, id: "m2", clientId: "b", name: "Ada", text: "ahead" })).toBe(one)
+  })
+
+  it("advances past an event whose content doesn't fit, without changing anything else", () => {
+    const stray = apply(empty, { type: "ReplyDelta", seq: 1, id: "r9", text: "x" })
+    expect(stray).toEqual({ ...empty, seq: 1 })
+    const failed = apply(apply(empty, { type: "ReplyStarted", seq: 1, id: "r1" }), { type: "ReplyFailed", seq: 2, id: "r1", reason: "" })
+    expect(failed.agent).toBe("failed")
+    expect(failed.entries[0]!.error).toBe("failed")
+  })
+})
+
+/** Delivery orders: each element is an index into the log; out-of-range and repeated indexes are allowed. */
+const deliveries = Arbitrary.all({
+  list: intents,
+  order: Arbitrary.array(Arbitrary.map(Arbitrary.schema(Schema.Int), (n) => Math.abs(n) % 61), { maxLength: 120 }),
+})
+
+/** A client fed `order` from `log`, replaying from its last seq whenever it notices a gap, then to the end. */
+function deliver(log: ReadonlyArray<Event>, order: ReadonlyArray<number>): Client {
+  let client = newClient
+  const replay = () => {
+    client = resume(client)
+    for (const event of log) client = receive(client, event)
+  }
+  for (const index of order) {
+    const event = log[index]
+    if (event === undefined) continue
+    client = receive(client, event)
+    if (client.gap) replay()
+  }
+  replay()
+  return client
+}
+
+describe("a client", () => {
+  it.effect("converges on the sequencer's conversation whatever order, duplicates or gaps it sees", () =>
+    holds(deliveries, ({ list, order }) => {
+      const { state, log } = run(list)
+      return JSON.stringify(deliver(log, order).conversation) === JSON.stringify(state)
+    }))
+
+  it.effect("ignores an event it already has", () =>
+    holds(deliveries, ({ list, order }) => {
+      const { log } = run(list)
+      const client = deliver(log, order)
+      return log.every((event) => receive(client, event) === client)
+    }))
+
+  it("shows its own post as pending until the post's event arrives", () => {
+    const sent = post(newClient, "a", "  hi ")
+    expect(sent.pending).toEqual([{ clientId: "a", text: "hi", error: "" }])
+    expect(post(sent, "a", "hi")).toBe(sent)
+    expect(post(sent, "b", "   ")).toBe(sent)
+    const failed = failPost(sent, "a", "")
+    expect(failed.pending[0]!.error).toBe("failed")
+    const confirmed = receive(sent, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(confirmed.pending).toEqual([])
+    expect(confirmed.conversation.entries[0]!.text).toBe("hi")
+  })
+
+  it("marks a gap once and closes it on resume", () => {
+    const ahead = receive(newClient, { type: "ReplyStarted", seq: 2, id: "r1" })
+    expect(ahead.gap).toBe(true)
+    expect(receive(ahead, { type: "ReplyStarted", seq: 3, id: "r1" })).toBe(ahead)
+    expect(resume(ahead).gap).toBe(false)
+    expect(resume(newClient)).toBe(newClient)
+  })
+})

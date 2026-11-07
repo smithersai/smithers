@@ -27,6 +27,8 @@ packages:
   - ".smithers/flows/coding"
   - ".smithers/flows/review/seeded-bugs"
   - "apps/*"
+  # apps/vibelang installs on its own until the monorepo moves to Effect 4.1 (apps/vibelang/wiki/roadmap.md).
+  - "!apps/vibelang"
   - "evals/*"
 
 allowBuilds:

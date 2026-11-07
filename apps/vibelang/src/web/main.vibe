@@ -1,0 +1,225 @@
+// The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.ts`. Every
+// change to the conversation goes through the shared machine (`../core/conversation.ts`); this file only adds what a
+// screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
+//
+//   splash (maximized) ──⌘K──▶ palette ──⏎──▶ chat (the splash shrinks into the first pane) ──pane──▶ splash
+import { Command, Dom, Subscription, type Runtime, type Update } from "foldkit"
+import { defineMessageUnion } from "foldkit/message"
+import * as Machine from "../core/conversation.ts"
+import { EventSchema, Factory } from "../core/Factory.vibe"
+import { Client } from "../core/schemas.vibe"
+
+// FLAGS
+
+/** What the page knows when it starts: a random id for this tab's posts, the backend, and the name posts carry. */
+export schema Flags {
+  readonly session: string
+  readonly mode: "mock" | "live"
+  readonly name: string
+}
+
+// MODEL
+
+export schema Model {
+  /** `splash`: the home page fills the window. `chat`: the conversation, with the home page as its first pane. */
+  readonly surface: "splash" | "chat"
+  /** Whether the ⌘K prompt is open. */
+  readonly palette: boolean
+  readonly draft: string
+  readonly session: string
+  readonly name: string
+  /** How many posts this tab has sent; the next one's client id is `<session>-<sent + 1>`. */
+  readonly sent: number
+  readonly conversation: string
+  readonly client: Client
+  readonly mode: "mock" | "live"
+  /** The event stream: `closed` before the first post, `open` while it follows, `failed` after it broke. */
+  readonly stream: "closed" | "open" | "failed"
+  /** Bumped to start the event stream again from `from`. */
+  readonly epoch: number
+  readonly from: number
+}
+
+/** The conversation every visitor of the home page joins until conversations have their own pages. */
+export const HOME_CONVERSATION = "home"
+
+// MESSAGE
+
+export const Message = defineMessageUnion({
+  PressedCommandK: {},
+  PressedEscape: {},
+  ClickedAsk: {},
+  ClickedSplash: {},
+  ClickedChat: {},
+  UpdatedDraft: { value: Schema.String },
+  SubmittedDraft: {},
+  SucceededPost: { clientId: Schema.String },
+  FailedPost: { clientId: Schema.String, reason: Schema.String },
+  ReceivedEvent: { event: EventSchema },
+  FailedEvents: { reason: Schema.String },
+  ClickedReconnect: {},
+  FocusedPrompt: {},
+})
+export type Message = typeof Message.Type
+
+// INIT
+
+export function init(flags: Flags): Update.Return<Model, Message, Factory> {
+  return {
+    model: {
+      surface: "splash",
+      palette: false,
+      draft: "",
+      session: flags.session,
+      name: flags.name,
+      sent: 0,
+      conversation: HOME_CONVERSATION,
+      client: Machine.newClient,
+      mode: flags.mode,
+      stream: "closed",
+      epoch: 0,
+      from: 0,
+    },
+  }
+}
+
+// UPDATE
+
+export function update(model: Model, message: Message): Update.Return<Model, Message, Factory> {
+  return Message.match<Update.Return<Model, Message, Factory>>(message, {
+    PressedCommandK: () => openPalette(model, !model.palette),
+    ClickedAsk: () => openPalette(model, true),
+    PressedEscape: () => ({ model: model.palette ? { ...model, palette: false } : model }),
+    ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
+    ClickedChat: () => ({ model: hasConversation(model) ? { ...model, surface: "chat" } : model }),
+    UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
+    SubmittedDraft: () => submit(model),
+    SucceededPost: () => ({ model }),
+    FailedPost: ({ clientId, reason }) => ({ model: { ...model, client: Machine.failPost(model.client, clientId, reason) } }),
+    ReceivedEvent: ({ event }) => {
+      const client = Machine.receive(model.client, event)
+      // A missed event: replay from the last one this copy applied.
+      if (client.gap) return { model: { ...model, client: Machine.resume(client), epoch: model.epoch + 1, from: client.conversation.seq } }
+      return { model: { ...model, client } }
+    },
+    FailedEvents: () => ({ model: { ...model, stream: "failed" } }),
+    ClickedReconnect: () => ({ model: { ...model, stream: "open", epoch: model.epoch + 1, from: model.client.conversation.seq } }),
+    FocusedPrompt: () => ({ model }),
+  })
+}
+
+function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
+  return { model: { ...model, palette: open }, commands: open ? [FocusPrompt({})] : [] }
+}
+
+/** Whether there is a conversation to go back to. */
+export function hasConversation(model: Model): boolean {
+  return model.client.conversation.entries.length > 0 || model.client.pending.length > 0
+}
+
+function submit(model: Model): Update.Return<Model, Message, Factory> {
+  const text = model.draft.trim()
+  if (text === "") return { model }
+  const clientId = `${model.session}-${model.sent + 1}`
+  return {
+    model: {
+      ...model,
+      surface: "chat",
+      palette: false,
+      draft: "",
+      sent: model.sent + 1,
+      client: Machine.post(model.client, clientId, text),
+      stream: model.stream === "closed" ? "open" : model.stream,
+    },
+    commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text })],
+  }
+}
+
+// COMMAND
+
+/** A Message from its constructor, in a Command. Constructors validate with Schema, so a bad payload is a defect. */
+effect function message<A>(make: () => A) {
+  return try orDie(Effect.try(make))
+}
+
+/** The id of the prompt's input, in the ⌘K palette and in the docked composer alike. */
+export const PROMPT_ID = "vl-prompt"
+
+export const FocusPrompt = Command.define("FocusPrompt", {
+  args: {},
+  messages: [Message.FocusedPrompt],
+  execute: effect () => {
+    // The prompt is gone again if the palette closed before this ran; then there is nothing to focus.
+    Dom.focus(`#${PROMPT_ID}`) catch () => undefined
+    return try message(() => Message.FocusedPrompt())
+  },
+})
+
+export const PostMessage = Command.define("PostMessage", {
+  args: { conversation: Schema.String, clientId: Schema.String, name: Schema.String, text: Schema.String },
+  messages: [Message.SucceededPost, Message.FailedPost],
+  execute: effect ({ conversation, clientId, name, text }) => {
+    const factory = try Factory
+    const posted = effect {
+      try factory.post(conversation, clientId, name, text)
+      return ""
+    } catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+    return try message(() => posted === "" ? Message.SucceededPost({ clientId }) : Message.FailedPost({ clientId, reason: posted }))
+  },
+})
+
+// SUBSCRIPTION
+
+/** The key a keydown means to the app, if any: ⌘K or Ctrl+K toggles the prompt, Escape closes it. */
+export function keyMessage(key: string, meta: boolean, control: boolean): Option.Option<Message> {
+  if ((meta || control) && key.toLowerCase() === "k") return Option.some(Message.PressedCommandK())
+  if (key === "Escape") return Option.some(Message.PressedEscape())
+  return Option.none()
+}
+
+/** The app's subscriptions: the keyboard on `keys` (the document, in a browser) and the conversation's events. */
+export function subscriptions(keys: EventTarget) {
+  return Subscription.make<Model, Message, Factory>()((entry) => ({
+    keyboard: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMapPreventDefault({
+        target: keys,
+        type: "keydown",
+        filterMapEvent: (event: Event) => {
+          const keyboard = event as KeyboardEvent
+          return keyMessage(keyboard.key, keyboard.metaKey, keyboard.ctrlKey)
+        },
+      }),
+    ),
+    events: entry(
+      { conversation: Schema.String, epoch: Schema.Number, from: Schema.Number, open: Schema.Boolean },
+      {
+        modelToDependencies: (model: Model) => ({
+          conversation: model.conversation,
+          epoch: model.epoch,
+          from: model.from,
+          open: model.stream === "open",
+        }),
+        dependenciesToStream: ({ conversation, from, open }) =>
+          Stream.when(
+            Stream.unwrap(effect {
+              const factory = try Factory
+              return factory.events(conversation, from).pipe(
+                Stream.map((event) => Message.ReceivedEvent({ event })),
+                Stream.catchTag("Unavailable", (error) => Stream.make(Message.FailedEvents({ reason: error.reason }))),
+              )
+            }),
+            sync(() => open),
+          ),
+      },
+    ),
+  }))
+}
+
+// VIEW TRANSITION
+
+/**
+ * Moving between the splash and the chat morphs the splash into its pane and the prompt into the composer. Nothing
+ * else animates: the ⌘K prompt opens at once, and a view transition would swallow clicks while it runs.
+ */
+export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) =>
+  previousModel.surface === model.surface ? false : { types: [model.surface === "chat" ? "to-chat" : "to-splash"] }

@@ -1,0 +1,32 @@
+// Schemas for the conversation machine's state (`conversation.ts`), so a Foldkit Model, the wire and the tests can
+// decode and encode it. Each one matches the TypeScript type of the same name in `conversation.ts`.
+
+export schema Entry {
+  readonly id: string
+  readonly seq: number
+  readonly clientId: string
+  readonly author: "person" | "agent"
+  readonly name: string
+  readonly text: string
+  readonly done: boolean
+  readonly error: string
+}
+
+export schema Conversation {
+  readonly seq: number
+  readonly entries: ReadonlyArray<Entry>
+  readonly agent: "idle" | "working" | "failed"
+  readonly replying: string
+}
+
+export schema Pending {
+  readonly clientId: string
+  readonly text: string
+  readonly error: string
+}
+
+export schema Client {
+  readonly conversation: Conversation
+  readonly pending: ReadonlyArray<Pending>
+  readonly gap: boolean
+}

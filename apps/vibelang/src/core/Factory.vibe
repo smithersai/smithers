@@ -1,0 +1,41 @@
+// The factory's API: one Effect service every surface calls, the web app, the CLI, the MCP server and the skill
+// (wiki/decisions/0002-core-is-an-effect-api.md). Two layers provide it: `MockFactory` (no backend, no model) and the
+// live one that talks to vibelang.smithers.sh.
+import type { Event } from "./conversation.ts"
+
+/** Which backend a `Factory` talks to. */
+export type Mode = "mock" | "live"
+
+/** vibelang.smithers.sh couldn't be reached, or answered with something that isn't the protocol. */
+export error Unavailable { reason: string }
+
+/** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy` or `not-replying`. */
+export error Refused { refusal: string }
+
+/** The wire form of a conversation's events, as `conversation.ts` defines them. */
+export schema Posted {
+  readonly type: "Posted"
+  readonly seq: number
+  readonly id: string
+  readonly clientId: string
+  readonly name: string
+  readonly text: string
+}
+export schema ReplyStarted { readonly type: "ReplyStarted"; readonly seq: number; readonly id: string }
+export schema ReplyDelta { readonly type: "ReplyDelta"; readonly seq: number; readonly id: string; readonly text: string }
+export schema ReplyFinished { readonly type: "ReplyFinished"; readonly seq: number; readonly id: string }
+export schema ReplyFailed { readonly type: "ReplyFailed"; readonly seq: number; readonly id: string; readonly reason: string }
+
+/** Decodes one event off the wire. */
+export const EventSchema = Schema.Union([Posted, ReplyStarted, ReplyDelta, ReplyFinished, ReplyFailed])
+
+/**
+ * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every
+ * client sees the answer through `events`. `events(conversation, after)` replays the conversation's events numbered
+ * above `after`, then follows new ones until the stream is closed.
+ */
+export service Factory {
+  readonly mode: Mode
+  post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
+  events(conversation: string, after: number): Stream.Stream<Event, Unavailable>
+}

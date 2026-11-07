@@ -1,0 +1,85 @@
+// The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the real sequencer
+// (`decide`, `apply`) in memory and answers every post with the scripted agent, so the app, its tests and its demos
+// behave as they do against vibelang.smithers.sh, without a network.
+import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.ts"
+import { Factory, type Mode, Refused } from "./Factory.vibe"
+import { chunks, mockReply } from "./mockReplies.ts"
+
+/** One conversation's sequencer state: the conversation and every event it numbered. */
+interface Room {
+  readonly conversation: Conversation
+  readonly log: ReadonlyArray<Event>
+}
+
+/** A numbered event and the conversation it belongs to. */
+interface Published {
+  readonly conversation: string
+  readonly event: Event
+}
+
+/** How long the scripted agent waits between the pieces of its reply. */
+export const MOCK_DELTA_DELAY = "25 millis"
+
+/** The mock factory. Each layer build is its own empty world. */
+export const MockFactory = Layer.effect(Factory, effect {
+  const rooms = try Ref.make(new Map<string, Room>())
+  const published = try PubSub.unbounded<Published>()
+  const ids = try Ref.make(0)
+  // One reply at a time per world, the way the live agent's flow takes posts in order.
+  const agent = try Semaphore.make(1)
+
+  effect function nextId(prefix: string) {
+    const n = try Ref.updateAndGet(ids, (value) => value + 1)
+    return `${prefix}${n}`
+  }
+
+  effect function record(conversation: string, intent: Intent) {
+    const decision = try Ref.modify(rooms, (all): readonly [Decision, Map<string, Room>] => {
+      const room = all.get(conversation) ?? { conversation: empty, log: [] }
+      const decided = decide(room.conversation, intent)
+      if (!decided.ok) return [decided, all]
+      const next = new Map(all)
+      next.set(conversation, { conversation: apply(room.conversation, decided.event), log: [...room.log, decided.event] })
+      return [decided, next]
+    })
+    if (decision.ok) try PubSub.publish(published, { conversation, event: decision.event })
+    return decision
+  }
+
+  effect function reply(conversation: string, prompt: string) {
+    const id = try nextId("r")
+    const started = try record(conversation, { type: "StartReply", id })
+    if (!started.ok) return
+    for (const piece of chunks(mockReply(prompt))) {
+      try sleep(MOCK_DELTA_DELAY)
+      try record(conversation, { type: "AppendReply", id, text: piece })
+    }
+    try record(conversation, { type: "FinishReply", id })
+  }
+
+  const mode: Mode = "mock"
+  return {
+    mode,
+    post: effect (conversation: string, clientId: string, name: string, text: string) => {
+      const id = try nextId("m")
+      const decision = try record(conversation, { type: "Post", id, clientId, name, text })
+      if (!decision.ok) throw new Refused({ refusal: decision.refusal })
+      try Effect.forkDetach(Semaphore.withPermits(agent, 1)(reply(conversation, text)))
+    },
+    events: (conversation: string, after: number) =>
+      Stream.unwrap(effect {
+        // Subscribe before reading the log, so no event falls between the replay and the live tail.
+        const live = try PubSub.subscribe(published)
+        const all = try Ref.get(rooms)
+        const log = (all.get(conversation)?.log ?? []).filter((event) => event.seq > after)
+        const replayedTo = log.length === 0 ? after : log[log.length - 1]!.seq
+        return Stream.concat(
+          Stream.fromIterable(log),
+          Stream.fromSubscription(live).pipe(
+            Stream.filter((item) => item.conversation === conversation && item.event.seq > replayedTo),
+            Stream.map((item) => item.event),
+          ),
+        )
+      }),
+  }
+})

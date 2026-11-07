@@ -1,0 +1,39 @@
+// vibelang.smithers.sh's infrastructure (wiki/decisions/0006-hosting.md): the Vite build served by a Cloudflare
+// Worker with static assets. The custom domain comes from the deployment (`VIBELANG_DOMAIN`, such as
+// vibelang.smithers.sh); without it the site answers only at its workers.dev URL. `alchemy dev` keeps state in
+// .alchemy/ with no Cloudflare account.
+//
+// Dev:    pnpm alchemy dev
+// Plan:   pnpm plan         (read-only)
+// Deploy: pnpm run deploy   (with Cloudflare credentials and VIBELANG_DOMAIN in the environment)
+import * as Alchemy from "alchemy"
+import * as Cloudflare from "@alchemy.run/cloudflare"
+
+// Its own state store: Alchemy beta.85's store format (v8) differs from the one apps/mvp's Alchemy beta.83 keeps in the
+// account's default store (v7), and migrating that one would break apps/mvp's deploys.
+export const STATE_STORE = "smithers-vibelang-state"
+
+const state = Layer.unwrap(effect {
+  return (try Alchemy.ALCHEMY_DEV) ? Alchemy.localState() : Cloudflare.state({ workerName: STATE_STORE })
+}) |> Layer.orDie(%)
+
+export default Alchemy.Stack(
+  "smithers-vibelang",
+  { providers: Cloudflare.providers(), state },
+  effect {
+    const dev = try Alchemy.ALCHEMY_DEV
+    const domain = dev ? Option.none<string>() : try Config.option(Config.String("VIBELANG_DOMAIN"))
+    const site = try Cloudflare.Website.Vite("vibelang-site", {
+      main: "worker/index.ts",
+      compatibility: { date: "2026-10-01" },
+      assets: { notFoundHandling: "single-page-application" },
+      ...(Option.isSome(domain) ? { domain: domain.value } : {}),
+      observability: {
+        enabled: true,
+        logs: { enabled: true, invocationLogs: true, persist: true },
+        traces: { enabled: true, persist: true },
+      },
+    })
+    return { url: site.url }
+  },
+)

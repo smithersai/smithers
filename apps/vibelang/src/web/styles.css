@@ -1,0 +1,86 @@
+/* vibelang.smithers.sh's frame and splash. Colors come from the Smithers theme (@smthrs/ui-styleguide); chat parts use
+   @smthrs/ui-css's `sui-*` classes. VibeLang's brand adds its gradient and violet accent (launch kit brand/BRIEF.md). */
+
+:root {
+  --vl-cyan: #41d1ff;
+  --vl-violet: #747bff;
+  --vl-magenta: #bd34fe;
+  --vl-gradient: linear-gradient(120deg, var(--vl-cyan) 8%, var(--vl-violet) 48%, var(--vl-magenta) 88%);
+  --brand: #5b61e8;
+  color-scheme: light dark;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) { --brand: var(--vl-violet); }
+}
+:root[data-theme="dark"] { --brand: var(--vl-violet); }
+
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans, system-ui, sans-serif); -webkit-font-smoothing: antialiased; }
+button { font: inherit; }
+
+.vl-app { min-height: 100dvh; display: flex; flex-direction: column; }
+
+/* ── top bar ─────────────────────────────────────────────────────────────────── */
+.vl-top { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.vl-home { display: inline-flex; align-items: center; padding: 4px; border: 0; border-radius: var(--r-1, 6px); background: transparent; cursor: pointer; }
+.vl-home:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+.vl-logo { height: 24px; width: auto; display: block; }
+:root[data-theme="light"] .vl-logo { filter: invert(1) hue-rotate(180deg); }
+@media (prefers-color-scheme: light) { :root:not([data-theme="dark"]) .vl-logo { filter: invert(1) hue-rotate(180deg); } }
+.vl-nav { display: flex; align-items: center; gap: 18px; }
+.vl-link { padding: 0; border: 0; background: none; color: var(--brand); font-size: 14px; text-decoration: none; cursor: pointer; }
+.vl-link:hover { text-decoration: underline; }
+.vl-pill { padding: 2px 8px; border: 1px solid var(--brand-border, var(--border)); border-radius: var(--r-full, 999px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.vl-kbd { margin-left: 8px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono, ui-monospace, monospace); font-size: 11px; }
+
+/* ── splash ──────────────────────────────────────────────────────────────────── */
+.vl-splash { flex: 1; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: center; gap: 48px; width: min(100%, 1200px); margin: 0 auto; padding: 48px 32px 96px; }
+.vl-eyebrow { color: var(--text-muted); font-size: 13px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.vl-title { margin: 12px 0 0; font-size: clamp(56px, 9vw, 96px); font-weight: 750; letter-spacing: -.035em; line-height: .95; }
+.vl-gradient { background: var(--vl-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.vl-tagline { max-width: 34ch; margin: 22px 0 0; color: var(--text-muted); font-size: 19px; line-height: 1.5; }
+.vl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 32px; }
+.vl-ask { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--brand-border, var(--brand)); border-radius: var(--r-2, 10px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 15px; font-weight: 650; cursor: pointer; transition: background .15s ease, box-shadow .15s ease; }
+.vl-ask:hover { background: var(--brand-soft-strong, var(--hover)); }
+.vl-ask:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-install { display: inline-block; margin: 24px 0 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: var(--code-bg, var(--surface-2)); color: var(--code-text, var(--text)); font-family: var(--font-mono, ui-monospace, monospace); font-size: 14px; }
+.vl-install::before { content: "$ "; color: var(--text-faint, var(--text-muted)); }
+.vl-media { margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: #0e0e11; box-shadow: var(--shadow-3, 0 24px 60px rgb(0 0 0 / .25)); }
+.vl-media video { display: block; width: 100%; height: auto; }
+@media (max-width: 900px) {
+  .vl-splash { grid-template-columns: 1fr; gap: 36px; padding: 24px 16px 64px; }
+}
+
+/* ── chat ────────────────────────────────────────────────────────────────────── */
+.vl-chat { flex: 1; display: flex; flex-direction: column; }
+.vl-pane { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-bubble, 18px); background: var(--surface); color: var(--text-muted); text-align: left; cursor: pointer; transition: border-color .15s ease; }
+.vl-pane:hover { border-color: var(--border-strong, var(--brand)); }
+.vl-pane:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-pane .vl-logo { height: 20px; }
+.vl-pane-text { flex: 1; font-size: 13px; }
+.vl-pane-expand { color: var(--text-faint, var(--text-muted)); }
+.sui-chat-message[data-pending="true"] .sui-chat-bubble { opacity: .6; }
+.sui-chat-bubble p { margin: 0 0 10px; }
+.sui-chat-bubble p:last-child { margin-bottom: 0; }
+.sui-chat-bubble code { padding: 1px 5px; border-radius: 4px; background: var(--code-bg, var(--surface-2)); font-family: var(--font-mono, ui-monospace, monospace); font-size: .88em; }
+.vl-code { margin: 10px 0; padding: 12px 14px; overflow-x: auto; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: var(--code-bg, var(--surface-2)); color: var(--code-text, var(--text)); font-size: 13px; line-height: 1.55; }
+.vl-code code { padding: 0; background: none; font-size: inherit; }
+.vl-error { color: var(--danger, #e5484d); }
+.vl-dots { display: inline-block; width: 28px; height: 10px; background: radial-gradient(circle, var(--text-muted) 2px, transparent 2.5px) 0 50% / 9px 10px repeat-x; animation: vl-dots 1s steps(3) infinite; }
+@keyframes vl-dots { from { width: 0; } to { width: 28px; } }
+.vl-send { border: 0; background: var(--brand); color: var(--inverse-text, #fff); cursor: pointer; }
+.vl-send:disabled { opacity: .35; cursor: default; }
+
+/* ── ⌘K ──────────────────────────────────────────────────────────────────────── */
+.vl-palette-layer { position: fixed; inset: 0; z-index: 50; display: grid; justify-items: center; align-content: start; padding: 18vh 16px 0; }
+.vl-palette-scrim { position: absolute; inset: 0; background: rgb(0 0 0 / .45); -webkit-backdrop-filter: blur(2px); backdrop-filter: blur(2px); animation: vl-fade .14s ease-out both; }
+.vl-palette { position: relative; width: min(100%, 640px); }
+@keyframes vl-fade { from { opacity: 0; } }
+
+/* ── view transitions: the splash shrinks into its pane, the prompt docks into the composer ─────────────────────── */
+::view-transition-group(splash), ::view-transition-group(prompt) { animation-duration: .38s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-old(splash), ::view-transition-new(splash) { height: 100%; object-fit: cover; overflow: hidden; }
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
+}

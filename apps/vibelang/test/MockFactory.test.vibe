@@ -1,0 +1,84 @@
+// The mock factory through the `Factory` service, as every surface calls it: the real sequencer, the scripted agent,
+// and two clients following one conversation (wiki/decisions/0007-multiplayer.md).
+import { describe, expect, it } from "@effect/vitest"
+import { apply, empty, type Event } from "../src/core/conversation.ts"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { mockReply } from "../src/core/mockReplies.ts"
+
+/** Every event of `conversation` up to and including the one that finishes its `replies`-th reply. */
+effect function untilReplies(conversation: string, replies: number) {
+  const factory = try Factory
+  let finished = 0
+  const events = try Stream.runCollect(
+    factory.events(conversation, 0) |> Stream.takeUntil(%, (event: Event) => event.type === "ReplyFinished" && ++finished === replies),
+  )
+  return Array.from(events)
+}
+
+describe("MockFactory", () => {
+  it.live("records a post and streams the scripted reply, every event numbered in order", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("c1", "a", "Ada", "  How do I install it?  ")
+      const events = try untilReplies("c1", 1)
+      try Effect.try(() => {
+        expect(events.map((event) => event.seq)).toEqual(events.map((_, index) => index + 1))
+        expect(events[0]).toEqual({ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "How do I install it?" })
+        expect(events[1]!.type).toBe("ReplyStarted")
+        const conversation = events.reduce(apply, empty)
+        expect(conversation.entries[1]!.text).toBe(mockReply("How do I install it?"))
+        expect(conversation.agent).toBe("idle")
+        expect(factory.mode).toBe("mock")
+      })
+    }
+  })
+
+  it.live("refuses a repeated client id and a blank post", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("c1", "a", "Ada", "hi")
+      const repeated = factory.post("c1", "a", "Ada", "hi again") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      const blank = factory.post("c1", "b", "Ada", "   ") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      try Effect.try(() => {
+        expect(repeated).toBe("duplicate")
+        expect(blank).toBe("empty")
+      })
+    }
+  })
+
+  it.live("answers posts one at a time, and two followers see the same events", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("c2", "a", "Ada", "What is a service?")
+      try factory.post("c2", "b", "Grace", "How do errors work?")
+      const [first, second] = try.all [untilReplies("c2", 2), untilReplies("c2", 2)]
+      try Effect.try(() => {
+        expect(first).toEqual(second)
+        const conversation = first.reduce(apply, empty)
+        expect(conversation.entries.map((entry) => entry.name)).toEqual(["Ada", "Grace", "VibeLang agent", "VibeLang agent"])
+        expect(conversation.entries[3]!.text).toBe(mockReply("How do errors work?"))
+      })
+    }
+  })
+
+  it.live("replays only the events after the number a reconnecting client already has", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("c3", "a", "Ada", "hi")
+      const all = try untilReplies("c3", 1)
+      const tail = try Stream.runCollect(factory.events("c3", 2) |> Stream.take(%, all.length - 2))
+      try Effect.try(() => expect(Array.from(tail)).toEqual(all.slice(2)))
+    }
+  })
+
+  it.live("keeps conversations apart", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("c4", "a", "Ada", "hi")
+      try factory.post("c5", "a", "Ada", "hello")
+      const four = try untilReplies("c4", 1)
+      try Effect.try(() => expect(four.filter((event) => event.type === "Posted").map((event) => event.seq)).toEqual([1]))
+    }
+  })
+})
