@@ -5113,6 +5113,9 @@ importers:
 
   packages/smithers/flows/platform-cloudflare:
     dependencies:
+      '@effect/sql-sqlite-do':
+        specifier: 4.1.1
+        version: 4.1.1(effect@4.1.1)
       '@smthrs/artifacts':
         specifier: 1.0.0-rc.16
         version: link:../artifacts
@@ -5147,6 +5150,9 @@ importers:
         specifier: 1.0.0-rc.16
         version: link:../sandbox
     devDependencies:
+      '@cloudflare/workers-types':
+        specifier: 5.20261019.1
+        version: 5.20261019.1
       '@effect/language-service':
         specifier: 0.87.2
         version: 0.87.2
@@ -8284,6 +8290,11 @@ packages:
 
   '@effect/sql-sqlite-bun@4.1.1':
     resolution: {integrity: sha512-NkkE5GQbrzMpD83+hKhPihuqp2rYMdIlNOqSosjp/3S1+RQXuZQC8u5pwhwNKrz7U0unbdN27zU+6JOSRr/3Cw==}
+    peerDependencies:
+      effect: 4.1.1
+
+  '@effect/sql-sqlite-do@4.1.1':
+    resolution: {integrity: sha512-9U5xF0vFo/48n0cSeFPOEnUAM4sQ9Tdajk8fF3+I/0YQJ8ce5UH4VDeTAr+wkhXULB7hvAE/ZUJrEgaAl0Jjfw==}
     peerDependencies:
       effect: 4.1.1
 
@@ -17780,6 +17791,10 @@ snapshots:
       effect: 4.1.1
 
   '@effect/sql-sqlite-bun@4.1.1(effect@4.1.1)':
+    dependencies:
+      effect: 4.1.1
+
+  '@effect/sql-sqlite-do@4.1.1(effect@4.1.1)':
     dependencies:
       effect: 4.1.1
 

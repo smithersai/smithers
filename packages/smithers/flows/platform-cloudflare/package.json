@@ -82,6 +82,7 @@
     "coverage": "vitest --coverage"
   },
   "dependencies": {
+    "@effect/sql-sqlite-do": "4.1.1",
     "@smthrs/artifacts": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
     "@smthrs/crypto": "1.0.0-rc.16",
@@ -95,6 +96,7 @@
     "@smthrs/sandbox": "1.0.0-rc.16"
   },
   "devDependencies": {
+    "@cloudflare/workers-types": "5.20261019.1",
     "@effect/language-service": "0.87.2",
     "@effect/sql-pg": "4.1.1",
     "@effect/vitest": "4.1.1",

@@ -30,6 +30,25 @@ describe("shared SQL dialect", () => {
       expect(yield* sql`SELECT value FROM sample`).toEqual([{ value: 7 }])
     })))
 
+  it.effect("runs a read transaction the way its driver registered, for a client whose SQL cannot say BEGIN", () =>
+    run(Effect.gen(function*() {
+      const sql = yield* SqlClient
+      yield* sql`CREATE TABLE registered (value INTEGER)`
+      yield* sql`INSERT INTO registered VALUES(1)`
+      const opened: Array<string> = []
+      Dialect.registerReadTransaction(sql, (effect) =>
+        Effect.suspend(() => {
+          opened.push("open")
+          return sql.withTransaction(effect)
+        }))
+      const rows = yield* Dialect.readTransaction(sql, sql`SELECT value FROM registered`)
+      expect(rows).toEqual([{ value: 1 }])
+      expect(opened).toEqual(["open"])
+      // Inside a transaction already, the read joins it and opens nothing.
+      yield* sql.withTransaction(Dialect.readTransaction(sql, sql`SELECT value FROM registered`))
+      expect(opened).toEqual(["open"])
+    })))
+
   describe.skipIf(process.env.SMITHERS_TEST_PG_URL === undefined)("deferred trigger flush", () => {
     it.effect("flushes mixed operations in write order and defers subsequent writes again", () =>
       run(Effect.gen(function*() {

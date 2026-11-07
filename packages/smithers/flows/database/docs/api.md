@@ -786,6 +786,11 @@ client opens the read transaction itself; any other PostgreSQL client reads at
 `REPEATABLE READ READ ONLY` on a reserved connection. Keep writes out of
 `effect`: PostgreSQL refuses them, and on SQLite one takes the write lock.
 
+`registerReadTransaction(sql, open)` is for a driver whose SQL cannot say
+`BEGIN`: `readTransaction` on that client runs `open(effect)` instead. A
+Durable Object's SQLite storage is one; `@smthrs/platform-cloudflare`'s
+`ObjectDatabase` registers `storage.transaction()` there.
+
 `trigger` rejects a row with `reject` as its message (a constraint failure on
 both backends), skips it with `ignore: true`, or runs `body`; `when` limits it
 to rows where the condition holds. `query` does not parse SQL, so its template

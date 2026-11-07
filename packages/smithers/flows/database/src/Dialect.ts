@@ -274,6 +274,19 @@ export const query = <A extends object = Record<string, unknown>>(
   return sql.unsafe<A>(isPostgres(sql) ? template.replaceAll("?", () => `$${++index}`) : template, values)
 }
 /**
+ * Records how `sql` opens a read transaction, for a driver whose SQL cannot
+ * say `BEGIN`, such as a Durable Object's SQLite storage, which runs every
+ * transaction in `storage.transaction()`. {@link readTransaction} on `sql`
+ * then runs `open(effect)`. A driver calls this once, on the client it made.
+ *
+ * @category transactions
+ * @since 1.0.0-rc.17
+ */
+export const registerReadTransaction = (
+  sql: SqlClient,
+  open: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>
+): void => ReadTransaction.register(sql, open)
+/**
  * Runs `effect` as one read transaction: every statement in it reads one
  * snapshot, and it takes no writer lock, so a writer may commit while it
  * reads. Use it for a read that must agree with itself, such as rows checked

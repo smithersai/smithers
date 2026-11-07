@@ -1,0 +1,64 @@
+/**
+ * The durable engine's database in a Durable Object's own SQLite storage.
+ *
+ * `CloudflareRuntime.layer` takes any `SqlClient`. Over Hyperdrive that is a
+ * shared Postgres; this module gives each object its own instead: the SQLite
+ * database every SQLite-backed Durable Object carries, through Effect's
+ * `@effect/sql-sqlite-do` client. An execution's journal, runs and timers
+ * then live in the object that drives it, so the host needs no database
+ * server. It suits flows whose executions run on one object each and never
+ * read another object's store: a child flow's execution would keep its own
+ * store on its own object, which the parent's could not read.
+ *
+ * - The object's storage is single-threaded, so the client runs one statement
+ *   at a time.
+ * - SQLite in a Durable Object refuses `BEGIN` and `SAVEPOINT`. Transactions,
+ *   read transactions (`Dialect.readTransaction`) included, run in
+ *   `storage.transaction()`, which holds the object's input gate until they
+ *   end. A read transaction therefore excludes writers, where SQLite's own
+ *   deferred `BEGIN` would not; never wait inside one for a write.
+ *
+ * ```ts
+ * import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+ * import * as Layer from "effect/Layer"
+ *
+ * const runtime = (intent: ExecutionObject.Intent) =>
+ *   CloudflareRuntime.layer({ hostId: ctx.id.toString(), executionId: intent.executionId }, registration).pipe(
+ *     Layer.provide(ObjectDatabase.layer(ctx.storage))
+ *   )
+ * ```
+ *
+ * @since 1.0.0-rc.17
+ */
+
+import * as SqliteClient from "@effect/sql-sqlite-do/SqliteClient"
+import * as Dialect from "@smthrs/database/Dialect"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Reactivity from "effect/reactivity/Reactivity"
+import * as SqlClient from "effect/sql/SqlClient"
+
+/**
+ * A SQLite-backed Durable Object's storage, `ctx.storage`: its `sql` and the
+ * `transaction` its transactions run in.
+ *
+ * @category models
+ * @since 1.0.0-rc.17
+ */
+export type Storage = NonNullable<SqliteClient.SqliteClientConfig["storage"]>
+
+/**
+ * Provides `SqlClient` over `storage`'s SQLite database, with transactions
+ * and read transactions in `storage.transaction()`.
+ *
+ * @category layers
+ * @since 1.0.0-rc.17
+ */
+export const layer = (storage: Storage): Layer.Layer<SqlClient.SqlClient> =>
+  Layer.effect(
+    SqlClient.SqlClient,
+    Effect.map(SqliteClient.make({ storage }), (client) => {
+      Dialect.registerReadTransaction(client, (effect) => client.withTransaction(effect))
+      return client
+    })
+  ).pipe(Layer.provide(Reactivity.layer))
