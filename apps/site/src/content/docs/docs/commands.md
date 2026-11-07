@@ -33,6 +33,7 @@ The composer is available to Members and above. Minimum roles below describe eac
 | `/clone` | `repo` | Guest | Clone a repository. |
 | `/flow.new` | `name request` | Member | Draft or edit a personal flow. |
 | `/flow.run` | `name [input]` | Member | Run the latest saved revision. |
+| `/repo.run` | `repo flow ref` | Member | Run a repository's flow at the selected ref. |
 | `/branch.new` | `repo branch` | Member | Create and track a branch. |
 | `/publish` | `title` | Member | Publish this branch's changes as a pull request. |
 | `/branch.update` | none | Member | Update the current branch. |
