@@ -20,7 +20,7 @@ export function blocks(text: string): ReadonlyArray<Block> {
     prose = []
   }
   for (const line of lines) {
-    const fence = /^```\s*([\w-]*)\s*$/.exec(line)
+    const fence = /^```(\S*)/.exec(line)
     if (fence) {
       if (code === undefined) {
         flushProse()
