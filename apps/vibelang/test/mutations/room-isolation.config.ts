@@ -1,3 +1,4 @@
+// Stays .ts: Vitest loads --config files through Vite's config loader, which bundles JS/TS files only.
 // Reproduce review finding 12 without editing production source. This run must fail its isolation assertion.
 // pnpm exec vitest run --config test/mutations/room-isolation.config.ts test/MockFactory.test.vibe -t 'keeps complete live transcripts'
 import { defineConfig, mergeConfig } from "vitest/config"

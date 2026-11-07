@@ -1,3 +1,4 @@
+// Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
 import { expect, test } from "@playwright/test"
 
 // The live agent in a real browser (wiki/decisions/0010-live-agent.md), opt in: `E2E_LIVE_URL` names a deployment or

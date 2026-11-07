@@ -7,8 +7,26 @@
 Smithers packages (`@smthrs/flow`, `agent`, `model`, `model-host`, `platform-cloudflare`, `crypto`, `plan`, `ui-css`,
 `ui-styleguide`; the live agent, 0010). Build and test tools are `vibelang`, `vibelang-vite`, `vite`, `vitest`,
 `@effect/vitest`, `happy-dom`, `@playwright/test` and `alchemy`, and for the workerd suites `miniflare`, `esbuild`
-and `vibelang-unplugin`, the versions apps/mvp pins. Effect code is VibeLang (`.vibe`); files with no Effect code stay `.ts`
-(the repository rule), which keeps the state machine provable by LemmaScript (0005).
+and `vibelang-unplugin`, the versions apps/mvp pins.
+
+**Language (VL-4).** Every file is VibeLang (`.vibe`), Effect code or not: Will, 2026-11-07, "We are writing it in
+vibelang". This overrides the repository rule that files with no Effect code stay `.ts`. Platform access goes through
+Effect's and VibeLang's services (`Stdio`, `Config`, `FileSystem`, `Path`, `ChildProcess`, `HttpClient`, and
+`Experimental.Window`, `Document`, `MediaQuery`, `Crypto` and `Process`). The state machine is VibeLang too; LemmaScript
+proves an exact `.ts` copy of its text (0005). A file stays `.ts` only when a tool reads nothing else, and its first
+line says which:
+
+| Files | The tool that requires `.ts` |
+| --- | --- |
+| `vite.config.ts`, `test/mutations/room-isolation.config.ts` | Vite's config loader, for Vite and Vitest, bundles JS/TS only |
+| `playwright.config.ts`, `e2e/*.spec.ts` | Playwright loads configs and collects test files by JS/TS extension only |
+| `alchemy.run.ts` | the Alchemy CLI's entry; it re-exports `infra/Stack.vibe` |
+| `PACKAGE.ts` | `smthrs` discovers targets only in files of that name |
+| `verify/bugs/*.ts` | LemmaScript defect reproductions, in the TypeScript LemmaScript reads |
+| `test/viewport.test.ts`, `test/support/browser.ts`, `test/support/scrollHost.ts` | they drive happy-dom through DOM globals, EK4402 in VibeLang, which no Effect service provides |
+
+The last row and the specs' page callbacks (`page.evaluate(() => window.scrollY)`, also EK4402) are VibeLang gaps,
+reproduced as `upstream-bugs/vibelang-dom-test-globals` and `upstream-bugs/playwright-vibe-specs` on the build host.
 
 **Why the monorepo.** VL-4 requires Smithers' abstractions; `workspace:` packages are how apps reuse them.
 

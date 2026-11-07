@@ -1,3 +1,4 @@
+// Stays .ts: Playwright loads its config by JS/TS extension only.
 import { defineConfig, devices } from "@playwright/test"
 
 // End-to-end tests drive the real built app in a browser. Mock mode needs no backend, so the preview server is the

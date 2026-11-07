@@ -1,3 +1,4 @@
+// Stays .ts: a LemmaScript defect reproduction, in the TypeScript LemmaScript reads (verify/README.md).
 export {}
 interface Item { readonly text: string }
 //@ verify

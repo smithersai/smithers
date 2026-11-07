@@ -1,3 +1,5 @@
+// Stays .ts: it drives happy-dom through DOM globals, which VibeLang rejects as host code (EK4402) and no Effect
+// service provides (upstream-bugs/vibelang-dom-test-globals).
 /** Native input events drive the same handlers as the browser; the tests never call update directly. */
 export function send(text: string): void {
   const input = document.activeElement as HTMLTextAreaElement

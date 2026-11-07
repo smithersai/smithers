@@ -1,3 +1,4 @@
+// Stays .ts: smthrs discovers targets only in files named PACKAGE.ts.
 /**
  * Targets for vibelang.smithers.sh (wiki/decisions/0008-testing.md): the
  * typecheck, the Vitest suites, the Worker suites in local workerd, and the

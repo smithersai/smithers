@@ -1,3 +1,5 @@
+// Stays .ts: it drives happy-dom through DOM globals, which VibeLang rejects as host code (EK4402) and no Effect
+// service provides (upstream-bugs/vibelang-dom-test-globals).
 // A controlled animation-frame boundary in happy-dom. The application, update and subscriptions remain real.
 // happy-dom has no layout; observing scrollIntoView records whether a follow write was attempted after intent.
 import { vi } from "vitest"

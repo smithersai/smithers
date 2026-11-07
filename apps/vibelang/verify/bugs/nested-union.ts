@@ -1,3 +1,4 @@
+// Stays .ts: a LemmaScript defect reproduction, in the TypeScript LemmaScript reads (verify/README.md).
 export {}
 type Event = { readonly type: "A"; readonly seq: number } | { readonly type: "B"; readonly seq: number }
 type Reason = "empty" | "busy"

@@ -1,3 +1,5 @@
+// Stays .ts: it drives happy-dom through DOM globals, which VibeLang rejects as host code (EK4402) and no Effect
+// service provides (upstream-bugs/vibelang-dom-test-globals).
 import { afterEach, beforeEach, describe, expect, test, vi } from "vitest"
 import { init, Message, update } from "../src/web/main.vibe"
 import { transcriptViewport } from "../src/web/viewport.vibe"

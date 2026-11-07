@@ -6,9 +6,10 @@ as its code (VL-23).
 
 ## Rules
 
-- **Effect for everything; no other runtime dependencies** (VL-4, VL-5). Effect code is VibeLang (`.vibe`; read
-  `node_modules/vibelang/skills/vibelang/SKILL.md` first). Files with no Effect code stay `.ts`. A new dependency needs
-  Will's approval, recorded in [0001](wiki/decisions/0001-app-and-stack.md).
+- **Effect for everything, written in VibeLang; no other runtime dependencies** (VL-4, VL-5). Every file is VibeLang
+  (`.vibe`; read `node_modules/vibelang/skills/vibelang/SKILL.md` first), Effect code or not. A file stays `.ts` only
+  when a tool reads nothing else, and its first line says which ([0001](wiki/decisions/0001-app-and-stack.md)). A new
+  dependency needs Will's approval, recorded in 0001.
 - **One state machine** ([0003](wiki/decisions/0003-one-state-machine.md)). Conversation state changes only through
   `src/core/conversation.vibe` (`decide`, `apply`, `receive`). Keep it in LemmaScript's verifiable subset, plain
   TypeScript syntax with no Effect code ([0005](wiki/decisions/0005-formal-verification.md)); a new transition comes with its contract and property.

@@ -1,3 +1,4 @@
+// Stays .ts: a LemmaScript defect reproduction, in the TypeScript LemmaScript reads (verify/README.md).
 export {}
 type Intent = { readonly type: "A"; readonly n: number } | { readonly type: "B" }
 const LIMIT = 8000

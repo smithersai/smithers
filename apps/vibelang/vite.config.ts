@@ -1,3 +1,4 @@
+// Stays .ts: Vite and Vitest load their config through Vite's config loader, which bundles JS/TS files only.
 import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
