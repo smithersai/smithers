@@ -2,8 +2,8 @@ import { fileURLToPath } from "node:url"
 import vibelang from "vibelang-vite"
 import { defineConfig } from "vitest/config"
 
-// `vite --mode mock` (or `?mock` in the URL) runs the app with no backend and no model: the mock Factory layer stands
-// in for vibelang.smithers.sh's API (wiki/decisions/0004-mock-mode.md).
+// Until the live agent lands, the mock Factory layer (no backend, no model) is the app's only backend
+// (wiki/decisions/0004-mock-mode.md). `--mode e2e` adds the fault-injection page the recovery tests drive.
 export default defineConfig(({ mode }) => ({
   plugins: [vibelang()],
   // The Smithers packages are linked from this repository (package.json `link:`) until this app joins the pnpm

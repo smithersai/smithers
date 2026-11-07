@@ -22,6 +22,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     return {
       mode: base.mode,
       post: base.post,
+      read: base.read,
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         return base.events(conversation, after).pipe(
