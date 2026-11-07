@@ -870,7 +870,7 @@
     "typescript": "5.9.3",
     "yaml": "2.9.0",
     "@smthrs/sandbox": "1.0.0-rc.16",
-    "undici": "8.11.2",
+    "undici": "8.12.4",
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0",
