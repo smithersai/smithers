@@ -49,4 +49,4 @@ export * as Uuid from "./Uuid.ts"
  * @category services
  * @since 1.0.0
  */
-export * as Crypto from "./Crypto.ts"
+export * as Crypto from "./Crypto.vibe"
