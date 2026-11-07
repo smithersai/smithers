@@ -48,6 +48,8 @@ failing package — so a green partial run proves less than it looks like it
 does. `pnpm --recursive --if-present --no-bail run test` reports every
 package instead of the first casualty.
 
+Recursive package scripts use `ignoreWorkspaceCycles: true` because package test dependencies form cycles. Each selected package still runs once; source import cycles are checked by the `circular` targets.
+
 ## Updating documentation
 
 Edit main-site pages in `apps/site/src/content/docs/docs/`. Library documentation lives in each package's `docs/` directory and ships in its npm tarball. Edit those sources directly.

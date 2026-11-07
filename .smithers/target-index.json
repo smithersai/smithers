@@ -54239,15 +54239,29 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/contracts/workspace-cycles.test.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/scripts/workspace-packages.mjs"
       },
       {
         "kind": "file",
         "path": "packages/repo-targets/scripts/workspace-packages.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "package.json"
       }
     ],
     "outputs": [],
-    "dependencies": [],
+    "dependencies": [
+      "//packages/repo-targets:repositoryInputs"
+    ],
     "source": {
       "file": "packages/repo-targets/PACKAGE.ts"
     }

@@ -320,9 +320,17 @@ const bunCoverage = Smithers.NodeTest({
  * @category test
  */
 const workspacePackages = Smithers.NodeTest({
-  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/scripts/workspace-packages.test.mjs")]),
-  srcs: [Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"), Smithers.file("//packages/repo-targets/scripts/workspace-packages.d.mts")],
-  deps: []
+  runner: Smithers.testRunner([
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.test.mjs"),
+    Smithers.file("//packages/repo-targets/contracts/workspace-cycles.test.mjs")
+  ]),
+  srcs: [
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.mjs"),
+    Smithers.file("//packages/repo-targets/scripts/workspace-packages.d.mts"),
+    Smithers.file("//pnpm-workspace.yaml"),
+    Smithers.file("//package.json")
+  ],
+  deps: [repositoryInputs]
 })
 
 /**

@@ -44,6 +44,8 @@ allowBuilds:
 
 linkWorkspacePackages: true
 verifyDepsBeforeRun: false
+# Test dependencies form intentional package cycles; source cycles have their own gate.
+ignoreWorkspaceCycles: true
 
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
