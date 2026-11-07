@@ -4,14 +4,15 @@ Bricks in order. A brick is done when its end-to-end test passes against the dep
 
 ```
 brick                                   state         proof
-1a  splash, ⌘K, chat, mock agent        done          e2e/chat.spec.ts (dark, light, phone); 25 unit/property/scene tests
+1a  splash, ⌘K, chat, mock agent        done          e2e/ (dark, light, phone) passes against the deployment; Astra and Fable
+                                                      reviews fixed (25 findings), each with a test that failed first
 1b  live agent on Cloudflare            next          a Durable Object per conversation runs the sequencer; the reply is an
                                                       @smthrs/agent flow step (VL-11); LiveFactory replaces MockFactory
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
                                                       Live dogfooding awaits 1b; local and deployed browser suites pass.
-1d  formal proofs in CI                 in progress   local `pnpm verify` proves conversation.ts; `pnpm verify:broken` checks mutations;
-                                                      CI wiring remains (0005, VL-9)
+1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.ts; `pnpm verify:broken`: 48/48
+                                                      mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       later         VL-20
@@ -23,6 +24,13 @@ brick                                   state         proof
 
 ## Open work outside this app
 
+- **Effect 4.1.1 upgrade landing (2026-11-07).** 57 commits in nyc-01 `~/vl/ws-effect41`; all typecheck/check gates
+  pass. Lane `vl-e41land` classifies each remaining red as pre-existing or introduced and fixes introduced ones before
+  it lands. Reproductions of upstream defects it found: `~/vl/vibelang-bugs/` and
+  `~/vl/effect41-evidence/` on nyc-01.
+- **VibeLang bugs to fix upstream** (reproductions on nyc-01 under `~/vl/vibelang-bugs/`): `vibelang-error-subclass-is`
+  (after `--fix`, `is` stops matching a subclass of an error), `vibelang-format-npm-reference` (the formatter can't
+  resolve its shipped binary on Linux). EK4802 on Effect CLI Commands is fixed and queued (`1794050628-ek4802`).
 - **The monorepo moves to Effect 4.1.1, VibeLang 0.0.12 and Alchemy beta.85.** Foldkit 0.170 needs Effect `~4.1.0`,
   Alchemy beta.85 needs `^4.1.0` and `vibelang-runtime` 0.0.12 pins 4.1.1, while the monorepo pins 4.0.5. Until that
   lands, this app installs on its own (`pnpm run setup`, excluded in the root `pnpm-workspace.yaml`)
