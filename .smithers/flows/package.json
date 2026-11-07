@@ -28,6 +28,7 @@
     "@smthrs/model": "workspace:*",
     "@smthrs/patterns": "workspace:*",
     "@smthrs/plan": "workspace:*",
+    "@smthrs/plugin": "workspace:*",
     "@smthrs/platform-node": "workspace:*",
     "@smthrs/registry": "workspace:*",
     "@smthrs/run-store": "workspace:*",
