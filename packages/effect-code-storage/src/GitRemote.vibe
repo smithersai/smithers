@@ -18,11 +18,8 @@
  */
 
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
 import * as HttpClient from "effect/http/HttpClient"
-import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as Metric from "effect/Metric"
-import * as Option from "effect/Option"
 import * as Redacted from "effect/Redacted"
 import * as Schema from "effect/Schema"
 import { readPackets } from "./internal/bounded.ts"
@@ -190,20 +187,38 @@ const withCredential = (request: HttpClientRequest.HttpClientRequest, upstream: 
     : HttpClientRequest.setHeader(request, "authorization", Redacted.value(upstream.authorization))
 
 /** One count on {@link requests} by how a read ended, and its span, which names only the remote's URL. */
-const observed = (span: string, remote: string) => <A, R>(effect: Effect.Effect<A, GitRemoteError, R>) =>
-  effect.pipe(
-    Effect.onExit((exit) =>
-      Metric.update(
-        Metric.withAttributes(requests, {
-          outcome: Exit.isSuccess(exit) ?
-            "ok" :
-            Option.match(Exit.findErrorOption(exit), { onNone: () => "interrupted", onSome: (error) => error.code })
-        }),
-        1
-      )
-    ),
-    Effect.withSpan(span, { attributes: { "git.remote": remote } })
-  )
+const observed = (span: string, remote: string) => <A, R>(effect: A!GitRemoteError!R) =>
+  effect
+  |> Effect.onExit(%, (exit) =>
+    Metric.update(
+      Metric.withAttributes(requests, {
+        outcome: Exit.isSuccess(exit) ?
+          "ok" :
+          do {
+            const $optionSubject = Exit.findErrorOption(exit)
+            const $optionHandlers: {
+              onNone: () => string
+              onSome: (
+                error: GitRemoteError
+              ) =>
+                | "empty"
+                | "invalid_response"
+                | "not_found"
+                | "ref_not_found"
+                | "too_large"
+                | "transport"
+                | "unavailable"
+            } = { onNone: () => "interrupted", onSome: (error) => error.code }
+            const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers
+            match ($optionSubject) {
+              when Option.Some(let $optionValue): $optionSome($optionValue);
+              default: $optionNone();
+            }
+          }
+      }),
+      1
+    ))
+  |> withSpan(%, span, { attributes: { "git.remote": remote } })
 
 /**
  * Reads the HEAD of the git remote at `remote`, such as
@@ -213,33 +228,33 @@ const observed = (span: string, remote: string) => <A, R>(effect: Effect.Effect<
  * @category reads
  * @since 0.1.0
  */
-export const head = (remote: string | Upstream): Effect.Effect<Head, GitRemoteError, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
-    const client = yield* HttpClient.HttpClient
+export const head = (remote: string | Upstream): Head!GitRemoteError!HttpClient.HttpClient =>
+  effect {
+    const client = try HttpClient.HttpClient
     const upstream = typeof remote === "string" ? { url: remote } : remote
     const request = HttpClientRequest.get(`${upstream.url.replace(/\/+$/, "")}/info/refs`).pipe(
       HttpClientRequest.setUrlParam("service", "git-upload-pack"),
       (request) => withCredential(request, upstream)
     )
-    const response = yield* client.execute(request).pipe(
-      Effect.mapError(() => new GitRemoteError({ code: "transport" }))
-    )
+    const response = client.execute(request) catch effect () => {
+      throw new GitRemoteError({ code: "transport" })
+    }
     const status = response.status
     if (status === 401 || status === 403 || status === 404) {
-      return yield* new GitRemoteError({ code: "not_found", status })
+      throw new GitRemoteError({ code: "not_found", status })
     }
-    if (status >= 300) return yield* new GitRemoteError({ code: "unavailable", status })
+    if (status >= 300) throw new GitRemoteError({ code: "unavailable", status })
     if (!(response.headers["content-type"] ?? "").startsWith("application/x-git-upload-pack-advertisement")) {
-      return yield* new GitRemoteError({ code: "invalid_response", status })
+      throw new GitRemoteError({ code: "invalid_response", status })
     }
     const reader = advertisedHead()
-    const stopped = yield* readPackets(response.stream, maxAdvertisementBytes, reader.onPacket).pipe(
-      Effect.mapError(() => new GitRemoteError({ code: "transport", status }))
-    )
+    const stopped = readPackets(response.stream, maxAdvertisementBytes, reader.onPacket) catch effect () => {
+      throw new GitRemoteError({ code: "transport", status })
+    }
     const read = reader.result()
     if (read?._tag === "Found") return read.value
-    return yield* unread(read, stopped, status, "empty")
-  }).pipe(observed("GitRemote.head", typeof remote === "string" ? remote : remote.url))
+    throw unread(read, stopped, status, "empty")
+  } |> observed("GitRemote.head", typeof remote === "string" ? remote : remote.url)(%)
 
 /** The most of an `ls-refs` answer {@link ref} reads: one prefix's refs, far less. */
 const maxRefsBytes = 1024 * 1024
@@ -307,31 +322,31 @@ const listedRef = (wanted: string) => {
  * @category reads
  * @since 0.2.0
  */
-export const ref = (upstream: Upstream, branch: string): Effect.Effect<string, GitRemoteError, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
-    const client = yield* HttpClient.HttpClient
+export const ref = (upstream: Upstream, branch: string): string!GitRemoteError!HttpClient.HttpClient =>
+  effect {
+    const client = try HttpClient.HttpClient
     const wanted = `refs/heads/${branch}`
     const request = HttpClientRequest.post(`${upstream.url.replace(/\/+$/, "")}/git-upload-pack`).pipe(
       HttpClientRequest.setHeader("git-protocol", "version=2"),
       HttpClientRequest.bodyUint8Array(lsRefs(wanted), "application/x-git-upload-pack-request"),
       (request) => withCredential(request, upstream)
     )
-    const response = yield* client.execute(request).pipe(
-      Effect.mapError(() => new GitRemoteError({ code: "transport" }))
-    )
+    const response = client.execute(request) catch effect () => {
+      throw new GitRemoteError({ code: "transport" })
+    }
     const status = response.status
     if (status === 401 || status === 403 || status === 404) {
-      return yield* new GitRemoteError({ code: "not_found", status })
+      throw new GitRemoteError({ code: "not_found", status })
     }
-    if (status >= 300) return yield* new GitRemoteError({ code: "unavailable", status })
+    if (status >= 300) throw new GitRemoteError({ code: "unavailable", status })
     if (!(response.headers["content-type"] ?? "").startsWith("application/x-git-upload-pack-result")) {
-      return yield* new GitRemoteError({ code: "invalid_response", status })
+      throw new GitRemoteError({ code: "invalid_response", status })
     }
     const reader = listedRef(wanted)
-    const stopped = yield* readPackets(response.stream, maxRefsBytes, reader.onPacket).pipe(
-      Effect.mapError(() => new GitRemoteError({ code: "transport", status }))
-    )
+    const stopped = readPackets(response.stream, maxRefsBytes, reader.onPacket) catch effect () => {
+      throw new GitRemoteError({ code: "transport", status })
+    }
     const read = reader.result()
     if (read?._tag === "Found") return read.value
-    return yield* unread(read, stopped, status, "ref_not_found")
-  }).pipe(observed("GitRemote.ref", upstream.url))
+    throw unread(read, stopped, status, "ref_not_found")
+  } |> observed("GitRemote.ref", upstream.url)(%)

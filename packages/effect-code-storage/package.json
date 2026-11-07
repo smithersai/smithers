@@ -30,7 +30,11 @@
   "sideEffects": false,
   "exports": {
     "./package.json": "./package.json",
-    ".": "./src/index.ts"
+    ".": {
+      "types": "./src/index.ts",
+      "vibelang-source": "./src/index.ts",
+      "default": "./.vibelang/js/src/index.js"
+    }
   },
   "files": [
     "src/**/*.ts",
@@ -42,7 +46,9 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/GitRemote.vibe",
+    ".vibelang/js"
   ],
   "publishConfig": {
     "exports": {
@@ -89,5 +95,12 @@
   },
   "dependencies": {
     "vibelang-runtime": "file:../../.vibelang-toolchain/vibelang-runtime-0.0.11-6a665783b5e4.tgz"
+  },
+  "imports": {
+    "#vibelang/emitted/src/GitRemote": {
+      "types": "./.vibe/declarations/src/GitRemote.d.vibe.ts",
+      "vibelang-source": "./src/GitRemote.vibe",
+      "default": "./.vibelang/js/src/GitRemote.js"
+    }
   }
 }

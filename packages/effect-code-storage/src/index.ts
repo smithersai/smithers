@@ -17,7 +17,7 @@ export * as CodeStorage from "./CodeStorage.ts"
  * @category git
  * @since 0.1.0
  */
-export * as GitRemote from "./GitRemote.ts"
+export * as GitRemote from "#vibelang/emitted/src/GitRemote"
 
 /**
  * @category git

@@ -43,7 +43,7 @@ import * as HttpServerResponse from "effect/http/HttpServerResponse"
 import * as Metric from "effect/Metric"
 import * as Redacted from "effect/Redacted"
 import * as Stream from "effect/Stream"
-import * as GitRemote from "./GitRemote.ts"
+import * as GitRemote from "#vibelang/emitted/src/GitRemote"
 import { readAtMost } from "./internal/bounded.ts"
 import { negotiation, packet, validBranch } from "./internal/scopedGit.ts"
 
