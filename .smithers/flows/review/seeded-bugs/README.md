@@ -28,7 +28,7 @@ reports recall, precision, F1, anchor accuracy, and severity calibration.
 ## What the gate measures
 
 ```bash
-node .smithers/flows/review/seeded-bugs/run.ts
+bun .smithers/flows/review/seeded-bugs/run.vibe
 ```
 
 This is the default run, and it is offline. Every fixture is materialized as a
@@ -49,13 +49,13 @@ drops from critical to info, leaves the counts alone and still fails the gate.
 Re-record deliberately, and only when you can name what changed:
 
 ```bash
-node .smithers/flows/review/seeded-bugs/run.ts --update
+bun .smithers/flows/review/seeded-bugs/run.vibe --update
 ```
 
 ## What the live run measures
 
 ```bash
-node .smithers/flows/review/seeded-bugs/run.ts --live
+bun .smithers/flows/review/seeded-bugs/run.vibe --live
 ```
 
 The same suite against real seats, credentialed the way the CLI is
