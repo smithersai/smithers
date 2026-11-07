@@ -369,3 +369,10 @@ Settled since this table was first written (updated 2026-10-25):
 - **Cerebras capacity at real traffic:** load-tested, then the capacity request sent on 2026-10-21, as Will chose in the queue; a backup source of very fast inference is required (ARCH-17 addenda; work note [cerebras-rate-limits](work/cerebras-rate-limits.md)). Since 2026-10-25 13:28, hosted inference is flagged off until after the initial release (ARCH-20).
 
 - **FE-23** “Add your model” is one dismissable call to action on the shared toast stack, titled “Add your model” with “Open settings”. It overlays the page, persists until a usable model is added, and resolves automatically. It never takes conversation or timeline space (FE-21). Empty signed-out `/app` onboarding remains separate. Will, 2026-10-31 about 20:25 PDT, on smithers.sh: "Another problem is this add your model ui is taking up so much space that the timeline and the chat could be using. It should be a toast notification using that UI like any other call to action would be using that UI like needing approvals and stuff".
+
+## 19. vibelang.smithers.sh (Will, 2026-11-07)
+
+vibelang.smithers.sh, the VibeLang factory, is its own app, `apps/vibelang`: a Foldkit app written in VibeLang on
+Effect, on Cloudflare by Alchemy. Its rulings, VL-1 to VL-26, live in its wiki,
+[apps/vibelang/wiki/rulings.md](../../vibelang/wiki/rulings.md), which is the source of truth for that app (VL-23).
+VL-22 brings back the mythical history for it, which TODO-2 deferred for apps/mvp.
