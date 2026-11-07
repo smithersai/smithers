@@ -63,6 +63,9 @@ export class ConversationsStore extends Context.Service<
           getKey: (row) => row.conversationId,
           schemaVersion: 1,
         })
+        // Expose the store only after local pending acts are restored. An empty pre-restore snapshot must not look
+        // settled to a consumer while the resume fiber is still waiting for the device's rows.
+        yield* Effect.ignore(pending.restored)
         const search = yield* Collection.local<Search, string>({
           id: "conversation-search",
           schema: Search,
