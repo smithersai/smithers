@@ -471,7 +471,7 @@
       "inputs": [
         "docs/design/agent-flow-health.md",
         "packages/smithers/control/src/Health.vibe",
-        "packages/smithers/control/src/Monitor.ts"
+        "packages/smithers/control/src/Monitor.vibe"
       ],
       "excerpts": {
         "docs/design/agent-flow-health.md": [
@@ -486,7 +486,7 @@
             "end": 110
           }
         ],
-        "packages/smithers/control/src/Monitor.ts": [
+        "packages/smithers/control/src/Monitor.vibe": [
           {
             "start": 1,
             "end": 18
