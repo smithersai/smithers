@@ -17,7 +17,6 @@ import { Journal } from "@smthrs/journal"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { SqlTimeTravelStore, TimeTravel } from "@smthrs/time-travel"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /**
@@ -78,8 +77,8 @@ const timeTravelLayer = (filename: string, hostId: string) =>
     Layer.provideMerge(engineLayer(filename, hostId))
   )
 
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     let dispatches = 0
 
     const measured = Measure.toLayer(() =>
@@ -93,39 +92,44 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       Layer.provideMerge(Action.layerImplementations)
     )
 
-    const forked = yield* Effect.scoped(
-      Effect.gen(function*() {
-        const parentResult = yield* Analyse.execute({}, { executionId: "analyse-1" })
-        const journal = yield* Journal.Journal
-        yield* journal.flush
+    const forked = try Effect.scoped(
+      effect {
+        const parentResult = try Analyse.execute({}, { executionId: "analyse-1" })
+        const journal = try Journal.Journal
+        try journal.flush
 
-        const page = yield* journal.entries({ runId: "analyse-1" as never, limit: 200 })
+        const page = try journal.entries({ runId: "analyse-1" as never, limit: 200 })
         // The frame to fork at: the last committed sequence for this run.
         const seq = page.entries.at(-1)?.seq ?? 0
 
-        const timeTravel = yield* TimeTravel
-        const fork = yield* timeTravel.fork({
+        const timeTravel = try TimeTravel
+        const fork2 = try timeTravel.fork({
           runId: "analyse-1",
           // A frame is addressed by the lineage the ENGINE minted for the run,
           // and `FlowEngine.Lineage` is where that id is minted. It is an opaque
           // versioned encoding, so build it with the constructor rather than
           // spelling one out.
-          frame: { lineageId: FlowEngine.Lineage.root("analyse-1"), seq }
+          frame: {
+            lineageId: try Effect.orDie(Effect.try({
+              try: () => FlowEngine.Lineage.root("analyse-1"),
+              catch: (e) => e
+            })),
+            seq
+          }
         })
 
-        return { parentResult, forkRunId: fork.runId, parentEntryCount: page.entries.length }
-      }).pipe(
-        Effect.provide(
+        return { parentResult, forkRunId: fork2.runId, parentEntryCount: page.entries.length }
+      }
+        |> Effect.provide(
+          %,
           analyseLayer.pipe(Layer.provideMerge(timeTravelLayer(filename, "fork-parent")))
         )
-      )
     )
 
     // A fresh engine drives the fork. The copied attempt rows replay.
-    const forkResult = yield* Effect.scoped(
-      Analyse.execute({}, { executionId: forked.forkRunId }).pipe(
-        Effect.provide(analyseLayer.pipe(Layer.provideMerge(engineLayer(filename, "fork-child"))))
-      )
+    const forkResult = try Effect.scoped(
+      Analyse.execute({}, { executionId: forked.forkRunId })
+        |> Effect.provide(%, analyseLayer.pipe(Layer.provideMerge(engineLayer(filename, "fork-child"))))
     )
 
     return {
@@ -135,4 +139,4 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       dispatches,
       parentEntryCount: forked.parentEntryCount
     }
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)

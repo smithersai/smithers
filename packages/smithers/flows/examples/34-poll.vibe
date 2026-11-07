@@ -12,9 +12,6 @@ import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, Interpreter, Poll, Sleep } from "@smthrs/flow"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
-import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 
 /** The check the poll runs: a deployment that goes live on the third look. */
@@ -43,8 +40,8 @@ export interface Summary {
   readonly checksBeforeRestart: ReadonlyArray<number>
 }
 
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     const checks: Array<number> = []
     const status = Status.toLayer(({ attempt }) =>
       Effect.sync(() => {
@@ -64,29 +61,28 @@ export const main = (filename: string): Effect.Effect<Summary> =>
     // Phase one: the first attempt runs and the round parks on its timer.
     // `discard` returns once the run is admitted and scheduled, so the drive
     // waits for the durable park before it drops the engine.
-    yield* Effect.scoped(
-      Effect.gen(function*() {
-        yield* Deployment.execute({ id: "web" }, { executionId: "deploy-1", discard: true })
-        const state = yield* DurableEngineState.DurableEngineState
-        yield* state.waiting("deploy-1").pipe(
+    try Effect.scoped(
+      effect {
+        try Deployment.execute({ id: "web" }, { executionId: "deploy-1", discard: true })
+        const state = try DurableEngineState.DurableEngineState
+        try (state.waiting("deploy-1").pipe(
           Effect.repeat({ until: Option.isSome, schedule: Schedule.spaced(10) }),
           Effect.timeout(30_000)
-        )
-      }).pipe(Effect.provide(engine("worker-a")))
+        ))
+      } |> Effect.provide(%, engine("worker-a"))
     )
 
     const checksBeforeRestart = [...checks]
 
     // The process is gone while the timer is still pending. Wait past it, so a
     // fresh engine finds the clock due rather than arming a second one.
-    yield* Effect.sleep(300)
+    try Effect.sleep(300)
 
     // Phase two: a fresh engine picks the lineage up and finishes the poll.
-    const result = yield* Effect.scoped(
-      Deployment.execute({ id: "web" }, { executionId: "deploy-1" }).pipe(
-        Effect.provide(engine("worker-b"))
-      )
+    const result = try Effect.scoped(
+      Deployment.execute({ id: "web" }, { executionId: "deploy-1" })
+        |> Effect.provide(%, engine("worker-b"))
     )
 
     return { result, checks, checksBeforeRestart }
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)

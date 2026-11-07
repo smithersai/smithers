@@ -19,8 +19,6 @@ import { Node } from "@smthrs/plan"
 import { TestNodeRuntime } from "@smthrs/platform-node"
 import { Registry } from "@smthrs/registry"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import * as Schedule from "effect/Schedule"
 import * as Schema from "effect/Schema"
 
 /** The empty capability envelope this flow is planned under. */
@@ -120,25 +118,21 @@ const flows: ReadonlyArray<ControlRuntime.MemoryFlow> = [
  */
 export const deliverSignals = (
   runId: string
-): Effect.Effect<
-  ReadonlyArray<string>,
-  never,
-  ControlRuntime.ControlRuntime | FlowRuntime.FlowRuntime
-> =>
-  Effect.gen(function*() {
-    const runtime = yield* ControlRuntime.ControlRuntime
-    const signals = yield* runtime.deliveredSignals(runId as ControlSchema.RunId)
+): ReadonlyArray<string>!never!(ControlRuntime.ControlRuntime | FlowRuntime.FlowRuntime) =>
+  effect {
+    const runtime = try ControlRuntime.ControlRuntime
+    const signals = try runtime.deliveredSignals(runId as ControlSchema.RunId)
     const delivered: Array<string> = []
     for (const signal of signals) {
       const waitPoint = WaitFor.deferred(signal.name)
-      yield* DurableDeferred.succeed(waitPoint, {
+      try DurableDeferred.succeed(waitPoint, {
         token: DurableDeferred.tokenFromExecutionId(waitPoint, { flow: Ship, executionId: runId }),
         value: signal.payload
       })
       delivered.push(signal.name)
     }
     return delivered
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)
 
 /** What the plan gate did. */
 export interface PlanGate {
@@ -196,8 +190,8 @@ export interface Summary {
 const receipt = (value: { readonly _tag: string }): string => value._tag
 
 /** Runs both gates over one SQLite file. */
-export const main = (filename: string): Effect.Effect<Summary> =>
-  Effect.gen(function*() {
+export const main = (filename: string): Summary!! =>
+  effect {
     let launches = 0
     const clearanceReads: Array<ControlRuntime.ApprovalDecision["_tag"]> = []
 
@@ -211,21 +205,21 @@ export const main = (filename: string): Effect.Effect<Summary> =>
      * done nothing wrong, it is waiting for a person.
      */
     const clearance = Clearance.toLayer(({ requestId }) =>
-      Effect.gen(function*() {
-        const instance = yield* FlowRuntime.FlowInstance
-        const runtime = yield* ControlRuntime.ControlRuntime
+      effect {
+        const instance = try FlowRuntime.FlowInstance
+        const runtime = try ControlRuntime.ControlRuntime
         const request = clearanceRequest(instance.executionId)
-        let token = yield* Effect.orDie(runtime.registerApproval(request))
+        let token = try Effect.orDie(runtime.registerApproval(request))
         clearanceReads.push(token._tag)
         if (token._tag === "Pending") {
           // Waking a wait point is not approval. Re-read the durable decision
           // if this deferred is completed explicitly instead of parking.
-          yield* FlowRuntime.annotateWaiting({ reason: "approval", token: requestId })
-          yield* DurableDeferred.await(clearanceGate)
-          token = yield* Effect.orDie(runtime.registerApproval(request))
+          try FlowRuntime.annotateWaiting({ reason: "approval", token: requestId })
+          try DurableDeferred.await(clearanceGate)
+          token = try Effect.orDie(runtime.registerApproval(request))
         }
-        return (yield* ControlRuntime.requireApproved(token)).tokenId
-      })
+        return (try ControlRuntime.requireApproved(token)).tokenId
+      }
     )
 
     /**
@@ -234,13 +228,17 @@ export const main = (filename: string): Effect.Effect<Summary> =>
      * drains. An executor that started the run would answer `accepted`.
      */
     const executor = ControlExecutor.layer(
-      ControlExecutor.makeNoop({
-        launch: () =>
-          Effect.sync(() => {
-            launches += 1
-            return "pending" as const
-          })
-      })
+      try Effect.orDie(Effect.try({
+        try: () =>
+          ControlExecutor.makeNoop({
+            launch: () =>
+              Effect.sync(() => {
+                launches += 1
+                return "pending" as const
+              })
+          }),
+        catch: (e) => e
+      }))
     )
 
     const controlPlane = ControlLive.layer.pipe(
@@ -268,13 +266,13 @@ export const main = (filename: string): Effect.Effect<Summary> =>
       Layer.provideMerge(plane)
     )
 
-    return yield* Effect.scoped(
-      Effect.gen(function*() {
-        const control = yield* Control.Control
-        const runtime = yield* ControlRuntime.ControlRuntime
+    return try Effect.scoped(
+      effect {
+        const control = try Control.Control
+        const runtime = try ControlRuntime.ControlRuntime
 
         // ------------------------------------------------------- the plan gate
-        const card = yield* control.plan({
+        const card = try control.plan({
           flowId: "examples/Ship" as ControlSchema.FlowId,
           input: { build: "v1.4.0" }
         })
@@ -285,27 +283,27 @@ export const main = (filename: string): Effect.Effect<Summary> =>
           envelope: card.envelope
         }
         // A pending plan does not launch. The receipt says why.
-        const beforeApproval = yield* control.run({
+        const beforeApproval = try control.run({
           ...launch,
           idempotencyKey: "run:before" as ControlSchema.IdempotencyKey
         })
-        yield* control.approve({
+        try control.approve({
           target: { _tag: "Plan", planId: card.planId, digest: card.digest, envelope: card.envelope },
           scope: card.approval.scope,
           idempotencyKey: "approve:plan" as ControlSchema.IdempotencyKey
         })
-        const afterApproval = yield* control.run({
+        const afterApproval = try control.run({
           ...launch,
           idempotencyKey: "run:after" as ControlSchema.IdempotencyKey
         })
-        const approved = yield* runtime.getPlan(card.planId)
+        const approved = try runtime.getPlan(card.planId)
 
         // A second plan, denied. The launch refuses rather than parking.
-        const rejected = yield* control.plan({
+        const rejected = try control.plan({
           flowId: "examples/Ship" as ControlSchema.FlowId,
           input: { build: "v1.4.1" }
         })
-        yield* control.deny({
+        try control.deny({
           target: {
             _tag: "Plan",
             planId: rejected.planId,
@@ -315,8 +313,8 @@ export const main = (filename: string): Effect.Effect<Summary> =>
           scope: rejected.approval.scope,
           idempotencyKey: "deny:plan" as ControlSchema.IdempotencyKey
         })
-        const deniedPlan = yield* runtime.getPlan(rejected.planId)
-        const deniedLaunch = yield* Effect.match(
+        const deniedPlan = try runtime.getPlan(rejected.planId)
+        const deniedLaunch = try Effect.match(
           control.run({
             _tag: "Plan",
             planId: rejected.planId,
@@ -344,54 +342,54 @@ export const main = (filename: string): Effect.Effect<Summary> =>
         //
         // Drive one reaches the clearance step, which registers its own token,
         // finds it undecided, and parks the run under `approval`.
-        yield* Ship.execute({ build: "v1.4.0" }, { executionId: shipRunId, discard: true })
-        const firstRow = yield* observe(shipRunId, (row) => row.status === "waiting-approval")
+        try Ship.execute({ build: "v1.4.0" }, { executionId: shipRunId, discard: true })
+        const firstRow = try observe(shipRunId, (row) => row.status === "waiting-approval")
 
         // The decision, taken from outside the run against the token the STEP
         // registered. `approve` looks the token up rather than creating one, so
         // this call could not have run before the step parked.
         const request = clearanceRequest(shipRunId)
-        const approvalReceipt = yield* control.approve({
+        const approvalReceipt = try control.approve({
           target: request,
           scope: "once",
           idempotencyKey: "approve:node" as ControlSchema.IdempotencyKey
         })
         // Read the actual answer. A lookup/storage failure is not approval.
-        const token = yield* runtime.registerApproval(request)
+        const token = try runtime.registerApproval(request)
 
         // Drive two: the same step runs again, reads the resolved token, and
         // lets the run through to its next wait instead of asking a second
         // time.
-        yield* Ship.resume(shipRunId)
-        const row = yield* observe(shipRunId, (candidate) => candidate.status === "parked")
+        try Ship.resume(shipRunId)
+        const row = try observe(shipRunId, (candidate) => candidate.status === "parked")
 
         // The signal. It records a fact and resumes nothing.
-        yield* control.signal({
+        try control.signal({
           runId: shipRunId as ControlSchema.RunId,
           signal: { name: "ship", payload: { approved: true, by: "release-manager" } },
           idempotencyKey: "signal:ship" as ControlSchema.IdempotencyKey
         })
-        const signals = yield* runtime.deliveredSignals(shipRunId as ControlSchema.RunId)
+        const signals = try runtime.deliveredSignals(shipRunId as ControlSchema.RunId)
         // The host turns the recorded fact into a completed wait point.
-        const delivered = yield* deliverSignals(shipRunId)
-        const result = yield* Ship.execute({ build: "v1.4.0" }, { executionId: shipRunId })
+        const delivered = try deliverSignals(shipRunId)
+        const result = try Ship.execute({ build: "v1.4.0" }, { executionId: shipRunId })
         const approvedReads = [...clearanceReads]
 
         // Denial uses the exact same action implementation and must fail
         // before the following signal wait can be activated.
         const deniedRunId = `${shipRunId}-denied`
-        yield* Ship.execute({ build: "v1.4.1" }, { executionId: deniedRunId, discard: true })
-        yield* observe(deniedRunId, (row) => row.status === "waiting-approval")
-        yield* control.deny({
+        try Ship.execute({ build: "v1.4.1" }, { executionId: deniedRunId, discard: true })
+        try observe(deniedRunId, (row) => row.status === "waiting-approval")
+        try control.deny({
           target: clearanceRequest(deniedRunId),
           scope: "once",
           idempotencyKey: "deny:node"
         })
-        const deniedFailure = yield* Effect.flip(Ship.execute({ build: "v1.4.1" }, { executionId: deniedRunId }))
+        const deniedFailure = try Effect.flip(Ship.execute({ build: "v1.4.1" }, { executionId: deniedRunId }))
 
-        const journal = yield* Journal.Journal
-        yield* journal.flush
-        const page = yield* journal.entries({ runId: shipRunId as JournalEvent.RunId, limit: 500 })
+        const journal = try Journal.Journal
+        try journal.flush
+        const page = try journal.entries({ runId: shipRunId as JournalEvent.RunId, limit: 500 })
         const approvals = page.entries
           .filter((entry) => entry.eventType === "control.approval.approved")
           .map((entry) => (entry.payload as { readonly target: string }).target)
@@ -422,6 +420,6 @@ export const main = (filename: string): Effect.Effect<Summary> =>
             result
           }
         } satisfies Summary
-      }).pipe(Effect.provide(stack))
+      } |> Effect.provide(%, stack)
     )
-  }).pipe(Effect.orDie)
+  } |> Effect.orDie(%)
