@@ -13,10 +13,10 @@ a Node binding, a Bun binding, a browser's Web Crypto, a hardware module. So
 import { digest } from "@smthrs/crypto"
 
 digest("hello")
-// Effect<Digest, Sha256Error, Crypto.Crypto>
+// Effect<Digest, Sha256Error, EffectDigest.Digest>
 ```
 
-The `Crypto.Crypto` in the requirement channel is the whole design. A test
+The `EffectDigest.Digest` in the requirement channel is the whole design. A test
 provides a scripted service and never touches a platform binding. A browser
 build provides Web Crypto. A fault-injection test provides a service that
 fails, and the code under test does not change.
@@ -56,18 +56,15 @@ interface, for code that already consumes the service and cannot suspend:
 
 ```ts
 import { digest, syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 
-Effect.runSync(Effect.provideService(digest("hello"), Crypto.Crypto, syncCrypto))
+Effect.runSync(Effect.provideService(digest("hello"), EffectDigest.Digest, syncCrypto))
 ```
 
-It is deliberately narrow. It answers `SHA-256` and rejects every other
-algorithm with a `BadArgument` naming the one it received, and it refuses
-randomness rather than returning weak bytes. Because `Crypto.make` derives
-random numbers, UUIDs, and shuffling from `randomBytes`, every random
-operation on `syncCrypto` fails with the same refusal. Supply a platform
-`Crypto` layer for anything but hashing.
+It is deliberately narrow. It implements Digest for SHA-256 and rejects other
+algorithms as defects. It supplies no SecureRandom service. Provide a platform
+layer when the program needs secure bytes, UUIDv4, or another digest algorithm.
 
 ## What the package checks about an answer it did not compute
 
@@ -94,7 +91,7 @@ it is the reason to provide a platform layer you trust.
 ## The one failure that is not a Sha256Error
 
 A missing `Crypto` service is not a runtime failure. It stays an unsatisfied
-Effect context requirement and surfaces as `Service not found: effect/Crypto`,
+Effect context requirement and surfaces as `Service not found: effect/crypto/Digest`,
 because a composition that forgot to provide a host has a defect, not a bad
 input. The distinction is deliberate: `Sha256Error` codes describe inputs and
 hosts that behaved badly, and a program that branches on them should never

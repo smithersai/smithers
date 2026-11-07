@@ -19,12 +19,12 @@ import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as PlanStore from "@smthrs/plan-store/PlanStore"
 import * as KeyMaterial from "@smthrs/plan/KeyMaterial"
 import * as Plan from "@smthrs/plan/Plan"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 
 /** From "Compile drafts into a plan" and "Persist a plan". */
-declare const compiled: Effect.Effect<Plan.Plan, never, Crypto.Crypto>
+declare const compiled: Effect.Effect<Plan.Plan, never, EffectDigest.Digest>
 declare const planStore: Layer.Layer<PlanStore.PlanStore>
 
 export const grow = Effect.gen(function*() {

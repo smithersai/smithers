@@ -279,7 +279,7 @@ admitted it. A memory engine loses every execution when its layer scope closes.
 
 ## A missing Crypto service
 
-**Symptom.** A type error naming `Crypto.Crypto` as an unmet requirement of a
+**Symptom.** A type error naming `(EffectDigest.Digest | SecureRandom.SecureRandom)` as an unmet requirement of a
 program that executes a flow.
 
 **Cause.** Every action dispatch is recorded under a derived step identity, and

@@ -47,7 +47,7 @@ type CloudflareHost =
   | ChildProcessSpawner
   | Jj.Jj
   | HttpClient
-  | Crypto.Crypto
+  | (EffectDigest.Digest \| SecureRandom.SecureRandom)
   | OwnerIdentity.OwnerIdentity
 ```
 

@@ -69,7 +69,7 @@ failures for both halves:
 import { deriveKey } from "@smthrs/keys"
 
 deriveKey({ domain: "step", flow: "build", attempt: 1 })
-// Effect<KeyV1, KeyDerivationError, Crypto.Crypto>
+// Effect<KeyV1, KeyDerivationError, EffectDigest.Digest>
 ```
 
 [`@smthrs/artifacts`](/api/artifacts) is the same idea for bytes: an address

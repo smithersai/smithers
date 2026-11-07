@@ -47,12 +47,12 @@ covers why the ordering matters.
 ```ts
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import type * as Plan from "@smthrs/plan/Plan"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 
 /** The effect from "Compile drafts into a plan", before its Crypto layer is provided. */
-declare const compiled: Effect.Effect<Plan.Plan, never, Crypto.Crypto>
+declare const compiled: Effect.Effect<Plan.Plan, never, EffectDigest.Digest>
 
 export const record = Effect.gen(function*() {
   const plan = yield* compiled

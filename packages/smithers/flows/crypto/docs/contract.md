@@ -67,7 +67,7 @@ fails with a typed `Sha256Error` when one does not hold:
 | There are exactly 32 of them                 | `invalid_digest`, naming the length it received                     |
 
 A missing `Crypto` service is not on that list. It stays an unsatisfied Effect
-context requirement, which surfaces as `Service not found: effect/Crypto` and
+context requirement, which surfaces as `Service not found: effect/crypto/Digest` and
 is a composition defect rather than a runtime failure.
 
 ## What the package does not defend against

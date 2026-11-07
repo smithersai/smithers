@@ -62,7 +62,7 @@ flow states in its own type which implementations it names and does not hold:
 
 ```ts
 Checkout.execute({ customer: "ada", cents: 4_200 }, { executionId: "checkout-1" })
-// Effect<string, ..., FlowRuntime | Crypto.Crypto | Action.Requirement<"payments/Charge">>
+// Effect<string, ..., FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom) | Action.Requirement<"payments/Charge">>
 ```
 
 `Charge.toLayer(...)` provides that key. A composition missing an implementation

@@ -48,7 +48,7 @@ normal operational API.
   encoded as UTF-8; the array is copied and hashed exactly as viewed.
 - Returns the digest as 64 lowercase hexadecimal characters, branded as `Digest`.
 - Requires `EffectDigest.Digest`. A missing service stays an unsatisfied Effect
-  requirement and surfaces as `Service not found: effect/Crypto`, which is a
+  requirement and surfaces as `Service not found: effect/crypto/Digest`, which is a
   composition defect rather than a `Sha256Error`.
 - Fails with [`Sha256Error`](#sha256error) under any of the five codes.
 

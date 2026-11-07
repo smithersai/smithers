@@ -6,11 +6,11 @@ description: "Every failure @smthrs/crypto reports, the symptom you see, what ca
 Each entry names the symptom first. `Sha256Error.code` is the stable value to
 branch on; messages are prose and may change.
 
-## Service not found: effect/Crypto
+## Service not found: effect/crypto/Digest
 
-**Symptom.** The program dies with `Service not found: effect/Crypto`, or
+**Symptom.** The program dies with `Service not found: effect/crypto/Digest`, or
 TypeScript refuses to run an Effect whose requirement channel still holds
-`Crypto.Crypto`.
+`EffectDigest.Digest`.
 
 **Cause.** `digest` and the `Sha256` schema require a `Crypto` service, and
 the composition provided none. This is a composition defect, not a
@@ -75,8 +75,9 @@ the original failure is preserved as `cause`. The second means
 a hand-rolled service that returned bytes directly.
 
 **Fix.** Read `cause` for the host's own error. If you wrote the service,
-build it with `Crypto.make({ randomBytes, digest })` so `digest` returns
-`Effect<Uint8Array, PlatformError>`.
+build it with `EffectDigest.Digest.of({ digest, digestHex })`. Each operation
+returns an Effect and reports host faults as defects; the SDK normalizes those
+causes to its typed Sha256Error boundary.
 
 ## invalid_digest
 
@@ -143,16 +144,14 @@ digests comparable with `===`.
 
 ## syncCrypto refused the operation
 
-**Symptom.** A `BadArgument` reading
-`syncCrypto supports only SHA-256, not SHA-384`, or a `BadArgument` defect
-from `randomBytes` reading `@smthrs/crypto syncCrypto provides SHA-256 only;
-supply a platform Crypto layer for randomness`.
+**Symptom.** A `BadArgument` defect reading
+`syncCrypto supports only SHA-256, not SHA-384`, or a missing SecureRandom service.
 
-**Cause.** `syncCrypto` is a hashing adapter, not a platform layer. It answers
-`SHA-256` only and refuses randomness rather than returning weak bytes, which
-also fails every random helper `Crypto.make` derives from `randomBytes`.
+**Cause.** `syncCrypto` implements Digest for SHA-256 only and supplies no
+SecureRandom service.
 
-**Fix.** Provide a platform `Crypto` layer for anything but SHA-256 hashing.
+**Fix.** Provide a platform crypto layer for other digest algorithms or secure
+randomness.
 
 ## digestSync blocks on a large input
 

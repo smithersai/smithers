@@ -654,7 +654,7 @@ the bytes match the `Canonical` schema's decode.
 ### Digest.provideSync
 
 ```ts
-const provideSync: <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>) => Effect.Effect<A, E>
+const provideSync: <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>) => Effect.Effect<A, E>
 ```
 
 Provides the synchronous SHA-256 service to an Effect. The caller runs the

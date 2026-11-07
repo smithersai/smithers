@@ -6,7 +6,7 @@ description: "What each closed Host service does in a Worker, which ones refuse,
 The durable engine composes over a closed set of host services. `NodeHost`,
 `BunHost` and `BrowserHost` provide them on their platforms, and
 `CloudflareHost.layer` provides the same tags in a Worker or a Durable Object,
-plus `effect/Crypto` and the engine's `OwnerIdentity`:
+plus `effect/crypto/Digest` and the engine's `OwnerIdentity`:
 
 | Service               | On Cloudflare                                                                                                                                                               |
 | --------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

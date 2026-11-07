@@ -44,7 +44,7 @@ const testLayer = (send: (to: string) => Effect.Effect<string>) =>
 
 Two services are easy to forget:
 
-- `Crypto.Crypto`. Every action dispatch is recorded under a derived step
+- `(EffectDigest.Digest | SecureRandom.SecureRandom)`. Every action dispatch is recorded under a derived step
   identity, and deriving it is a SHA-256, so the memory engine needs crypto
   too. In Node, provide `NodeCrypto.layer`.
 - The clock, when the flow retries or parks. Retry delays and the suspended

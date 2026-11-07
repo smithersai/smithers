@@ -26,7 +26,7 @@ in Bun, in a browser tab, and inside a sandbox:
 
 | Service                                               | Needed by                                         | Node layer              |
 | ----------------------------------------------------- | ------------------------------------------------- | ----------------------- |
-| `Crypto.Crypto` from `effect/Crypto`                  | `put` and `get` on every store                    | `NodeCrypto.layer`      |
+| `EffectDigest.Digest` from `effect/crypto/Digest`                  | `put` and `get` on every store                    | `NodeCrypto.layer`      |
 | `FileSystem.FileSystem` from `effect/FileSystem`      | the filesystem store, the sweep, the backup lease | `NodeFileSystem.layer`  |
 | `Path.Path` from `effect/Path`                        | the filesystem store                              | `NodePath.layer`        |
 | `HttpClient.HttpClient` from `effect/http/HttpClient` | `RemoteArtifacts`                                 | `FetchHttpClient.layer` |

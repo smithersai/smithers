@@ -35,7 +35,7 @@ things, and the type checker names each one it is missing:
 | `FlowRuntime.FlowRuntime`    | `FlowEngine.layerMemory` here, or `EngineStore.layer` from [`@smthrs/engine-store`](/api/engine-store) for durability. |
 | The flow's registration      | `Interpreter.layer(flow)` from `@smthrs/flow`, once per flow you execute.                                              |
 | Each action's implementation | `action.toLayer(...)`, collected by `Action.layerImplementations`.                                                     |
-| `Crypto.Crypto`              | A platform crypto layer, such as `NodeCrypto.layer` from `@effect/platform-node`.                                      |
+| `(EffectDigest.Digest \| SecureRandom.SecureRandom)`              | A platform crypto layer, such as `NodeCrypto.layer` from `@effect/platform-node`.                                      |
 
 The `Crypto` requirement is not optional and it is not only a durability
 concern. Every action dispatch is recorded under a derived step identity, and

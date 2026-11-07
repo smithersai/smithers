@@ -96,7 +96,7 @@ interface Service {
 }
 ```
 
-`createdAtMs` comes from the caller's clock. Constructing the store requires `Crypto.Crypto` alongside SQL and the durable writer; individual operations use that captured implementation.
+`createdAtMs` comes from the caller's clock. Constructing the store requires `EffectDigest.Digest` alongside SQL and the durable writer; individual operations use that captured implementation.
 
 ### PlanStore.RecordResult
 
@@ -120,7 +120,7 @@ The service tag.
 ### PlanStore.make
 
 ```ts
-const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
+const make: Effect.Effect<Service, never, DurableWriter | SqlClient.SqlClient | EffectDigest.Digest>
 ```
 
 Builds the SQL-backed store.
@@ -128,7 +128,7 @@ Builds the SQL-backed store.
 ### PlanStore.layer
 
 ```ts
-const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | Crypto.Crypto>
+const layer: Layer.Layer<PlanStore, never, DurableWriter | SqlClient.SqlClient | EffectDigest.Digest>
 ```
 
 Provides `make`.

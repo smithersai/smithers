@@ -60,10 +60,10 @@ implementation identities, and platform module re-exports.
 
 | Export             | Signature                                                                                                   |
 | ------------------ | ----------------------------------------------------------------------------------------------------------- |
-| `layer`            | `Layer.Layer<BunHost \| Crypto.Crypto>`                                                                     |
-| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| Crypto.Crypto>`                                                   |
-| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>`               |
-| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| Crypto.Crypto, never, ProcessLedger>` |
+| `layer`            | `Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                                     |
+| `layerAt`          | `(root: string) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom)>`                                                   |
+| `layerContained`   | `(options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>`               |
+| `layerContainedAt` | `(root: string, options?: ContainedOptions) => Layer.Layer<BunHost \| (EffectDigest.Digest \| SecureRandom.SecureRandom), never, ProcessLedger>` |
 | `layerHttpClient`  | `Layer.Layer<HttpClient>`                                                                                   |
 
 `layer` provides all five Host services, including the runtime-independent

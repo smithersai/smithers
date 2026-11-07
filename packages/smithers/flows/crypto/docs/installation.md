@@ -62,7 +62,7 @@ const address = Crypto.digestSync("hello")
 
 ## Provide a Crypto service
 
-`digest` returns an Effect that requires `Crypto.Crypto`. Choose the
+`digest` returns an Effect that requires `EffectDigest.Digest`. Choose the
 implementation that matches where the code runs:
 
 | Implementation                           | Provide it with                                    | Use it for                                                                                                                                          |
@@ -71,8 +71,8 @@ implementation that matches where the code runs:
 | `@effect/platform-bun/BunCrypto`         | `BunCrypto.layer`                                  | A Bun process.                                                                                                                                      |
 | `@effect/platform-browser/BrowserCrypto` | The layer that module exports                      | A browser tab. Add `@effect/platform-browser` yourself: [`@smthrs/platform-browser`](/api/platform-browser) leaves `Crypto` out of its host bundle. |
 | `WebCrypto` from this package            | `WebCrypto.layer`                                  | Any host with the global WebCrypto: Node, Bun, a browser, or a Cloudflare Worker. It reads randomness only on demand.                               |
-| `syncCrypto` from this package           | `Effect.provideService(Crypto.Crypto, syncCrypto)` | Synchronous code and tests. It answers SHA-256 only and refuses randomness.                                                                         |
-| Your own                                 | `Crypto.make({ randomBytes, digest })`             | A custom host, a hardware module, or a fault-injecting test.                                                                                        |
+| `syncCrypto` from this package           | `Effect.provideService(EffectDigest.Digest, syncCrypto)` | Synchronous code and tests. It answers SHA-256 only; provide SecureRandom separately.                                                                         |
+| Your own                                 | `EffectDigest.Digest.of({ digest, digestHex })`             | A custom host, a hardware module, or a fault-injecting test.                                                                                        |
 
 ```bash
 pnpm add @effect/platform-node @effect/platform-node-shared
@@ -91,9 +91,8 @@ uses the package's own implementation, and `Digest` validates a value without
 hashing anything.
 
 Provide a real platform service in production. `syncCrypto` exists for
-synchronous callers that already speak the `Crypto` interface, and it refuses
-randomness rather than returning weak bytes, so it is not a general
-replacement for a platform layer.
+synchronous callers that already use the Digest service. It supplies no
+SecureRandom service, so it is not a general replacement for a platform layer.
 
 ## Next step
 

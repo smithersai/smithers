@@ -252,7 +252,7 @@ validate the entire shape, reject unknown fields, and return typed
 ```ts
 const environmentIdentity: (
   environment?: EnvironmentIdentity
-) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 A fingerprint for binding a durable execution to its runtime environment,
@@ -309,8 +309,8 @@ interface DigestMemo {
   readonly digest: (
     from: string,
     path: ReadonlyArray<string>,
-    compute: Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
-  ) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+    compute: Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
+  ) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 }
 ```
 
@@ -329,7 +329,7 @@ Creates an empty memo.
 ```ts
 const content: (
   identity: ContentIdentity
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a cross-run reusable key. Set-like declarations are normalized before serialization; write declarations remain part of the identity even when the step writes nothing.
@@ -339,7 +339,7 @@ Produces a cross-run reusable key. Set-like declarations are normalized before s
 ```ts
 const ordinal: (
   identity: OrdinalIdentity
-) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Produces a run-local key for compensable, irreversible, or unsealed work. These keys intentionally cannot be reused across runs.
@@ -350,7 +350,7 @@ Produces a run-local key for compensable, irreversible, or unsealed work. These 
 const planIdentity: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The declaration fingerprint used by `Plan.compile`, `append`, and `verify`.
@@ -364,7 +364,7 @@ to own string-valued properties, as with `fromKeyMaterial`.
 const fromKeyMaterial: (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The sealed plan key: resolves graph-local references against `dependencyDigests`, which must hold an own string-valued property for every node the material names, then builds a content key. Fails `non_content_material` unless `material.kind` is `sealed`. Use `planIdentity` for a tier-independent compiler.
@@ -378,7 +378,7 @@ const dispatchIdentity: (options: {
   readonly hermetic: NonNullable<ContentIdentity["hermetic"]>
   readonly environment?: EnvironmentIdentity | undefined
   readonly digestMemo?: DigestMemo | undefined
-}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The key a dispatch is _cached_ under, as distinct from the plan key a node is _identified_ by.
@@ -526,7 +526,7 @@ const compile: (options: {
   readonly planId: string
   readonly flow: string
   readonly nodes: ReadonlyArray<NodeDraft>
-}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+}) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Compiles drafts into a plan: topological order of material dependencies, dependency-digest substitution, overlap annotation, reader-after-writer ordering, and the plan digest. No I/O. The options are snapshotted before anything else happens, and the result is deep-frozen at generation 0 with `baseDigest` equal to `digest`. Array order follows material dependencies; scheduling follows the complete `dependsOn` graph.
@@ -539,7 +539,7 @@ Traversal uses explicit stacks. Because the conflict and reader-after-writer pas
 const append: (
   plan: Plan,
   drafts: ReadonlyArray<NodeDraft>
-) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 Appends an elaborated subgraph at the next generation. Nodes already in the plan keep their id, key, edges, and generation byte for byte, and the new nodes arrive pre-keyed against them. `baseDigest` does not move; `digest` does. New nodes retain material-dependency order after the recorded prefix, including when inferred edges point to later entries. An append with no drafts fails as `invalid_node`.
@@ -550,7 +550,7 @@ Appends an elaborated subgraph at the next generation. Nodes already in the plan
 const verify: (input: unknown) => Effect.Effect<
   Plan,
   PlanError | StepKey.KeyMaterialError | Schema.SchemaError,
-  Crypto.Crypto
+  EffectDigest.Digest
 >
 ```
 
@@ -569,7 +569,7 @@ Whether a value is a compiler-owned immutable snapshot that already passed `veri
 ```ts
 const prefixDigest: (
   plan: Plan
-) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto>
+) => Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest>
 ```
 
 The approval digest of every generation before the newest: the digest the plan carried before its last append. `PlanStore.append` matches it against the stored envelope, so an append proves the recorded prefix is the caller's from the already-verified prefix instead of decoding and re-verifying every stored row.

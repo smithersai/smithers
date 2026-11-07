@@ -151,7 +151,7 @@ each guarantee and what proves it.
 
 | Module              | What it provides                                                                                                                                                                          |
 | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as `effect/Crypto`.                                                                             |
+| `CloudflareHost`    | `layer`: the closed Host surface on Cloudflare, with `@smthrs/crypto`'s `WebCrypto.layer` as `effect/crypto/Digest`.                                                                             |
 | `CloudflareRuntime` | `layer({ hostId, executionId }, registerFlows)`: the durable engine for one execution over an injected `SqlClient`.                                                                       |
 | `ExecutionObject`   | `start`, `wake`, `alarm` and `intent`: the per-execution Durable Object, as functions over a structural slice of Durable Object storage.                                                  |
 | `EdgeCache`         | `layer({ name?, maxEntryBytes? })`: `@smthrs/artifacts`' `ImmutableCache` over the Workers Cache API, `caches.default` or a named cache.                                                  |

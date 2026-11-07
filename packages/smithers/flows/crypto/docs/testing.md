@@ -14,10 +14,10 @@ dependency:
 
 ```ts
 import { digest, syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 
-Effect.runSync(Effect.provideService(digest("abc"), Crypto.Crypto, syncCrypto))
+Effect.runSync(Effect.provideService(digest("abc"), EffectDigest.Digest, syncCrypto))
 // "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
 ```
 
@@ -37,12 +37,17 @@ reaches all of them by constructing a `Crypto` service that misbehaves on
 purpose:
 
 ```ts
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as PlatformError from "effect/PlatformError"
+import * as Hex from "effect/encoding/Hex"
 
-const host = (operation: Crypto.Crypto["digest"]): Crypto.Crypto =>
-  Crypto.make({ randomBytes: (size) => new Uint8Array(size), digest: operation })
+type DigestService = typeof EffectDigest.Digest.Service
+const host = (operation: DigestService["digest"]): DigestService =>
+  EffectDigest.Digest.of({
+    digest: operation,
+    digestHex: (algorithm, data) => Effect.map(operation(algorithm, data), Hex.encode)
+  })
 
 // invalid_digest, naming the length it received.
 const short = host(() => Effect.succeed(new Uint8Array(31)))
@@ -54,13 +59,13 @@ const hardware = PlatformError.systemError({
   method: "digest",
   description: "hardware failure"
 })
-const broken = host(() => Effect.fail(hardware))
+const broken = host(() => Effect.die(hardware))
 ```
 
 Then flip the effect and match on the code, which is the stable part:
 
 ```ts
-Effect.runSync(Effect.flip(Effect.provideService(digest("secret"), Crypto.Crypto, short)))
+Effect.runSync(Effect.flip(Effect.provideService(digest("secret"), EffectDigest.Digest, short)))
 // Sha256Error { code: "invalid_digest", ... }
 ```
 

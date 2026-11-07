@@ -286,7 +286,7 @@ const make: (
 Constructs the production executor. It must be built in a scope: the scope owns
 the registered agent flow, every forked run driver, and the resume bridge that
 follows the journal. Its requirements are `Agent`, `ControlRuntime`,
-`Crypto.Crypto`, `DurableEngineState`, `FlowRuntime`, `Journal`,
+`(EffectDigest.Digest | SecureRandom.SecureRandom)`, `DurableEngineState`, `FlowRuntime`, `Journal`,
 `NotificationQueue`, `Registry`, `RunStore`, and `SeatResolver`.
 
 ### AgentSession.layer
@@ -637,7 +637,7 @@ interface AgentAction<Tag, Payload, Output> extends Action.Declared<Tag, Payload
 
 A declared model-backed action, plus the layer that implements it. The layer's
 requirements are `Agent`, `FlowRuntime`, `Host`, `Sandbox.Sandbox`,
-`SeatResolver`, `Steering.Source`, `Crypto.Crypto`, `Budget.Budget`, and
+`SeatResolver`, `Steering.Source`, `(EffectDigest.Digest | SecureRandom.SecureRandom)`, `Budget.Budget`, and
 `QuotaPolicy.QuotaClassifier`.
 
 ### AgentAction.Host
@@ -1885,7 +1885,7 @@ the catalog fails with `assembly_failed`.
 
 ```ts
 const clock: (
-  services: Context.Context<Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
+  services: Context.Context<(EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>,
   options?: { readonly maxSeconds?: number | undefined }
 ) => FlowBinding.Source
 ```
@@ -2067,11 +2067,11 @@ runs. It touches three services and no more: `FlowRuntime`, `RunStore`, and
 ```ts
 const make: (
   options: Options
-) => Effect.Effect<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Effect.Effect<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
 
 const layer: (
   options: Options
-) => Layer.Layer<ChildFlows.Children, never, Control | Crypto.Crypto | FlowRuntime.FlowRuntime | RunStore.RunStore>
+) => Layer.Layer<ChildFlows.Children, never, Control | (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | RunStore.RunStore>
 ```
 
 Builds or provides the durable child port:
@@ -2461,7 +2461,7 @@ const make: (
 ) => Effect.Effect<
   EngineLike.EngineLike,
   never,
-  Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Budget.Budget | QuotaPolicy.QuotaClassifier
 >
 
 const layer: (options: Options) => Layer.Layer<EngineLike.EngineLike, never, ...>
@@ -2561,7 +2561,7 @@ const sandboxed: (
   sandbox: WorkspaceSandbox.Service,
   runner: WorkspaceCallRunner,
   options?: { readonly layers?: ReadonlyArray<string> | undefined }
-) => Effect.Effect<CallRunner, never, Crypto.Crypto>
+) => Effect.Effect<CallRunner, never, (EffectDigest.Digest | SecureRandom.SecureRandom)>
 ```
 
 Runs every cell call inside an outer workspace transaction. A call's declared
@@ -2651,7 +2651,7 @@ the walkthrough, see [A durable model call](./guides/durable-model-call.md).
 ```ts
 const run: (
   options: Options
-) => Effect.Effect<Result, Failure, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<Result, Failure, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
 ```
 
 Calls the model once, as one step of the running flow.
@@ -2690,7 +2690,7 @@ failure, with the route's `prepare` error, or with an `engine_failed`
 ```ts
 const model: (
   options: Omit<Options, "request" | "onEvent">
-) => Effect.Effect<Model.Model, never, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
+) => Effect.Effect<Model.Model, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance>
 ```
 
 A `Model` whose every call is one `run` of the running flow, keyed, sealed and

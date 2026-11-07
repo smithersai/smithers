@@ -45,7 +45,7 @@ npm install @smthrs/database@next @effect/platform-node @effect/platform-node-sh
   imports `@smthrs/database/node/NodeDatabase` and
   `@smthrs/database/DurableWriter` by name, and a package manager that isolates
   transitive dependencies will not resolve those unless you declare it too.
-- `@effect/platform-node` provides `NodeCrypto.layer`, the `Crypto.Crypto`
+- `@effect/platform-node` provides `NodeCrypto.layer`, the `SecureRandom.SecureRandom`
   service `MemoryStore.layer` requires for generating thread ids.
 - `@effect/sql-sqlite-node` is the optional database peer required by
   `@smthrs/database/node/NodeDatabase`.
