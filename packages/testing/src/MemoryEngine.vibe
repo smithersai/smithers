@@ -4,13 +4,8 @@
  * @since 0.0.0
  */
 
-import * as Cause from "effect/Cause"
-import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
-import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import * as Option from "effect/Option"
 import * as Ref from "effect/Ref"
 import type * as Scope from "effect/Scope"
 import {
@@ -91,21 +86,20 @@ const unavailable = (message: string): EngineUnavailableError => new EngineUnava
 const getExecution = (
   store: EngineStore,
   executionId: string
-): Effect.Effect<StoredExecution, EngineUnavailableError> =>
-  Ref.get(store[EngineStoreTypeId]).pipe(
-    Effect.flatMap((state) => {
-      const execution = state.executions.get(executionId)
-      return execution === undefined
-        ? Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
-        : Effect.succeed(execution)
-    })
-  )
+): StoredExecution!EngineUnavailableError =>
+  Ref.get(store[EngineStoreTypeId])
+  |> Effect.flatMap(%, (state) => {
+    const execution = state.executions.get(executionId)
+    return execution === undefined
+      ? Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
+      : Effect.succeed(execution)
+  })
 
 const modifyExecution = <A>(
   store: EngineStore,
   executionId: string,
   f: (execution: StoredExecution) => readonly [A, StoredExecution]
-): Effect.Effect<A, EngineUnavailableError> =>
+): A!EngineUnavailableError =>
   Ref.modify<StoreState, Modification<A>>(store[EngineStoreTypeId], (state) => {
     const execution = state.executions.get(executionId)
     if (execution === undefined) {
@@ -118,13 +112,11 @@ const modifyExecution = <A>(
     const executions = new Map(state.executions)
     executions.set(executionId, updated)
     return [{ found: true as const, value }, { ...state, executions }] as const
-  }).pipe(
-    Effect.flatMap((result) =>
-      result.found
-        ? Effect.succeed(result.value)
-        : Effect.fail(unavailable(`Execution ${executionId} is unavailable`))
-    )
-  )
+  })
+  |> Effect.flatMap(%, (result) =>
+    result.found
+      ? Effect.succeed(result.value)
+      : Effect.fail(unavailable(`Execution ${executionId} is unavailable`)))
 
 const appendEntry = (
   store: EngineStore,
@@ -133,7 +125,7 @@ const appendEntry = (
   kind: string,
   outcome: JournalEntryLike["outcome"],
   value: unknown
-): Effect.Effect<JournalEntryLike, EngineUnavailableError> =>
+): JournalEntryLike!EngineUnavailableError =>
   modifyExecution(store, executionId, (execution) => {
     const entry: JournalEntryLike = value === undefined
       ? {
@@ -233,7 +225,7 @@ const setStatus = (
   executionId: string,
   status: ExecutionStatus,
   value: unknown
-): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
+): ExecutionResult!EngineUnavailableError =>
   modifyExecution(store, executionId, (execution) => {
     const updated: StoredExecution = { ...execution, status, value }
     return [storedResult(updated), updated] as const
@@ -243,7 +235,7 @@ const suspendIfRunning = (
   store: EngineStore,
   executionId: string,
   activeStep: StepSpec | undefined
-): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
+): ExecutionResult!EngineUnavailableError =>
   modifyExecution(store, executionId, (execution) => {
     if (execution.status !== "running") {
       return [storedResult(execution), execution] as const
@@ -272,7 +264,7 @@ const abort = (
   store: EngineStore,
   executionId: string,
   activeStep: StepSpec | undefined
-): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
+): ExecutionResult!EngineUnavailableError =>
   modifyExecution(store, executionId, (execution) => {
     if (execution.status === "completed" || execution.status === "failed" || execution.status === "aborted") {
       return [storedResult(execution), execution] as const
@@ -307,12 +299,12 @@ const executeRaceBranch = (
   winnerIndex: { value: number | undefined },
   slots: ReadonlyMap<string, number>,
   path: string
-): Effect.Effect<unknown, unknown> => {
+): unknown!unknown => {
   const effect = branch.kind === "step"
     ? branch.run(input)
     : executeRace(store, executionId, branch, input, slots, path)
-  return effect.pipe(
-    Effect.onExit((exit) => {
+  return effect
+    |> Effect.onExit(%, (exit) => {
       if (Exit.isSuccess(exit)) {
         return appendEntry(
           store,
@@ -321,18 +313,18 @@ const executeRaceBranch = (
           branch.kind,
           "completed",
           exit.value
-        ).pipe(Effect.asVoid, Effect.orDie)
+        ) |> Effect.asVoid(%) |> Effect.orDie(%)
       }
       if (Cause.hasInterruptsOnly(exit.cause)) {
         return winnerIndex.value !== undefined && winnerIndex.value !== index
-          ? appendEntry(
+          ? (appendEntry(
             store,
             executionId,
             branch.key,
             branch.kind,
             "aborted",
             undefined
-          ).pipe(Effect.asVoid, Effect.orDie)
+          ) |> Effect.asVoid(%) |> Effect.orDie(%))
           : Effect.void
       }
       return appendEntry(
@@ -342,9 +334,8 @@ const executeRaceBranch = (
         branch.kind,
         "failed",
         Cause.squash(exit.cause)
-      ).pipe(Effect.asVoid, Effect.orDie)
+      ) |> Effect.asVoid(%) |> Effect.orDie(%)
     })
-  )
 }
 
 const executeRace = (
@@ -354,65 +345,62 @@ const executeRace = (
   input: unknown,
   slots: ReadonlyMap<string, number>,
   path: string
-): Effect.Effect<unknown, unknown> =>
-  getExecution(store, executionId).pipe(
-    Effect.orDie,
-    Effect.flatMap((execution) => {
-      const replayed = recordedWinner(execution.journal, race, slots, path)
-      if (replayed !== undefined) return Effect.succeed(replayed.recorded.value)
-      if (race.branches.length === 0) {
-        return Effect.fail(unavailable(`Race ${race.key} has no branches`))
-      }
-      const winnerIndex: { value: number | undefined } = { value: undefined }
-      return Effect.raceAll(
-        race.branches.map((branch, index) =>
-          executeRaceBranch(
-            store,
-            executionId,
-            branch,
-            input,
-            index,
-            winnerIndex,
-            slots,
-            branchPath(path, index)
-          )
-        ),
-        {
-          onWinner: ({ index }) => {
-            winnerIndex.value = index
-          }
-        }
-      ).pipe(
-        Effect.tap(() =>
-          Effect.gen(function*() {
-            const settled = yield* getExecution(store, executionId)
-            const winner = recordedWinner(settled.journal, race, slots, path)?.branch
-            for (const branch of race.branches) {
-              if (branch === winner) continue
-              const hasOutcome = settled.journal.some(
-                (entry) =>
-                  entry.stepKey === branch.key &&
-                  (
-                    entry.outcome === "aborted" ||
-                    entry.outcome === "failed"
-                  )
-              )
-              if (!hasOutcome) {
-                yield* appendEntry(
-                  store,
-                  executionId,
-                  branch.key,
-                  branch.kind,
-                  "aborted",
-                  undefined
-                )
-              }
-            }
-          }).pipe(Effect.orDie)
+): unknown!unknown =>
+  getExecution(store, executionId)
+  |> Effect.orDie(%)
+  |> Effect.flatMap(%, (execution) => {
+    const replayed = recordedWinner(execution.journal, race, slots, path)
+    if (replayed !== undefined) return Effect.succeed(replayed.recorded.value)
+    if (race.branches.length === 0) {
+      return Effect.fail(unavailable(`Race ${race.key} has no branches`))
+    }
+    const winnerIndex: { value: number | undefined } = { value: undefined }
+    return Effect.raceAll(
+      race.branches.map((branch, index) =>
+        executeRaceBranch(
+          store,
+          executionId,
+          branch,
+          input,
+          index,
+          winnerIndex,
+          slots,
+          branchPath(path, index)
         )
-      )
-    })
-  )
+      ),
+      {
+        onWinner: ({ index }) => {
+          winnerIndex.value = index
+        }
+      }
+    )
+      |> Effect.tap(%, () =>
+        effect {
+          const settled = try getExecution(store, executionId)
+          const winner = recordedWinner(settled.journal, race, slots, path)?.branch
+          for (const branch of race.branches) {
+            if (branch === winner) continue
+            const hasOutcome = settled.journal.some(
+              (entry) =>
+                entry.stepKey === branch.key &&
+                (
+                  entry.outcome === "aborted" ||
+                  entry.outcome === "failed"
+                )
+            )
+            if (!hasOutcome) {
+              try appendEntry(
+                store,
+                executionId,
+                branch.key,
+                branch.kind,
+                "aborted",
+                undefined
+              )
+            }
+          }
+        } |> Effect.orDie(%))
+  })
 
 const executeStep = (
   store: EngineStore,
@@ -422,114 +410,105 @@ const executeStep = (
   active: ActiveExecution,
   slots: ReadonlyMap<string, number>,
   path: string
-): Effect.Effect<StepOutcome, EngineUnavailableError> =>
-  getExecution(store, executionId).pipe(
-    Effect.flatMap((execution) => {
-      const recorded = step.kind === "step"
-        ? recordedOutcome(execution.journal, step, slots.get(path)!)
-        : recordedWinner(execution.journal, step, slots, path)?.recorded
-      if (recorded !== undefined) {
-        return Effect.succeed({ status: "completed" as const, value: recorded.value })
-      }
+): StepOutcome!EngineUnavailableError =>
+  getExecution(store, executionId)
+  |> Effect.flatMap(%, (execution) => {
+    const recorded = step.kind === "step"
+      ? recordedOutcome(execution.journal, step, slots.get(path)!)
+      : recordedWinner(execution.journal, step, slots, path)?.recorded
+    if (recorded !== undefined) {
+      return Effect.succeed({ status: "completed" as const, value: recorded.value })
+    }
 
-      active.activeStep = step
-      const effect = step.kind === "step"
-        ? step.run(input)
-        : executeRace(store, executionId, step, input, slots, path)
+    active.activeStep = step
+    const effect = step.kind === "step"
+      ? step.run(input)
+      : executeRace(store, executionId, step, input, slots, path)
 
-      return Effect.exit(effect).pipe(
-        Effect.flatMap((exit): Effect.Effect<StepOutcome, EngineUnavailableError> => {
-          if (Exit.isSuccess(exit)) {
-            const record = step.kind === "step"
-              ? appendEntry(
-                store,
-                executionId,
-                step.key,
-                step.kind,
-                "completed",
-                exit.value
-              ).pipe(Effect.asVoid)
-              : Effect.void
-            return record.pipe(
-              Effect.tap(() =>
-                Effect.sync(() => {
-                  active.activeStep = undefined
-                })
-              ),
-              Effect.as({ status: "completed" as const, value: exit.value })
-            )
-          }
-          if (Cause.hasInterruptsOnly(exit.cause)) {
-            return suspendIfRunning(
+    return Effect.exit(effect)
+      |> Effect.flatMap(%, (exit): StepOutcome!EngineUnavailableError => {
+        if (Exit.isSuccess(exit)) {
+          const record = step.kind === "step"
+            ? (appendEntry(
               store,
               executionId,
-              active.activeStep
-            ).pipe(
-              Effect.tap(() =>
-                Effect.sync(() => {
-                  active.activeStep = undefined
-                })
-              ),
-              Effect.map((result) => ({
-                status: "suspended" as const,
-                value: result.value
-              }))
-            )
-          }
-          const value = Cause.squash(exit.cause)
-          return appendEntry(
-            store,
-            executionId,
-            step.key,
-            step.kind,
-            "failed",
-            value
-          ).pipe(
-            Effect.tap(() =>
+              step.key,
+              step.kind,
+              "completed",
+              exit.value
+            ) |> Effect.asVoid(%))
+            : Effect.void
+          return record
+            |> Effect.tap(%, () =>
               Effect.sync(() => {
                 active.activeStep = undefined
-              })
-            ),
-            Effect.as({ status: "failed" as const, value })
+              }))
+            |> Effect.as(%, { status: "completed" as const, value: exit.value })
+        }
+        if (Cause.hasInterruptsOnly(exit.cause)) {
+          return suspendIfRunning(
+            store,
+            executionId,
+            active.activeStep
           )
-        })
-      )
-    })
-  )
+            |> Effect.tap(%, () =>
+              Effect.sync(() => {
+                active.activeStep = undefined
+              }))
+            |> Effect.map(%, (result) => ({
+              status: "suspended" as const,
+              value: result.value
+            }))
+        }
+        const value = Cause.squash(exit.cause)
+        return appendEntry(
+          store,
+          executionId,
+          step.key,
+          step.kind,
+          "failed",
+          value
+        )
+          |> Effect.tap(%, () =>
+            Effect.sync(() => {
+              active.activeStep = undefined
+            }))
+          |> Effect.as(%, { status: "failed" as const, value })
+      })
+  })
 
-const execute = (
+const execute = effect (
   store: EngineStore,
   executionId: string,
   active: ActiveExecution
-): Effect.Effect<ExecutionResult, EngineUnavailableError> =>
-  Effect.gen(function*() {
-    const execution = yield* getExecution(store, executionId)
-    const slots = occurrenceSlots(execution.flow)
-    let input = execution.payload
-    for (let index = 0; index < execution.flow.steps.length; index++) {
-      const step = execution.flow.steps[index]
-      if (step === undefined) continue
-      const outcome = yield* executeStep(
-        store,
-        executionId,
-        step,
-        input,
-        active,
-        slots,
-        String(index)
-      )
-      if (outcome.status === "failed") {
-        return yield* setStatus(store, executionId, "failed", outcome.value)
-      }
-      if (outcome.status === "suspended") {
-        const suspended = yield* getExecution(store, executionId)
-        return storedResult(suspended)
-      }
-      input = outcome.value
+): ExecutionResult!EngineUnavailableError => {
+  const execution = try getExecution(store, executionId)
+  const slots = occurrenceSlots(execution.flow)
+  let input = execution.payload
+  for (let index = 0; index < execution.flow.steps.length; index++) {
+    const step = execution.flow.steps[index]
+    if (step === undefined) continue
+    const outcome = try executeStep(
+      store,
+      executionId,
+      step,
+      input,
+      active,
+      slots,
+      String(index)
+    )
+    if (outcome.status === "failed") {
+      return try setStatus(store, executionId, "failed", outcome.value)
     }
-    active.activeStep = undefined
-    return yield* setStatus(store, executionId, "completed", input)
-  })
+    if (outcome.status === "suspended") {
+      const suspended = try getExecution(store, executionId)
+      return storedResult(suspended)
+    }
+    input = outcome.value
+  }
+  active.activeStep = undefined
+  return try setStatus(store, executionId, "completed", input)
+}
 
 const claimExecution = (
   store: EngineStore,
@@ -539,8 +518,8 @@ const claimExecution = (
     readonly executionId?: string | undefined
     readonly idempotencyKey?: string | undefined
   }
-): Effect.Effect<StoredExecution, ExecutionConflictError> =>
-  Ref.modify<StoreState, Effect.Effect<StoredExecution, ExecutionConflictError>>(
+): StoredExecution!ExecutionConflictError =>
+  Ref.modify<StoreState, StoredExecution!ExecutionConflictError>(
     store[EngineStoreTypeId],
     (state) => {
       const joinedId = options.idempotencyKey === undefined
@@ -564,10 +543,21 @@ const claimExecution = (
           { flowName: options.flow.name, payload: options.payload } satisfies ExecutionConflict
         )
         return [
-          Option.match(difference, {
-            onNone: () => Effect.succeed(existing),
-            onSome: (error) => Effect.fail(error)
-          }),
+          do {
+            const $optionSubject = difference
+            const $optionHandlers: {
+              onNone: () => StoredExecution!!
+              onSome: (error: ExecutionConflictError) => never!ExecutionConflictError
+            } = {
+              onNone: () => Effect.succeed(existing),
+              onSome: (error) => Effect.fail(error)
+            }
+            const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers
+            match ($optionSubject) {
+              when Option.Some(let $optionValue): $optionSome($optionValue);
+              default: $optionNone();
+            }
+          },
           state
         ] as const
       }
@@ -598,7 +588,7 @@ const claimExecution = (
         }
       ] as const
     }
-  ).pipe(Effect.flatten)
+  ) |> Effect.flatten(%)
 
 /**
  * Creates an empty persistent store for memory-engine executions.
@@ -606,14 +596,13 @@ const claimExecution = (
  * @category constructors
  * @since 0.0.0
  */
-export const makeStore = (): Effect.Effect<EngineStore> =>
+export const makeStore = (): EngineStore!! =>
   Ref.make<StoreState>({
     executions: new Map(),
     idempotencyIndex: new Map(),
     nextExecutionId: 0
-  }).pipe(
-    Effect.map((state): EngineStore => ({ [EngineStoreTypeId]: state }))
-  )
+  })
+  |> Effect.map(%, (state): EngineStore => ({ [EngineStoreTypeId]: state }))
 
 /**
  * Constructs an in-memory engine whose durable state is held by `store`.
@@ -625,118 +614,110 @@ export const makeStore = (): Effect.Effect<EngineStore> =>
  * @category constructors
  * @since 0.0.0
  */
-export const make = (
+export const make = effect (
   store: EngineStore
-): Effect.Effect<EngineSubjectService, never, Scope.Scope> =>
-  Effect.gen(function*() {
-    const scope = yield* Effect.scope
-    const active = new Map<string, ActiveExecution>()
+): EngineSubjectService!never!Scope.Scope => {
+  const scope = try Effect.scope
+  const active = new Map<string, ActiveExecution>()
 
-    const start = Effect.fnUntraced(function*(
-      executionId: string
-    ): Effect.fn.Return<ExecutionResult, EngineUnavailableError> {
-      const running = active.get(executionId)
-      if (running !== undefined) return yield* Deferred.await(running.deferred)
+  const start = effect (
+    executionId: string
+  ): ExecutionResult!EngineUnavailableError => {
+    const running = active.get(executionId)
+    if (running !== undefined) return try Deferred.await(running.deferred)
 
-      const execution = yield* getExecution(store, executionId)
-      if (
-        execution.status === "completed" ||
-        execution.status === "failed" ||
-        execution.status === "aborted"
-      ) {
-        return storedResult(execution)
-      }
+    const execution = try getExecution(store, executionId)
+    if (
+      execution.status === "completed" ||
+      execution.status === "failed" ||
+      execution.status === "aborted"
+    ) {
+      return storedResult(execution)
+    }
 
-      const deferred = Deferred.makeUnsafe<ExecutionResult>()
-      const activeExecution: ActiveExecution = {
-        deferred,
-        fiber: Deferred.makeUnsafe(),
-        activeStep: undefined
-      }
-      const worker = execute(store, executionId, activeExecution).pipe(
-        Effect.onInterrupt(() =>
-          suspendIfRunning(
-            store,
-            executionId,
-            activeExecution.activeStep
-          ).pipe(
-            Effect.tap((result) => Deferred.succeed(deferred, result)),
-            Effect.asVoid,
-            Effect.orDie
-          )
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            active.delete(executionId)
-          })
-        ),
-        Effect.tap((result) => Deferred.succeed(deferred, result)),
-        Effect.orDie
-      )
-
-      // Claiming the execution is one synchronous step. The check above ran
-      // before a store read, so a concurrent caller can reach here too; only
-      // re-reading `active` in the same step that publishes keeps two callers
-      // from forking two workers over one journal. The loser joins the winner's
-      // deferred and forks nothing.
-      //
-      // Publishing an active entry and the fiber that owns it is one
-      // interruption boundary. If cancellation could land between those two
-      // writes, interrupt and resume would wait forever on deferreds no worker
-      // can complete. A typed store failure still rolls the provisional entry
-      // back, because no worker was successfully published to own its cleanup.
-      const claimed = yield* Effect.gen(function*() {
-        const concurrent = active.get(executionId)
-        if (concurrent !== undefined) return concurrent
-        active.set(executionId, activeExecution)
-        yield* setStatus(store, executionId, "running", execution.value)
-        const fiber = yield* Effect.forkIn(worker, scope)
-        yield* Deferred.succeed(activeExecution.fiber, fiber)
-        return activeExecution
-      }).pipe(
-        Effect.onError(() =>
-          Effect.sync(() => {
-            // Only this claimant can publish here. Arming failed before a
-            // worker was forked; concurrent callers only join this entry.
-            active.delete(executionId)
-          })
-        ),
-        Effect.uninterruptible
-      )
-
-      // Only arming is protected. A caller may stop waiting without stopping
-      // the independently scoped execution, which is the engine's join
-      // contract for run and resume.
-      return yield* Deferred.await(claimed.deferred)
-    })
-
-    const engine: EngineSubjectService = EngineSubjectTag.of({
-      name: "MemoryEngine",
-      run: (options) =>
-        Effect.gen(function*() {
-          const execution = yield* claimExecution(store, options)
-          return yield* start(execution.executionId)
-        }),
-      result: (executionId) => getExecution(store, executionId).pipe(Effect.map(storedResult)),
-      interrupt: (executionId) =>
-        Effect.gen(function*() {
-          const running = active.get(executionId)
-          const result = yield* abort(store, executionId, running?.activeStep)
-          if (running !== undefined) {
-            yield* Deferred.succeed(running.deferred, result)
-            yield* Deferred.await(running.fiber).pipe(Effect.flatMap(Fiber.interrupt))
-          }
-        }).pipe(
-          Effect.catchTag("EngineUnavailableError", () => Effect.void)
-        ),
-      resume: start,
-      journal: (executionId) =>
-        getExecution(store, executionId).pipe(
-          Effect.map((execution) => execution.journal)
+    const deferred = Deferred.makeUnsafe<ExecutionResult>()
+    const activeExecution: ActiveExecution = {
+      deferred,
+      fiber: Deferred.makeUnsafe(),
+      activeStep: undefined
+    }
+    const worker = execute(store, executionId, activeExecution)
+      |> Effect.onInterrupt(%, () =>
+        suspendIfRunning(
+          store,
+          executionId,
+          activeExecution.activeStep
         )
-    })
-    return engine
+        |> Effect.tap(%, (result) => Deferred.succeed(deferred, result))
+        |> Effect.asVoid(%)
+        |> Effect.orDie(%))
+      |> Effect.ensuring(
+        %,
+        Effect.sync(() => {
+          active.delete(executionId)
+        })
+      )
+      |> Effect.tap(%, (result) => Deferred.succeed(deferred, result))
+      |> Effect.orDie(%)
+
+    // Claiming the execution is one synchronous step. The check above ran
+    // before a store read, so a concurrent caller can reach here too; only
+    // re-reading `active` in the same step that publishes keeps two callers
+    // from forking two workers over one journal. The loser joins the winner's
+    // deferred and forks nothing.
+    //
+    // Publishing an active entry and the fiber that owns it is one
+    // interruption boundary. If cancellation could land between those two
+    // writes, interrupt and resume would wait forever on deferreds no worker
+    // can complete. A typed store failure still rolls the provisional entry
+    // back, because no worker was successfully published to own its cleanup.
+    const claimed = try (effect {
+      const concurrent = active.get(executionId)
+      if (concurrent !== undefined) return concurrent
+      active.set(executionId, activeExecution)
+      try setStatus(store, executionId, "running", execution.value)
+      const fiber = try Effect.forkIn(worker, scope)
+      try Deferred.succeed(activeExecution.fiber, fiber)
+      return activeExecution
+    }
+      |> Effect.onError(%, () =>
+        Effect.sync(() => {
+          // Only this claimant can publish here. Arming failed before a
+          // worker was forked; concurrent callers only join this entry.
+          active.delete(executionId)
+        }))
+      |> Effect.uninterruptible(%))
+
+    // Only arming is protected. A caller may stop waiting without stopping
+    // the independently scoped execution, which is the engine's join
+    // contract for run and resume.
+    return try Deferred.await(claimed.deferred)
+  }
+
+  const engine: EngineSubjectService = EngineSubjectTag.of({
+    name: "MemoryEngine",
+    run: effect (options) => {
+      const execution = try claimExecution(store, options)
+      return try start(execution.executionId)
+    },
+    result: (executionId) => getExecution(store, executionId) |> Effect.map(%, storedResult),
+    interrupt: (executionId) =>
+      effect {
+        const running = active.get(executionId)
+        const result = try abort(store, executionId, running?.activeStep)
+        if (running !== undefined) {
+          try Deferred.succeed(running.deferred, result)
+          try (Deferred.await(running.fiber) |> Effect.flatMap(%, Fiber.interrupt))
+        }
+      }
+      |> Effect.catchTag(%, "EngineUnavailableError", () => Effect.void),
+    resume: start,
+    journal: (executionId) =>
+      getExecution(store, executionId)
+      |> Effect.map(%, (execution) => execution.journal)
   })
+  return engine
+}
 
 /**
  * Provides a scoped in-memory engine backed by `store`.

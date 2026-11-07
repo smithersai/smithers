@@ -21,7 +21,7 @@ import * as Latch from "effect/Latch"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
 import * as EngineSubject from "../../src/EngineSubject.vibe"
-import * as FlowEngineLike from "../../src/FlowEngineLike.ts"
+import * as FlowEngineLike from "../../src/FlowEngineLike.vibe"
 import { EngineUnavailableError } from "../../src/TestingError.vibe"
 import { describe, expect, it } from "../../src/Vitest.vibe"
 

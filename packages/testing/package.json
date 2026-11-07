@@ -85,8 +85,8 @@
       "default": "./.vibelang/js/src/FixtureStore.js"
     },
     "./FlowEngineLike": {
-      "types": "./src/FlowEngineLike.ts",
-      "vibelang-source": "./src/FlowEngineLike.ts",
+      "types": "./.vibe/declarations/FlowEngineLike.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngineLike.vibe",
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
     "./HostSuite": {
@@ -100,8 +100,8 @@
       "default": "./.vibelang/js/src/JournalAssertions.js"
     },
     "./MemoryEngine": {
-      "types": "./src/MemoryEngine.ts",
-      "vibelang-source": "./src/MemoryEngine.ts",
+      "types": "./.vibe/declarations/MemoryEngine.d.vibe.ts",
+      "vibelang-source": "./src/MemoryEngine.vibe",
       "default": "./.vibelang/js/src/MemoryEngine.js"
     },
     "./ModelLike": {
@@ -222,7 +222,9 @@
     "docs/",
     ".vibelang/js",
     "src/BuiltinScript.vibe",
-    "src/TestingError.vibe"
+    "src/TestingError.vibe",
+    "src/FlowEngineLike.vibe",
+    "src/MemoryEngine.vibe"
   ],
   "publishConfig": {
     "access": "public",

@@ -1,7 +1,7 @@
 import * as Effect from "effect/Effect"
 import { coreSuite } from "../../src/Conformance.vibe"
 import { make as makeEngineSubject } from "../../src/EngineSubject.vibe"
-import * as MemoryEngine from "../../src/MemoryEngine.ts"
+import * as MemoryEngine from "../../src/MemoryEngine.vibe"
 import * as RestartableEngine from "../../src/RestartableEngine.vibe"
 import { describe, it } from "../../src/Vitest.vibe"
 

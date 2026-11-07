@@ -69,10 +69,10 @@ export * as Fixture from "./Fixture.vibe"
 export * as FixtureStore from "./FixtureStore.ts"
 
 /** @since 0.0.0 @category layers */
-export * as MemoryEngine from "./MemoryEngine.ts"
+export * as MemoryEngine from "./MemoryEngine.vibe"
 
 /** @since 0.0.0 @category layers */
-export * as FlowEngineLike from "./FlowEngineLike.ts"
+export * as FlowEngineLike from "./FlowEngineLike.vibe"
 
 /** @since 0.0.0 @category testing */
 export * as RestartableEngine from "./RestartableEngine.vibe"

@@ -11,7 +11,7 @@ import {
   EngineSubject as EngineSubjectTag,
   type ExecutionResult
 } from "./EngineSubject.vibe"
-import { type EngineStore, make as makeMemoryEngine, makeStore } from "./MemoryEngine.ts"
+import { type EngineStore, make as makeMemoryEngine, makeStore } from "./MemoryEngine.vibe"
 import type { EngineSubjectError, EngineUnavailableError } from "./TestingError.vibe"
 
 interface EngineInstance {
