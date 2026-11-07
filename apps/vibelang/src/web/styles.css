@@ -96,7 +96,7 @@ button { font: inherit; }
 }
 
 /* Keep the transcript's tail above the fixed composer, and make the return control reachable. */
-.sui-chat-messages { overflow-anchor: none; }
+html { overflow-anchor: none; }
 #vl-newest { scroll-margin-bottom: 156px; }
 .vl-latest { position: fixed; bottom: 150px; z-index: 31; }
 

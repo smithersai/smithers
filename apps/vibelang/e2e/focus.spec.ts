@@ -1,7 +1,6 @@
 import { expect, test, type Page } from "@playwright/test"
 
 const input = (page: Page) => page.getByRole("textbox", { name: "Message" })
-const answers = (page: Page) => page.locator(".sui-chat-message[data-role='assistant']")
 
 async function open(page: Page) {
   await page.keyboard.press("ControlOrMeta+k")
@@ -54,6 +53,10 @@ test("6: Escape returns to the actual keyboard opener on the splash", async ({ p
 test("8: the palette contains Tab and Shift+Tab and excludes the background accessibility tree", async ({ page }) => {
   await page.goto("/")
   await open(page)
+  await page.keyboard.press("Shift+Tab")
+  await expect(input(page)).toBeFocused()
+  await page.keyboard.press("Tab")
+  await expect(input(page)).toBeFocused()
   await type(page, "a draft")
   const send = page.getByRole("button", { name: "Send" })
   await expect(send).toBeEnabled()

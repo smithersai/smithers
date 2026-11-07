@@ -21,10 +21,12 @@ export function view(model: Model, h: H): Document {
         top(model, h),
         model.surface === "splash" ? splash(h) : chat(model, h),
         palette(model, h),
-        h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
-          h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [model.answer]),
+        h.div([h.Id("vl-announcements")], [
+          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
+            h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [`Answer ${model.announced}: ${model.answer}`]),
+          ]),
+          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
         ]),
-        h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
       ],
     ),
   }
@@ -92,7 +94,7 @@ function splashPane(h: H): Html {
 function chat(model: Model, h: H): Html {
   const { conversation, pending } = model.client
   return h.main([h.Class("vl-chat")], [
-    h.div([h.Class("sui-chat-messages"), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
+    h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
       ...conversation.entries.map((entry) => entryView(entry, h)),
       ...pending.map((post) => pendingView(post, model.name, h)),
@@ -178,7 +180,7 @@ function statusText(model: Model): string {
 // ── ⌘K ──────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function palette(model: Model, h: H): Html {
-  return h.dialog([h.Id(PALETTE_ID), h.Class("vl-palette-layer"), h.AriaLabel("Ask the agent"), h.AriaModal(true), h.AriaHidden(!model.palette), h.OnCancelPreventDefault(Message.PressedEscape())], [
+  return h.dialog([h.Id(PALETTE_ID), h.Class("vl-palette-layer"), h.AriaLabel("Ask the agent"), h.AriaModal(true), h.DataAttribute("state", model.palette ? "open" : "closed"), h.OnCancelPreventDefault(Message.PressedEscape())], [
     h.div([h.Class("vl-palette-scrim"), h.OnClick(Message.PressedEscape())], []),
     h.form(
       [

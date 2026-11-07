@@ -68,8 +68,6 @@ export const Message = defineMessageUnion({
   FocusedPrompt: {},
   ScrolledTranscript: { bottom: Schema.Boolean },
   ClickedLatest: {},
-  ScrolledLatest: {},
-  CompletedCancelFollowLatest: {},
 })
 export type Message = typeof Message.Type
 
@@ -106,7 +104,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ClickedAsk: () => openPalette(model, true),
     PressedEscape: () => model.palette ? openPalette(model, false) : { model },
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
-    ClickedChat: () => hasConversation(model) ? { model: { ...model, surface: "chat", following: true }, commands: [FollowLatest({})] } : { model },
+    ClickedChat: () => hasConversation(model) ? { model: { ...model, surface: "chat", following: true } } : { model },
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
@@ -124,18 +122,20 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           client,
           connection: model.stream === "open" ? "Connected" : model.connection,
           answer: answer ? answer.error === "" ? answer.text : `Answer failed: ${answer.error}` : model.answer,
-          announced: completed ? event.seq : model.announced,
+          announced: completed ? model.announced + 1 : model.announced,
         },
-        commands: model.following && model.surface === "chat" && advanced ? [FollowLatest({})] : [],
       }
     },
     FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
-    ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq } }),
+    ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq }, commands: [FocusComposer({})] }),
     FocusedPrompt: () => ({ model }),
-    ScrolledTranscript: ({ bottom }) => ({ model: { ...model, following: bottom }, commands: !bottom && model.following ? [FollowLatest.Interrupt(() => Message.CompletedCancelFollowLatest())] : [] }),
-    ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FollowLatest({})] }),
-    ScrolledLatest: () => ({ model }),
-    CompletedCancelFollowLatest: () => ({ model }),
+    ScrolledTranscript: ({ bottom }) => {
+      if (model.surface !== "chat" || model.palette) return { model }
+      return {
+        model: { ...model, following: bottom },
+      }
+    },
+    ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FocusComposer({})] }),
   })
 }
 
@@ -163,7 +163,7 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
       stream: model.stream === "closed" ? "open" : model.stream,
       connection: model.stream === "closed" ? "Connecting" : model.connection,
     },
-    commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true }), ...(model.following ? [FollowLatest({})] : [])],
+    commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true })],
   }
 }
 
@@ -184,8 +184,18 @@ export const ShowPalette = Command.define("ShowPalette", {
   args: {},
   messages: [Message.FocusedPrompt],
   execute: effect () => {
-    const opened = Dom.showDialog(`#${PALETTE_ID}`, { isModal: true, focusSelector: `#${PALETTE_PROMPT_ID}` }) catch () => false
+    const opened = Dom.showDialog(`#${PALETTE_ID}`, { isModal: true, allowedOutsideSelectors: ["#vl-announcements"], focusSelector: `#${PALETTE_PROMPT_ID}` }) catch () => false
     if (opened) try Dom.lockScroll
+    return try message(() => Message.FocusedPrompt())
+  },
+})
+
+/** Ephemeral actions return keyboard focus to the stable composer when they disappear. */
+export const FocusComposer = Command.define("FocusComposer", {
+  args: {},
+  messages: [Message.FocusedPrompt],
+  execute: effect () => {
+    Dom.focus(`#${PROMPT_ID}`, { preventScroll: true }) catch () => undefined
     return try message(() => Message.FocusedPrompt())
   },
 })
@@ -200,17 +210,6 @@ export const ClosePalette = Command.define("ClosePalette", {
     if (closed) try Dom.unlockScroll
     if (dock) Dom.focus(`#${PROMPT_ID}`, { preventScroll: true }) catch () => undefined
     return try message(() => Message.FocusedPrompt())
-  },
-})
-
-/** A sentinel before the transcript's composer clearance keeps the last line above the dock. */
-export const FollowLatest = Command.define("FollowLatest", {
-  args: {},
-  interrupt: true,
-  messages: [Message.ScrolledLatest],
-  execute: effect () => {
-    Dom.scrollIntoView("#vl-newest", { block: "end" }) catch () => undefined
-    return try message(() => Message.ScrolledLatest())
   },
 })
 
@@ -249,12 +248,39 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         },
       }),
     ),
+    // Pause on upward wheel intent before the compositor starts scrolling: a pending reply render must not race it.
+    wheel: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: keys,
+        type: "wheel",
+        options: { passive: true },
+        filterMapEvent: (event: Event) => (event as WheelEvent).deltaY < 0 ? Option.some(Message.ScrolledTranscript({ bottom: false })) : Option.none(),
+      }),
+    ),
     scroll: entry(
       { active: Schema.Boolean },
       {
         modelToDependencies: (model: Model) => ({ active: model.surface === "chat" && !model.palette }),
         dependenciesToStream: ({ active }) => Stream.when(
           Dom.streamFromEvent({ target: keys, type: "scroll", mapEvent: () => Message.ScrolledTranscript({ bottom: page ? atBottom(page) : true }) }),
+          sync(() => active),
+        ),
+      },
+    ),
+    // Only the latest transcript position matters. Model dependencies cancel obsolete scroll work before rendering.
+    follow: entry(
+      { active: Schema.Boolean, seq: Schema.Number, sent: Schema.Number, stream: Schema.String },
+      {
+        modelToDependencies: (model: Model) => ({
+          active: model.surface === "chat" && model.following && !model.palette,
+          seq: model.client.conversation.seq,
+          sent: model.sent,
+          stream: model.stream,
+        }),
+        dependenciesToStream: ({ active }) => Stream.when(
+          Stream.drain(Stream.fromEffect(effect {
+            Dom.scrollIntoView("[data-following='true'] #vl-newest", { block: "end" }) catch () => undefined
+          })),
           sync(() => active),
         ),
       },
