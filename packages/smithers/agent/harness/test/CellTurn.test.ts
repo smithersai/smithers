@@ -518,7 +518,7 @@ console.log(kept)`
   })
 
   it("parks durably when a call needs a permission the run does not hold", async () => {
-    const request = new Permission.PermissionRequired({
+    const request = Permission.PermissionRequired.new({
       requestId: "perm-1",
       capability: Capability.make("proc:spawn", "**"),
       tier: "irreversible",

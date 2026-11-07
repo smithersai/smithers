@@ -2194,7 +2194,7 @@ const minter = (
         ordinal: mint.ordinal
       })
     )
-    return new Cell.CallResult({ outcome: "success", value: Cell.checkpoint(snapshot.value.id) })
+    return Cell.CallResult.new({ outcome: "success", value: Cell.checkpoint(snapshot.value.id) })
   })
 
 const emitModelProgress = (

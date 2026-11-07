@@ -25,8 +25,8 @@ import { type CallFailureCode, CallResult } from "../Cell.ts"
  */
 export const refusal = (code: CallFailureCode | undefined, message: string): CallResult =>
   code === undefined
-    ? new CallResult({ outcome: "failure", value: null, message })
-    : new CallResult({ outcome: "failure", value: null, code, message })
+    ? CallResult.new({ outcome: "failure", value: null, message })
+    : CallResult.new({ outcome: "failure", value: null, code, message })
 
 /**
  * A timeout refusal: the `timeout` code, with the limit the call ran past
@@ -37,7 +37,7 @@ export const refusal = (code: CallFailureCode | undefined, message: string): Cal
  * @private
  */
 export const timedOut = (message: string, limitMillis: number): CallResult =>
-  new CallResult({ outcome: "failure", value: { limitMillis }, code: "timeout", message })
+  CallResult.new({ outcome: "failure", value: { limitMillis }, code: "timeout", message })
 
 /**
  * The limit a {@link timedOut} refusal recorded, when it recorded one.

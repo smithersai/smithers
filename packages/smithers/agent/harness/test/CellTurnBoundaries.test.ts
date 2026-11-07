@@ -203,7 +203,7 @@ const stubEngine = (
     call: (call) => {
       calls.push(call)
       return overrides.call === undefined
-        ? Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+        ? Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
         : overrides.call(call)
     },
     record: (boundary) => boundary.execute,
@@ -228,7 +228,7 @@ const stubEngine = (
  * fail admission before the cell or its durable success event can observe it.
  */
 const valueless = (): Cell.CallResult =>
-  Object.assign(new Cell.CallResult({ outcome: "success", value: null }), { value: undefined as never })
+  Object.assign(Cell.CallResult.new({ outcome: "success", value: null }), { value: undefined as never })
 
 const messagesOf = (model: ScriptedModel.Fixture, index: number): string =>
   JSON.stringify(model.recorder.requests[index]?.messages ?? [])
@@ -702,7 +702,7 @@ describe("CellTurn call classification", () => {
       emits(`ctx.done("recovered")`)
     ])
     const engine = stubEngine(model.model, {
-      call: () => Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null }))
+      call: () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: null }))
     })
     const { events } = await collect({ state: state(), flows: [lister] }, { engine: engine.layer })
 
@@ -1138,7 +1138,7 @@ describe("CellTurn steering boundaries", () => {
         Effect.sync(() => {
           // A human steers while the cell is still resolving its calls.
           arrived.push(ModelRequest.Message.user("steer: prefer the shorter route"))
-          return new Cell.CallResult({ outcome: "success", value: [] })
+          return Cell.CallResult.new({ outcome: "success", value: [] })
         })
     })
     const steering = source(() => {
@@ -1472,7 +1472,7 @@ describe("CellTurn frame failures", () => {
   })
 
   it("parks when the sealed model step itself raises the permission request", async () => {
-    const request = new Permission.PermissionRequired({
+    const request = Permission.PermissionRequired.new({
       requestId: "perm-seal",
       capability: Capability.make("model:call", "anthropic/*"),
       tier: "irreversible",
@@ -1494,7 +1494,7 @@ describe("CellTurn frame failures", () => {
   })
 
   it("parks when a permission request arrives as plain data rather than as an instance", async () => {
-    const request = new Permission.PermissionRequired({
+    const request = Permission.PermissionRequired.new({
       requestId: "perm-json",
       capability: Capability.make("proc:spawn", "**"),
       tier: "irreversible",
@@ -1643,7 +1643,7 @@ describe("CellTurn interruption", () => {
     const { advance, clock } = manualClock()
     const model = ScriptedModel.make([emits(`await ctx.call("fs/list", { path: "." })`)])
     const engine = ScriptedEngine.make(model.model)
-    const request = new Permission.PermissionRequired({
+    const request = Permission.PermissionRequired.new({
       requestId: "timed-permission",
       capability: Capability.make("fs:read", "**"),
       tier: "irreversible",
@@ -2276,7 +2276,7 @@ describe("CellTurn recorded observations", () => {
             engine.recorder.calls.push(call)
             return stalls && call.identity.ordinal === 0
               ? Effect.never
-              : Effect.succeed(new Cell.CallResult({ outcome: "success", value: ["alpha.md"] }))
+              : Effect.succeed(Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] }))
           }
         })
         const observed = await collect(
@@ -2373,7 +2373,7 @@ describe("CellTurn recorded observations", () => {
       const permission = new HarnessError({
         code: "engine_failed",
         message: "Permission required",
-        cause: new Permission.PermissionRequired({
+        cause: Permission.PermissionRequired.new({
           requestId: "orphan-admission",
           capability: Capability.make("fs:read", "**"),
           tier: "irreversible",
@@ -2472,12 +2472,12 @@ describe("CellTurn recorded observations", () => {
       admit: (call) =>
         (call.input as { path: string }).path === "refused"
           ? Effect.succeed(
-            new Cell.CallResult({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
+            Cell.CallResult.new({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
           )
           : Effect.as(Effect.sleep("150 millis"), undefined),
       call: (call) => {
         engine.recorder.calls.push(call)
-        return Effect.succeed(new Cell.CallResult({ outcome: "success", value: "listed" }))
+        return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "listed" }))
       }
     })
     const observed = await collect(
@@ -2518,17 +2518,18 @@ describe("CellTurn recorded observations", () => {
               if (previous !== undefined) return previous
               effects.push(call.input)
               if (first && call.input === "read") {
-                yield* kind === "call-timeout" ? Effect.never : Effect.sleep(50)
+                if (kind === "call-timeout") return yield* Effect.never
+                yield* Effect.sleep(50)
               }
-              if (first && call.input === "wait") yield* Effect.never
-              const result = new Cell.CallResult({ outcome: "success", value: call.input })
+              if (first && call.input === "wait") return yield* Effect.never
+              const result = Cell.CallResult.new({ outcome: "success", value: call.input })
               cached.set(key, result)
               return result
             }),
           capture: ({ id }) =>
             Effect.gen(function*() {
               captures.push(id)
-              if (first) yield* Effect.never
+              if (first) return yield* Effect.never
               return Option.none()
             })
         })
@@ -2830,7 +2831,7 @@ describe("CellTurn recorded observations", () => {
 
   it("re-issues a call whose original attempt parked, so a later grant can answer it", async () => {
     const records = new Map<string, unknown>()
-    const request = new Permission.PermissionRequired({
+    const request = Permission.PermissionRequired.new({
       requestId: "perm-replayed",
       capability: Capability.make("fs:read", "**"),
       tier: "irreversible",
@@ -2849,7 +2850,7 @@ describe("CellTurn recorded observations", () => {
         ...engine.engine,
         call: () =>
           granted
-            ? Effect.succeed(new Cell.CallResult({ outcome: "success", value: { entries: ["granted.md"] } }))
+            ? Effect.succeed(Cell.CallResult.new({ outcome: "success", value: { entries: ["granted.md"] } }))
             : Effect.fail(new HarnessError({ code: "engine_failed", message: "Permission required", cause: request }))
       })
       return collect(
@@ -3339,7 +3340,7 @@ describe("CellTurn timeout guard", () => {
   it("parks a call that reports its own timeout with no limit and a message naming the flow", async () => {
     const observed = await callRun({
       parks: true,
-      call: () => Effect.succeed(new Cell.CallResult({ outcome: "failure", value: null, code: "timeout" }))
+      call: () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: null, code: "timeout" }))
     })
     const callSubject = callSubjectOf(observed.records, 0)
 
@@ -3360,7 +3361,7 @@ describe("CellTurn timeout guard", () => {
       parks: true,
       call: () =>
         Effect.succeed(
-          new Cell.CallResult({
+          Cell.CallResult.new({
             outcome: "failure",
             value: { limitMillis: 5 },
             code: "timeout",
@@ -3394,7 +3395,7 @@ describe("CellTurn timeout guard", () => {
     const observed = await callRun({
       parks: true,
       stops: (subject) => subject.includes("cell-call:"),
-      call: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: "listed" }))
+      call: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: "listed" }))
     })
     const frameSubject = frameSubjectOf(observed.records)
     const callSubject = callSubjectOf(observed.records, 0)
@@ -3409,7 +3410,7 @@ describe("CellTurn timeout guard", () => {
       parks: true,
       admit: () =>
         Effect.succeed(
-          new Cell.CallResult({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
+          Cell.CallResult.new({ outcome: "failure", value: null, code: "capability_refused", message: "Denied" })
         ),
       call: () => Effect.never
     })

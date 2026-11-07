@@ -99,7 +99,7 @@ it.each([
       call: (invocation) => {
         commands.push(JSON.stringify(invocation.input))
         return Effect.succeed(
-          new Cell.CallResult(
+          Cell.CallResult.new(
             commands.length <= failures
               ? { outcome: "failure", value: null, code: "timeout", message: "deadline" }
               : { outcome: "success", value: { stdout: "found" } }

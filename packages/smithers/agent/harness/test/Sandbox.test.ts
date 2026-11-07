@@ -40,8 +40,8 @@ const handler = (
   Effect.sync(() => {
     observed.push(invocation)
     return failing.has(invocation.flow)
-      ? new Cell.CallResult({ outcome: "failure", value: null, message: `${invocation.flow} refused` })
-      : new Cell.CallResult({ outcome: "success", value: replies[invocation.flow] ?? null })
+      ? Cell.CallResult.new({ outcome: "failure", value: null, message: `${invocation.flow} refused` })
+      : Cell.CallResult.new({ outcome: "success", value: replies[invocation.flow] ?? null })
   })
 
 /** Evaluates one cell in a realm of its own, which is what one frame does. */
@@ -371,7 +371,7 @@ describe("Sandbox", () => {
         mint: (mint) =>
           Effect.sync(() => {
             minted.push(mint.ordinal)
-            return new Cell.CallResult({ outcome: "success", value: null })
+            return Cell.CallResult.new({ outcome: "success", value: null })
           })
       }
     )
@@ -428,7 +428,7 @@ describe("Sandbox", () => {
           observed.push(invocation)
           return invocation.ordinal === 0
             ? Effect.never
-            : Effect.succeed(new Cell.CallResult({ outcome: "success", value: { entries: ["sites.py"] } }))
+            : Effect.succeed(Cell.CallResult.new({ outcome: "success", value: { entries: ["sites.py"] } }))
         },
         limits: { callMs: 50 }
       }
@@ -455,7 +455,7 @@ describe("Sandbox", () => {
           call: (invocation) =>
             Deferred.succeed(entered[invocation.ordinal]!, undefined).pipe(
               Effect.andThen(Effect.sleep(200)),
-              Effect.as(new Cell.CallResult({ outcome: "success", value: invocation.input }))
+              Effect.as(Cell.CallResult.new({ outcome: "success", value: invocation.input }))
             )
         }), { callMs: 300 }).pipe(Effect.forkChild({ startImmediately: true }))
       for (const call of entered) {
@@ -627,7 +627,7 @@ describe("Sandbox", () => {
         call: (invocation) => {
           observed.push(invocation)
           return Effect.succeed(
-            new Cell.CallResult({ outcome: "success", value: `${invocation.ordinal}:${observed.length}` })
+            Cell.CallResult.new({ outcome: "success", value: `${invocation.ordinal}:${observed.length}` })
           )
         }
       }
@@ -1415,7 +1415,7 @@ describe("QuickJSSandbox", () => {
         call: () =>
           Effect.sync(() => {
             now += 5_000
-            return new Cell.CallResult({ outcome: "success", value: { ok: true } })
+            return Cell.CallResult.new({ outcome: "success", value: { ok: true } })
           })
       })
       return frame.outcome

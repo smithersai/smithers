@@ -7,7 +7,7 @@ import * as QuickJSSandbox from "../src/QuickJSSandbox.ts"
 import * as QuickJSVariant from "../src/QuickJSVariant.ts"
 import * as Sandbox from "../src/Sandbox.ts"
 
-const succeeds: Sandbox.Handler = () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+const succeeds: Sandbox.Handler = () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
 
 /** Drive real frames; prints and calls prove whether admission ran user code. */
 const framesOf = (

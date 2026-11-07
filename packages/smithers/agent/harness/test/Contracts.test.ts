@@ -45,7 +45,7 @@ const child = new Plan.Child({
   placement: Option.some("local")
 })
 const batch = new Plan.Batch({ children: [child] })
-const permissionRequest = new Permission.PermissionRequired({
+const permissionRequest = Permission.PermissionRequired.new({
   requestId: "permission-1",
   capability: new Capability.Capability({
     action: "fs:read",
@@ -228,7 +228,7 @@ describe("AgentEvent", () => {
         eventType: "flows.harness.cell-call-settled.v1",
         flowName: flowCall.flowName,
         identity: callIdentity,
-        result: new Cell.CallResult({ outcome: "success", value: ["alpha.md"] })
+        result: Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] })
       }),
       new AgentEvent.CellSettled({
         eventType: "flows.harness.cell-settled.v1",
@@ -1112,7 +1112,7 @@ describe("EngineLike", () => {
   })
 
   it("replaces only the overridden operation and leaves the rest unavailable", async () => {
-    const settled = new Cell.CallResult({ outcome: "success", value: ["alpha.md"] })
+    const settled = Cell.CallResult.new({ outcome: "success", value: ["alpha.md"] })
     const service = EngineLike.makeNoop({ call: () => Effect.succeed(settled) })
 
     const called = await Effect.runPromise(service.call(flowCall))
@@ -1148,7 +1148,7 @@ describe("EngineLike", () => {
   })
 
   it("provides a complete implementation through make and layer", async () => {
-    const settled = new Cell.CallResult({ outcome: "failure", value: null, message: "no such flow" })
+    const settled = Cell.CallResult.new({ outcome: "failure", value: null, message: "no such flow" })
     const implementation = EngineLike.make({
       ...EngineLike.makeNoop(),
       call: () => Effect.succeed(settled)
@@ -1171,7 +1171,7 @@ describe("EngineLike", () => {
     // died on the way into the journal, replacing the park with a schema
     // failure. This is that exact value, through the union, through JSON, and
     // back.
-    const request = new Permission.PermissionRequired({
+    const request = Permission.PermissionRequired.new({
       requestId: "perm-1",
       runId: "run-1",
       capability: new Capability.Capability({ action: "fs:write", resource: "src/**" }),

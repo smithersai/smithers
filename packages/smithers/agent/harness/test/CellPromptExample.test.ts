@@ -32,7 +32,7 @@ const example = (fault?: "grep" | "read" | "edit" | "baseline" | "after", conten
         calls.push(invocation)
         const phase = invocation.flow === "bash" ? invocation.at === undefined ? "after" : "baseline" : invocation.flow
         if (phase === fault) {
-          return new Cell.CallResult({ outcome: "failure", value: null, message: `${phase} unavailable` })
+          return Cell.CallResult.new({ outcome: "failure", value: null, message: `${phase} unavailable` })
         }
         const input = invocation.input as Record<string, Schema.Json>
         let value: Schema.Json
@@ -59,7 +59,7 @@ const example = (fault?: "grep" | "read" | "edit" | "baseline" | "after", conten
           default:
             throw new Error(`Unexpected example flow: ${invocation.flow}`)
         }
-        return new Cell.CallResult({ outcome: "success", value })
+        return Cell.CallResult.new({ outcome: "success", value })
       })
     const sandbox = yield* QuickJSSandbox.make
     const realm = yield* sandbox.openRealm!({ flows })

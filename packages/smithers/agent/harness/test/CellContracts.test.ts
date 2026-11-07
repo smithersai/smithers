@@ -24,7 +24,7 @@ describe("cell state and result contracts", () => {
     Effect.gen(function*() {
       for (const result of results) {
         expect(yield* Cell.decodeCallResult(JSON.parse(JSON.stringify(result)))).toEqual(result)
-        expect(Schema.encodeSync(Schema.toCodecJson(Cell.CallResult))(new Cell.CallResult(result))).toEqual(result)
+        expect(Schema.encodeSync(Schema.toCodecJson(Cell.CallResult))(Cell.CallResult.new(result))).toEqual(result)
       }
       for (const transition of transitions) {
         expect(yield* Cell.decodeTransition(transition)).toEqual(transition)
@@ -86,14 +86,17 @@ describe("cell state and result contracts", () => {
     expect(SchemaRepresentation.toJson(restored)).toEqual(encoded)
   })
 
-  it("rejects success failure-codes at the existing constructor and schema", () => {
+  it("rejects success failure-codes at the factory and decoded host boundary", () => {
     expect(() => {
       // @ts-expect-error A successful call cannot carry a failure code.
-      return new Cell.CallResult({ outcome: "success", value: null, code: "timeout" })
+      return Cell.CallResult.new({ outcome: "success", value: null, code: "timeout" })
     }).toThrow()
-    expect(() => Schema.decodeUnknownSync(Cell.CallResult)({ outcome: "success", value: null, code: "timeout" }))
-      .toThrow()
-    const valid = new Cell.CallResult({ outcome: "failure", value: null, code: "timeout" })
+    expect(
+      Effect.runSync(Effect.result(
+        Cell.decodeCallResult({ outcome: "success", value: null, code: "timeout" })
+      ))._tag
+    ).toBe("Failure")
+    const valid = Cell.CallResult.new({ outcome: "failure", value: null, code: "timeout" })
     expect(valid.outcome).toBe("failure")
   })
 
@@ -104,7 +107,7 @@ describe("cell state and result contracts", () => {
       const frame = yield* realm.evaluate({
         cell: Cell.source("const result = await ctx.call(\"probe\", {}); ctx.done(String(result.count))"),
         frame: 0,
-        call: () => Effect.succeed(new Cell.CallResult(results[0]))
+        call: () => Effect.succeed(Cell.CallResult.new(results[0]))
       })
       const encoded = Schema.encodeSync(Schema.toCodecJson(Cell.Outcome))(frame.outcome)
       expect(encoded).toEqual({ _tag: "settled", transition: { _tag: "complete", output: "2", value: "2" } })

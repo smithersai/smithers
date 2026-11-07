@@ -32,7 +32,7 @@ describe("package conventions", () => {
 
   // Two private `refused` helpers plus ten inline copies of one literal shape.
   it("constructs a refusal call result in one place", () => {
-    expect(owning(/new (?:Cell\.)?CallResult\(\{\s*\n?\s*outcome: "failure"/)).toEqual([
+    expect(owning(/(?:Cell\.)?CallResult\.new\(\{\s*\n?\s*outcome: "failure"/)).toEqual([
       "internal/refusal.ts"
     ])
   })

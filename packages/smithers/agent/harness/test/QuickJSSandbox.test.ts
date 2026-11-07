@@ -29,7 +29,7 @@ const flows: Readonly<Record<string, Cell.FlowProjection>> = {
   })
 }
 
-const succeeds: Sandbox.Handler = () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+const succeeds: Sandbox.Handler = () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
 
 /** A catalog wide enough for its own installation to cost something. */
 const wideCatalog = (
@@ -126,7 +126,7 @@ describe("QuickJSSandbox limits", () => {
           call: () =>
             Effect.sync(() => {
               calls++
-              return new Cell.CallResult({ outcome: "success", value: null })
+              return Cell.CallResult.new({ outcome: "success", value: null })
             }),
           limits
         }))
@@ -208,7 +208,7 @@ describe("QuickJSSandbox limits", () => {
           call: () =>
             Deferred.succeed(entered, undefined).pipe(
               Effect.andThen(Deferred.await(release)),
-              Effect.as(new Cell.CallResult({ outcome: "success", value: null }))
+              Effect.as(Cell.CallResult.new({ outcome: "success", value: null }))
             )
         }).pipe(Effect.forkChild({ startImmediately: true }))
         yield* Deferred.await(entered)
@@ -368,7 +368,7 @@ describe("QuickJSSandbox limits", () => {
         mint: () =>
           Effect.sync(() => {
             now += 5_000
-            return new Cell.CallResult({
+            return Cell.CallResult.new({
               outcome: "success",
               value: Cell.checkpoint("slow-checkpoint")
             })
@@ -605,7 +605,7 @@ describe("QuickJSSandbox calls", () => {
     const observed: Array<Sandbox.Invocation> = []
     const call: Sandbox.Handler = (invocation) => {
       observed.push(invocation)
-      return Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+      return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
     }
 
     for (
@@ -646,7 +646,7 @@ describe("QuickJSSandbox calls", () => {
       {
         call: (invocation) => {
           observed.push(invocation)
-          return Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+          return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
         }
       }
     )
@@ -664,7 +664,7 @@ describe("QuickJSSandbox calls", () => {
       {
         call: (invocation) => {
           observed.push(invocation)
-          return Effect.succeed(new Cell.CallResult({ outcome: "success", value: null }))
+          return Effect.succeed(Cell.CallResult.new({ outcome: "success", value: null }))
         }
       }
     )
@@ -686,7 +686,7 @@ describe("QuickJSSandbox calls", () => {
     const outcome = await outcomeOf(
       `const result = await ctx.call("fs/list", {})
        ctx.done(result.error.code + "|" + result.error.message)`,
-      { call: () => Effect.succeed(new Cell.CallResult({ outcome: "failure", value: { why: "denied" } })) }
+      { call: () => Effect.succeed(Cell.CallResult.new({ outcome: "failure", value: { why: "denied" } })) }
     )
 
     expect(outcome).toMatchObject({
@@ -707,7 +707,7 @@ describe("QuickJSSandbox calls", () => {
         call: (invocation) => {
           observed.push(invocation)
           return Effect.succeed(
-            new Cell.CallResult({ outcome: "success", value: { entries: ["a", "b"], exitCode: 0 } })
+            Cell.CallResult.new({ outcome: "success", value: { entries: ["a", "b"], exitCode: 0 } })
           )
         }
       }
@@ -961,7 +961,7 @@ describe("QuickJSSandbox memory pressure", () => {
     for (let depth = 0; depth < 10_000; depth++) value = { child: value }
     // The host may hand the bridge any JSON tree, independent of a schema
     // constructor's own recursion limit.
-    const result = Object.assign(new Cell.CallResult({ outcome: "success", value: null }), { value })
+    const result = Object.assign(Cell.CallResult.new({ outcome: "success", value: null }), { value })
     const outcome = await outcomeOf("const listed = await ctx.call(\"fs/list\", {}); ctx.done(\"received\")", {
       call: () => Effect.succeed(result)
     })
@@ -975,7 +975,7 @@ describe("QuickJSSandbox memory pressure", () => {
   it("accounts for array storage when the JSON bytes fit the remaining heap", async () => {
     const exit = await evaluate("const listed = await ctx.call(\"fs/list\", {}); ctx.done(String(listed.length))", {
       limits: { memoryBytes: Sandbox.minimumMemoryBytes, steps: Number.MAX_SAFE_INTEGER },
-      call: () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: Array(200_000).fill(0) }))
+      call: () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: Array(200_000).fill(0) }))
     })
     expect(exit).toMatchObject({
       _tag: "Success",
@@ -991,7 +991,7 @@ describe("QuickJSSandbox memory pressure", () => {
         limits: { memoryBytes: Sandbox.minimumMemoryBytes, steps: Number.MAX_SAFE_INTEGER },
         call: () =>
           Effect.succeed(
-            new Cell.CallResult({ outcome: "success", value: { blob: "z".repeat(3 * 1024 * 1024) } })
+            Cell.CallResult.new({ outcome: "success", value: { blob: "z".repeat(3 * 1024 * 1024) } })
           )
       }
     )

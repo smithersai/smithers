@@ -45,7 +45,7 @@ const flows: Readonly<Record<string, Cell.FlowProjection>> = {
   })
 }
 
-const call: Sandbox.Handler = () => Effect.succeed(new Cell.CallResult({ outcome: "success", value: ["README.md"] }))
+const call: Sandbox.Handler = () => Effect.succeed(Cell.CallResult.new({ outcome: "success", value: ["README.md"] }))
 
 /**
  * The build this host names, assembled once per isolate.

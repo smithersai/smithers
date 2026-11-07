@@ -127,7 +127,7 @@ const resolve = (
     }).pipe(Effect.provide(registryLayer()), Effect.orDie)
   )
 
-const succeeded = (value: Schema.Json): Cell.CallResult => new Cell.CallResult({ outcome: "success", value })
+const succeeded = (value: Schema.Json): Cell.CallResult => Cell.CallResult.new({ outcome: "success", value })
 
 describe("CellCalls.make", () => {
   it("calls the discovered flow.ts body, which outranks the SKILL.md beside it", async () => {
