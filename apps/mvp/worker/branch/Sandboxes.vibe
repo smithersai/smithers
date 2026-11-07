@@ -93,7 +93,7 @@ export service Sandboxes {
   wake: (
     branch: SandboxBranch,
     ownerId?: string,
-  ) => { readonly generation: number }!SandboxUnavailable | CheckoutFailed
+  ) => { readonly generation: number }!(SandboxUnavailable | CheckoutFailed)
   /**
    * Starts terminal `terminalId`'s shell session in the branch's machine unless it is there, as its owner's own user,
    * made on first use, so one person's shell can't reach another's.

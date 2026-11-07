@@ -89,7 +89,8 @@ export service Machines {
     ownerId: string,
     callId: string,
     call: SandboxTools.Call,
-  ) => Ran!SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed
+  ) =>
+    Ran!(SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed)
   /**
    * The commands person `ownerId` starts detached in the branch's machine, as their own user
    * (`SandboxCommand.Commands`): what a `sandbox/Command` job runs a command with (worker/flows/SandboxCommand.ts).
@@ -118,7 +119,7 @@ export service Machines {
 /** A tool call's outcome on the machine as the tool's success, or its typed failure (`Machines.tool`). */
 export const ranOf = (
   outcome: ToolOutcome,
-): Ran!SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed =>
+): Ran!(SandboxTools.ToolRefused | SandboxTools.ToolLost | SandboxUnavailable | SandboxStartTimedOut | CheckoutFailed) =>
   outcome._tag === "Done"
     ? Effect.succeed<Ran>({ result: outcome.result, generation: outcome.generation })
     : outcome._tag === "Refused"
@@ -195,7 +196,7 @@ export const commandsOver = <R>(
 export interface MachineObject {
   readonly tool: (branch: SandboxBranch, ownerId: string, callId: string, call: SandboxTools.Call) => ToolOutcome!!
   readonly command: (branch: SandboxBranch, ownerId: string, request: CommandRequest) => CommandOutcome!!
-  readonly sleepIfIdle: (generation: number, idleMs: number) => SleepOutcome | "unavailable"!!
+  readonly sleepIfIdle: (generation: number, idleMs: number) => (SleepOutcome | "unavailable")!!
 }
 
 /**

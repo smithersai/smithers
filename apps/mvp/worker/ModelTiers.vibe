@@ -116,7 +116,7 @@ export const effortFor = (
   request: ModelRequest.ModelRequest,
   modelId: string,
   record?: ModelRequest.ReasoningEffort,
-): ModelRequest.ReasoningEffort | undefined!! => {
+): (ModelRequest.ReasoningEffort | undefined)!! => {
   const effort = effortOf(route, request, modelId, record)
   if (record !== undefined || hintOf(route, request) === undefined) return Effect.succeed(effort)
   const outcome = acceptsEffort(modelId) ? "sent" : "dropped"

@@ -44,7 +44,7 @@ export interface Provider {
   /** Registers `hostname`, or finds it when an earlier attempt already did, so a step run again registers once. */
   readonly ensure: (
     hostname: string,
-  ) => Registration!ProviderUnavailable | HostnameTaken | HostnameRejected
+  ) => Registration!(ProviderUnavailable | HostnameTaken | HostnameRejected)
   /** The registration `id` of `hostname` now; none when the provider no longer has it. */
   readonly status: (id: string, hostname: string) => Option.Option<Registration>!ProviderUnavailable
   /** Forgets registration `id`; one the provider no longer has is already forgotten. */

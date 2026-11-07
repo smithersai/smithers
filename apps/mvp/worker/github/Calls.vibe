@@ -55,7 +55,7 @@ export const statusOf = (error: unknown): number | undefined =>
  */
 export const withToken =
   (token: Redacted.Redacted<string>, apiBaseUrl: string) =>
-  <A, E, R>(effect: A!E!R): A!E!Exclude<R, GitHub.GitHubClient.GitHubClient> | HttpClient.HttpClient =>
+  <A, E, R>(effect: A!E!R): A!E!(Exclude<R, GitHub.GitHubClient.GitHubClient> | HttpClient.HttpClient) =>
     Effect.flatMap(
       // A malformed base URL is a deployment's defect, caught when the deployment starts (`Config.ts`).
       Effect.orDie(GitHub.GitHubClient.make({ token: Redacted.value(token), apiBaseUrl }, {})),

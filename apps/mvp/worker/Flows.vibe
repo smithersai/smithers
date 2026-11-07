@@ -24,7 +24,7 @@ export service FlowStarter {
   start: (
     flow: Flow.Any,
     options: { readonly executionId: string; readonly payload: unknown },
-  ) => void!StartConflict | StartUnavailable
+  ) => void!(StartConflict | StartUnavailable)
 }
 
 /** A window of time in epoch milliseconds: from its start, up to its end. */

@@ -55,7 +55,7 @@ export interface AboutStore<R = never> {
     nowMs: number,
     untilMs: number,
     recoverAnonymous?: boolean,
-  ) => string | false!StoreUnavailable!R
+  ) => (string | false)!StoreUnavailable!R
   /** Keeps an answer only for the matching claim generation, consuming it; `false` means superseded. */
   readonly keep: (repoId: string, answer: KeptAnswer, generation: string) => boolean!StoreUnavailable!R
   /** Keeps GitHub's refusal with no read before `nextReadAtMs`; `not_found` also drops the answer. */
