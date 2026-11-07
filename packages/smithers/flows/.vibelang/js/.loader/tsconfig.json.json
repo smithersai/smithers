@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows"
   },
-  "compiler": "y_3429gIodLvOshjfZlehHIiPeyk62ZPQzArZuc3eBI",
+  "compiler": "smhzQIPJwE9miT-uA2sGTkLKrqq0KtRh66K2es8S8mU",
   "configs": [
    {
     "path": {
@@ -131,7 +131,7 @@
      "relative": "packages/smithers/flows/src"
     },
     null,
-    "MPZnlz5pVvgsupz10pb-b205-XpjDDBKWDS21H0Nbng",
+    "pQ8i_wcGli9gKS0ERDIzyxHvM-I4om8bbRTpsZanVt4",
     [],
     {
      "recursive": true,
@@ -264,7 +264,7 @@
      "relative": "pnpm-lock.yaml"
     },
     "size": 1032876,
-    "hash": "nx7-kvTX6-lRk6husfjjhdq7oOrXcz9ADOSFKtnCdSg"
+    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
    },
    {
     "path": {
@@ -289,7 +289,7 @@
      "relative": "bun.lock"
     },
     "size": 1488383,
-    "hash": "s4QhTgpttf_5XhhCrsfYci82InjSBLyX76vi_Gqs82w"
+    "hash": "UINYD7lqMV7-EZyP2nobCbykISy0bxA8CsUWcW_MCa0"
    },
    {
     "path": {
@@ -301,6 +301,13 @@
   "packages": [
    {
     "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/package.json"
+    },
+    "size": 4687,
+    "hash": "20imS0cRUHTXLT9UZAzWgkgMGpkkKl68_TUrhg7ognw"
+   },
+   {
+    "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/package.json"
     },
     "size": 3248,
@@ -310,15 +317,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/package.json"
     },
-    "size": 8983,
-    "hash": "4VvCi9yweqTQN7OLx5CjD0tmwNIpogpAdOuNL78NV1k"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/package.json"
-    },
-    "size": 4687,
-    "hash": "20imS0cRUHTXLT9UZAzWgkgMGpkkKl68_TUrhg7ognw"
+    "size": 9024,
+    "hash": "KTj9J9Mi1wLpxzgyHjmDAvr0i_Bg5ZH9eWWRqZZAvNM"
    },
    {
     "path": {
@@ -332,119 +332,119 @@
      "relative": "packages/smithers/flows/crypto/package.json"
     },
     "size": 4131,
-    "hash": "o045TlblKjXK525ti_yzAwEnzgoxAK_jIQbRs42UvGU"
+    "hash": "G6Jvq_A2rsDK9FIFkzYhnXDDZ64ipmmuoUbVJ5B3Huk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/package.json"
     },
-    "size": 7099,
-    "hash": "4twUoToqTQuOgaz0-egJ-cZuRfDVS_lVpvYw-okp_3E"
+    "size": 7128,
+    "hash": "mlnhBssrKSIHqMLvhduaqobSP4gGPYzigWRqX9FNj8s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan/package.json"
     },
     "size": 10315,
-    "hash": "koEBM0Xk0JlAWJUwC4pbFtDnOJngQ0-NvjzgvkaHRp8"
+    "hash": "nohCBU8glBZAy75Oiv6bU1DabnG-VsZE7KUJZD8OSe8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/package.json"
     },
     "size": 13976,
-    "hash": "KoXtiMALx-Ds_xaNvl74txONsZLrCAYSduHMBWx9180"
+    "hash": "LHgjXjvV8-bM5TFQulldRdVTfGlEEBXlNXbC9L5u_lI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/capability/package.json"
     },
     "size": 4935,
-    "hash": "3Psqaaakx2mCuONTiompUTJtzy7gEqOySmkyIecEPNI"
+    "hash": "ywpPYQoA_HtHWXEbdW8jpLYLpwdkDLbv__qqK4Mge4U"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 5792,
-    "hash": "XtX91BkcR6mnH6kK0UuH5p463iVv8H3oIlTPcSyms5s"
+    "size": 5846,
+    "hash": "i6JJi0lsEiBkd2vdaB53mnhAjKPmVi4S4kHtRpnAF88"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/kernel/package.json"
     },
     "size": 14526,
-    "hash": "H-t1HpY1YEyRZpdtmrhBn4KV2cPvxMNMHdJr4815Z78"
+    "hash": "UJEoLkJ7MXGmJYIzXPkyA3-7p_k52_D8URkKB_Ofs-w"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/keys/package.json"
     },
     "size": 3572,
-    "hash": "krkXUY4i4OM7fIcOcTgrc6hAwdBlR7EImGiB7xyVbOg"
+    "hash": "20pvQWljll78scwLV8mqO7vur6OU95prTZbTZRQSBF0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine-store/package.json"
     },
     "size": 15515,
-    "hash": "iuKcgJBSKOec57LsRqZbOWZhZYYEd7wnDnyJoeyyY_o"
+    "hash": "9SIwk83tKINlZBCcjjG4ZZb0JuPSHoq7DhmSf46kVYI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/step-cache/package.json"
     },
     "size": 6772,
-    "hash": "PDbmtBwaifMg8xo8e8sshgT4DxBUNraaYy17hCyYn9c"
+    "hash": "Iz9hfR_2ty9UgmetwJT-434q0RYeMpr69_0-FBld8sw"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11258,
-    "hash": "rGo8ecYGRiaJv9OzlOr-J-NPnQ0_XjOFLsSSXMm_e_U"
+    "size": 14222,
+    "hash": "UvWrjF-8GMhrSTP0oGgKXBiCYP3850ZgHxvGOOQ3CVg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/run-store/package.json"
     },
     "size": 7088,
-    "hash": "L5fpKGg2FbL-bbpRq_YlefD5Em-og1_ImjXbGxSFdaY"
+    "hash": "q13S71scplguP_e1froPFQGBe8qAr-NpCrZZAuJJyag"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/observability/package.json"
     },
     "size": 9895,
-    "hash": "LH9WSZ_WGwMEPr0AjiUM6bzlOGw2B20C2fHGXref5dE"
+    "hash": "9GcZk3xYoB_dCBPYDNKfrJJk4OfIyFlLDn5mGcGWfok"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/package.json"
     },
     "size": 6254,
-    "hash": "Hea3nMWuvm2_696OsMTMRp-MQ5YyzcV4ceoKKmvwaA4"
+    "hash": "9hRV6N_JW35Lw3SvPT7NdkOD2ZSzUnHKf1zoVZqe5zM"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/jj/package.json"
     },
-    "size": 5939,
-    "hash": "azRfePbp3L4vVGVVDxsL6q81V-otdw6_Nwi931OLq8o"
+    "size": 7010,
+    "hash": "e8ExeeI_-R-7WbqAA3L5db70KeE2WuC1-NXEnTCcL1o"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/plan-store/package.json"
     },
     "size": 4083,
-    "hash": "vMzRtDOlvzaKisBXUcSGorgpaWYyfeclQeZYPiZhWF8"
+    "hash": "qup3qRzCCEZgffmEMg2FYTj_EhS1IIT9wKwwYzlYASg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/package.json"
     },
-    "size": 5182,
-    "hash": "ODMCrNpjv86vbpRVk6BHpw05F-eAhFwWr_6Gy5f_fK8"
+    "size": 5456,
+    "hash": "bdwjBk-mA9pgN7329gm46lyTBunbnrwIhwBj0odedGI"
    },
    {
     "path": {
@@ -499,15 +499,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/package.json"
     },
-    "size": 16607,
-    "hash": "P7jKyE4biR9cisWhmRF3xXU4alY2DC6K3YP6dyC_ciE"
+    "size": 16691,
+    "hash": "iLfYU4HX6Y-TrGaUdEEoyXzTbCIm1oj2He7oBLm3VTE"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sync/package.json"
     },
     "size": 14547,
-    "hash": "EJwDNO1jWe3hLJu0xRe-3gvPE5MkEsC96QTVPaO3ySE"
+    "hash": "z2frjymwcCJC6y0uPiQDWTPzyCbkGdUzk6FLGgf2JTI"
    },
    {
     "path": {
@@ -528,7 +528,7 @@
      "relative": "packages/smithers/flows/time-travel/package.json"
     },
     "size": 8808,
-    "hash": "eCE_sx9zHiULn8bPh5Mmj9liMTMda7XZ0ahClo6YyOo"
+    "hash": "6mjN6XWIo9JHr3IBHWgVH_AejjrU54jF7xjg0LEFMZg"
    },
    {
     "path": {
@@ -553,6 +553,13 @@
    }
   ],
   "files": [
+   {
+    "path": {
+     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
+    },
+    "size": 91,
+    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
+   },
    {
     "path": {
      "relative": "node_modules/.pnpm/effect@4.1.1/node_modules/effect/dist/Types.d.ts"
@@ -1773,20 +1780,6 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/database/src/internal/CommitScope.ts"
-    },
-    "size": 1949,
-    "hash": "0iLwoqDOYNXo-QTK28lkMUFaOvCvmFtfU9NStgIrfnY"
-   },
-   {
-    "path": {
-     "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/version.d.ts"
-    },
-    "size": 91,
-    "hash": "OLhx74xVvRMxcl4krcVslmdZGXNsTNFw1VSQRYH3mpc"
-   },
-   {
-    "path": {
      "relative": "node_modules/.pnpm/vibelang-runtime@file+.vibelang-toolchain+vibelang-runtime-0.0.11-6a665783b5e4.tgz_@eff_715fe32e5dc3942d8edbf32c9e9bb85b/node_modules/vibelang-runtime/dist/calls.d.ts"
     },
     "size": 1375,
@@ -2025,10 +2018,17 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/database/src/internal/CommitScope.ts"
+    },
+    "size": 1949,
+    "hash": "0iLwoqDOYNXo-QTK28lkMUFaOvCvmFtfU9NStgIrfnY"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/database/src/internal/WriteLock.vibe"
     },
-    "size": 625,
-    "hash": "8eYhjDA8w7GBaY71br2OO6PYHH_Lf8LrnP4_KWaUhDo"
+    "size": 1107,
+    "hash": "hvMBMUZnlpwwL-E3fshAgtJhx2-VICh5i9-__JpOHbk"
    },
    {
     "path": {
@@ -2055,8 +2055,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/DurableWriter.ts"
     },
-    "size": 16756,
-    "hash": "8e20GC9bg3UGBEhtVRfQGKlwajnM-IMO7rLRWvx28Y8"
+    "size": 17266,
+    "hash": "Wc9eOXzfHIxxWHOafZ2mz42hCKpVTvTzr1WIfbc0H_o"
    },
    {
     "path": {
@@ -2160,8 +2160,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/internal/ReadTransaction.vibe"
     },
-    "size": 821,
-    "hash": "jsrWBpxRJQYNzMvXF9NKwgI4unUsfN9Z6qwiDZPjb7M"
+    "size": 823,
+    "hash": "51rXlYqR5wIlKgSrBN93V9fd-2kaHfBz3_tTiFYFDRA"
    },
    {
     "path": {
@@ -2172,10 +2172,17 @@
    },
    {
     "path": {
+     "relative": "packages/smithers/flows/database/src/postgres/QualifiedRead.ts"
+    },
+    "size": 3893,
+    "hash": "sCZLQXPVzDBlAeXKx8zv1vw0ZcS56LPepTWLbFexDqk"
+   },
+   {
+    "path": {
      "relative": "packages/smithers/flows/database/src/postgres/PostgresDatabase.ts"
     },
-    "size": 22893,
-    "hash": "UHez2HBhkcidzvA7wwdLI2qGXDHHdwj30ba09FSCJKo"
+    "size": 26981,
+    "hash": "bnLOD5EtKP6dLSTzLZ1CCm-mRjUug0pU97YQpbGyjxc"
    },
    {
     "path": {
@@ -2291,10 +2298,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+     "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
     },
-    "size": 881,
-    "hash": "G7louxHWm_lsKwN6BSd5VpF_9nmoMy16ufzJyz9r_bI"
+    "size": 864,
+    "hash": "D_W-_nxnXk8SHN5s8V2opTJ_w24LfvGYpiZUF5r6muk"
    },
    {
     "path": {
@@ -2314,15 +2321,15 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/FileSystemArtifactStore.ts"
     },
-    "size": 22837,
-    "hash": "J_ZzIMFuwXtQmkTdwIvr6_QPSL-ZtAKHhnNZTB1BN1E"
+    "size": 22839,
+    "hash": "0RWkt7rtkgK0wbaWBQpWNhD1pm1r2QJGuRRMSAXKB_c"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/MemoryArtifactStore.vibe"
     },
-    "size": 3205,
-    "hash": "2FvTYZPZ7fUn57w6Y3VlYxpI1AKqzEiRyD36OvqSzQQ"
+    "size": 3207,
+    "hash": "nuHd16l_91sKtHt1r6FeA1ZhFsDop0Ff5zykt86RnGA"
    },
    {
     "path": {
@@ -2335,8 +2342,8 @@
     "path": {
      "relative": "packages/smithers/flows/artifacts/src/ArtifactStore.ts"
     },
-    "size": 5516,
-    "hash": "BSNCat2Z9Fqlfz33UB5QllHd2-2-rLM9dF9yIpoIluc"
+    "size": 5518,
+    "hash": "7E5nB5RuyNNVrY-FDt-cSmYzBz_QRURE88DatRYLWTU"
    },
    {
     "path": {
@@ -2648,10 +2655,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+     "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
     },
-    "size": 3466,
-    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+    "size": 3364,
+    "hash": "Vt245oY5GzEJWu0aI_2ozleaQdo77LyMCMUIsz7JCSY"
    },
    {
     "path": {
@@ -2678,8 +2685,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/src/index.vibe"
     },
-    "size": 1664,
-    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+    "size": 1666,
+    "hash": "Hd8vMVI2OlcM02QkrsWnSKituLfroBIUHlrp6QcyUGs"
    },
    {
     "path": {
@@ -3154,8 +3161,8 @@
     "path": {
      "relative": "packages/smithers/flows/step-cache/src/internal/CacheAdmission.vibe"
     },
-    "size": 9800,
-    "hash": "ovm7A0Sc4KUG6v-G5DU4jY6GWzBFNvoqTxp2kUXclVE"
+    "size": 9806,
+    "hash": "JdIYqHqa2YLTpbKVpoJ5LogeL8DiQ-6T1d7azdhBXOc"
    },
    {
     "path": {
@@ -3182,8 +3189,8 @@
     "path": {
      "relative": "packages/smithers/flows/database/src/Dialect.vibe"
     },
-    "size": 10156,
-    "hash": "ZAFv7m1i-TvSbTeSl_pQH9NNOmRbCctwWwSBbIpmprw"
+    "size": 10158,
+    "hash": "2qpF8l12cct1aXQg-R00mZLeyxuRHXGu0TgIaOIdRAo"
    },
    {
     "path": {
@@ -3399,8 +3406,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/Consensus.ts"
     },
-    "size": 28491,
-    "hash": "n8gjhY8_vSTINTfzR3k12SqHdYPI_Qc-dY7cJnWnDtY"
+    "size": 28506,
+    "hash": "1rTioBEpwacZgDPK6-HwXIUjEccrnE9HLNKio32hKO8"
    },
    {
     "path": {
@@ -3420,15 +3427,15 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/Journal.ts"
     },
-    "size": 28195,
-    "hash": "G4gzecrcYjsefufC3IUNICzRGfYCYXeCbm_XCdzR3x0"
+    "size": 28210,
+    "hash": "ic86Py_YlKQC6XBUChj3kko1Qb1JrGnH2A6zL7Wxrdg"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlConsensus.ts"
     },
-    "size": 14820,
-    "hash": "3_MssCulhT6JRs8AaVdGkfPVyzlGApBZgSAY0Iy7ubo"
+    "size": 15216,
+    "hash": "4pmwUEfSoBLUBBDQiK5c6jK6VfFuS6q8LH8xSCOSras"
    },
    {
     "path": {
@@ -3446,17 +3453,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
     },
-    "size": 1996,
-    "hash": "bnv3ytm7gYx9pgq9HLRopPrYRPKctQSL5q31pqiFupM"
+    "size": 1974,
+    "hash": "qXl-DYPIh9jULJFArmD-svNO-2sKLKDUEfoOcn-RPUc"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+     "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
     },
-    "size": 2864,
-    "hash": "QtqvPCvQkkYx4GN2l5g-yt3DY4DvI0ZAUpOZ0pK0n4I"
+    "size": 2699,
+    "hash": "SOkLWtRPWG2unW6tY38LF_G-uYMBGh9vSsfKDZYxpVc"
    },
    {
     "path": {
@@ -3469,8 +3476,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/RunStore.ts"
     },
-    "size": 87788,
-    "hash": "ZndaMo3_26LRSNeqG1bgkUWvcrOvYY-yyaP0uQk4OHM"
+    "size": 87792,
+    "hash": "4Jf-pv2BQYcoTjCPvuIkLTrOzg1EUkJ2Aa0SQK7rt2A"
    },
    {
     "path": {
@@ -3532,8 +3539,8 @@
     "path": {
      "relative": "packages/smithers/flows/run-store/src/AttemptStore.vibe"
     },
-    "size": 46646,
-    "hash": "YjJQZu3R0KAJxBJ1j5-6strYJhdQx49HIRvAsw_tOyo"
+    "size": 46658,
+    "hash": "CnwtTsExzxacvZAmj2GpXm00zn7eYv9UaNPxn11UPYk"
    },
    {
     "path": {
@@ -3579,7 +3586,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+     "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
     },
     "size": 2042,
     "hash": "wb2hLivujMZ5mMsu7b9K4k-9eiklIGlniDCH9JUftnE"
@@ -3770,8 +3777,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29125,
-    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
+    "size": 29135,
+    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
    },
    {
     "path": {
@@ -3819,15 +3826,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23051,
-    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
+    "size": 23089,
+    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5610,
-    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
+    "size": 5612,
+    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
    },
    {
     "path": {
@@ -3840,8 +3847,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6389,
-    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
+    "size": 6391,
+    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
    },
    {
     "path": {
@@ -4085,8 +4092,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14134,
-    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
+    "size": 14148,
+    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
    },
    {
     "path": {
@@ -4106,15 +4113,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4649,
-    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
+    "size": 4653,
+    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10284,
-    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
+    "size": 10288,
+    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
    },
    {
     "path": {
@@ -4218,8 +4225,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 21996,
-    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
+    "size": 22016,
+    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
    },
    {
     "path": {
@@ -4253,8 +4260,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2762,
-    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
+    "size": 2764,
+    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
    },
    {
     "path": {
@@ -4274,8 +4281,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1723,
-    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
+    "size": 1725,
+    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
    },
    {
     "path": {
@@ -4309,8 +4316,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Deadline.vibe"
     },
-    "size": 8464,
-    "hash": "FfMT9KOpLcjFMtpkYFY4t-kJwfqY0auSnn__Dmrb5WE"
+    "size": 8472,
+    "hash": "bZQWspojeuR376eyg647eW0LfGpx_U7to06jnd_mQNo"
    },
    {
     "path": {
@@ -4414,15 +4421,15 @@
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Round.vibe"
     },
-    "size": 6990,
-    "hash": "reLpQ2jSTAFxmpxtzUW9cvLe8WmL5TDDdVWnvE9YNAQ"
+    "size": 6992,
+    "hash": "WD3Rap7qqwyMDJweuQQgWXKwfgBwRScTGJP6DtOYufc"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/engine/src/FlowEngine/Encoded.vibe"
     },
-    "size": 15350,
-    "hash": "pRQXTh_-X81irAiJXXamyVG2X9qXwZjvwXr3fBUSIq4"
+    "size": 15364,
+    "hash": "MxSHP2K1CttU9j_GOqYh_NnpI05zpC8LdB1MP4nzzBA"
    },
    {
     "path": {
@@ -4433,10 +4440,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
     },
-    "size": 75096,
-    "hash": "_mlxwRw7wGsrbBEnDv7Ax92E2tL4beu8b6ukLyYN6WA"
+    "size": 75215,
+    "hash": "MM4UCJtf8cRyW2GgCmq22HbCztw4V6vwqyZDDuacmdo"
    },
    {
     "path": {
@@ -4603,8 +4610,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/EngineEvent.ts"
     },
-    "size": 26711,
-    "hash": "eFr7vqDvoO-gH7hIYLwT3VUwabFnwFOvTQ7Ghnvd9CI"
+    "size": 26726,
+    "hash": "eA8lOcAwFq3khasiQ_KQUw-EF-JYCxVEx_-NETbPPyI"
    },
    {
     "path": {
@@ -4659,29 +4666,29 @@
     "path": {
      "relative": "packages/smithers/flows/journal/src/SqlJournal.ts"
     },
-    "size": 133667,
-    "hash": "NE5CzGudJwrdNZk506DZ_yPIro2DQFsSje3EqpwVMWI"
+    "size": 133759,
+    "hash": "MGewmMGOIOZFl9qAdJke7JJLntmRQw09dQlo3-LMQ34"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/RedactedLogger.ts"
     },
-    "size": 20719,
-    "hash": "fkywAhB33uzprw3HWRluZ53hNVTI1xAfZ-zVA8pVkGY"
+    "size": 20736,
+    "hash": "xSPdy0S3Nvc1lg15TQMLRpJ_7uFxQqWFDNLNbXzGE2s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
     },
-    "size": 21223,
-    "hash": "CCWOAsQ-VlpL7CoYjPcDQm913MhWxnYhTszJHjYePJE"
+    "size": 21225,
+    "hash": "dIxDun9aC5C5HQHC9kbpBz2DUXxlUIMIZNHZdr5F8Q0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/journal/src/index.ts"
     },
-    "size": 2240,
-    "hash": "0gUWEzql0RZDvjoOTSrz7cYZJgeP0Gt7-meBfeBvdT8"
+    "size": 2394,
+    "hash": "YGTRQ3Ny4rzuMtm12t5QKxaPV-5w9ld8Pb0V3ZwySRQ"
    },
    {
     "path": {
@@ -5385,10 +5392,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/src/Runtime.ts"
+     "relative": "packages/smithers/flows/src/Runtime.vibe"
     },
-    "size": 8877,
-    "hash": "Roowlbh2O1s2ocFUbxj86G7gMrIQT2GQK9Umzum6eiQ"
+    "size": 8816,
+    "hash": "M6hyTEf692_jFbBvpKJtXDQHmCPIhoBUC0S9qrmbuhw"
    },
    {
     "path": {
@@ -6778,17 +6785,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.vibe"
     },
-    "size": 2782,
-    "hash": "KKsSqGJAA18n-UpJT8Az80RmvVKiozu0pP8y-M_kgfc"
+    "size": 2697,
+    "hash": "h9FIHdufR4YW8v56XJGcuHORsiV4-oBIV9y2lKo9Jzk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/make.ts"
     },
-    "size": 1212,
-    "hash": "LnUUpRJW634tkaFYehe7tmreLBCWAZQiyvCA8Ke1w6M"
+    "size": 1214,
+    "hash": "f3PfoD0L7N_mALRrtmo9rVUU9p5liIR-SvOC4qUHyKk"
    },
    {
     "path": {
@@ -6806,17 +6813,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
     },
-    "size": 9346,
-    "hash": "QK10g9WSR8cI2Z46_EWgpKj9LOvcbEwe_cpFoJ3-GM0"
+    "size": 9024,
+    "hash": "QBcTKsNGFDaPGs2O4-1_zXnzzZhs-sSc6r8t-i_2gFI"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/index.ts"
     },
-    "size": 629,
-    "hash": "2hTsv9BtetrIlEK_ordKX_Eo7kXgrKwZNEYsuA4Ybd0"
+    "size": 631,
+    "hash": "vfF3Gq_8AkHDGti30KOXRSo2r4E29n594mRW4A8LBSk"
    },
    {
     "path": {
@@ -6834,17 +6841,17 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.ts"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.vibe"
     },
-    "size": 2897,
-    "hash": "WPOO2gHbTFzPBQmLt4UnfBceJR5SXAI2EXe7pHQYvtM"
+    "size": 2847,
+    "hash": "nmwDAA_KQDOM1P06o7VgeYlINiWSAkj0LQXoAreNbWY"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/commandProvider.ts"
     },
-    "size": 4628,
-    "hash": "AAhlPb6th3kZqL7I4QMVNEuiZhwXedNZD8agsqmh9hc"
+    "size": 4630,
+    "hash": "IA1sjkwBcdC-bIO2-mClO3ZbNwmUG8MSxAYzWdVthqo"
    },
    {
     "path": {
@@ -6869,7 +6876,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.vibe"
     },
     "size": 798,
     "hash": "xu4JFcncu1J3bAEpgJHhx2Cnum_UMaU3UitfUpjoJQQ"
@@ -6885,15 +6892,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/index.ts"
     },
-    "size": 509,
-    "hash": "jl6hu4NqZO2sceDvzH5xs42I0vhsKUu3AXcw8zJOmt8"
+    "size": 513,
+    "hash": "h3NqV-n59SLcRGC4erQItXu6k4YpM-gMI__p54Xf8Hs"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/layerHost.ts"
     },
-    "size": 5980,
-    "hash": "Ex1qaGPpo8-EEM99aDZMJb9EdvUFp9qSCuYOczyCZmg"
+    "size": 5982,
+    "hash": "N1N_b6Q1Ps2-5TPdyineZRk-uaH8XhueGUc5Qafblb8"
    },
    {
     "path": {
@@ -6918,10 +6925,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.ts"
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
     },
-    "size": 2949,
-    "hash": "9Qa_PfcbQmJtdP4UcElYzA3U-3JxG0MycM606X-CPO4"
+    "size": 2887,
+    "hash": "ZaJ4SmYxOkKC_5RsXwxh9290ciODuPuWPowO-Q3Z4fk"
    },
    {
     "path": {
@@ -6934,8 +6941,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionProvider.ts"
     },
-    "size": 390,
-    "hash": "55p1fXpXKvYr0mNoL_SCmvKoHRoS49MYpR8fS3e2FuY"
+    "size": 392,
+    "hash": "5ERXfPPEEdaw0nbR7lUp5DfHQfinwXrFaOyxU4Mv5yc"
    },
    {
     "path": {
@@ -6969,36 +6976,36 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/job.ts"
     },
-    "size": 12449,
-    "hash": "xfpxlyF2s6AEqk-OpQcogQdmOH6Zouo5Kxne_kBxnyk"
+    "size": 12451,
+    "hash": "SDDuFA2RogL1Q2XPiOE1H9LmnJxJsvXnTZDeELy4Zg8"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/Sandbox/index.ts"
     },
-    "size": 2240,
-    "hash": "GyHQP1itUkaNLMzSIukCmXjZ6qM6JBXrm5nYNq9XlCI"
+    "size": 2244,
+    "hash": "4eBOwihZSjoeztXXVxTxv17rmpxe2NBhuBpBHEJMh84"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
     },
-    "size": 54224,
-    "hash": "1b9nCAJBVxsN-e5ujPmk5X0j0lVDmqQOaCvg0kd4pv8"
+    "size": 53170,
+    "hash": "i2gnna5zqLv2jc2Wyo8_x5BcGzM-Z9-A8out-Caz1VQ"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.vibe"
     },
-    "size": 10452,
-    "hash": "aQvuTmYTusydrrS2Zo19QFdrnRuM1XuORz67dTA3tMg"
+    "size": 10344,
+    "hash": "OtqG7pK0p8F2ZwHbauSf1a9b-e_koZXZB8mG_UhX4o8"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/CiJob/index.ts"
+     "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
     },
-    "size": 19659,
-    "hash": "Ws4j1dpXIDHF0I6njeIxMI3EN-8eBQJMQdEVCBIRO_w"
+    "size": 19483,
+    "hash": "bqISpatlaY4CSLSo9T2NcxF43jPAnfoUYMXendE4BiQ"
    },
    {
     "path": {
@@ -7018,8 +7025,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Strategy.vibe"
     },
-    "size": 3617,
-    "hash": "aeWosIXv_PnA-KkLrpf2n73zJGJJzl06j5EsjznRenE"
+    "size": 3621,
+    "hash": "SnpoaVzMaQLDtibg7e6NTlG-bt8VphaFzwLw8uwSH6E"
    },
    {
     "path": {
@@ -7060,8 +7067,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxConformance/check.ts"
     },
-    "size": 29370,
-    "hash": "ibRuI-0iXdmxIS-LwkjTbyTR6MElK7TEKuOfhXGzem0"
+    "size": 29374,
+    "hash": "KKN8uTu7GhegDoCb50gLc54izPo81FVC1ROIJOaT5XE"
    },
    {
     "path": {
@@ -7088,8 +7095,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DirectorySandbox/make.ts"
     },
-    "size": 12614,
-    "hash": "aYNC5pqhZMmvFuV3vSdirQs9ObcoUH2wuwavEWfgrYs"
+    "size": 12616,
+    "hash": "tRQUpZ56CkclY-AsMt4vpHHgORkg3QWgB_yDmpwiW7Q"
    },
    {
     "path": {
@@ -7165,8 +7172,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/ContainerSandbox/make.ts"
     },
-    "size": 18427,
-    "hash": "i-LrAtM1qnl2ZGlsYXHE8V0pQFf6PcKXf1DbNTwNQGs"
+    "size": 18429,
+    "hash": "Nnfhyo4zQqXV7YysHycGW5Q-QCQ4YJ1KkYo8u5Xpa30"
    },
    {
     "path": {
@@ -7179,8 +7186,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CommandSandbox/make.ts"
     },
-    "size": 12262,
-    "hash": "o_Q_O8eRMJAdwbLTmS8nPj5Ib49VOD2ix1s1kBDhZ-4"
+    "size": 12264,
+    "hash": "-ge8AOD9tVEvbxo5YLiKjPA9A93u4sWo8ayaQV3EFU4"
    },
    {
     "path": {
@@ -7193,8 +7200,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/KubernetesSandbox/make.ts"
     },
-    "size": 21812,
-    "hash": "kFfwHyLpUDxl106G7csBfGPSrYUyz2h1pVGcXUgvqZ4"
+    "size": 21814,
+    "hash": "1rHeoZuBXRYFX0E6jfzkDZdJ9-WncSK1IgSP0dCKuDI"
    },
    {
     "path": {
@@ -7214,8 +7221,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/JustBashSandbox/make.ts"
     },
-    "size": 10274,
-    "hash": "rFx3gQDHmsLDsp_jP6A6uLh-PZ-cY5V6rzEa11D_LGY"
+    "size": 10276,
+    "hash": "gXGtL4C_LqvO3XVRsqA3Dzt0rWUBfeD9sw2W0bEoO7Y"
    },
    {
     "path": {
@@ -7312,15 +7319,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
     },
-    "size": 38687,
-    "hash": "VOczQMtISvJE3i6bOVBLsHz-d63nJsCFXIsj4v50GgQ"
+    "size": 38689,
+    "hash": "eWYFtDpJev1Dx-IOO-0dOglkow3SCVccHsQvcNq1nzg"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
+     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.vibe"
     },
-    "size": 6910,
-    "hash": "OBTdBYbjR-0BitXboOpEMrlVXlyoYX5YNAsCEzSyjhY"
+    "size": 6641,
+    "hash": "Esaz9dnzBZZLigdKluNn7TkZP-SYwW_0qjVlhDG5GBc"
    },
    {
     "path": {
@@ -7333,8 +7340,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/index.ts"
     },
-    "size": 708,
-    "hash": "B2TIaWYpudzFkPvl4JZgt5nwJfNxzUcO9e_xFX7nNpg"
+    "size": 710,
+    "hash": "keECoEL4fVOlpx4S3dhN7J03bdsUQNCKqK0p7rnO_2I"
    },
    {
     "path": {
@@ -7375,8 +7382,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/VercelSandbox/make.ts"
     },
-    "size": 16614,
-    "hash": "cF1Sr6FPA3rQ56kGjTC1SLG9RVX97GnW9c2UguShU1I"
+    "size": 16616,
+    "hash": "mcOnzudTc2IJOEDf52t74HaO59fhNd0KBXn3R3fzCrg"
    },
    {
     "path": {
@@ -7396,8 +7403,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/DaytonaSandbox/make.ts"
     },
-    "size": 14754,
-    "hash": "7a5rBPqfG_3Hkomr5vOIGPEbsLomZ5vMIlebiWmIzgs"
+    "size": 14756,
+    "hash": "J08PKDjJ958rzLPgFm9-PKkOP37bMJ67Xa09P5gKIIo"
    },
    {
     "path": {
@@ -7424,8 +7431,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/AwsSandbox/make.ts"
     },
-    "size": 39982,
-    "hash": "sGxb3oOsxGKf-7SeQ5ECEBARIe42GNOXPIWaWtFJ6xI"
+    "size": 39984,
+    "hash": "u32ONpswrPd_3Hy2K3gg1Gu4qgAWDgMmUzNXF-CQm0I"
    },
    {
     "path": {
@@ -7445,8 +7452,8 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/CloudflareSandbox/make.ts"
     },
-    "size": 10171,
-    "hash": "j9xkfsyexEcJfnUETyftrTdaN24Nr--OyTaQo0o7-3g"
+    "size": 10173,
+    "hash": "sSoXSA6Aq9Af4Cs7sOj23Ee56ZoUndzc4GugGVGB0-E"
    },
    {
     "path": {
@@ -7485,7 +7492,7 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.ts"
+     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
     },
     "size": 926,
     "hash": "_mJ60ZanEm52CIoZQUVIumyO5isB5MGrOS-N3AWUnC0"
@@ -7494,15 +7501,15 @@
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/index.ts"
     },
-    "size": 1208,
-    "hash": "xYGWhe5KJ6e3h3tW6_HHqPynNzPwMwRNtqMyt_DknB4"
+    "size": 1210,
+    "hash": "Xzmwi_1ORxtT_0zt24wHBcuB6LEXufFPjChvf9I6erk"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/sandbox/src/index.ts"
     },
-    "size": 3505,
-    "hash": "pDnPptGLcHw8y_oHoFd-p2Z8e9v-IUh-EeK0wvATG8Y"
+    "size": 3511,
+    "hash": "6GyC7aliv_bz2zwax9n5pR0pZXRMaipE1pT3xOnI28o"
    },
    {
     "path": {
@@ -8166,8 +8173,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/JournalPages.vibe"
     },
-    "size": 3859,
-    "hash": "p91vkMn3zzGIacmG19Yr9wbaICfMqAeWrqyHOTEoLac"
+    "size": 3863,
+    "hash": "E1a_Vc3ebOOjEPpehu3qv4CkRqz-gr-k9PaZ4Xmgwvo"
    },
    {
     "path": {
@@ -8180,8 +8187,8 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Fork.vibe"
     },
-    "size": 20627,
-    "hash": "UMtwURlnMHws0YL8wt4HH10TR_tsQAM8EviLGKOjuKg"
+    "size": 20631,
+    "hash": "xLGAmbUHXchgjRAMykoGwsJOLhT4bc0TsinnO5fq79s"
    },
    {
     "path": {
@@ -8222,15 +8229,15 @@
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/Replay.vibe"
     },
-    "size": 7895,
-    "hash": "1kxD-fLpopY_DKjLjSpJYsPRPV8mpKSMkDWkNBeylTQ"
+    "size": 7897,
+    "hash": "zNN9BcJAkRWwtCQBRxdalRPpoykHmx7G6jypcEDzerA"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/time-travel/src/internal/SnapshotProjector.vibe"
     },
-    "size": 13077,
-    "hash": "WR-oDrF6TvRaWQdf33CvHha7gphDhPRt0gmBlcQW-PI"
+    "size": 13079,
+    "hash": "hsbjwYpiTIgP22qlBlf1wIImn6r0SGWa-p1HldqWlkk"
    },
    {
     "path": {
@@ -8327,8 +8334,8 @@
     "path": {
      "relative": "packages/smithers/flows/src/index.ts"
     },
-    "size": 5482,
-    "hash": "0jV-NNaguePGNAlTlhDujoBfsqXV3cVJr1dUWewZfSA"
+    "size": 5499,
+    "hash": "ScFlXQovU6JFLnciYpjHqj__a0D09bug8_wFmo5hx3s"
    },
    {
     "path": {
@@ -9265,6 +9272,9 @@
     "relative": "packages/smithers/flows/database/src/internal/UnsupportedDatabase.vibe"
    },
    {
+    "relative": "packages/smithers/flows/database/src/postgres/QualifiedRead.ts"
+   },
+   {
     "relative": "packages/smithers/flows/database/src/postgres/PostgresDatabase.ts"
    },
    {
@@ -9316,7 +9326,7 @@
     "relative": "packages/smithers/flows/artifacts/src/ArtifactStoreMetrics.vibe"
    },
    {
-    "relative": "packages/smithers/flows/artifacts/src/measureBytes.ts"
+    "relative": "packages/smithers/flows/artifacts/src/measureBytes.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/snapshotBytes.vibe"
@@ -9469,7 +9479,7 @@
     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
    },
    {
-    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
@@ -9664,10 +9674,10 @@
     "relative": "packages/smithers/flows/run-store/src/internal/Boundary.ts"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/Companion.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/Companion.vibe"
    },
    {
-    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.ts"
+    "relative": "packages/smithers/flows/run-store/src/internal/SpanOutcome.vibe"
    },
    {
     "relative": "packages/smithers/flows/run-store/src/RunStoreMetrics.vibe"
@@ -9700,7 +9710,7 @@
     "relative": "packages/smithers/flows/journal/src/migrations/0006_consensus.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Migrations.ts"
+    "relative": "packages/smithers/flows/journal/src/Migrations.vibe"
    },
    {
     "relative": "packages/smithers/flows/run-store/src/migrations/0001_initial.vibe"
@@ -10045,7 +10055,7 @@
     "relative": "packages/smithers/flows/engine/src/FlowEngine/FlowInstance.vibe"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+    "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
    },
    {
     "relative": "packages/smithers/flows/engine/src/internal/Diagnostic.ts"
@@ -10426,7 +10436,7 @@
     "relative": "packages/smithers/flows/src/internal/RuntimeOptions.vibe"
    },
    {
-    "relative": "packages/smithers/flows/src/Runtime.ts"
+    "relative": "packages/smithers/flows/src/Runtime.vibe"
    },
    {
     "relative": "packages/smithers/flows/artifacts/src/CombinedArtifacts.ts"
@@ -10546,7 +10556,7 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/ProbeOptions.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/probe.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/make.ts"
@@ -10558,7 +10568,7 @@
     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/Violation.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.ts"
+    "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/index.ts"
@@ -10570,7 +10580,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Session.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.ts"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/Provider.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/commandProvider.ts"
@@ -10585,7 +10595,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/fileSystem.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layer.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxHealth/layerNoop.vibe"
@@ -10606,7 +10616,7 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/Work.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.ts"
+    "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/TestSessionState.ts"
@@ -10633,13 +10643,13 @@
     "relative": "packages/smithers/flows/sandbox/src/Sandbox/index.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxCommand/index.vibe"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/CiJob/index.ts"
+    "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/Outcome.vibe"
@@ -10777,7 +10787,7 @@
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/make.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.ts"
+    "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/reap.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
@@ -10849,7 +10859,7 @@
     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/make.ts"
    },
    {
-    "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.ts"
+    "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/layer.vibe"
    },
    {
     "relative": "packages/smithers/flows/sandbox/src/SandboxSupervision/index.ts"
@@ -11527,6 +11537,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
+    },
+    "line": 1242,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "RedactionDepthError extends Schema.TaggedError; a schema error declaration, schema error RedactionDepthError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/journal/src/TelemetryLog.vibe"
     },
     "line": 90,
@@ -11637,6 +11657,16 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/sandbox/src/CiJob/index.vibe"
+    },
+    "line": 252,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "MachineUnavailable extends Schema.TaggedError; a schema error declaration, schema error MachineUnavailable { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/sandbox/src/MicrosandboxSandbox/snapshots.vibe"
     },
     "line": 388,
@@ -11657,6 +11687,26 @@
    },
    {
     "file": {
+     "relative": "packages/smithers/flows/sandbox/src/ProviderConformance/check.vibe"
+    },
+    "line": 32,
+    "column": 39,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provide wraps a program in a call; write it as a block: provide Layer { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/Sandbox/run.vibe"
+    },
+    "line": 77,
+    "column": 20,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provide wraps a program in a call; write it as a block: provide Layer { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
      "relative": "packages/smithers/flows/sandbox/src/SandboxMerge/ApplyAction.vibe"
     },
     "line": 20,
@@ -11674,6 +11724,106 @@
     "category": "warning",
     "code": "EK4837",
     "text": "MergeError extends Schema.TaggedError; a schema error declaration, schema error MergeError { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 100,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "Read holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema Read { … }.\n  Its quick fix writes schema Read { tool: \"read\"; path: GuestPath }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 121,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "List holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema List { … }.\n  Its quick fix writes schema List { tool: \"list\"; path?: GuestPath }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 195,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "RunResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema RunResult { … }.\n  Its quick fix writes schema RunResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 213,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "ReadResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema ReadResult { … }.\n  Its quick fix writes schema ReadResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 227,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "WriteResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema WriteResult { … }.\n  Its quick fix writes schema WriteResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 255,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "ListResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema ListResult { … }.\n  Its quick fix writes schema ListResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 304,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4832",
+    "text": "DiffResult holds a Schema.Struct; a schema declaration writes the struct and its type at once: schema DiffResult { … }.\n  Its quick fix writes schema DiffResult { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 340,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ToolRefused extends Schema.TaggedError; a schema error declaration, schema error ToolRefused { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 351,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ToolLost extends Schema.TaggedError; a schema error declaration, schema error ToolLost { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
+   },
+   {
+    "file": {
+     "relative": "packages/smithers/flows/sandbox/src/SandboxTools/index.vibe"
+    },
+    "line": 363,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4837",
+    "text": "ToolUnavailable extends Schema.TaggedError; a schema error declaration, schema error ToolUnavailable { … }, writes the same failure with its Schema.\n  No quick fix: a schema error's tag is its name."
    },
    {
     "file": {
@@ -11815,6 +11965,26 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/src/Runtime.vibe"
+     }
+    ],
+    "code": "/**\n * Platform-independent composition for the durable flows runtime.\n *\n * The SQL client and every host service are injected. No driver is opened\n * and no file is named here: the host supplies the owner identity\n * (`OwnerIdentity`), the workspace root (`Workspace`) and the artifact store\n * (`ArtifactStore`) wherever the layers it passes in need them. The native\n * hosts, `NodeRuntime` in `@smthrs/platform-node` and `BunRuntime` in\n * `@smthrs/platform-bun`, supply the process identity, a workspace directory\n * and filesystem artifacts beside the database. A host without a filesystem\n * supplies `OwnerIdentity.layerWithoutPid` and passes\n * `StepBoundary.layerUnsupported` with `WorkspaceSandbox.layerUnsupported`,\n * which need no workspace and no artifact store.\n *\n * Construction is ordered by layer dependencies: migrations finish before any\n * store is built, the durable engine is built over those stores, and\n * `registerFlows` finishes before the resulting services are exposed. The\n * engine's own registration hook then re-arms durable clocks and deferred\n * wakes, so a persisted run cannot resume through this composition before its\n * flow has been registered. Once every flow is registered, the runtime\n * recovers them together, with one read of the store\n * (`EngineStore.Options.deferRecovery`), and logs that recovery once, as\n * `engine-store.registration.recovered` with `registrations` and `durationMs`\n * (`EngineStore.Driver.reportRecovery`).\n *\n * @since 0.1.0\n */\nimport * as Duration from \"effect/Duration\";\nimport { DurableWriter } from \"@smthrs/database\";\nimport { DurableEngineState, EngineStore, Migrations } from \"@smthrs/engine-store\";\nimport { Action, RunMetrics } from \"@smthrs/flow\";\nimport { RedactedLogger, SqlJournal } from \"@smthrs/journal\";\nimport { AttemptStore, RunStore } from \"@smthrs/run-store\";\nimport { CacheStore } from \"@smthrs/step-cache\";\nimport * as Context from \"effect/Context\";\nimport * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport { registryLayer } from \"./internal/RegistryArgs.js\";\nexport { registryLayer } from \"./internal/RegistryArgs.js\";\nexport { decodeField, RuntimeConfigurationError, validate } from \"./internal/RuntimeOptions.js\";\nimport { validate } from \"./internal/RuntimeOptions.js\";\n/** Records a phase without changing its memoization or resource scope. */\nconst observed = (phase, layer) => Layer.fromBuild((memoMap, scope) => Effect.map(Effect.tap(Effect.timed(Layer.buildWithMemoMap(layer, memoMap, scope)), ([elapsed]) => { var topic_1; return (topic_1 = Effect.flatMap(RunMetrics.LineLevel, (level) => Effect.logWithLevel(level)(\"flows.runtime.phase\")), Effect.annotateLogs({ phase, durationMs: Math.round(Duration.toMillis(elapsed)) })(topic_1)); }), ([, context]) => context));\n/**\n * Provides the migrated durable stores over the injected SQL client, without\n * constructing an engine: the journal, `RunStore`, `AttemptStore`,\n * `CacheStore` and `DurableEngineState`, with the `DurableWriter` they share.\n *\n * This is the lower-level seam for integrations that construct another\n * engine-backed service over the same storage context. Application entry\n * points should normally use {@link layer}.\n *\n * Every use builds its own stores. Two runtimes over two databases in one\n * program never share a store instance, so each stays on its own SQL client.\n *\n * @since 0.1.0\n * @category layers\n * @slop\n */\nexport const storage = observed(\"stores\", Layer.mergeAll(SqlJournal.layer({ capacity: 1024, overflow: \"reject\" }), RunStore.layer, AttemptStore.layer, CacheStore.layer, DurableEngineState.layer)).pipe(Layer.provideMerge(Layer.provideMerge(observed(\"migrations\", Migrations.layer), DurableWriter.layer())), Layer.fresh);\n/** Compose an isolated runtime from injected storage and execution services.\n * @category layers\n * @since 1.0.0-rc.0\n */\nexport const layer = (options, stepBoundary, workspaceSandbox, registerFlows, ...registry) => {\n    const validated = validate(options);\n    const execution = Layer.merge(stepBoundary, workspaceSandbox).pipe(Layer.provideMerge(storage), \n    // Credential redaction covers the operator's terminal as well as the\n    // journal (the release policy). It sits UNDER the engine so the\n    // context the engine captures for an action body carries it: a line an\n    // action, the harness, or an agent session writes leaves through the same\n    // rules `@smthrs/journal` applies on the write path.\n    Layer.provideMerge(RedactedLogger.layer()));\n    const engineOptions = {\n        owner: validated.owner,\n        journalSource: `${validated.owner.hostId}-engine`,\n        isAlive: validated.isAlive,\n        canExecute: validated.canExecute,\n        canActivate: validated.canActivate,\n        requestResume: validated.requestResume,\n        // What this host says about the tree it read its flows out of; every\n        // recorded graph page carries it, and a host that says nothing records\n        // nothing (D-068).\n        sourceRevision: validated.sourceRevision,\n        sweep: validated.sweep,\n        resumeConcurrency: validated.resumeConcurrency,\n        placement: validated.placement,\n        // Registration is the last phase and its report follows it, before any run can resume through this runtime: every\n        // registration's clocks and completions recover together, in that report.\n        deferRecovery: true\n    };\n    // A host that guards the ambient `Jj` for action bodies keeps the engine's\n    // own snapshots on its privileged repository, as `layerHost` does.\n    const engine = observed(\"engine\", validated.privilegedJj === undefined\n        ? EngineStore.layer(engineOptions)\n        : EngineStore.layerWithPrivilegedJj(engineOptions, validated.privilegedJj)).pipe(Layer.provideMerge(execution), \n    // Under the engine, not beside it: `@smthrs/engine`\n    // `FlowEngine/Dispatch` reads this reference off the context the engine\n    // captures for an action dispatch, and a sibling layer is not in it.\n    // Undeclared it stays absent, which is what every sealed key in this repo\n    // is derived without today.\n    Layer.provideMerge(validated.cacheEnvironment === undefined\n        ? Layer.empty\n        : Action.layerCacheEnvironment(validated.cacheEnvironment)));\n    // The registry is built BETWEEN the engine and the registration phase, so a\n    // registration that reads a catalog off it — `@smthrs/registry`'s\n    // `Executable.layer`, which turns every discovered descriptor into a\n    // registered durable flow — has both the registry and the engine's own\n    // context in hand, and the engine is still live before the first flow is\n    // registered.\n    // Constant store and registration layers must belong to this runtime's SQL\n    // context. An enclosing control plane can build the same layer values over\n    // another database; sharing their memoized instances crosses that boundary.\n    return Layer.effectContext(Effect.tap(Layer.build(observed(\"registration\", registerFlows).pipe(Layer.provideMerge(observed(\"registry\", registryLayer(registry))), Layer.provideMerge(engine), Layer.fresh))\n    // Registration is the last phase: one line says what every registration's recovery did.\n    , (context) => Context.get(context, EngineStore.Driver).reportRecovery));\n};\n/** Build the runtime in the caller's scope.\n * @category constructors\n * @since 1.0.0-rc.0\n */\nexport const make = (options, stepBoundary, workspaceSandbox, registerFlows, ...registry) => Layer.build(layer(options, stepBoundary, workspaceSandbox, registerFlows, ...registry));\n",
+    "map": {
+     "version": 3,
+     "file": "Runtime.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/src/Runtime.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
     }
    }
   ]

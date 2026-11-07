@@ -117,7 +117,7 @@ describe("raw failure sites in the flow engine's packages", () => {
     expect(scanned.map((path) => relative(root, path).split(sep).join("/"))).toEqual(
       expect.arrayContaining([
         "database/src/internal/PostgresSelection.vibe",
-        "src/Runtime.ts",
+        "src/Runtime.vibe",
         "platform-node/src/SandboxedFlow.ts"
       ])
     )

@@ -1185,7 +1185,7 @@ export const REPOS: Record<string, RepoData> = {
       "packages/rpc/src/Cards.ts": { content: RPC_CARDS_TS, lang: "ts" },
       "packages/rpc/src/Changes.ts": { content: RPC_CHANGES_TS, lang: "ts" },
       "packages/rpc/src/DiffCard.ts": { content: RPC_DIFFCARD_TS, lang: "ts" },
-      "packages/smithers/flows/src/Runtime.ts": { content: RUNTIME_TS, lang: "ts" },
+      "packages/smithers/flows/src/Runtime.vibe": { content: RUNTIME_TS, lang: "ts" },
       "packages/smithers/flows/src/NodeRuntime.ts": { content: NODE_RUNTIME_TS, lang: "ts" }
     },
     readme: SMITHERS_README,
@@ -1276,8 +1276,8 @@ export const REPOS: Record<string, RepoData> = {
     ],
     answers: [
       { q: "How does a stopped run resume?", disclosure: "Worked for 6 s · Read 4 files", files: [
-        { path: "packages/smithers/flows/src/Runtime.ts", label: "Runtime.ts:11-14" },
-        { path: "packages/smithers/flows/src/Runtime.ts", label: "Runtime.ts:60-86" },
+        { path: "packages/smithers/flows/src/Runtime.vibe", label: "Runtime.ts:11-14" },
+        { path: "packages/smithers/flows/src/Runtime.vibe", label: "Runtime.ts:60-86" },
         { path: "packages/smithers/flows/src/NodeRuntime.ts", label: "NodeRuntime.ts:15-20" },
         { path: "README.md", label: "README.md" }
       ], md: "A killed run resumes with `smthrs runs resume`, continuing where it stopped. See the [runtime](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/flows/src/Runtime.ts?L=11-14) and [run storage](smithers.sh/smithers-canary/smithers/blob/main/packages/smithers/flows/src/Runtime.ts?L=60-86).", openOwn: true },
