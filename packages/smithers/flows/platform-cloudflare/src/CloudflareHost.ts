@@ -1,15 +1,14 @@
-import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The closed Host surface for a Cloudflare Worker or Durable Object.
  *
  * A Worker has WebCrypto, `fetch` and nothing else a flow host usually
  * reaches for: no filesystem, no child processes and no jj. This bundle
  * provides the same five Host tags `NodeHost`, `BunHost` and `BrowserHost`
- * provide, plus `effect/Crypto` and the engine's `OwnerIdentity`, so the
- * durable engine composes on Cloudflare exactly as it does elsewhere. The
- * three services a Worker cannot serve are present and refuse every call, so
- * a flow that reaches for one meets a typed failure at the call instead of a
- * missing-service defect at composition.
+ * provide, plus Effect's `Digest` and `SecureRandom` and the engine's
+ * `OwnerIdentity`, so the durable engine composes on Cloudflare exactly as it
+ * does elsewhere. The three services a Worker cannot serve are present and
+ * refuse every call, so a flow that reaches for one meets a typed failure at
+ * the call instead of a missing-service defect at composition.
  *
  * @since 1.0.0
  */
@@ -18,6 +17,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { OwnerIdentity } from "@smthrs/engine-store"
 import * as Jj from "@smthrs/jj"
 import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type { FileSystem } from "effect/FileSystem"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import type { HttpClient } from "effect/http/HttpClient"
@@ -27,8 +27,8 @@ import type { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Refusals from "./internal/Refusals.ts"
 
 /**
- * The services {@link layer} provides: the five closed Host tags, `Crypto`,
- * and the engine's `OwnerIdentity`.
+ * The services {@link layer} provides: the five closed Host tags, `Digest`,
+ * `SecureRandom` and the engine's `OwnerIdentity`.
  *
  * @category models
  * @since 1.0.0
@@ -51,8 +51,8 @@ const layerHttpClient: Layer.Layer<HttpClient> = Layer.provide(
 /**
  * Provides the closed Host surface on Cloudflare.
  *
- * - `Crypto` is WebCrypto: `WebCrypto.layer` from `@smthrs/crypto`, which
- *   reads randomness only when a caller asks for it.
+ * - `Digest` and `SecureRandom` are WebCrypto: `WebCrypto.layer` from
+ *   `@smthrs/crypto`, which reads randomness only when a caller asks for it.
  * - `OwnerIdentity` is `OwnerIdentity.layerWithoutPid`: a Worker has no
  *   process id, and the one `nodejs_compat` reports can be the same for two
  *   isolates of one object, so every owner carries a drawn incarnation
