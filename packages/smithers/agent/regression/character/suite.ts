@@ -18,7 +18,7 @@ import { existsSync, readdirSync, readFileSync } from "node:fs"
 import { dirname, isAbsolute, join, resolve } from "node:path"
 import { parse as parseYaml } from "yaml"
 import type * as Subject from "./subject.ts"
-import type * as World from "./world.ts"
+import type * as World from "./world.vibe"
 
 /** An inclusive count bound. */
 export interface Bound {

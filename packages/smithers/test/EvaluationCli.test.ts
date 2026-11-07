@@ -177,7 +177,7 @@ describe("evaluation CLI", () => {
     // The old recommender suite was retired with packages/backend in 82b5490d.
     const root = await fixture()
     const shipped = [
-      ["agent/agent", "../agent/regression/agent.eval.ts"],
+      ["agent/agent", "../agent/regression/agent.eval.vibe"],
       [
         "review-seeded-bugs/review-seeded-bugs",
         "../../../.smithers/flows/review/seeded-bugs/review-seeded-bugs.eval.vibe"

@@ -55,11 +55,11 @@ import {
 import type { Seat } from "../../src/index.ts"
 import * as Event from "./event.ts"
 import * as Profile from "./profile.ts"
-import * as CharacterRubric from "./rubric.ts"
+import * as CharacterRubric from "#vibelang/emitted/character/rubric"
 import * as Score from "./score.ts"
 import * as Subject from "./subject.ts"
 import * as CharacterSuite from "./suite.ts"
-import * as World from "./world.ts"
+import * as World from "#vibelang/emitted/character/world"
 
 // ---------------------------------------------------------------------------
 // Arguments

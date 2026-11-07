@@ -52,7 +52,7 @@ import { Node } from "../../../flows/plan/src/index.ts"
 import * as EgressHttpClient from "../../../flows/platform-node/src/EgressHttpClient.ts"
 import * as NativeEquipment from "../../../src/internal/NativeEquipment.ts"
 import type * as Profile from "./profile.ts"
-import * as World from "./world.ts"
+import * as World from "#vibelang/emitted/character/world"
 import { Crypto } from "@smthrs/crypto"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 

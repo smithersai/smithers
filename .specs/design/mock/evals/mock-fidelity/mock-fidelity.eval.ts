@@ -100,7 +100,7 @@ export const rubricInstructions = `Judge model: ${judgeModel}. Judge only the su
 /** The existing subscription judge is loaded lazily: offline tests never call a model. */
 const liveJudge: Rubric.Judge<unknown> = request => Effect.gen(function*() {
   const { seatJudge } = yield* Effect.tryPromise({
-    try: () => import("../../../../../packages/smithers/agent/regression/character/rubric.ts"),
+    try: () => import("../../../../../packages/smithers/agent/regression/character/rubric.vibe"),
     catch: () => new Error("Could not load the repository rubric seat adapter; check workspace dependencies")
   })
   return yield* seatJudge(judgeModel, repoRoot)(request)

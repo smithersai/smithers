@@ -9,7 +9,7 @@
   "description": "Offline flows-agent evaluation suite, gated on the committed baseline, and the character runner for agent profiles",
   "scripts": {
     "check": "vibelang -p tsconfig.json --noEmit",
-    "test": "bun run.ts",
+    "test": "bun run.vibe",
     "character": "bun character/run.ts",
     "test:character": "bun test character"
   },
@@ -36,5 +36,17 @@
     "bun-types": "^1.4.0",
     "typescript": "5.9.3",
     "vibelang": "file:../../../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+  },
+  "imports": {
+    "#vibelang/emitted/character/rubric": {
+      "types": "./.vibe/declarations/character/rubric.d.vibe.ts",
+      "vibelang-source": "./character/rubric.vibe",
+      "default": "./.vibelang/js/character/rubric.js"
+    },
+    "#vibelang/emitted/character/world": {
+      "types": "./.vibe/declarations/character/world.d.vibe.ts",
+      "vibelang-source": "./character/world.vibe",
+      "default": "./.vibelang/js/character/world.js"
+    }
   }
 }

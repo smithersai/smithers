@@ -7,7 +7,7 @@
  * @since 0.1.0
  */
 import type * as Suite from "./suite.ts"
-import type * as World from "./world.ts"
+import type * as World from "./world.vibe"
 
 const nameOf = (world: World.World, role: string, id: string): string => {
   if (id === "owner") return world.data.owner.name
