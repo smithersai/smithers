@@ -13,7 +13,6 @@ import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 export const Greet = Action.make("examples/Greet", {
@@ -44,13 +43,12 @@ const GreetingLayer = Layer.mergeAll(
  * an `idempotencyKey`, the default source mints a fresh UUID for each call.
  * Retain the id to reattach to the same execution.
  */
-export const main: Effect.Effect<string> = Greeting.execute(
+export const main: string!! = Greeting.execute(
   { name: "Ada" },
   { executionId: "greeting-ada-1" }
-).pipe(
+)
   // `execute` fails typed when a payload does not satisfy the flow's schema.
   // This example constructs a statically valid payload, so a refusal here
   // would be a defect in the example, not an error a caller handles.
-  Effect.orDie,
-  Effect.provide(GreetingLayer)
-)
+  |> Effect.orDie(%)
+  |> Effect.provide(%, GreetingLayer)

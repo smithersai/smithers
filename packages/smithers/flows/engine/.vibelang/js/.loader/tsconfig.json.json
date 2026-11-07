@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/engine"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "W1IVKQ-JsXk7xhAwlkcC7VoHIWMq29t6NKEUEd3b8wY",
   "configs": [
    {
     "path": {
@@ -46,6 +46,13 @@
     },
     "size": 1116,
     "hash": "LZOOLDRYOFo9W63aTMuuK1TcahYL9HGvgB-NiZprtwU"
+   },
+   {
+    "path": {
+     "relative": "packages/smithers/flows/journal/tsconfig.json"
+    },
+    "size": 1328,
+    "hash": "9GKtx0w862Om4f-B6NoT8QV2VEtr2HxtsujE-c3huCY"
    }
   ],
   "directories": [
@@ -54,7 +61,7 @@
      "relative": "packages/smithers/flows/engine/src"
     },
     null,
-    "Km536IabG-bjdiU9EkAh6ixCOc24wNkbivX8UlnASwY",
+    "5RgqUxIS0JolO7PTyRCnqyujiEN8Yee6G_mHUKE5ggI",
     [],
     {
      "recursive": true,
@@ -222,8 +229,8 @@
     "path": {
      "relative": "pnpm-lock.yaml"
     },
-    "size": 1032876,
-    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
+    "size": 1033342,
+    "hash": "ToTWzvSj2LGhxHYgS1D9GQlopt_P9dNN_CeEzD6D5n4"
    },
    {
     "path": {
@@ -297,8 +304,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 5792,
-    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
+    "size": 5846,
+    "hash": "i6JJi0lsEiBkd2vdaB53mnhAjKPmVi4S4kHtRpnAF88"
    },
    {
     "path": {
@@ -325,8 +332,8 @@
     "path": {
      "relative": "packages/smithers/flows/journal/package.json"
     },
-    "size": 11258,
-    "hash": "6G406-Iu10imZcjoo6qIGQBsOdDD7JVMa-yp10wJIuo"
+    "size": 11620,
+    "hash": "eLJMZl6jaonWcgTs6guIIEaV-VxrLMo48ooX5dtL648"
    },
    {
     "path": {
@@ -2201,10 +2208,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+     "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
     },
-    "size": 3466,
-    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+    "size": 3364,
+    "hash": "Vt245oY5GzEJWu0aI_2ozleaQdo77LyMCMUIsz7JCSY"
    },
    {
     "path": {
@@ -2224,8 +2231,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/src/index.vibe"
     },
-    "size": 1664,
-    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+    "size": 1666,
+    "hash": "Hd8vMVI2OlcM02QkrsWnSKituLfroBIUHlrp6QcyUGs"
    },
    {
     "path": {
@@ -2315,8 +2322,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29125,
-    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
+    "size": 29135,
+    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
    },
    {
     "path": {
@@ -2483,15 +2490,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23051,
-    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
+    "size": 23089,
+    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5610,
-    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
+    "size": 5612,
+    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
    },
    {
     "path": {
@@ -2504,8 +2511,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6389,
-    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
+    "size": 6391,
+    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
    },
    {
     "path": {
@@ -2938,8 +2945,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14134,
-    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
+    "size": 14148,
+    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
    },
    {
     "path": {
@@ -2959,15 +2966,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4649,
-    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
+    "size": 4653,
+    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10284,
-    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
+    "size": 10288,
+    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
    },
    {
     "path": {
@@ -3092,8 +3099,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 21996,
-    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
+    "size": 22016,
+    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
    },
    {
     "path": {
@@ -3127,8 +3134,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2762,
-    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
+    "size": 2764,
+    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
    },
    {
     "path": {
@@ -3148,8 +3155,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1723,
-    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
+    "size": 1725,
+    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
    },
    {
     "path": {
@@ -3183,8 +3190,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Deadline.vibe"
     },
-    "size": 8464,
-    "hash": "FfMT9KOpLcjFMtpkYFY4t-kJwfqY0auSnn__Dmrb5WE"
+    "size": 8472,
+    "hash": "bZQWspojeuR376eyg647eW0LfGpx_U7to06jnd_mQNo"
    },
    {
     "path": {
@@ -3440,10 +3447,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+     "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
     },
-    "size": 75096,
-    "hash": "_mlxwRw7wGsrbBEnDv7Ax92E2tL4beu8b6ukLyYN6WA"
+    "size": 75215,
+    "hash": "MM4UCJtf8cRyW2GgCmq22HbCztw4V6vwqyZDDuacmdo"
    },
    {
     "path": {
@@ -4649,7 +4656,7 @@
     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
    },
    {
-    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
@@ -5006,7 +5013,7 @@
     "relative": "packages/smithers/flows/engine/src/FlowProxy.ts"
    },
    {
-    "relative": "packages/smithers/flows/journal/src/Redaction.ts"
+    "relative": "packages/smithers/flows/journal/src/Redaction.vibe"
    },
    {
     "relative": "packages/smithers/flows/engine/src/internal/Diagnostic.ts"

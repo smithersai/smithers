@@ -16,10 +16,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Crypto } from "@smthrs/crypto"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
-import * as Effect from "effect/Effect"
-import * as Layer from "effect/Layer"
-import { RpcTest } from "effect/rpc"
-import * as Schema from "effect/Schema"
 import { FlowEngine, FlowProxy, FlowProxyServer } from "../src/index.ts"
 
 const ReviewStep = Action.make("docs/ReviewStep", {
@@ -76,14 +72,16 @@ export const runServeRpc = (): Promise<{
 
   const ServerLayer = FlowProxyServer.layerRpcHandlers(flows, { prefix }).pipe(Layer.provide(EngineLayer))
 
-  const program = Effect.gen(function*() {
-    const client = yield* RpcTest.makeClient(FlowProxy.toRpcGroup(flows, { prefix }))
+  const program = effect {
+    const client = try RpcTest.makeClient(
+      try Effect.orDie(Effect.try({ try: () => FlowProxy.toRpcGroup(flows, { prefix }), catch: (e) => e }))
+    )
     const call = client["flows_docs/Review"]
-    const first = yield* call({ payload: { id: "spec-1" }, executionId: "review-spec-1" })
-    const second = yield* call({ payload: { id: "spec-1" }, executionId: "review-spec-1" })
-    const rejection = yield* call({ payload: { id: "draft-2" }, executionId: "review-draft-2" }).pipe(Effect.flip)
+    const first = try call({ payload: { id: "spec-1" }, executionId: "review-spec-1" })
+    const second = try call({ payload: { id: "spec-1" }, executionId: "review-spec-1" })
+    const rejection = try (call({ payload: { id: "draft-2" }, executionId: "review-draft-2" }) |> Effect.flip(%))
     return { first, second, reviews, rejection }
-  }).pipe(Effect.provide(ServerLayer), Effect.scoped)
+  } |> Effect.provide(%, ServerLayer) |> Effect.scoped(%)
 
   return Effect.runPromise(program)
 }
