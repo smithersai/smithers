@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The durable engine's composition in a dedicated Web Worker: everything
  * `BrowserRuntime` loads only when a worker builds an engine, so a tab that
@@ -13,7 +14,7 @@ import { type Flow, type FlowRuntime, RunMetrics } from "@smthrs/flow"
 import { Runtime } from "@smthrs/flows"
 import * as Jj from "@smthrs/jj"
 import { Ownership } from "@smthrs/run-store"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type { HttpClient } from "effect/http/HttpClient"
 import * as Layer from "effect/Layer"
@@ -63,7 +64,7 @@ export interface HostOptions extends Options {
  * @since 1.0.0
  */
 export type Host =
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | OwnerIdentity.OwnerIdentity
   | Path.Path
   | HttpClient

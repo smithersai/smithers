@@ -183,6 +183,7 @@ export const make = (database: Database): Effect.Effect<Client.SqlClient, never,
       semaphore: yield* Semaphore.make(1)
     })
     return yield* Client.make({
+      driver: "sqlite-browser",
       acquirer,
       borrower,
       compiler: Statement.makeCompilerSqlite(),

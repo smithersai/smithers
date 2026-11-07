@@ -180,7 +180,7 @@ export const make = (bash: JustBashLike) =>
 
       const cwd = yield* resolveWorkingDirectory(cmd.options)
       const env = resolveEnvironment(cmd.options)
-      const line = CommandLine.render(cmd)
+      const line = CommandLine.renderForExecution(cmd)
 
       const completed = yield* Deferred.make<
         Awaited<ReturnType<JustBashLike["exec"]>>,

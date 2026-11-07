@@ -34,7 +34,7 @@ const program = Effect.gen(function*() {
       wasm: () => fetch("/wa-sqlite.wasm").then((response) => response.arrayBuffer())
     }
   })
-  yield* Effect.gen(function*() {
+  return yield* Effect.gen(function*() {
     const sql = yield* SqlClient.SqlClient
     if (mode === "write") {
       yield* sql`CREATE TABLE data (id INTEGER PRIMARY KEY, value TEXT NOT NULL)`

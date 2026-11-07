@@ -66,7 +66,7 @@ describe("TypeScript workspace regressions", () => {
           Effect.gen(function*() {
             if (block && paths.includes("/main.ts")) {
               yield* Deferred.succeed(entered, undefined)
-              yield* Effect.never
+              return yield* Effect.never
             }
             return paths.map((path) => [path, files[path] ?? null] as const)
           })
@@ -97,7 +97,7 @@ describe("TypeScript workspace regressions", () => {
           Effect.gen(function*() {
             if (block && paths.includes("/pkg/package.json")) {
               yield* Deferred.succeed(entered, undefined)
-              yield* Effect.never
+              return yield* Effect.never
             }
             return paths.map((path) => [path, files[path] ?? null] as const)
           })

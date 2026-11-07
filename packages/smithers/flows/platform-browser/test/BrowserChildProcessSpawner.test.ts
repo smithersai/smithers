@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The spawner is driven through a stub `JustBashLike`, because what is being
  * pinned is the adapter — which command line the interpreter is handed, which
@@ -122,22 +123,22 @@ const runExit = <A, E>(
 ) => Effect.exit(Effect.provide(effect, layerOf(bash)))
 
 describe("BrowserChildProcessSpawner", () => {
-  it.effect("renders the line with the very renderer the kernel grants against", () =>
+  it.effect("reveals protected arguments only when handing the quoted line to the interpreter", () =>
     Effect.gen(function*() {
       const { bash, calls } = stub(ok("hi\n"))
 
-      const command = ChildProcess.make("echo", ["a b", "it's"])
+      const command = ChildProcess.make("echo", [Redacted.make("a b"), "it's"])
       const output = yield* run(
         bash,
         Effect.flatMap(ChildProcessSpawner, (spawner) => spawner.string(command))
       )
 
       expect(output).toBe("hi\n")
-      // Argv semantics are kept by quoting only what needs it — and the string is
-      // `CommandLine.render`'s, the same one `proc:spawn` is checked against, so
-      // a grant cannot authorize a line different from the one that runs.
+      // The interpreter receives the literal secret, quoted as one argument;
+      // the diagnostic line keeps that protected value private.
       expect(calls[0]?.command).toBe("echo 'a b' 'it'\\''s'")
-      expect(calls[0]?.command).toBe(CommandLine.render(command))
+      expect(calls[0]?.command).toBe(CommandLine.renderForExecution(command))
+      expect(CommandLine.render(command)).not.toContain("a b")
     }))
 
   it.effect("passes the line through verbatim when `shell` is requested", () =>
@@ -1035,7 +1036,8 @@ describe("BrowserChildProcessSpawner boundary", () => {
       expect(calls[0]?.command).toBe(
         "echo 'line\nbreak' '`id`' '$(id)' '${IFS}' 'it'\\''s' -x ''"
       )
-      expect(calls[0]?.command).toBe(CommandLine.render(command))
+      expect(calls[0]?.command).toBe(CommandLine.renderForExecution(command))
+      expect(CommandLine.render(command)).not.toContain("a b")
     }))
 
   it.effect("derives `lines` and `streamLines` from the same buffered output", () =>
