@@ -1003,7 +1003,7 @@ describe("NodeControl control mount framing", () => {
       )
     )
 
-  it("answers a request that arrives beside a line it cannot read", async () => {
+  it("refuses a malformed complete frame beside a valid request", async () => {
     const answered = { _tag: "Exit", requestId: "1", exit: { _tag: "Success", value: { _tag: "flows" } } }
     const [alone, before, after, between] = await answers([
       `${request}\n`,
@@ -1013,23 +1013,30 @@ describe("NodeControl control mount framing", () => {
     ])
 
     expect(alone).toMatchObject({ status: 200, frames: [answered] })
-    // The unreadable line is dropped, and the request beside it runs once.
-    expect(before).toEqual(alone)
-    expect(after).toEqual(alone)
-    expect(between).toEqual(alone)
+    for (const refused of [before, after, between]) {
+      expect(refused).toMatchObject({
+        status: 200,
+        frames: [{ _tag: "Defect", defect: { name: "NdjsonDecodeError" } }]
+      })
+      expect(refused!.frames).toHaveLength(1)
+    }
   })
 
-  it("answers a body with no readable frame with nothing, and keeps serving", async () => {
+  it("reports malformed complete frames and continues serving clean requests", async () => {
     const [garbage, truncated, next] = await answers(["not json\n", `${request.slice(0, 20)}\n`, `${request}\n`])
 
-    // No frame was read, so no request ran and there is no outcome to report.
-    expect(garbage).toEqual({ status: 200, frames: [] })
-    expect(truncated).toEqual({ status: 200, frames: [] })
+    for (const refused of [garbage, truncated]) {
+      expect(refused).toMatchObject({
+        status: 200,
+        frames: [{ _tag: "Defect", defect: { name: "NdjsonDecodeError" } }]
+      })
+      expect(refused!.frames).toHaveLength(1)
+    }
     expect(next).toMatchObject({ status: 200, frames: [{ _tag: "Exit", requestId: "1", exit: { _tag: "Success" } }] })
   })
 
   // The other end of the same codec: the remote client `layerControl` builds.
-  it("reads the outcome beside an unreadable answer line, and fails an answer that has none", async () => {
+  it("reads a clean outcome and refuses malformed complete answer frames", async () => {
     const refusal = { _tag: "/control/FlowNotFound", code: "flow_not_found", flowId: "system/test" }
     const outcome = (requestId: unknown) =>
       JSON.stringify({ _tag: "Exit", requestId, exit: { _tag: "Failure", cause: [{ _tag: "Fail", error: refusal }] } })
@@ -1067,11 +1074,18 @@ describe("NodeControl control mount framing", () => {
       }
     }
 
-    expect(await planAgainst((requestId) => `<html>\n${outcome(requestId)}\n`)).toMatchObject(refusal)
-    expect(await planAgainst(() => "<html>captive portal</html>\n")).toMatchObject({
-      _tag: "/control/TransportError",
-      code: "transport_error",
-      message: "The control response could not be decoded."
-    })
+    expect(await planAgainst((requestId) => `${outcome(requestId)}\n`)).toMatchObject(refusal)
+    for (
+      const answer of [
+        (requestId: unknown) => `<html>\n${outcome(requestId)}\n`,
+        () => "<html>captive portal</html>\n"
+      ]
+    ) {
+      expect(await planAgainst(answer)).toMatchObject({
+        _tag: "/control/TransportError",
+        code: "transport_error",
+        message: "The control response could not be decoded."
+      })
+    }
   })
 })

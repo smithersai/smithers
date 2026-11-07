@@ -3,7 +3,7 @@
  * @since 1.0.0
  */
 
-import { NodeWS } from "@effect/platform-node"
+import * as NodeWS from "@effect/platform-node/NodeWS"
 import type * as Socket from "effect/socket/Socket"
 
 /**
