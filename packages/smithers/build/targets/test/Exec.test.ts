@@ -54,8 +54,8 @@ const failed = async (value: Exec.Payload, options: Parameters<typeof Exec.run>[
   const exit = await Effect.runPromiseExit(Exec.run(options, value))
   if (Exit.isSuccess(exit)) throw new Error("expected an exec failure")
   const rendered = JSON.stringify(exit.cause)
-  const parsed = JSON.parse(rendered) as { readonly failures?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
-  const error = parsed.failures?.[0]?.error
+  const parsed = JSON.parse(rendered) as { readonly reasons?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
+  const error = parsed.reasons?.[0]?.error
   if (error === undefined) throw new Error(`expected an ExecError: ${rendered}`)
   return error
 }

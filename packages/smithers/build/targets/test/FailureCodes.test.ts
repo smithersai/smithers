@@ -28,8 +28,8 @@ const failureOf = async (value: Exec.Payload): Promise<Exec.ExecError> => {
   const exit = await Effect.runPromiseExit(Exec.run({ workspaceRoot: root }, value))
   if (Exit.isSuccess(exit)) throw new Error("expected the run to fail")
   const rendered = JSON.stringify(exit.cause)
-  const parsed = JSON.parse(rendered) as { readonly failures?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
-  const error = parsed.failures?.[0]?.error
+  const parsed = JSON.parse(rendered) as { readonly reasons?: ReadonlyArray<{ readonly error: Exec.ExecError }> }
+  const error = parsed.reasons?.[0]?.error
   if (error === undefined) throw new Error(`expected an ExecError: ${rendered}`)
   return error
 }
@@ -141,10 +141,10 @@ const driftOf = (exit: Exit.Exit<unknown, GeneratedFile.DriftError>): GeneratedF
   if (Exit.isSuccess(exit)) throw new Error("expected the check to fail")
   const rendered = JSON.stringify(exit.cause)
   const parsed = JSON.parse(rendered) as {
-    readonly failures?: ReadonlyArray<{ readonly error: GeneratedFile.DriftError }>
+    readonly reasons?: ReadonlyArray<{ readonly error: GeneratedFile.DriftError }>
     readonly error?: GeneratedFile.DriftError
   }
-  const error = parsed.failures?.[0]?.error ?? parsed.error
+  const error = parsed.reasons?.[0]?.error ?? parsed.error
   if (error === undefined) throw new Error(`expected a DriftError: ${rendered}`)
   return error
 }
