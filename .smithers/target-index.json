@@ -54172,6 +54172,57 @@
     }
   },
   {
+    "label": "//packages/repo-targets:tuiSourceInventory",
+    "package": "packages/repo-targets",
+    "name": "tuiSourceInventory",
+    "rule": "NodeTest",
+    "kinds": [
+      "test"
+    ],
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/tui-source-inventory.test.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/test/native-source-inventory.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/coverage-inventory.mjs"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/coverage-inventory.d.mts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/coverage-roster.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/coverage-source-manifest.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/tui/test/coverage-roster.test.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/corpus/smithers-tui-source-inventory.json"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//packages/repo-targets:repositoryInputs"
+    ],
+    "source": {
+      "file": "packages/repo-targets/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//packages/repo-targets:webBundleContract",
     "package": "packages/repo-targets",
     "name": "webBundleContract",
@@ -65143,7 +65194,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/build/examples/**/*.ts",
+        "pattern": "packages/smithers/build/examples/**/*.{ts,vibe}",
         "exclude": []
       },
       {
@@ -65372,7 +65423,7 @@
       },
       {
         "kind": "glob",
-        "pattern": "packages/smithers/build/examples/**/*.ts",
+        "pattern": "packages/smithers/build/examples/**/*.{ts,vibe}",
         "exclude": []
       },
       {

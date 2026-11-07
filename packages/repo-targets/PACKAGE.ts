@@ -334,6 +334,28 @@ const workspacePackages = Smithers.NodeTest({
 })
 
 /**
+ * Native source renames preserve the terminal app's complete coverage inventory.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const tuiSourceInventory = Smithers.NodeTest({
+  runner: Smithers.testRunner([
+    Smithers.file("//packages/repo-targets/contracts/tui-source-inventory.test.mjs"),
+    Smithers.file("//apps/tui/test/native-source-inventory.test.ts")
+  ]),
+  srcs: [
+    Smithers.file("//apps/tui/coverage-inventory.mjs"),
+    Smithers.file("//apps/tui/coverage-inventory.d.mts"),
+    Smithers.file("//apps/tui/coverage-roster.json"),
+    Smithers.file("//apps/tui/coverage-source-manifest.json"),
+    Smithers.file("//apps/tui/test/coverage-roster.test.ts"),
+    Smithers.file("//packages/repo-targets/contracts/corpus/smithers-tui-source-inventory.json")
+  ],
+  deps: [repositoryInputs]
+})
+
+/**
  * Lints the contract gates and the Bun coverage collector against the root
  * config's operator-script block: statement style only, no semicolons.
  *
@@ -887,4 +909,4 @@ const mvpDocs = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })

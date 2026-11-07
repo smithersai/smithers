@@ -1,0 +1,6 @@
+{
+  "witness": [
+    "src/branch.ts",
+    "src/view.tsx"
+  ]
+}
