@@ -47,8 +47,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./Runtime": {
-      "types": "./.vibe/declarations/src/Runtime.d.vibe.ts",
-      "vibelang-source": "./src/Runtime.vibe",
+      "types": "./src/Runtime.ts",
+      "vibelang-source": "./src/Runtime.ts",
       "default": "./.vibelang/js/src/Runtime.js"
     },
     "./NodeRuntime": null,
@@ -66,8 +66,7 @@
     "CHANGELOG.md",
     "dist/vendor/**",
     "docs/",
-    ".vibelang/js",
-    "src/Runtime.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
@@ -177,12 +176,5 @@
   },
   "peerDependencies": {
     "effect": "4.1.1"
-  },
-  "imports": {
-    "#vibelang/emitted/src/Runtime": {
-      "types": "./.vibe/declarations/src/Runtime.d.vibe.ts",
-      "vibelang-source": "./src/Runtime.vibe",
-      "default": "./.vibelang/js/src/Runtime.js"
-    }
   }
 }

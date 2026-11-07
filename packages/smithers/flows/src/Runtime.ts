@@ -39,6 +39,7 @@ import { RedactedLogger, SqlJournal } from "@smthrs/journal"
 import { AttemptStore, RunStore } from "@smthrs/run-store"
 import { CacheStore } from "@smthrs/step-cache"
 import * as Context from "effect/Context"
+import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import { type RegistryArgs, registryLayer } from "./internal/RegistryArgs.vibe"
@@ -50,14 +51,15 @@ import { type Options, validate } from "./internal/RuntimeOptions.vibe"
 /** Records a phase without changing its memoization or resource scope. */
 const observed = <A, E, R>(phase: string, layer: Layer.Layer<A, E, R>) =>
   Layer.fromBuild((memoMap, scope) =>
-    Layer.buildWithMemoMap(layer, memoMap, scope)
-    |> Effect.timed(%)
-    |> Effect.tap(%, ([elapsed]) =>
-      Effect.flatMap(RunMetrics.LineLevel, (level) =>
-        Effect.logWithLevel(level)("flows.runtime.phase"))
-      |> Effect.annotateLogs({ phase, durationMs: Math.round(Duration.toMillis(elapsed)) })(%))
-    |> Effect.map(%, ([, context]) =>
-      context)
+    Layer.buildWithMemoMap(layer, memoMap, scope).pipe(
+      Effect.timed,
+      Effect.tap(([elapsed]) =>
+        Effect.flatMap(RunMetrics.LineLevel, (level) => Effect.logWithLevel(level)("flows.runtime.phase")).pipe(
+          Effect.annotateLogs({ phase, durationMs: Math.round(Duration.toMillis(elapsed)) })
+        )
+      ),
+      Effect.map(([, context]) => context)
+    )
   )
 
 /**
@@ -176,9 +178,10 @@ export const layer = <
         Layer.provideMerge(engine),
         Layer.fresh
       )
-    )
+    ).pipe(
       // Registration is the last phase: one line says what every registration's recovery did.
-      |> Effect.tap(%, (context) => Context.get(context, EngineStore.Driver).reportRecovery)
+      Effect.tap((context) => Context.get(context, EngineStore.Driver).reportRecovery)
+    )
   )
 }
 

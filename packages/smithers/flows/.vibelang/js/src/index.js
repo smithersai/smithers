@@ -78,7 +78,7 @@ export * as Sandbox from "@smthrs/sandbox";
 export * as StepCache from "@smthrs/step-cache";
 export * as Sync from "@smthrs/sync";
 export { TimeTravel } from "@smthrs/time-travel";
-export * as Runtime from "#vibelang/emitted/src/Runtime";
+export * as Runtime from "./Runtime.js";
 /**
  * The namespace names this barrel re-exports, sorted.
  *
