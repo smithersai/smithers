@@ -5,12 +5,9 @@ From the app:
 - `pnpm verify`: install the pinned tools if missing, strictly typecheck and freshly verify the production module.
 - `pnpm verify verify/broken/<name>.ts`: demonstrate one executable mutation failing with its function and line.
 - `pnpm verify:broken`: assert every committed mutation fails its intended proof obligation.
-- `pnpm verify verify/findings`: demonstrate the two unchanged-code unrestricted claims failing.
-- `node verify/findings/run.mjs`: execute their counterexamples against production.
 - `pnpm verify verify/bugs/<name>.ts`: reproduce a toolchain lowering defect.
 
 See [decision 0005](../wiki/decisions/0005-formal-verification.md) for the numeric bounds and the exact coverage;
-`verify/findings` is deliberately distinct from `verify/broken`.
 
 `verify:broken` checks fixture freshness and byte-identical annotations, then asks Dafny to check the intended
 function in each full source copy (`--filter-symbol` also selects its generated `_ensures` lemma). Other functions
@@ -25,3 +22,4 @@ runner uses no saved proof artifacts. `python3 verify/mutations.py` regenerates 
 production change; `--check` is read-only and is part of the selftest. Keep executable mutations meaningful and
 never change annotations to make a copy fail. macOS installers support Apple Silicon and Intel but were not run on
 the Linux lane. Versions are LemmaScript 0.6.6 and Dafny 4.11.0; release archives are pinned by SHA-256.
+

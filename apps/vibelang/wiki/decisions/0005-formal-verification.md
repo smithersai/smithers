@@ -1,6 +1,6 @@
 # 0005. Formal verification of the state machine
 
-**Status:** accepted, 2026-11-07; unrestricted reducer-input findings remain open. **Rulings:** VL-9, VL-15.
+**Status:** accepted, 2026-11-07. **Rulings:** VL-9, VL-15.
 
 **Decision.** Two independent layers check the actual `src/core/conversation.ts`:
 
@@ -24,7 +24,7 @@ accepts a saved `.dfy` proof. All eight exported transitions/queries and both ty
 mapped back to TypeScript function names and declaration lines; raw generated locations remain in the diagnostic.
 Summaries, SHA-256 source identities, raw logs and Dafny CSV timings are retained under that run directory.
 
-A measured Linux run on nyc-01 took **17.240 s** including extraction and strict checking (**21 verified, 0 errors**;
+A measured Linux run on nyc-01 took **17.240 s** including extraction and strict checking (**21 verified, 0 errors** at the time; **23** after the fix below;
 16.367 s for extraction plus Dafny). Preceding runs on the identical source took 46.308 s and 56.577 s under contention. These exclude first-time installation and vary
 with contention on the shared server. `nice` is used by the scripts; `CHECK_JOBS` defaults to one for multiple files.
 
@@ -53,24 +53,20 @@ strings use the JavaScript UTF-16 configuration. These are mathematical proofs u
 not enumeration of bounded event histories. Invariant antecedents are explicit: no function claims to repair an
 already-invalid conversation.
 
-## Findings: the unrestricted requested invariants are false
+## Findings, fixed: `apply` accepted two malformed events
 
-Preserving existing behavior prevents claiming the following for **every external event**:
+The proof run found two inputs for which the unrestricted invariants failed, though `decide` never numbers either:
 
-- `apply(empty, { type: "ReplyStarted", seq: 1, id: "" })` leaves `agent = "working"` and `replying = ""`.
-- Two next `Posted` events with `clientId = ""` append two person entries carrying that id. `hasClientId` deliberately
-  never matches the empty sentinel.
+- `apply(empty, { type: "ReplyStarted", seq: 1, id: "" })` left `agent = "working"` with `replying = ""`.
+- Two next `Posted` events with `clientId = ""` appended two person entries carrying that id.
 
-`decide` rejects both inputs, and its contracts prove those guards. The qualified preservation claims above are
-separate from these unrestricted claims; they are not a proof that malformed external events preserve every
-invariant. Unmodified executable copies with the unrestricted contracts are retained in `verify/findings/`:
-`pnpm verify verify/findings` must fail. `node verify/findings/run.mjs` executes concrete counterexamples against the
-production module, including a sequence overflow outside the numeric precondition. The lane leaves behavior intact;
-fixing these direct-event cases needs an explicit change in the reducer's invalid-event behavior.
+`apply` now ignores any creation the sequencer would refuse (an empty client id, or an empty or reused entry id),
+advancing `seq` as it does for every other misfit. The contracts hold for every event without qualification, and two
+more are proved: entry ids stay nonempty and unique. `test/conversation.test.vibe` keeps a regression for each case.
 
 ## Able to fail
 
-The final Linux selftest rejected **36/36** executable mutations in **360.292 s** with two workers; every copy
+The final Linux selftest rejected **40/40** executable mutations in **400.308 s** with two workers; every copy
 strictly typechecked and reached a failed Dafny obligation in its intended function.
 
 `pnpm verify:broken` checks the committed executable mutations in `verify/broken/`. Its generator checks that all
@@ -78,8 +74,7 @@ strictly typechecked and reached a failed Dafny obligation in its intended funct
 must strictly typecheck, reach Dafny, and fail an obligation in its intended function; parser errors, backend type
 errors, timeouts and tool failures do not count. The selftest selects the intended function in each unchanged-contract
 copy; a direct `pnpm verify` on that copy checks every function. The selftest defaults to two workers. Individual failures are reproducible with
-`pnpm verify verify/broken/<name>.ts`. `verify/broken/manifest.json` describes the mutations. These mutations are
-separate from the unchanged-code findings above.
+`pnpm verify verify/broken/<name>.ts`. `verify/broken/manifest.json` describes the mutations.
 
 The verification subset keeps readonly records, string-tagged unions, spread appends and indexed `forall`
 contracts. Lookup loops use an explicit index with loop invariants **inside the loop body**. Decision construction

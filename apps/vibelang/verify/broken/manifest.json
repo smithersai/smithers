@@ -26,8 +26,8 @@
   "apply-client-id": {
     "function": "apply",
     "claim": "nonempty person client ids are unique",
-    "before": "event.text === \"\" || hasClientId(conversation.entries, event.clientId)",
-    "after": "event.text === \"\" || (hasClientId(conversation.entries, event.clientId) && false)"
+    "before": "event.text === \"\" || event.clientId === \"\" || hasClientId(conversation.entries, event.clientId)",
+    "after": "event.text === \"\" || event.clientId === \"\" || (hasClientId(conversation.entries, event.clientId) && false)"
   },
   "apply-phase": {
     "function": "apply",
@@ -44,8 +44,8 @@
   "apply-one-open": {
     "function": "apply",
     "claim": "at most one entry is unfinished",
-    "before": "if (conversation.agent === \"working\") return next",
-    "after": "if (false) return next"
+    "before": "if (conversation.agent === \"working\" || hasEntryId(conversation.entries, event.id)) return next",
+    "after": "if (hasEntryId(conversation.entries, event.id)) return next"
   },
   "apply-open-exists": {
     "function": "apply",
@@ -121,9 +121,9 @@
   },
   "decide-start": {
     "function": "decide",
-    "claim": "accepted start has a nonempty reply id",
-    "before": "if (intent.id === \"\")",
-    "after": "if (false)"
+    "claim": "accepted start has a fresh, nonempty reply id",
+    "before": "      if (intent.id === \"\") return refused(\"not-replying\")\n      if (hasEntryId(conversation.entries, intent.id)) return refused(\"duplicate\")\n      return accepted({ type: \"ReplyStarted\"",
+    "after": "      return accepted({ type: \"ReplyStarted\""
   },
   "decide-busy": {
     "function": "decide",
@@ -136,6 +136,30 @@
     "claim": "accepted post has a nonempty client id and no existing matching client id",
     "before": "intent.clientId === \"\" || hasClientId(conversation.entries, intent.clientId)",
     "after": "hasClientId(conversation.entries, intent.clientId) && false"
+  },
+  "has-entry-id": {
+    "function": "hasEntryId",
+    "claim": "exact entry-id lookup",
+    "before": "if (entries[i]!.id === id) return true",
+    "after": "if (entries[i]!.id === id) return false"
+  },
+  "apply-entry-id": {
+    "function": "apply",
+    "claim": "entry ids stay unique whatever event arrives",
+    "before": "hasClientId(conversation.entries, event.clientId) || hasEntryId(conversation.entries, event.id)) return next",
+    "after": "hasClientId(conversation.entries, event.clientId)) return next"
+  },
+  "apply-empty-client": {
+    "function": "apply",
+    "claim": "person entries never carry an empty client id",
+    "before": "event.text === \"\" || event.clientId === \"\" || hasClientId",
+    "after": "event.text === \"\" || hasClientId"
+  },
+  "decide-entry-id": {
+    "function": "decide",
+    "claim": "an accepted post has a fresh entry id",
+    "before": "if (text.length > MAX_TEXT) return refused(\"too-long\")\n      if (hasEntryId(conversation.entries, intent.id)) return refused(\"duplicate\")",
+    "after": "if (text.length > MAX_TEXT) return refused(\"too-long\")"
   },
   "decide-blank": {
     "function": "decide",

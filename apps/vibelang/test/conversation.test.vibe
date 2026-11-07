@@ -170,6 +170,14 @@ describe("the sequencer", () => {
 })
 
 describe("apply", () => {
+  it("ignores a creation the sequencer would refuse: an empty client id, an empty or reused entry id", () => {
+    const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
+    expect(apply(one, { type: "Posted", seq: 2, id: "m2", clientId: "", name: "Ada", text: "x" })).toEqual({ ...one, seq: 2 })
+    expect(apply(one, { type: "Posted", seq: 2, id: "m1", clientId: "b", name: "Ada", text: "x" })).toEqual({ ...one, seq: 2 })
+    expect(apply(one, { type: "ReplyStarted", seq: 2, id: "" })).toEqual({ ...one, seq: 2 })
+    expect(apply(one, { type: "ReplyStarted", seq: 2, id: "m1" })).toEqual({ ...one, seq: 2 })
+  })
+
   it("ignores an event that isn't the next one", () => {
     const one = apply(empty, { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })
     expect(apply(one, { type: "Posted", seq: 1, id: "m2", clientId: "b", name: "Ada", text: "again" })).toBe(one)
