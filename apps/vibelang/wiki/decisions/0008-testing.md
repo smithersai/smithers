@@ -29,15 +29,26 @@ state and resolve the real close command. Chat retains its docked input while th
 checks real IntersectionObserver viewport intersection and that the final paragraph clears the fixed composer.
 During the next streamed answer a real wheel scroll reaches the top; the scroll offset must stay there through
 completion. Latest must return to the tail and resume following. `app.scene.test.ts` independently checks pausing,
-manual return to the bottom and the Latest action. A follow subscription waits for the render commit; model
-dependencies cancel obsolete scroll work whenever a newer piece arrives or the reader leaves the bottom.
+manual return to the bottom and the Latest action. A follow subscription waits for the render commit. Model dependencies cancel obsolete work; a native intent
+revision also vetoes work that already resumed against the old DOM. The permission check and native scroll run in
+one synchronous operation. Wheel and touch-move listeners are non-passive (without preventing the default action),
+so Chromium dispatches intent before applying its compositor scroll. A passive listener can arrive after a follow
+write changed the offset that the compositor calculated, leaving a 20–56px remainder even if following then stops.
+An unchanged bottom notification from an earlier follow cannot resume after upward intent; downward movement back
+into the bottom or Latest can. Returning through the splash preserves the paused state.
 
 **Scroll ordering regression (lane scrollfix).** `test/scroll.runtime.test.vibe` embeds Foldkit's real update, view
 and subscriptions. Its happy-dom host controls animation-frame delivery and observes attempted native scroll writes
 (happy-dom has no layout). It releases a pending follow, delivers upward wheel intent, then the old follow's bottom
 notification and a fresh reply delta in one host turn. Following must remain paused and no follow write may run.
-This case fails on main 87c54fa7 because the stale bottom notification resumes following before native movement.
-The browser case remains the layout and real wheel-scrolling receipt.
+The original wheel case fails on main 87c54fa7 because the stale bottom notification resumes following before
+native movement. The suite now covers wheel, touch drag, PageUp, Home and ArrowUp in commit-first, intent-first and
+delta-first orderings (15 cases). Each checks subsequent growth while paused and resumption by both downward return
+to the bottom and Latest. `test/viewport.test.ts` independently checks the permission veto while the old rendered
+attribute still says true, paused rendered state, editor keyboard navigation, and splash/palette isolation. The native
+revision is acknowledged even when the model is already on an inactive surface but the old chat DOM remains on
+screen; tests hold this transition gap for both the palette and splash so it cannot strand follow permission.
+The browser case remains the layout and real wheel-scrolling receipt; its assertions and timeout are unchanged.
 
 **Announcements (review 9).** The transcript is the named Conversation `role="log"` with `aria-live="off"`, so
 stream pieces do not repeat the whole answer. Persistent Answer and Connection status regions are polite and atomic.
@@ -70,7 +81,7 @@ Announcements remain accessible while the palette is modal; only the noninteract
 from background isolation. The native closed dialog controls its own accessibility visibility. The browser observes
 all rendered stream states and announcement text changes from before sending, including a completion while the
 palette is open; it requires exactly one completed announcement per answer and no partial answer announcements.
-Upward wheel intent pauses following, and the render's follow attribute guards
-against stale scroll work. Native scroll anchoring is disabled because the app owns following. Splash and palette
+Native upward intent invalidates follow permission before queued scroll work; the render's follow attribute also
+guards paused transcripts. Native scroll anchoring is disabled because the app owns following. Splash and palette
 scrolling do not change chat follow state. Playwright keeps the original three-browser concurrency as files are added,
 so streamed render assertions run under the same browser load; assertion thresholds and timeouts are unchanged.

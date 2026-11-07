@@ -8,7 +8,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.ts"
 import { EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
-import { atBottom } from "./viewport.ts"
+import { transcriptViewport } from "./viewport.ts"
 
 // FLAGS
 
@@ -41,6 +41,8 @@ export schema Model {
   readonly from: number
   /** Follow transcript growth until the reader scrolls away from the bottom. */
   readonly following: boolean
+  /** Native input revision that authorized following; older scheduled work cannot scroll. */
+  readonly followIntent: number
   /** Live regions change only for completed answers and connection transitions. */
   readonly answer: string
   readonly announced: number
@@ -66,7 +68,7 @@ export const Message = defineMessageUnion({
   FailedEvents: { reason: Schema.String },
   ClickedReconnect: {},
   FocusedPrompt: {},
-  ScrolledTranscript: { bottom: Schema.Boolean },
+  ScrolledTranscript: { bottom: Schema.Boolean, intent: Schema.optionalKey(Schema.Number) },
   ClickedLatest: {},
 })
 export type Message = typeof Message.Type
@@ -89,6 +91,7 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       epoch: 0,
       from: 0,
       following: true,
+      followIntent: 0,
       answer: "",
       announced: 0,
       connection: "",
@@ -104,7 +107,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ClickedAsk: () => openPalette(model, true),
     PressedEscape: () => model.palette ? openPalette(model, false) : { model },
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
-    ClickedChat: () => hasConversation(model) ? { model: { ...model, surface: "chat", following: true } } : { model },
+    ClickedChat: () => hasConversation(model) ? { model: { ...model, surface: "chat" } } : { model },
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
@@ -129,10 +132,13 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
     ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq }, commands: [FocusComposer({})] }),
     FocusedPrompt: () => ({ model }),
-    ScrolledTranscript: ({ bottom }) => {
-      if (model.surface !== "chat" || model.palette) return { model }
+    ScrolledTranscript: ({ bottom, intent = model.followIntent }) => {
+      if (intent < model.followIntent) return { model }
+      // The native handler can see the old chat DOM while a surface transition awaits its render. Acknowledge
+      // its revision even when that surface ignores the position, or future follows would keep an obsolete token.
+      if (model.surface !== "chat" || model.palette) return { model: { ...model, followIntent: intent } }
       return {
-        model: { ...model, following: bottom },
+        model: { ...model, following: bottom, followIntent: intent },
       }
     },
     ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FocusComposer({})] }),
@@ -237,6 +243,9 @@ export function keyMessage(key: string, meta: boolean, control: boolean): Option
 
 /** The app's subscriptions: the keyboard on `keys` (the document, in a browser) and the conversation's events. */
 export function subscriptions(keys: EventTarget, page?: Document) {
+  const viewport = transcriptViewport(page)
+  const scrolled = (value: { bottom: boolean; intent: number } | undefined) =>
+    value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
   return Subscription.make<Model, Message, Factory>()((entry) => ({
     keyboard: Subscription.persistentEntry(
       Dom.streamFromEventFilterMapPreventDefault({
@@ -253,33 +262,56 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       Dom.streamFromEventFilterMap({
         target: keys,
         type: "wheel",
-        options: { passive: true },
-        filterMapEvent: (event: Event) => (event as WheelEvent).deltaY < 0 ? Option.some(Message.ScrolledTranscript({ bottom: false })) : Option.none(),
+        // Let the browser dispatch intent before its default scroll. A passive wheel listener can arrive after
+        // the compositor has applied an offset computed before a pending follow write.
+        options: { passive: false, capture: true },
+        filterMapEvent: (event: Event) => scrolled(viewport.wheel(event as WheelEvent)),
       }),
     ),
-    scroll: entry(
-      { active: Schema.Boolean },
-      {
-        modelToDependencies: (model: Model) => ({ active: model.surface === "chat" && !model.palette }),
-        dependenciesToStream: ({ active }) => Stream.when(
-          Dom.streamFromEvent({ target: keys, type: "scroll", mapEvent: () => Message.ScrolledTranscript({ bottom: page ? atBottom(page) : true }) }),
-          sync(() => active),
-        ),
-      },
+    pageKeys: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: keys, type: "keydown", options: { capture: true },
+        filterMapEvent: (event: Event) => scrolled(viewport.key(event as KeyboardEvent)),
+      }),
     ),
-    // Only the latest transcript position matters. Model dependencies cancel obsolete scroll work before rendering.
+    touchStart: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: keys, type: "touchstart", options: { passive: true },
+        filterMapEvent: (event: Event) => { viewport.touchStart(event as TouchEvent); return Option.none() },
+      }),
+    ),
+    touchMove: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: keys, type: "touchmove", options: { passive: false, capture: true },
+        filterMapEvent: (event: Event) => scrolled(viewport.touchMove(event as TouchEvent)),
+      }),
+    ),
+    touchEnd: Subscription.persistentEntry(
+      Stream.merge(
+        Dom.streamFromEventFilterMap({ target: keys, type: "touchend", filterMapEvent: () => { viewport.touchEnd(); return Option.none() } }),
+        Dom.streamFromEventFilterMap({ target: keys, type: "touchcancel", filterMapEvent: () => { viewport.touchEnd(); return Option.none() } }),
+      ),
+    ),
+    scroll: Subscription.persistentEntry(
+      Dom.streamFromEventFilterMap({
+        target: keys, type: "scroll", filterMapEvent: () => scrolled(viewport.scrolled()),
+      }),
+    ),
+    // Dependency cancellation removes obsolete work; the native intent revision also vetoes already-resumed work.
     follow: entry(
-      { active: Schema.Boolean, seq: Schema.Number, sent: Schema.Number, stream: Schema.String },
+      { active: Schema.Boolean, intent: Schema.Number, seq: Schema.Number, sent: Schema.Number, stream: Schema.String },
       {
         modelToDependencies: (model: Model) => ({
           active: model.surface === "chat" && model.following && !model.palette,
+          intent: model.followIntent,
           seq: model.client.conversation.seq,
           sent: model.sent,
           stream: model.stream,
         }),
-        dependenciesToStream: ({ active }) => Stream.when(
+        dependenciesToStream: ({ active, intent }) => Stream.when(
           Stream.drain(Stream.fromEffect(effect {
-            Dom.scrollIntoView("[data-following='true'] #vl-newest", { block: "end" }) catch () => undefined
+            try Render.afterCommit
+            try sync(() => viewport.follow(intent))
           })),
           sync(() => active),
         ),

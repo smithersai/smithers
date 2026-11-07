@@ -3,6 +3,8 @@
 import { vi } from "vitest"
 import type { Message } from "../../src/web/main.vibe"
 
+export type UpwardInput = "wheel" | "touch" | "PageUp" | "Home" | "ArrowUp"
+
 export function scrollHost() {
   const node = document.createElement("div")
   node.id = "scroll-runtime"
@@ -11,6 +13,10 @@ export function scrollHost() {
   const frames = new Map<number, FrameRequestCallback>()
   let intent = false
   let scrolls = 0
+  let y = 600
+  const position = vi.spyOn(window, "scrollY", "get").mockImplementation(() => y)
+  const height = vi.spyOn(document.documentElement, "scrollHeight", "get").mockReturnValue(1000)
+  const viewport = vi.spyOn(document.documentElement, "clientHeight", "get").mockReturnValue(400)
   const raf = vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(callback => {
     const id = ++next
     frames.set(id, callback)
@@ -18,12 +24,23 @@ export function scrollHost() {
   })
   const cancel = vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(id => { frames.delete(id) })
   const scroll = vi.spyOn(Element.prototype, "scrollIntoView").mockImplementation(() => { if (intent) scrolls++ })
+  const scrolled = () => { document.dispatchEvent(new Event("scroll")) }
   return {
     node,
     page: document,
     target: node as EventTarget,
-    up: () => { document.dispatchEvent(new WheelEvent("wheel", { deltaY: -10000, bubbles: true })) },
-    scrolled: () => { document.dispatchEvent(new Event("scroll")) },
+    up: (kind: UpwardInput = "wheel") => {
+      if (kind === "wheel") document.dispatchEvent(new WheelEvent("wheel", { deltaY: -10000, bubbles: true }))
+      else if (kind === "touch") {
+        const start = new Touch({ identifier: 1, target: node, clientY: 100 })
+        const move = new Touch({ identifier: 1, target: node, clientY: 200 })
+        document.dispatchEvent(new TouchEvent("touchstart", { touches: [start], bubbles: true }))
+        document.dispatchEvent(new TouchEvent("touchmove", { touches: [move], bubbles: true }))
+      } else document.dispatchEvent(new KeyboardEvent("keydown", { key: kind, bubbles: true }))
+    },
+    scrolled,
+    moveTo: (value: number) => { y = value; scrolled() },
+    latest: () => { document.querySelector<HTMLButtonElement>(".vl-latest")!.click() },
     emit: (message: Message) => { node.dispatchEvent(new CustomEvent("delta", { detail: message })) },
     message: (event: Event): Message => (event as CustomEvent<Message>).detail,
     pending: () => frames.size,
@@ -34,6 +51,9 @@ export function scrollHost() {
     },
     markIntent: () => { intent = true },
     scrollsAfterIntent: () => scrolls,
-    dispose: () => { raf.mockRestore(); cancel.mockRestore(); scroll.mockRestore(); node.remove() },
+    dispose: () => {
+      raf.mockRestore(); cancel.mockRestore(); scroll.mockRestore()
+      position.mockRestore(); height.mockRestore(); viewport.mockRestore(); node.remove()
+    },
   }
 }
