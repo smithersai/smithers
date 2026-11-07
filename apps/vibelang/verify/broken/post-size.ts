@@ -9,7 +9,8 @@
 // event it already has, and marks a gap when it misses one, so a reconnect replays from its last `seq`.
 //
 // Plain TypeScript with no Effect code, so the formal checks (wiki/decisions/0005-formal-verification.md) and the
-// property tests (test/conversation.test.ts) read these functions directly.
+// property tests (test/conversation.test.ts) read these functions directly. Every exported function is total and
+// says so with `@throws {never}`, so Effect code calls them directly.
 
 /** Who wrote an entry. */
 export type Author = "person" | "agent"
@@ -76,6 +77,7 @@ export const AGENT_NAME = "VibeLang agent"
  * The conversation after `event`. An event other than the next one (`seq + 1`) changes nothing. The next one always
  * advances `seq`, even when its content doesn't fit the state, so one bad event can't stall every later one; the
  * sequencer never numbers such an event (`decide`).
+ * @throws {never}
  */
 // Invariant preservation is stated as implication, so sequence checks cover arbitrary records.
 // A creation the sequencer would refuse (empty client id, empty or reused entry id) only advances seq.
@@ -171,14 +173,20 @@ export function apply(conversation: Conversation, event: Event): Conversation {
   }
 }
 
-/** Whether a reply with this id streams now. */
+/**
+ * Whether a reply with this id streams now.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result == (conversation.agent == "working" && conversation.replying == id && id != "")
 export function isReplying(conversation: Conversation, id: string): boolean {
   return conversation.agent === "working" && conversation.replying === id && id !== ""
 }
 
-/** Whether a person's entry already carries `clientId`. `""` never matches. */
+/**
+ * Whether a person's entry already carries `clientId`. `""` never matches.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result == (clientId != "" && exists(i, 0 <= i && i < entries.length && entries[i].clientId == clientId))
 export function hasClientId(entries: ReadonlyArray<Entry>, clientId: string): boolean {
@@ -194,7 +202,10 @@ export function hasClientId(entries: ReadonlyArray<Entry>, clientId: string): bo
   return false
 }
 
-/** Whether an entry already has `id`. `""` always counts as taken, so no entry is created without an id. */
+/**
+ * Whether an entry already has `id`. `""` always counts as taken, so no entry is created without an id.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result == (id == "" || exists(i, 0 <= i && i < entries.length && entries[i].id == id))
 export function hasEntryId(entries: ReadonlyArray<Entry>, id: string): boolean {
@@ -210,7 +221,10 @@ export function hasEntryId(entries: ReadonlyArray<Entry>, id: string): boolean {
   return false
 }
 
-/** Whether this is a person's post with no reply yet, including finished or failed replies. */
+/**
+ * Whether this is a person's post with no reply yet, including finished or failed replies.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result == (id != "" && exists(i, 0 <= i && i < entries.length && entries[i].author == "person" && entries[i].id == id) && forall(i, 0 <= i && i < entries.length && entries[i].author == "agent" ==> entries[i].inReplyTo != id))
 export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
@@ -267,6 +281,7 @@ function refused(refusal: Refusal): Decision {
 /**
  * The event that records `intent` as the next one, or a refusal. Every event it returns is one `apply` takes as is:
  * applying it changes the conversation the way its type says.
+ * @throws {never}
  */
 //@ verify
 //@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
@@ -333,7 +348,10 @@ export interface Client {
 /** A client that has seen nothing. */
 export const newClient: Client = { conversation: empty, pending: [], gap: false }
 
-/** The client after it sends a post, shown as pending until its event arrives. A blank post changes nothing. */
+/**
+ * The client after it sends a post, shown as pending until its event arrives. A blank post changes nothing.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result.conversation == client.conversation && \result.gap == client.gap
 //@ ensures \result.pending.length == client.pending.length || \result.pending.length == client.pending.length + 1
@@ -355,7 +373,10 @@ export function post(client: Client, clientId: string, text: string): Client {
   return { ...client, pending: [...client.pending, { clientId, text: trimmed, error: "" }, { clientId: clientId + "!", text: trimmed, error: "" }] }
 }
 
-/** The client after sending its post failed; the post stays, marked with why. */
+/**
+ * The client after sending its post failed; the post stays, marked with why.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result.conversation == client.conversation && \result.gap == client.gap
 //@ ensures \result.pending.length == client.pending.length
@@ -369,7 +390,10 @@ export function failPost(client: Client, clientId: string, reason: string): Clie
   }
 }
 
-/** Retry the same pending post identity, preserving the optimistic message until confirmation. */
+/**
+ * Retry the same pending post identity, preserving the optimistic message until confirmation.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures \result.conversation == client.conversation && \result.gap == client.gap
 //@ ensures \result.pending.length == client.pending.length
@@ -383,6 +407,7 @@ export function retryPost(client: Client, clientId: string): Client {
 /**
  * The client after an event arrives. One it already has changes nothing; one past the next marks a gap and changes
  * nothing else; the next one is applied, and a post it confirms leaves `pending`.
+ * @throws {never}
  */
 //@ verify
 //@ requires 0 <= client.conversation.seq && client.conversation.seq < 9007199254740991
@@ -399,7 +424,10 @@ export function receive(client: Client, event: Event): Client {
   return { conversation, pending, gap: false }
 }
 
-/** The client after it replays from `conversation.seq`: the gap closes so the replay's events apply. */
+/**
+ * The client after it replays from `conversation.seq`: the gap closes so the replay's events apply.
+ * @throws {never}
+ */
 //@ verify
 //@ ensures !\result.gap
 //@ ensures \result.conversation == client.conversation && \result.pending == client.pending
