@@ -6,7 +6,7 @@ import * as NodePath from "node:path"
 import * as Vm from "node:vm"
 import { afterEach, beforeEach, describe, expect, it } from "vitest"
 import * as Input from "../src/Input.ts"
-import * as ModelEngine from "../src/ModelEngine.ts"
+import * as ModelEngine from "../src/ModelEngine.vibe"
 import {
   assertPackageName,
   diffFields,

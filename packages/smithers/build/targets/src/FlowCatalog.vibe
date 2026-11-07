@@ -19,7 +19,7 @@
 
 import * as Schema from "effect/Schema"
 import type * as Flow from "./Flow.ts"
-import * as Home from "./Home.ts"
+import * as Home from "./Home.vibe"
 
 /**
  * The entry file a flow was discovered from: a `flow.ts` module, a

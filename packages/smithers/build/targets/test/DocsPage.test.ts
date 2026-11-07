@@ -6,7 +6,7 @@ import * as Filegroup from "../src/Filegroup.ts"
 import * as Input from "../src/Input.ts"
 import * as Smithers from "../src/Smithers.ts"
 import * as Target from "../src/Target.ts"
-import * as Verb from "../src/Verb.ts"
+import * as Verb from "../src/Verb.vibe"
 import { plannedCalls } from "./plan.ts"
 
 const context: Target.ImplementationContext = { sourceFile: undefined, packageDirectory: "apps/site" }

@@ -6,7 +6,7 @@
 
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
-import { ExecIrreversible } from "./Changesets.ts"
+import { ExecIrreversible } from "./Changesets.vibe"
 import * as Exec from "./Exec.ts"
 import * as Input from "./Input.ts"
 import * as Secret from "./Secret.ts"

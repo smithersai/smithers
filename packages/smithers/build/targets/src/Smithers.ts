@@ -25,16 +25,16 @@ import * as DependencyDocs from "./DependencyDocs.ts"
 import * as DocsCheckModule from "./DocsCheck.ts"
 import * as DocsPageModule from "./DocsPage.ts"
 import * as FactoryModule from "./Factory.ts"
-import * as HomeModule from "./Home.ts"
+import * as HomeModule from "./Home.vibe"
 import * as InputModule from "./Input.ts"
-import { Mise as MiseSurface } from "./Mise.ts"
+import { Mise as MiseSurface } from "./Mise.vibe"
 import * as NodeArtifactModule from "./NodeArtifact.ts"
 import * as NpmTargetModule from "./NpmTarget.ts"
 import * as OwnersModule from "./Owners.ts"
 import * as PackageManagerModule from "./PackageManager.ts"
 import * as RuntimeModule from "./Runtime.ts"
 import * as RustToolchainModule from "./RustToolchain.ts"
-import * as VerbModule from "./Verb.ts"
+import * as VerbModule from "./Verb.vibe"
 import * as WorkspaceDeclarationModule from "./WorkspaceDeclaration.ts"
 
 /**
@@ -99,9 +99,9 @@ export { Workspace } from "./WorkspaceDeclaration.ts"
 /** @category constructors @since 0.1.0 */
 export { Cache, Flags, Host, Sandbox, Sandboxes } from "./WorkspaceDeclaration.ts"
 /** @category constructors @since 0.1.0 */
-export { make as LocalRepository } from "./LocalRepository.ts"
+export { make as LocalRepository } from "./LocalRepository.vibe"
 /** @category constructors @since 1.0.0 */
-export { Mount, Mounts } from "./Mount.ts"
+export { Mount, Mounts } from "./Mount.vibe"
 /** @category constructors @since 0.1.0 */
 export { Package } from "./Package.ts"
 
@@ -216,7 +216,7 @@ export { Flow } from "./Flow.ts"
 /** @category guards @since 1.0.0 */
 export { isFlowDeclaration } from "./Flow.ts"
 /** @category errors @since 1.0.0 */
-export { FlowCatalogError } from "./FlowCatalog.ts"
+export { FlowCatalogError } from "./FlowCatalog.vibe"
 /** @category targets @since 1.0.0 */
 export { Lifecycle } from "./Factory.ts"
 
@@ -228,7 +228,7 @@ export { FactoryProjectionAction, FactoryProjectionError } from "./Factory.ts"
 /** @category guards @since 1.0.0 */
 export { isFactoryDeclaration } from "./Factory.ts"
 /** @category guards @since 1.0.0 */
-export { isHomeDeclaration } from "./Home.ts"
+export { isHomeDeclaration } from "./Home.vibe"
 /** @category actions @since 0.1.0 */
 /** @category parsing @since 0.1.0 */
 export * as GithubWorkflow from "./GithubWorkflow.ts"
@@ -248,7 +248,7 @@ export { JevLint } from "./JevLint.ts"
 /** @category actions @since 1.0.0 */
 export { JevReview } from "./JevLint.ts"
 /** @category macros @since 1.0.0 */
-export { SecurityReview } from "./SecurityReview.ts"
+export { SecurityReview } from "./SecurityReview.vibe"
 /** @category targets @since 0.1.0 */
 export { Clean } from "./Compose.ts"
 /** @category targets @since 0.1.0 */

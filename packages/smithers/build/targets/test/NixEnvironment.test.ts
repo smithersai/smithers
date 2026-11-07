@@ -15,7 +15,7 @@ import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
 import { Secret } from "../src/Secret.ts"
 import * as Target from "../src/Target.ts"
-import * as Verb from "../src/Verb.ts"
+import * as Verb from "../src/Verb.vibe"
 import * as WorkspaceDeclaration from "../src/WorkspaceDeclaration.ts"
 
 const flake = Input.file("//flake.nix")

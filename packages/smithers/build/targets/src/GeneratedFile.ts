@@ -22,7 +22,7 @@ import * as Fs from "node:fs/promises"
 import * as NodePath from "node:path"
 import * as NodeUtil from "node:util/types"
 import * as Input from "./Input.ts"
-import { PublicationFileSystem } from "./internal/PublicationFileSystem.ts"
+import { PublicationFileSystem } from "./internal/PublicationFileSystem.vibe"
 import * as SafeFs from "./SafeFs.ts"
 
 /**

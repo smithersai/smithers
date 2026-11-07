@@ -33,7 +33,7 @@ import * as RemoteCache from "./RemoteCache.ts"
 import * as RustToolchain from "./RustToolchain.ts"
 import * as Secret from "./Secret.ts"
 import * as Target from "./Target.ts"
-import * as Verb from "./Verb.ts"
+import * as Verb from "./Verb.vibe"
 
 /**
  * How a CI workflow target treats its output file.

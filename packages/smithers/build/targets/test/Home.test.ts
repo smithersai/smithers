@@ -9,7 +9,7 @@
  */
 import * as Views from "@smthrs/views"
 import { describe, expect, it } from "vitest"
-import * as Home from "../src/Home.ts"
+import * as Home from "../src/Home.vibe"
 
 describe("the home blocks", () => {
   it("declare frozen plain values that carry their type", () => {

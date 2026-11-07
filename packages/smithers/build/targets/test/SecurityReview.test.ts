@@ -5,7 +5,7 @@ import { describe, expect, it } from "vitest"
 import { Smithers } from "../src/index.ts"
 import * as Input from "../src/Input.ts"
 import type * as LlmLint from "../src/LlmLint.ts"
-import * as SecurityReview from "../src/SecurityReview.ts"
+import * as SecurityReview from "../src/SecurityReview.vibe"
 import * as Target from "../src/Target.ts"
 
 const check: SecurityReview.Check = {
@@ -394,7 +394,7 @@ describe("SecurityReview path validation", () => {
   })
 
   it("derives the root from the declaring PACKAGE.ts and checks its paths", async () => {
-    const source = NodePath.resolve(import.meta.dirname, "../src/SecurityReview.ts")
+    const source = NodePath.resolve(import.meta.dirname, "../src/SecurityReview.vibe")
     const declaration = (cwd: string, context: string) =>
       `import { SecurityReview } from ${JSON.stringify(source)}\n` +
       `export const targets = () => SecurityReview({ cwd: ${JSON.stringify(cwd)}, checks: [], ` +

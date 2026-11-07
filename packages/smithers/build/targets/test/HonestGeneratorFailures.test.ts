@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, expect, it } from "vitest"
 import * as Compose from "../src/Compose.ts"
 import * as Exec from "../src/Exec.ts"
-import { PublicationFileSystem } from "../src/internal/PublicationFileSystem.ts"
+import { PublicationFileSystem } from "../src/internal/PublicationFileSystem.vibe"
 
 let root: string
 const retained: Array<string> = []
