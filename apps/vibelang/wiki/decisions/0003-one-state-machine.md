@@ -9,7 +9,8 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
                    event #seq ──receive──▶ client             every copy: browsers, CLI, MCP
 ```
 
-- `decide` is the only writer: it numbers the next event (`seq = last + 1`) or refuses with a reason.
+- `decide` is the only writer: it numbers the next event (`seq = last + 1`) or refuses with a reason. `Post` and
+  `StartReply` require a nonempty entry id that has never appeared in this conversation, including finished replies.
 - `apply` is shared: every copy applies the same numbered events in order. A stale event changes nothing; the next one
   always advances `seq`.
 - `receive` adds a client's view: posts it sent that no event has confirmed (`pending`), and `gap` when an event
@@ -20,5 +21,11 @@ intent ──decide──▶ event #seq ──apply──▶ conversation       
 invalid states can't be represented and the rules live in one module that tests and provers read directly.
 
 **Invariants** (0005 proves them): `seq` counts up by one with no gaps; the agent is `working` exactly when a reply is
-open, and only that reply is unfinished; entries are ordered by `seq`; a client id appears at most once; a client that
-sees any order of duplicates and gaps converges on the sequencer's conversation.
+open, and only that reply is unfinished; entries are ordered by `seq`; entry ids are nonempty and unique; a client id
+appears at most once; an event preserves every unrelated entry. The property suite checks these after every accepted
+intent, with a retained regression for a reply reusing a person's or a finished reply's id.
+
+**Gap recovery property.** Deliveries may duplicate, reorder or omit events, with the final numbered event eventually
+delivered. Only `receive` setting `gap` requests replay from the client's last applied `seq`; the harness never forces
+a final replay. An entirely silent missing tail needs reconnect, covered by the surface/runtime tests. A receive
+mutation that never flags gaps must fail convergence for `Posted #1, ReplyStarted #2` delivered as `[1]`.

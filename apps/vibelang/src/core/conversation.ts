@@ -173,6 +173,8 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
       const text = intent.text.trim()
       if (text === "") return { ok: false, refusal: "empty" }
       if (text.length > MAX_TEXT) return { ok: false, refusal: "too-long" }
+      if (intent.id === "") return { ok: false, refusal: "duplicate" }
+      for (const entry of conversation.entries) if (entry.id === intent.id) return { ok: false, refusal: "duplicate" }
       if (intent.clientId === "" || hasClientId(conversation.entries, intent.clientId)) {
         return { ok: false, refusal: "duplicate" }
       }
@@ -184,6 +186,7 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
     case "StartReply":
       if (conversation.agent === "working") return { ok: false, refusal: "busy" }
       if (intent.id === "") return { ok: false, refusal: "not-replying" }
+      for (const entry of conversation.entries) if (entry.id === intent.id) return { ok: false, refusal: "duplicate" }
       return { ok: true, event: { type: "ReplyStarted", seq, id: intent.id } }
     case "AppendReply":
       if (!isReplying(conversation, intent.id)) return { ok: false, refusal: "not-replying" }

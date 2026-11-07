@@ -55,6 +55,8 @@ function invariant(state: Conversation): boolean {
   const open = state.entries.filter((entry) => !entry.done)
   if (working ? open.length !== 1 || open[0]!.id !== state.replying : open.length !== 0) return false
   for (let i = 1; i < state.entries.length; i++) if (state.entries[i - 1]!.seq >= state.entries[i]!.seq) return false
+  const ids = state.entries.map((entry) => entry.id)
+  if (ids.some((id) => id === "") || new Set(ids).size !== ids.length) return false
   const clientIds = state.entries.filter((entry) => entry.author === "person").map((entry) => entry.clientId)
   if (clientIds.some((id) => id === "") || new Set(clientIds).size !== clientIds.length) return false
   return state.entries.every((entry) => entry.seq <= state.seq)
@@ -62,6 +64,12 @@ function invariant(state: Conversation): boolean {
 
 /** Whether `after` is `before` with `event`'s whole effect: a new entry, a longer reply, or the agent's new phase. */
 function hasEffect(before: Conversation, event: Event, after: Conversation): boolean {
+  // An event can only change its own entry; all earlier, unrelated entries survive byte for byte.
+  for (let i = 0; i < before.entries.length; i++) {
+    const entry = before.entries[i]!
+    if (entry.id !== event.id && JSON.stringify(after.entries[i]) !== JSON.stringify(entry)) return false
+    if ((event.type === "Posted" || event.type === "ReplyStarted") && entry.id === event.id) return false
+  }
   const grew = after.entries.length === before.entries.length + 1
   const reply = after.entries.find((entry) => entry.id === event.id)
   switch (event.type) {
@@ -135,6 +143,20 @@ describe("the sequencer", () => {
     expect(decide(empty, { type: "Post", id: "m1", clientId: "", name: "Ada", text: "hi" })).toEqual({ ok: false, refusal: "duplicate" })
   })
 
+  it("refuses empty and reused entry ids for posts and replies without overwriting history", () => {
+    const original: Intent = { type: "Post", id: "same", clientId: "a", name: "Ada", text: "original" }
+    const { state } = run([original])
+    for (const id of ["", "same"]) {
+      expect(decide(state, { type: "Post", id, clientId: "b", name: "Grace", text: "new" }).ok).toBe(false)
+      expect(decide(state, { type: "StartReply", id }).ok).toBe(false)
+    }
+    const finished = run([original, { type: "StartReply", id: "reply" }, { type: "FinishReply", id: "reply" }]).state
+    expect(decide(finished, { type: "StartReply", id: "reply" }).ok).toBe(false)
+    expect(decide(finished, { type: "Post", id: "reply", clientId: "b", name: "Grace", text: "new" }).ok).toBe(false)
+    const attacked = run([original, { type: "StartReply", id: "same" }, { type: "AppendReply", id: "same", text: " agent reply" }, { type: "FailReply", id: "same", reason: "oops" }])
+    expect(attacked.state.entries).toEqual(state.entries)
+  })
+
   it("takes one reply at a time", () => {
     const started = apply(empty, { type: "ReplyStarted", seq: 1, id: "r1" })
     expect(decide(started, { type: "StartReply", id: "r2" })).toEqual({ ok: false, refusal: "busy" })
@@ -169,24 +191,49 @@ const deliveries = Arbitrary.all({
   order: Arbitrary.array(Arbitrary.map(Arbitrary.schema(Schema.Int), (n) => Math.abs(n) % 61), { maxLength: 120 }),
 })
 
-/** A client fed `order` from `log`, replaying from its last seq whenever it notices a gap, then to the end. */
-function deliver(log: ReadonlyArray<Event>, order: ReadonlyArray<number>): Client {
+/** A client fed `order` from `log`, replaying from its last seq whenever it notices a gap, with the final event eventually delivered. */
+function deliver(log: ReadonlyArray<Event>, order: ReadonlyArray<number>, suppressGap = false): Client {
   let client = newClient
+  // Mutation control: suppress only the protocol's gap signal, retaining its other receive behavior.
+  const receiveEvent = (client: Client, event: Event): Client => {
+    const next = receive(client, event)
+    return suppressGap ? { ...next, gap: false } : next
+  }
   const replay = () => {
     client = resume(client)
-    for (const event of log) client = receive(client, event)
+    for (const event of log) client = receiveEvent(client, event)
   }
   for (const index of order) {
     const event = log[index]
     if (event === undefined) continue
-    client = receive(client, event)
+    client = receiveEvent(client, event)
     if (client.gap) replay()
   }
-  replay()
+  const last = log[log.length - 1]
+  if (last !== undefined) {
+    client = receiveEvent(client, last)
+    if (client.gap) replay()
+  }
   return client
 }
 
 describe("a client", () => {
+  it("detects the receive mutation that never requests replay", () => {
+    const { state, log } = run([
+      { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "hi" },
+      { type: "StartReply", id: "r1" },
+    ])
+    expect(deliver(log, [1], true).conversation).not.toEqual(state)
+  })
+
+  it("requests gap replay through receive when only the final event is delivered", () => {
+    const { state, log } = run([
+      { type: "Post", id: "m1", clientId: "a", name: "Ada", text: "hi" },
+      { type: "StartReply", id: "r1" },
+    ])
+    expect(deliver(log, [1]).conversation).toEqual(state)
+  })
+
   it.effect("converges on the sequencer's conversation whatever order, duplicates or gaps it sees", () =>
     holds(deliveries, ({ list, order }) => {
       const { state, log } = run(list)
