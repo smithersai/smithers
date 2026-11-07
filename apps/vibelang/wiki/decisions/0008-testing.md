@@ -24,3 +24,10 @@ specific palette or docked input's focus before typing, assert its value, and aw
 navigating to it. A focus assertion on the shared accessible name alone can accidentally accept the outgoing input.
 The dialog stays mounted so `Dom.closeDialog` can release isolation and restore its opener; scenes assert its closed
 accessibility state and resolve the real close command. Chat retains its docked input while the palette is open.
+
+**Scroll regressions (review 7).** `e2e/scroll.spec.ts` submits an answer and four follow-ups in each viewport. It
+checks real IntersectionObserver viewport intersection and that the final paragraph clears the fixed composer.
+During the next streamed answer a real wheel scroll reaches the top; the scroll offset must stay there through
+completion. Latest must return to the tail and resume following. `app.scene.test.ts` independently checks pausing,
+manual return to the bottom, the Latest action and cancellation of pending scroll commands. Scroll commands wait for
+the render commit and are cancelled when the reader leaves the bottom, including commands queued by earlier pieces.

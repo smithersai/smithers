@@ -100,7 +100,9 @@ function chat(model: Model, h: H): Html {
           ]),
         ])]
         : []),
+      h.div([h.Id("vl-newest"), h.AriaHidden(true)], []),
     ]),
+    ...(!model.following ? [h.button([h.Class("sui-msg-scroller-jump vl-latest"), h.Type("button"), h.AriaLabel("Latest"), h.OnClick(Message.ClickedLatest())], ["↓"])] : []),
     composer(model, h),
   ])
 }

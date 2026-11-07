@@ -2,7 +2,7 @@
 import { Command, click, expect, given, placeholder, role, scene, Subscription, text, type } from "foldkit/scene"
 import { describe, test } from "vitest"
 import { newClient } from "../src/core/conversation.ts"
-import { ShowPalette, ClosePalette, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
+import { ShowPalette, ClosePalette, FollowLatest, HOME_CONVERSATION, Message, type Model, PostMessage, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.ts"
 
 const home: Model = {
@@ -18,6 +18,7 @@ const home: Model = {
   stream: "closed",
   epoch: 0,
   from: 0,
+  following: true,
 }
 
 describe("the splash", () => {
@@ -43,8 +44,9 @@ describe("the splash", () => {
       expect(role("dialog", { name: "Ask the agent" })).toExist(),
       type(placeholder("Ask about VibeLang, or describe what to change"), "How do I install it?"),
       click(role("button", { name: "Send" })),
-      Command.expectExact(PostMessage({ conversation: HOME_CONVERSATION, clientId: "s1-1", name: "Ada", text: "How do I install it?" }), ClosePalette({ dock: true })),
+      Command.expectExact(PostMessage({ conversation: HOME_CONVERSATION, clientId: "s1-1", name: "Ada", text: "How do I install it?" }), ClosePalette({ dock: true }), FollowLatest({})),
       Command.resolve(ClosePalette, Message.FocusedPrompt()),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
       Command.resolve(PostMessage, Message.SucceededPost({ clientId: "s1-1" })),
       expect(role("dialog", { name: "Ask the agent" })).toHaveAttr("aria-hidden", "true"),
       expect(role("button", { name: "Expand the VibeLang home page" })).toExist(),
@@ -72,12 +74,36 @@ describe("the chat", () => {
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "s1-1", name: "Ada", text: "hi" } })),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 2, id: "r1" } })),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
       expect(role("status", { name: "Thinking" })).toExist(),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 3, id: "r1", text: "Use `npm create`" } })),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
       expect(text("npm create")).toExist(),
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFinished", seq: 4, id: "r1" } })),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
       expect(text("VibeLang agent")).toExist(),
+    )
+  })
+
+  test("scrolling up pauses following; Latest follows the transcript again", () => {
+    scene(
+      { update, view },
+      given(chatting),
+      Subscription.emit(Message.ScrolledTranscript({ bottom: false })),
+      Command.resolve(FollowLatest.Interrupt(() => Message.CompletedCancelFollowLatest()), Message.CompletedCancelFollowLatest()),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "other", name: "Grace", text: "hi" } })),
+      Command.expectNone(),
+      expect(role("button", { name: "Latest" })).toExist(),
+      click(role("button", { name: "Latest" })),
+      Command.expectExact(FollowLatest({})),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
+      expect(role("button", { name: "Latest" })).toBeAbsent(),
+      Subscription.emit(Message.ScrolledTranscript({ bottom: false })),
+      Command.resolve(FollowLatest.Interrupt(() => Message.CompletedCancelFollowLatest()), Message.CompletedCancelFollowLatest()),
+      Subscription.emit(Message.ScrolledTranscript({ bottom: true })),
+      expect(role("button", { name: "Latest" })).toBeAbsent(),
     )
   })
 
@@ -108,6 +134,7 @@ describe("the chat", () => {
       click(role("button", { name: "Expand the VibeLang home page" })),
       expect(role("heading", { name: "VibeLang" })).toExist(),
       click(role("button", { name: "Chat" })),
+      Command.resolve(FollowLatest, Message.ScrolledLatest()),
       expect(text("hi")).toExist(),
     )
   })

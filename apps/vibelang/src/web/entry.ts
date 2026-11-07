@@ -20,7 +20,7 @@ const application = Runtime.makeApplication({
   init,
   update,
   view,
-  subscriptions: subscriptions(document),
+  subscriptions: subscriptions(document, document),
   viewTransition,
   resources: MockFactory,
   container: document.getElementById("root")!,

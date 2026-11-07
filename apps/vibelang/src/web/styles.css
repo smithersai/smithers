@@ -94,3 +94,8 @@ button { font: inherit; }
 @media (prefers-reduced-motion: reduce) {
   ::view-transition-group(*), ::view-transition-old(*), ::view-transition-new(*) { animation: none !important; }
 }
+
+/* Keep the transcript's tail above the fixed composer, and make the return control reachable. */
+.sui-chat-messages { overflow-anchor: none; }
+#vl-newest { scroll-margin-bottom: 156px; }
+.vl-latest { position: fixed; bottom: 150px; z-index: 31; }
