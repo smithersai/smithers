@@ -1,5 +1,5 @@
 import * as BunCrypto from "@effect/platform-bun/BunCrypto"
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import { NodeWS } from "@effect/platform-node"
 import * as ControlExecutor from "@smthrs/control/ControlExecutor"
 import * as ControlLive from "@smthrs/control/ControlLive"
 import * as ScopedToken from "@smthrs/control/ScopedToken"

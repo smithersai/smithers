@@ -26,7 +26,7 @@ Effect.runPromise(
     const server = yield* HttpServer.HttpServer
     if (server.address._tag !== "InetAddressV4") throw new Error("IPv4 required")
     console.log(`PORT=${server.address.port}`)
-    yield* Effect.never
+    return yield* Effect.never
   }).pipe(Effect.provide(server), Effect.scoped)
 ).catch((error) => {
   console.error(error)

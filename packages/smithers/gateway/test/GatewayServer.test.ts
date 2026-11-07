@@ -559,14 +559,12 @@ describe("the RPC body a mount will act on", () => {
     expect(GatewayServer.carriesRpcRequest(ndjson, request)).toBe(true)
     expect(GatewayServer.carriesRpcRequest(ndjson, "{}")).toBe(false)
     expect(GatewayServer.carriesRpcRequest(ndjson, "")).toBe(false)
-    // The parser skips a complete line that is not JSON, and buffers an
-    // unterminated one. Either way the body yields no message.
+    // Effect 4.1 rejects malformed complete frames and buffers incomplete ones.
     expect(GatewayServer.carriesRpcRequest(ndjson, "not json\n")).toBe(false)
     expect(GatewayServer.carriesRpcRequest(ndjson, "not json")).toBe(false)
-    // Beside a framed request the line is skipped the same way, by this
-    // predicate and by the mount, which reads the body through the same parser.
-    expect(GatewayServer.carriesRpcRequest(ndjson, `not json\n${request}`)).toBe(true)
-    expect(GatewayServer.carriesRpcRequest(ndjson, `${request}not json\n`)).toBe(true)
+    // A malformed frame refuses the whole body, even beside a valid request.
+    expect(GatewayServer.carriesRpcRequest(ndjson, `not json\n${request}`)).toBe(false)
+    expect(GatewayServer.carriesRpcRequest(ndjson, `${request}not json\n`)).toBe(false)
     // A line that is JSON and no message still refuses the whole body.
     expect(GatewayServer.carriesRpcRequest(ndjson, `42\n${request}`)).toBe(false)
   })
@@ -1055,7 +1053,7 @@ describe("the assembled gateway over a real loopback bind", () => {
       }).pipe(Effect.provide(served())))
   }
 
-  test("acts on the framed request in a body whose other line is not JSON", () =>
+  test("refuses a malformed NDJSON frame before dispatching the valid frame beside it", () =>
     Effect.gen(function*() {
       const url = yield* baseUrl
       const response = yield* Effect.promise(() =>
@@ -1066,12 +1064,11 @@ describe("the assembled gateway over a real loopback bind", () => {
         })
       )
 
-      // The mount skips the line it cannot parse and answers the request: the
-      // protocol itself reports the procedure that does not exist.
-      expect(response.status).toBe(200)
-      const answer = JSON.parse((yield* Effect.promise(() => response.text())).split("\n")[0]!)
-      expect(answer).toMatchObject({ _tag: "Exit", exit: { _tag: "Failure" } })
-      expect(JSON.stringify(answer)).toContain("NoSuchProcedure")
+      expect(response.status).toBe(400)
+      expect(yield* Effect.promise(() => response.json())).toMatchObject({
+        _tag: "@smthrs/gateway/GatewayError",
+        code: "malformed_request"
+      })
     }).pipe(Effect.provide(served())))
 
   test("refuses a malformed body on every RPC mount, not only /rpc", () =>

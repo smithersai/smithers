@@ -24,7 +24,7 @@ export const logDefect = (cause: Cause.Cause<unknown>): Effect.Effect<void> =>
   Cause.hasDies(cause) ? Effect.logError("A control RPC handler died") : Effect.void
 
 /**
- * The effective external scheme for hosts whose request URLs are relative.
+ * The authoritative external scheme, including behind a TLS-terminating host.
  * A TLS host or trusted TLS-terminating proxy supplies `https:`; a plain HTTP
  * host supplies `http:`. Forwarding headers are not trusted automatically.
  * Without an absolute URL or this service, browser origins fail closed.
@@ -147,9 +147,10 @@ const sameOrigin = (
   if (origin === undefined) return true
   const host = headers.host
   const parsed = URL.parse(origin)
-  // Web adapters retain the absolute URL. Other hosts supply the external
-  // scheme explicitly: a relative URL reveals nothing about transport security.
-  const protocol = URL.parse(request.originalUrl)?.protocol ?? scheme
+  // Effect 4.1 Node adapters retain an absolute transport URL too. A host
+  // behind TLS termination explicitly supplies its external scheme; that
+  // configuration takes precedence over the internal connection URL.
+  const protocol = scheme ?? URL.parse(request.originalUrl)?.protocol
   return host !== undefined && parsed !== null &&
     (parsed.protocol === "http:" || parsed.protocol === "https:") &&
     parsed.protocol === protocol && parsed.origin === origin && parsed.host === host.toLowerCase()
