@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The system wait point, as an ordinary declared action.
  *
@@ -21,7 +22,7 @@
  * @since 0.1.0
  */
 
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -214,15 +215,16 @@ const target = (
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = action.toLayer((payload) =>
-  Effect.gen(function*() {
-    const instance = yield* FlowInstance
-    const waitPoint = yield* target(payload, instance.flow._tag, instance.executionId)
-    const token = DurableDeferred.tokenFromExecutionId(waitPoint, {
-      flow: instance.flow,
-      executionId: instance.executionId
+export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime> = action
+  .toLayer((payload) =>
+    Effect.gen(function*() {
+      const instance = yield* FlowInstance
+      const waitPoint = yield* target(payload, instance.flow._tag, instance.executionId)
+      const token = DurableDeferred.tokenFromExecutionId(waitPoint, {
+        flow: instance.flow,
+        executionId: instance.executionId
+      })
+      yield* annotateWaiting({ reason: "event", token })
+      return yield* DurableDeferred.await(waitPoint)
     })
-    yield* annotateWaiting({ reason: "event", token })
-    return yield* DurableDeferred.await(waitPoint)
-  })
-)
+  )

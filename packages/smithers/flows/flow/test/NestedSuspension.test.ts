@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A durable wait taken from inside an action, on the flow's own instance.
  *
@@ -25,7 +26,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Deferred, Effect, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
 
@@ -67,7 +68,7 @@ describe("an action that awaits a durable deferred on the flow's own instance", 
           // The context a harness flow binding captures: the run's own
           // instance, handed back to the handler that arms the durable wait.
           const services = yield* Effect.context<
-            Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+            (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
           >()
           return yield* settlement(
             Flow.intoResult(
@@ -97,7 +98,7 @@ describe("an action that awaits a durable deferred on the flow's own instance", 
         const result = yield* withCrypto(
           Effect.gen(function*() {
             const services = yield* Effect.context<
-              Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+              (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
             >()
             const wait = DurableDeferred.await(gate)
             const wrapped = wrapper === "into"
@@ -142,7 +143,7 @@ describe("an action that awaits a durable deferred on the flow's own instance", 
       const result = yield* withCrypto(
         Effect.gen(function*() {
           const services = yield* Effect.context<
-            Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
+            (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance
           >()
           return yield* settlement(
             Flow.intoResult(

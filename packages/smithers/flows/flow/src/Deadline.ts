@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The wall-clock bound one run of a flow settles by.
  *
@@ -19,7 +20,7 @@
  */
 
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
@@ -85,7 +86,11 @@ export const start = (options: {
    * Absent, the execution's first start is journaled and read back.
    */
   readonly startedAtMs?: number | undefined
-}): Effect.Effect<LineageDeadline | undefined, never, FlowRuntime | FlowInstance | Crypto.Crypto> =>
+}): Effect.Effect<
+  LineageDeadline | undefined,
+  never,
+  FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+> =>
   Effect.gen(function*() {
     const instance = yield* FlowInstance
     let lineage = instance.lineageDeadline
@@ -201,5 +206,5 @@ export const bound = (options: {
 }) =>
 <A, E, R>(
   body: Effect.Effect<A, E, R>
-): Effect.Effect<A, E, R | FlowRuntime | FlowInstance | Crypto.Crypto> =>
+): Effect.Effect<A, E, R | FlowRuntime | FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.flatMap(start(options), (deadline) => within(deadline, options.flowName)(body))

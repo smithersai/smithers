@@ -2,7 +2,8 @@ import { expect, expectTypeOf, it } from "@effect/vitest"
 import { DurableDeferred, Flow } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Context, Effect, Schema, SchemaGetter } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { withCrypto } from "./Crypto.ts"
 
 class Encoder extends Context.Service<Encoder, { readonly prefix: string }>()("ExecutionIdServices/Encoder") {}
@@ -23,10 +24,18 @@ const token = DurableDeferred.tokenFromPayload(gate, { flow, payload })
 const curriedToken = DurableDeferred.tokenFromPayload({ flow, payload })(gate)
 
 it("advertises payload encoding services on every execution identity surface", () => {
-  expectTypeOf<Effect.Services<typeof id>>().toEqualTypeOf<Crypto.Crypto | Encoder>()
-  expectTypeOf<Effect.Services<typeof minted>>().toEqualTypeOf<Crypto.Crypto | Encoder>()
-  expectTypeOf<Effect.Services<typeof token>>().toEqualTypeOf<Crypto.Crypto | Encoder>()
-  expectTypeOf<Effect.Services<typeof curriedToken>>().toEqualTypeOf<Crypto.Crypto | Encoder>()
+  expectTypeOf<Effect.Services<typeof id>>().toEqualTypeOf<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Encoder
+  >()
+  expectTypeOf<Effect.Services<typeof minted>>().toEqualTypeOf<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Encoder
+  >()
+  expectTypeOf<Effect.Services<typeof token>>().toEqualTypeOf<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Encoder
+  >()
+  expectTypeOf<Effect.Services<typeof curriedToken>>().toEqualTypeOf<
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Encoder
+  >()
 })
 
 it.effect("uses the supplied payload encoder consistently for ids and tokens", () =>
@@ -46,9 +55,9 @@ it.effect("uses the supplied payload encoder consistently for ids and tokens", (
 
 // A caller must not be allowed to run the derived codec without its service.
 const missingEncoder = () => {
-  // @ts-expect-error Encoder must still be provided after cryptography.
-  Effect.runPromise(withCrypto(id))
-  // @ts-expect-error The token helper carries the same service obligation.
-  Effect.runPromise(withCrypto(token))
+  const derivedId = withCrypto(id)
+  const derivedToken = withCrypto(token)
+  expectTypeOf<typeof derivedId>().not.toExtend<Parameters<typeof Effect.runPromise>[0]>()
+  expectTypeOf<typeof derivedToken>().not.toExtend<Parameters<typeof Effect.runPromise>[0]>()
 }
 void missingEncoder

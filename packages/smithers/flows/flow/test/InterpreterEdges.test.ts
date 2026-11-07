@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Edges of the body interpreter the rest of the suite runs through without
  * pinning: the plan paging boundaries, the refusal that names a cycle, the
@@ -9,7 +10,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { OutcomeValueTypeId } from "../src/internal/OutcomeMarker.ts"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
@@ -77,7 +78,11 @@ const tracing = () => {
   return { interrupted, layer }
 }
 
-type Needs = Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+type Needs =
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowInstance
+  | FlowRuntime.FlowRuntime
+  | Action.Implementations
 
 /** One process over `state`, as `instance`, whose runtime reports every cancellation it is asked for. */
 const drive = <A, E>(

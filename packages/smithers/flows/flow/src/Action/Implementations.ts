@@ -35,7 +35,7 @@
  */
 
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -62,7 +62,7 @@ export interface Implementation {
   readonly implementationVersion?: string | undefined
   readonly action: (
     payload: unknown
-  ) => Effect.Effect<unknown, unknown, Crypto.Crypto | FlowRuntime | FlowInstance>
+  ) => Effect.Effect<unknown, unknown, EffectDigest.Digest | FlowRuntime | FlowInstance>
 }
 
 /**

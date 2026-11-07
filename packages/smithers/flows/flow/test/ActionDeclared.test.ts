@@ -2,7 +2,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Graph } from "@smthrs/flow"
 import { Node, Planned } from "@smthrs/plan"
 import { Cause, Context, Effect, Exit, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import type * as Scope from "effect/Scope"
 import { withCrypto } from "./Crypto.ts"
 import { layerMemory, makeInstance } from "./MemoryFlowRuntime.ts"
@@ -17,7 +18,11 @@ const InlineHost = Flow.make("ActionDeclared/inline-host", {
 })
 
 const runInline = <A, E>(
-  effect: Effect.Effect<A, E, Crypto.Crypto | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Scope.Scope>
+  effect: Effect.Effect<
+    A,
+    E,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Scope.Scope
+  >
 ) =>
   withCrypto(
     Effect.scoped(effect).pipe(

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The system sleep action: what it puts in a plan, how it parks, and what a
  * settled wait does on replay.
@@ -6,7 +7,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableClock, DurableDeferred, Flow, FlowRuntime, Graph, Interpreter, Sleep } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Clock, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { withCrypto } from "./Crypto.ts"
 import { effectOnTestClock as effect, isComplete, pollUntil } from "./Harness.ts"
@@ -25,7 +26,7 @@ const wired = (
 ): Layer.Layer<
   Action.Requirement<"sleep/mark"> | FlowRuntime.FlowRuntime | Action.Implementations,
   never,
-  Crypto.Crypto
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
 > =>
   Layer.mergeAll(
     Sleep.layer,

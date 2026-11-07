@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -21,7 +22,7 @@ import type * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
 import type * as Cause from "effect/Cause"
 import type * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Duration from "effect/Duration"
 import type * as Effect from "effect/Effect"
 import type * as Option from "effect/Option"
@@ -279,7 +280,7 @@ export interface Flow<
     Discard extends true ? string : Success["Type"],
     Schema.SchemaError | FlowCycleDetected | ExecutionIdentityConflict | (Discard extends true ? never : Error["Type"]),
     | FlowRuntime
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | Requires
     | Payload["EncodingServices"]
     | Success["DecodingServices"]
@@ -295,7 +296,7 @@ export interface Flow<
     string,
     Schema.SchemaError | FlowCycleDetected,
     | FlowRuntime
-    | Crypto.Crypto
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
     | Requires
     | Payload["EncodingServices"]
     | Success["DecodingServices"]
@@ -334,7 +335,7 @@ export interface Flow<
   ) => Effect.Effect<
     string,
     RetryFromRefused | ExecutionIdentityConflict,
-    FlowRuntime | Crypto.Crypto | Requires
+    FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom) | Requires
   >
 
   /**
@@ -404,7 +405,7 @@ export interface Flow<
    */
   readonly executionId: (
     payload: Payload["~type.make.in"]
-  ) => Effect.Effect<string, never, Crypto.Crypto | Payload["EncodingServices"]>
+  ) => Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | Payload["EncodingServices"]>
 
   /**
    * Runs an effect and registers how to undo its successful result if the

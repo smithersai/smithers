@@ -18,7 +18,11 @@ const retry = <A, E, R>(operation: Effect.Effect<A, E, R>, name = "operation") =
     error: Schema.Union([Outage, Schema.Unknown])
   })
 const provideRuntime = <A, E>(
-  operation: Effect.Effect<A, E, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | import("effect/Crypto").Crypto>
+  operation: Effect.Effect<
+    A,
+    E,
+    FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | import("effect/crypto/Digest").Digest
+  >
 ) =>
   withCrypto(operation.pipe(
     Effect.provideService(FlowRuntime.FlowInstance, FlowEngine.makeInstance(RetryHost, "transient")),

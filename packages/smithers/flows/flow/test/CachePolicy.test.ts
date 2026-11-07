@@ -67,7 +67,7 @@ describe("withCache", () => {
   })
 
   it("leaves the action it was given alone", () => {
-    withCache(compile, { ttlMs: 1000 })
+    const _declaration = withCache(compile, { ttlMs: 1000 })
     expect(cachePolicyOf(compile.annotations)).toBeUndefined()
   })
 

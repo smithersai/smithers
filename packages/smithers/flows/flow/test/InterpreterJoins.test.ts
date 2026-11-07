@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * `Node.race`, `Node.any`, and `Node.quorum` driven by the body interpreter:
  * each join settles as soon as its rule can, interrupts the members it no
@@ -8,7 +9,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node, type Planned } from "@smthrs/plan"
 import { Cause, Deferred, Effect, Exit, Fiber, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 
@@ -87,7 +88,11 @@ const tracing = (options: { readonly blockSucceeds?: boolean } = {}) => {
   return { trace, layer }
 }
 
-type Needs = Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+type Needs =
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  | FlowRuntime.FlowInstance
+  | FlowRuntime.FlowRuntime
+  | Action.Implementations
 
 /** One process: the implementations, over a durable record a later process can reopen. */
 const run = <A, E>(

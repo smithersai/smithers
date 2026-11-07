@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Asking a person something, as an ordinary declared action.
  *
@@ -40,7 +41,7 @@
 
 import * as Node from "@smthrs/plan/Node"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -756,7 +757,7 @@ const attemptOnce = (
   payload: Payload,
   attempt: number,
   deadline: Duration.Duration | undefined
-): Effect.Effect<Settled, never, Crypto.Crypto | FlowRuntime | FlowInstance> => {
+): Effect.Effect<Settled, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance> => {
   const answered: Effect.Effect<Settled, never, FlowRuntime | FlowInstance> = Effect.map(
     DurableDeferred.await(deferred(payload.name, attempt)),
     (value): Settled => ({ _tag: "answered", value })
@@ -837,58 +838,59 @@ const recordRejection = (task: string, attempt: number, reason: string) =>
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = action.toLayer((payload) =>
-  Effect.gen(function*() {
-    const instance = yield* FlowInstance
-    const maxAttempts = yield* budgetOf(payload)
-    const deadline = yield* deadlineOf(payload)
-    const request = yield* requestOf(payload)
-    const retained: RetainedRejections = { entries: [], chars: 0, omitted: 0 }
-    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
-      const token = DurableDeferred.tokenFromExecutionId(deferred(payload.name, attempt), {
-        flow: instance.flow,
-        executionId: instance.executionId
-      })
-      // Declared rather than left to a driver's derivation, so the run parks
-      // under `approval` carrying the ONE wait point that is currently open.
-      // The question travels with the park for a different reason than the
-      // token does: the token addresses the wait, and the question is what an
-      // inbox has to render for a person to answer it at all. Without it a
-      // parked run carried nothing but a wait name, so run-3's
-      // `coding-clarification` could be listed and never asked.
-      yield* annotateWaiting({ reason: "approval", token, request: declaredQuestion(payload, attempt, maxAttempts) })
-      const settled = yield* attemptOnce(payload, attempt, deadline)
-      // The attempt is over either way, so the declared park is over too. A
-      // raced attempt awaits on a copied instance, so the branch that resolved
-      // could not clear the annotation itself.
-      yield* annotateWaiting(undefined)
-      if (settled._tag === "timeout") {
-        return yield* Effect.fail(
-          failed(
-            payload,
-            "timeout",
-            attempt,
-            retained.entries,
-            `Nobody answered "${payload.name}" within ${payload.timeoutMs} ms.`
+export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime> = action
+  .toLayer((payload) =>
+    Effect.gen(function*() {
+      const instance = yield* FlowInstance
+      const maxAttempts = yield* budgetOf(payload)
+      const deadline = yield* deadlineOf(payload)
+      const request = yield* requestOf(payload)
+      const retained: RetainedRejections = { entries: [], chars: 0, omitted: 0 }
+      for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+        const token = DurableDeferred.tokenFromExecutionId(deferred(payload.name, attempt), {
+          flow: instance.flow,
+          executionId: instance.executionId
+        })
+        // Declared rather than left to a driver's derivation, so the run parks
+        // under `approval` carrying the ONE wait point that is currently open.
+        // The question travels with the park for a different reason than the
+        // token does: the token addresses the wait, and the question is what an
+        // inbox has to render for a person to answer it at all. Without it a
+        // parked run carried nothing but a wait name, so run-3's
+        // `coding-clarification` could be listed and never asked.
+        yield* annotateWaiting({ reason: "approval", token, request: declaredQuestion(payload, attempt, maxAttempts) })
+        const settled = yield* attemptOnce(payload, attempt, deadline)
+        // The attempt is over either way, so the declared park is over too. A
+        // raced attempt awaits on a copied instance, so the branch that resolved
+        // could not clear the annotation itself.
+        yield* annotateWaiting(undefined)
+        if (settled._tag === "timeout") {
+          return yield* Effect.fail(
+            failed(
+              payload,
+              "timeout",
+              attempt,
+              retained.entries,
+              `Nobody answered "${payload.name}" within ${payload.timeoutMs} ms.`
+            )
           )
-        )
+        }
+        const rejection = validate(settled.value, request)
+        if (rejection === undefined) return settled.value
+        retainRejection(retained, `attempt ${attempt}: ${rejection}`)
+        yield* recordRejection(payload.name, attempt, rejection)
       }
-      const rejection = validate(settled.value, request)
-      if (rejection === undefined) return settled.value
-      retainRejection(retained, `attempt ${attempt}: ${rejection}`)
-      yield* recordRejection(payload.name, attempt, rejection)
-    }
-    return yield* Effect.fail(
-      failed(
-        payload,
-        "rejected",
-        maxAttempts,
-        retained.entries,
-        `"${payload.name}" was asked ${maxAttempts} times without an answer it could accept.`
+      return yield* Effect.fail(
+        failed(
+          payload,
+          "rejected",
+          maxAttempts,
+          retained.entries,
+          `"${payload.name}" was asked ${maxAttempts} times without an answer it could accept.`
+        )
       )
-    )
-  })
-)
+    })
+  )
 
 /**
  * Records one answer to a human task.

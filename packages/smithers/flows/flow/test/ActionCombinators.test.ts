@@ -3,7 +3,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { Context, Effect, Layer, Schema, Tracer } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 

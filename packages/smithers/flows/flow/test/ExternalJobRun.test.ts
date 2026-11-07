@@ -90,8 +90,14 @@ const provider = (options: {
 type Provider = ReturnType<typeof provider>
 
 /** Runs `effect` with `p`'s job registered on the memory engine, on the test clock. */
-const on = <A, E>(p: Provider, effect: Effect.Effect<A, E, FlowRuntime.FlowRuntime | import("effect/Crypto").Crypto>) =>
-  withCrypto(Effect.provide(effect, p.layer))
+const on = <A, E>(
+  p: Provider,
+  effect: Effect.Effect<
+    A,
+    E,
+    FlowRuntime.FlowRuntime | import("effect/crypto/Digest").Digest | import("effect/crypto/SecureRandom").SecureRandom
+  >
+) => withCrypto(Effect.provide(effect, p.layer))
 
 /** Whether the job has an execution `id`. */
 const made = (id: string) =>

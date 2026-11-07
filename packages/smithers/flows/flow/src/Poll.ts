@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Polling as a durable lineage: one attempt per round, a durable wait between
  * attempts, and a bound the lineage settles on.
@@ -32,7 +33,7 @@
 
 import * as Node from "@smthrs/plan/Node"
 import type * as Repetition from "@smthrs/plan/Repetition"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -408,13 +409,14 @@ export const make = <
  * @category layers
  * @since 0.1.0
  */
-export const layer: Layer.Layer<never, never, Crypto.Crypto | FlowRuntime> = exhausted.toLayer(
-  ({ attempts, poll }) =>
-    Effect.fail(
-      new PollExhausted({
-        poll,
-        attempts,
-        message: `Poll "${poll}" used all ${attempts} attempts without a satisfied check.`
-      })
-    )
-)
+export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime> =
+  exhausted.toLayer(
+    ({ attempts, poll }) =>
+      Effect.fail(
+        new PollExhausted({
+          poll,
+          attempts,
+          message: `Poll "${poll}" used all ${attempts} attempts without a satisfied check.`
+        })
+      )
+  )

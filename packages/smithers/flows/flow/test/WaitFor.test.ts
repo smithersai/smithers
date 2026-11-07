@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The system wait action: what it puts in a plan, how it parks, how the
  * ordinary deferred completion path resumes it, and what a settled wait does on
@@ -7,7 +8,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime, Graph, Interpreter, WaitFor } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { withCrypto } from "./Crypto.ts"
 import { effect, isComplete, pollUntil } from "./Harness.ts"
 import { layerWired, makeInstance } from "./MemoryFlowRuntime.ts"
@@ -25,7 +26,7 @@ const wired = (
 ): Layer.Layer<
   Action.Requirement<"waitFor/mark"> | FlowRuntime.FlowRuntime | Action.Implementations,
   never,
-  Crypto.Crypto
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
 > =>
   Layer.mergeAll(
     WaitFor.layer,
@@ -48,7 +49,10 @@ const drive = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | FlowRuntime.FlowInstance
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
   >,
   instance: FlowRuntime.FlowInstance["Service"]
 ) =>

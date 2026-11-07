@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -16,7 +17,7 @@
 import * as Node from "@smthrs/plan/Node"
 import * as Arr from "effect/Array"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Filter from "effect/Filter"
@@ -226,7 +227,7 @@ export const process: <
   Error["Type"],
   | FlowRuntime
   | FlowInstance
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | PersistedQueue.PersistedQueueFactory
   | Payload["EncodingServices"]
   | Payload["DecodingServices"]
@@ -601,7 +602,7 @@ export const makeWorker: <
   | FlowRuntime
   | PersistedQueue.PersistedQueueFactory
   | Exclude<R, FlowRuntime | FlowInstance>
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Payload["EncodingServices"]
   | Payload["DecodingServices"]
   | Success["EncodingServices"]
@@ -655,7 +656,7 @@ export const worker: <
   | FlowRuntime
   | PersistedQueue.PersistedQueueFactory
   | Exclude<R, FlowRuntime | FlowInstance>
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | Payload["EncodingServices"]
   | Payload["DecodingServices"]
   | Success["EncodingServices"]

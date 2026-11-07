@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -12,7 +13,7 @@
  */
 
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
@@ -128,7 +129,7 @@ export const sleep = (
 ): Effect.Effect<
   void,
   never,
-  Crypto.Crypto | FlowRuntime | FlowInstance
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance
 > => {
   const name = options.name
   const duration = clockDuration(options.duration)

@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A minimal in-memory implementation of the `FlowRuntime` port, used to
  * exercise the authoring APIs this package owns.
@@ -13,7 +14,7 @@
  */
 import { Action, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Fiber from "effect/Fiber"
@@ -194,18 +195,20 @@ const makeRuntime = (durable: MemoryState) =>
     })
 
     const runtime: FlowRuntime.FlowRuntime["Service"] = FlowRuntime.FlowRuntime.of({
-      register: Effect.fnUntraced(function*(flow, execute, options) {
-        const services = yield* Effect.context<FlowRuntime.FlowRuntime>()
-        const scope = yield* Effect.scope
-        if (options?.ifAbsent === true && flows.has(flow._tag)) return
-        flows.set(flow._tag, {
-          scope,
-          handler: (payload, executionId) =>
-            Effect.suspend(() => execute(payload as any, executionId)).pipe(
-              Effect.updateContext((input) => Context.merge(services, input) as Context.Context<any>)
-            ) as Handler extends (...args: never) => infer R ? R : never
-        })
-      }) as any,
+      register: Effect.fnUntraced(
+        function*(...[flow, execute, options]: Parameters<FlowRuntime.FlowRuntime["Service"]["register"]>) {
+          const services = yield* Effect.context<FlowRuntime.FlowRuntime>()
+          const scope = yield* Effect.scope
+          if (options?.ifAbsent === true && flows.has(flow._tag)) return
+          flows.set(flow._tag, {
+            scope,
+            handler: (payload, executionId) =>
+              Effect.suspend(() => execute(payload as any, executionId)).pipe(
+                Effect.updateContext((input) => Context.merge(services, input) as Context.Context<any>)
+              ) as Handler extends (...args: never) => infer R ? R : never
+          })
+        }
+      ) as any,
       execute: Effect.fnUntraced(function*(flow: any, options: any) {
         const parentInstance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
         const state = yield* start(
@@ -449,9 +452,17 @@ export const layerMemory: Layer.Layer<FlowRuntime.FlowRuntime> = Layer.effect(Fl
  * without it each build gets a record of its own.
  */
 export const layerWired = <Implemented = never>(
-  registrations: Layer.Layer<Implemented, never, Crypto.Crypto | FlowRuntime.FlowRuntime | Action.Implementations>,
+  registrations: Layer.Layer<
+    Implemented,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowRuntime | Action.Implementations
+  >,
   state?: MemoryState
-): Layer.Layer<Implemented | FlowRuntime.FlowRuntime | Action.Implementations, never, Crypto.Crypto> =>
+): Layer.Layer<
+  Implemented | FlowRuntime.FlowRuntime | Action.Implementations,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> =>
   registrations.pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(state === undefined ? layerMemory : layerMemoryOver(state))

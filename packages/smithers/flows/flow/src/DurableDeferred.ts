@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -17,7 +18,7 @@ import type { NonEmptyReadonlyArray } from "effect/Array"
 import type * as Brand from "effect/Brand"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Base64Url from "effect/encoding/Base64Url"
 import * as Exit from "effect/Exit"
@@ -563,7 +564,11 @@ export const tokenFromPayload: {
     readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
   }): <Success extends Schema.Constraint, Error extends Schema.Constraint>(
     self: DurableDeferred<Success, Error>
-  ) => Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>
+  ) => Effect.Effect<
+    Token,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]
+  >
   <
     Success extends Schema.Constraint,
     Error extends Schema.Constraint,
@@ -574,7 +579,11 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]>
+  ): Effect.Effect<
+    Token,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]
+  >
 } = dual(
   2,
   <
@@ -587,7 +596,11 @@ export const tokenFromPayload: {
       readonly flow: W
       readonly payload: Flow.PayloadSchema<W>["~type.make.in"]
     }
-  ): Effect.Effect<Token, never, Crypto.Crypto | Flow.PayloadSchema<W>["EncodingServices"]> =>
+  ): Effect.Effect<
+    Token,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | Flow.PayloadSchema<W>["EncodingServices"]
+  > =>
     Effect.map(options.flow.executionId(options.payload), (executionId) =>
       tokenFromExecutionId(self, {
         flow: options.flow,

@@ -1,3 +1,4 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Private flow construction shared by declarations and action registration.
  *
@@ -9,7 +10,7 @@ import { Sha256 } from "@smthrs/crypto"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import type * as Duration from "effect/Duration"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
@@ -171,10 +172,10 @@ const Proto = {
   },
   start(this: AnyWithProps, payload: unknown) {
     return Effect.flatMap(
-      Crypto.Crypto,
-      (crypto) =>
+      SecureRandom.SecureRandom,
+      (random) =>
         Effect.flatMap(
-          Effect.orDie(crypto.randomUUIDv4()),
+          random.uuidV4(),
           (executionId) => this.execute(payload, { executionId, discard: true })
         )
     )
@@ -195,7 +196,7 @@ const Proto = {
       if (engine.retryFrom === undefined) {
         return yield* new RetryFromRefused({ code: "unsupported", executionId: source, step: options.step })
       }
-      const executionId = options.executionId ?? (yield* Effect.orDie((yield* Crypto.Crypto).randomUUIDv4()))
+      const executionId = options.executionId ?? (yield* Effect.orDie((yield* SecureRandom.SecureRandom).uuidV4()))
       yield* Effect.annotateCurrentSpan({ executionId, source })
       yield* identityConflictAsFailure(engine.retryFrom(this, { source, step: options.step, executionId }))
       return executionId

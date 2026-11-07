@@ -28,7 +28,7 @@
 import { Sha256 } from "@smthrs/crypto"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
@@ -183,7 +183,7 @@ export interface AllocationIdentity {
  */
 export const allocationScope = (
   identity: AllocationIdentity
-): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<string, Schema.SchemaError, EffectDigest.Digest> =>
   Effect.gen(function*() {
     let scope = `${identity.kind}/${identity.name.length}:${identity.name}`
     if (typeof identity.idempotency === "string") {
@@ -214,7 +214,7 @@ export const invocationKey = (input: {
   readonly parentScope?: string | undefined
   readonly ordinal: number
   readonly tier: "unsealed" | "compensable" | "irreversible"
-}): Effect.Effect<StoredKey, Schema.SchemaError, Crypto.Crypto> =>
+}): Effect.Effect<StoredKey, Schema.SchemaError, EffectDigest.Digest> =>
   Schema.decodeUnknownEffect(Invocation)(input).pipe(
     Effect.flatMap((validated) => Schema.decodeUnknownEffect(DerivedKey)({ kind: "invocation", ...validated }))
   )

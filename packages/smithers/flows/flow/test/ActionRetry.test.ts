@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -10,7 +11,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Effect, Latch, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
 import { layerWired } from "./MemoryFlowRuntime.ts"
 
@@ -28,9 +29,13 @@ const Host = Flow.make("Retry/Host", {
 })
 
 const run = (
-  body: Effect.Effect<number, never, Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime>,
+  body: Effect.Effect<
+    number,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime
+  >,
   id: string
-): Effect.Effect<number, never, Crypto.Crypto> =>
+): Effect.Effect<number, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Host.execute({ id }, { executionId: id }).pipe(
     Effect.provide(
       layerWired(Layer.mergeAll(Block.toLayer(() => body), Interpreter.layer(Host)))

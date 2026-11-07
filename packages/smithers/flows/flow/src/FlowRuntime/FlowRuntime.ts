@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 // Deep reviewed and polished by a human on 2026-08-10.
 
 /**
@@ -23,7 +24,7 @@
  */
 
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"
@@ -262,7 +263,7 @@ export class FlowRuntime extends Context.Service<
       | Success["DecodingServices"]
       | Error["DecodingServices"]
       | R
-      | Crypto.Crypto
+      | (EffectDigest.Digest | SecureRandom.SecureRandom)
       | FlowInstance
     >
 

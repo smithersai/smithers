@@ -3,7 +3,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import { Flow } from "@smthrs/flow"
 import { Cause, Effect, Exit, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { effect } from "./Harness.ts"
 
 const CompleteSchema = Flow.Complete.Schema({

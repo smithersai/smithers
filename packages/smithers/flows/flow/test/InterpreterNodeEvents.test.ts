@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * What a driven graph tells its runtime about itself: the plan it recorded,
  * and the scheduled/settled pair every node in it produces.
@@ -14,7 +15,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Graph, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { withCrypto } from "./Crypto.ts"
 import { layerWired, makeInstance, makeMemoryState, type MemoryState } from "./MemoryFlowRuntime.ts"
 
@@ -119,7 +120,10 @@ const drive = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    Crypto.Crypto | FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Action.Implementations
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | FlowRuntime.FlowInstance
+    | FlowRuntime.FlowRuntime
+    | Action.Implementations
   >,
   memory: MemoryState
 ) =>

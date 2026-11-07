@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The body interpreter: what a flow does when it runs.
  *
@@ -52,7 +53,7 @@ import * as Planned from "@smthrs/plan/Planned"
 import * as StepKey from "@smthrs/plan/StepKey"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -278,7 +279,7 @@ export interface Interpretation {
  *
  * @private
  */
-type Services = Crypto.Crypto | FlowRuntime | FlowInstance | Implementations
+type Services = (EffectDigest.Digest | SecureRandom.SecureRandom) | FlowRuntime | FlowInstance | Implementations
 
 /** Reads one own data property without invoking an accessor or letting a proxy trap escape. */
 const ownDataProperty = (value: unknown, key: PropertyKey): unknown => {
@@ -315,7 +316,7 @@ export const childExecutionId = (
   nodeId: string,
   calleeTag: string,
   payload: unknown
-): Effect.Effect<string, never, Crypto.Crypto> =>
+): Effect.Effect<string, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const payloadDigest = yield* Schema.decodeUnknownEffect(DerivedKey)(payload).pipe(Effect.orDie)
     const tupleDigest = yield* Schema.decodeUnknownEffect(DerivedKey)([
@@ -448,7 +449,10 @@ interface Pager {
 const emptyPage = (): Page => ({ nodes: [], edges: [] })
 
 /** The content identity of the plan a graph records. @private */
-const planIdentity = (flow: string, graph: Graph.Graph): Effect.Effect<string, InterpreterError, Crypto.Crypto> =>
+const planIdentity = (
+  flow: string,
+  graph: Graph.Graph
+): Effect.Effect<string, InterpreterError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   StepKey.content({
     body: { flow, nodes: recordedPlanDrafts(graph), edges: Graph.edges(graph) },
     inputs: {},
@@ -2179,7 +2183,7 @@ const makeLayer = <
       }) as (payload: Payload["Type"], executionId: string) => Effect.Effect<
         Success["Type"],
         Error["Type"],
-        Crypto.Crypto | Implementations
+        (EffectDigest.Digest | SecureRandom.SecureRandom) | Implementations
       >,
       { ifAbsent }
     )

@@ -1,3 +1,4 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The ambient source of execution identity, for a flow executed without one.
  *
@@ -19,7 +20,7 @@
 import { Sha256 } from "@smthrs/crypto"
 import { DerivedKey } from "@smthrs/keys"
 import * as Context from "effect/Context"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -40,7 +41,11 @@ export interface ExecutionIdSource {
   readonly mint: <W extends Any>(
     flow: W,
     payload: unknown
-  ) => Effect.Effect<string, never, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]>
+  ) => Effect.Effect<
+    string,
+    never,
+    (EffectDigest.Digest | SecureRandom.SecureRandom) | W["payloadSchema"]["EncodingServices"]
+  >
 }
 
 /**
@@ -58,7 +63,11 @@ export interface ExecutionIdSource {
 const canonicalKey = <W extends Any>(
   flow: W,
   payload: unknown
-): Effect.Effect<string, ExecutionIdRequired, Crypto.Crypto | W["payloadSchema"]["EncodingServices"]> =>
+): Effect.Effect<
+  string,
+  ExecutionIdRequired,
+  (EffectDigest.Digest | SecureRandom.SecureRandom) | W["payloadSchema"]["EncodingServices"]
+> =>
   (Schema.encodeEffect(Schema.toCodecJson(flow.payloadSchema))(payload) as Effect.Effect<
     unknown,
     unknown,
@@ -99,7 +108,7 @@ export const derived: ExecutionIdSource = {
  * @since 0.1.0
  */
 export const fresh: ExecutionIdSource = {
-  mint: () => Effect.flatMap(Crypto.Crypto, (crypto) => Effect.orDie(crypto.randomUUIDv4()))
+  mint: () => Effect.flatMap(SecureRandom.SecureRandom, (random) => random.uuidV4())
 }
 
 /**
