@@ -131,7 +131,10 @@ derives checkout, installation, tool setup, and every
 in the package that owns it before CI can invoke it, matching Bazel's rule that
 a BUILD file has no free-form command surface.
 
-The generated `tsconfig.json` is the root TypeScript project. The lockfile and
+The generated `tsconfig.json` is the root TypeScript project. It selects the `PACKAGE.ts` graph declarations;
+package projects own their VibeLang source configuration. The declaration in the
+root `PACKAGE.ts` is the source of truth, and the generated-root regression
+checks the rendered configuration. The root target verifies the checked-in file. The lockfile and
 install are separate targets because a target cannot be keyed on a file it
 also produces: `Lockfile` writes `pnpm-lock.yaml`, while `Install` consumes the
 lockfile target. The hand-written `pnpm-workspace.yaml` is a planner input. Its

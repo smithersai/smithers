@@ -54294,6 +54294,10 @@
       },
       {
         "kind": "file",
+        "path": "packages/repo-targets/contracts/root-tsconfig.test.mjs"
+      },
+      {
+        "kind": "file",
         "path": "packages/repo-targets/scripts/workspace-packages.mjs"
       },
       {
@@ -54303,6 +54307,22 @@
       {
         "kind": "file",
         "path": "pnpm-workspace.yaml"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "tsconfig.base.json"
+      },
+      {
+        "kind": "file",
+        "path": "PACKAGE.ts"
+      },
+      {
+        "kind": "file",
+        "path": "packages/repo-targets/contracts/corpus/smithers-root-tsconfig.json"
       },
       {
         "kind": "file",

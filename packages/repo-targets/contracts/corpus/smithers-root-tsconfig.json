@@ -1,0 +1,10 @@
+{
+  "directories": [
+    "apps/NAME",
+    "evals/NAME",
+    "packages/NAME",
+    "packages/NAME/nested",
+    "packages/NAME/nested/deeper",
+    "packages/smithers/agent/harness/benchmarks/NAME"
+  ]
+}

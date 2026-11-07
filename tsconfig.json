@@ -1,9 +1,6 @@
 {
-  "vibe": { "sidecarDir": ".vibe/declarations" },
   "extends": "./tsconfig.base.json",
   "compilerOptions": {
-    "rootDirs": [".",".vibe/declarations"],
-    "rewriteRelativeImportExtensions": true,
     "noEmit": true,
     "lib": [
       "ES2024"
@@ -25,16 +22,7 @@
     ".smithers/flows/PACKAGE.ts",
     "packages/*/PACKAGE.ts",
     "packages/*/*/PACKAGE.ts",
-    "packages/*/*/*/PACKAGE.ts",
-    "PACKAGE.vibe",
-    "apps/*/PACKAGE.vibe",
-    "evals/*/PACKAGE.vibe",
-    "packages/smithers/agent/harness/benchmarks/*/PACKAGE.vibe",
-    ".smithers/flows/review/seeded-bugs/PACKAGE.vibe",
-    ".smithers/flows/PACKAGE.vibe",
-    "packages/*/PACKAGE.vibe",
-    "packages/*/*/PACKAGE.vibe",
-    "packages/*/*/*/PACKAGE.vibe"
+    "packages/*/*/*/PACKAGE.ts"
   ],
   "exclude": [
     "**/dist/**",
