@@ -1,0 +1,45 @@
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Dom, Runtime, Subscription } from "foldkit"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { init, Message, Model, Flags, subscriptions, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.ts"
+import { scrollHost } from "./support/scrollHost.ts"
+
+it.live("upward intent vetoes a pending follow before its message or a new delta can render", () => scoped(effect {
+  const host = try acquireRelease(sync(scrollHost), (host) => sync(() => host.dispose()))
+  const initial = init({ session: "scroll", name: "Ada", mode: "mock" }).model
+  let latest: Model = { ...initial, surface: "chat" }
+  const program = try Effect.try(() => Runtime.makeApplication({
+    Model, Flags, init: () => ({ model: latest }), update,
+    view: (model, h) => { latest = model; return view(model, h) },
+    subscriptions: Subscription.aggregate(subscriptions(host.page, host.page), Subscription.make<Model, Message>()(() => ({
+      driver: Subscription.persistentEntry(Dom.streamFromEvent({
+        target: host.target, type: "delta", mapEvent: (event: Event) => host.message(event),
+      })),
+    }))), resources: MockFactory, container: host.node,
+  }))
+  try acquireRelease(
+    sync(() => Runtime.embed(program, { flags: succeed({ session: "scroll", name: "Ada", mode: "mock" as const }) })),
+    (handle) => sync(() => handle.dispose()),
+  )
+  try promise(() => vi.waitFor(() => expect(host.pending()).toBeGreaterThan(0)))
+  // Release the pending follow, then dispatch intent in the same host turn. Its queued continuation must recheck
+  // permission synchronously at the DOM write, even though the rendered model still says following=true.
+  try sync(() => {
+    host.frame()
+    host.up()
+    // The old follow's scroll notification still reports the bottom, before the reader's native movement.
+    host.scrolled()
+    // A fresh transcript delta can also schedule follow work against the old rendered permission.
+    host.emit(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 1, id: "r1" } }))
+    host.emit(Message.ReceivedEvent({ event: { type: "ReplyDelta", seq: 2, id: "r1", text: "new piece" } }))
+    host.markIntent()
+  })
+  try promise(() => vi.waitFor(() => {
+    host.frame()
+    expect(latest.following).toBe(false)
+    expect(latest.client.conversation.seq).toBe(2)
+  }))
+  try Effect.try(() => expect(host.scrollsAfterIntent()).toBe(0))
+}))

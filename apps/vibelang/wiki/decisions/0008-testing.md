@@ -32,6 +32,13 @@ completion. Latest must return to the tail and resume following. `app.scene.test
 manual return to the bottom and the Latest action. A follow subscription waits for the render commit; model
 dependencies cancel obsolete scroll work whenever a newer piece arrives or the reader leaves the bottom.
 
+**Scroll ordering regression (lane scrollfix).** `test/scroll.runtime.test.vibe` embeds Foldkit's real update, view
+and subscriptions. Its happy-dom host controls animation-frame delivery and observes attempted native scroll writes
+(happy-dom has no layout). It releases a pending follow, delivers upward wheel intent, then the old follow's bottom
+notification and a fresh reply delta in one host turn. Following must remain paused and no follow write may run.
+This case fails on main 87c54fa7 because the stale bottom notification resumes following before native movement.
+The browser case remains the layout and real wheel-scrolling receipt.
+
 **Announcements (review 9).** The transcript is the named Conversation `role="log"` with `aria-live="off"`, so
 stream pieces do not repeat the whole answer. Persistent Answer and Connection status regions are polite and atomic.
 Only accepted completion/failure events update Answer; an answer ordinal distinguishes identical successive answers.
