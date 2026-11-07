@@ -10,7 +10,7 @@
   "root": {
    "relative": "packages/smithers/flows/patterns"
   },
-  "compiler": "jLC80QpzjT7q_lbPINjSvmxTFgFlihEWxr7I21MD4c4",
+  "compiler": "FMmsnTMyg_I7pG133PXDddNoS56UzZEqQUvgZcYYhU4",
   "configs": [
    {
     "path": {
@@ -54,7 +54,7 @@
      "relative": "packages/smithers/flows/patterns/src"
     },
     null,
-    "YDWvGZr4tCUBNosbqryLy1VRYHu1iCUbOXwP6kNLCvg",
+    "OO2XCgNJ4scX7GdLWfRNK3-MS5snvwVvBATlOlZZaD0",
     [],
     {
      "recursive": true,
@@ -222,8 +222,8 @@
     "path": {
      "relative": "pnpm-lock.yaml"
     },
-    "size": 1032876,
-    "hash": "Wdgpwi5CfwupcUCc1lpnxDEk5QKzBQUHXWMnnvNpE2k"
+    "size": 1032990,
+    "hash": "JWXHDc5FqtoaD_7kBZtDp_c1gN0Pv_YzpXJiGdIsulM"
    },
    {
     "path": {
@@ -283,8 +283,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/package.json"
     },
-    "size": 5792,
-    "hash": "EbvnTwl2pWoIOvNncZuvUoa5F2_slp0s1cdWCgvHxNw"
+    "size": 5846,
+    "hash": "i6JJi0lsEiBkd2vdaB53mnhAjKPmVi4S4kHtRpnAF88"
    },
    {
     "path": {
@@ -318,8 +318,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 15173,
-    "hash": "W4ZYTA6WZd7ZNkzvvcEyD5K4g8N7aNTt9n8GgfEDmlc"
+    "size": 15332,
+    "hash": "ZRxPCRBKfhxd3jzJQ7EKJ-PM6Tff2LvuWyPIEYGiJLw"
    },
    {
     "path": {
@@ -2187,10 +2187,10 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+     "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
     },
-    "size": 3466,
-    "hash": "RsldAKl2fw_586heZYcJGSio45wc6qchC8915ExbUWs"
+    "size": 3364,
+    "hash": "Vt245oY5GzEJWu0aI_2ozleaQdo77LyMCMUIsz7JCSY"
    },
    {
     "path": {
@@ -2210,8 +2210,8 @@
     "path": {
      "relative": "packages/smithers/flows/canonical/src/index.vibe"
     },
-    "size": 1664,
-    "hash": "S1BBY8TfNv9-QJd989QcZdjfrk4XbSFzP1C6Mpx6FgA"
+    "size": 1666,
+    "hash": "Hd8vMVI2OlcM02QkrsWnSKituLfroBIUHlrp6QcyUGs"
    },
    {
     "path": {
@@ -2427,8 +2427,8 @@
     "path": {
      "relative": "packages/smithers/flows/plan/src/StepKey.vibe"
     },
-    "size": 29125,
-    "hash": "zfQQ73C-hhusNSVLEwZ0bBVPqEsyhG4QfYMEURumNpw"
+    "size": 29135,
+    "hash": "dSK_BWz_ksrbGnuYs9z9844HJIZ9UjAmGogEvtrcNWY"
    },
    {
     "path": {
@@ -2602,15 +2602,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/idempotencyKey.vibe"
     },
-    "size": 2762,
-    "hash": "KXHPnhrNzleOz3g0rwrwX0EbdRXKCAzvQU8_3_mCBw0"
+    "size": 2764,
+    "hash": "HarbmomtecBLjLkEpjlFbzrVs6PAijfmhWsavJcys1s"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/Implementations.vibe"
     },
-    "size": 6389,
-    "hash": "xJ8m8Sqsof9l5CAdy1QWMN6Eco8l3Ir1TjlQE_GPhWg"
+    "size": 6391,
+    "hash": "aJm4AeSsP26zg8eb5I7OxwjF4ndulqJqucEe6T8RlZM"
    },
    {
     "path": {
@@ -2763,15 +2763,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableDeferred.vibe"
     },
-    "size": 23051,
-    "hash": "lL0uGRDTmlChYH1keoxSm0wqArmmaKDPe2HaJdcMoZU"
+    "size": 23089,
+    "hash": "-qcJ8haaWEPM-jLoqMRr-KGOfbyw2TGcBZxj-3Bdojo"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Action/raceAll.vibe"
     },
-    "size": 1723,
-    "hash": "dcJYpUjCgygFnChr-3Op1tUsWXDQ7HCPbSZOIwHkUS0"
+    "size": 1725,
+    "hash": "iS6NAWzBH63HzxzatjE2JusZHkxya4HlzdvYuO64Duo"
    },
    {
     "path": {
@@ -2805,8 +2805,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/DurableClock.vibe"
     },
-    "size": 5610,
-    "hash": "N-LSFuhX_B-JZbh1g8dGVNBn8ou3jC37r8qa2K14zio"
+    "size": 5612,
+    "hash": "6irA1YSWs2JmGXloL8Rn4FvaSdkt0E8Lq19MzvCNH6c"
    },
    {
     "path": {
@@ -3043,8 +3043,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/FlowRuntime/FlowRuntime.vibe"
     },
-    "size": 14134,
-    "hash": "rSjRD7u8-J3GRrvcaXDjHHni9F34FAAapANHqPecxW8"
+    "size": 14148,
+    "hash": "0IbVLLzJ6xwWvTLRet7y13Lbbh7ubbhyd_4qsOdcNCQ"
    },
    {
     "path": {
@@ -3064,15 +3064,15 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/ExecutionIds.vibe"
     },
-    "size": 4649,
-    "hash": "fgS28WkI6VYHNd8i6KPudnHPxiB4zIfbLxTHXOfj6Mk"
+    "size": 4653,
+    "hash": "0gAJhZO6K0Lv-ygUambSREHip0Lc5YmEfJlLnamsMI0"
    },
    {
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/internal.vibe"
     },
-    "size": 10284,
-    "hash": "OadxnnKjYKB_Q7dzKmoWBHm9W9yid_YmSGRpD1Nc2s8"
+    "size": 10288,
+    "hash": "TAccMbGr55u20CLVrlSXAzqY4epDiNmDx3ZyDZS1v7w"
    },
    {
     "path": {
@@ -3155,8 +3155,8 @@
     "path": {
      "relative": "packages/smithers/flows/flow/src/Flow/Flow.vibe"
     },
-    "size": 21996,
-    "hash": "ZDiluye0NVtTHCbIWSYmHt7FhnUBjMZ2lMO-1_s3144"
+    "size": 22016,
+    "hash": "6Y0vQCtudxnD7MMf7lUwOpbKQH_KPamdMXkWcWkVox8"
    },
    {
     "path": {
@@ -3923,24 +3923,24 @@
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Saga.ts"
+     "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
     },
-    "size": 16949,
-    "hash": "6BNJLFxLvPGQ3xSf4v8OnY7MkWP7koKGOc9nWH70CQQ"
+    "size": 16966,
+    "hash": "zzojJFaIcZSkJUhP9VmIGSUhr0BGE7b50-sH3Yw1rEQ"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.ts"
+     "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.vibe"
     },
-    "size": 9471,
-    "hash": "rkyljUDStJzMw42jDS0EXLA5NLJ8gI93c_ZT0IhahTw"
+    "size": 9606,
+    "hash": "LuaqfiSxC_tfCccxpypzmigBR3seVMRcYY8lLiCjjhI"
    },
    {
     "path": {
-     "relative": "packages/smithers/flows/patterns/src/Sidecar.ts"
+     "relative": "packages/smithers/flows/patterns/src/Sidecar.vibe"
     },
-    "size": 12941,
-    "hash": "Q25SNCZQFEocreRxU9Pe_QrV-ORxOGy7xD6ukLE9ei4"
+    "size": 12929,
+    "hash": "6-DU_lBd9FeV8qB9y-4-mS6hCBeKSgXSoHWjjPnPJ98"
    },
    {
     "path": {
@@ -3953,8 +3953,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/src/index.ts"
     },
-    "size": 2409,
-    "hash": "6vXV6wASLy8q7VJSZjeOubYWGM19mkFwBst4DMiWT-c"
+    "size": 2415,
+    "hash": "Di1F0xrQE5JJcS9xiVag32X2wPap_2VmDM-PT6iGPdI"
    },
    {
     "path": {
@@ -5017,7 +5017,7 @@
     "relative": "packages/smithers/flows/canonical/src/internal/canonicalize.ts"
    },
    {
-    "relative": "packages/smithers/flows/canonical/src/Canonical.ts"
+    "relative": "packages/smithers/flows/canonical/src/Canonical.vibe"
    },
    {
     "relative": "packages/smithers/flows/canonical/src/Serializer.ts"
@@ -5434,13 +5434,13 @@
     "relative": "packages/smithers/flows/patterns/src/Runbook.vibe"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Saga.ts"
+    "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.ts"
+    "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.vibe"
    },
    {
-    "relative": "packages/smithers/flows/patterns/src/Sidecar.ts"
+    "relative": "packages/smithers/flows/patterns/src/Sidecar.vibe"
    },
    {
     "relative": "packages/smithers/flows/patterns/src/Supervisor.ts"
@@ -5900,6 +5900,126 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
+     }
+    ],
+    "code": "/**\n * Forward steps with compensations that unwind in reverse.\n *\n * A saga is the answer to \"the third call failed and the first two already\n * changed the world\". Each step registers the call that undoes it, and a\n * failure walks those calls backwards, most recent first.\n *\n * @see https://github.com/smithersai/smithers/blob/main/packages/smithers/flows/engine/docs/concepts/retries.md\n * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership\n *\n * @since 0.1.0\n */\nimport * as Cause from \"effect/Cause\";\nimport * as Exit from \"effect/Exit\";\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport * as Schema_1 from \"effect/Schema\";\nimport * as Flow from \"@smthrs/flow/Flow\";\nimport * as Node from \"@smthrs/plan/Node\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Compose from \"./internal/Compose.js\";\nimport { call as callMember } from \"./internal/Member.js\";\nimport { OpaqueInput } from \"./internal/Payload.js\";\nimport { PatternError } from \"./PatternError.js\";\nconst CleanUnwind = Schema_1.Struct({\n    failure: Schema.Unknown, residue: Schema_1.Tuple([]),\n});\n// The refusal is minted once, as a value. `make` throws it, because a\n// declaration is built eagerly and a broken one is a programming error. `run`\n// FAILS with it, because `PatternError` is in its declared error channel and a\n// caller composing it must be able to claim the refusal with `Effect.catchTag`.\n// A thrown refusal inside `Effect.suspend` would be a defect no handler claims.\nconst stepsRefusal = (steps) => {\n    if (steps.length === 0) {\n        return new PatternError({ code: \"invalid_decorator\", message: \"Saga requires at least one step\" });\n    }\n    const ids = new Set(steps.map((step) => step.id));\n    if (ids.size !== steps.length) {\n        return new PatternError({ code: \"invalid_decorator\", message: \"Saga step ids must be unique\" });\n    }\n    return undefined;\n};\n// `make` builds topology out of the two members a step names, so a value that\n// cannot record a call is refused here rather than left to fail inside\n// `Graph.build` with a TypeError naming nothing a caller can act on. A member\n// is a flow or an action, and both record a call through their own `.call`, so\n// that is what is checked. `run` takes effect functions instead and has nothing\n// to check.\n// Every function already inherits `Function.prototype.call`, so \"has a `call`\"\n// alone would admit a bare arrow. A member's own `call` shadows it: a flow's\n// comes from the flow prototype, an action's from the action prototype, and a\n// test fixture's is its own property.\nconst callable = (member) => {\n    if (member === null || (typeof member !== \"object\" && typeof member !== \"function\"))\n        return false;\n    const record = member;\n    return typeof record.call === \"function\" && record.call !== Function.prototype.call;\n};\nconst declarationRefusal = (steps) => {\n    for (const step of steps) {\n        if (!callable(step.action)) {\n            return new PatternError({\n                code: \"invalid_decorator\",\n                message: `Saga step \"${step.id}\" action must be a flow or an action`\n            });\n        }\n        if (!callable(step.compensation)) {\n            return new PatternError({\n                code: \"invalid_decorator\",\n                message: `Saga step \"${step.id}\" compensation must be a flow or an action`\n            });\n        }\n    }\n    return undefined;\n};\n/**\n * Declares the forward chain and its compensation arms.\n *\n * Each step's continuation is wrapped in a `Node.catch` whose arm calls that\n * step's compensation and re-raises, so a failure deeper in the chain unwinds\n * one step at a time, most recent first. Under `compensate`, the default, an\n * outer arm turns the re-raised failure into a settled {@link Compensated}\n * value only when every compensation succeeds; under `fail` no arm is declared\n * at all. Failed compensations are collected without stopping earlier undos.\n * Both compensation policies fail with `compensation_failed`, preserving the\n * original failure and the residue sorted by step id.\n *\n * A step whose action or compensation is not a flow is refused here, because\n * the declaration cannot be built out of anything else.\n *\n * `make` snapshots `steps` and each step's `id`, `action`, and\n * `compensation` at the call, so a later edit to the caller's array or\n * records does not change the declaration.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (options) => {\n    // The body runs when the graph builds, later than this call, so it reads\n    // this snapshot and never the caller's steps again.\n    const steps = options.steps.map((step) => ({\n        id: step.id,\n        action: step.action,\n        compensation: step.compensation\n    }));\n    const refusal = stepsRefusal(steps) ?? declarationRefusal(steps);\n    if (refusal !== undefined)\n        $raise(refusal);\n    const policy = options.onFailure ?? \"compensate\";\n    const { name, description } = Compose.label(\"saga\", { steps: steps.map((step) => step.id), onFailure: policy }, options);\n    const body = ({ input }) => {\n        const visit = (index, completed) => {\n            const step = steps[index];\n            if (step === undefined)\n                return Node.succeed({ _tag: \"Completed\", values: completed });\n            const action = callMember(step.action, { input, completed });\n            const guarded = policy === \"fail\" ? action : Node.catch(action, {\n                onFailure: Node.capture({ step: step.id, forward: true }, (failure) => Node.fail({ failure, residue: [] }))\n            });\n            return Node.bindPlanned(guarded, Node.capture({ step: step.id }, (value) => {\n                const rest = visit(index + 1, { ...completed, [step.id]: value });\n                if (policy === \"fail\")\n                    return rest;\n                return Node.catch(rest, {\n                    onFailure: Node.capture({ step: step.id }, (error) => {\n                        const unwind = error;\n                        // The unwind is a planned reference until the run produces it,\n                        // so the compensation is SEQUENCED ahead of a node that hands\n                        // that reference back. A mapper closing over the reference\n                        // would return the placeholder instead of the unwind.\n                        const undo = Node.catch(Node.andThen(callMember(step.compensation, { id: step.id, input, value }), Node.succeed(unwind)), {\n                            onFailure: Node.capture({ step: step.id, residue: true }, (undoError) => Node.map(Node.succeed({ unwind, undoError }), Node.capture({ step: step.id, residue: true }, ({ unwind, undoError }) => ({\n                                failure: unwind.failure,\n                                residue: [...unwind.residue, { id: step.id, error: undoError }]\n                            }))))\n                        });\n                        return Node.bindPlanned(undo, Node.capture({ step: step.id }, (failure) => Node.fail(failure)));\n                    })\n                });\n            }));\n        };\n        const chain = visit(0, {});\n        if (policy === \"fail\")\n            return chain;\n        const reported = Node.catch(chain, {\n            onFailure: Node.capture({ residue: true }, (error) => Node.bindPlanned(Node.map(Node.succeed(error), Node.capture({ residue: true }, (unwind) => {\n                if (unwind.residue.length === 0)\n                    return unwind;\n                const residue = [...unwind.residue].sort((left, right) => left.id.localeCompare(right.id));\n                return new PatternError({\n                    code: \"compensation_failed\",\n                    message: `Saga compensation failed for: ${residue.map((entry) => entry.id).join(\", \")}`,\n                    cause: { failure: unwind.failure, residue }\n                });\n            })), Node.capture({ residue: true }, (failure) => Node.fail(failure))))\n        });\n        // A schema selects the clean arm at execution time; branching on a\n        // symbolic error while building the graph would hide the dirty arm.\n        return Node.catch(reported, {\n            error: CleanUnwind,\n            onFailure: Node.capture({ settled: true, onFailure: policy }, (unwind) => policy === \"compensate\"\n                ? Node.succeed({ _tag: \"Compensated\", failure: unwind.failure })\n                : Node.fail(unwind.failure))\n        });\n    };\n    return Flow.make(name, {\n        ...(description === undefined ? {} : { description }),\n        payload: OpaqueInput,\n        success: Schema.Unknown,\n        // `@smthrs/core` carried its error type as a phantom parameter and declared\n        // no error schema. `@smthrs/flow` needs a real one, because the engine\n        // encodes a typed failure through it, and a saga fails with whatever the\n        // step it called failed with.\n        error: Schema.Unknown,\n        body: Node.capture({ steps: steps.map((step) => step.id), onFailure: policy }, body)\n    });\n};\n/**\n * Runs the forward chain, unwinding completed steps on a failure or an\n * interruption.\n *\n * The policy defaults to `compensate`. Both outcomes are tagged: a chain that\n * ran to the end returns {@link Completed} with its step values nested under\n * `values`, and a clean unwind under `compensate` returns\n * {@link Compensated}.\n *\n * Each completed step registers a scope finalizer, so the unwind is LIFO and\n * runs on interruption as well as on failure. A compensation that fails does\n * not stop the ones behind it; every failing step id is collected and the run\n * fails `PatternError { code: \"compensation_failed\" }` naming them, because\n * state left dirty outranks the failure that started the unwind.\n *\n * A compensation that DIES counts as a failed compensation, not as a defect\n * the run raises: the undo did not happen, so the step belongs in the residue\n * with the typed failures. This includes a synchronous throw while constructing\n * the compensation effect. Letting the defect escape would lose both the\n * residue and the failure that started the unwind.\n *\n * @category combinators\n * @since 0.1.0\n */\nexport const run = (input, options) => {\n    // Snapshots taken at the call, ahead of the suspend: the effect may run\n    // later, and a caller's edit to the array, a step record, or the option\n    // object in between must not reach it.\n    const steps = options.steps.map((step) => ({\n        id: step.id,\n        action: step.action,\n        compensation: step.compensation\n    }));\n    const policy = options.onFailure ?? \"compensate\";\n    return Effect.suspend(() => {\n        const refusal = stepsRefusal(steps);\n        if (refusal !== undefined)\n            return Effect.fail(refusal);\n        const residue = [];\n        const forward = Effect_1.gen(runtime.$iteratorFrame(runtime.$joinedFrame(function* forward() {\n            const completed = new Map();\n            {\n                let pending_1 = runtime.$normal;\n                try {\n                    for (const step of steps) {\n                        try {\n                            {\n                                const value = yield* step.action({\n                                    input,\n                                    completed: Object.fromEntries(completed)\n                                });\n                                completed.set(step.id, value);\n                                if (policy === \"fail\")\n                                    continue;\n                                yield* Effect.addFinalizer((exit) => Exit.isSuccess(exit)\n                                    ? Effect.void\n                                    : Effect.matchCause(Effect_1.suspend(() => step.compensation({ id: step.id, input, value })), {\n                                        onFailure: (cause) => {\n                                            residue.push({ id: step.id, error: Cause.squash(cause) });\n                                        },\n                                        onSuccess: () => { }\n                                    }));\n                            }\n                        }\n                        catch (thrown_1) {\n                            pending_1 = thrown_1;\n                            break;\n                        }\n                    }\n                }\n                catch (thrown_2) {\n                    throw runtime.$finallyFailure(pending_1, thrown_2);\n                }\n                if (pending_1 !== runtime.$normal)\n                    throw pending_1;\n            }\n            return Object.fromEntries(completed);\n        })));\n        const settle = (exit) => {\n            const failure = Exit.findErrorOption(exit);\n            if (residue.length > 0) {\n                const sorted = [...residue].sort((left, right) => left.id.localeCompare(right.id));\n                return Effect.fail(new PatternError({\n                    code: \"compensation_failed\",\n                    message: `Saga compensation failed for: ${sorted.map((entry) => entry.id).join(\", \")}`,\n                    cause: {\n                        ...(Option.isSome(failure) ? { failure: failure.value } : {}),\n                        residue: sorted\n                    }\n                }));\n            }\n            if (!Exit.isSuccess(exit) && policy === \"compensate\" && Option.isSome(failure)) {\n                return Effect.succeed({ _tag: \"Compensated\", failure: failure.value });\n            }\n            // A failure exit short-circuits the map and re-raises; a success exit\n            // becomes the completed envelope.\n            return Effect.map(exit, (values) => ({ _tag: \"Completed\", values }));\n        };\n        return Effect.flatMap(Effect.exit(Effect.scoped(forward)), settle);\n    });\n};\nimport { raise as $raise } from \"./Saga.vibe.$throw$ts.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "Saga.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/patterns/src/Saga.vibe.$throw$ts.js"
+     }
+    ],
+    "code": "export function raise(value) {\n    throw value;\n}\n",
+    "map": {
+     "version": 3,
+     "file": "Saga.vibe.$throw$ts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/patterns/src/Saga.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAqbE,MAAM,UAAU,KAAK,CAAC,KAAc;IAClC,MAAM,KAAK,CAAA;AACb,CAAC"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.vibe"
+     }
+    ],
+    "code": "/**\n * Scan for issues, fix them in parallel, verify, and repeat until clean.\n *\n * This is the shape of every lint-fix, test-repair, and audit-remediation\n * workflow: the number of issues is a runtime fact, and so is the number of\n * rounds. {@link ReviewLoop} cannot express it, because a review loop revises\n * one artifact; here each issue gets its own fix.\n *\n * The retry bound and fan-out bound are declared, so the plan shows the worst\n * case. The engine fixes only issues the scanner returned.\n *\n * @see https://smithers.sh/docs/reference/api/patterns\n * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership\n *\n * @since 0.1.0\n */\nimport * as Flow from \"@smthrs/flow/Flow\";\nimport * as Node from \"@smthrs/plan/Node\";\nimport * as Schema from \"effect/Schema\";\nimport * as Compose from \"./internal/Compose.js\";\nimport { call as callMember } from \"./internal/Member.js\";\nimport { OpaqueInput } from \"./internal/Payload.js\";\nimport { PatternError } from \"./PatternError.js\";\n/**\n * Reads the signals a verifier uses to report that nothing is left to fix.\n *\n * A verifier answers with `true` or an object carrying its own `resolved: true`.\n * A symbolic plan-time value is neither, which keeps the declared unrolling\n * conservative.\n *\n * The flow records every verification and stops on an empty scan. Callers\n * read the recorded verdicts with this function.\n *\n * @category predicates\n * @since 0.1.0\n */\nexport const resolved = (value) => value === true ||\n    Compose.ownTrue(value, \"resolved\");\n// How many issues a scan returned. A scan answers with an array.\nconst issueCount = (issues) => issues.length;\nconst positive = (value) => Number.isSafeInteger(value) && value >= 1;\nconst validate = (options) => positive(options.maxRetries) && positive(options.concurrency) &&\n    (options.maxIssues === undefined || positive(options.maxIssues))\n    ? undefined\n    : new PatternError({\n        code: \"invalid_decorator\",\n        message: \"ScanFixVerify maxRetries, maxIssues, and concurrency must be positive safe integers\"\n    });\n/**\n * Declares the bounded scan-fix-verify topology and its runtime decisions.\n *\n * Every retry is unrolled, and every retry declares `maxIssues` fix slots in\n * `concurrency`-sized batches, so the plan shows the worst case. Each scan is\n * the subject of a `Node.branch`: an empty scan settles `resolved: true`.\n * Each fix slot is its own `Node.branch` on whether the scan\n * returned an issue at that index, so a run pays for exactly the fixes the\n * scan asked for, and `verify` is handed the fixes of the issues that exist.\n * Issues past `maxIssues` wait for the next round's rescan. Very large retry\n * and issue bounds build a very large graph before anything runs.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (options) => {\n    const invalid = validate(options);\n    if (invalid !== undefined)\n        $raise(invalid);\n    // The body runs when the graph builds, later than this call, so it reads\n    // these snapshots and never the caller's options again.\n    const stages = { scan: options.scan, fix: options.fix, verify: options.verify };\n    const maxRetries = options.maxRetries;\n    const maxIssues = options.maxIssues;\n    const concurrency = options.concurrency;\n    const captures = { maxRetries, maxIssues, concurrency };\n    const { name, description } = Compose.label(\"scanFixVerify\", { maxRetries, maxIssues, concurrency }, options);\n    const clean = Node.capture({ ...captures, clean: true }, (issues) => issueCount(issues) === 0);\n    const body = ({ input }) => {\n        const visit = (iteration, verifications) => Node.branch(callMember(stages.scan, { input, iteration }), {\n            if: clean,\n            then: () => Node.succeed({ iterations: iteration, remaining: [], resolved: true, verifications }),\n            else: (issues) => fixAll(iteration, issues, verifications)\n        });\n        const fixAll = (iteration, issues, verifications) => {\n            const found = issues;\n            const batches = [];\n            for (let offset = 0; offset < maxIssues; offset += concurrency) {\n                const members = {};\n                const names = [];\n                const last = Math.min(offset + concurrency, maxIssues);\n                for (let index = offset; index < last; index++) {\n                    names.push(`fix-${index}`);\n                    // A slot the scan left empty runs nothing: the predicate reads the\n                    // real issue list, so no fix is paid for an issue that is not there.\n                    members[`fix-${index}`] = Node.branch(Node.succeed(issues), {\n                        if: Node.capture({ ...captures, iteration, index }, (list) => index < issueCount(list)),\n                        then: () => callMember(stages.fix, { issue: found[index], index, iteration }),\n                        else: () => Node.succeed(null)\n                    });\n                }\n                batches.push({ names, members });\n            }\n            const verified = (slots) => {\n                // The slots past the scan's length hold nothing; verify is handed the\n                // fixes of the issues that exist.\n                const fixes = Node.map(Node.succeed({ issues, slots }), Node.capture({ ...captures, iteration, fixes: true }, (state) => state.slots.slice(0, issueCount(state.issues))));\n                return Node.bindPlanned(fixes, Node.capture({ ...captures, iteration }, (fixed) => Node.bindPlanned(callMember(stages.verify, { input, issues, fixes: fixed, iteration }), Node.capture({ ...captures, iteration }, (verification) => iteration >= maxRetries\n                    ? Node.succeed({\n                        iterations: iteration,\n                        remaining: issues,\n                        resolved: false,\n                        verifications: [...verifications, verification]\n                    })\n                    : visit(iteration + 1, [...verifications, verification])))));\n            };\n            // Each batch gates the next one, so the plan carries the width bound\n            // as dependency edges, and the slot list is assembled from every\n            // member's planned reference: a planned result may be read by field\n            // and passed into a payload, never spread into a new array.\n            const fanOut = (batch, fixed) => {\n                const declared = batches[batch];\n                if (declared === undefined)\n                    return verified(fixed);\n                return Node.bindPlanned(Node.all(declared.members), Node.capture({ ...captures, iteration, batch }, (reference) => Node.andThen(Node.succeed(reference), fanOut(batch + 1, [\n                    ...fixed,\n                    ...declared.names.map((member) => reference[member])\n                ]))));\n            };\n            return fanOut(0, []);\n        };\n        return visit(1, []);\n    };\n    return Flow.make(name, {\n        ...(description === undefined ? {} : { description }),\n        payload: OpaqueInput,\n        success: Schema.Unknown,\n        // `@smthrs/core` carried its error type as a phantom parameter and declared\n        // no error schema. `@smthrs/flow` needs a real one, because the engine\n        // encodes a typed failure through it, and this pattern fails with whatever\n        // the stage it called failed with.\n        error: Schema.Unknown,\n        body: Node.capture(captures, body)\n    });\n};\nimport { raise as $raise } from \"./ScanFixVerify.vibe.$throw$ts.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "ScanFixVerify.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.vibe.$throw$ts.js"
+     }
+    ],
+    "code": "export function raise(value) {\n    throw value;\n}\n",
+    "map": {
+     "version": 3,
+     "file": "ScanFixVerify.vibe.$throw$ts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/patterns/src/ScanFixVerify.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAwOE,MAAM,UAAU,KAAK,CAAC,KAAc;IAClC,MAAM,KAAK,CAAA;AACb,CAAC"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/patterns/src/Sidecar.vibe"
+     }
+    ],
+    "code": "/**\n * Run a cheap shadow beside the primary and measure the gap.\n *\n * A sidecar answers one question: would the cheaper model have been good\n * enough? It runs both over the same input, concurrently, and scores them.\n * The shadow is an experiment, so its failure is quarantined and the primary\n * result stands. The primary is not: a sidecar is not a fallback ladder, and a\n * failed primary is a failed run. {@link Escalation} is the pattern for\n * alternatives.\n *\n * @see https://smithers.sh/docs/reference/api/patterns\n * @see https://smithers.sh/docs/reference/api/patterns#identity-and-ownership\n *\n * @since 0.1.0\n */\nimport * as Exit from \"effect/Exit\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as Flow from \"@smthrs/flow/Flow\";\nimport * as Node from \"@smthrs/plan/Node\";\nimport * as Cause from \"effect/Cause\";\nimport * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Compose from \"./internal/Compose.js\";\nimport { call as callMember } from \"./internal/Member.js\";\nimport { OpaqueInput } from \"./internal/Payload.js\";\nimport { PatternError } from \"./PatternError.js\";\n// Reads one field of a joined value. During planning the value is symbolic and\n// the read answers a reference the plan records; during execution it answers\n// the field. Both directions matter: the plan must show which half of the join\n// the scorer reads, and the run must actually read it.\nconst field = (value, key) => value[key];\n// Scores are data an evaluator returned, so a non-finite one is an input\n// fault rather than a declaration fault.\nconst scoreRefusal = (primary, shadow) => {\n    if (!Number.isFinite(primary)) {\n        return new PatternError({\n            code: \"invalid_input\",\n            message: `Sidecar primary score must be a finite number, received ${primary}`\n        });\n    }\n    if (!Number.isFinite(shadow)) {\n        return new PatternError({\n            code: \"invalid_input\",\n            message: `Sidecar shadow score must be a finite number, received ${shadow}`\n        });\n    }\n    const difference = primary - shadow;\n    return Number.isFinite(difference)\n        ? undefined\n        : new PatternError({\n            code: \"invalid_input\",\n            message: `Sidecar score difference must be a finite number, received ${difference}`\n        });\n};\nconst measuredDelta = (primary, shadow) => ({\n    primary,\n    shadow,\n    difference: Number((primary - shadow).toFixed(12)),\n    cheaperWins: shadow >= primary\n});\n/**\n * Compares two scores.\n *\n * The subtraction is rounded to twelve decimal places, because a raw\n * floating-point difference reports `0.30000000000000004` for two scores an\n * operator entered as `0.8` and `0.5`. A tie counts as `cheaperWins`: equal\n * quality at lower cost is the cheaper seat winning.\n * Both scores and the difference must be finite.\n *\n * @category combinators\n * @since 0.1.0\n */\nexport const delta = (primary, shadow) => {\n    const refusal = scoreRefusal(primary, shadow);\n    if (refusal !== undefined)\n        $raise(refusal);\n    return measuredDelta(primary, shadow);\n};\n/**\n * Declares the sidecar topology: primary and shadow under one `All`, with the\n * shadow behind a `Catch`.\n *\n * The declared `All` is what makes the shadow concurrent rather than an extra\n * sequential step. The `Catch` is what makes it an experiment: the arm settles\n * the shadow as `{ quarantined: true, error }`, so the join cannot fail on the\n * shadow's behalf and a plan reader sees that a failed shadow does not fail the\n * run. A settled shadow is `{ quarantined: false, value }`, the shape\n * {@link run} reports.\n *\n * The score call is the settled arm of a `Node.branch` on the real shadow, so a\n * quarantined shadow is never scored, as in {@link run}. The declared result\n * is `{ primary, shadow, delta? }`, which is {@link Result}, except that a\n * quarantined shadow carries its typed `error` where `run` carries the whole\n * `Cause`: a cause does not cross the declared wire.\n *\n * @category constructors\n * @since 0.1.0\n */\nexport const make = (options) => {\n    // The body runs when the graph builds, later than this call, so it reads\n    // these snapshots and never the caller's options again.\n    const declared = { primary: options.primary, shadow: options.shadow };\n    const score = options.score;\n    const { name, description } = Compose.label(\"sidecar\", { scores: score !== undefined }, options);\n    const body = ({ input }) => {\n        const shadow = Node.catch(Node.map(callMember(declared.shadow, input), Node.capture({ shadow: \"settled\" }, (value) => ({ quarantined: false, value }))), {\n            onFailure: Node.capture({ shadow: \"quarantined\" }, (error) => Node.succeed({ quarantined: true, error }))\n        });\n        // The delta is computed on the REAL scores, and the pair beside it is\n        // carried as planned references: a mapper that closed over the pair would\n        // hand back the placeholder instead of the values the run produced.\n        const measured = (scorer, both) => Node.bindPlanned(Node.branch(Node.map(\n        // The scorer sees the same pair `run` hands it: the primary's value\n        // and the shadow's, not the shadow's quarantine wrapper.\n        callMember(scorer, { primary: field(both, \"primary\"), shadow: field(field(both, \"shadow\"), \"value\") }), Node.capture({ scores: true }, (scores) => {\n            const primary = field(scores, \"primary\");\n            const shadow = field(scores, \"shadow\");\n            const refusal = scoreRefusal(primary, shadow);\n            return refusal === undefined ? { delta: measuredDelta(primary, shadow) } : { refusal };\n        })), \n        // The scorer's output is data, so the declared form refuses the same\n        // scores `run` refuses, on the typed channel.\n        {\n            if: Node.capture({ scores: true, refused: true }, (measure) => field(measure, \"refusal\") !== undefined),\n            then: (measure) => Node.fail(field(measure, \"refusal\")),\n            else: (measure) => Node.succeed(field(measure, \"delta\"))\n        }), Node.capture({ scores: true }, (delta) => Node.succeed({\n            primary: field(both, \"primary\"),\n            shadow: field(both, \"shadow\"),\n            delta\n        })));\n        // A quarantined shadow has no value to score, so the score call is the\n        // settled arm of a branch on the real shadow, as `run` skips it.\n        const scored = (both) => score === undefined ? Node.succeed(both) : Node.branch(Node.succeed(both), {\n            if: Node.capture({ scores: true }, (settled) => field(field(settled, \"shadow\"), \"quarantined\") === true),\n            then: (settled) => Node.succeed(settled),\n            else: (settled) => measured(score, settled)\n        });\n        return Node.bindPlanned(Node.all({ primary: callMember(declared.primary, input), shadow }), Node.capture({ scores: score !== undefined }, scored));\n    };\n    return Flow.make(name, {\n        ...(description === undefined ? {} : { description }),\n        payload: OpaqueInput,\n        success: Schema.Unknown,\n        error: Schema.Unknown,\n        body: Node.capture({ scores: score !== undefined }, body)\n    });\n};\n/**\n * Runs the primary and its shadow concurrently and scores the pair.\n *\n * The shadow's failure, defect included, becomes a quarantined result rather\n * than a run failure. Interruption is not quarantined: a cancelled run is\n * cancelled, and reporting the shadow as merely failed would hide that.\n *\n * @category combinators\n * @since 0.1.0\n */\nexport const run = (input, options) => {\n    // Snapshots taken at the call: the effect may run later, and a caller's\n    // edit to the option object in between must not reach it.\n    const declared = { primary: options.primary, shadow: options.shadow, score: options.score };\n    return Effect_1.gen(function* () {\n        // The shadow callback is invoked inside `Effect.suspend` so that a factory\n        // that throws before it returns an effect is a defect the quarantine\n        // claims, not one that fails the run before the primary ever starts.\n        const quarantine = Effect.flatMap(Effect.exit(Effect_1.suspend(() => declared.shadow(input))), (exit) => Exit.isSuccess(exit)\n            ? Effect.succeed({ quarantined: false, value: exit.value })\n            // An interrupted shadow means the run itself is being cancelled.\n            // Reporting that as a quarantined experiment would hide the\n            // cancellation, so re-raise it as the interruption it is.\n            : Cause.hasInterrupts(exit.cause)\n                ? Effect.interrupt\n                : Effect.succeed({ quarantined: true, cause: exit.cause }));\n        const [primary, shadow] = yield* Effect.all([declared.primary(input), quarantine], { concurrency: 2 });\n        if (declared.score === undefined || shadow.quarantined) {\n            const reported = { primary, shadow };\n            return reported;\n        }\n        const scores = yield* declared.score({ primary, shadow: shadow.value });\n        const refusal = scoreRefusal(scores.primary, scores.shadow);\n        if (refusal !== undefined)\n            return yield* Effect_1.fail(refusal);\n        const reported = { primary, shadow, delta: measuredDelta(scores.primary, scores.shadow) };\n        return reported;\n    });\n};\nimport { raise as $raise } from \"./Sidecar.vibe.$throw$ts.js\";\n",
+    "map": {
+     "version": 3,
+     "file": "Sidecar.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/patterns/src/Sidecar.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "packages/smithers/flows/patterns/src/Sidecar.vibe.$throw$ts.js"
+     }
+    ],
+    "code": "export function raise(value) {\n    throw value;\n}\n",
+    "map": {
+     "version": 3,
+     "file": "Sidecar.vibe.$throw$ts.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "packages/smithers/flows/patterns/src/Sidecar.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAoVE,MAAM,UAAU,KAAK,CAAC,KAAc;IAClC,MAAM,KAAK,CAAA;AACb,CAAC"
     }
    }
   ]

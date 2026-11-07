@@ -114,7 +114,7 @@ const validate = (options: {
  */
 export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> => {
   const invalid = validate(options)
-  if (invalid !== undefined) throw invalid
+  if (invalid !== undefined) $raise(invalid)
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
   const stages = { scan: options.scan, fix: options.fix, verify: options.verify }
@@ -228,3 +228,10 @@ export const make = <R = never>(options: MakeOptions<R>): ScanFixVerifyFlow<R> =
     body: Node.capture(captures, body)
   })
 }
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts

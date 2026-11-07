@@ -70,7 +70,7 @@ export * as Quarantine from "./Quarantine.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as Saga from "./Saga.ts"
+export * as Saga from "./Saga.vibe"
 
 /**
  * @category patterns
@@ -136,13 +136,13 @@ export * as Runbook from "./Runbook.vibe"
  * @category patterns
  * @since 0.1.0
  */
-export * as ScanFixVerify from "./ScanFixVerify.ts"
+export * as ScanFixVerify from "./ScanFixVerify.vibe"
 
 /**
  * @category patterns
  * @since 0.1.0
  */
-export * as Sidecar from "./Sidecar.ts"
+export * as Sidecar from "./Sidecar.vibe"
 
 /**
  * @category patterns

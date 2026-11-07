@@ -19,8 +19,8 @@ import * as Quarantine from "../src/Quarantine.vibe"
 import * as Recursion from "../src/Recursion.vibe"
 import * as ReviewLoop from "../src/ReviewLoop.vibe"
 import * as Runbook from "../src/Runbook.vibe"
-import * as ScanFixVerify from "../src/ScanFixVerify.ts"
-import * as Sidecar from "../src/Sidecar.ts"
+import * as ScanFixVerify from "../src/ScanFixVerify.vibe"
+import * as Sidecar from "../src/Sidecar.vibe"
 import * as Trellis from "../src/Trellis.ts"
 
 // Every field any pattern here hands a member, as the one struct a

@@ -141,18 +141,18 @@
       "default": "./.vibelang/js/src/Runbook.js"
     },
     "./Saga": {
-      "types": "./src/Saga.ts",
-      "vibelang-source": "./src/Saga.ts",
+      "types": "./.vibe/declarations/src/Saga.d.vibe.ts",
+      "vibelang-source": "./src/Saga.vibe",
       "default": "./.vibelang/js/src/Saga.js"
     },
     "./ScanFixVerify": {
-      "types": "./src/ScanFixVerify.ts",
-      "vibelang-source": "./src/ScanFixVerify.ts",
+      "types": "./.vibe/declarations/src/ScanFixVerify.d.vibe.ts",
+      "vibelang-source": "./src/ScanFixVerify.vibe",
       "default": "./.vibelang/js/src/ScanFixVerify.js"
     },
     "./Sidecar": {
-      "types": "./src/Sidecar.ts",
-      "vibelang-source": "./src/Sidecar.ts",
+      "types": "./.vibe/declarations/src/Sidecar.d.vibe.ts",
+      "vibelang-source": "./src/Sidecar.vibe",
       "default": "./.vibelang/js/src/Sidecar.js"
     },
     "./Supervisor": {
@@ -186,7 +186,10 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js"
+    ".vibelang/js",
+    "src/Saga.vibe",
+    "src/ScanFixVerify.vibe",
+    "src/Sidecar.vibe"
   ],
   "publishConfig": {
     "access": "public",

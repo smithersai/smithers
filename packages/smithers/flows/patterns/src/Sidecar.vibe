@@ -18,7 +18,6 @@ import * as Flow from "@smthrs/flow/Flow"
 import * as Node from "@smthrs/plan/Node"
 import * as Cause from "effect/Cause"
 import * as Effect from "effect/Effect"
-import * as Exit from "effect/Exit"
 import * as Schema from "effect/Schema"
 import * as Compose from "./internal/Compose.vibe"
 import type { Member } from "./internal/Member.ts"
@@ -129,10 +128,10 @@ export interface Result<P, S> {
  * @since 0.1.0
  */
 export interface RuntimeOptions<I, P, S, E, R, E2, R2, E3 = never, R3 = never> {
-  readonly primary: (input: I) => Effect.Effect<P, E, R>
-  readonly shadow: (input: I) => Effect.Effect<S, E2, R2>
+  readonly primary: (input: I) => P!E!R
+  readonly shadow: (input: I) => S!E2!R2
   readonly score?:
-    | ((input: { readonly primary: P; readonly shadow: S }) => Effect.Effect<Scores, E3, R3>)
+    | ((input: { readonly primary: P; readonly shadow: S }) => Scores!E3!R3)
     | undefined
 }
 
@@ -187,7 +186,7 @@ const measuredDelta = (primary: number, shadow: number): Delta => ({
  */
 export const delta = (primary: number, shadow: number): Delta => {
   const refusal = scoreRefusal(primary, shadow)
-  if (refusal !== undefined) throw refusal
+  if (refusal !== undefined) $raise(refusal)
   return measuredDelta(primary, shadow)
 }
 
@@ -303,16 +302,18 @@ export const make = <R = never>(options: MakeOptions<R>): SidecarFlow<R> => {
 export const run = <I, P, S, E, R, E2, R2, E3 = never, R3 = never>(
   input: I,
   options: RuntimeOptions<I, P, S, E, R, E2, R2, E3, R3>
-): Effect.Effect<Result<P, S>, E | E3 | PatternError, R | R2 | R3> => {
+): Result<P, S>!(E | E3 | PatternError)!(R | R2 | R3) => {
   // Snapshots taken at the call: the effect may run later, and a caller's
   // edit to the option object in between must not reach it.
   const declared = { primary: options.primary, shadow: options.shadow, score: options.score }
-  return Effect.gen(function*() {
+  return effect {
     // The shadow callback is invoked inside `Effect.suspend` so that a factory
     // that throws before it returns an effect is a defect the quarantine
     // claims, not one that fails the run before the primary ever starts.
-    const quarantine: Effect.Effect<Shadow<S>, never, R2> = Effect.flatMap(
-      Effect.exit(Effect.suspend(() => declared.shadow(input))),
+    const quarantine: Shadow<S>!never!R2 = Effect.flatMap(
+      Effect.exit(effect {
+        return try declared.shadow(input)
+      }),
       (exit) =>
         Exit.isSuccess(exit)
           ? Effect.succeed<Shadow<S>>({ quarantined: false, value: exit.value })
@@ -323,15 +324,22 @@ export const run = <I, P, S, E, R, E2, R2, E3 = never, R3 = never>(
           ? Effect.interrupt
           : Effect.succeed<Shadow<S>>({ quarantined: true, cause: exit.cause })
     )
-    const [primary, shadow] = yield* Effect.all([declared.primary(input), quarantine] as const, { concurrency: 2 })
+    const [primary, shadow] = try Effect.all([declared.primary(input), quarantine] as const, { concurrency: 2 })
     if (declared.score === undefined || shadow.quarantined) {
       const reported: Result<P, S> = { primary, shadow }
       return reported
     }
-    const scores = yield* declared.score({ primary, shadow: shadow.value })
+    const scores = try declared.score({ primary, shadow: shadow.value })
     const refusal = scoreRefusal(scores.primary, scores.shadow)
-    if (refusal !== undefined) return yield* Effect.fail(refusal)
+    if (refusal !== undefined) throw refusal
     const reported: Result<P, S> = { primary, shadow, delta: measuredDelta(scores.primary, scores.shadow) }
     return reported
-  })
+  }
 }
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts

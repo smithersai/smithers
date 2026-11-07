@@ -71,7 +71,7 @@ const securityReview = Smithers.SecurityReview({
         "src/DelegationChain.vibe",
         "src/Escalation.vibe",
         "src/Supervisor.ts",
-        "src/ScanFixVerify.ts",
+        "src/ScanFixVerify.vibe",
         "src/DriftDetector.vibe"
       ]
     },
@@ -133,7 +133,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Panel.vibe",
         "src/Bounded.vibe",
         "src/Quarantine.vibe",
-        "src/Sidecar.ts",
+        "src/Sidecar.vibe",
         "src/CheckSuite.vibe",
         "src/Burndown.ts"
       ]
