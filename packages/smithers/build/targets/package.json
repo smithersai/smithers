@@ -79,7 +79,7 @@
       "default": "./.vibelang/js/src/Cargo.js"
     },
     "./Changesets": {
-      "types": "./.vibe/declarations/Changesets.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Changesets.d.vibe.ts",
       "vibelang-source": "./src/Changesets.vibe",
       "default": "./.vibelang/js/src/Changesets.js"
     },
@@ -199,7 +199,7 @@
       "default": "./.vibelang/js/src/Flow.js"
     },
     "./FlowCatalog": {
-      "types": "./.vibe/declarations/FlowCatalog.d.vibe.ts",
+      "types": "./.vibe/declarations/src/FlowCatalog.d.vibe.ts",
       "vibelang-source": "./src/FlowCatalog.vibe",
       "default": "./.vibelang/js/src/FlowCatalog.js"
     },
@@ -214,7 +214,7 @@
       "default": "./.vibelang/js/src/GeneratedFile.js"
     },
     "./Home": {
-      "types": "./.vibe/declarations/Home.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Home.d.vibe.ts",
       "vibelang-source": "./src/Home.vibe",
       "default": "./.vibelang/js/src/Home.js"
     },
@@ -269,7 +269,7 @@
       "default": "./.vibelang/js/src/LlmLint.js"
     },
     "./LocalRepository": {
-      "types": "./.vibe/declarations/LocalRepository.d.vibe.ts",
+      "types": "./.vibe/declarations/src/LocalRepository.d.vibe.ts",
       "vibelang-source": "./src/LocalRepository.vibe",
       "default": "./.vibelang/js/src/LocalRepository.js"
     },
@@ -289,12 +289,12 @@
       "default": "./.vibelang/js/src/MemoryTarget.js"
     },
     "./Mise": {
-      "types": "./.vibe/declarations/Mise.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Mise.d.vibe.ts",
       "vibelang-source": "./src/Mise.vibe",
       "default": "./.vibelang/js/src/Mise.js"
     },
     "./Mount": {
-      "types": "./.vibe/declarations/Mount.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Mount.d.vibe.ts",
       "vibelang-source": "./src/Mount.vibe",
       "default": "./.vibelang/js/src/Mount.js"
     },
@@ -334,7 +334,7 @@
       "default": "./.vibelang/js/src/NpmTarget.js"
     },
     "./Outward": {
-      "types": "./.vibe/declarations/Outward.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Outward.d.vibe.ts",
       "vibelang-source": "./src/Outward.vibe",
       "default": "./.vibelang/js/src/Outward.js"
     },
@@ -419,7 +419,7 @@
       "default": "./.vibelang/js/src/SecretProxy.js"
     },
     "./SecurityReview": {
-      "types": "./.vibe/declarations/SecurityReview.d.vibe.ts",
+      "types": "./.vibe/declarations/src/SecurityReview.d.vibe.ts",
       "vibelang-source": "./src/SecurityReview.vibe",
       "default": "./.vibelang/js/src/SecurityReview.js"
     },
@@ -489,7 +489,7 @@
       "default": "./.vibelang/js/src/TypedocDocumentation.js"
     },
     "./Verb": {
-      "types": "./.vibe/declarations/Verb.d.vibe.ts",
+      "types": "./.vibe/declarations/src/Verb.d.vibe.ts",
       "vibelang-source": "./src/Verb.vibe",
       "default": "./.vibelang/js/src/Verb.js"
     },

@@ -951,4 +951,28 @@ const packageOutputRoutes = Smithers.NodeTest({
   deps: [repositoryInputs]
 })
 
-export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, packageOutputRoutes, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
+/**
+ * Public native target exports resolve to the emitted declarations.
+ *
+ * @since 0.1.0
+ * @category test
+ */
+const targetDeclarationRoutes = Smithers.NodeTest({
+  runner: Smithers.testRunner([Smithers.file("//packages/repo-targets/contracts/target-declaration-routes.test.mjs")]),
+  srcs: [
+    Smithers.file("//packages/repo-targets/contracts/smithers-targets-declaration-root.json"),
+    Smithers.file("//packages/smithers/build/targets/package.json"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Changesets.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/FlowCatalog.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Home.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/LocalRepository.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Mise.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Mount.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Outward.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/SecurityReview.d.vibe.ts"),
+    Smithers.file("//packages/smithers/build/targets/.vibe/declarations/src/Verb.d.vibe.ts")
+  ],
+  deps: [repositoryInputs]
+})
+
+export const Package = Smithers.Package({ targets: { ...repositoryPackages, repositoryInputs, workflowSources, lockfileParity, lockfileParityUnit, dependencyBoundaries, dependencyBoundariesUnit, conformanceCheck, repositoryConformance, testScriptWiring, macDistribution, egressHttpClient, ciInventory, check, test, workspacePackages, targetDeclarationRoutes, packageOutputRoutes, workerVibePolicy, tuiSourceInventory, conflictMarkers, mvpDocs, conflictMarkersUnit, trackedHygiene, trackedHygieneUnit, toolchainPins, effectVersion, releaseContracts, privateEffectAdapters, driftJob, nativeWindowsWorkflow, runnerContract, webBundleContract, knownRedCoverage, bunCoverage, testPinRegister, contractsLint, packageContract, publicExportMaps, barrels, reliabilityWorkflow, faultSkips, machinePaths, scratchArtifacts, cliVerbs, reviewDocsAgainstCode, reviewJsdocAgainstCode, ...securityReview } })
