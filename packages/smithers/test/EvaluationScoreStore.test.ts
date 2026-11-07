@@ -247,7 +247,7 @@ describe("evaluation scoring over the project's engine store", () => {
           score: (input: Parameters<typeof binding.scorer.score>[0]) =>
             Effect.gen(function*() {
               yield* Deferred.succeed(started, undefined)
-              if (interrupted) yield* Effect.never
+              if (interrupted) return yield* Effect.never
               const result = yield* binding.scorer.score(input)
               completed += 1
               return result

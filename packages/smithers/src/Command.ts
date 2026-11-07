@@ -722,7 +722,7 @@ const doctor = Command.make("doctor", {}, () =>
         : Ui.renderChecklist(`Diagnostics: ${report.root}`, report.checks, { interactive: ui.interactive })
     )
     if (Doctor.failed(report)) {
-      yield* Effect.fail(new CliError.UnsupportedError({ message: "doctor found a blocking problem" }))
+      return yield* Effect.fail(new CliError.UnsupportedError({ message: "doctor found a blocking problem" }))
     }
   })).pipe(Command.withDescription(Verb.find("doctor")!.help))
 

@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import { NodeWS } from "@effect/platform-node"
 import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
 import { Refused, UsageError } from "../../CliError.ts"

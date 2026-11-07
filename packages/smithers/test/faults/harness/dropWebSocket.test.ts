@@ -1,10 +1,10 @@
-import * as NodeSocket from "@effect/platform-node/NodeSocket"
+import { NodeWS } from "@effect/platform-node"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
 import { dropWebSocket, SocketState, trackingWebSocketConstructor } from "./dropWebSocket.ts"
 
 // The `ws` server class the client half of this harness is built on, reached
 // through the same re-export `@effect/platform-node` uses for the client.
-const Server = NodeSocket.NodeWS.WebSocketServer
+const Server = NodeWS.WebSocketServer
 
 interface ServerSocket {
   on: (event: string, listener: (data: unknown) => void) => unknown

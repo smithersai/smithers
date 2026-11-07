@@ -1,9 +1,11 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { Health } from "@smthrs/control"
 import { Journal } from "@smthrs/journal"
 import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import { NodeRuntime } from "@smthrs/platform-node"
 import { Effect } from "effect"
+import * as EffectLayer from "effect/Layer"
 import { execFile, spawn } from "node:child_process"
 import { access, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -138,7 +140,7 @@ it(
           )
         }).pipe(
           Effect.provide(NodeRuntime.storage(join(root, ".flows", "engine.db"), root)),
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.scoped
         )
       )

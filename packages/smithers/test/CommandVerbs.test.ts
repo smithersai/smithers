@@ -1,3 +1,4 @@
+import { expectTypeOf } from "vitest"
 /**
  * The verbs the other command suites do not reach, driven through the real parser.
  *
@@ -793,8 +794,8 @@ declare const probeControl: Layer.Layer<ControlService.Control, unknown>
 
 /** Never called; tsc checks it (#2347). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error the command runner does not provide Unprovided
-  run(Effect.map(Unprovided, (service) => service.value), probeControl)
+  const missing = Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof missing>().not.toExtend<Parameters<typeof run>[0]>()
   run(Effect.succeed(1), probeControl)
 }
 

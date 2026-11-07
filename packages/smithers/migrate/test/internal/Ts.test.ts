@@ -110,7 +110,7 @@ describe("scan compiler session", () => {
       Effect.gen(function*() {
         retained = yield* Ts.session
         retained("flow.ts", "const a = 1")
-        yield* Effect.interrupt
+        return yield* Effect.interrupt
       }).pipe(Effect.scoped, Effect.exit)
     )
     expect(counts.closes).toBe(1)

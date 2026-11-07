@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** Scoped, bounded health observation beside the native control host.
  * @since 1.0.0
  */
@@ -7,7 +8,8 @@ import { Action, type FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow
 import type { Journal } from "@smthrs/journal"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Node } from "@smthrs/plan"
-import { Cause, type Crypto, Effect, FiberMap, Layer, Metric, Schema, Scope, Semaphore } from "effect"
+import { Cause, Effect, FiberMap, Layer, Metric, Schema, Scope, Semaphore } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { randomUUID } from "node:crypto"
 
 const activeSubjects = Metric.gauge("smithers.health.monitored_subjects")
@@ -39,7 +41,11 @@ const prepare = (
 ): Effect.Effect<
   Effect.Effect<never>,
   never,
-  Control.Control | Journal.Journal | Scope.Scope | FlowRuntime.FlowRuntime | Crypto.Crypto
+  | Control.Control
+  | Journal.Journal
+  | Scope.Scope
+  | FlowRuntime.FlowRuntime
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 > =>
   Effect.gen(function*() {
     const control = yield* Control.Control
@@ -114,7 +120,7 @@ const prepare = (
     // A stable identity resumes the same poll after a host crash. A UUID here
     // would leave another perpetual lineage for every interrupted host.
     const services = yield* Layer.build(layer)
-    const context = yield* Effect.context<FlowRuntime.FlowRuntime | Crypto.Crypto>()
+    const context = yield* Effect.context<FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)>()
     // Probe teardown can await external resources. Keep the discovery handler
     // registered until those probes stop, so a due timer cannot become an
     // unregistered wake during an otherwise ordinary host shutdown.

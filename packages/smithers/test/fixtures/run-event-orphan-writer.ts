@@ -71,6 +71,6 @@ await Effect.runPromise(
       }
     }
     yield* Effect.sync(() => process.stdout.write(`ORPHAN_READY ${JSON.stringify(runs)}\n`))
-    yield* Effect.never
+    return yield* Effect.never
   }).pipe(Effect.provide(runtime), Effect.scoped)
 )

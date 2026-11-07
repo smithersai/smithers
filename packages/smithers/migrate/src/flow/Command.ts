@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The entry point every caller shares: the CLI verb, the `smithers-migrate`
  * bin, and the durable control-plane launch.
@@ -14,7 +15,7 @@ import type { Action } from "@smthrs/flow"
 import type * as FlowRuntime from "@smthrs/flow/FlowRuntime"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import * as Clock from "effect/Clock"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type * as FileSystem from "effect/FileSystem"
 import type * as Layer from "effect/Layer"
@@ -70,7 +71,7 @@ export const flowId = "system/migrate"
 export type Requirements =
   | FileSystem.FileSystem
   | Path.Path
-  | Crypto.Crypto
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
   | FlowRuntime.FlowRuntime
   | Action.Implementations
   | MigrateFlow.Requires

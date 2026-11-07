@@ -23,7 +23,7 @@ if (process.argv[2] === "original") {
       })
       if (receipt._tag !== "Accepted" || receipt.runId === undefined) return yield* Effect.die("Run was not accepted")
       yield* Effect.promise(() => writeFile(join(root, "run-id"), receipt.runId!))
-      yield* Effect.never
+      return yield* Effect.never
     }).pipe(Effect.provide(host(root)), Effect.scoped)
   )
 }

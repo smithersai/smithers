@@ -16,10 +16,10 @@ or opens a database except read only.
 ## Install the scanner API
 
 ```bash
-npm install @smthrs/migrate@next @effect/platform-node@4.0.5 @effect/platform-node-shared@4.0.5 effect@4.0.5
+npm install @smthrs/migrate@next @effect/platform-node@4.1.1 @effect/platform-node-shared@4.1.1 effect@4.1.1
 ```
 
-The package depends on `effect` 4.0.5 exactly, so the line pins `effect` and
+The package depends on `effect` 4.1.1 exactly, so the line pins `effect` and
 the Node adapters the example imports to that release, which keeps one copy of
 `effect` in the tree. Keep optional dependencies enabled: TypeScript 7 supplies the native compiler
 the scanners need through a platform-specific optional package. See

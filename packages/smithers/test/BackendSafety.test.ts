@@ -1,4 +1,4 @@
-import { NodeWS } from "@effect/platform-node/NodeSocket"
+import { NodeWS } from "@effect/platform-node"
 import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import { execFileSync, spawn } from "node:child_process"

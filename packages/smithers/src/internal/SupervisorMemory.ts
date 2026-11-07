@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The supervisor's memory as the native host composes it: which database it
  * lives in, how that database waits for a concurrent writer, how recall reads
@@ -22,7 +23,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import type * as Recall from "@smthrs/memory/Recall"
 import * as RecallKeyword from "@smthrs/memory/RecallKeyword"
 import { Context, Effect, Layer, Option } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { SqlClient } from "effect/sql/SqlClient"
 import { createHash } from "node:crypto"
 import { resolve } from "node:path"
@@ -144,7 +145,7 @@ export const memoryDatabase = (input: {
 export const layer = (input: {
   readonly environment: Environment.Source
   readonly database: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
-  readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
   /** The workspace's own stores, used when `SMITHERS_MEMORY_DB` names no file. */
   readonly stores?: Layer.Layer<DurableWriter.DurableWriter | SqlClient> | undefined
 }): Layer.Layer<MemoryStore.MemoryStore | Recall.Recall> => {

@@ -55,9 +55,9 @@ export const observe = (database: (filename: string) => Layer.Layer<SqlClient>) 
             { readonly found: number }
           >`SELECT 1 AS found FROM sqlite_master WHERE type = 'table' AND name = 'flows_migrations'`
       })
-      if (!tables[0]?.found) return yield* Effect.die(new StoreInitializing())
+      if (!tables[0]?.found) return yield* Effect.die(StoreInitializing.new())
       const applied = yield* sql`SELECT migration_id FROM flows_migrations LIMIT 1`
-      if (applied.length === 0) return yield* Effect.die(new StoreInitializing())
+      if (applied.length === 0) return yield* Effect.die(StoreInitializing.new())
     }).pipe(Effect.orDie)
   ))
 
@@ -67,7 +67,11 @@ export const observe = (database: (filename: string) => Layer.Layer<SqlClient>) 
  * @private
  */
 export class StoreInitializing extends CliError.Refused {
-  constructor() {
-    super({ fault: "infra", code: "store_initializing", message: "The store is still being initialized" })
+  static new(): StoreInitializing {
+    return new StoreInitializing({
+      fault: "infra",
+      code: "store_initializing",
+      message: "The store is still being initialized"
+    })
   }
 }

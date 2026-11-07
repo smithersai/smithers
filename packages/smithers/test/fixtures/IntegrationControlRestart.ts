@@ -1,3 +1,4 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import * as ControlMigrations from "@smthrs/control/Migrations"
 import * as DurableWriter from "@smthrs/database/DurableWriter"
@@ -8,6 +9,7 @@ import * as MemoryStore from "@smthrs/memory/MemoryStore"
 import * as MemoryMigrations from "@smthrs/memory/Migrations"
 import * as TimeTravelMigrations from "@smthrs/time-travel/Migrations"
 import { Effect, Layer } from "effect"
+import * as EffectLayer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 
 const [operation, filename] = process.argv.slice(2)
@@ -38,6 +40,6 @@ const result = await Effect.runPromise(
       control: yield* sql`SELECT value FROM control_sequences WHERE name = 'shared-database-regression'`,
       ledger: yield* sql`SELECT migration_id, name FROM flows_migrations ORDER BY migration_id`
     }
-  }).pipe(Effect.provide(database), Effect.provide(NodeServices.layer))
+  }).pipe(Effect.provide(database), Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
 )
 process.stdout.write(JSON.stringify(result))

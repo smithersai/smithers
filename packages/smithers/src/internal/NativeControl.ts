@@ -1,3 +1,5 @@
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /** One private control/executor composition over existing native platform adapters.
  * @since 1.0.0
  */
@@ -98,7 +100,7 @@ import {
   Scope,
   Semaphore
 } from "effect"
-import type { Crypto, Path } from "effect"
+import type { Path } from "effect"
 import * as Deferred from "effect/Deferred"
 import { SqlClient } from "effect/sql/SqlClient"
 import type * as Terminal from "effect/Terminal"
@@ -461,7 +463,7 @@ export interface Platform {
    */
   readonly toolCallLimitMs?: number | undefined
   readonly host: Layer.Layer<Exclude<NodeServices.NodeServices, Terminal.Terminal>>
-  readonly crypto: Layer.Layer<Crypto.Crypto>
+  readonly crypto: Layer.Layer<(EffectDigest.Digest | SecureRandom.SecureRandom)>
   readonly database: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
   /** Opens an existing store read-only: no directory, migration, schema object or write lock. */
   readonly observe: (filename: string) => Layer.Layer<DurableWriter.DurableWriter | SqlClient>
