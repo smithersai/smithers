@@ -1,15 +1,21 @@
-// The site Worker: serves the Vite build. `/api/health` says which agent the deployment runs, so a smoke test can
-// tell a mock deployment from a live one. The Effect-native API and the agent's Durable Object arrive with the live
-// agent (wiki/roadmap.md, brick 1b).
+// The site Worker: serves the Vite build and hands /api/* to the API Worker (worker/Api.vibe) over its service
+// binding, as apps/mvp's site does. Without the binding the site runs the mock agent in the browser, and `/api/health`
+// says so; with it, the API answers health itself, `agent: "live"` (wiki/decisions/0006-hosting.md, 0010-live-agent.md).
 interface Env {
   readonly ASSETS: Fetcher
+  /** The API Worker; absent on a mock-only deployment. */
+  readonly API?: Fetcher
 }
 
 export default {
   fetch: async (request, env) => {
     const url = new URL(request.url)
-    if (url.pathname === "/api/health") return Response.json({ ok: true, agent: "mock" })
-    // Only home and built assets exist today. Reject before the asset service's SPA fallback can turn a miss into 200.
+    if (url.pathname.startsWith("/api/")) {
+      if (env.API !== undefined) return env.API.fetch(request)
+      if (url.pathname === "/api/health") return Response.json({ ok: true, agent: "mock" })
+      return new Response("Not found", { status: 404 })
+    }
+    // Only home and built assets exist. Reject before the asset service's SPA fallback can turn a miss into 200.
     const home = url.pathname === "/" || url.pathname === "/index.html"
     const asset = /^\/(?:assets|media)\/[^?]+\.[^/]+$/.test(url.pathname)
     if (!home && !asset) return new Response("Not found", { status: 404 })

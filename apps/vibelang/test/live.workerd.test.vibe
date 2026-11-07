@@ -1,0 +1,149 @@
+// The live Factory end to end in local workerd (wiki/decisions/0010-live-agent.md, 0008-testing.md): Miniflare runs
+// the API Worker's Durable Objects over the real sequencer, the real `vibelang/Reply` flow on the engine in each
+// conversation's own SQLite, and the real HTTP protocol (test/workerd/worker.ts), and `LiveFactory` talks to it over
+// HTTP from this process, as the CLI and the browser do. No model is scripted: without a key the agent's real
+// configuration has no model, so every reply fails saying so, and a spent budget refuses before any model call. The
+// opt-in case asks the real model when `CEREBRAS_API_KEY` is set. Run with `pnpm test:workerd`.
+import { describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient } from "effect/http"
+import { afterAll, beforeAll } from "vitest"
+import { apply, empty, type Event } from "../src/core/conversation.ts"
+import { Factory } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { REASONS } from "../worker/Reply.vibe"
+import { modelKey, room, serveApi, type Served } from "./support/workerd.ts"
+
+/** The live Factory at `origin`, over this process's fetch. */
+function live(origin: string) {
+  return LiveFactory(origin).pipe(Layer.provide(FetchHttpClient.layer))
+}
+
+/** What `origin`'s `/api/health` says, over this process's fetch. */
+effect function healthOf(origin: string) {
+  provide FetchHttpClient.layer {
+    return try health(origin)
+  }
+}
+
+/** Every event of `conversation` after `after`, up to the one that settles its `replies`-th reply. */
+effect function untilSettled(conversation: string, replies: number, after = 0) {
+  const factory = try Factory
+  let settled = 0
+  const events = try Stream.runCollect(
+    factory.events(conversation, after) |> Stream.takeUntil(%, (event: Event) =>
+      (event.type === "ReplyFinished" || event.type === "ReplyFailed") && ++settled === replies),
+  )
+  return Array.from(events)
+}
+
+describe("the live Factory in local workerd, with no model key", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await serveApi() }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("says it is live, and a post's reply runs as a durable flow that fails, saying the agent has no model", () => effect {
+    const origin = api!.origin
+    const answer = try healthOf(origin)
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = room("unconfigured")
+      try factory.post(conversation, "a", "Ada", "  How do services work?  ")
+      const events = try untilSettled(conversation, 1)
+      const snapshot = try factory.read(conversation, 0)
+      try Effect.try(() => {
+        expect(answer).toEqual({ ok: true, agent: "live" })
+        expect(factory.mode).toBe("live")
+        expect(events).toEqual([
+          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "How do services work?" },
+          { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" },
+          { type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unconfigured },
+        ])
+        expect(snapshot).toEqual({ seq: 3, entries: events.reduce(apply, empty).entries })
+      })
+    }
+  })
+
+  it.live("answers posts one at a time in order, two followers see the same events, and a cursor resumes", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = room("queue")
+      try factory.post(conversation, "a", "Ada", "first")
+      try factory.post(conversation, "b", "Grace", "second")
+      const [first, second] = try.all [untilSettled(conversation, 2), untilSettled(conversation, 2)]
+      const resumed = try untilSettled(conversation, 1, 3)
+      try Effect.try(() => {
+        expect(first).toEqual(second)
+        expect(first.map((event) => event.seq)).toEqual(first.map((_, index) => index + 1))
+        const state = first.reduce(apply, empty)
+        const posts = state.entries.filter((entry) => entry.author === "person").map((entry) => entry.id)
+        const replies = state.entries.filter((entry) => entry.author === "agent")
+        expect(state.entries.filter((entry) => entry.author === "person").map((entry) => entry.text)).toEqual(["first", "second"])
+        expect(replies.map((reply) => [reply.inReplyTo, reply.error])).toEqual(posts.map((post) => [post, REASONS.unconfigured]))
+        // The second reply starts only after the first settles.
+        const settledFirst = first.findIndex((event) => event.type === "ReplyFailed")
+        const startedSecond = first.findIndex((event) => event.type === "ReplyStarted" && event.inReplyTo === posts[1])
+        expect(settledFirst).toBeLessThan(startedSecond)
+        expect(state.agent).toBe("failed")
+        expect(resumed.map((event) => event.seq)).toEqual(first.filter((event) => event.seq > 3).map((event) => event.seq))
+      })
+    }
+  })
+
+  it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = room("refusals")
+      const refusal = effect (clientId: string, text: string) => {
+        return factory.post(conversation, clientId, "Ada", text) catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      }
+      const blank = try refusal("a", "   ")
+      try factory.post(conversation, "b", "Ada", "hi")
+      const repeated = try refusal("b", "hi again")
+      const long = try refusal("c", "x".repeat(8001))
+      try Effect.try(() => {
+        expect(blank).toBe("empty")
+        expect(repeated).toBe("duplicate")
+        expect(long).toBe("too-long")
+      })
+    }
+  })
+})
+
+describe("the live Factory in local workerd, with the day's budget spent", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await serveApi({ CHAT_DAILY_TOKENS: "0", CEREBRAS_API_KEY: "unused-key" }) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("refuses the reply before any model call, saying the budget is spent", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = room("budget")
+      try factory.post(conversation, "a", "Ada", "hi")
+      const events = try untilSettled(conversation, 1)
+      try Effect.try(() => {
+        expect(events.at(-1)).toEqual({ type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.budget })
+      })
+    }
+  })
+})
+
+describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await serveApi({ CEREBRAS_API_KEY: modelKey ?? "" }) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("streams an answer that finishes with VibeLang in it", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = room("model")
+      try factory.post(conversation, "a", "Ada", "Show me a VibeLang service with one effect method.")
+      const events = try untilSettled(conversation, 1)
+      const reply = events.reduce(apply, empty).entries[1]!
+      try Effect.try(() => {
+        expect(events.at(-1)!.type).toBe("ReplyFinished")
+        expect(events.some((event) => event.type === "ReplyDelta")).toBe(true)
+        expect(reply.text).toContain("service")
+      })
+    }
+  }, 180_000)
+})

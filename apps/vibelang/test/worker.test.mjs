@@ -14,3 +14,12 @@ it("serves the home, health and known assets", async () => {
   expect(await (await worker.fetch(new Request("https://example.test/api/health"), env)).json()).toEqual({ ok: true, agent: "mock" })
   expect(await (await worker.fetch(new Request("https://example.test/media/logo-dark.svg"), env)).text()).toBe("<svg/>")
 })
+it("hands every /api/ path to the API Worker when it is bound, health included", async () => {
+  const seen = []
+  const api = { fetch: async (request) => { seen.push(new URL(request.url).pathname); return Response.json({ ok: true, agent: "live" }) } }
+  const bound = { ...env, API: api }
+  expect(await (await worker.fetch(new Request("https://example.test/api/health"), bound)).json()).toEqual({ ok: true, agent: "live" })
+  await worker.fetch(new Request("https://example.test/api/conversations/home/events?after=2"), bound)
+  expect(seen).toEqual(["/api/health", "/api/conversations/home/events"])
+  expect((await worker.fetch(new Request("https://example.test/api/conversations/home"), env)).status).toBe(404)
+})

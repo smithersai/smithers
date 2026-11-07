@@ -1,8 +1,11 @@
 import vibelang from "vibelang-vite"
-import { defineConfig } from "vitest/config"
+import { configDefaults, defineConfig } from "vitest/config"
 
-// Until the live agent lands, the mock Factory layer (no backend, no model) is the app's only backend
-// (wiki/decisions/0004-mock-mode.md). `--mode e2e` adds the fault-injection page the recovery tests drive.
+// The browser picks the mock Factory (no backend, no model) unless its origin's API says it is live
+// (wiki/decisions/0004-mock-mode.md, 0010-live-agent.md). `--mode e2e` adds the fault-injection page the recovery tests
+// drive. `vitest --mode workerd` runs only the suites that start local workerd (`pnpm test:workerd`), in Node.
+const WORKERD = "test/**/*.workerd.test.{ts,vibe}"
+
 export default defineConfig(({ mode }) => ({
   plugins: [vibelang()],
   build: {
@@ -11,8 +14,10 @@ export default defineConfig(({ mode }) => ({
   },
   server: { port: 5178 },
   test: {
-    environment: "happy-dom",
-    include: ["test/**/*.test.{ts,vibe,mjs}"],
+    environment: mode === "workerd" ? "node" : "happy-dom",
+    include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
+    exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],
+    ...(mode === "workerd" ? { testTimeout: 120_000, hookTimeout: 120_000 } : {}),
     // Foldkit ships ESM that Vitest must transform with the app.
     server: { deps: { inline: ["foldkit"] } },
   },

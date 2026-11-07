@@ -926,6 +926,9 @@ importers:
       '@smthrs/agent':
         specifier: workspace:*
         version: link:../../packages/smithers/agent
+      '@smthrs/crypto':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/crypto
       '@smthrs/flow':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/flow
@@ -935,6 +938,9 @@ importers:
       '@smthrs/model-host':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/model-host
+      '@smthrs/plan':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/plan
       '@smthrs/platform-cloudflare':
         specifier: workspace:*
         version: link:../../packages/smithers/flows/platform-cloudflare
@@ -21548,7 +21554,7 @@ snapshots:
       ast-v8-to-istanbul: 1.0.5
       magicast: 0.5.4
       obug: 2.1.4
-      std-env: 4.2.0
+      std-env: 4.3.0
       tinyrainbow: 3.1.1
       vitest: 5.0.0(@opentelemetry/api@1.9.1)(@types/node@26.4.1)(@vitest/coverage-v8@5.0.0)(happy-dom@20.13.2)(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))
 

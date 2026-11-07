@@ -1,6 +1,7 @@
 /**
  * Targets for vibelang.smithers.sh (wiki/decisions/0008-testing.md): the
- * typecheck, the Vitest suites and the state machine's proofs.
+ * typecheck, the Vitest suites, the Worker suites in local workerd, and the
+ * state machine's proofs.
  *
  * Each runs the package script a person runs from `apps/vibelang`, so a
  * target and `pnpm <script>` cannot disagree. `verify` installs LemmaScript
@@ -20,6 +21,7 @@ const sources = [
   Smithers.glob("//apps/vibelang/test/**/*"),
   Smithers.glob("//apps/vibelang/e2e/**/*"),
   Smithers.glob("//apps/vibelang/skills/**/*"),
+  Smithers.glob("//apps/vibelang/scripts/**/*"),
   Smithers.file("//apps/vibelang/package.json"),
   Smithers.file("//apps/vibelang/tsconfig.json"),
   Smithers.file("//apps/vibelang/tsconfig.surfaces.json"),
@@ -62,6 +64,20 @@ const test = Smithers.Shell.Test({
 })
 
 /**
+ * `pnpm test:workerd`: the API Worker and its Durable Objects in local workerd, with LiveFactory over HTTP.
+ *
+ * @since 1.0.0
+ * @category test
+ */
+const workerd = Smithers.Shell.Test({
+  summary: "Run the API Worker's Durable Objects in local workerd through LiveFactory, the protocol and the CLI.",
+  shell: "cd apps/vibelang && pnpm test:workerd",
+  data: sources,
+  timeout: "20m",
+  sandbox: { network: "loopback" }
+})
+
+/**
  * `pnpm verify`: LemmaScript's contracts on `src/core/conversation.ts`, proven by Dafny.
  *
  * @since 1.0.0
@@ -88,4 +104,4 @@ const verifyBroken = Smithers.Shell.Test({
   exclusive: true
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, verify, verifyBroken } })
+export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken } })

@@ -1,0 +1,124 @@
+// The workerd test's API Worker (test/live.workerd.test.ts): plain Durable Objects over the same code the Alchemy ones
+// in worker/Api.vibe run (worker/Objects.vibe, worker/Http.vibe), so local workerd runs the real sequencer, the real
+// reply flow on the engine in each object's SQLite, and the real HTTP protocol. Alchemy's own bundle can't be loaded
+// here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
+// and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
+import { ConfigProvider, Effect } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { ReadSnapshot } from "../../src/core/schemas.vibe"
+import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
+import { afterOf, eventStream, handle, type Conversations } from "../../worker/Http.vibe"
+import * as Objects from "../../worker/Objects.vibe"
+import type { Spend } from "../../worker/Reply.vibe"
+import type { Sequencer } from "../../worker/Sequencer.vibe"
+import { Unreachable } from "../../worker/Unreachable.vibe"
+
+interface Namespace {
+  idFromName(name: string): unknown
+  get(id: unknown): { fetch(input: string | Request, init?: RequestInit): Promise<Response> }
+}
+
+interface Env {
+  readonly CONVERSATION: Namespace
+  readonly BUDGET: Namespace
+  readonly [name: string]: unknown
+}
+
+interface State {
+  readonly id: { toString(): string }
+  readonly storage: Objects.Storage
+}
+
+/** The Worker's env as Effect `Config`, as Alchemy provides it to a deployed Worker. */
+const configured = <A, E>(env: Env, effect: Effect.Effect<A, E>) =>
+  Effect.provide(effect, ConfigProvider.layer(ConfigProvider.fromUnknown(env)))
+
+const call = async (namespace: Namespace, name: string, path: string, body: unknown) => {
+  const response = await namespace.get(namespace.idFromName(name)).fetch(`https://object/${path}`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  })
+  if (!response.ok) throw new Error(`${path} answered ${response.status}`)
+  return response.json()
+}
+
+const reach = <A>(what: string, promise: () => Promise<A>) =>
+  Effect.tryPromise({ try: promise, catch: () => new Unreachable({ what }) })
+
+export class Conversation {
+  readonly sequencer: Promise<Sequencer>
+
+  constructor(readonly state: State, readonly env: Env) {
+    this.sequencer = Effect.runPromise(Objects.conversation(state.storage))
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const sequencer = await this.sequencer
+    const url = new URL(request.url)
+    if (url.pathname.endsWith("/events")) {
+      await Effect.runPromise(sequencer.ensureDispatched())
+      return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
+    }
+    const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number }
+    if (url.pathname === "/post") {
+      const refusal = await Effect.runPromise(sequencer.post(args.clientId, args.name, args.text))
+      return Response.json({ refusal: refusal ?? null })
+    }
+    if (url.pathname === "/read") return Response.json(await Effect.runPromise(sequencer.read(args.after)))
+    return new Response("Not found", { status: 404 })
+  }
+
+  async alarm(): Promise<void> {
+    const sequencer = await this.sequencer
+    const env = this.env
+    const spend: Spend.Shape = {
+      admit: (day) => reach("budget", () => call(env.BUDGET, day, "admit", {}) as Promise<boolean>),
+      spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply, tokens }).then(() => undefined)),
+    }
+    const model = await Effect.runPromise(Effect.orDie(configured(env, chatModel())))
+    await Effect.runPromise(Objects.alarm(this.state.id.toString(), this.state.storage, sequencer, spend, model))
+  }
+}
+
+export class Budget {
+  readonly budget: Promise<Effect.Success<ReturnType<typeof Objects.budget>>>
+
+  constructor(readonly state: State, env: Env) {
+    this.budget = Effect.runPromise(Effect.flatMap(
+      Effect.orDie(configured(env, dailyTokens)),
+      (limit) => Objects.budget(state.storage, limit),
+    ))
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const budget = await this.budget
+    const url = new URL(request.url)
+    const args = await request.json() as { readonly reply: string; readonly tokens: number }
+    if (url.pathname === "/admit") return Response.json(await Effect.runPromise(budget.admit()))
+    await Effect.runPromise(budget.spend(args.reply, args.tokens))
+    return Response.json(null)
+  }
+}
+
+export default {
+  async fetch(request: Request, env: Env): Promise<Response> {
+    const conversations: Conversations = {
+      post: (conversation, body) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),
+      read: (conversation, after) =>
+        reach("conversation", () => call(env.CONVERSATION, conversation, "read", { after }) as Promise<ReadSnapshot>),
+      events: (conversation) =>
+        Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
+          reach("conversation", async () => {
+            const object = env.CONVERSATION.get(env.CONVERSATION.idFromName(conversation))
+            const url = new URL(incoming.url, "https://object")
+            return HttpServerResponse.raw(await object.fetch(`https://object/events${url.search}`, { signal: request.signal }))
+          })),
+    }
+    const response = await Effect.runPromise(
+      handle(conversations).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))),
+    )
+    return HttpServerResponse.toWeb(response)
+  },
+}
+

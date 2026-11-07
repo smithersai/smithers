@@ -47614,6 +47614,11 @@
         "exclude": []
       },
       {
+        "kind": "glob",
+        "pattern": "apps/vibelang/scripts/**/*",
+        "exclude": []
+      },
+      {
         "kind": "file",
         "path": "apps/vibelang/package.json"
       },
@@ -47683,6 +47688,11 @@
       {
         "kind": "glob",
         "pattern": "apps/vibelang/skills/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/scripts/**/*",
         "exclude": []
       },
       {
@@ -47773,6 +47783,83 @@
       {
         "kind": "file",
         "path": "apps/vibelang/src/core/conversation.ts"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [],
+    "source": {
+      "file": "apps/vibelang/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/vibelang:workerd",
+    "package": "apps/vibelang",
+    "name": "workerd",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "summary": "Run the API Worker's Durable Objects in local workerd through LiveFactory, the protocol and the CLI.",
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/worker/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/infra/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/test/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/skills/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.surfaces.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/index.html"
       }
     ],
     "outputs": [],

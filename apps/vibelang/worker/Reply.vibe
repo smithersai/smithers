@@ -1,0 +1,213 @@
+// The agent's reply to one post, a durable `@smthrs/flow` flow (rulings VL-11; wiki/decisions/0010-live-agent.md).
+// Every side effect is a journaled step, so a reset Durable Object resumes the reply where it stopped, and the model
+// call is `@smthrs/agent`'s `ModelStep`, never a raw provider call. The reply streams through the conversation's
+// sequencer as `StartReply`, `AppendReply`, `RestartReply` (the model call retried) and `FinishReply`; every failure
+// becomes `FailReply` with a reason the person reads.
+import { ModelStep } from "@smthrs/agent"
+import { WebCrypto } from "@smthrs/crypto"
+import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { type ModelError, ModelEvent, ModelRequest } from "@smthrs/model"
+import type { HostModel } from "@smthrs/model-host"
+import { Node } from "@smthrs/plan"
+import { AGENT_CONTEXT } from "./agentContext.ts"
+import { replyIdOf, Turn, type Answer } from "./Sequencer.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+
+/** Another reply streams in this conversation; starting waits for it. */
+export schema error Busy {}
+
+const Answered = Schema.Literals(["done", "busy", "refused"])
+
+/** The conversation's sequencer, as the reply's steps reach it: in the same Durable Object (Sequencer.vibe). */
+export service Replies {
+  start(post: string): Answer!!
+  history(post: string): ReadonlyArray<Turn>!!
+  append(reply: string, attempt: number, offset: number, text: string): void!!
+  restart(reply: string, attempt: number): void!!
+  finish(reply: string, text: string): Answer!!
+  fail(reply: string, reason: string): Answer!!
+}
+
+/** The day's token budget (Budget.vibe), in its own Durable Object: `admit` before a model call, `spend` after. */
+export service Spend {
+  admit(day: string): boolean!Unreachable
+  spend(day: string, reply: string, tokens: number): void!Unreachable
+}
+
+/** The agent's model, or why there is none: `CHAT_MODEL` and its key (AgentModel.vibe). */
+export service ChatModel {
+  readonly model: HostModel["Service"] | undefined
+  readonly unusable: string
+}
+
+/** The reasons a person reads on a failed reply. Short, and never a provider's message, which could hold anything. */
+export const REASONS = {
+  budget: "The agent's daily budget is spent. It resets at 00:00 UTC.",
+  unconfigured: "The agent has no model configured.",
+  refused: "The model refused to answer.",
+  unavailable: "The model is unavailable. Try again.",
+  empty: "The model returned no answer.",
+  failed: "The agent failed. Try again.",
+} as const
+
+/** The most tokens one answer may use, and the most turns of the conversation the model reads. */
+export const MAX_ANSWER_TOKENS = 2048
+export const MAX_TURNS = 24
+
+/** A step that waits on the budget's object, or on another reply: it retries until it can, at most a minute apart. */
+const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
+
+export const Reply = Flow.make("vibelang/Reply", {
+  description: "The VibeLang agent answers one person's post in its conversation.",
+  modelInvocable: false,
+  payload: { post: Schema.String },
+  success: Schema.Null,
+  body: () => Node.succeed(null),
+})
+
+/** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
+export function dayOf(millis: number): string {
+  return new Date(millis).toISOString().slice(0, 10)
+}
+
+/** The model request for `turns`: VibeLang's own reference as system context, then the conversation. */
+export function requestFor(modelId: string, turns: ReadonlyArray<Turn>) {
+  return ModelRequest.ModelRequest.make({
+    modelId,
+    system: [ModelRequest.SystemPart.make({ text: AGENT_CONTEXT })],
+    messages: turns.slice(-MAX_TURNS).map((turn) =>
+      turn.author === "person" ? ModelRequest.Message.user(turn.text) : ModelRequest.Message.assistant(turn.text)
+    ),
+    tools: [],
+    params: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
+  })
+}
+
+/** The reason a person reads for a provider error the model step sealed. */
+export function reasonOf(error: ModelError.ModelError): string {
+  if (error.code === "content_policy") return REASONS.refused
+  if (error.code === "out_of_credit" || error.code === "quota_exceeded") return REASONS.budget
+  return REASONS.unavailable
+}
+
+/** A failure's tag for the logs: never its message, which can carry a provider's words or a person's text. */
+function tagOf(error: unknown): string {
+  return typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : "defect"
+}
+
+function textOf(events: ReadonlyArray<ModelEvent.ModelEvent>): string {
+  return ModelEvent.settledMessage(events).message.content
+    .flatMap((part) => part.type === "text" ? [part.text] : []).join("")
+}
+
+function tokensOf(events: ReadonlyArray<ModelEvent.ModelEvent>): number {
+  const usage = ModelEvent.settledMessage(events).usage
+  return (usage.inputTokens ?? 0) + (usage.outputTokens ?? 0)
+}
+
+data Outcome { Answered { text: string }; Failed { reason: string } }
+
+/** Everything between starting the reply and settling it: the budget, the history, the model and the spend. */
+effect function compose(post: string, reply: string) {
+  const replies = try Replies
+  const spend = try Spend
+  const chat = try ChatModel
+  const admission = try Action.make({
+    name: "vibelang/reply/admit",
+    success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }),
+    error: Unreachable,
+    retryPolicy: patient,
+    execute: effect {
+      const day = dayOf(try Clock.currentTimeMillis)
+      return { day, admitted: try spend.admit(day) }
+    },
+  })
+  if (!admission.admitted) return Outcome.Failed({ reason: REASONS.budget })
+  const model = chat.model
+  if (model === undefined) {
+    try Effect.logWarning("vibelang.reply.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
+    return Outcome.Failed({ reason: REASONS.unconfigured })
+  }
+  const turns = try Action.make({
+    name: "vibelang/reply/history",
+    success: Schema.Array(Turn),
+    execute: replies.history(post),
+  })
+  // Each piece goes to the sequencer as it streams. `finish` sets the settled text whatever arrived, and a replay
+  // hands the recorded pieces again, which the sequencer already has.
+  let attempt = 1
+  let offset = 0
+  const result = try ModelStep.run({
+    name: "vibelang/reply/model",
+    request: requestFor(model.modelId, turns),
+    model: model.model,
+    route: model.route,
+    onEvent: (event) => {
+      if (event.type === "retry") {
+        attempt = event.attempt
+        offset = 0
+        return replies.restart(reply, attempt)
+      }
+      if (event.type !== "text-delta" || event.text === "") return Effect.void
+      const at = offset
+      offset += event.text.length
+      return replies.append(reply, attempt, at, event.text)
+    },
+  })
+  const tokens = tokensOf(result.events)
+  try Action.make({
+    name: "vibelang/reply/spend",
+    error: Unreachable,
+    retryPolicy: patient,
+    execute: spend.spend(admission.day, reply, tokens),
+  })
+  try Effect.logInfo("vibelang.reply.model").pipe(Effect.annotateLogs({
+    outcome: result.error === undefined ? "answered" : result.error.code,
+    tokens,
+    replayed: result.replayed,
+  }))
+  if (result.error !== undefined) return Outcome.Failed({ reason: reasonOf(result.error) })
+  const text = textOf(result.events)
+  return text === "" ? Outcome.Failed({ reason: REASONS.empty }) : Outcome.Answered({ text })
+}
+
+/** The reply flow's body: start the reply, compose it, then settle it as finished or failed. */
+export effect function answer(post: string) {
+  const replies = try Replies
+  const reply = replyIdOf(post)
+  const started = try Action.make({
+    name: "vibelang/reply/start",
+    success: Answered,
+    error: Busy,
+    retryPolicy: patient,
+    execute: effect {
+      const answered = try replies.start(post)
+      if (answered === "busy") throw new Busy()
+      return answered
+    },
+  })
+  if (started !== "done") {
+    try Effect.logWarning("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "refused" }))
+    return null
+  }
+  // Interruption is the engine's (a reset or a yielded drive): it resumes the flow, so it is never a failed reply.
+  const outcome = try Effect.catchCause(compose(post, reply), (cause) => {
+    if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
+    return Effect.as(
+      Effect.logError("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })),
+      Outcome.Failed({ reason: REASONS.failed }),
+    )
+  })
+  const settled = match (outcome) {
+    when { _tag: "Answered", let text }: replies.finish(reply, text);
+    when { _tag: "Failed", let reason }: replies.fail(reply, reason);
+  }
+  try Action.make({ name: "vibelang/reply/settle", success: Answered, execute: settled })
+  return null
+}
+
+/** Registers `Reply` with the engine; its steps reach the sequencer, the budget and the model through services. */
+export const registration = Layer.effectDiscard(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  try engine.register(Reply, (payload) => Effect.orDie(answer(payload.post)))
+}).pipe(Layer.provide(WebCrypto.layer))

@@ -1,0 +1,214 @@
+// One conversation's sequencer (wiki/decisions/0003-one-state-machine.md, 0010-live-agent.md): the only writer of its
+// numbered events. Every intent, a person's post or a step of the agent's reply flow, goes through `decide` and
+// `apply` under one lock, is written to the conversation's log before anyone sees it, and is then published to every
+// follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
+// Cloudflare.
+import {
+  apply, canReplyTo, decide, empty, isReplying,
+  type Conversation, type Entry, type Event, type Intent,
+} from "../src/core/conversation.ts"
+import type { ReadSnapshot } from "../src/core/schemas.vibe"
+
+/** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
+export interface Log {
+  read(): ReadonlyArray<Event>!!
+  write(event: Event): void!!
+}
+
+/** Starts the agent's reply flow for the first of `posts` that has none; a no-op while another reply flow runs. */
+export interface Dispatch {
+  start(posts: ReadonlyArray<string>): void!!
+}
+
+/** What a reply step got: done (or already done), `busy` while another reply streams, or a final refusal. */
+export type Answer = "done" | "busy" | "refused"
+
+/** One turn of the conversation as the model reads it. */
+export schema Turn { readonly author: "person" | "agent"; readonly text: string }
+
+/** The reply that answers `post`: the sequencer chooses both ids, so each post has exactly one possible reply. */
+export function replyIdOf(post: string): string {
+  return `r${post.slice(1)}`
+}
+
+/** The person posts no reply targets, oldest first, when the agent isn't replying: the ones to answer next. */
+export function unanswered(conversation: Conversation): ReadonlyArray<string> {
+  if (conversation.agent === "working") return []
+  return conversation.entries
+    .filter((entry) => entry.author === "person" && canReplyTo(conversation.entries, entry.id))
+    .map((entry) => entry.id)
+}
+
+interface State {
+  readonly conversation: Conversation
+  readonly log: ReadonlyArray<Event>
+}
+
+/** How many times `reply` restarted: its current model attempt is one more. */
+function attemptOf(log: ReadonlyArray<Event>, reply: string): number {
+  return 1 + log.filter((event) => event.type === "ReplyRestarted" && event.id === reply).length
+}
+
+function entryOf(conversation: Conversation, id: string): Entry | undefined {
+  return conversation.entries.find((entry) => entry.id === id)
+}
+
+/** The sequencer over `log`, publishing to its followers and dispatching replies through `dispatch`. */
+export effect function make(log: Log, dispatch: Dispatch) {
+  const lock = try Semaphore.make(1)
+  const published = try PubSub.unbounded<Event>()
+  const loaded = try Ref.make<State | undefined>(undefined)
+
+  effect function state() {
+    const current = try Ref.get(loaded)
+    if (current !== undefined) return current
+    const events = try log.read()
+    const restored: State = { conversation: events.reduce(apply, empty), log: events }
+    try Ref.set(loaded, restored)
+    return restored
+  }
+
+  /** Decides `intent` against the current state; an accepted event is written, applied and published. */
+  effect function record(intent: Intent) {
+    const current = try state()
+    const decision = decide(current.conversation, intent)
+    if (!decision.ok) return decision
+    try log.write(decision.event)
+    try Ref.set(loaded, { conversation: apply(current.conversation, decision.event), log: [...current.log, decision.event] })
+    try PubSub.publish(published, decision.event)
+    return decision
+  }
+
+  function locked<A, E, R>(body: A!E!R) {
+    return Semaphore.withPermits(lock, 1)(body)
+  }
+
+  /** Starts the next unanswered post's reply flow, if the agent isn't replying. */
+  effect function ensureDispatched() {
+    const posts = unanswered((try locked(state())).conversation)
+    if (posts.length > 0) try dispatch.start(posts)
+  }
+
+  /** Settles the streaming reply with `intent` (finish or fail), then dispatches the next post. */
+  effect function settle(reply: string, intent: Intent, settled: (entry: Entry) => boolean) {
+    const answer = try locked(effect {
+      const current = try state()
+      const entry = entryOf(current.conversation, reply)
+      const already: Answer = entry !== undefined && settled(entry) ? "done" : "refused"
+      if (entry === undefined || !isReplying(current.conversation, reply)) return already
+      try record(intent)
+      const done: Answer = "done"
+      return done
+    })
+    try ensureDispatched()
+    return answer
+  }
+
+  return {
+    ensureDispatched,
+
+    /** Records a person's post, then makes sure its reply flow runs. The refusal when the sequencer refuses it. */
+    post: effect (clientId: string, name: string, text: string) => {
+      const decision = try locked(effect {
+        const seq = (try state()).conversation.seq + 1
+        return try record({ type: "Post", id: `m${seq}`, clientId, name, text })
+      })
+      if (!decision.ok) return decision.refusal
+      try ensureDispatched()
+      return undefined
+    },
+
+    /** Current copies of the entries touched by an event after `after`, and the cursor. */
+    read: effect (after: number) => {
+      const current = try locked(state())
+      const touched = new Set(current.log.filter((event) => event.seq > after).map((event) => event.id))
+      const snapshot: ReadSnapshot = {
+        seq: current.conversation.seq,
+        entries: current.conversation.entries.filter((entry) => touched.has(entry.id)),
+      }
+      return snapshot
+    },
+
+    /** Every event after `after`, then each new one as it is numbered. Subscribing first loses none between. */
+    follow: (after: number) =>
+      Stream.unwrap(effect {
+        const live = try PubSub.subscribe(published)
+        const current = try locked(state())
+        const replay = current.log.filter((event) => event.seq > after)
+        const replayedTo = replay.length === 0 ? after : replay[replay.length - 1]!.seq
+        return Stream.concat(
+          Stream.fromIterable(replay),
+          Stream.fromSubscription(live).pipe(Stream.filter((event) => event.seq > replayedTo)),
+        )
+      }),
+
+    /** The turns the model reads to answer `post`: every post and finished answer up to it. */
+    history: effect (post: string) => {
+      const current = try locked(state())
+      const turns: Array<Turn> = []
+      for (const entry of current.conversation.entries) {
+        if (entry.author === "person") turns.push({ author: "person", text: entry.text })
+        else if (entry.done && entry.error === "") turns.push({ author: "agent", text: entry.text })
+        if (entry.id === post) break
+      }
+      return turns
+    },
+
+    /** Starts the reply to `post`. Done again when that reply already exists. */
+    start: effect (post: string) => {
+      const reply = replyIdOf(post)
+      return try locked(effect {
+        const decision = try record({ type: "StartReply", id: reply, inReplyTo: post })
+        const exists = entryOf((try state()).conversation, reply)?.inReplyTo === post
+        const answer: Answer = decision.ok || exists ? "done" : decision.refusal === "busy" ? "busy" : "refused"
+        return answer
+      })
+    },
+
+    /** Appends `text` at `offset` of attempt `attempt`. A piece already applied, or of an earlier attempt, is ignored. */
+    append: effect (reply: string, attempt: number, offset: number, text: string) => {
+      try locked(effect {
+        const current = try state()
+        const entry = entryOf(current.conversation, reply)
+        if (entry === undefined || !isReplying(current.conversation, reply)) return
+        if (attempt !== attemptOf(current.log, reply) || offset !== entry.text.length || text === "") return
+        try record({ type: "AppendReply", id: reply, text })
+      })
+    },
+
+    /** The model's attempt `attempt` begins: what streamed before it is discarded. Each attempt restarts once. */
+    restart: effect (reply: string, attempt: number) => {
+      try locked(effect {
+        const current = try state()
+        if (!isReplying(current.conversation, reply)) return
+        // One restart per attempt, skipped attempts included, so this attempt's pieces apply.
+        for (let next = attemptOf(current.log, reply); next < attempt; next++) {
+          try record({ type: "RestartReply", id: reply })
+        }
+      })
+    },
+
+    /**
+     * Finishes the reply as exactly `text`, the model's settled answer: whatever streamed is completed, or replaced
+     * when a lost piece left it different. Done again once finished. Then the next post is dispatched.
+     */
+    finish: effect (reply: string, text: string) => {
+      try locked(effect {
+        const current = try state()
+        const entry = entryOf(current.conversation, reply)
+        if (entry === undefined || !isReplying(current.conversation, reply)) return
+        if (!text.startsWith(entry.text)) try record({ type: "RestartReply", id: reply })
+        const shown = text.startsWith(entry.text) ? entry.text : ""
+        if (text.length > shown.length) try record({ type: "AppendReply", id: reply, text: text.slice(shown.length) })
+      })
+      return try settle(reply, { type: "FinishReply", id: reply }, (entry) => entry.done && entry.error === "")
+    },
+
+    /** Fails the reply with `reason`, shown on it. Done again once failed. Then the next post is dispatched. */
+    fail: effect (reply: string, reason: string) => {
+      return try settle(reply, { type: "FailReply", id: reply, reason }, (entry) => entry.error !== "")
+    },
+  }
+}
+
+export type Sequencer = Effect.Success<ReturnType<typeof make>>
