@@ -1,4 +1,5 @@
-import { Crypto, Schema } from "effect"
+import { Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { readFileSync } from "node:fs"
 import { describe, expect, it } from "vitest"
 import { Digest, digest, digestSync, Sha256 } from "../src/index.ts"
@@ -10,7 +11,7 @@ import { Digest, digest, digestSync, Sha256 } from "../src/index.ts"
 // `Codec`.
 const documentedDigest: Schema.Codec<Digest, string> = Digest
 
-const documentedSha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
+const documentedSha256: Schema.Codec<Digest, string | Uint8Array, EffectDigest.Digest> & {
   readonly Digest: typeof Digest
   readonly digest: typeof digest
   readonly digestSync: typeof digestSync
@@ -34,7 +35,7 @@ describe("docs/api.md schema signatures", () => {
 
   it("declares Sha256 with its Crypto decoding requirement", () => {
     expect(signature("Sha256")).toContain(
-      "const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {\n"
+      "const Sha256: Schema.Codec<Digest, string | Uint8Array, EffectDigest.Digest> & {\n"
     )
     expect(documentedSha256).toBe(Sha256)
   })

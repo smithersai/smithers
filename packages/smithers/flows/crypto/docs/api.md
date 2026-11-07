@@ -38,7 +38,7 @@ const sameAddress = digestSync("hello")
 ### digest
 
 ```ts
-const digest: (input: string | Uint8Array) => Effect.Effect<Digest, Sha256Error, Crypto.Crypto>
+const digest: (input: string | Uint8Array) => Effect.Effect<Digest, Sha256Error, EffectDigest.Digest>
 ```
 
 Hashes text or bytes through the injected Effect `Crypto` service. This is the
@@ -47,7 +47,7 @@ normal operational API.
 - `input`: a well-formed JavaScript string, or a `Uint8Array`. The string is
   encoded as UTF-8; the array is copied and hashed exactly as viewed.
 - Returns the digest as 64 lowercase hexadecimal characters, branded as `Digest`.
-- Requires `Crypto.Crypto`. A missing service stays an unsatisfied Effect
+- Requires `EffectDigest.Digest`. A missing service stays an unsatisfied Effect
   requirement and surfaces as `Service not found: effect/Crypto`, which is a
   composition defect rather than a `Sha256Error`.
 - Fails with [`Sha256Error`](#sha256error) under any of the five codes.
@@ -101,7 +101,7 @@ The expected-value message is
 ### Sha256
 
 ```ts
-const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
+const Sha256: Schema.Codec<Digest, string | Uint8Array, EffectDigest.Digest> & {
   readonly Digest: typeof Digest
   readonly digest: typeof digest
   readonly digestSync: typeof digestSync
@@ -111,7 +111,7 @@ const Sha256: Schema.Codec<Digest, string | Uint8Array, Crypto.Crypto> & {
 The one-way schema transformation from text or bytes to a `Digest`: the
 schema-composition face of [`digest`](#digest).
 
-- Decoding runs `digest`, so `Crypto.Crypto` is the codec's decoding
+- Decoding runs `digest`, so `EffectDigest.Digest` is the codec's decoding
   requirement, the third type argument above. Decode with
   `Schema.decodeUnknownEffect` and provide the service. There is no
   synchronous decode.
@@ -201,7 +201,7 @@ accept, are ordinary `SchemaError` validation failures rather than
 ### syncCrypto
 
 ```ts
-const syncCrypto: Crypto.Crypto
+const syncCrypto: typeof EffectDigest.Digest.Service
 ```
 
 A synchronous, SHA-256-only Effect `Crypto` service backed by the same
@@ -209,18 +209,15 @@ package-owned implementation as `digestSync`. It exists for synchronous code
 that already consumes a `Crypto` service, and for tests that want real hashing
 with no platform layer.
 
-- `digest("SHA-256", input)` snapshots the input and returns the 32 raw bytes.
-- Every other algorithm fails with a `PlatformError.badArgument` whose
+- `digest(EffectDigest.sha256, input)` snapshots the input and returns the 32 raw bytes.
+- Every other algorithm dies with a `PlatformError.badArgument` whose
   description is `syncCrypto supports only SHA-256, not <algorithm>`, with
   `module: "@smthrs/crypto"` and `method: "digest"`.
-- An input whose buffer cannot be copied fails with a `badArgument` described
+- An input whose buffer cannot be copied dies with a `badArgument` described
   as `syncCrypto could not snapshot SHA-256 input`, with the original
   `TypeError` as `cause`.
-- `randomBytes` throws a `PlatformError.badArgument` with
-  `module: "@smthrs/crypto"` and `method: "randomBytes"`, described as
-  `@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness`.
-  Because `Crypto.make` derives random numbers, UUIDs, and shuffling from
-  `randomBytes`, every random operation fails the same way.
+- `digestHex(EffectDigest.sha256, input)` returns lowercase hexadecimal.
+- Randomness belongs to the separate `SecureRandom` service; this adapter exposes only digest operations.
 
 Normal application code should provide its platform `Crypto` layer, or
 [`WebCrypto.layer`](#webcryptolayer), instead.
@@ -228,35 +225,22 @@ Normal application code should provide its platform `Crypto` layer, or
 ### WebCrypto.make
 
 ```ts
-const make: () => Crypto.Crypto
+const make: () => Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>
 ```
 
-Effect's `Crypto` over the global WebCrypto object, `globalThis.crypto`, which
-Node, Bun, browsers, and Cloudflare Workers all provide. It is the one
-WebCrypto-backed `Crypto` in Smithers: `@smthrs/platform-cloudflare`'s host
-bundle and `@smthrs/platform-node`'s sandboxed-flow guest both provide it.
-
-- `randomBytes(size)` fills any size, at most 65,536 bytes per
-  `crypto.getRandomValues` call. That is the Web Crypto limit; one larger call
-  throws `QuotaExceededError`. Effect derives random numbers, UUIDs, ULIDs, and
-  shuffling from it.
-- `digest(algorithm, data)` copies `data` and calls `crypto.subtle.digest`. A
-  rejection fails with a `PlatformError` whose reason is `Unknown`, with
-  `module: "Crypto"`, `method: "digest"`, the description
-  `WebCrypto could not compute <algorithm>`, and WebCrypto's own error as
-  `cause`.
-- Randomness is read only when a caller asks for it, never while the module
-  evaluates or while `make` builds the service. Cloudflare refuses to deploy a
-  script that calls `crypto.getRandomValues` at module scope (upload error
-  10021).
+Constructs Effect 4.1's standard WebCrypto layers for message digests and secure
+randomness. Hosts provide both services independently. Randomness is drawn only
+when a program runs, so constructing the layers is safe at Cloudflare module scope.
+Digest algorithms are values such as `EffectDigest.sha256`; WebCrypto rejections
+are defects. MD5 uses Effect's pure implementation.
 
 ### WebCrypto.layer
 
 ```ts
-const layer: Layer.Layer<Crypto.Crypto>
+const layer: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>
 ```
 
-[`WebCrypto.make()`](#webcryptomake) as a layer.
+The standard layers constructed by [`WebCrypto.make()`](#webcryptomake).
 
 ```ts
 import { digest, WebCrypto } from "@smthrs/crypto"
@@ -270,7 +254,7 @@ const address = await Effect.runPromise(digest("hello").pipe(Effect.provide(WebC
 ### Uuid.v5
 
 ```ts
-const v5: (namespace: string, name: string) => Effect.Effect<string, PlatformError, Crypto.Crypto>
+const v5: (namespace: string, name: string) => Effect.Effect<string, never, EffectDigest.Digest>
 ```
 
 The RFC 9562 version 5 UUID of `name` in `namespace`, in lowercase: SHA-1 of

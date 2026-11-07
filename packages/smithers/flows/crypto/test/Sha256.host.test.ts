@@ -1,25 +1,35 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Cause, Crypto, Effect, Exit, PlatformError, Schema } from "effect"
+import { Cause, Effect, Exit, PlatformError, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as Hex from "effect/encoding/Hex"
 import { describe, expect, it } from "vitest"
 import { digest, digestSync, Sha256, Sha256Error, syncCrypto } from "../src/index.ts"
 import { vectors } from "./fixtures.ts"
+
+const defectOf = <A, E>(program: Effect.Effect<A, E>): unknown => {
+  const result = Effect.runSyncExit(program)
+  if (Exit.isFailure(result)) return Cause.squash(result.cause)
+  throw new Error("Expected the digest to fail")
+}
 
 const encoder = new TextEncoder()
 
 const bytesFromHex = (hex: string): Uint8Array =>
   Uint8Array.from({ length: hex.length / 2 }, (_, index) => Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16))
 
-const host = (operation: Crypto.Crypto["digest"]): Crypto.Crypto =>
-  Crypto.make({
-    randomBytes: (size) => new Uint8Array(size),
-    digest: operation
+const host = (operation: (typeof EffectDigest.Digest.Service)["digest"]): typeof EffectDigest.Digest.Service =>
+  EffectDigest.Digest.of({
+    digest: operation,
+    digestHex(algorithm, data) {
+      return Effect.map(this.digest(algorithm, data), Hex.encode)
+    }
   })
 
-const run = (input: string | Uint8Array, crypto: Crypto.Crypto) =>
-  Effect.runSync(Effect.provideService(digest(input), Crypto.Crypto, crypto))
+const run = (input: string | Uint8Array, crypto: typeof EffectDigest.Digest.Service) =>
+  Effect.runSync(Effect.provideService(digest(input), EffectDigest.Digest, crypto))
 
-const fail = (input: string | Uint8Array, crypto: Crypto.Crypto) =>
-  Effect.runSync(Effect.flip(Effect.provideService(digest(input), Crypto.Crypto, crypto)))
+const fail = (input: string | Uint8Array, crypto: typeof EffectDigest.Digest.Service) =>
+  Effect.runSync(Effect.flip(Effect.provideService(digest(input), EffectDigest.Digest, crypto)))
 
 const deferred = <A>() => {
   let resolve!: (value: A | PromiseLike<A>) => void
@@ -62,7 +72,7 @@ describe("injected Crypto boundary", () => {
       method: "digest",
       description: "hardware failure"
     })
-    const error = fail("do-not-log-this-secret", host(() => Effect.fail(cause)))
+    const error = fail("do-not-log-this-secret", host(() => Effect.die(cause)))
     expect(error).toBeInstanceOf(Sha256Error)
     expect(error).toMatchObject({
       code: "digest_failed",
@@ -103,7 +113,7 @@ describe("injected Crypto boundary", () => {
     const cause = new Error("backend unavailable")
     const secret = "schema-secret-that-must-not-appear"
     const crypto = host(() =>
-      Effect.fail(PlatformError.systemError({
+      Effect.die(PlatformError.systemError({
         _tag: "Unknown",
         module: "test-host",
         method: "digest",
@@ -112,7 +122,7 @@ describe("injected Crypto boundary", () => {
     )
     const error = Effect.runSync(Effect.flip(
       Schema.decodeUnknownEffect(Sha256)(secret, { reportInput: true }).pipe(
-        Effect.provideService(Crypto.Crypto, crypto)
+        Effect.provideService(EffectDigest.Digest, crypto)
       )
     ))
     expect(error.message).toContain("[digest_failed] The injected Crypto service failed to compute SHA-256")
@@ -135,7 +145,7 @@ describe("injected Crypto boundary", () => {
     const exit = Effect.runSyncExit(digest("hello") as Effect.Effect<never, never>)
     expect(Exit.isFailure(exit)).toBe(true)
     if (Exit.isFailure(exit)) {
-      expect(Cause.pretty(exit.cause)).toContain("Service not found: effect/Crypto")
+      expect(Cause.pretty(exit.cause)).toContain("Service not found: effect/crypto/Digest")
     }
   })
 
@@ -146,12 +156,12 @@ describe("injected Crypto boundary", () => {
       Effect.promise(async () => {
         started.resolve()
         await release.promise
-        const output = await globalThis.crypto.subtle.digest("SHA-256", new Uint8Array(input))
+        const output = await globalThis.crypto.subtle.digest(EffectDigest.sha256.name, new Uint8Array(input))
         return new Uint8Array(output)
       })
     )
     const input = encoder.encode("abc")
-    const running = Effect.runPromise(Effect.provideService(digest(input), Crypto.Crypto, crypto))
+    const running = Effect.runPromise(Effect.provideService(digest(input), EffectDigest.Digest, crypto))
 
     await started.promise
     input.fill(0)
@@ -203,18 +213,18 @@ describe("injected Crypto boundary", () => {
 describe("host parity and synchronous service policy", () => {
   it.each(vectors)("agrees with Node and Web Crypto for %j", async (input, expected) => {
     const bytes = encoder.encode(input)
-    const web = new Uint8Array(await globalThis.crypto.subtle.digest("SHA-256", bytes))
+    const web = new Uint8Array(await globalThis.crypto.subtle.digest(EffectDigest.sha256.name, bytes))
     expect(bytesFromHex(digestSync(input))).toEqual(web)
     expect(Effect.runSync(digest(input).pipe(Effect.provide(NodeCrypto.layer)))).toBe(expected)
   })
 
   it("accepts SHA-256 through syncCrypto", () => {
-    const output = Effect.runSync(syncCrypto.digest("SHA-256", encoder.encode("abc")))
+    const output = Effect.runSync(syncCrypto.digest(EffectDigest.sha256, encoder.encode("abc")))
     expect(output).toEqual(bytesFromHex(vectors[1][1]))
   })
 
   it("rejects every non-SHA-256 algorithm through syncCrypto", () => {
-    const error = Effect.runSync(Effect.flip(syncCrypto.digest("SHA-384", encoder.encode("abc"))))
+    const error = defectOf(syncCrypto.digest(EffectDigest.sha384, encoder.encode("abc")))
     expect(error).toMatchObject({
       reason: {
         _tag: "BadArgument",
@@ -228,7 +238,7 @@ describe("host parity and synchronous service policy", () => {
   it("reports an uncopyable syncCrypto input as BadArgument", () => {
     const input = encoder.encode("abc")
     structuredClone(input.buffer, { transfer: [input.buffer] })
-    const error = Effect.runSync(Effect.flip(syncCrypto.digest("SHA-256", input)))
+    const error = defectOf(syncCrypto.digest(EffectDigest.sha256, input))
     expect(error).toMatchObject({
       reason: {
         _tag: "BadArgument",
@@ -240,20 +250,8 @@ describe("host parity and synchronous service policy", () => {
     })
   })
 
-  it("refuses randomness instead of returning weak bytes", () => {
-    expect(() => Effect.runSync(syncCrypto.randomBytes(16))).toThrow(
-      "@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness"
-    )
-    const exit = Effect.runSyncExit(syncCrypto.randomBytes(16))
-    expect(Exit.isFailure(exit)).toBe(true)
-    expect(Exit.isFailure(exit) && Cause.squash(exit.cause)).toMatchObject({
-      _tag: "PlatformError",
-      reason: {
-        _tag: "BadArgument",
-        module: "@smthrs/crypto",
-        method: "randomBytes",
-        description: "@smthrs/crypto syncCrypto provides SHA-256 only; supply a platform Crypto layer for randomness"
-      }
-    })
+  it("exposes only digest operations and computes hexadecimal SHA-256", () => {
+    expect(Object.keys(syncCrypto).sort()).toEqual(["digest", "digestHex"])
+    expect(Effect.runSync(syncCrypto.digestHex(EffectDigest.sha256, encoder.encode("abc")))).toBe(vectors[1][1])
   })
 })

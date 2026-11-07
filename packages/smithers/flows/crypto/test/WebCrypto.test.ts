@@ -1,18 +1,28 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
-import { Crypto, Effect, type Layer, PlatformError } from "effect"
+import { Cause, Effect, Exit, type Layer } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import * as SecureRandom from "effect/crypto/SecureRandom"
 import { readFileSync } from "node:fs"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import { digest as sha256, digestSync, WebCrypto } from "../src/index.ts"
 
 const hex = (bytes: Uint8Array) => Array.from(bytes, (byte) => byte.toString(16).padStart(2, "0")).join("")
 
-const randomBytes = (size: number) => Effect.runSync(WebCrypto.make().randomBytes(size))
-
-const digest = (algorithm: Crypto.DigestAlgorithm, data: Uint8Array) =>
-  Effect.runPromise(WebCrypto.make().digest(algorithm, data))
-
-const refusal = (algorithm: Crypto.DigestAlgorithm, data: Uint8Array) =>
-  Effect.runPromise(Effect.flip(WebCrypto.make().digest(algorithm, data)))
+const randomBytes = (size: number) =>
+  Effect.runSync(
+    SecureRandom.SecureRandom.use((random) => random.randomBytes(size)).pipe(Effect.provide(WebCrypto.make()))
+  )
+const digest = (algorithm: EffectDigest.Algorithm, data: Uint8Array) =>
+  Effect.runPromise(
+    EffectDigest.Digest.use((service) => service.digest(algorithm, data)).pipe(Effect.provide(WebCrypto.make()))
+  )
+const refusal = async (algorithm: EffectDigest.Algorithm, data: Uint8Array) => {
+  const result = await Effect.runPromiseExit(
+    EffectDigest.Digest.use((service) => service.digest(algorithm, data)).pipe(Effect.provide(WebCrypto.make()))
+  )
+  if (Exit.isFailure(result)) return Cause.squash(result.cause)
+  throw new Error("Expected the digest to fail")
+}
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -42,7 +52,9 @@ describe("WebCrypto.make randomBytes", () => {
   })
 
   it("feeds Effect's derived randomness, such as a v4 UUID", () => {
-    expect(Effect.runSync(WebCrypto.make().randomUUIDv4())).toMatch(
+    expect(
+      Effect.runSync(SecureRandom.SecureRandom.use((random) => random.uuidV4()).pipe(Effect.provide(WebCrypto.make())))
+    ).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/
     )
   })
@@ -55,30 +67,30 @@ describe("randomness is read only on demand", () => {
     const fresh = await import("../src/WebCrypto.ts")
     const service = fresh.make()
     expect(getRandomValues).not.toHaveBeenCalled()
-    Effect.runSync(service.randomBytes(16))
+    Effect.runSync(SecureRandom.SecureRandom.use((random) => random.randomBytes(16)).pipe(Effect.provide(service)))
     expect(getRandomValues).toHaveBeenCalledTimes(1)
   })
 })
 
 describe("WebCrypto.make digest", () => {
   it("computes the FIPS 180-4 SHA-256 of abc", async () => {
-    expect(hex(await digest("SHA-256", new TextEncoder().encode("abc")))).toBe(
+    expect(hex(await digest(EffectDigest.sha256, new TextEncoder().encode("abc")))).toBe(
       "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad"
     )
   })
 
   it("agrees with the package's own SHA-256", async () => {
     const material = new TextEncoder().encode("the same key material on both sides of the machine boundary")
-    expect(hex(await digest("SHA-256", material))).toBe(digestSync(material))
+    expect(hex(await digest(EffectDigest.sha256, material))).toBe(digestSync(material))
   })
 
-  it.each(["SHA-1", "SHA-256", "SHA-384", "SHA-512"] as const)(
+  it.each([EffectDigest.sha1, EffectDigest.sha256, EffectDigest.sha384, EffectDigest.sha512])(
     "agrees with Node's crypto for %s, so a guest and its Node host derive the same ids",
     async (algorithm) => {
       const material = new TextEncoder().encode("the same key material on both sides of the machine boundary")
       const onNode = await Effect.runPromise(
         Effect.gen(function*() {
-          return yield* (yield* Crypto.Crypto).digest(algorithm, material)
+          return yield* (yield* EffectDigest.Digest).digest(algorithm, material)
         }).pipe(Effect.provide(NodeCrypto.layer))
       )
       expect(await digest(algorithm, material)).toEqual(onNode)
@@ -87,27 +99,19 @@ describe("WebCrypto.make digest", () => {
 
   it("hashes the bytes a subarray views, not its whole buffer", async () => {
     const buffer = new TextEncoder().encode("xabcx")
-    expect(hex(await digest("SHA-256", buffer.subarray(1, 4)))).toBe(digestSync("abc"))
+    expect(hex(await digest(EffectDigest.sha256, buffer.subarray(1, 4)))).toBe(digestSync("abc"))
   })
 
-  it("maps a WebCrypto rejection to an Unknown PlatformError carrying the cause", async () => {
+  it("preserves a WebCrypto rejection as a defect", async () => {
     const cause = new DOMException("the operation failed", "OperationError")
     vi.spyOn(globalThis.crypto.subtle, "digest").mockRejectedValueOnce(cause)
-    const error = await refusal("SHA-256", new Uint8Array(1))
-    expect(error).toBeInstanceOf(PlatformError.PlatformError)
-    expect(error.reason).toMatchObject({
-      _tag: "Unknown",
-      module: "Crypto",
-      method: "digest",
-      description: "WebCrypto could not compute SHA-256"
-    })
-    expect(error.reason.cause).toBe(cause)
+    expect(await refusal(EffectDigest.sha256, new Uint8Array(1))).toBe(cause)
   })
 
-  it("names an algorithm WebCrypto refuses in the failure", async () => {
-    const error = await refusal("MD5" as Crypto.DigestAlgorithm, new Uint8Array(1))
-    expect(error.reason).toMatchObject({ _tag: "Unknown", module: "Crypto", method: "digest" })
-    expect(error.message).toContain("WebCrypto could not compute MD5")
+  it("supports MD5 through Effect's pure implementation", async () => {
+    expect(hex(await digest(EffectDigest.md5, new TextEncoder().encode("abc")))).toBe(
+      "900150983cd24fb0d6963f7d28e17f72"
+    )
   })
 })
 
@@ -116,10 +120,10 @@ describe("WebCrypto.layer", () => {
     const getRandomValues = vi.spyOn(globalThis.crypto, "getRandomValues")
     const [bytes, digested] = await Effect.runPromise(
       Effect.gen(function*() {
-        const crypto = yield* Crypto.Crypto
+        const crypto = yield* EffectDigest.Digest
         return [
-          yield* crypto.randomBytes(70_000),
-          yield* crypto.digest("SHA-256", new TextEncoder().encode("abc"))
+          yield* (yield* SecureRandom.SecureRandom).randomBytes(70_000),
+          yield* crypto.digest(EffectDigest.sha256, new TextEncoder().encode("abc"))
         ] as const
       }).pipe(Effect.provide(WebCrypto.layer))
     )
@@ -131,8 +135,8 @@ describe("WebCrypto.layer", () => {
 
 // The signatures docs/api.md publishes, annotated onto the real exports, so the
 // typecheck rejects a documented type that no longer describes the source.
-const documentedMake: () => Crypto.Crypto = WebCrypto.make
-const documentedLayer: Layer.Layer<Crypto.Crypto> = WebCrypto.layer
+const documentedMake: () => Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom> = WebCrypto.make
+const documentedLayer: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom> = WebCrypto.layer
 
 const api = readFileSync(new URL("../docs/api.md", import.meta.url), "utf8")
 
@@ -146,8 +150,12 @@ const signature = (heading: string): string => {
 
 describe("docs/api.md WebCrypto signatures", () => {
   it("declares make and layer as the source exports them", () => {
-    expect(signature("WebCrypto.make")).toBe("const make: () => Crypto.Crypto\n")
-    expect(signature("WebCrypto.layer")).toBe("const layer: Layer.Layer<Crypto.Crypto>\n")
+    expect(signature("WebCrypto.make")).toBe(
+      "const make: () => Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>\n"
+    )
+    expect(signature("WebCrypto.layer")).toBe(
+      "const layer: Layer.Layer<EffectDigest.Digest | SecureRandom.SecureRandom>\n"
+    )
     expect(documentedMake).toBe(WebCrypto.make)
     expect(documentedLayer).toBe(WebCrypto.layer)
   })

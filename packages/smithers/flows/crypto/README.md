@@ -44,13 +44,13 @@ const synchronous = digestSync("hello")
 ## Public API
 
 - `digest(input)` is the normal operational API. It requires an Effect
-  `Crypto.Crypto` service and fails with `Sha256Error`.
+  `EffectDigest.Digest` service and fails with `Sha256Error`.
 - `digestSync(input)` is the explicit synchronous API for pure plan and
   identity construction. It uses the package-owned FIPS 180-4 implementation.
 - `Digest` validates an existing digest without hashing it.
 - `Sha256` is the one-way schema adapter. `Sha256.Digest`, `Sha256.digest`, and
   `Sha256.digestSync` remain attached for compatibility.
-- `syncCrypto` adapts the synchronous implementation to Effect `Crypto`. It
+- `syncCrypto` adapts the synchronous implementation to Effect `Digest`. It
   accepts only `SHA-256` and deliberately refuses randomness.
 - `WebCrypto.layer` and `WebCrypto.make()` provide Effect `Crypto` over the
   global WebCrypto in Node, Bun, a browser, or a Cloudflare Worker. Randomness
