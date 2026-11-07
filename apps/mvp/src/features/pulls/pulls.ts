@@ -3,7 +3,7 @@ import { runners } from "../../boundary"
 import { IssuesStore } from "../issues/store"
 import type { FlowDispatch } from "../../flows/dispatch"
 import { closeFiles, loadFiles, merge, open, retry, review, warm } from "./actions"
-import { PullsClient } from "./api"
+import { PullsClient } from "#vibelang/emitted/src/features/pulls/api"
 import type { PullTab } from "./contract"
 import { PullsStore, type RepoPulls } from "./store"
 

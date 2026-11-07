@@ -260,6 +260,86 @@
       "types": "./.vibe/declarations/worker/stack/StackFeed.d.vibe.ts",
       "vibelang-source": "./worker/stack/StackFeed.vibe",
       "default": "./.vibelang/js/worker/stack/StackFeed.js"
+    },
+    "#vibelang/emitted/plugins/bugs/src/tab": {
+      "types": "./.vibe/declarations/plugins/bugs/src/tab.d.vibe.ts",
+      "vibelang-source": "./plugins/bugs/src/tab.vibe",
+      "default": "./.vibelang/js/plugins/bugs/src/tab.js"
+    },
+    "#vibelang/emitted/plugins/factory/src/feeds": {
+      "types": "./.vibe/declarations/plugins/factory/src/feeds.d.vibe.ts",
+      "vibelang-source": "./plugins/factory/src/feeds.vibe",
+      "default": "./.vibelang/js/plugins/factory/src/feeds.js"
+    },
+    "#vibelang/emitted/src/features/chat/api": {
+      "types": "./.vibe/declarations/src/features/chat/api.d.vibe.ts",
+      "vibelang-source": "./src/features/chat/api.vibe",
+      "default": "./.vibelang/js/src/features/chat/api.js"
+    },
+    "#vibelang/emitted/src/features/chat/metrics": {
+      "types": "./.vibe/declarations/src/features/chat/metrics.d.vibe.ts",
+      "vibelang-source": "./src/features/chat/metrics.vibe",
+      "default": "./.vibelang/js/src/features/chat/metrics.js"
+    },
+    "#vibelang/emitted/src/features/pulls/api": {
+      "types": "./.vibe/declarations/src/features/pulls/api.d.vibe.ts",
+      "vibelang-source": "./src/features/pulls/api.vibe",
+      "default": "./.vibelang/js/src/features/pulls/api.js"
+    },
+    "#vibelang/emitted/src/features/pulls/comparison": {
+      "types": "./.vibe/declarations/src/features/pulls/comparison.d.vibe.ts",
+      "vibelang-source": "./src/features/pulls/comparison.vibe",
+      "default": "./.vibelang/js/src/features/pulls/comparison.js"
+    },
+    "#vibelang/emitted/src/features/chat/draftWrite": {
+      "types": "./.vibe/declarations/src/features/chat/draftWrite.d.vibe.ts",
+      "vibelang-source": "./src/features/chat/draftWrite.vibe",
+      "default": "./.vibelang/js/src/features/chat/draftWrite.js"
+    },
+    "#vibelang/emitted/src/features/chat/sharedPrompt": {
+      "types": "./.vibe/declarations/src/features/chat/sharedPrompt.d.vibe.ts",
+      "vibelang-source": "./src/features/chat/sharedPrompt.vibe",
+      "default": "./.vibelang/js/src/features/chat/sharedPrompt.js"
+    },
+    "#vibelang/emitted/src/outbox": {
+      "types": "./.vibe/declarations/src/outbox.d.vibe.ts",
+      "vibelang-source": "./src/outbox.vibe",
+      "default": "./.vibelang/js/src/outbox.js"
+    },
+    "#vibelang/emitted/src/features/issues/metrics": {
+      "types": "./.vibe/declarations/src/features/issues/metrics.d.vibe.ts",
+      "vibelang-source": "./src/features/issues/metrics.vibe",
+      "default": "./.vibelang/js/src/features/issues/metrics.js"
+    },
+    "#vibelang/emitted/src/features/pins/api": {
+      "types": "./.vibe/declarations/src/features/pins/api.d.vibe.ts",
+      "vibelang-source": "./src/features/pins/api.vibe",
+      "default": "./.vibelang/js/src/features/pins/api.js"
+    },
+    "#vibelang/emitted/src/features/pulls/shapeSync": {
+      "types": "./.vibe/declarations/src/features/pulls/shapeSync.d.vibe.ts",
+      "vibelang-source": "./src/features/pulls/shapeSync.vibe",
+      "default": "./.vibelang/js/src/features/pulls/shapeSync.js"
+    },
+    "#vibelang/emitted/src/features/pulls/refresh": {
+      "types": "./.vibe/declarations/src/features/pulls/refresh.d.vibe.ts",
+      "vibelang-source": "./src/features/pulls/refresh.vibe",
+      "default": "./.vibelang/js/src/features/pulls/refresh.js"
+    },
+    "#vibelang/emitted/src/features/todos/metrics": {
+      "types": "./.vibe/declarations/src/features/todos/metrics.d.vibe.ts",
+      "vibelang-source": "./src/features/todos/metrics.vibe",
+      "default": "./.vibelang/js/src/features/todos/metrics.js"
+    },
+    "#vibelang/emitted/src/features/pulls/steps": {
+      "types": "./.vibe/declarations/src/features/pulls/steps.d.vibe.ts",
+      "vibelang-source": "./src/features/pulls/steps.vibe",
+      "default": "./.vibelang/js/src/features/pulls/steps.js"
+    },
+    "#vibelang/emitted/plugins/queue/src/tab": {
+      "types": "./.vibe/declarations/plugins/queue/src/tab.d.vibe.ts",
+      "vibelang-source": "./plugins/queue/src/tab.vibe",
+      "default": "./.vibelang/js/plugins/queue/src/tab.js"
     }
   },
   "dependencies": {

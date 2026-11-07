@@ -1,5 +1,3 @@
-import { Metric } from "effect"
-
 /** Local admission outcomes, independent of engine startup and network delivery. */
 export const admissions = Metric.counter("smithers_todo_write_admissions", { incremental: true })
 

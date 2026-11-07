@@ -1,5 +1,5 @@
 import { Host } from "@smthrs/plugin"
-import { Effect, Stream } from "effect"
+import { Effect } from "effect"
 
 // The queue's tab (decision 0022, slice 1; decision 0017's `needs-you`, renamed): everything that waits on you, one
 // item at a time, oldest first. It reads the core's `core/waits` and keeps a cursor on it, moved by the view's local
@@ -37,7 +37,11 @@ export const clamp = (index: number, total: number): number => Math.max(0, Math.
  * Where the cursor goes when the waits change: it stays on its item, or, when that one left (answered here or on
  * another device), on the item that took its place.
  */
-export const follow = (rows: ReadonlyArray<{ readonly runId: string }>, runId: string | undefined, index: number): number => {
+export const follow = (
+  rows: ReadonlyArray<{ readonly runId: string }>,
+  runId: string | undefined,
+  index: number,
+): number => {
   const at = rows.findIndex((row) => row.runId === runId)
   return at === -1 ? index : at
 }
@@ -55,10 +59,10 @@ export interface QueueTab {
 }
 
 /** The tab: built by the host in the plugin's scope on first use. */
-export const tab = Effect.gen(function* () {
-  const host = yield* Host.PluginHost
-  const run = Effect.runForkWith(yield* Effect.context<never>())
-  const waits = yield* host.query<Wait>("core/waits")
+export const tab = effect {
+  const host = try Host.PluginHost
+  const run = Effect.runForkWith(try Effect.context<never>())
+  const waits = try host.query<Wait>("core/waits")
   let runId: string | undefined
   let current: Current = { item: undefined, index: 0, total: 0 }
   const listeners = new Set<() => void>()
@@ -71,18 +75,18 @@ export const tab = Effect.gen(function* () {
     const moved = item?.runId !== runId
     runId = item?.runId
     current = { item, index: at, total: rows.length }
-    if (moved && item !== undefined) run(host.select({ query: "core/waits", key: item.runId }).pipe(Effect.ignore))
+    if (moved && item !== undefined) run(host.select({ query: "core/waits", key: item.runId }) |> Effect.ignore(%))
     for (const listener of listeners) listener()
   }
 
   const stop = waits.subscribe(() => settle(follow(waits.current(), runId, current.index)))
-  yield* Effect.addFinalizer(() => Effect.sync(stop))
+  try Effect.addFinalizer(() => Effect.sync(stop))
   settle(0)
 
-  yield* host.events(VIEW).pipe(
+  try (host.events(VIEW).pipe(
     Stream.runForEach(({ name }) => Effect.sync(() => settle(current.index + (name === "next" ? 1 : -1)))),
     Effect.forkScoped({ startImmediately: true }),
-  )
+  ))
 
   return {
     queries: {
@@ -97,4 +101,4 @@ export const tab = Effect.gen(function* () {
     },
     actions: { open: () => void run(host.open(VIEW)) },
   } satisfies QueueTab
-})
+}

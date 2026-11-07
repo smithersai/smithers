@@ -9,8 +9,8 @@ import { RepoStore } from "../repo/store";
 import { CHECKS_SHAPE_ROUTE, PULL_COMMITS_SHAPE_ROUTE, PULLS_SHAPE_ROUTE, REVIEWS_SHAPE_ROUTE } from "./contract";
 import { checksQuery, commentsQuery, commitsQuery, filesQuery, listQuery, pullQuery, reviewsQuery, viewQuery, } from "./queries";
 import { CheckRow, commitKey, FilesRow, PullCommitRow, PullRow, PullsView, ReviewRow, VIEW } from "./schema";
-import { observePullShape } from "./shapeSync";
-import { refreshingSource } from "./refresh";
+import { observePullShape } from "#vibelang/emitted/src/features/pulls/shapeSync";
+import { refreshingSource } from "#vibelang/emitted/src/features/pulls/refresh";
 /**
  * The pull requests' state for one tab: `forRepo(id)`, repository `id`'s (`RepoPulls`), opened once with its issues;
  * `routed()`, the routed repository's, or `empty`'s, with no rows; `route(id)`, which says which repository the route

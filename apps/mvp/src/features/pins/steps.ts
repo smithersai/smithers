@@ -1,6 +1,6 @@
 import { FlowRuntime, Interpreter } from "@smthrs/flow"
 import { type Duration, Effect, Layer, Metric, Schema } from "effect"
-import { PinClient } from "./api"
+import { PinClient } from "#vibelang/emitted/src/features/pins/api"
 import { requesterOf } from "../../flows/requests"
 import { ChatPin, ChatUnpin, Pinned, PinRefused, PinUnavailable, PinStamp, PinWrite, UnpinWrite } from "./flows"
 

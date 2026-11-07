@@ -26,11 +26,11 @@ import {
 } from "effect"
 import { type DispatchFailed, FlowDispatch } from "../../flows/dispatch"
 import { ChatDraftsStore, ChatUnsentStore, outboxUpgrade } from "../../device/registry"
-import { OutboxWrites } from "../../outbox"
+import { OutboxWrites } from "#vibelang/emitted/src/outbox"
 import { ViewsStore } from "../views/store"
-import { ChatClient } from "./api"
+import { ChatClient } from "#vibelang/emitted/src/features/chat/api"
 import { PAGE_SIZE, SHAPE_ROUTE } from "./contract"
-import { askFailures, connectionDrops, firstAnswerText } from "./metrics"
+import { askFailures, connectionDrops, firstAnswerText } from "#vibelang/emitted/src/features/chat/metrics"
 import {
   composerQuery,
   connectionQuery,

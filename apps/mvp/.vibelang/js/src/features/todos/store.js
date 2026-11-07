@@ -15,7 +15,7 @@ import { TODO_REQUESTS_SHAPE_ROUTE, TODOS_SHAPE_ROUTE } from "./contract";
 import { Access, Draft, requestKey, StackView, Todo, TodoRequest, VIEW, } from "./schema";
 import { deliveredOf } from "./view";
 import { keep, StackWrites, TODO_OP } from "./writes";
-import { admissions } from "./metrics";
+import { admissions } from "#vibelang/emitted/src/features/todos/metrics";
 /** A row's key: its id. */
 const byId = (row) => row.id;
 /** A live query of every row of `collection`. */

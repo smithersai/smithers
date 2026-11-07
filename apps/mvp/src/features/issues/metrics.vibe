@@ -1,5 +1,3 @@
-import { Metric } from "effect"
-
 // Usage metrics for issue writes, exported over OTLP with the rest of the browser's telemetry
 // (docs/observability.md#browser). Labels carry operations, doors and outcomes, never a title, a body or a login.
 
@@ -29,12 +27,14 @@ export const pendingActions = Metric.counter("smithers_issue_pending_actions", {
 
 /** Create presses durably admitted, retained for Retry, or refused by device storage; never their text. */
 export const admissions = Metric.counter("smithers_issue_write_admissions", {
-  description: "Issue-write local admissions by outcome", incremental: true,
+  description: "Issue-write local admissions by outcome",
+  incremental: true,
 })
 
 /** Comment submissions that never obtained a queue receipt, without recording their text. */
 export const submissionFailures = Metric.counter("smithers_issue_submission_failures", {
-  description: "Failed comment recovery storage", incremental: true,
+  description: "Failed comment recovery storage",
+  incremental: true,
 })
 
 /** Repositories whose issues the device evicted once this person lost read access, by `status` (`sign_in`, `forbidden`). */

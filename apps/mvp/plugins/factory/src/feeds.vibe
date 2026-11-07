@@ -54,8 +54,8 @@ export type Params = Readonly<Record<string, string>>
 
 /** `PluginHost`'s reads as the factory asks them: by name and `params`. */
 export interface Reads {
-  readonly query: <R>(name: string, params: Params) => Effect.Effect<Host.Live<R>, Host.PluginRefused>
-  readonly select: (item: Host.ItemRef & { readonly params: Params }) => Effect.Effect<void, Host.PluginRefused>
+  readonly query: <R>(name: string, params: Params) => Host.Live<R>!Host.PluginRefused
+  readonly select: (item: Host.ItemRef & { readonly params: Params }) => void!Host.PluginRefused
 }
 
 /** `owner/name`, as feeds key a repository. */
@@ -64,15 +64,15 @@ export const repoOf = (repository: Host.Repository): string => `${repository.own
 /** How the factory reads a repository's feeds. */
 export interface Feeds {
   /** The repository's index documents, live. */
-  readonly index: (repository: Host.Repository) => Effect.Effect<Host.Live<FeedDocument>, Host.PluginRefused>
+  readonly index: (repository: Host.Repository) => Host.Live<FeedDocument>!Host.PluginRefused
   /** One document of the repository by name, live: none until the collector pushed it. */
-  readonly document: (repository: Host.Repository, name: string) => Effect.Effect<Host.Live<FeedDocument>, Host.PluginRefused>
+  readonly document: (repository: Host.Repository, name: string) => Host.Live<FeedDocument>!Host.PluginRefused
   /** The repository's decisions, answered or not, live. */
-  readonly asks: (repository: Host.Repository) => Effect.Effect<Host.Live<AskRow>, Host.PluginRefused>
+  readonly asks: (repository: Host.Repository) => Host.Live<AskRow>!Host.PluginRefused
   /** Tells the host the person looks at `ask`, so the strip under the view answers it. */
-  readonly select: (ask: AskRow) => Effect.Effect<void, Host.PluginRefused>
+  readonly select: (ask: AskRow) => void!Host.PluginRefused
   /** The repository's agent runs on Smithers, live. */
-  readonly runs: (repository: Host.Repository) => Effect.Effect<Host.Live<SmithersRun>, Host.PluginRefused>
+  readonly runs: (repository: Host.Repository) => Host.Live<SmithersRun>!Host.PluginRefused
 }
 
 /** The feeds over `host`'s reads. */

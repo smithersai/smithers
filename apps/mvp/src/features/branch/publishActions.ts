@@ -5,7 +5,7 @@ import { Effect, FiberHandle, Metric, Option, type Result, Stream } from "effect
 import { type DispatchFailed, type Dispatched, FlowDispatch } from "../../flows/dispatch"
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract"
 import { IssuesStore } from "../issues/store"
-import { readComparison } from "../pulls/comparison"
+import { readComparison } from "#vibelang/emitted/src/features/pulls/comparison"
 import { publishes, resyncs, updates } from "./metrics"
 import type { PressRefusal, PublicationRow, PublishPress } from "./publishSchema"
 import { PublishStore } from "./publishStore"

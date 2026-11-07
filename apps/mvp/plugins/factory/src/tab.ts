@@ -1,6 +1,6 @@
 import { Host } from "@smthrs/plugin"
 import { Effect, Exit, Scope } from "effect"
-import { type AskRow, type FeedDocument, type Feeds, feedsOf, repoOf } from "./feeds"
+import { type AskRow, type FeedDocument, type Feeds, feedsOf, repoOf } from "#vibelang/emitted/plugins/factory/src/feeds"
 import { decisionsOf, type SmithersRun, statusOf, type Status, VIEWS, type ViewId } from "./model"
 
 // The factory's tab (decision 0128 §9): one per app, built by the host on first use. It reads a repository's feed

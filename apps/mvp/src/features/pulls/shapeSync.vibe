@@ -1,6 +1,6 @@
 import { type ElectricCollection } from "@smthrs/effect-electric"
 import { Metric, Stream } from "effect"
-import { observeShape } from "../issues/shapeSync"
+import { observeShape } from "../issues/shapeSync.ts"
 
 /** Pull metadata's first answer, changed failure status and recovery; no repository or pull content. */
 export const pullShapeTransitions = Metric.counter("smithers_pull_shape_transitions", {

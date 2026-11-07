@@ -1,6 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric } from "effect"
-import { OutboxWrites } from "../../outbox"
+import { OutboxWrites } from "#vibelang/emitted/src/outbox"
 import { TextsClient } from "./api"
 import { sends } from "./metrics"
 import { Sending, type Sending as SendingRow } from "./schema"

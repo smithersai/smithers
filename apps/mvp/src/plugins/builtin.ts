@@ -18,12 +18,12 @@ export interface BuiltIn {
 export const BUILTIN: ReadonlyArray<BuiltIn> = [
   {
     manifest: queue,
-    tab: () => import("../../plugins/queue/src/tab"),
+    tab: () => import("#vibelang/emitted/plugins/queue/src/tab"),
     components: () => import("../../plugins/queue/src/components/index"),
   },
   {
     manifest: bugs,
-    tab: () => import("../../plugins/bugs/src/tab"),
+    tab: () => import("#vibelang/emitted/plugins/bugs/src/tab"),
     components: () => import("../../plugins/bugs/src/components/index"),
   },
   {

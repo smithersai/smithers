@@ -39,7 +39,7 @@ const workerSources = [
 
 /** The built-in plugins' sources (decision 0017, `apps/mvp/plugins/<id>/src`), tests left out. */
 function pluginSources() {
-  return ["plugins/*/src/**/!(*.test).ts", "plugins/*/src/**/*.tsx"]
+  return ["plugins/*/src/**/!(*.test).{ts,vibe}", "plugins/*/src/**/*.tsx"]
 }
 
 /**
@@ -48,7 +48,7 @@ function pluginSources() {
  */
 const coreSources = [
   "src/!(test|plugins)/**/!(*.test).{ts,vibe}",
-  "src/!(*.test).ts",
+  "src/!(*.test).{ts,vibe}",
   "src/plugins/!(builtin|builtinFlows|manifests|*.test).ts",
   "src/plugins/*/**/!(*.test).ts",
   "src/**/!(main).tsx",
@@ -63,7 +63,7 @@ const coreSources = [
  */
 const appSources = [
   "src/!(test)/**/!(*.test).{ts,vibe}",
-  "src/!(*.test).ts",
+  "src/!(*.test).{ts,vibe}",
   "src/**/!(main).tsx",
   ...pluginSources(),
   ...workerSources,
@@ -364,7 +364,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
   },
   {
     kind: "forbid",
-    files: ["src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "src/**/*.tsx"],
+    files: ["src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "src/**/*.tsx"],
     modules: [
       "node:*",
       "node:*/**",
@@ -420,7 +420,7 @@ export const importRules: ReadonlyArray<ImportRule> = [
 const importRulesTarget = ImportRules({ cwd, rules: importRules })
 
 /** Browser code: the state machine and components, tests and test support left out. */
-const browserSources = ["src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "src/**/*.tsx"]
+const browserSources = ["src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "src/**/*.tsx"]
 
 /** Every test and its support code. */
 const testSources = ["**/*.test.ts", "e2e/**/*.ts", "src/test/**/*.ts", "worker/**/test/**/*.ts", "db/TestDatabase.ts"]
@@ -443,7 +443,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "durable.no-hand-rolled-durability",
-    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "db/Database.ts", "db/migrations/*.ts"],
     lookFor: "Does this file implement its own durability machinery: a retry loop, a backoff schedule, a periodic " +
       "sweep or cron job, a background job runner, re-dispatch of stuck work, attempt counters, leases or fencing, " +
       "or a work queue, instead of leaving that to the durable flow engine?",
@@ -518,7 +518,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.boundary-only",
-    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "src/**/!(main).tsx"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "src/**/!(main).tsx"],
     lookFor: "A DOM listener that must call preventDefault before it returns, and a function a React event handler " +
       "calls to dispatch an action, may run an Effect synchronously. Apart from those, does this file run an Effect, " +
       "with Effect.runPromise, runSync, runFork or runCallback, their ...With forms, a ManagedRuntime or Runtime's " +
@@ -530,7 +530,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.wrap-every-library",
-    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "db/Database.ts", "db/migrations/*.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "db/Database.ts", "db/migrations/*.ts"],
     lookFor: "Does this file call a third-party library's Promise, callback or class API directly in app logic, " +
       "instead of through that library's own Effect API or an Effect wrapper?",
     violation: "App logic calls a third-party library's non-Effect API directly.",
@@ -539,7 +539,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "effect.choices-are-services",
-    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "alchemy.run.ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "alchemy.run.ts"],
     lookFor: "Does this file hard-code a deployment choice, such as which model or provider to use, a service URL, a " +
       "limit, a timeout or a credential name, inside a handler or module body, instead of reading it from a service " +
       "provided by a layer or from Effect Config with a named default?",
@@ -597,7 +597,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "config.generic-names",
-    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts", "db/Database.ts", "alchemy.run.ts",
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}", "db/Database.ts", "alchemy.run.ts",
       "playwright.config.ts"],
     lookFor: "Does this file name a configuration setting, such as an environment variable, Config key, option or " +
       "type, after one vendor when the setting is generic, for example CEREBRAS_URL for any OpenAI-compatible " +
@@ -608,7 +608,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "obs.every-action-observed",
-    files: [...workerSources, "src/features/**/!(*.test).{ts,vibe}", "src/!(*.test).ts"],
+    files: [...workerSources, "src/features/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}"],
     lookFor: "Does this file define an action, such as a request handler, a database write, a model call, a " +
       "background program, or what happens when a person does something, that records none of a structured log " +
       "line, a span or a metric for it? A function that only dispatches another action, binds a key or an event to " +
@@ -621,7 +621,7 @@ export const jevRules: ReadonlyArray<JevRule> = [
   },
   {
     id: "obs.content-free",
-    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).ts"],
+    files: [...workerSources, "src/!(test)/**/!(*.test).{ts,vibe}", "src/!(*.test).{ts,vibe}"],
     lookFor: "Does any log line, span attribute, span event, error message, error cause or metric attribute in this " +
       "file carry user content or secrets, such as message text, a question, an answer, a prompt, a provider's " +
       "error text or a credential, instead of only ids, counts, durations, sizes, status codes and error codes?",

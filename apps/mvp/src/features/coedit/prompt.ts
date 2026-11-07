@@ -1,5 +1,5 @@
 import { Effect, Layer, Ref } from "effect"
-import { SharedPrompt } from "../chat/sharedPrompt"
+import { SharedPrompt } from "#vibelang/emitted/src/features/chat/sharedPrompt"
 import type { ChatStore } from "../chat/store"
 import { followPrompt, shownConversation, type ShownPrompt, type } from "./actions"
 import type { CoeditStore } from "./store"

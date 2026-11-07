@@ -4,8 +4,8 @@ import { Clipboard } from "../../clipboard"
 import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { MAX_QUESTION_LENGTH } from "./contract"
-import { persistDraft } from "./draftWrite"
-import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics"
+import { persistDraft } from "#vibelang/emitted/src/features/chat/draftWrite"
+import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "#vibelang/emitted/src/features/chat/metrics"
 import {
   type Asking,
   COMPOSER,
@@ -20,7 +20,7 @@ import {
   type QuestionSubmitted,
 } from "./schema"
 import type { FormValues } from "../views/schema"
-import { type DraftSelection, SharedPrompt } from "./sharedPrompt"
+import { type DraftSelection, SharedPrompt } from "#vibelang/emitted/src/features/chat/sharedPrompt"
 import { ChatStore, keepUnsent, timeFirstText } from "./store"
 
 // What a person does, as Effects that finish synchronously. The chat layer (chat.ts) binds each to a plain function

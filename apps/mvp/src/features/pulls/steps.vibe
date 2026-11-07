@@ -1,8 +1,15 @@
 import { Interpreter } from "@smthrs/flow"
-import { type Duration, Effect, Layer, Metric } from "effect"
-import { PullsClient, type PullsRequestFailed } from "./api"
+import { type Duration } from "effect"
+import { PullsClient, type PullsRequestFailed } from "./api.vibe"
 import { REVIEW_REFUSALS, type ReviewRefusal } from "./contract"
-import { PullReview, type ReviewFailure, ReviewRefused, type ReviewRequest, ReviewRequestStep, ReviewUnsent } from "./flows"
+import {
+  PullReview,
+  type ReviewFailure,
+  ReviewRefused,
+  type ReviewRequest,
+  ReviewRequestStep,
+  ReviewUnsent,
+} from "./flows.ts"
 
 // Review on request (docs/features/pulls.md#review-on-request): one ChatApi request through `PullsClient`. A
 // Maintainer's press, or `/review`, runs this step on this device's engine.
@@ -24,8 +31,8 @@ const isRefusal = (code: string | undefined): code is ReviewRefusal =>
  * not_configured` (no App: asking again changes nothing); anything else, a rate limit included, is tried again.
  */
 export const failureOf = (failed: PullsRequestFailed): ReviewFailure =>
-  failed.status !== undefined &&
-    (failed.status >= 400 && failed.status < 500 && failed.status !== 429 || failed.code === "not_configured")
+  failed.status !== undefined
+    && (failed.status >= 400 && failed.status < 500 && failed.status !== 429 || failed.code === "not_configured")
     ? new ReviewRefused({ status: failed.status, ...(isRefusal(failed.code) ? { code: failed.code } : {}) })
     : new ReviewUnsent()
 
@@ -33,23 +40,25 @@ export const failureOf = (failed: PullsRequestFailed): ReviewFailure =>
  * `pull/review/request`: one `POST /api/repos/<owner>/<name>/pulls/<number>/review`, a log line `pull.review.request`
  * and a count by outcome, with ChatApi's status and code; never the pull request's title or diff.
  */
-export const requestReview = (payload: ReviewRequest) =>
-  Effect.gen(function* () {
-    const answer = yield* Effect.result((yield* PullsClient).review(payload))
-    const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
-    const outcome = failure === undefined ? "sent" : failure._tag === "@smthrs/mvp/pulls/ReviewRefused" ? "refused" : "unsent"
-    yield* Metric.update(Metric.withAttributes(reviews, { outcome }), 1)
-    yield* Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("pull.review.request").pipe(
-      Effect.annotateLogs({
-        outcome,
-        ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
-        ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
-        feature: "pulls",
-      }),
-    )
-    if (answer._tag === "Success") return answer.success
-    return yield* Effect.fail(failure!)
-  })
+export const requestReview = effect (payload: ReviewRequest) => {
+  const answer = try Effect.result((try PullsClient).review(payload))
+  const failure = answer._tag === "Failure" ? failureOf(answer.failure) : undefined
+  const outcome = failure === undefined
+    ? "sent"
+    : failure._tag === "@smthrs/mvp/pulls/ReviewRefused"
+    ? "refused"
+    : "unsent"
+  try Metric.update(Metric.withAttributes(reviews, { outcome }), 1)
+  try (Effect.logWithLevel(failure === undefined ? "Info" : "Warn")("pull.review.request")
+    |> Effect.annotateLogs({
+      outcome,
+      ...(answer._tag === "Failure" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),
+      ...(answer._tag === "Failure" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),
+      feature: "pulls",
+    })(%))
+  if (answer._tag === "Success") return answer.success
+  throw failure!
+}
 
 /** Registers `pull/review` with its step, asking through the host's `PullsClient`. */
 export const registration = Interpreter.layerWithImplementations(PullReview, ReviewRequestStep.toLayer(requestReview))

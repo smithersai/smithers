@@ -1,5 +1,3 @@
-import { Metric } from "effect"
-
 // Usage metrics for chat, exported over OTLP with the rest of the browser's telemetry (docs/observability.md).
 // Labels carry how or why, never what anyone wrote. The outbox and the device store count their own work
 // (`outbox_*`, `persistence_*`, from @smthrs/effect-tanstack-db).

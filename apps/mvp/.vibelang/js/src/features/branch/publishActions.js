@@ -6,7 +6,7 @@ import { Effect, FiberHandle, Metric, Option, Stream } from "effect";
 import { FlowDispatch } from "../../flows/dispatch";
 import { MAX_BODY_LENGTH, MAX_TITLE_LENGTH } from "../issues/contract";
 import { IssuesStore } from "../issues/store";
-import { readComparison } from "../pulls/comparison";
+import { readComparison } from "#vibelang/emitted/src/features/pulls/comparison";
 import { publishes, resyncs, updates } from "./metrics";
 import { PublishStore } from "./publishStore";
 import { CURRENT } from "./schema";

@@ -1,9 +1,9 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
-import { Effect, Option, type Scope } from "effect"
+import { type Scope } from "effect"
 import { codeOf } from "../../errorCode"
-import { PullsClient } from "./api"
+import { PullsClient } from "./api.vibe"
 import { SHA } from "./contract"
-import type { FilesRow } from "./schema"
+import type { FilesRow } from "./schema.ts"
 
 // Reading two commits' comparison into a tab (docs/features/pulls.md#the-browser): a pull request's Files tab and a
 // branch's Compare (docs/features/branch-publish.md#the-branch-page) each keep their own rows, read the same way.
@@ -21,15 +21,15 @@ export const readComparison = (
   base: string,
   head: string,
 ) =>
-  Effect.gen(function* () {
+  effect {
     if (!SHA.test(base) || !SHA.test(head)) return
     const id = `${base}...${head}`
-    const held = yield* rows.get(id)
+    const held = try rows.get(id)
     if (Option.isSome(held) && held.value.status !== "failed") return
-    if (Option.isSome(held)) yield* rows.delete(id)
-    yield* rows.insert({ id, status: "loading", files: [], truncated: false, commits: [], commitsTruncated: false })
-    yield* (yield* PullsClient).compare(owner, name, base, head).pipe(
-      Effect.matchEffect({
+    if (Option.isSome(held)) try rows.delete(id)
+    try rows.insert({ id, status: "loading", files: [], truncated: false, commits: [], commitsTruncated: false })
+    try ((try PullsClient).compare(owner, name, base, head)
+      |> Effect.matchEffect(%, {
         onSuccess: (compared) =>
           rows.update(id, (row) => {
             row.status = "ready"
@@ -41,15 +41,14 @@ export const readComparison = (
         // The comparison couldn't be read: the Files tab shows it failed, logged by its code and ChatApi's status.
         onFailure: (failure) =>
           Effect.andThen(
-            Effect.logWarning("pulls.files.load").pipe(Effect.annotateLogs({
+            Effect.logWarning("pulls.files.load") |> Effect.annotateLogs({
               feature: "pulls",
               outcome: "failed",
               errorCode: codeOf(failure),
               ...(failure.status === undefined ? {} : { status: failure.status }),
-            })),
+            })(%),
             rows.update(id, (row) => void (row.status = "failed")),
           ),
-      }),
-      Effect.forkIn(scope),
-    )
-  }).pipe(Effect.orDie)
+      })
+      |> Effect.forkIn(%, scope))
+  } |> Effect.orDie(%)

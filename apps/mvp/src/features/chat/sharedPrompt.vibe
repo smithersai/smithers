@@ -1,4 +1,4 @@
-import { Context, type Effect } from "effect"
+import { type Effect } from "effect"
 
 // The prompt a shared branch's people type together (docs/features/coedit.md#the-prompt). When the app provides it and
 // the conversation shown is a branch its owner shared (`Place.shared`), the composer's draft is the branch's prompt:
@@ -11,13 +11,12 @@ export interface DraftSelection {
   readonly head: number
 }
 
-export class SharedPrompt extends Context.Service<
-  SharedPrompt,
-  {
+export service SharedPrompt: {
     /** The person made the draft `draft`, from `base`, the draft the composer showed, with `selection` after. */
     readonly set: (
       draft: string,
       edit: { readonly base: string; readonly selection?: DraftSelection | undefined },
-    ) => Effect.Effect<void>
-  }
->()("@smthrs/mvp/chat/SharedPrompt") {}
+    ) => void!!
+  } {
+  static readonly key = "@smthrs/mvp/chat/SharedPrompt"
+}

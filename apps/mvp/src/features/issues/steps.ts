@@ -24,7 +24,7 @@ import {
   TriageRunAgain,
   type WriteRequested,
 } from "./flows"
-import { writes } from "./metrics"
+import { writes } from "#vibelang/emitted/src/features/issues/metrics"
 import { Queued, type QueuedWrite } from "./schema"
 
 // The issue writes' steps (docs/features/issues.md#flows). A step runs in the leader tab's engine worker, which has no

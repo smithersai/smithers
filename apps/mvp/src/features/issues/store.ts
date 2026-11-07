@@ -60,7 +60,7 @@ import {
   WorkLinkRow,
   WriteRow,
 } from "./schema"
-import { evictions } from "./metrics"
+import { evictions } from "#vibelang/emitted/src/features/issues/metrics"
 import { observeIssueShape } from "./shapeSync"
 import { ISSUE_WRITE, IssueWrites, keep } from "./writes"
 

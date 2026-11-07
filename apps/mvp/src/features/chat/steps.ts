@@ -11,7 +11,7 @@ import {
   editChannel,
 } from "./contract"
 import { ChatCopy, ChatEdit, CopyMessage, EditQuestion, MessageNotFound, QuestionNotEditable } from "./flows"
-import { messageCopies, questionEdits } from "./metrics"
+import { messageCopies, questionEdits } from "#vibelang/emitted/src/features/chat/metrics"
 import { CopyAnswer, type CopyCall, EditAnswer, type EditCall } from "./schema"
 
 // The steps of `chat/copy` and `chat/edit` (docs/features/chat.md#message-controls). Each runs in the leader tab's engine

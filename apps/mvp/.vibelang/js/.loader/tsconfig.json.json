@@ -10,7 +10,7 @@
   "root": {
    "relative": "apps/mvp"
   },
-  "compiler": "0bYWROsKQ6Cmsk2OMeAeZENQnYKJvubjtis_bTCMick",
+  "compiler": "2iKH7FRJ0O2JrAUmsY7UZKfgravmOkCbpWAyZn2D8Rk",
   "configs": [
    {
     "path": {
@@ -292,7 +292,7 @@
      "relative": "apps/mvp/src"
     },
     null,
-    "h6bbQSs1XQK2SPOIHLiLPiWi01nepl3vqkXruol_gPw",
+    "YG8f0HIE4oaY69jwrUyyF0EaWYkxz5osqrXnk0Dmv98",
     [],
     {
      "recursive": true,
@@ -311,7 +311,7 @@
      "relative": "apps/mvp/plugins"
     },
     null,
-    "cOvCfVDmFSWv_lFah-gic_DwPGzjju1ircb25q9CgTQ",
+    "TzFod3amTKkH8_iOki9EQONhKLpNb43ug_OAZ2brfuA",
     [],
     {
      "recursive": true,
@@ -330,7 +330,7 @@
      "relative": "apps/mvp/dev"
     },
     null,
-    "iwJRMk5Dm61QlsOFtIt_IpPAUBSHKBej_minPKHIhzA",
+    "a3VStIlg2_ByBIVOwp85OGkgxGUPcevIgK6xDqyNU3g",
     [],
     {
      "recursive": true,
@@ -349,7 +349,7 @@
      "relative": "apps/mvp/e2e"
     },
     null,
-    "AkOBuTdclpke_JBODWTQcBEkaOd4RfO3aUR7-xfMyeE",
+    "ktMcwSjfxTVbLnQDLOQFXNSfmicl4Fwk9H_jeY_HfV8",
     [],
     {
      "recursive": true,
@@ -368,7 +368,7 @@
      "relative": "apps/mvp"
     },
     null,
-    "YWdPn_BLt9N2Q1FQhx_D98iagH6vdmmeQIrErYZjeyA",
+    "ODIAmNVl9R2Y61BRPeH5scqCJMoynxV8pptyfrTDpfE",
     [],
     {
      "recursive": false,
@@ -387,7 +387,7 @@
      "relative": "apps/mvp"
     },
     null,
-    "YWdPn_BLt9N2Q1FQhx_D98iagH6vdmmeQIrErYZjeyA",
+    "ODIAmNVl9R2Y61BRPeH5scqCJMoynxV8pptyfrTDpfE",
     [],
     {
      "recursive": false,
@@ -406,7 +406,7 @@
      "relative": "apps/mvp"
     },
     null,
-    "YWdPn_BLt9N2Q1FQhx_D98iagH6vdmmeQIrErYZjeyA",
+    "ODIAmNVl9R2Y61BRPeH5scqCJMoynxV8pptyfrTDpfE",
     [],
     {
      "recursive": false,
@@ -425,7 +425,7 @@
      "relative": "apps/mvp"
     },
     null,
-    "YWdPn_BLt9N2Q1FQhx_D98iagH6vdmmeQIrErYZjeyA",
+    "ODIAmNVl9R2Y61BRPeH5scqCJMoynxV8pptyfrTDpfE",
     [],
     {
      "recursive": false,
@@ -571,8 +571,8 @@
     "path": {
      "relative": "apps/mvp/package.json"
     },
-    "size": 16665,
-    "hash": "uy1PoJwEwJA-y0UwVzNfr1uRqXhvkalCEk70QS-6_Ys"
+    "size": 20772,
+    "hash": "RoTQwh-EQTP-oeXAQK42bOEOuJWLbirjdRx2i330bmY"
    },
    {
     "path": {
@@ -886,8 +886,8 @@
     "path": {
      "relative": "packages/smithers/flows/patterns/package.json"
     },
-    "size": 15173,
-    "hash": "W4ZYTA6WZd7ZNkzvvcEyD5K4g8N7aNTt9n8GgfEDmlc"
+    "size": 15332,
+    "hash": "ZRxPCRBKfhxd3jzJQ7EKJ-PM6Tff2LvuWyPIEYGiJLw"
    },
    {
     "path": {
@@ -16034,10 +16034,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/chat/metrics.ts"
+     "relative": "apps/mvp/src/features/chat/metrics.vibe"
     },
-    "size": 3957,
-    "hash": "UsLBgWSsjk9tL6FxqBDJn648hRd7hUNJDfY5cvTu2_E"
+    "size": 3924,
+    "hash": "9oDCpRJoEbfgZLbNI9arhlBNdSRUDLeLHVgUE5rUBJY"
    },
    {
     "path": {
@@ -16048,17 +16048,17 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/chat/draftWrite.ts"
+     "relative": "apps/mvp/src/features/chat/draftWrite.vibe"
     },
-    "size": 1652,
-    "hash": "66RyoI7J7HXT72qUEzSfnqrJAZ4aBTiLunLYdzcjNSU"
+    "size": 1658,
+    "hash": "Lvm0TeRRj2Z_EgQoF4AqiWhnL7TSAOn8fCSTQDa0H50"
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/chat/sharedPrompt.ts"
+     "relative": "apps/mvp/src/features/chat/sharedPrompt.vibe"
     },
-    "size": 1083,
-    "hash": "eydsWSieC2LsNtZdJsIN_qN6T4cJmczC8UYH2pl26rM"
+    "size": 1041,
+    "hash": "MtuNY9nmcLxmHiHbW-Bby4WSsPoeq7YUAikwIk54t84"
    },
    {
     "path": {
@@ -16307,10 +16307,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/outbox.ts"
+     "relative": "apps/mvp/src/outbox.vibe"
     },
-    "size": 2160,
-    "hash": "I8ATHd0rFARV5ChQwfB54_MXSxl1yXE_RDyzgoPXgVg"
+    "size": 2139,
+    "hash": "aGecsbPa4H-Aoyv59RQgYmMFcgaPIgqg7aZ0ZdGsqfw"
    },
    {
     "path": {
@@ -16321,10 +16321,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/chat/api.ts"
+     "relative": "apps/mvp/src/features/chat/api.vibe"
     },
-    "size": 4384,
-    "hash": "s3dzO6mspl7FvTz7B3RtFZTH2DzQOKUXQczvDcU6mCc"
+    "size": 4324,
+    "hash": "pocrJM2aonTmBXVTsnDaGpB11jxICF3dWdFimA_twe0"
    },
    {
     "path": {
@@ -16337,15 +16337,15 @@
     "path": {
      "relative": "apps/mvp/src/features/chat/store.ts"
     },
-    "size": 36961,
-    "hash": "BPh5TChB-MRERPP2NiuM7n0_X8a4Mc3xL5wR9fTh7ls"
+    "size": 37045,
+    "hash": "o-nvRVJJfm7Y46IphOQbFBagDfRKHbBDofdY_dk-uOE"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/chat/actions.ts"
     },
-    "size": 28220,
-    "hash": "C8Pbv3JpacTRziHPa0AMQ4JaVsWd86D8igSJE7jnob8"
+    "size": 28322,
+    "hash": "GjkfauU4Lr_90HR399vkXrPcicvAjL15pxqlxe8zMtM"
    },
    {
     "path": {
@@ -18708,10 +18708,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/issues/metrics.ts"
+     "relative": "apps/mvp/src/features/issues/metrics.vibe"
     },
-    "size": 2036,
-    "hash": "qC-N9qVx46-96Ye6Bnnxt9bfNw8NNw28qrfZqzBD9Nk"
+    "size": 2007,
+    "hash": "mAsTc8GflDbAFbECgbv0vt_aqrqDkCYXHmLs-0Ffz-0"
    },
    {
     "path": {
@@ -18738,15 +18738,15 @@
     "path": {
      "relative": "apps/mvp/src/features/issues/writes.ts"
     },
-    "size": 11386,
-    "hash": "3Y904pmVASfbqz9sBK6GUzAjQX5hPeSJ8TuE0NQbx2Q"
+    "size": 11438,
+    "hash": "wBHL1toknLO7ZTgWE8BTp9hjOGvKZD6LpgNfiaEt8C8"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/issues/store.ts"
     },
-    "size": 29688,
-    "hash": "g8O99RalY_kcqwmAyIZowKNcIxzoffVfNnP5NZVnAzs"
+    "size": 29724,
+    "hash": "H52ZMkFS-OE0kLBCmW7TEsb0_VEtFKcLWrDzJdZBghg"
    },
    {
     "path": {
@@ -18778,24 +18778,24 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/todos/metrics.ts"
+     "relative": "apps/mvp/src/features/todos/metrics.vibe"
     },
-    "size": 1782,
-    "hash": "IUMaakxZlDhtezS7wKkYBAmgmR7ekHTe1eTA3Hg6_bY"
+    "size": 1749,
+    "hash": "RTcu0ZL1oySdZUSdbASBWZyO8etlFxA9cH8SGdQrCWA"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/todos/writes.ts"
     },
-    "size": 7718,
-    "hash": "BNpuvi8tpAp37VBdY7UfwUZdBJU_JbqPcf_HiV5InuU"
+    "size": 7769,
+    "hash": "plN3y_pLMB1avemKGH5o98AmEGwJj_KRN7hbQOTiaRU"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/todos/store.ts"
     },
-    "size": 12929,
-    "hash": "DrQy8DN0Jl3Iav8KCTd_Fxj-9y71236H_QBDOSdrI9g"
+    "size": 12964,
+    "hash": "UtHka6mGuiG2IWJXJ3buhRaI_RYplwwZ4KuHV954jGQ"
    },
    {
     "path": {
@@ -18815,8 +18815,8 @@
     "path": {
      "relative": "apps/mvp/src/features/runs/writes.ts"
     },
-    "size": 6533,
-    "hash": "G5qd1oIzlBIGJqKyIZfpG7Uah2WOgpF15xJHgt61Psc"
+    "size": 6549,
+    "hash": "7RL8q3I5U1IjDuivCtdWSGMFS-z8IX9orEfz6Molg7M"
    },
    {
     "path": {
@@ -18955,8 +18955,8 @@
     "path": {
      "relative": "apps/mvp/src/features/coedit/writes.ts"
     },
-    "size": 4136,
-    "hash": "IR-E5rD-iOnsWZ-kfLIaprW8zDs9EDlXojl_kpQ4bv4"
+    "size": 4152,
+    "hash": "_c-9DjY_FCr7Xb-ZIT0UVFE1I4Ul3uSiX4FYriHdE3A"
    },
    {
     "path": {
@@ -19128,10 +19128,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/pulls/api.ts"
+     "relative": "apps/mvp/src/features/pulls/api.vibe"
     },
-    "size": 4795,
-    "hash": "-yte74LbOCsf0beJN4Lk0CQ2WuO_ETcX395nGWBiKa0"
+    "size": 4705,
+    "hash": "FYjYc7r9DtBE3W5mg-RpEIFFmRXUwHbeuLta_KvOUSs"
    },
    {
     "path": {
@@ -19149,10 +19149,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/pulls/comparison.ts"
+     "relative": "apps/mvp/src/features/pulls/comparison.vibe"
     },
-    "size": 2369,
-    "hash": "d_cIHOcIhs4DhDXIEJW5BE-VkiZobCOyz3gQQkeXhFA"
+    "size": 2328,
+    "hash": "ZbzvzQZoa1-zhNuAxZBf8xv8wHoiirzFVy_q9fKgzZA"
    },
    {
     "path": {
@@ -19172,15 +19172,15 @@
     "path": {
      "relative": "apps/mvp/src/features/branch/publishActions.ts"
     },
-    "size": 12535,
-    "hash": "lOd6k6gMb6wEwtJxXyGRdLWkxylbm5tHorqi83Pc5Rw"
+    "size": 12563,
+    "hash": "q1t5M__1Can-P9_-2868nLx8MmGPwt_TDFg7l_4Opog"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/branch/publishing.ts"
     },
-    "size": 3461,
-    "hash": "fFKTWX6hvLoIsBmyqqmu08Sgw5k7tpuga2rvOO2NSYk"
+    "size": 3466,
+    "hash": "nm4bedTVUz__JmB8oCn3eLyBIMYL5IaiPTJwkQ5Xpe8"
    },
    {
     "path": {
@@ -19569,24 +19569,24 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/plugins/queue/src/tab.ts"
+     "relative": "apps/mvp/plugins/queue/src/tab.vibe"
     },
-    "size": 3871,
-    "hash": "yzCmzOIK18BtnSzLJx51HlfHb-vGOnsljvXHuz4O6oE"
+    "size": 3841,
+    "hash": "1IMgU1wGXgm_JQpg8dw-pFVFMniDPiyF9HdCjrYr90A"
    },
    {
     "path": {
      "relative": "apps/mvp/plugins/queue/src/components/NavCount.tsx"
     },
-    "size": 587,
-    "hash": "jgT5alvgswJUey7y_ILhsTRaOB3x5xQKNa3MoR80Qaw"
+    "size": 592,
+    "hash": "ZMyK1qOWU0eQSPPkdsE3NOOpbvlwoTvuZYEmQeiIm4E"
    },
    {
     "path": {
      "relative": "apps/mvp/plugins/queue/src/components/Queue.tsx"
     },
-    "size": 976,
-    "hash": "oVHZn-EkOudKzed69oSuo7S_8SCEqvDRsPvY3l2bEvA"
+    "size": 981,
+    "hash": "N-Kh8AAmCxEPP7lMtmuF1pJQy333f5KyOzTaQUTAqkU"
    },
    {
     "path": {
@@ -19597,31 +19597,31 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/plugins/bugs/src/tab.ts"
+     "relative": "apps/mvp/plugins/bugs/src/tab.vibe"
     },
-    "size": 6706,
-    "hash": "fD7i98b79FDLIEOUuEAL7gt56MXa5tjJpSO6Q6-QM6M"
+    "size": 7148,
+    "hash": "7tnfBbm3lY2BxrvlJlZTFCVKwK1dEcfXQN_pQ_6CnqM"
    },
    {
     "path": {
      "relative": "apps/mvp/plugins/bugs/src/components/Inbox.tsx"
     },
-    "size": 3774,
-    "hash": "psNhWcSQHz437sReck8JrrTJQ7DC10wtg_YBd6T8OAc"
+    "size": 3779,
+    "hash": "UmOwb3qSi2oHFKcnqLqlzcfJzGRSWe0v6UJ4H1OhjmI"
    },
    {
     "path": {
      "relative": "apps/mvp/plugins/bugs/src/components/NavButton.tsx"
     },
-    "size": 364,
-    "hash": "LN95Jqm6LEQ7vrDczS7c7JNFncMmZeZ1C-F0pJbdM4A"
+    "size": 369,
+    "hash": "cskbBzAsi-LDCRKLac0iq5Xyfw4nFPLaB7NjAeJsUyA"
    },
    {
     "path": {
      "relative": "apps/mvp/plugins/bugs/src/components/Report.tsx"
     },
-    "size": 2497,
-    "hash": "8QA9rLKVBnoGf9Fis2CCIuFYlSZO93uVDg161ymJb4c"
+    "size": 2529,
+    "hash": "_Ny6BBGzbtwbYjl1UalepJpjo9BAhGfdrnGpPAR07w8"
    },
    {
     "path": {
@@ -19639,17 +19639,17 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/plugins/factory/src/feeds.ts"
+     "relative": "apps/mvp/plugins/factory/src/feeds.vibe"
     },
-    "size": 4494,
-    "hash": "qwGrTK6GkjxXMXsqQ83DgyA88ICmf6yUoULNjzbvNRk"
+    "size": 4382,
+    "hash": "rJ-Ti7XXzhKBtzcAlctZ4S-mhqfmCRB1wsJ47-l6Htc"
    },
    {
     "path": {
      "relative": "apps/mvp/plugins/factory/src/tab.ts"
     },
-    "size": 9985,
-    "hash": "8gvPDLjZx5kFPEaIV3TJBAj4cEoX6BfTtmlL0ZYYihs"
+    "size": 10021,
+    "hash": "cyAircN3qp9XylMUx0dSdrug7ilisOzBKwB4-zMatIQ"
    },
    {
     "path": {
@@ -19809,8 +19809,8 @@
     "path": {
      "relative": "apps/mvp/src/plugins/builtin.ts"
     },
-    "size": 1758,
-    "hash": "fA4i6UMyvo1LSkLY90V0XNjenMTjWjpQrNYIgc90kk4"
+    "size": 1782,
+    "hash": "9In-Gv5ia7tpxTa_z4sP4wPbTnM-W6wZKesBS9LwMcs"
    },
    {
     "path": {
@@ -19886,15 +19886,15 @@
     "path": {
      "relative": "apps/mvp/src/features/commands/actions.ts"
     },
-    "size": 17182,
-    "hash": "AXYnvIL2RNpKKWkkqy8sUF7Qe3z0wlRipvjxJTa-X4M"
+    "size": 17187,
+    "hash": "7vSIXzewlc9B-1o-rtHVs504Y-8KVAk_DUQ9AQ1mKkM"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/commands/commands.ts"
     },
-    "size": 3258,
-    "hash": "5aTYs5uaT32p0cjHaiAtId4xX6GPVFWvgVoENHPc8rs"
+    "size": 3263,
+    "hash": "GGmNXUhPQ9T-N5Oo87OZH8B6XCjhF82HGF9hYswEElo"
    },
    {
     "path": {
@@ -20299,8 +20299,8 @@
     "path": {
      "relative": "apps/mvp/src/features/issues/actions.ts"
     },
-    "size": 17936,
-    "hash": "rKwWY5Loo6CdyBGEalDV64WYM8bJqLWQyS7lnoOD0Aw"
+    "size": 17972,
+    "hash": "0im52tQIVsJ5gYYjSNbXx2pYMS2KG8YG-IFrDCI_Npg"
    },
    {
     "path": {
@@ -20360,38 +20360,38 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/pulls/shapeSync.ts"
+     "relative": "apps/mvp/src/features/pulls/shapeSync.vibe"
     },
-    "size": 595,
-    "hash": "RHNEvyQlHpT6rlc5QX6E9OPuEek-NY8z8TXiZDVlBZg"
+    "size": 598,
+    "hash": "RqTtdiXYfhDQL_7oKhBbE77ge9ju8FVsL5aSF3aBUSU"
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/pulls/refresh.ts"
+     "relative": "apps/mvp/src/features/pulls/refresh.vibe"
     },
-    "size": 1528,
-    "hash": "JH4YzZGLgVpEs68Pj4-MJprqL_ByLcuX64XAcfiYWK0"
+    "size": 1480,
+    "hash": "Nn7lqUyPp2Zesyk3YNIY8FgDem2UdtTjgnU8CFIlrM8"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/pulls/store.ts"
     },
-    "size": 14435,
-    "hash": "a0SjPXEaUu6HXY2Z5LvHc-n6cG-Z-fgwydUEoz9Wyeo"
+    "size": 14505,
+    "hash": "F3qfO79Bn9nRskCZCP9-1gO11jX887IInf6xgwzyAsg"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/pulls/actions.ts"
     },
-    "size": 7983,
-    "hash": "NvtEbDd2PbMybJkRhgO0uWZzHULZzXXi4c8mpCGdAPI"
+    "size": 8053,
+    "hash": "EQD9DVgXOHvLzoAy-wV97u_OSL650Lh8XOekXf_smMo"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/pulls/pulls.ts"
     },
-    "size": 4076,
-    "hash": "pgYmsWghL13lDumhiVHIvQguTNCYIeBvi-yakNgRxKA"
+    "size": 4111,
+    "hash": "bkECGnjBzan5a8wZl8rlVNgnpr5gp1eUeFXZxCTaONs"
    },
    {
     "path": {
@@ -20663,8 +20663,8 @@
     "path": {
      "relative": "apps/mvp/src/features/todos/actions.ts"
     },
-    "size": 14526,
-    "hash": "gxOygV8DBTylv07q-8-Pr58QDtAb_fKty5WXRTmh_ik"
+    "size": 14561,
+    "hash": "cHPXTrEga4bAiE_H-NLeuDTsl4BI7Eo_1HCsyj8iLP8"
    },
    {
     "path": {
@@ -21860,8 +21860,8 @@
     "path": {
      "relative": "apps/mvp/src/features/coedit/prompt.ts"
     },
-    "size": 1771,
-    "hash": "wSeY3KTxfRJ0aYuEBLHwJAPZ2XZiMAj2LUZ-cTZxsoY"
+    "size": 1799,
+    "hash": "Blq1gZ8sd0T5ypV30VCSMCWEYe0UanjanJmp4x6NVfc"
    },
    {
     "path": {
@@ -21965,8 +21965,8 @@
     "path": {
      "relative": "apps/mvp/src/boot.ts"
     },
-    "size": 38256,
-    "hash": "lFyHQ6XA5WN9AL0YL6z8e8aRxecUdXGbRDweiPs4AcM"
+    "size": 38316,
+    "hash": "9RESK3jGrXrg7221BotMTX2X4aeIxhJyGEgv2S-oxCQ"
    },
    {
     "path": {
@@ -25493,8 +25493,8 @@
     "path": {
      "relative": "apps/mvp/worker/Flows.vibe"
     },
-    "size": 3617,
-    "hash": "xBXr6q3876_t5ZJQRNecyaX8rTkgpsl_fv3cnMWLDVw"
+    "size": 3619,
+    "hash": "QKB-IicDDfsFvaJVelYzHmST1TBd9OLZan0xkVb4kHk"
    },
    {
     "path": {
@@ -25836,8 +25836,8 @@
     "path": {
      "relative": "apps/mvp/worker/github/Calls.vibe"
     },
-    "size": 3618,
-    "hash": "s2-nyQoP4MhfXrXVmmejeNUlxhA0SxcDFWDLnFF2kUQ"
+    "size": 3620,
+    "hash": "poZOqK96IeICqcxzz-mO6u7CMnd186hjSkdz_WHqJGQ"
    },
    {
     "path": {
@@ -26424,8 +26424,8 @@
     "path": {
      "relative": "apps/mvp/worker/ModelTiers.vibe"
     },
-    "size": 5573,
-    "hash": "QJGBe_VGdVXQ7J539OB_euKdq3qT9_2MX9RE15hRzss"
+    "size": 5575,
+    "hash": "2iiVBwBqsKdsQFdXdbMj8UNlvHOq-hOIyR9Md0d1O_E"
    },
    {
     "path": {
@@ -26704,15 +26704,15 @@
     "path": {
      "relative": "apps/mvp/worker/branch/Sandboxes.vibe"
     },
-    "size": 6653,
-    "hash": "uOXWrpYvCeCwaQpdlumSvxT1XXUpAzxqQ-n6OynuAAE"
+    "size": 6655,
+    "hash": "XxEgeBDAomnlRz5WFzcKC48Nv5rmhdeX_mAyH1Mnv-o"
    },
    {
     "path": {
      "relative": "apps/mvp/worker/branch/Machines.vibe"
     },
-    "size": 13032,
-    "hash": "eF-W7WlA78Ec3KQb1cwjbhCm2E-K9L-W_Nf_kbtptlE"
+    "size": 13042,
+    "hash": "mY73YFlXChIqWGI84TdOMWoPhssEJ6z5A_6xAlKStg0"
    },
    {
     "path": {
@@ -26928,8 +26928,8 @@
     "path": {
      "relative": "apps/mvp/worker/about/Store.vibe"
     },
-    "size": 8194,
-    "hash": "jf0MT-slnBp-3UtIzlAgSTpBgtfuqIuUaO2ha2HcJAQ"
+    "size": 8196,
+    "hash": "CovfDso2NktcqZs15-VtA4jiD7YGTxgFoOwZrzLkBKE"
    },
    {
     "path": {
@@ -27222,8 +27222,8 @@
     "path": {
      "relative": "apps/mvp/worker/domains/Provider.vibe"
     },
-    "size": 3431,
-    "hash": "WlO5r8AOjrEqGhk0vBqGoQg9QyLI1TTxLjHOUg0qwFE"
+    "size": 3433,
+    "hash": "krSjatVdd3nUfi3w7QsOVctoh0ZsWc1fXXszCVbR2NY"
    },
    {
     "path": {
@@ -27514,17 +27514,17 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/pins/api.ts"
+     "relative": "apps/mvp/src/features/pins/api.vibe"
     },
-    "size": 895,
-    "hash": "ktwpCtheYvslf76eGeSAMB6er5gTd9DqDRUkwoIjWzY"
+    "size": 920,
+    "hash": "WHQjmT218bI3a35nHGiDZXTpoWGPCluevXJ_a2IECp4"
    },
    {
     "path": {
      "relative": "apps/mvp/src/features/pins/steps.ts"
     },
-    "size": 3578,
-    "hash": "rtWuNlgZxtpX38b9i8bXKO82yX6gV_Ov9kaG0BmEqbY"
+    "size": 3612,
+    "hash": "nxT42HAwFjDsGzD8LS3o6-jkqru5x9P6o60yDPRtMqI"
    },
    {
     "path": {
@@ -27656,8 +27656,8 @@
     "path": {
      "relative": "apps/mvp/src/features/chat/steps.ts"
     },
-    "size": 6035,
-    "hash": "8k91l_Qp32bjQy9_QEdDl2gsN93CWrOV21s3hhI9vAs"
+    "size": 6069,
+    "hash": "vuGkSU6GcOdcszKguPxk0OEcV0ErALA9zXo8UKiCvac"
    },
    {
     "path": {
@@ -27698,8 +27698,8 @@
     "path": {
      "relative": "apps/mvp/src/features/issues/steps.ts"
     },
-    "size": 8529,
-    "hash": "qap-O15Lyl5KoygTsYeEiahVXTLNbo3vLOp-YoRm3UE"
+    "size": 8565,
+    "hash": "5AcvXdHqtXCZeN-3bYDOO7npz7MVg38wUCqaNLUg1Qc"
    },
    {
     "path": {
@@ -27815,10 +27815,10 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/src/features/pulls/steps.ts"
+     "relative": "apps/mvp/src/features/pulls/steps.vibe"
     },
-    "size": 3300,
-    "hash": "p6RBromrDJvdQ5vSC6EmwPcJ-q8MsscOKHyCYJDmsoQ"
+    "size": 3228,
+    "hash": "cogqzFf9_9zsP_6pFI0O0XhiBPs0bPCp0QuQQu3f7T8"
    },
    {
     "path": {
@@ -27873,8 +27873,8 @@
     "path": {
      "relative": "apps/mvp/src/features/todos/steps.ts"
     },
-    "size": 12126,
-    "hash": "5MfVktqxaMMVhh_bN_6r3ltC61VqPBMIV2SEAMrV_Gc"
+    "size": 12161,
+    "hash": "Gze0LCSH_lzJdnle0NLNA92pV9DmXp9Y5OzMJy8vhvQ"
    },
    {
     "path": {
@@ -27936,8 +27936,8 @@
     "path": {
      "relative": "apps/mvp/src/flows/registrations.ts"
     },
-    "size": 10649,
-    "hash": "vnvX8NNLSQmblWzny7ZN_CUqAvSjm2bhJdDeUks2D60"
+    "size": 10668,
+    "hash": "fOHJ3jy_YRHQcoGh-EXjmYlQP14_oT-Tr8FHO5yETN4"
    },
    {
     "path": {
@@ -34255,7 +34255,7 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/plugins/branches/src/create.ts"
+     "relative": "apps/mvp/plugins/branches/src/create.vibe"
     },
     "size": 516,
     "hash": "5DKIb2BtWHl_gh-TQeQLaC0VUnEMAUmyaj5SXXO1FXU"
@@ -34297,14 +34297,14 @@
    },
    {
     "path": {
-     "relative": "apps/mvp/plugins/branches/src/publish.ts"
+     "relative": "apps/mvp/plugins/branches/src/publish.vibe"
     },
     "size": 622,
     "hash": "n9jJMvJTXRO7UpDiaYXtpuaadMn-qiLs7CLytsxzHFE"
    },
    {
     "path": {
-     "relative": "apps/mvp/plugins/branches/src/update.ts"
+     "relative": "apps/mvp/plugins/branches/src/update.vibe"
     },
     "size": 593,
     "hash": "x6EBc1fNT5ueiMa2CU5kDrcN6uYGp8Uue1vawr4iz84"
@@ -40473,8 +40473,8 @@
     "path": {
      "relative": "apps/mvp/e2e/faults.ts"
     },
-    "size": 4754,
-    "hash": "ibRvASipApevek3O44VE3Gt5tI7CZc-X2CiPDGmnkF8"
+    "size": 4759,
+    "hash": "V_6NL-lmvwYJoaSw5ZBc8gd_Xrm2tyycYVe2RIld1L0"
    },
    {
     "path": {
@@ -45537,16 +45537,16 @@
     "relative": "apps/mvp/src/clipboard.ts"
    },
    {
-    "relative": "apps/mvp/src/features/chat/metrics.ts"
+    "relative": "apps/mvp/src/features/chat/metrics.vibe"
    },
    {
     "relative": "apps/mvp/src/features/chat/schema.ts"
    },
    {
-    "relative": "apps/mvp/src/features/chat/draftWrite.ts"
+    "relative": "apps/mvp/src/features/chat/draftWrite.vibe"
    },
    {
-    "relative": "apps/mvp/src/features/chat/sharedPrompt.ts"
+    "relative": "apps/mvp/src/features/chat/sharedPrompt.vibe"
    },
    {
     "relative": "apps/mvp/src/features/pins/schema.ts"
@@ -45642,13 +45642,13 @@
     "relative": "apps/mvp/src/features/chat/answerEnd.ts"
    },
    {
-    "relative": "apps/mvp/src/outbox.ts"
+    "relative": "apps/mvp/src/outbox.vibe"
    },
    {
     "relative": "apps/mvp/src/features/views/store.ts"
    },
    {
-    "relative": "apps/mvp/src/features/chat/api.ts"
+    "relative": "apps/mvp/src/features/chat/api.vibe"
    },
    {
     "relative": "apps/mvp/src/features/chat/queries.ts"
@@ -46527,7 +46527,7 @@
     "relative": "apps/mvp/src/features/issues/queries.ts"
    },
    {
-    "relative": "apps/mvp/src/features/issues/metrics.ts"
+    "relative": "apps/mvp/src/features/issues/metrics.vibe"
    },
    {
     "relative": "apps/mvp/src/features/issues/shapeSync.ts"
@@ -46557,7 +46557,7 @@
     "relative": "apps/mvp/src/features/todos/api.ts"
    },
    {
-    "relative": "apps/mvp/src/features/todos/metrics.ts"
+    "relative": "apps/mvp/src/features/todos/metrics.vibe"
    },
    {
     "relative": "apps/mvp/src/features/todos/writes.ts"
@@ -46707,7 +46707,7 @@
     "relative": "apps/mvp/src/features/branch/actions.ts"
    },
    {
-    "relative": "apps/mvp/src/features/pulls/api.ts"
+    "relative": "apps/mvp/src/features/pulls/api.vibe"
    },
    {
     "relative": "apps/mvp/src/features/attention/writeNotices.ts"
@@ -46716,7 +46716,7 @@
     "relative": "apps/mvp/src/features/branch/writeIdentity.ts"
    },
    {
-    "relative": "apps/mvp/src/features/pulls/comparison.ts"
+    "relative": "apps/mvp/src/features/pulls/comparison.vibe"
    },
    {
     "relative": "apps/mvp/src/features/branch/publishSchema.ts"
@@ -46890,7 +46890,7 @@
     "relative": "apps/mvp/src/plugins/manifests.ts"
    },
    {
-    "relative": "apps/mvp/plugins/queue/src/tab.ts"
+    "relative": "apps/mvp/plugins/queue/src/tab.vibe"
    },
    {
     "relative": "apps/mvp/plugins/queue/src/components/NavCount.tsx"
@@ -46902,7 +46902,7 @@
     "relative": "apps/mvp/plugins/queue/src/components/index.tsx"
    },
    {
-    "relative": "apps/mvp/plugins/bugs/src/tab.ts"
+    "relative": "apps/mvp/plugins/bugs/src/tab.vibe"
    },
    {
     "relative": "apps/mvp/plugins/bugs/src/components/Inbox.tsx"
@@ -46920,7 +46920,7 @@
     "relative": "apps/mvp/plugins/factory/src/model.ts"
    },
    {
-    "relative": "apps/mvp/plugins/factory/src/feeds.ts"
+    "relative": "apps/mvp/plugins/factory/src/feeds.vibe"
    },
    {
     "relative": "apps/mvp/plugins/factory/src/tab.ts"
@@ -47229,10 +47229,10 @@
     "relative": "apps/mvp/src/features/pulls/queries.ts"
    },
    {
-    "relative": "apps/mvp/src/features/pulls/shapeSync.ts"
+    "relative": "apps/mvp/src/features/pulls/shapeSync.vibe"
    },
    {
-    "relative": "apps/mvp/src/features/pulls/refresh.ts"
+    "relative": "apps/mvp/src/features/pulls/refresh.vibe"
    },
    {
     "relative": "apps/mvp/src/features/pulls/store.ts"
@@ -49317,7 +49317,7 @@
     "relative": "apps/mvp/src/flows/declarations.ts"
    },
    {
-    "relative": "apps/mvp/src/features/pins/api.ts"
+    "relative": "apps/mvp/src/features/pins/api.vibe"
    },
    {
     "relative": "apps/mvp/src/features/pins/steps.ts"
@@ -49446,7 +49446,7 @@
     "relative": "apps/mvp/src/features/feeds/steps.ts"
    },
    {
-    "relative": "apps/mvp/src/features/pulls/steps.ts"
+    "relative": "apps/mvp/src/features/pulls/steps.vibe"
    },
    {
     "relative": "apps/mvp/src/features/personal-model/steps.ts"
@@ -50313,7 +50313,7 @@
     "relative": "apps/mvp/src/features/branch/conversation.test.ts"
    },
    {
-    "relative": "apps/mvp/plugins/branches/src/create.ts"
+    "relative": "apps/mvp/plugins/branches/src/create.vibe"
    },
    {
     "relative": "apps/mvp/src/features/branch/creationFlows.test.ts"
@@ -50331,10 +50331,10 @@
     "relative": "apps/mvp/src/features/branch/publish.test.ts"
    },
    {
-    "relative": "apps/mvp/plugins/branches/src/publish.ts"
+    "relative": "apps/mvp/plugins/branches/src/publish.vibe"
    },
    {
-    "relative": "apps/mvp/plugins/branches/src/update.ts"
+    "relative": "apps/mvp/plugins/branches/src/update.vibe"
    },
    {
     "relative": "apps/mvp/src/features/branch/publishSteps.test.ts"
@@ -52068,6 +52068,36 @@
   "warnings": [
    {
     "file": {
+     "relative": "apps/mvp/src/features/chat/api.vibe"
+    },
+    "line": 32,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4830",
+    "text": "QuestionNotTaken extends Data.TaggedError; in VibeLang an error is an error declaration: error QuestionNotTaken { … }.\n  Its quick fix writes error QuestionNotTaken { … }; vibelang --fix applies every such fix in the project."
+   },
+   {
+    "file": {
+     "relative": "apps/mvp/src/features/chat/api.vibe"
+    },
+    "line": 82,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "ChatClient extends Context.Service; in VibeLang a service is a service declaration: service ChatClient { … }.\n  No quick fix: move its static members into the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/mvp/chat/ChatClient\"."
+   },
+   {
+    "file": {
+     "relative": "apps/mvp/src/features/chat/api.vibe"
+    },
+    "line": 94,
+    "column": 16,
+    "category": "warning",
+    "code": "EK4836",
+    "text": "Effect.provideService wraps a program in a call; write it as a block: provide Key = value { … }.\n  No quick fix: a provide block stands only as a statement or a return; run the call in one, such as a function that returns it."
+   },
+   {
+    "file": {
      "relative": "apps/mvp/src/features/files/store.vibe"
     },
     "line": 98,
@@ -52075,6 +52105,26 @@
     "category": "warning",
     "code": "EK4831",
     "text": "FilesStore extends Context.Service; in VibeLang a service is a service declaration: service FilesStore { … }.\n  No quick fix: its members come from Effect.Success<typeof make>; write them in the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/mvp/files/FilesStore\"."
+   },
+   {
+    "file": {
+     "relative": "apps/mvp/src/features/pins/api.vibe"
+    },
+    "line": 5,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "PinClient extends Context.Service; in VibeLang a service is a service declaration: service PinClient { … }.\n  No quick fix: move its static members into the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/mvp/pins/PinClient\"."
+   },
+   {
+    "file": {
+     "relative": "apps/mvp/src/features/pulls/api.vibe"
+    },
+    "line": 37,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "PullsClient extends Context.Service; in VibeLang a service is a service declaration: service PullsClient { … }.\n  No quick fix: move its static members into the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/mvp/pulls/PullsClient\"."
    },
    {
     "file": {
@@ -52105,6 +52155,16 @@
     "category": "warning",
     "code": "EK4831",
     "text": "SharingStore extends Context.Service; in VibeLang a service is a service declaration: service SharingStore { … }.\n  No quick fix: move its static members into the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/mvp/sharing/SharingStore\"."
+   },
+   {
+    "file": {
+     "relative": "apps/mvp/src/outbox.vibe"
+    },
+    "line": 11,
+    "column": 14,
+    "category": "warning",
+    "code": "EK4831",
+    "text": "OutboxWrites extends Context.Service; in VibeLang a service is a service declaration: service OutboxWrites { … }.\n  No quick fix: move its static members into the declaration. Keep its key in the declaration: static readonly key = \"@smthrs/mvp/OutboxWrites\"."
    },
    {
     "file": {
@@ -52731,6 +52791,146 @@
    {
     "paths": [
      {
+      "relative": "apps/mvp/src/features/chat/metrics.vibe"
+     }
+    ],
+    "code": "// Usage metrics for chat, exported over OTLP with the rest of the browser's telemetry (docs/observability.md).\n// Labels carry how or why, never what anyone wrote. The outbox and the device store count their own work\n// (`outbox_*`, `persistence_*`, from @smthrs/effect-tanstack-db).\nimport * as Metric from \"effect/Metric\";\nconst MILLISECONDS = Metric.exponentialBoundaries({ start: 50, factor: 2, count: 12 });\n/** Device draft writes by stage: waiting, stored or failed. */\nexport const draftWrites = Metric.counter(\"smithers_web_draft_writes\", {\n    description: \"Device draft writes by persistence stage\",\n    incremental: true,\n});\n/** Composer opens, by `via`: `shortcut` (⌘K or Ctrl+K) or `button`. */\nexport const composerOpens = Metric.counter(\"smithers_web_composer_opens\", {\n    description: \"Times a person opened the chat composer\",\n    incremental: true,\n});\n/** Questions this tab asked, by `queued`: `true` when the pill showed, so the question waited in the outbox. */\nexport const questionsAsked = Metric.counter(\"smithers_web_questions\", {\n    description: \"Questions asked\",\n    incremental: true,\n});\n/**\n * Questions that stayed unsent, by `reason`: `refused` (400), `conflict` (409), `too_large` (413) or `not_admitted`\n * (the outbox couldn't store it).\n */\nexport const askFailures = Metric.counter(\"smithers_web_ask_failures\", {\n    description: \"Questions that stayed unsent on the device\",\n    incremental: true,\n});\n/** What a person did with an unsent question, by `action`: `edit`, `discard` or `retry`. */\nexport const unsentActions = Metric.counter(\"smithers_web_unsent_actions\", {\n    description: \"Edits, discards and retries of unsent questions\",\n    incremental: true,\n});\n/** From asking to the first text of the answer reaching this tab, time queued included. */\nexport const firstAnswerText = Metric.histogram(\"smithers_web_answer_first_text_ms\", {\n    description: \"Milliseconds from asking to the answer's first text on this tab\",\n    boundaries: MILLISECONDS,\n});\n/**\n * Times the connection pill showed, by `reason`: `offline` (the browser), `unreachable` (shape requests or sends\n * failing for 10 s), `refused` (Electric refused the shape), `invalid_response` (an answer it couldn't read) or\n * `engine` (this tab's engine worker failed).\n */\nexport const connectionDrops = Metric.counter(\"smithers_web_sync_failures\", {\n    description: \"Times chat showed it was offline or its sync failed\",\n    incremental: true,\n});\n/** Times a person or the browser asked to sync and send now, by `via`: `button` (Retry) or `online`. */\nexport const syncRetries = Metric.counter(\"smithers_web_sync_retries\", {\n    description: \"Times chat synced and sent at once instead of waiting out its backoff\",\n    incremental: true,\n});\n/** \"Load earlier\" presses: the window grows on the device, at once. */\nexport const historyLoads = Metric.counter(\"smithers_web_history_loads\", {\n    description: \"Earlier pages of the conversation a person showed\",\n    incremental: true,\n});\n/** Whether the browser granted persistent storage at boot, by `granted`: `true` or `false`. */\nexport const storagePersisted = Metric.counter(\"smithers_web_storage_persisted\", {\n    description: \"Persistent storage requests at boot, by whether the browser granted them\",\n    incremental: true,\n});\n/**\n * Copies of a message to the clipboard (`chat/copy`), by `door` (`button`, `slash`, `agent`), `which` (`message` or\n * `latest`, the latest finished answer) and `outcome` (`COPY_OUTCOMES`).\n */\nexport const messageCopies = Metric.counter(\"smithers_web_message_copies\", {\n    description: \"Messages copied to the clipboard, by door, which message and outcome\",\n    incremental: true,\n});\n/** Questions taken back into the composer (`chat/edit`), by `door` and `outcome` (`EDIT_OUTCOMES`). */\nexport const questionEdits = Metric.counter(\"smithers_web_question_edits\", {\n    description: \"Questions taken back into the composer before Smithers had them, by door and outcome\",\n    incremental: true,\n});\n",
+    "map": {
+     "version": 3,
+     "file": "metrics.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/chat/metrics.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,+GAA+G;AAC/G,yGAAyG;AACzG,kEAAkE;;AAElE,MAAM,YAAY,GAAG,MAAM,CAAC,qBAAqB,CAAC,EAAE,KAAK,EAAE,EAAE,EAAE,MAAM,EAAE,CAAC,EAAE,KAAK,EAAE,EAAE,EAAE,CAAC,CAAA;AAEtF,+DAA+D;AAC/D,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,OAAO,CAAC,2BAA2B,EAAE;IACrE,WAAW,EAAE,0CAA0C;IACvD,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,uEAAuE;AACvE,MAAM,CAAC,MAAM,aAAa,GAAG,MAAM,CAAC,OAAO,CAAC,6BAA6B,EAAE;IACzE,WAAW,EAAE,yCAAyC;IACtD,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,gHAAgH;AAChH,MAAM,CAAC,MAAM,cAAc,GAAG,MAAM,CAAC,OAAO,CAAC,wBAAwB,EAAE;IACrE,WAAW,EAAE,iBAAiB;IAC9B,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF;;;GAGG;AACH,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,OAAO,CAAC,2BAA2B,EAAE;IACrE,WAAW,EAAE,4CAA4C;IACzD,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,4FAA4F;AAC5F,MAAM,CAAC,MAAM,aAAa,GAAG,MAAM,CAAC,OAAO,CAAC,6BAA6B,EAAE;IACzE,WAAW,EAAE,iDAAiD;IAC9D,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,2FAA2F;AAC3F,MAAM,CAAC,MAAM,eAAe,GAAG,MAAM,CAAC,SAAS,CAAC,mCAAmC,EAAE;IACnF,WAAW,EAAE,iEAAiE;IAC9E,UAAU,EAAE,YAAY;CACzB,CAAC,CAAA;AAEF;;;;GAIG;AACH,MAAM,CAAC,MAAM,eAAe,GAAG,MAAM,CAAC,OAAO,CAAC,4BAA4B,EAAE;IAC1E,WAAW,EAAE,qDAAqD;IAClE,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,wGAAwG;AACxG,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,OAAO,CAAC,2BAA2B,EAAE;IACrE,WAAW,EAAE,uEAAuE;IACpF,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,uEAAuE;AACvE,MAAM,CAAC,MAAM,YAAY,GAAG,MAAM,CAAC,OAAO,CAAC,4BAA4B,EAAE;IACvE,WAAW,EAAE,mDAAmD;IAChE,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,+FAA+F;AAC/F,MAAM,CAAC,MAAM,gBAAgB,GAAG,MAAM,CAAC,OAAO,CAAC,gCAAgC,EAAE;IAC/E,WAAW,EAAE,0EAA0E;IACvF,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF;;;GAGG;AACH,MAAM,CAAC,MAAM,aAAa,GAAG,MAAM,CAAC,OAAO,CAAC,6BAA6B,EAAE;IACzE,WAAW,EAAE,sEAAsE;IACnF,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,uGAAuG;AACvG,MAAM,CAAC,MAAM,aAAa,GAAG,MAAM,CAAC,OAAO,CAAC,6BAA6B,EAAE;IACzE,WAAW,EAAE,sFAAsF;IACnG,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/chat/draftWrite.vibe"
+     }
+    ],
+    "code": "import * as Metric from \"effect/Metric\";\nimport { withSpan } from \"effect/Effect\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { Effect } from \"effect\";\nimport { codeOf } from \"../../errorCode\";\nimport { draftWrites } from \"./metrics.js\";\nimport { HOME_DRAFT } from \"./schema\";\n// A draft whose save is still pending must be distinguishable from a failed device write. The transaction id joins\n// its stages; records contain neither draft text nor a storage error's message.\nexport const persistDraft = (write, key) => {\n    var topic_1;\n    const count = (stage) => Metric.update(Metric.withAttributes(draftWrites, { stage }), 1);\n    return Effect.flatMap(withSpan(Effect.tap(Effect.result((topic_1 = Effect_1.gen(function* () {\n        yield* count(\"waiting\");\n        yield* Effect.logInfo(\"chat draft saving\");\n        yield* (Effect.tapError(Effect.tap(write.persisted, () => Effect.andThen(count(\"stored\"), Effect.logInfo(\"chat draft stored\"))), (failure) => {\n            var topic_2;\n            return Effect.andThen(count(\"failed\"), (topic_2 = Effect.logWarning(\"chat draft failed\"), Effect.annotateLogs({ outcome: \"failed\", errorCode: codeOf(failure) })(topic_2)));\n        }));\n    }), Effect.annotateLogs({\n        feature: \"chat\",\n        transactionId: write.id,\n        conversation: key === HOME_DRAFT ? \"home\" : \"branch\",\n    })(topic_1))), (outcome) => Effect.annotateCurrentSpan({ outcome: outcome._tag })), \"chat.draft.save\"), (outcome) => outcome._tag === \"Success\" ? Effect.void : Effect.fail(outcome.failure));\n};\n",
+    "map": {
+     "version": 3,
+     "file": "draftWrite.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/chat/draftWrite.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";;;AACA,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAC/B,OAAO,EAAE,MAAM,EAAE,MAAM,iBAAiB,CAAA;AACxC,OAAO,EAAE,WAAW,EAAE,MAAM,cAAgB,CAAA;AAC5C,OAAO,EAAE,UAAU,EAAE,MAAM,UAAU,CAAA;AAErC,mHAAmH;AACnH,gFAAgF;AAChF,MAAM,CAAC,MAAM,YAAY,GAAG,CAAC,KAA6B,EAAE,GAAW,EAAE,EAAE;;IACzE,MAAM,KAAK,GAAG,CAAC,KAAa,EAAE,EAAE,CAAC,MAAM,CAAC,MAAM,CAAC,MAAM,CAAC,cAAc,CAAC,WAAW,EAAE,EAAE,KAAK,EAAE,CAAC,EAAE,CAAC,CAAC,CAAA;IAChG,OAsBK,MAAM,CAAC,OAAO,CADd,QAAQ,CADR,MAAM,CAAC,GAAG,CADV,MAAM,CAAC,MAAM,YAnBX,a,CAAA;QACL,OAAI,KAAK,CAAC,SAAS,CAAC,CAAA;QACpB,OAAI,MAAM,CAAC,OAAO,CAAC,mBAAmB,CAAC,CAAA;QACvC,OAAI,CAEC,MAAM,CAAC,QAAQ,CADf,MAAM,CAAC,GAAG,CADV,KAAK,CAAC,SAAS,EACD,GAAG,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,KAAK,CAAC,QAAQ,CAAC,EAAE,MAAM,CAAC,OAAO,CAAC,mBAAmB,CAAC,CAAC,CAAC,EACtE,CAAC,OAAO,EAAE,EAAE;;YAChC,OAAA,MAAM,CAAC,OAAO,CACZ,KAAK,CAAC,QAAQ,CAAC,aACf,MAAM,CAAC,UAAU,CAAC,mBAAmB,CAAC,EACjC,MAAM,CAAC,YAAY,CAAC,EAAE,OAAO,EAAE,QAAQ,EAAE,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC,EAAE,CAAC,SAAG,EAC/E,CAAA;QAAA,CAAC,AAAD,CAAC,CAAC,CAAA;IACT,CAAC,CAAA,EACI,MAAM,CAAC,YAAY,CAAC;QACrB,OAAO,EAAE,MAAM;QACf,aAAa,EAAE,KAAK,CAAC,EAAE;QACvB,YAAY,EAAE,GAAG,KAAK,UAAU,CAAC,CAAC,CAAC,MAAM,CAAC,CAAC,CAAC,QAAQ;KACrD,CAAC,SAAG,EAGc,EACF,CAAC,OAAO,EAAE,EAAE,CAAC,MAAM,CAAC,mBAAmB,CAAC,EAAE,OAAO,EAAE,OAAO,CAAC,IAAI,EAAE,CAAC,CAAC,EACrE,iBAAiB,CAAC,EACZ,CAAC,OAAO,EAAE,EAAE,CAAC,OAAO,CAAC,IAAI,KAAK,SAAS,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,OAAO,CAAC,OAAO,CAAC,CAAC,CAAA;AAC9G,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/chat/sharedPrompt.vibe"
+     }
+    ],
+    "code": "import * as runtime from \"vibelang-runtime\";\nexport class SharedPrompt extends runtime.$service(\"@smthrs/mvp/chat/SharedPrompt\") {\n}\n",
+    "map": {
+     "version": 3,
+     "file": "sharedPrompt.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/chat/sharedPrompt.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";AAaA,MAAM,OAAS,YAAY;CAQ1B"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/outbox.vibe"
+     }
+    ],
+    "code": "import * as Option from \"effect/Option\";\nimport { Context, Effect } from \"effect\";\n// The device has one durable outbox (decision 0002 §3), which chat's store builds and leads\n// (src/features/chat/store.ts). A feature that writes through it hands its writes over here, from a layer built below\n// chat's store: the collections its writes' optimistic rows go in and the mutations that send them, each under a name\n// that never changes, because a stored write names its collection and its mutation by them. Each mutation has its\n// services already: it runs as the outbox sends it, in whichever tab leads.\n/** The writes features send through the device's outbox besides chat's own questions. */\nexport class OutboxWrites extends Context.Service()(\"@smthrs/mvp/OutboxWrites\") {\n    /**\n     * `writes` added to the writes a layer below handed over, if any: how a second feature hands its writes to the same\n     * outbox. Its names must be new: the earlier feature's stay as they were.\n     */\n    static adding = (writes) => Effect.map(Effect.serviceOption(OutboxWrites), (below) => {\n        const earlier = Option.getOrElse(below, () => ({ collections: {}, mutations: {}, parked: {} }));\n        return OutboxWrites.of({\n            collections: { ...writes.collections, ...earlier.collections },\n            mutations: { ...writes.mutations, ...earlier.mutations },\n            parked: { ...writes.parked, ...earlier.parked },\n        });\n    });\n}\n",
+    "map": {
+     "version": 3,
+     "file": "outbox.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/outbox.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";AACA,OAAO,EAAE,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAExC,4FAA4F;AAC5F,sHAAsH;AACtH,sHAAsH;AACtH,kHAAkH;AAClH,4EAA4E;AAE5E,yFAAyF;AACzF,MAAM,OAAO,YAAa,SAAQ,OAAO,CAAC,OAAO,EAa9C,CAAC,0BAA0B,CAAC;IAC7B;;;OAGG;IACH,MAAM,CAAU,MAAM,GAAG,CAAC,MAA+B,EAAE,EAAE,CAC3D,MAAM,CAAC,GAAG,CAAC,MAAM,CAAC,aAAa,CAAC,YAAY,CAAC,EAAE,CAAC,KAAK,EAAE,EAAE;QACvD,MAAM,OAAO,GAAG,MAAM,CAAC,SAAS,CAAC,KAAK,EAAE,GAAG,EAAE,CAAC,CAAC,EAAE,WAAW,EAAE,EAAE,EAAE,SAAS,EAAE,EAAE,EAAE,MAAM,EAAE,EAAE,EAAE,CAAC,CAAC,CAAA;QAC/F,OAAO,YAAY,CAAC,EAAE,CAAC;YACrB,WAAW,EAAE,EAAE,GAAG,MAAM,CAAC,WAAW,EAAE,GAAG,OAAO,CAAC,WAAW,EAAE;YAC9D,SAAS,EAAE,EAAE,GAAG,MAAM,CAAC,SAAS,EAAE,GAAG,OAAO,CAAC,SAAS,EAAE;YACxD,MAAM,EAAE,EAAE,GAAG,MAAM,CAAC,MAAM,EAAE,GAAG,OAAO,CAAC,MAAM,EAAE;SAChD,CAAC,CAAA;IACJ,CAAC,CAAC,CAAA;CACL"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/chat/api.vibe"
+     }
+    ],
+    "code": "import * as Data from \"effect/Data\";\nimport * as HttpClientRequest from \"effect/http/HttpClientRequest\";\nimport * as HttpClientResponse from \"effect/http/HttpClientResponse\";\nimport * as Schema from \"effect/Schema\";\nimport { withSpan } from \"effect/Effect\";\nimport { $catchExpression } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { Context, Effect, Layer } from \"effect\";\nimport { HttpClient } from \"effect/http\";\n// Both success bodies are checked before the device starts the answer. The device waits for the question itself,\n// which reaches every tab, so it reads no transaction id (src/features/chat/store.ts `delivered`).\nconst Inserted = Schema.Struct({\n    txid: Schema.Number,\n});\nconst Existing = Schema.Struct({\n    txid: Schema.Null, existing: Schema.Literal(true),\n});\n/**\n * ChatApi didn't take the question:\n * - `unreachable`: no whole answer within the deadline, its body included, for example offline;\n * - `refused`: an answer other than 200 or 202, such as 409 for a retry that doesn't match the stored question;\n * - `invalid_response`: 200 or 202 with a body outside the contract, or one that broke off.\n */\nexport class QuestionNotTaken extends Data.TaggedError(\"QuestionNotTaken\") {\n}\n/**\n * Asks ChatApi to store a question and its empty answer. One deadline, `within`, covers the whole request: sending it,\n * the status and reading the body. Past it, the request is aborted and the question counts as `unreachable`.\n */\nexport const postQuestion = (url, question, within) => Effect_1.suspend({ postQuestion: () => { return withSpan(Effect_1.gen(function* () {\n        const client = yield* HttpClient.HttpClient;\n        return yield* (Effect.timeoutOrElse(Effect_1.gen(function* () {\n            const response = yield* (Effect.mapError(client\n                .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question))), () => new QuestionNotTaken({ reason: \"unreachable\" })));\n            yield* Effect.annotateCurrentSpan({ \"http.response.status_code\": response.status });\n            if (response.status === 200) {\n                yield* $catchExpression(() => HttpClientResponse.schemaBodyJson(Existing)(response), () => Effect_1.suspend(() => { return Effect_1.fail(new QuestionNotTaken({ reason: \"invalid_response\", status: 200 })); }));\n                return { _tag: \"existing\" };\n            }\n            if (response.status !== 202) {\n                return yield* Effect_1.fail(new QuestionNotTaken({ reason: \"refused\", status: response.status }));\n            }\n            yield* $catchExpression(() => HttpClientResponse.schemaBodyJson(Inserted)(response), () => Effect_1.suspend(() => { return Effect_1.fail(new QuestionNotTaken({ reason: \"invalid_response\", status: 202 })); }));\n            return { _tag: \"inserted\" };\n        })\n        // Interrupting the request, at any step, aborts its fetch (Effect HttpClient), so a stalled body stops too.\n        , {\n            duration: within,\n            orElse: () => Effect.fail(new QuestionNotTaken({ reason: \"unreachable\" })),\n        }));\n    }), \"chat.question.post\"); } }.postQuestion);\n/**\n * ChatApi's client, as a service: the one way the browser asks a question. The real one posts `POST /api/questions`\n * (`postQuestion`). Tests of what happens when ChatApi refuses or times out provide a faulty one\n * (src/test/faults.ts); every other test uses the real one.\n */\nexport class ChatClient extends Context.Service()(\"@smthrs/mvp/chat/ChatClient\") {\n    /** The real client: ChatApi at `url`, with `within` for each whole request. */\n    static layer = (options) => Layer.effect(ChatClient, Effect.map(HttpClient.HttpClient, (client) => ChatClient.of({\n        ask: (question) => Effect.provideService(postQuestion(options.url, question, options.within), HttpClient.HttpClient, client),\n    })));\n}\n",
+    "map": {
+     "version": 3,
+     "file": "api.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/chat/api.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";;;;;;;AAAA,OAAO,EAAE,OAAO,EAAiB,MAAM,EAAE,KAAK,EAAE,MAAM,QAAQ,CAAA;AAC9D,OAAO,EAAE,UAAU,EAAE,MAAM,aAAa,CAAA;AAmBxC,iHAAiH;AACjH,mGAAmG;AAC5F,MAAA,QAAQ,GAAC,MAAA,CAAA,MAAA,CAAA;IAAW,IAAI,EAAE,MAAA,CAAA,MAAA;CAAQ,CAAA,CAAA;AAClC,MAAA,QAAQ,GAAC,MAAA,CAAA,MAAA,CAAA;IAAW,IAAI,EAAE,MAAA,CAAA,IAAA,EAAe,QAAQ,EAAE,MAAA,CAAA,OAAA,CAAA,IAAI,CAAA;CAAE,CAAA,CAAA;AAEhE;;;;;GAKG;AACH,MAAM,OAAO,gBAAiB,SAAQ,IAAI,CAAC,WAAW,CAAC,kBAAkB,CAGvE;CAAG;AAEL;;;GAGG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAC1B,GAAW,EACX,QAAkB,EAClB,MAAsB,KAEtB,iC,CAAA,O,CAAA,MAAI,QAAQ,CACV,a,CAAA;QACE,MAAM,MAAM,UAAO,UAAU,CAAC,UAAU,CAAA;QACxC,cAAW,CAoBN,MAAM,CAAC,aAAa,CApBb,a,CAAA;YACV,MAAM,QAAQ,UAAO,CAEhB,MAAM,CAAC,QAAQ,CAFE,MAAM;iBACzB,OAAO,CAAC,iBAAiB,CAAC,IAAI,CAAC,GAAG,CAAC,CAAC,IAAI,CAAC,iBAAiB,CAAC,cAAc,CAAC,QAAQ,CAAC,CAAC,CAAC,EAChE,GAAG,EAAE,CAAC,IAAI,gBAAgB,CAAC,EAAE,MAAM,EAAE,aAAa,EAAE,CAAC,CAAC,CAAC,CAAA;YAC/E,OAAI,MAAM,CAAC,mBAAmB,CAAC,EAAE,2BAA2B,EAAE,QAAQ,CAAC,MAAM,EAAE,CAAC,CAAA;YAChF,IAAI,QAAQ,CAAC,MAAM,KAAK,GAAG,EAAE,CAAC;gBAC5B,OAAsD,gBAAK,C,CAAA,EAA3D,EAD4B,C,CAC5B,iBAAkB,CAAC,cAAc,CAAC,QAAQ,CAAC,CAAC,QAAQ,CAAC,EAAO,uB,CAAA,O,CAAA,oBACpD,IAAI,gBAAgB,CAAC,EAAE,MAAM,EAAE,kBAAkB,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,KACxE,CAAA,CAAA;gBACD,OAAO,EAAE,IAAI,EAAE,UAAU,EAAkB,CAAA;YAC7C,CAAC;YACD,IAAI,QAAQ,CAAC,MAAM,KAAK,GAAG,EAAE,CAAC;gBAC5B,4BAAM,IAAI,gBAAgB,CAAC,EAAE,MAAM,EAAE,SAAS,EAAE,MAAM,EAAE,QAAQ,CAAC,MAAM,EAAE,CAAC,EAAA;YAC5E,CAAC;YACD,OAAsD,gBAAK,C,CAAA,EAA3D,EADC,C,CACD,iBAAkB,CAAC,cAAc,CAAC,QAAQ,CAAC,CAAC,QAAQ,CAAC,EAAO,uB,CAAA,O,CAAA,oBACpD,IAAI,gBAAgB,CAAC,EAAE,MAAM,EAAE,kBAAkB,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,KACxE,CAAA,CAAA;YACD,OAAO,EAAE,IAAI,EAAE,UAAU,EAAkB,CAAA;QAC7C,CAAC,CAAA;QACC,4GAA4G;UACjF;YACzB,QAAQ,EAAE,MAAM;YAChB,MAAM,EAAE,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,gBAAgB,CAAC,EAAE,MAAM,EAAE,aAAa,EAAE,CAAC,CAAC;SAC3E,CAAC,CAAC,CAAA;IACP,CAAC,CAAA,EACD,oBAAoB,CACrB,mBAAA,CAAA;AAEH;;;;GAIG;AACH,MAAM,OAAO,UAAW,SAAQ,OAAO,CAAC,OAAO,EAG5C,CAAC,6BAA6B,CAAC;IAChC,+EAA+E;IAC/E,MAAM,CAAU,KAAK,GAAG,CAAC,OAAkE,EAAE,EAAE,CAC7F,KAAK,CAAC,MAAM,CACV,UAAU,EACV,MAAM,CAAC,GAAG,CAAC,UAAU,CAAC,UAAU,EAAE,CAAC,MAAM,EAAE,EAAE,CAC3C,UAAU,CAAC,EAAE,CAAC;QACZ,GAAG,EAAE,CAAC,QAAQ,EAAE,EAAE,CAEb,MAAM,CAAC,cAAc,CADxB,YAAY,CAAC,OAAO,CAAC,GAAG,EAAE,QAAQ,EAAE,OAAO,CAAC,MAAM,CAAC,EACvB,UAAU,CAAC,UAAU,EAAE,MAAM,CAAC;KAC7D,CAAC,CAAC,CACN,CAAA;CACJ"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/issues/metrics.vibe"
+     }
+    ],
+    "code": "// Usage metrics for issue writes, exported over OTLP with the rest of the browser's telemetry\n// (docs/observability.md#browser). Labels carry operations, doors and outcomes, never a title, a body or a login.\nimport * as Metric from \"effect/Metric\";\n/**\n * Write steps, by `op`, `door` (`button`, `slash`, `agent`, or `unknown` when no tab answered) and `outcome`\n * (`queued`, `not_admitted`, `tab_gone`, `no_credential`).\n */\nexport const writes = Metric.counter(\"smithers_issue_writes\", {\n    description: \"Issue write steps, by operation, door and outcome\",\n    incremental: true,\n});\n/**\n * Sends of queued writes to ChatApi's writes route, by `op` and `outcome`: `started` (202), `existing` (200),\n * `refused` (a 4xx that stays Not sent) or `retry` (sent again).\n */\nexport const sends = Metric.counter(\"smithers_issue_write_sends\", {\n    description: \"Sends of issue writes to ChatApi, by operation and outcome\",\n    incremental: true,\n});\n/** Edit and Discard on a write that wasn't sent, by `action`. */\nexport const pendingActions = Metric.counter(\"smithers_issue_pending_actions\", {\n    description: \"Edit and Discard on issue writes that weren't sent, by action\",\n    incremental: true,\n});\n/** Create presses durably admitted, retained for Retry, or refused by device storage; never their text. */\nexport const admissions = Metric.counter(\"smithers_issue_write_admissions\", {\n    description: \"Issue-write local admissions by outcome\",\n    incremental: true,\n});\n/** Comment submissions that never obtained a queue receipt, without recording their text. */\nexport const submissionFailures = Metric.counter(\"smithers_issue_submission_failures\", {\n    description: \"Failed comment recovery storage\",\n    incremental: true,\n});\n/** Repositories whose issues the device evicted once this person lost read access, by `status` (`sign_in`, `forbidden`). */\nexport const evictions = Metric.counter(\"smithers_issue_access_evictions\", {\n    description: \"Repositories whose issues the device evicted after read access was lost, by status\",\n    incremental: true,\n});\n",
+    "map": {
+     "version": 3,
+     "file": "metrics.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/issues/metrics.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,8FAA8F;AAC9F,kHAAkH;;AAElH;;;GAGG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,OAAO,CAAC,uBAAuB,EAAE;IAC5D,WAAW,EAAE,mDAAmD;IAChE,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF;;;GAGG;AACH,MAAM,CAAC,MAAM,KAAK,GAAG,MAAM,CAAC,OAAO,CAAC,4BAA4B,EAAE;IAChE,WAAW,EAAE,4DAA4D;IACzE,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,iEAAiE;AACjE,MAAM,CAAC,MAAM,cAAc,GAAG,MAAM,CAAC,OAAO,CAAC,gCAAgC,EAAE;IAC7E,WAAW,EAAE,+DAA+D;IAC5E,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,2GAA2G;AAC3G,MAAM,CAAC,MAAM,UAAU,GAAG,MAAM,CAAC,OAAO,CAAC,iCAAiC,EAAE;IAC1E,WAAW,EAAE,yCAAyC;IACtD,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,6FAA6F;AAC7F,MAAM,CAAC,MAAM,kBAAkB,GAAG,MAAM,CAAC,OAAO,CAAC,oCAAoC,EAAE;IACrF,WAAW,EAAE,iCAAiC;IAC9C,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,4HAA4H;AAC5H,MAAM,CAAC,MAAM,SAAS,GAAG,MAAM,CAAC,OAAO,CAAC,iCAAiC,EAAE;IACzE,WAAW,EAAE,oFAAoF;IACjG,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/todos/metrics.vibe"
+     }
+    ],
+    "code": "import * as Metric from \"effect/Metric\";\n/** Local admission outcomes, independent of engine startup and network delivery. */\nexport const admissions = Metric.counter(\"smithers_todo_write_admissions\", { incremental: true });\n// The TODOs feature's usage metrics in the browser (docs/observability.md#todos), exported over OTLP with the tab's and\n// the engine worker's other records. None carries a title or a prompt.\n/** Drafts a `todo/draft` step kept, by `door` and `outcome` (`kept`, `tab_gone`, `not_kept`). */\nexport const drafts = Metric.counter(\"smithers_todo_drafts\", {\n    description: \"TODO drafts kept on the device, by door and outcome\",\n    incremental: true,\n});\n/** Changes a `todo/commit` or `todo/drop` step queued, by `op`, `door` and `outcome` (`queued`, `tab_gone`, `not_admitted`). */\nexport const queued = Metric.counter(\"smithers_todo_queued\", {\n    description: \"Stack changes queued in the device's outbox, by op, door and outcome\",\n    incremental: true,\n});\n/** Sends of a queued change, by `op` and `outcome` (`taken`, `existing`, `retry`, `refused`). */\nexport const sends = Metric.counter(\"smithers_todo_sends\", {\n    description: \"Stack changes sent to ChatApi, by op and outcome\",\n    incremental: true,\n});\n/** Edit and Discard on a change Not sent, and Discard on a draft, by `action`. */\nexport const pendingActions = Metric.counter(\"smithers_todo_pending_actions\", {\n    description: \"Edit and Discard on a stack change Not sent, and Discard on a draft, by action\",\n    incremental: true,\n});\n/** Agent reads of the shared TODO state, by found, missing or refusal outcome. */\nexport const statusReads = Metric.counter(\"smithers_todo_status_reads_client\", {\n    description: \"Shared TODO status reads from the device's durable agent, by outcome\",\n    incremental: true,\n});\n",
+    "map": {
+     "version": 3,
+     "file": "metrics.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/todos/metrics.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";AAAA,oFAAoF;AACpF,MAAM,CAAC,MAAM,UAAU,GAAG,MAAM,CAAC,OAAO,CAAC,gCAAgC,EAAE,EAAE,WAAW,EAAE,IAAI,EAAE,CAAC,CAAA;AAEjG,wHAAwH;AACxH,uEAAuE;AAEvE,iGAAiG;AACjG,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,OAAO,CAAC,sBAAsB,EAAE;IAC3D,WAAW,EAAE,qDAAqD;IAClE,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,gIAAgI;AAChI,MAAM,CAAC,MAAM,MAAM,GAAG,MAAM,CAAC,OAAO,CAAC,sBAAsB,EAAE;IAC3D,WAAW,EAAE,sEAAsE;IACnF,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,iGAAiG;AACjG,MAAM,CAAC,MAAM,KAAK,GAAG,MAAM,CAAC,OAAO,CAAC,qBAAqB,EAAE;IACzD,WAAW,EAAE,kDAAkD;IAC/D,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,kFAAkF;AAClF,MAAM,CAAC,MAAM,cAAc,GAAG,MAAM,CAAC,OAAO,CAAC,+BAA+B,EAAE;IAC5E,WAAW,EAAE,gFAAgF;IAC7F,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,kFAAkF;AAClF,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,OAAO,CAAC,mCAAmC,EAAE;IAC7E,WAAW,EAAE,sEAAsE;IACnF,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "apps/mvp/src/features/sharing/store.vibe"
      }
     ],
@@ -52771,6 +52971,126 @@
    {
     "paths": [
      {
+      "relative": "apps/mvp/src/features/pulls/api.vibe"
+     }
+    ],
+    "code": "import * as HttpClientRequest from \"effect/http/HttpClientRequest\";\nimport * as Schema from \"effect/Schema\";\nimport { withSpan } from \"effect/Effect\";\nimport { $catchExpression, TaggedError } from \"vibelang-runtime\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { Context, Effect, Layer } from \"effect\";\nimport { HttpClient } from \"effect/http\";\nimport { writesRoute } from \"../issues/contract\";\nimport { WriteTaken } from \"../issues/schema.js\";\nimport { compareRoute, reviewRoute } from \"./contract\";\nimport { ReviewTaken } from \"./flows.js\";\nimport { Compared } from \"./schema.js\";\n// ChatApi's pull request routes as the browser calls them (docs/features/pulls.md#routes), through Effect's HttpClient,\n// with one deadline covering each whole exchange: a person's merge, sent in their own session and never queued (decision\n// 0012 decision 6), and a comparison's files.\n/**\n * ChatApi didn't answer the request: no whole answer within the deadline, no network (`status` absent), or any other\n * status, with ChatApi's `code` when its body had one.\n */\nexport class PullsRequestFailed extends TaggedError(\"PullsRequestFailed\") {\n}\nconst decodeTaken = Schema.decodeUnknownEffect(WriteTaken);\nconst decodeCompared = Schema.decodeUnknownEffect(Compared);\nconst decodeReviewTaken = Schema.decodeUnknownEffect(ReviewTaken);\nconst decodeRefusal = Schema.decodeUnknownEffect(Schema.Struct({ code: Schema.String }));\n/** ChatApi's pull request routes, as a service. Tests of a route that fails provide a faulty one. */\nexport class PullsClient extends Context.Service()(\"@smthrs/mvp/pulls/PullsClient\") {\n    /** The real client: ChatApi at `origin`, with `within` for each whole request. */\n    static layer = (options) => Layer.effect(PullsClient, Effect.map(HttpClient.HttpClient, (client) => {\n        const send = (request, decode, ok) => Effect.timeoutOrElse(Effect_1.gen(function* () {\n            const response = yield* $catchExpression(() => client.execute(request), () => Effect_1.suspend(() => { return Effect_1.fail(new PullsRequestFailed({})); }));\n            if (!ok.includes(response.status)) {\n                const refusal = yield* (Effect.option(Effect.flatMap(response.json, decodeRefusal)));\n                return yield* Effect_1.fail(new PullsRequestFailed({\n                    status: response.status,\n                    ...(refusal._tag === \"Some\" ? { code: refusal.value.code } : {}),\n                }));\n            }\n            return yield* $catchExpression(() => (Effect.flatMap(response.json, decode)), () => Effect_1.suspend(() => { return Effect_1.fail(new PullsRequestFailed({ status: response.status })); }));\n        }), {\n            duration: options.within,\n            orElse: () => Effect.fail(new PullsRequestFailed({})),\n        });\n        return PullsClient.of({\n            merge: (owner, name, merge) => withSpan(send(HttpClientRequest.post(`${options.origin}${writesRoute(owner, name)}`).pipe(HttpClientRequest.bodyJsonUnsafe({ ...merge, op: \"pr/merge\" })), decodeTaken, [200, 202]), \"pulls.merge.post\"),\n            compare: (owner, name, base, head) => withSpan(send(HttpClientRequest.get(`${options.origin}${compareRoute(owner, name, base, head)}`), decodeCompared, [\n                200,\n            ]), \"pulls.compare.get\"),\n            review: ({ repo, number, headSha }) => {\n                const [owner = \"\", name = \"\"] = repo.split(\"/\");\n                return withSpan(send(HttpClientRequest.post(`${options.origin}${reviewRoute(owner, name, number)}`).pipe(HttpClientRequest.bodyJsonUnsafe(headSha === undefined ? {} : { headSha })), decodeReviewTaken, [202]), \"pulls.review.post\");\n            },\n        });\n    }));\n}\n",
+    "map": {
+     "version": 3,
+     "file": "api.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/pulls/api.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/pulls/comparison.vibe"
+     }
+    ],
+    "code": "import * as Effect from \"effect/Effect\";\nimport * as Option from \"effect/Option\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { codeOf } from \"../../errorCode\";\nimport { PullsClient } from \"./api.js\";\nimport { SHA } from \"./contract\";\n// Reading two commits' comparison into a tab (docs/features/pulls.md#the-browser): a pull request's Files tab and a\n// branch's Compare (docs/features/branch-publish.md#the-branch-page) each keep their own rows, read the same way.\n/**\n * Reads the files and commits `base` and `head` differ by into `rows` under `<base>...<head>`, once: a comparison of two\n * SHAs never changes, so a row held is kept and only a failed one is read again. The read runs in `scope`; two refs\n * that aren't both SHAs read nothing.\n */\nexport const readComparison = (rows, scope, owner, name, base, head) => Effect.orDie(Effect_1.gen(function* () {\n    if (!SHA.test(base) || !SHA.test(head))\n        return;\n    const id = `${base}...${head}`;\n    const held = yield* rows.get(id);\n    if (Option.isSome(held) && held.value.status !== \"failed\")\n        return;\n    if (Option.isSome(held))\n        yield* rows.delete(id);\n    yield* rows.insert({ id, status: \"loading\", files: [], truncated: false, commits: [], commitsTruncated: false });\n    yield* (Effect.forkIn(Effect.matchEffect((yield* PullsClient).compare(owner, name, base, head), {\n        onSuccess: (compared) => rows.update(id, (row) => {\n            row.status = \"ready\";\n            row.files = [...compared.files];\n            row.truncated = compared.truncated;\n            row.commits = [...compared.commits];\n            row.commitsTruncated = compared.commitsTruncated;\n        }),\n        // The comparison couldn't be read: the Files tab shows it failed, logged by its code and ChatApi's status.\n        onFailure: (failure) => {\n            var topic_1;\n            return Effect.andThen((topic_1 = Effect.logWarning(\"pulls.files.load\"), Effect.annotateLogs({\n                feature: \"pulls\",\n                outcome: \"failed\",\n                errorCode: codeOf(failure),\n                ...(failure.status === undefined ? {} : { status: failure.status }),\n            })(topic_1)), rows.update(id, (row) => void (row.status = \"failed\")));\n        },\n    }), scope));\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "comparison.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/pulls/comparison.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";;;AAEA,OAAO,EAAE,MAAM,EAAE,MAAM,iBAAiB,CAAA;AACxC,OAAO,EAAE,WAAW,EAAE,MAAM,UAAY,CAAA;AACxC,OAAO,EAAE,GAAG,EAAE,MAAM,YAAY,CAAA;AAGhC,oHAAoH;AACpH,kHAAkH;AAElH;;;;GAIG;AACH,MAAM,CAAC,MAAM,cAAc,GAAG,CAC5B,IAA6C,EAC7C,KAAkB,EAClB,KAAa,EACb,IAAY,EACZ,IAAY,EACZ,IAAY,EACZ,EAAE,CA+BG,MAAM,CAAC,KAAK,CA9BjB,a,CAAA;IACE,IAAI,CAAC,GAAG,CAAC,IAAI,CAAC,IAAI,CAAC,IAAI,CAAC,GAAG,CAAC,IAAI,CAAC,IAAI,CAAC;QAAE,OAAM;IAC9C,MAAM,EAAE,GAAG,GAAG,IAAI,MAAM,IAAI,EAAE,CAAA;IAC9B,MAAM,IAAI,UAAO,IAAI,CAAC,GAAG,CAAC,EAAE,CAAC,CAAA;IAC7B,IAAI,MAAM,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,IAAI,CAAC,KAAK,CAAC,MAAM,KAAK,QAAQ;QAAE,OAAM;IACjE,IAAI,MAAM,CAAC,MAAM,CAAC,IAAI,CAAC;QAAE,OAAI,IAAI,CAAC,MAAM,CAAC,EAAE,CAAC,CAAA;IAC5C,OAAI,IAAI,CAAC,MAAM,CAAC,EAAE,EAAE,EAAE,MAAM,EAAE,SAAS,EAAE,KAAK,EAAE,EAAE,EAAE,SAAS,EAAE,KAAK,EAAE,OAAO,EAAE,EAAE,EAAE,gBAAgB,EAAE,KAAK,EAAE,CAAC,CAAA;IAC7G,OAAI,CAsBC,MAAM,CAAC,MAAM,CArBb,MAAM,CAAC,WAAW,CADlB,QAAK,WAAW,CAAC,CAAC,OAAO,CAAC,KAAK,EAAE,IAAI,EAAE,IAAI,EAAE,IAAI,CAAC,EAC5B;QACvB,SAAS,EAAE,CAAC,QAAQ,EAAE,EAAE,CACtB,IAAI,CAAC,MAAM,CAAC,EAAE,EAAE,CAAC,GAAG,EAAE,EAAE;YACtB,GAAG,CAAC,MAAM,GAAG,OAAO,CAAA;YACpB,GAAG,CAAC,KAAK,GAAG,CAAC,GAAG,QAAQ,CAAC,KAAK,CAAC,CAAA;YAC/B,GAAG,CAAC,SAAS,GAAG,QAAQ,CAAC,SAAS,CAAA;YAClC,GAAG,CAAC,OAAO,GAAG,CAAC,GAAG,QAAQ,CAAC,OAAO,CAAC,CAAA;YACnC,GAAG,CAAC,gBAAgB,GAAG,QAAQ,CAAC,gBAAgB,CAAA;QAClD,CAAC,CAAC;QACJ,2GAA2G;QAC3G,SAAS,EAAE,CAAC,OAAO,EAAE,EAAE;;YACrB,OAAA,MAAM,CAAC,OAAO,YACZ,MAAM,CAAC,UAAU,CAAC,kBAAkB,CAAC,EAAI,MAAM,CAAC,YAAY,CAAC;gBAC3D,OAAO,EAAE,OAAO;gBAChB,OAAO,EAAE,QAAQ;gBACjB,SAAS,EAAE,MAAM,CAAC,OAAO,CAAC;gBAC1B,GAAG,CAAC,OAAO,CAAC,MAAM,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,CAAC;aACpE,CAAC,SAAG,GACL,IAAI,CAAC,MAAM,CAAC,EAAE,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,KAAK,CAAC,GAAG,CAAC,MAAM,GAAG,QAAQ,CAAC,CAAC,CACvD,CAAA;QAAA,CAAC,AAAD;KACJ,CAAC,EACkB,KAAK,CAAC,CAAC,CAAA;AAC/B,CAAC,CAAA,CAAmB,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/queue/src/tab.vibe"
+     }
+    ],
+    "code": "import * as Stream from \"effect/Stream\";\nimport * as Effect_1 from \"effect/Effect\";\nimport * as runtime from \"vibelang-runtime\";\nimport { Host } from \"@smthrs/plugin\";\nimport { Effect } from \"effect\";\n/** The queue's view. */\nexport const VIEW = \"queue/queue\";\n/** Where the cursor moves to: `index` kept inside `total` items, `0` when there are none. */\nexport const clamp = (index, total) => Math.max(0, Math.min(index, total - 1));\n/**\n * Where the cursor goes when the waits change: it stays on its item, or, when that one left (answered here or on\n * another device), on the item that took its place.\n */\nexport const follow = (rows, runId, index) => {\n    const at = rows.findIndex((row) => row.runId === runId);\n    return at === -1 ? index : at;\n};\n/** The tab: built by the host in the plugin's scope on first use. */\nexport const tab = Effect_1.gen(runtime.$joinedFrame(function* tab() {\n    const host = yield* Host.PluginHost;\n    const run = Effect.runForkWith(yield* Effect.context());\n    const waits = yield* host.query(\"core/waits\");\n    let runId;\n    let current = { item: undefined, index: 0, total: 0 };\n    const listeners = new Set();\n    /** Puts the cursor at `index` of the waits now, tells the host what it selected, and says the queue changed. */\n    const settle = (index) => {\n        const rows = waits.current();\n        const at = clamp(index, rows.length);\n        const item = rows[at];\n        const moved = item?.runId !== runId;\n        runId = item?.runId;\n        current = { item, index: at, total: rows.length };\n        if (moved && item !== undefined)\n            run(Effect.ignore(host.select({ query: \"core/waits\", key: item.runId })));\n        for (const listener of listeners)\n            listener();\n    };\n    const stop = waits.subscribe(() => settle(follow(waits.current(), runId, current.index)));\n    yield* Effect.addFinalizer(() => Effect.sync(stop));\n    settle(0);\n    (yield* host.events(VIEW).pipe(Stream.runForEach(({ name }) => Effect.sync(() => settle(current.index + (name === \"next\" ? 1 : -1)))), Effect.forkScoped({ startImmediately: true })));\n    return {\n        queries: {\n            waits,\n            current: {\n                current: () => current,\n                subscribe: (listener) => {\n                    listeners.add(listener);\n                    return () => void listeners.delete(listener);\n                },\n            },\n        },\n        actions: { open: () => void run(host.open(VIEW)) },\n    };\n}));\n",
+    "map": {
+     "version": 3,
+     "file": "tab.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/queue/src/tab.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/bugs/src/tab.vibe"
+     }
+    ],
+    "code": "export { FORM, MAX_WHAT, idFor, settle, tab, whatOf } from \"./tab.vibe.platform.js\";\n/** The inbox's view. */\nexport const INBOX = \"bugs/inbox\";\n/** Why a report wasn't sent, in a few words, from its failure's code. */\nexport const reasonOf = (code) => {\n    switch (code) {\n        case \"authentication\":\n            return \"signed out\";\n        case \"forbidden\":\n            return \"not allowed\";\n        case \"invalid\":\n        case \"invalid_fields\":\n            return \"not accepted\";\n        case \"too_large\":\n            return \"too long\";\n        case \"BugUnsent\":\n            return \"couldn't reach Smithers\";\n        default:\n            return code;\n    }\n};\n",
+    "map": {
+     "version": 3,
+     "file": "tab.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/bugs/src/tab.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAoJA,OAAO,EAAE,IAAI,EAAE,QAAQ,EAAE,KAAK,EAAE,MAAM,EAAE,GAAG,EAAE,MAAM,EAAE,MAAM,wBAAQ,CAAA;AAGnE,wBAAwB;AACxB,MAAM,CAAC,MAAM,KAAK,GAAG,YAAY,CAAA;AACjC,yEAAyE;AACzE,MAAM,CAAC,MAAM,QAAQ,GAAG,CAAC,IAAY,EAAU,EAAE;IAC/C,QAAQ,IAAI,EAAE,CAAC;QACb,KAAK,gBAAgB;YACnB,OAAO,YAAY,CAAA;QACrB,KAAK,WAAW;YACd,OAAO,aAAa,CAAA;QACtB,KAAK,SAAS,CAAC;QACf,KAAK,gBAAgB;YACnB,OAAO,cAAc,CAAA;QACvB,KAAK,WAAW;YACd,OAAO,UAAU,CAAA;QACnB,KAAK,WAAW;YACd,OAAO,yBAAyB,CAAA;QAClC;YACE,OAAO,IAAI,CAAA;IACf,CAAC;AACH,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/bugs/src/tab.vibe.platform.js"
+     }
+    ],
+    "code": "import { Host } from \"@smthrs/plugin\";\nimport { Effect } from \"effect\";\n/** The form's view, whose `send` event files a report. */\nexport const FORM = \"bugs/report\";\n/** The longest report the form sends, as the manifest's `Report` allows. */\nexport const MAX_WHAT = 4_000;\n/** What a person's words become: trimmed at the ends; nothing to send when only spaces, or too long. */\nexport const whatOf = (text) => {\n    const what = text.trim();\n    return what === \"\" || what.length > MAX_WHAT ? undefined : what;\n};\n/** Where the last Send stands once `rows` arrived: Sent when its report is among them. */\nexport const settle = (sending, rows) => {\n    if (sending.status !== \"sending\")\n        return sending;\n    const report = rows.find((row) => row.id === sending.id);\n    return report === undefined ? sending : { status: \"sent\", report };\n};\n/**\n * The id a Send of `what` files under: the failed report's again when its words are unchanged, so Retry never files a\n * second copy; a new one otherwise.\n */\nexport const idFor = (sending, what, fresh) => sending.status === \"failed\" && sending.what === what ? sending.id : fresh();\n/** The tab: built by the host in the plugin's scope on first use. */\nexport const tab = Effect.gen(function* () {\n    const host = yield* Host.PluginHost;\n    const run = Effect.runForkWith(yield* Effect.context());\n    const reports = yield* host.query(\"core/bug-reports\");\n    let sending = { status: \"idle\" };\n    const listeners = new Set();\n    const set = (next) => {\n        sending = next;\n        for (const listener of listeners)\n            listener();\n    };\n    const stop = reports.subscribe(() => {\n        const next = settle(sending, reports.current());\n        if (next !== sending)\n            set(next);\n    });\n    yield* Effect.addFinalizer(() => Effect.sync(stop));\n    const send = (text) => {\n        const what = whatOf(text);\n        if (sending.status === \"sending\")\n            return;\n        if (what === undefined) {\n            set({ status: \"invalid\", what: text, code: text.trim() === \"\" ? \"empty\" : \"too_large\" });\n            return;\n        }\n        const id = idFor(sending, what, () => crypto.randomUUID());\n        set({ status: \"sending\", id, what });\n        const failed = (code) => Effect.sync(() => set({ status: \"failed\", id, what, code }));\n        run(host.dispatch({ view: FORM, name: \"send\" }, { id, what }).pipe(Effect.flatMap((dispatched) => dispatched.settled), Effect.matchEffect({\n            // The host refused the event before anything ran: nothing was filed.\n            onFailure: (refused) => failed(refused.reason),\n            onSuccess: (settled) => settled._tag === \"Failed\"\n                ? failed(settled.code)\n                // Filed: Sent once its row is here, which it may be already.\n                : Effect.sync(() => set(settle(sending, reports.current()))),\n        })));\n    };\n    return {\n        queries: {\n            reports,\n            sending: {\n                current: () => sending,\n                subscribe: (listener) => {\n                    listeners.add(listener);\n                    return () => void listeners.delete(listener);\n                },\n            },\n        },\n        actions: { send, report: () => void run(host.open(FORM)) },\n    };\n});\n",
+    "map": {
+     "version": 3,
+     "file": "tab.vibe.platform.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/bugs/src/tab.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/factory/src/feeds.vibe"
+     }
+    ],
+    "code": "/** The core's index of a repository's feed documents: every document whose name has no `/`. */\nexport const INDEX = \"core/feeds\";\n/** One on-demand feed document, by name: `transcript/<lane>`, `diff/<commit>`, `report/...`. */\nexport const DOCUMENT = \"core/feed\";\n/** The items of one index document, one row per element with an id: what the action strip answers. */\nexport const ASKS = \"core/feed-items\";\n/** Smithers' own agent runs of a repository (docs/features/fleet.md#queries), which Agents lists beside the lanes. */\nexport const RUNS = \"core/agent-runs\";\n/** The document whose items are the decisions that wait on a maintainer. */\nexport const DECISIONS = \"for_will\";\n/** `owner/name`, as feeds key a repository. */\nexport const repoOf = (repository) => `${repository.owner}/${repository.name}`.toLowerCase();\n/** The feeds over `host`'s reads. */\nexport const feedsOf = (host) => ({\n    index: (repository) => host.query(INDEX, { repo: repoOf(repository) }),\n    document: (repository, name) => host.query(DOCUMENT, { repo: repoOf(repository), name }),\n    asks: (repository) => host.query(ASKS, { repo: repoOf(repository), name: DECISIONS }),\n    select: (ask) => host.select({ query: ASKS, key: ask.key, params: { repo: ask.repo, name: ask.document } }),\n    runs: (repository) => host.query(RUNS, { repo: repoOf(repository) }),\n});\n",
+    "map": {
+     "version": 3,
+     "file": "feeds.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/factory/src/feeds.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAsCA,+FAA+F;AAC/F,MAAM,CAAC,MAAM,KAAK,GAAG,YAAY,CAAA;AACjC,gGAAgG;AAChG,MAAM,CAAC,MAAM,QAAQ,GAAG,WAAW,CAAA;AACnC,sGAAsG;AACtG,MAAM,CAAC,MAAM,IAAI,GAAG,iBAAiB,CAAA;AAErC,sHAAsH;AACtH,MAAM,CAAC,MAAM,IAAI,GAAG,iBAAiB,CAAA;AAErC,4EAA4E;AAC5E,MAAM,CAAC,MAAM,SAAS,GAAG,UAAU,CAAA;AAWnC,+CAA+C;AAC/C,MAAM,CAAC,MAAM,MAAM,GAAG,CAAC,UAA2B,EAAU,EAAE,CAAC,GAAG,UAAU,CAAC,KAAK,IAAI,UAAU,CAAC,IAAI,EAAE,CAAC,WAAW,EAAE,CAAA;AAgBrH,qCAAqC;AACrC,MAAM,CAAC,MAAM,OAAO,GAAG,CAAC,IAAW,EAAS,EAAE,CAAC,CAAC;IAC9C,KAAK,EAAE,CAAC,UAAU,EAAE,EAAE,CAAC,IAAI,CAAC,KAAK,CAAe,KAAK,EAAE,EAAE,IAAI,EAAE,MAAM,CAAC,UAAU,CAAC,EAAE,CAAC;IACpF,QAAQ,EAAE,CAAC,UAAU,EAAE,IAAI,EAAE,EAAE,CAAC,IAAI,CAAC,KAAK,CAAe,QAAQ,EAAE,EAAE,IAAI,EAAE,MAAM,CAAC,UAAU,CAAC,EAAE,IAAI,EAAE,CAAC;IACtG,IAAI,EAAE,CAAC,UAAU,EAAE,EAAE,CAAC,IAAI,CAAC,KAAK,CAAS,IAAI,EAAE,EAAE,IAAI,EAAE,MAAM,CAAC,UAAU,CAAC,EAAE,IAAI,EAAE,SAAS,EAAE,CAAC;IAC7F,MAAM,EAAE,CAAC,GAAG,EAAE,EAAE,CAAC,IAAI,CAAC,MAAM,CAAC,EAAE,KAAK,EAAE,IAAI,EAAE,GAAG,EAAE,GAAG,CAAC,GAAG,EAAE,MAAM,EAAE,EAAE,IAAI,EAAE,GAAG,CAAC,IAAI,EAAE,IAAI,EAAE,GAAG,CAAC,QAAQ,EAAE,EAAE,CAAC;IAC3G,IAAI,EAAE,CAAC,UAAU,EAAE,EAAE,CAAC,IAAI,CAAC,KAAK,CAAc,IAAI,EAAE,EAAE,IAAI,EAAE,MAAM,CAAC,UAAU,CAAC,EAAE,CAAC;CAClF,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "apps/mvp/src/features/files/store.vibe"
      }
     ],
@@ -52786,6 +53106,46 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/pulls/shapeSync.vibe"
+     }
+    ],
+    "code": "import { Metric } from \"effect\";\nimport { observeShape } from \"../issues/shapeSync.js\";\n/** Pull metadata's first answer, changed failure status and recovery; no repository or pull content. */\nexport const pullShapeTransitions = Metric.counter(\"smithers_pull_shape_transitions\", {\n    description: \"Meaningful browser pull shape states, by phase\",\n    incremental: true,\n});\nexport const observePullShape = (events) => observeShape(events, \"pulls.shape.sync\", pullShapeTransitions);\n",
+    "map": {
+     "version": 3,
+     "file": "shapeSync.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/pulls/shapeSync.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AACA,OAAO,EAAE,MAAM,EAAU,MAAM,QAAQ,CAAA;AACvC,OAAO,EAAE,YAAY,EAAE,MAAM,wBAAwB,CAAA;AAErD,wGAAwG;AACxG,MAAM,CAAC,MAAM,oBAAoB,GAAG,MAAM,CAAC,OAAO,CAAC,iCAAiC,EAAE;IACpF,WAAW,EAAE,gDAAgD;IAC7D,WAAW,EAAE,IAAI;CAClB,CAAC,CAAA;AAEF,MAAM,CAAC,MAAM,gBAAgB,GAAG,CAAC,MAAmD,EAAE,EAAE,CACtF,YAAY,CAAC,MAAM,EAAE,kBAAkB,EAAE,oBAAoB,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/pulls/refresh.vibe"
+     }
+    ],
+    "code": "import * as Effect from \"effect/Effect\";\nimport * as Schema from \"effect/Schema\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { PULL_RECEIPT_HEADER } from \"./contract\";\nimport { VIEW } from \"./schema.js\";\nconst Receipt = Schema.fromJsonString(Schema.Struct({ number: Schema.Number, checkedAt: Schema.Number, missing: Schema.Boolean }));\nconst decode = Schema.decodeUnknownOption(Receipt);\n/** Detail shapes carry their routed subject; only a matching, newer server receipt can certify its absence. */\nexport const refreshingSource = (source, view, id) => ({\n    ...source,\n    request: Effect_1.fnUntraced(function* request(url, init) {\n        const current = (yield* view.toArray)[0];\n        const number = current.repoId === id ? current.number : null;\n        const target = new URL(url);\n        if (number !== null)\n            target.searchParams.set(\"refresh\", String(number));\n        const response = yield* source.request(target.href, init);\n        const receipt = decode(response.headers.get(PULL_RECEIPT_HEADER));\n        if (response.ok && receipt._tag === \"Some\" && receipt.value.number === number) {\n            const read = receipt.value;\n            yield* (Effect.orDie(view.update(VIEW, (row) => {\n                if (row.repoId !== id || row.number !== number || read.checkedAt < (row.pullCheckedAt ?? 0))\n                    return;\n                row.pullAbsent = read.missing;\n                row.pullCheckedAt = read.checkedAt;\n            })));\n        }\n        return response;\n    }),\n});\n",
+    "map": {
+     "version": 3,
+     "file": "refresh.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/pulls/refresh.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";;;AAEA,OAAO,EAAE,mBAAmB,EAAE,MAAM,YAAY,CAAA;AAChD,OAAO,EAAkB,IAAI,EAAE,MAAM,aAAa,CAAA;AAElD,MAAM,OAAO,GAAG,MAAM,CAAC,cAAc,CACnC,MAAM,CAAC,MAAM,CAAC,EAAE,MAAM,EAAE,MAAM,CAAC,MAAM,EAAE,SAAS,EAAE,MAAM,CAAC,MAAM,EAAE,OAAO,EAAE,MAAM,CAAC,OAAO,EAAE,CAAC,CAC5F,CAAA;AACD,MAAM,MAAM,GAAG,MAAM,CAAC,mBAAmB,CAAC,OAAO,CAAC,CAAA;AAElD,+GAA+G;AAC/G,MAAM,CAAC,MAAM,gBAAgB,GAAG,CAC9B,MAA0B,EAC1B,IAA8C,EAC9C,EAAU,EACU,EAAE,CAAC,CAAC;IACxB,GAAG,MAAM;IACT,OAAO,EAAE,sCAAQ,GAAG,EAAE,IAAI;QACxB,MAAM,OAAO,GAAG,QAAK,IAAI,CAAC,OAAO,CAAC,CAAC,CAAC,CAAE,CAAA;QACtC,MAAM,MAAM,GAAG,OAAO,CAAC,MAAM,KAAK,EAAE,CAAC,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,CAAC,IAAI,CAAA;QAC5D,MAAM,MAAM,GAAG,IAAI,GAAG,CAAC,GAAG,CAAC,CAAA;QAC3B,IAAI,MAAM,KAAK,IAAI;YAAE,MAAM,CAAC,YAAY,CAAC,GAAG,CAAC,SAAS,EAAE,MAAM,CAAC,MAAM,CAAC,CAAC,CAAA;QACvE,MAAM,QAAQ,UAAO,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,IAAI,EAAE,IAAI,CAAC,CAAA;QACtD,MAAM,OAAO,GAAG,MAAM,CAAC,QAAQ,CAAC,OAAO,CAAC,GAAG,CAAC,mBAAmB,CAAC,CAAC,CAAA;QACjE,IAAI,QAAQ,CAAC,EAAE,IAAI,OAAO,CAAC,IAAI,KAAK,MAAM,IAAI,OAAO,CAAC,KAAK,CAAC,MAAM,KAAK,MAAM,EAAE,CAAC;YAC9E,MAAM,IAAI,GAAG,OAAO,CAAC,KAAK,CAAA;YAC1B,OAAI,CAIE,MAAM,CAAC,KAAK,CAJb,IAAI,CAAC,MAAM,CAAC,IAAI,EAAE,CAAC,GAAG,EAAE,EAAE;gBAC7B,IAAI,GAAG,CAAC,MAAM,KAAK,EAAE,IAAI,GAAG,CAAC,MAAM,KAAK,MAAM,IAAI,IAAI,CAAC,SAAS,GAAG,CAAC,GAAG,CAAC,aAAa,IAAI,CAAC,CAAC;oBAAE,OAAM;gBACnG,GAAG,CAAC,UAAU,GAAG,IAAI,CAAC,OAAO,CAAA;gBAC7B,GAAG,CAAC,aAAa,GAAG,IAAI,CAAC,SAAS,CAAA;YACpC,CAAC,CAAC,CAAmB,CAAC,CAAA;QACxB,CAAC;QACD,OAAO,QAAQ,CAAA;IACjB,CAAC,CAAA;CACF,CAAC,CAAA"
     }
    },
    {
@@ -52985,7 +53345,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {
@@ -53125,7 +53485,7 @@
       }
      ],
      "names": [],
-     "mappings": "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"
+     "mappings": "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"
     }
    },
    {
@@ -53205,7 +53565,7 @@
       }
      ],
      "names": [],
-     "mappings": ";AAAA,OAAO,EAAuB,YAAY,EAAE,MAAM,iBAAiB,CAAA;AACnE,OAAO,EAAW,MAAM,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAChD,OAAO,EAAE,cAAc,EAAsB,oBAAoB,EAAE,kBAAkB,EAAE,MAAM,gBAAkB,CAAA;AAE/G,iGAAiG;AACjG,sHAAsH;AACtH,qHAAqH;AACrH,0FAA0F;AAE1F,wGAAwG;AACxG,MAAM,CAAC,MAAM,WAAW,GAAG,MAAM,CAAC,KAAK,CAAC;IACtC,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,EAAE,MAAM,EAAE,YAAY,CAAC,MAAM,EAAE,UAAU,EAAE,MAAM,CAAC,MAAM,EAAE,CAAC;IACvG,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,MAAM,EAAE,YAAY,CAAC,WAAW,CAAC,MAAM,CAAC,MAAM,EAAE,CAAC;IAClG,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,EAAE,CAAC;IAC/C,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,gBAAgB,CAAC,EAAE,CAAC;IACzD,gGAAgG;IAChG,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,aAAa,CAAC,EAAE,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,OAAO,CAAC,eAAe,CAAC,CAAC,EAAE,CAAC;IAChH,sEAAsE;IACtE,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,CAAC;CACnD,CAAC,CAAA;AAGF;;;;GAIG;AACH,MAAM,CAAC,MAAM,cAAc,GAAG,MAAM,CAAC,KAAK,CAAC;IACzC,MAAM,CAAC,MAAM,CAAC;QACZ,EAAE,EAAE,MAAM,CAAC,OAAO,CAAC,OAAO,CAAC;QAC3B,GAAG,EAAE,MAAM,CAAC,MAAM;QAClB,IAAI,EAAE,YAAY,CAAC,GAAG;QACtB,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;KACvC,CAAC;IACF,oHAAoH;IACpH,MAAM,CAAC,MAAM,CAAC,EAAE,EAAE,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,GAAG,EAAE,MAAM,CAAC,MAAM,EAAE,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,CAAC;IAC5G,MAAM,CAAC,MAAM,CAAC,EAAE,EAAE,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,GAAG,EAAE,MAAM,CAAC,MAAM,EAAE,CAAC;IACpE,MAAM,CAAC,MAAM,CAAC,EAAE,EAAE,EAAE,MAAM,CAAC,OAAO,CAAC,QAAQ,CAAC,EAAE,GAAG,EAAE,MAAM,CAAC,MAAM,EAAE,CAAC;CACpE,CAAC,CAAA;AAGF;;;GAGG;AACH,MAAM,CAAC,MAAM,cAAc,GAAG,MAAM,CAAC,KAAK,CAAC;IACzC,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,OAAO,EAAE,YAAY,CAAC,OAAO,EAAE,UAAU,EAAE,MAAM,CAAC,MAAM,EAAE,CAAC;IAC5G,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,UAAU,CAAC,EAAE,QAAQ,EAAE,YAAY,CAAC,QAAQ,EAAE,CAAC;IACpF,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,WAAW,CAAC,EAAE,MAAM,EAAE,YAAY,CAAC,SAAS,EAAE,CAAC;IACpF,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,WAAW,CAAC,EAAE,CAAC;IACpD,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,MAAM,EAAE,YAAY,CAAC,WAAW,CAAC,MAAM,CAAC,MAAM,EAAE,CAAC;IAClG,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,EAAE,CAAC;IAC/C,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,gBAAgB,CAAC,EAAE,CAAC;IACzD,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,aAAa,CAAC,EAAE,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,OAAO,CAAC,eAAe,CAAC,CAAC,EAAE,CAAC;IAChH,MAAM,CAAC,MAAM,CAAC,EAAE,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,SAAS,CAAC,EAAE,CAAC;IAClD,8FAA8F;IAC9F,MAAM,CAAC,MAAM,CAAC;QACZ,IAAI,EAAE,MAAM,CAAC,OAAO,CAAC,iBAAiB,CAAC;QACvC,IAAI,EAAE,YAAY,CAAC,eAAe,CAAC,MAAM,CAAC,IAAI;QAC9C,QAAQ,EAAE,MAAM,CAAC,QAAQ,CAAC,MAAM,CAAC,MAAM,CAAC;KACzC,CAAC;CACH,CAAC,CAAA;AAGF,8FAA8F;AAC9F,MAAM,CAAC,MAAM,cAAc,GAAG,MAAM,CAAC,KAAK,CAAC,CAAC,kBAAkB,EAAE,oBAAoB,EAAE,cAAc,CAAC,CAAC,CAAA;AAGtG,+GAA+G;AAC/G,MAAM,CAAC,MAAM,cAAc,GAAG,CAAC,OAAO,EAAE,MAAM,EAAE,MAAM,CAAU,CAAA;AAShE,4EAA4E;AAC5E,MAAM,OAAS,QAAQ;CAoCtB;AAED,0GAA0G;AAC1G,MAAM,CAAC,MAAM,KAAK,GAAG,CACnB,OAAoB,EAC+F,EAAE,CACrH,OAAO,CAAC,IAAI,KAAK,MAAM;IACrB,CAAC,CAAC,MAAM,CAAC,OAAO,CAAM,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,UAAU,EAAE,OAAO,CAAC,UAAU,EAAE,CAAC;IACjF,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,SAAS;QAC5B,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,YAAY,CAAC,WAAW,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,CAAC,CAAC;QACvE,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,MAAM;YACzB,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,YAAY,CAAC,QAAQ,EAAE,CAAC;YAC1C,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,gBAAgB;gBACnC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,cAAc,EAAE,CAAC;gBACnC,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,SAAS;oBAC5B,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,kBAAkB,CAAC,EAAE,MAAM,EAAE,SAAS,EAAE,CAAC,CAAC;oBAC5D,CAAC,CAAC,MAAM,CAAC,IAAI,CACX,OAAO,CAAC,MAAM,KAAK,eAAe,CAAC,CAAC,CAAC,IAAI,oBAAoB,EAAE,CAAC,CAAC,CAAC,IAAI,kBAAkB,CAAC,EAAE,MAAM,EAAE,MAAM,EAAE,CAAC,CAC7G,CAAA;AAEL;;;GAGG;AACH,MAAM,cAAc,GAAG,CAAC,OAAuB,EAAE,EAAE,CACjD,OAAO,CAAC,IAAI,KAAK,SAAS;IACxB,CAAC,CAAC,IAAI,YAAY,CAAC,WAAW,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,CAAC;IAC1D,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,MAAM;QACzB,CAAC,CAAC,IAAI,YAAY,CAAC,QAAQ,EAAE;QAC7B,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,gBAAgB;YACnC,CAAC,CAAC,IAAI,cAAc,EAAE;YACtB,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,iBAAiB;gBACpC,CAAC,CAAC,IAAI,YAAY,CAAC,eAAe,CAAC;oBACjC,IAAI,EAAE,OAAO,CAAC,IAAI;oBAClB,GAAG,CAAC,OAAO,CAAC,QAAQ,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,QAAQ,EAAE,OAAO,CAAC,QAAQ,EAAE,CAAC;iBAC1E,CAAC;gBACF,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,aAAa,IAAI,OAAO,CAAC,MAAM,KAAK,eAAe;oBACtE,CAAC,CAAC,IAAI,oBAAoB,EAAE;oBAC5B,CAAC,CAAC,IAAI,kBAAkB,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,IAAI,KAAK,SAAS,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC,MAAM,EAAE,CAAC,CAAA;AAEzF;;;;GAIG;AACH,MAAM,CAAC,MAAM,YAAY,GAAG,CAC1B,GAAwD,EACxD,KAA2C,EAC3C,MAAe,EAC6B,EAAE;IAC9C,MAAM,MAAM,GAAG,CAAI,OAAuB,EAAE,IAAgD,EAAE,EAAE,CAC9F,MAAM,CAAC,OAAO,CAAC,GAAG,CAAC,OAAO,CAAC,EAAE,CAAC,OAAO,EAAE,EAAE;QACvC,MAAM,MAAM,GAAG,IAAI,CAAC,OAAO,CAAC,CAAA;QAC5B,OAAO,MAAM,KAAK,SAAS,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,cAAc,CAAC,OAAO,CAAC,CAAC,CAAC,CAAC,CAAC,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,CAAA;IAC7F,CAAC,CAAC,CAAA;IACJ,OAAO;QACL,KAAK,EAAE,CAAC,IAAI,EAAE,GAAG,EAAE,EAAE,CAMhB,MAAM,CAAC,GAAG,CADV,MAAM,CAAC,GAAG,CAJb,MAAM,CACJ,EAAE,EAAE,EAAE,OAAO,EAAE,GAAG,EAAE,IAAI,EAAE,GAAG,CAAC,MAAM,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,MAAM,EAAE,CAAC,EAAE,EACvE,CAAC,OAAO,EAAE,EAAE,CAAC,OAAO,CAAC,IAAI,KAAK,SAAS,CAAC,CAAC,CAAC,OAAO,CAAC,CAAC,CAAC,SAAS,CAC9D,EACgB,CAAC,OAAO,EAAE,EAAE,CAAC,KAAK,CAAC,OAAO,CAAC,UAAU,CAAC,CAAC,EACvC,CAAC,OAAO,EAAE,EAAE,CAAC,OAAO,CAAC,OAAO,CAAC;QAChD,OAAO,EAAE,CAAC,GAAG,EAAE,OAAO,EAAE,EAAE,CACxB,MAAM,CACJ,EAAE,EAAE,EAAE,SAAS,EAAE,GAAG,EAAE,GAAG,CAAC,OAAO,EAAE,MAAM,KAAK,SAAS,CAAC,CAAC,CAAC,EAAE,CAAC,CAAC,CAAC,EAAE,MAAM,EAAE,OAAO,CAAC,MAAM,EAAE,CAAC,EAAE,EAC5F,CAAC,OAAO,EAAE,EAAE,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,UAAU,CAAC,CAAC,CAAC,OAAO,CAAC,QAAQ,CAAC,CAAC,CAAC,SAAS,CAAC,CAC1E;QACH,OAAO,EAAE,CAAC,GAAG,EAAE,EAAE,CACf,MAAM,CAAC,EAAE,EAAE,EAAE,SAAS,EAAE,GAAG,EAAE,EAAE,CAAC,OAAO,EAAE,EAAE,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,WAAW,CAAC,CAAC,CAAC,OAAO,CAAC,MAAM,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC;QAC1G,MAAM,EAAE,CAAC,GAAG,EAAE,EAAE,CACd,MAAM,CAAC,MAAM,CAAC,MAAM,CAAC,EAAE,EAAE,EAAE,QAAQ,EAAE,GAAG,EAAE,EAAE,CAAC,OAAO,EAAE,EAAE,CAAC,CAAC,OAAO,CAAC,IAAI,KAAK,WAAW,CAAC,CAAC,CAAC,OAAO,CAAC,CAAC,CAAC,SAAS,CAAC,CAAC,CAAC;KAClH,CAAA;AACH,CAAC,CAAA;AAkBD,8FAA8F;AAC9F,MAAM,UAAU,GAAG,CAAC,QAAgB,EAAE,OAA2B,EAAE,EAAE;;IACnE,OAAA,MAAM,CAAC,OAAO,YACZ,MAAM,CAAC,UAAU,CAAC,iBAAiB,CAAC,EAAI,MAAM,CAAC,YAAY,CAAC,EAAE,QAAQ,EAAE,OAAO,EAAE,OAAO,EAAE,YAAY,EAAE,CAAC,SAAG,GAC5G,MAAM,CAAC,IAAI,CAAC,IAAI,kBAAkB,CAAC,EAAE,MAAM,EAAE,YAAY,EAAE,CAAC,CAAC,CAC9D,CAAA;IAEH;;;;;OAKG;AACH,CAAC,AARE,CAAA;AAEH;;;;;GAKG;AACH,MAAM,CAAC,MAAM,MAAM,GAAG,CACpB,QAAsF,EACtF,IAAU,EACW,EAAE,CAAC,CAAC;IACzB,QAAQ,EAAE,CAAC,MAAM,EAAE,OAAO,EAAE,MAAM,EAAE,EAAE;QACpC,MAAM,MAAM,GAAG,QAAQ,CAAC,MAAM,CAAC,QAAQ,EAAE,MAAM,CAAC,OAAO,CAAC,CAAA;QACxD,IAAI,MAAM,KAAK,SAAS,EAAE,CAAC;YACzB,MAAM,OAAO,GAAG,UAAU,CAAC,MAAM,CAAC,QAAQ,EAAE,MAAM,CAAC,OAAO,CAAC,CAAA;YAC3D,OAAO,EAAE,KAAK,EAAE,GAAG,EAAE,CAAC,OAAO,EAAE,OAAO,EAAE,GAAG,EAAE,CAAC,OAAO,EAAE,OAAO,EAAE,GAAG,EAAE,CAAC,OAAO,EAAE,MAAM,EAAE,GAAG,EAAE,CAAC,OAAO,EAAE,CAAA;QACxG,CAAC;QACD,OAAO,YAAY,CACjB,CAAC,OAAO,EAAE,EAAE,CAAC,MAAM,CAAC,OAAO,CAAC,MAAM,EAAE,OAAO,EAAE,OAAO,CAAC,EACrD,CAAC,UAAU,EAAE,EAAE,CAAC,IAAI,CAAC,MAAM,CAAC,QAAQ,EAAE,UAAU,EAAE,MAAM,CAAC,OAAO,CAAC,EACjE,MAAM,CACP,CAAA;IACH,CAAC;IACD,IAAI,EAAE,CAAC,MAAM,EAAE,OAAO,EAAE,MAAM,EAAE,IAAI,EAAE,EAAE,CACtC,MAAM,CAAC,OAAO,CAAC,GAAG,EAAE;QAClB,MAAM,MAAM,GAAG,QAAQ,CAAC,MAAM,CAAC,QAAQ,EAAE,MAAM,CAAC,OAAO,CAAC,CAAA;QACxD,IAAI,MAAM,KAAK,SAAS;YAAE,OAAO,UAAU,CAAC,MAAM,CAAC,QAAQ,EAAE,MAAM,CAAC,OAAO,CAAC,CAAA;QAC5E,OAAO,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,IAAI,CAAC,MAAM,EAAE,OAAO,EAAE,MAAM,EAAE,IAAI,CAAC,EAAE,CAAC,OAAO,EAAE,EAAE,CAC5E,MAAM,CAAC,OAAO,CACZ,OAAO,CAAC,IAAI,KAAK,MAAM,CAAC,CAAC,CAAC,IAAI,CAAC,MAAM,CAAC,QAAQ,EAAE,OAAO,CAAC,UAAU,EAAE,MAAM,CAAC,OAAO,CAAC,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,EACjG,KAAK,CAAC,OAAO,CAAC,CACf,CAAC,CAAA;IACN,CAAC,CAAC;IACJ,WAAW,EAAE,CAAC,QAAQ,EAAE,UAAU,EAAE,MAAM,EAAE,OAAO,EAAE,EAAE,CACrD,MAAM,CAAC,OAAO,CAAC,GAAG,EAAE;QAClB,MAAM,MAAM,GAAG,QAAQ,CAAC,QAAQ,EAAE,OAAO,CAAC,CAAA;QAC1C,IAAI,MAAM,KAAK,SAAS;YAAE,OAAO,UAAU,CAAC,QAAQ,EAAE,OAAO,CAAC,CAAA;QAC9D,OAAO,MAAM,CAAC,OAAO,CAAC,MAAM,CAAC,WAAW,CAAC,UAAU,EAAE,MAAM,CAAC,EAAE,CAAC,OAAO,EAAE,EAAE,CACxE,OAAO,KAAK,aAAa,CAAC,CAAC,CAAC,MAAM,CAAC,IAAI,CAAC,IAAI,kBAAkB,CAAC,EAAE,MAAM,EAAE,MAAM,EAAE,CAAC,CAAC,CAAC,CAAC,CAAC,MAAM,CAAC,OAAO,CAAC,OAAO,CAAC,CAAC,CAAA;IAClH,CAAC,CAAC;CACL,CAAC,CAAA"
+     "mappings": "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"
     }
    },
    {
@@ -53571,6 +53931,26 @@
    {
     "paths": [
      {
+      "relative": "apps/mvp/src/features/pins/api.vibe"
+     }
+    ],
+    "code": "import * as Context from \"effect/Context\";\nimport * as HttpClient from \"effect/http/HttpClient\";\nimport * as HttpClientRequest from \"effect/http/HttpClientRequest\";\nimport * as Layer from \"effect/Layer\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { PIN_ROUTE } from \"./contract\";\n/** Captures the host's authenticated client before a run adds its own services. */\nexport class PinClient extends Context.Service()(\"@smthrs/mvp/pins/PinClient\") {\n    static layer = (origin) => Layer.effect(PinClient, Effect_1.gen(function* () {\n        const client = yield* HttpClient.HttpClient;\n        return PinClient.of({\n            post: (payload, stamping) => client.execute(HttpClientRequest.post(`${origin}${PIN_ROUTE}${stamping ? \"/stamp\" : \"\"}`).pipe(HttpClientRequest.bodyJsonUnsafe(payload))),\n        });\n    }));\n}\n",
+    "map": {
+     "version": 3,
+     "file": "api.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/pins/api.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": ";;;;;AACA,OAAO,EAAE,SAAS,EAAE,MAAM,YAAY,CAAA;AAEtC,mFAAmF;AACnF,MAAM,OAAO,SAAU,SAAQ,OAAO,CAAC,OAAO,EAK1C,CAAC,4BAA4B,CAAC;IAChC,MAAM,CAAU,KAAK,GAAG,CAAC,MAAc,EAAE,EAAE,CACzC,KAAK,CAAC,MAAM,CACV,SAAS,EACT,a,CAAA;QACE,MAAM,MAAM,UAAO,UAAU,CAAC,UAAU,CAAA;QACxC,OAAO,SAAS,CAAC,EAAE,CAAC;YAClB,IAAI,EAAE,CAAC,OAAO,EAAE,QAAQ,EAAE,EAAE,CAC1B,MAAM,CAAC,OAAO,CACZ,iBAAiB,CAAC,IAAI,CAAC,GAAG,MAAM,GAAG,SAAS,GAAG,QAAQ,CAAC,CAAC,CAAC,QAAQ,CAAC,CAAC,CAAC,EAAE,EAAE,CAAC,CAAC,IAAI,CAC7E,iBAAiB,CAAC,cAAc,CAAC,OAAO,CAAC,CAC1C,CACF;SACJ,CAAC,CAAA;IACJ,CAAC,CAAA,CACF,CAAA;CACJ"
+    }
+   },
+   {
+    "paths": [
+     {
       "relative": "apps/mvp/src/features/sharing/metrics.vibe"
      }
     ],
@@ -53606,6 +53986,86 @@
      ],
      "names": [],
      "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/src/features/pulls/steps.vibe"
+     }
+    ],
+    "code": "import * as Effect from \"effect/Effect\";\nimport * as Layer from \"effect/Layer\";\nimport * as Metric from \"effect/Metric\";\nimport * as Effect_1 from \"effect/Effect\";\nimport { Interpreter } from \"@smthrs/flow\";\nimport { PullsClient } from \"./api.js\";\nimport { REVIEW_REFUSALS } from \"./contract\";\nimport { PullReview, ReviewRefused, ReviewRequestStep, ReviewUnsent, } from \"./flows.js\";\n// Review on request (docs/features/pulls.md#review-on-request): one ChatApi request through `PullsClient`. A\n// Maintainer's press, or `/review`, runs this step on this device's engine.\n/** Reviews asked for, by `outcome`: `sent`, `refused` or `unsent`. */\nexport const reviews = Metric.counter(\"smithers_web_pull_reviews\", {\n    description: \"Reviews a Maintainer asked Smithers for on a pull request, by outcome\",\n    incremental: true,\n});\n/** How long the route gets to answer: it answers once its flow has started. */\nexport const REVIEW_WITHIN = \"15 seconds\";\nconst isRefusal = (code) => code !== undefined && REVIEW_REFUSALS.includes(code);\n/**\n * What ChatApi's answer means to the flow: a 4xx but `429` is final, with its code when it is one, and so is `503\n * not_configured` (no App: asking again changes nothing); anything else, a rate limit included, is tried again.\n */\nexport const failureOf = (failed) => failed.status !== undefined\n    && (failed.status >= 400 && failed.status < 500 && failed.status !== 429 || failed.code === \"not_configured\")\n    ? new ReviewRefused({ status: failed.status, ...(isRefusal(failed.code) ? { code: failed.code } : {}) })\n    : new ReviewUnsent();\n/**\n * `pull/review/request`: one `POST /api/repos/<owner>/<name>/pulls/<number>/review`, a log line `pull.review.request`\n * and a count by outcome, with ChatApi's status and code; never the pull request's title or diff.\n */\nexport const requestReview = Effect_1.fnUntraced(function* requestReview(payload) {\n    var topic_1;\n    const answer = yield* Effect.result((yield* PullsClient).review(payload));\n    const failure = answer._tag === \"Failure\" ? failureOf(answer.failure) : undefined;\n    const outcome = failure === undefined\n        ? \"sent\"\n        : failure._tag === \"@smthrs/mvp/pulls/ReviewRefused\"\n            ? \"refused\"\n            : \"unsent\";\n    yield* Metric.update(Metric.withAttributes(reviews, { outcome }), 1);\n    yield* ((topic_1 = Effect.logWithLevel(failure === undefined ? \"Info\" : \"Warn\")(\"pull.review.request\"), Effect.annotateLogs({\n        outcome,\n        ...(answer._tag === \"Failure\" && answer.failure.status !== undefined ? { status: answer.failure.status } : {}),\n        ...(answer._tag === \"Failure\" && answer.failure.code !== undefined ? { code: answer.failure.code } : {}),\n        feature: \"pulls\",\n    })(topic_1)));\n    if (answer._tag === \"Success\")\n        return answer.success;\n    return yield* Effect_1.fail(failure);\n});\n/** Registers `pull/review` with its step, asking through the host's `PullsClient`. */\nexport const registration = Interpreter.layerWithImplementations(PullReview, ReviewRequestStep.toLayer(requestReview));\n/** The flow, asking ChatApi on `origin`. Needs the host's `HttpClient`. */\nexport const registrationAt = (origin) => registration.pipe(Layer.provide(PullsClient.layer({ origin, within: REVIEW_WITHIN })));\n",
+    "map": {
+     "version": 3,
+     "file": "steps.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/src/features/pulls/steps.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "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"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/branches/src/create.vibe"
+     }
+    ],
+    "code": "import { Action, Flow } from \"@smthrs/flow\";\nimport { Node } from \"@smthrs/plan\";\nimport { Schema } from \"effect\";\nconst Create = Action.make(\"branches/ephemeral\", {\n    payload: { ref: Schema.String },\n    success: Schema.Unknown,\n});\nexport default Flow.make(\"branches/create\", {\n    description: \"Create a Smithers-only conversation branch.\",\n    capabilities: [\"git:write\"],\n    payload: { ref: Schema.String },\n    success: Schema.Unknown,\n    body: Node.capture({ create: Create.name }, ({ ref }) => Create.call({ ref })),\n});\n",
+    "map": {
+     "version": 3,
+     "file": "create.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/branches/src/create.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,OAAO,EAAE,MAAM,EAAE,IAAI,EAAE,MAAM,cAAc,CAAA;AAC3C,OAAO,EAAE,IAAI,EAAE,MAAM,cAAc,CAAA;AACnC,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAE/B,MAAM,MAAM,GAAG,MAAM,CAAC,IAAI,CAAC,oBAAoB,EAAE;IAC/C,OAAO,EAAE,EAAE,GAAG,EAAE,MAAM,CAAC,MAAM,EAAE;IAC/B,OAAO,EAAE,MAAM,CAAC,OAAO;CACxB,CAAC,CAAA;AAEF,eAAe,IAAI,CAAC,IAAI,CAAC,iBAAiB,EAAE;IAC1C,WAAW,EAAE,6CAA6C;IAC1D,YAAY,EAAE,CAAC,WAAW,CAAC;IAC3B,OAAO,EAAE,EAAE,GAAG,EAAE,MAAM,CAAC,MAAM,EAAE;IAC/B,OAAO,EAAE,MAAM,CAAC,OAAO;IACvB,IAAI,EAAE,IAAI,CAAC,OAAO,CAAC,EAAE,MAAM,EAAE,MAAM,CAAC,IAAI,EAAE,EAAE,CAAC,EAAE,GAAG,EAAE,EAAE,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,EAAE,GAAG,EAAE,CAAC,CAAC;CAC/E,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/branches/src/publish.vibe"
+     }
+    ],
+    "code": "import { Action, Flow } from \"@smthrs/flow\";\nimport { Node } from \"@smthrs/plan\";\nimport { Schema } from \"effect\";\nconst Publish = Action.make(\"branches/github-publish\", {\n    payload: { title: Schema.String, body: Schema.String },\n    success: Schema.Unknown,\n});\nexport default Flow.make(\"branches/publish\", {\n    description: \"Publish a Smithers-only branch to GitHub as one commit and a pull request.\",\n    capabilities: [\"github:write\"],\n    payload: { title: Schema.String, body: Schema.String },\n    success: Schema.Unknown,\n    body: Node.capture({ publish: Publish.name }, ({ title, body }) => Publish.call({ title, body })),\n});\n",
+    "map": {
+     "version": 3,
+     "file": "publish.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/branches/src/publish.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,OAAO,EAAE,MAAM,EAAE,IAAI,EAAE,MAAM,cAAc,CAAA;AAC3C,OAAO,EAAE,IAAI,EAAE,MAAM,cAAc,CAAA;AACnC,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAE/B,MAAM,OAAO,GAAG,MAAM,CAAC,IAAI,CAAC,yBAAyB,EAAE;IACrD,OAAO,EAAE,EAAE,KAAK,EAAE,MAAM,CAAC,MAAM,EAAE,IAAI,EAAE,MAAM,CAAC,MAAM,EAAE;IACtD,OAAO,EAAE,MAAM,CAAC,OAAO;CACxB,CAAC,CAAA;AAEF,eAAe,IAAI,CAAC,IAAI,CAAC,kBAAkB,EAAE;IAC3C,WAAW,EAAE,4EAA4E;IACzF,YAAY,EAAE,CAAC,cAAc,CAAC;IAC9B,OAAO,EAAE,EAAE,KAAK,EAAE,MAAM,CAAC,MAAM,EAAE,IAAI,EAAE,MAAM,CAAC,MAAM,EAAE;IACtD,OAAO,EAAE,MAAM,CAAC,OAAO;IACvB,IAAI,EAAE,IAAI,CAAC,OAAO,CAAC,EAAE,OAAO,EAAE,OAAO,CAAC,IAAI,EAAE,EAAE,CAAC,EAAE,KAAK,EAAE,IAAI,EAAE,EAAE,EAAE,CAAC,OAAO,CAAC,IAAI,CAAC,EAAE,KAAK,EAAE,IAAI,EAAE,CAAC,CAAC;CAClG,CAAC,CAAA"
+    }
+   },
+   {
+    "paths": [
+     {
+      "relative": "apps/mvp/plugins/branches/src/update.vibe"
+     }
+    ],
+    "code": "import { Action, Flow } from \"@smthrs/flow\";\nimport { Node } from \"@smthrs/plan\";\nimport { Schema } from \"effect\";\nconst Update = Action.make(\"branches/github-update\", {\n    payload: { method: Schema.Literals([\"merge\", \"rebase\"]) },\n    success: Schema.Unknown,\n});\nexport default Flow.make(\"branches/update\", {\n    description: \"Bring a published branch up to date with its base with a merge commit, as GitHub's Update branch does.\",\n    capabilities: [\"github:write\"],\n    payload: {},\n    success: Schema.Unknown,\n    body: Node.capture({ update: Update.name }, () => Update.call({ method: \"merge\" })),\n});\n",
+    "map": {
+     "version": 3,
+     "file": "update.js",
+     "sourceRoot": "",
+     "sources": [
+      {
+       "relative": "apps/mvp/plugins/branches/src/update.vibe"
+      }
+     ],
+     "names": [],
+     "mappings": "AAAA,OAAO,EAAE,MAAM,EAAE,IAAI,EAAE,MAAM,cAAc,CAAA;AAC3C,OAAO,EAAE,IAAI,EAAE,MAAM,cAAc,CAAA;AACnC,OAAO,EAAE,MAAM,EAAE,MAAM,QAAQ,CAAA;AAE/B,MAAM,MAAM,GAAG,MAAM,CAAC,IAAI,CAAC,wBAAwB,EAAE;IACnD,OAAO,EAAE,EAAE,MAAM,EAAE,MAAM,CAAC,QAAQ,CAAC,CAAC,OAAO,EAAE,QAAQ,CAAC,CAAC,EAAE;IACzD,OAAO,EAAE,MAAM,CAAC,OAAO;CACxB,CAAC,CAAA;AAEF,eAAe,IAAI,CAAC,IAAI,CAAC,iBAAiB,EAAE;IAC1C,WAAW,EAAE,wGAAwG;IACrH,YAAY,EAAE,CAAC,cAAc,CAAC;IAC9B,OAAO,EAAE,EAAE;IACX,OAAO,EAAE,MAAM,CAAC,OAAO;IACvB,IAAI,EAAE,IAAI,CAAC,OAAO,CAAC,EAAE,MAAM,EAAE,MAAM,CAAC,IAAI,EAAE,EAAE,GAAG,EAAE,CAAC,MAAM,CAAC,IAAI,CAAC,EAAE,MAAM,EAAE,OAAO,EAAE,CAAC,CAAC;CACpF,CAAC,CAAA"
     }
    },
    {

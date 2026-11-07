@@ -5,7 +5,7 @@ import { asker } from "../../flows/askingTab";
 import { requesterOf } from "../../flows/requests";
 import { ASK_TAB_WITHIN, copyChannel, editChannel, } from "./contract";
 import { ChatCopy, ChatEdit, CopyMessage, EditQuestion, MessageNotFound, QuestionNotEditable } from "./flows";
-import { messageCopies, questionEdits } from "./metrics";
+import { messageCopies, questionEdits } from "#vibelang/emitted/src/features/chat/metrics";
 import { CopyAnswer, EditAnswer } from "./schema";
 // The steps of `chat/copy` and `chat/edit` (docs/features/chat.md#message-controls). Each runs in the leader tab's engine
 // worker, which has neither the conversation nor the clipboard, so it asks the tab that started its run over one of the
