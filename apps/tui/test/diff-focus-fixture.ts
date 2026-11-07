@@ -63,7 +63,7 @@ export const fixture = (root: string) => {
         eventType: "flows.harness.cell-call-settled.v1",
         flowName: "edit",
         identity,
-        result: new Cell.CallResult({ outcome: "success", value: "Changed" })
+        result: Cell.CallResult.new({ outcome: "success", value: "Changed" })
       })
     })
     writer.append({

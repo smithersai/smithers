@@ -1842,13 +1842,13 @@ describe("replies", () => {
 
 describe("denials", () => {
   const settled = (code: Cell.CallFailureCode, message: string) =>
-    new Cell.CallResult({ outcome: "failure", value: null, code, message })
+    Cell.CallResult.new({ outcome: "failure", value: null, code, message })
 
   it("recognizes its own denial, carried as capability_refused", () => {
     expect(Approvals.denied(settled("capability_refused", "Denied: edit a.js"))).toBe(true)
     expect(Approvals.denied(settled("capability_refused", "Flow x is not model-invocable."))).toBe(false)
     expect(Approvals.denied(settled("flow_failed", "Denied: edit a.js"))).toBe(false)
-    expect(Approvals.denied(new Cell.CallResult({ outcome: "success", value: 1 }))).toBe(false)
+    expect(Approvals.denied(Cell.CallResult.new({ outcome: "success", value: 1 }))).toBe(false)
   })
 
   it("prints one line per denied flow, once", () => {

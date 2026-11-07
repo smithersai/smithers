@@ -53,8 +53,10 @@ export const program = (electricUrl: string, table: string) =>
       // Runs with the services of the fiber that made the collection: here, its SqlClient.
       onInsert: ({ rows, collection }) =>
         Effect.gen(function*() {
+          const [first, ...rest] = rows
+          if (first === undefined) return
           const [written] = yield* sql<{ readonly txid: string }>`
-            insert into ${sql(table)} ${sql.insert([...rows])}
+            insert into ${sql(table)} ${sql.insert([{ ...first }, ...rest.map((row) => ({ ...row }))])}
             returning pg_current_xact_id()::xid::text as txid`
           yield* collection.awaitTxId(Number(written!.txid), "10 seconds")
         })

@@ -30,7 +30,7 @@ with its peer dependencies at these exact versions. It depends on
     "@electric-sql/client": "1.5.28",
     "@tanstack/db": "0.15.1",
     "@tanstack/electric-db-collection": "0.6.2",
-    "effect": "4.0.5"
+    "effect": "4.1.1"
   }
 }
 ```

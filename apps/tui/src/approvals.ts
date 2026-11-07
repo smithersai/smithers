@@ -944,7 +944,7 @@ export const check = (
       if (decision._tag === "allow") return Effect.void
       const asked = decision._tag === "deny"
         ? Effect.fail(
-          new Permission.PermissionDenied({ capability: request.capability, reason: "denied earlier in this run" })
+          Permission.PermissionDenied.new({ capability: request.capability, reason: "denied earlier in this run" })
         )
         : grants.check(request.capability, { ...request.meta })
       return asked.pipe(

@@ -21,7 +21,7 @@ const SMITHERS_ZONE_ID = "8ebd98d2f0dc7d8db2e61f31ebc19c14"
 
 test("all deployment entry points import as Alchemy 2 stack effects", async () => {
   const entryPoints = [
-    ...appEntries,
+    ...appEntries
   ]
   for (const path of entryPoints) {
     const module = await import(pathToFileURL(path).href)
@@ -32,7 +32,7 @@ test("all deployment entry points import as Alchemy 2 stack effects", async () =
 test("stack properties and shared implementation typecheck against the declared Alchemy API", () => {
   const program = ts.createProgram({
     rootNames: [
-      ...appEntries,
+      ...appEntries
     ],
     options: {
       noEmit: true,
@@ -68,7 +68,11 @@ test("app stacks retain their Worker routing and defer required redacted credent
   assert.equal(bugs.workerProps.name, "smithers-bug-worker-smithers-bug-worker-williamcory")
   assert.equal(bugs.bugReportsProps.title, "smithers-bug-worker-bug-reports-williamcory")
   assert.equal(bugs.workerProps.main, "src/worker.ts")
-  assert.deepEqual(bugs.workerProps.domain, { name: "bug.smithers.sh", aliases: ["bugs.smithers.sh"], zoneId: SMITHERS_ZONE_ID })
+  assert.deepEqual(bugs.workerProps.domain, {
+    name: "bug.smithers.sh",
+    aliases: ["bugs.smithers.sh"],
+    zoneId: SMITHERS_ZONE_ID
+  })
   // A workers.dev origin would serve the same routes outside the smithers.sh zone's rules.
   assert.equal(bugs.workerProps.workersDev, false)
   assert.equal(bugs.workerProps.crons, undefined)
@@ -95,7 +99,7 @@ test("app stacks retain their Worker routing and defer required redacted credent
 /**
  * The hostnames a stack's Workers claim, read from source without running any of it: each `domain` (its name,
  * aliases and redirects) and each route `pattern` in every file of the stack's relative import graph that imports
- * `alchemy/Cloudflare`. Running a stack would load its whole app under Node; Vite and Alchemy bundle that code, and
+ * `@alchemy.run/cloudflare`. Running a stack would load its whole app under Node; Vite and Alchemy bundle that code, and
  * Node's loader rejects its extensionless imports. Configured claims are resolved through their pure routing helpers
  * with an injected deployment hostname. Any other nonliteral claim still fails closed.
  */
@@ -115,34 +119,46 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
         .find((candidate) => /\.tsx?$/.test(candidate) && existsSync(candidate))
       if (file !== undefined) pending.push(file)
     }
-    if (!imports.includes("alchemy/Cloudflare")) continue
+    if (!imports.includes("@alchemy.run/cloudflare")) continue
     const source = ts.createSourceFile(path, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX)
-    const where = (node) => `${relative(root, path)}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`
+    const where = (node) =>
+      `${relative(root, path)}:${source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1}`
     const bare = (node) => {
-      while (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) node = node.expression
+      while (ts.isAsExpression(node) || ts.isSatisfiesExpression(node) || ts.isParenthesizedExpression(node)) {
+        node = node.expression
+      }
       return node
     }
-    const unreadable = (node) => `${where(node)}: declare hostnames as literals, so this test reads them without running the stack`
+    const unreadable = (node) =>
+      `${where(node)}: declare hostnames as literals, so this test reads them without running the stack`
     const fields = (node) => {
       const object = bare(node)
       assert.ok(ts.isObjectLiteralExpression(object), unreadable(node))
-      return new Map(object.properties.flatMap((property) =>
-        ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
-          ? [[property.name.text, property.initializer]]
-          : []
-      ))
+      return new Map(
+        object.properties.flatMap((property) =>
+          ts.isPropertyAssignment(property) && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+            ? [[property.name.text, property.initializer]]
+            : []
+        )
+      )
     }
     const value = (node) => {
       const expression = bare(node)
       const bound = bindings.get(path)?.get(expression.getText(source))
       if (bound !== undefined) {
-        assert.ok(ts.isCallExpression(expression) && source.statements.some((statement) =>
-          ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) &&
-          resolve(dirname(path), statement.moduleSpecifier.text) === join(root, "apps/mvp/infra/Domain.ts") &&
-          statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings) &&
-          statement.importClause.namedBindings.elements.some((entry) => entry.name.text === expression.expression.getText(source) &&
-            (entry.propertyName?.text ?? entry.name.text) === entry.name.text)
-        ), unreadable(node))
+        assert.ok(
+          ts.isCallExpression(expression) &&
+            source.statements.some((statement) =>
+              ts.isImportDeclaration(statement) && ts.isStringLiteral(statement.moduleSpecifier) &&
+              resolve(dirname(path), statement.moduleSpecifier.text) === join(root, "apps/mvp/infra/Domain.ts") &&
+              statement.importClause?.namedBindings && ts.isNamedImports(statement.importClause.namedBindings) &&
+              statement.importClause.namedBindings.elements.some((entry) =>
+                entry.name.text === expression.expression.getText(source) &&
+                (entry.propertyName?.text ?? entry.name.text) === entry.name.text
+              )
+            ),
+          unreadable(node)
+        )
         return bound
       }
       if (ts.isStringLiteralLike(expression)) return expression.text
@@ -156,8 +172,13 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
     const visit = (node) => {
       if (ts.isObjectLiteralExpression(node)) {
         for (const property of node.properties) {
-          const key = property.name !== undefined && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name)) ? property.name.text : undefined
-          if ((key === "domain" || key === "routes") && !ts.isPropertyAssignment(property)) assert.fail(unreadable(property))
+          const key =
+            property.name !== undefined && (ts.isIdentifier(property.name) || ts.isStringLiteral(property.name))
+              ? property.name.text
+              : undefined
+          if ((key === "domain" || key === "routes") && !ts.isPropertyAssignment(property)) {
+            assert.fail(unreadable(property))
+          }
         }
         const props = fields(node)
         const name = props.get("name")
@@ -165,7 +186,9 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
         const domain = props.get("domain")
         if (domain !== undefined && bare(domain).kind !== ts.SyntaxKind.NullKeyword) {
           const declared = value(domain)
-          const hosts = typeof declared === "string" ? [declared] : [declared.name, ...declared.aliases ?? [], ...declared.redirects ?? []]
+          const hosts = typeof declared === "string"
+            ? [declared]
+            : [declared.name, ...declared.aliases ?? [], ...declared.redirects ?? []]
           for (const host of hosts) {
             assert.equal(typeof host, "string", unreadable(domain))
             claims.push({ host, owner, kind: "domain", path: "/*" })
@@ -178,8 +201,12 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
           for (const route of declared) {
             assert.equal(typeof route.pattern, "string", unreadable(routes))
             const slash = route.pattern.indexOf("/")
-            claims.push({ host: slash === -1 ? route.pattern : route.pattern.slice(0, slash), owner,
-              kind: route.custom_domain ? "domain" : "route", path: slash === -1 ? "/*" : route.pattern.slice(slash) })
+            claims.push({
+              host: slash === -1 ? route.pattern : route.pattern.slice(0, slash),
+              owner,
+              kind: route.custom_domain ? "domain" : "route",
+              path: slash === -1 ? "/*" : route.pattern.slice(slash)
+            })
           }
         }
       }
@@ -190,16 +217,19 @@ const stackHostnames = (stackPath, bindings = new Map()) => {
   return claims
 }
 
-const conflicts = (claims) => claims.flatMap((left, index) => claims.slice(index + 1).flatMap((right) => {
-  if (left.host !== right.host || left.owner === right.owner) return []
-  // The app owns its custom domain; docs zone routes own only their paths.
-  // A whole-host route would still hide the app, and two routes may not overlap.
-  const overlaps = left.kind !== right.kind
-    ? (left.kind === "route" ? left.path : right.path) === "/*"
-    : left.kind === "domain" || (left.path.endsWith("*") && right.path.startsWith(left.path.slice(0, -1))) ||
-      (right.path.endsWith("*") && left.path.startsWith(right.path.slice(0, -1))) || left.path === right.path
-  return overlaps ? [`${left.host}: ${left.owner} ${left.path}, ${right.owner} ${right.path}`] : []
-}))
+const conflicts = (claims) =>
+  claims.flatMap((left, index) =>
+    claims.slice(index + 1).flatMap((right) => {
+      if (left.host !== right.host || left.owner === right.owner) return []
+      // The app owns its custom domain; docs zone routes own only their paths.
+      // A whole-host route would still hide the app, and two routes may not overlap.
+      const overlaps = left.kind !== right.kind
+        ? (left.kind === "route" ? left.path : right.path) === "/*"
+        : left.kind === "domain" || (left.path.endsWith("*") && right.path.startsWith(left.path.slice(0, -1))) ||
+          (right.path.endsWith("*") && left.path.startsWith(right.path.slice(0, -1))) || left.path === right.path
+      return overlaps ? [`${left.host}: ${left.owner} ${left.path}, ${right.owner} ${right.path}`] : []
+    })
+  )
 
 test("each hostname and route has one owning Worker in this repository", () => {
   const owners = new Map()
@@ -209,8 +239,11 @@ test("each hostname and route has one owning Worker in this repository", () => {
     claims.push(entry)
     owners.set(entry.host, new Set([...(owners.get(entry.host) ?? []), entry.owner]))
   }
-  const host = { name: "example.com", redirects: ["www.example.com"],
-    aliases: [{ host: "factory.example.com", path: "/acme/widgets/-/factory" }] }
+  const host = {
+    name: "example.com",
+    redirects: ["www.example.com"],
+    aliases: [{ host: "factory.example.com", path: "/acme/widgets/-/factory" }]
+  }
   const bindings = new Map([
     [join(root, "apps/mvp/alchemy.run.ts"), new Map([["workerDomain(domain.value)", workerDomain(host)]])],
     [join(root, "apps/mvp/infra/DocsSite.ts"), new Map([["docsRoutes(domain)", docsRoutes(host.name)]])]
@@ -228,8 +261,12 @@ test("each hostname and route has one owning Worker in this repository", () => {
       assert.equal(error, undefined, wranglerPath)
       for (const route of config.routes ?? []) {
         const slash = route.pattern.indexOf("/")
-        claim({ host: slash === -1 ? route.pattern : route.pattern.slice(0, slash), owner: config.name,
-          kind: route.custom_domain ? "domain" : "route", path: slash === -1 ? "/*" : route.pattern.slice(slash) })
+        claim({
+          host: slash === -1 ? route.pattern : route.pattern.slice(0, slash),
+          owner: config.name,
+          kind: route.custom_domain ? "domain" : "route",
+          path: slash === -1 ? "/*" : route.pattern.slice(slash)
+        })
       }
     }
   }
@@ -249,8 +286,10 @@ test("each hostname and route has one owning Worker in this repository", () => {
   // An APP_ALIASES hostname is another custom domain of the app Worker, owned by it alone.
   const app = claims.find((entry) => entry.host === host.name && entry.kind === "domain")?.owner
   assert.deepEqual([...owners.get("factory.example.com") ?? []], [app])
-  assert.deepEqual(claims.filter((entry) => entry.host === host.name && entry.kind === "route").map((entry) => entry.path),
-    docsRoutes(host.name).map((entry) => entry.pattern.slice(host.name.length)))
+  assert.deepEqual(
+    claims.filter((entry) => entry.host === host.name && entry.kind === "route").map((entry) => entry.path),
+    docsRoutes(host.name).map((entry) => entry.pattern.slice(host.name.length))
+  )
   assert.deepEqual(conflicts(claims), [])
 })
 
@@ -272,7 +311,10 @@ test("an unknown dynamic domain or route cannot disappear from the inventory", (
   try {
     const path = join(directory, "alchemy.run.ts")
     for (const field of ["domain", "routes"]) {
-      writeFileSync(path, `import * as Cloudflare from "alchemy/Cloudflare"\nexport const props = { ${field}: unknownClaim() }\n`)
+      writeFileSync(
+        path,
+        `import * as Cloudflare from "@alchemy.run/cloudflare"\nexport const props = { ${field}: unknownClaim() }\n`
+      )
       assert.throws(() => stackHostnames(path), /declare hostnames as literals/)
     }
   } finally {
@@ -280,32 +322,48 @@ test("an unknown dynamic domain or route cannot disappear from the inventory", (
   }
 })
 
-
 test("every shared-state stack plans against one record under stage prod", () => {
   const read = (path) => readFileSync(join(root, path), "utf8")
   // Local state lives in a gitignored .alchemy/ on whichever machine deployed
   // last, and the CLI's default stage is dev_$USER, so either one gives each
   // machine its own view of production.
   const stacks = [
-    { stack: "apps/bug-worker/alchemy.run.ts", pkg: "apps/bug-worker/package.json", qualifiedOnly: true },
+    { stack: "apps/bug-worker/alchemy.run.ts", pkg: "apps/bug-worker/package.json", qualifiedOnly: true }
   ]
   for (const { stack, pkg, qualifiedOnly } of stacks) {
     const source = read(stack)
-    assert.ok(source.includes("state: Cloudflare.state()"), `${stack}: state must live in the account's alchemy-state-store`)
+    assert.ok(
+      source.includes("state: Cloudflare.state()"),
+      `${stack}: state must live in the account's alchemy-state-store`
+    )
     assert.ok(!source.includes("localState"), `${stack}: local state is one machine's view`)
     const packageScripts = JSON.parse(read(pkg)).scripts
     const scripts = Object.values(packageScripts).filter((script) => script.startsWith("alchemy "))
-    assert.deepEqual(scripts.sort(), [
-      "alchemy deploy --dry-run --stage prod",
-      ...(qualifiedOnly ? [] : ["alchemy deploy --stage prod"]),
-      "alchemy destroy --stage prod"
-    ].sort(), pkg)
-    assert.equal(packageScripts.deploy, qualifiedOnly
-      ? "node ../../.smithers/flows/rollout/refuse-unqualified.mjs"
-      : "alchemy deploy --stage prod", pkg)
+    assert.deepEqual(
+      scripts.sort(),
+      [
+        "alchemy deploy --dry-run --stage prod",
+        ...(qualifiedOnly ? [] : ["alchemy deploy --stage prod"]),
+        "alchemy destroy --stage prod"
+      ].sort(),
+      pkg
+    )
+    assert.equal(
+      packageScripts.deploy,
+      qualifiedOnly
+        ? "node ../../.smithers/flows/rollout/refuse-unqualified.mjs"
+        : "alchemy deploy --stage prod",
+      pkg
+    )
     if (qualifiedOnly) {
       for (const [name, script] of Object.entries(packageScripts)) {
-        if (name !== "plan") assert.doesNotMatch(script, /\balchemy\s+deploy\b/, `${pkg}:${name}: only the qualified Cloud host may deploy`)
+        if (name !== "plan") {
+          assert.doesNotMatch(
+            script,
+            /\balchemy\s+deploy\b/,
+            `${pkg}:${name}: only the qualified Cloud host may deploy`
+          )
+        }
       }
     }
   }
@@ -330,7 +388,7 @@ test("documented deploy commands hand Alchemy its flags directly", () => {
   // looks for a file named --adopt and never adopts.
   const docs = [
     "apps/bug-worker/README.md",
-    "apps/bug-worker/alchemy.run.ts",
+    "apps/bug-worker/alchemy.run.ts"
   ]
   for (const path of docs) {
     assert.doesNotMatch(readFileSync(join(root, path), "utf8"), /(run (plan|deploy|destroy)|docs:deploy) -- /, path)

@@ -95,7 +95,7 @@ service.
 
 ## Peers
 
-`effect` 4.0.5, `@tanstack/db` 0.15.1 and
+`effect` 4.1.1, `@tanstack/db` 0.15.1 and
 `@tanstack/db-sqlite-persistence-core` 0.4.11 are required.
 `@tanstack/offline-transactions` 1.1.3 is optional: the package imports only
 its types, and the host passes `startOfflineExecutor` to `Outbox.layer`.
