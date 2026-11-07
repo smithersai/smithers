@@ -27,7 +27,7 @@
 
 import { Sha256 } from "@smthrs/crypto"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -350,7 +350,7 @@ export interface Service {
    * Digests the evidence this manager leaves behind describing the linked
    * tree. This is the node_modules manifest digest: never the tree itself.
    */
-  readonly linkManifest: Effect.Effect<Digest, PackageManagerError, Crypto.Crypto>
+  readonly linkManifest: Effect.Effect<Digest, PackageManagerError, EffectDigest.Digest>
 }
 
 /**
@@ -1096,7 +1096,7 @@ const capture = (
  *
  * @private
  */
-const digestText = (text: string): Effect.Effect<Digest, never, Crypto.Crypto> =>
+const digestText = (text: string): Effect.Effect<Digest, never, EffectDigest.Digest> =>
   Effect.orDie(Schema.decodeUnknownEffect(Sha256)(text))
 
 /**
@@ -1111,7 +1111,7 @@ const digestFile = (
   projectRoot: string,
   path: string,
   limit: number
-): Effect.Effect<Digest, PackageManagerError, Crypto.Crypto> =>
+): Effect.Effect<Digest, PackageManagerError, EffectDigest.Digest> =>
   boundedBytes(fs, code, projectRoot, path, limit).pipe(
     Effect.flatMap((bytes) => Effect.orDie(Schema.decodeUnknownEffect(Sha256)(bytes)))
   )
@@ -1603,7 +1603,7 @@ export const storeManifest = (input: {
   readonly npmrcDigest: string | null
   readonly pnpmfileDigest?: string | null
   readonly workspaceDigest?: string | null
-}): Effect.Effect<StoreManifest, never, Crypto.Crypto> =>
+}): Effect.Effect<StoreManifest, never, EffectDigest.Digest> =>
   Effect.sync(() => normalizeStoreManifestInput(input)).pipe(
     Effect.flatMap((normalized) =>
       Effect.map(digestText(renderStoreManifestText(normalized)), (digest) =>
@@ -1630,7 +1630,7 @@ export const linkedTreeManifest = (input: {
   readonly storeDigest: Digest
   readonly packageJsonDigest: Digest
   readonly managerEvidence: Digest
-}): Effect.Effect<Digest, never, Crypto.Crypto> =>
+}): Effect.Effect<Digest, never, EffectDigest.Digest> =>
   Effect.sync(() => {
     const record = Validate.plainRecord(input, "linked tree manifest input")
     Validate.exactKeys(
@@ -1795,7 +1795,7 @@ const refuseUnsafeNpmrc = (
  */
 export const npmrcDigest = (
   projectRoot: string
-): Effect.Effect<Digest | null, PackageManagerError, FileSystem.FileSystem | Crypto.Crypto> =>
+): Effect.Effect<Digest | null, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     const path = `${projectRoot}/.npmrc`
@@ -1817,7 +1817,7 @@ export const npmrcDigest = (
 export const lockfileDigest = (
   projectRoot: string,
   lockfileName: string
-): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | Crypto.Crypto> =>
+): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     return yield* digestFile(
@@ -1837,7 +1837,7 @@ export const lockfileDigest = (
  */
 export const packageJsonDigest = (
   projectRoot: string
-): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | Crypto.Crypto> =>
+): Effect.Effect<Digest, PackageManagerError, FileSystem.FileSystem | EffectDigest.Digest> =>
   Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem
     return yield* digestFile(

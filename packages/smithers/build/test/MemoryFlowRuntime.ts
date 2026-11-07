@@ -70,17 +70,19 @@ export const layerMemory = (journal: Array<JournalEntry>): Layer.Layer<FlowRunti
     Effect.sync(() => {
       const flows = new Map<string, Handler>()
       const runtime: FlowRuntime.FlowRuntime["Service"] = FlowRuntime.FlowRuntime.of({
-        register: Effect.fnUntraced(function*(flow, execute, options) {
-          const services = yield* Effect.context<FlowRuntime.FlowRuntime>()
-          if (options?.ifAbsent === true && flows.has(flow._tag)) return
-          flows.set(
-            flow._tag,
-            (payload, executionId) =>
-              Effect.suspend(() => execute(payload as never, executionId)).pipe(
-                Effect.updateContext((input) => Context.merge(services, input) as Context.Context<any>)
-              )
-          )
-        }) as never,
+        register: Effect.fnUntraced(
+          function*(...[flow, execute, options]: Parameters<FlowRuntime.FlowRuntime["Service"]["register"]>) {
+            const services = yield* Effect.context<FlowRuntime.FlowRuntime>()
+            if (options?.ifAbsent === true && flows.has(flow._tag)) return
+            flows.set(
+              flow._tag,
+              (payload, executionId) =>
+                Effect.suspend(() => execute(payload as never, executionId)).pipe(
+                  Effect.updateContext((input) => Context.merge(services, input) as Context.Context<any>)
+                )
+            )
+          }
+        ) as never,
         execute: Effect.fnUntraced(function*(flow: Flow.Any, options: { executionId: string; payload: object }) {
           const handler = flows.get(flow._tag)
           if (handler === undefined) return yield* Effect.die(`Flow ${flow._tag} is not registered`)

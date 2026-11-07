@@ -64,7 +64,7 @@ import { Action, Flow } from "@smthrs/flow"
 import { FileInput } from "@smthrs/flow/FileInput"
 import * as Node from "@smthrs/plan/Node"
 import type * as Planned from "@smthrs/plan/Planned"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as FileSystem from "effect/FileSystem"
 import * as Layer from "effect/Layer"
@@ -536,7 +536,7 @@ const verifyContent = (manager: PackageManager.Service, content: Content) =>
 export const executeMeasure = (): Effect.Effect<
   Content,
   PackageManager.PackageManagerError,
-  PackageManager.PackageManager | FileSystem.FileSystem | Crypto.Crypto
+  PackageManager.PackageManager | FileSystem.FileSystem | EffectDigest.Digest
 > =>
   Effect.gen(function*() {
     const manager = yield* PackageManager.PackageManager
@@ -621,7 +621,7 @@ const verifyStoreContent = (
   platform: PackageManager.Platform | null,
   content: Content,
   store: PackageManager.StoreManifest
-): Effect.Effect<void, PackageManager.PackageManagerError, Crypto.Crypto> =>
+): Effect.Effect<void, PackageManager.PackageManagerError, EffectDigest.Digest> =>
   Effect.flatMap(
     PackageManager.storeManifest({
       manager: manager.name,

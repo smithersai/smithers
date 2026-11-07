@@ -1,3 +1,5 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import * as EffectLayer from "effect/Layer"
 /**
  * Keys an install on a project's `.npmrc` without letting a credential into
  * the key. `PackageManager.npmrcDigest` hashes the file when every credential
@@ -22,7 +24,7 @@ export const digestNpmrc = async (npmrc: string) => {
     return await Effect.runPromise(
       PackageManager.npmrcDigest(projectRoot).pipe(
         Effect.catchTag("smithers-build/PackageManagerError", (error) => Effect.succeed(error.code)),
-        Effect.provide(NodeServices.layer)
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
   } finally {

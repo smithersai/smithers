@@ -1451,7 +1451,7 @@ export const make: Effect.Effect<ServiceSupervisor, never, Scope.Scope> = Effect
       // A service that already went unhealthy fails new consumers immediately
       // rather than handing out a dead handle.
       if (Deferred.isDoneUnsafe(service.unhealthy)) {
-        yield* Deferred.await(service.unhealthy)
+        return yield* Deferred.await(service.unhealthy)
       }
       return {
         key: service.key,

@@ -1,13 +1,15 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { Action, Flow, Graph, Interpreter } from "@smthrs/flow"
 import * as FileSet from "@smthrs/plan/FileSet"
 import * as Plan from "@smthrs/plan/Plan"
 import * as Cause from "effect/Cause"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as FileSystem from "effect/FileSystem"
+import * as EffectLayer from "effect/Layer"
 import * as Layer from "effect/Layer"
 import * as PlatformError from "effect/PlatformError"
 import * as Result from "effect/Result"
@@ -48,7 +50,9 @@ const installContent = async (root: string): Promise<Install.Content> => ({
   lockfile: {
     path: "pnpm-lock.yaml",
     digest: await Effect.runPromise(
-      PackageManager.lockfileDigest(root, "pnpm-lock.yaml").pipe(Effect.provide(NodeServices.layer))
+      PackageManager.lockfileDigest(root, "pnpm-lock.yaml").pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
     )
   },
   npmrc: null,
@@ -105,7 +109,11 @@ const managerService = (options: ManagerOptions): PackageManager.Service => {
 }
 
 const packageJsonDigest = (root: string) =>
-  Effect.runPromise(PackageManager.packageJsonDigest(root).pipe(Effect.provide(NodeServices.layer)))
+  Effect.runPromise(
+    PackageManager.packageJsonDigest(root).pipe(
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+    )
+  )
 
 describe("Install", () => {
   it("refuses an optional input it cannot inspect while measuring", async () => {
@@ -113,7 +121,7 @@ describe("Install", () => {
       const real = await Effect.runPromise(
         Effect.gen(function*() {
           return yield* FileSystem.FileSystem
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
       const evidence = await packageJsonDigest(root)
       for (const name of [".pnpmfile.mjs", ".pnpmfile.cjs", "pnpm-workspace.yaml"]) {
@@ -133,7 +141,7 @@ describe("Install", () => {
           Install.executeMeasure().pipe(
             Effect.flip,
             Effect.provideService(FileSystem.FileSystem, fileSystem),
-            Effect.provide(NodeServices.layer),
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Effect.provideService(PackageManager.PackageManager, managerService({ root, evidence }))
           )
         )
@@ -151,7 +159,7 @@ describe("Install", () => {
       const error = await Effect.runPromise(
         Install.executeFetch({ content }).pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(
             PackageManager.PackageManager,
             managerService({
@@ -185,12 +193,12 @@ describe("Install", () => {
                 | PackageManager.PackageManager
                 | Runtime.Runtime
                 | FileSystem.FileSystem
-                | Crypto.Crypto
+                | EffectDigest.Digest
               >,
               service = initial
             ) =>
               effect.pipe(
-                Effect.provide(NodeServices.layer),
+                Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
                 Effect.provideService(PackageManager.PackageManager, service),
                 Effect.provideService(Runtime.Runtime, runtimeService())
               )
@@ -229,7 +237,7 @@ describe("Install", () => {
       const service = managerService({ root, evidence: await packageJsonDigest(root) })
       const store = await Effect.runPromise(
         Install.executeFetch({ content }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -237,7 +245,7 @@ describe("Install", () => {
       const error = await Effect.runPromise(
         Install.executeLink({ content, store }).pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, {
             ...service,
             link: Effect.promise(() => Fs.writeFile(NodePath.join(root, "package.json"), "{\"name\":\"changed\"}"))
@@ -261,7 +269,7 @@ describe("Install", () => {
           platform,
           lockfileDigest: content.lockfile.digest,
           npmrcDigest: null
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
       let links = 0
       const service = {
@@ -274,7 +282,7 @@ describe("Install", () => {
       const error = await Effect.runPromise(
         Install.executeLink({ content, store }).pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -291,14 +299,14 @@ describe("Install", () => {
       const measure = () =>
         Effect.runPromise(
           Install.executeMeasure().pipe(
-            Effect.provide(NodeServices.layer),
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Effect.provideService(PackageManager.PackageManager, service)
           )
         )
       const fetch = (content: Install.Content) =>
         Effect.runPromise(
           Install.executeFetch({ content }).pipe(
-            Effect.provide(NodeServices.layer),
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Effect.provideService(PackageManager.PackageManager, service),
             Effect.provideService(Runtime.Runtime, runtimeService())
           )
@@ -317,7 +325,9 @@ describe("Install", () => {
         expect(first[field]).toEqual({
           path,
           digest: await Effect.runPromise(
-            PackageManager.lockfileDigest(root, path).pipe(Effect.provide(NodeServices.layer))
+            PackageManager.lockfileDigest(root, path).pipe(
+              Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+            )
           )
         })
         const firstStore = await fetch(first)
@@ -335,7 +345,7 @@ describe("Install", () => {
       const nodes = Graph.drafts(Graph.build(Install.Install, { manager }))
       const plan = await Effect.runPromise(
         Plan.compile({ planId: `install-${manager}`, flow: Install.Install._tag, nodes })
-          .pipe(Effect.provide(NodeServices.layer))
+          .pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
       const links = plan.nodes.filter((node) => node.material.kind === "irreversible")
       expect(links).toHaveLength(1)
@@ -347,7 +357,11 @@ describe("Install", () => {
         ).toBe(true)
       }
       expect(
-        await Effect.runPromise(Plan.verify(JSON.parse(JSON.stringify(plan))).pipe(Effect.provide(NodeServices.layer)))
+        await Effect.runPromise(
+          Plan.verify(JSON.parse(JSON.stringify(plan))).pipe(
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+          )
+        )
       ).toEqual(plan)
     }
   })
@@ -398,12 +412,12 @@ describe("Install", () => {
           platform,
           lockfileDigest: content.lockfile.digest,
           npmrcDigest: null
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
 
       const link = () =>
         Install.executeLink({ content, store }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -412,7 +426,7 @@ describe("Install", () => {
           storeDigest: store.digest,
           packageJsonDigest: await packageJsonDigest(root),
           managerEvidence: evidence
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
       expect(evidence).not.toBe(await packageJsonDigest(root))
       const expected = { store: store.digest, manifest, linked: true }
@@ -440,7 +454,7 @@ describe("Install", () => {
 
       await expect(Effect.runPromise(
         Install.executeFetch({ content }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -464,7 +478,7 @@ describe("Install", () => {
 
       await expect(Effect.runPromise(
         Install.executeFetch({ content }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService({ requirement: ">=24.0.0", version: "22.19.0" }))
         )
@@ -488,7 +502,7 @@ describe("Install", () => {
 
       await expect(Effect.runPromise(
         Install.executeFetch({ content }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -517,7 +531,7 @@ describe("Install", () => {
 
       await expect(Effect.runPromise(
         Install.executeFetch({ content }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -539,12 +553,12 @@ describe("Install", () => {
           platform,
           lockfileDigest: content.lockfile.digest,
           npmrcDigest: null
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
 
       await expect(Effect.runPromise(
         Install.executeLink({ content, store }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -574,12 +588,12 @@ describe("Install", () => {
             platform: tc.platform,
             lockfileDigest: content.lockfile.digest,
             npmrcDigest: null
-          }).pipe(Effect.provide(NodeServices.layer))
+          }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
         )
         const error = await Effect.runPromise(
           Install.executeLink({ content, store }).pipe(
             Effect.flip,
-            Effect.provide(NodeServices.layer),
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Effect.provideService(
               PackageManager.PackageManager,
               managerService({
@@ -612,12 +626,12 @@ describe("Install", () => {
           platform: null,
           lockfileDigest: content.lockfile.digest,
           npmrcDigest: null
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
       let links = 0
       const result = await Effect.runPromise(
         Install.executeLink({ content, store }).pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(
             PackageManager.PackageManager,
             managerService({
@@ -649,7 +663,7 @@ describe("Install", () => {
           platform,
           lockfileDigest: content.lockfile.digest,
           npmrcDigest: null
-        }).pipe(Effect.provide(NodeServices.layer))
+        }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
       const failure = new PackageManager.PackageManagerError({
         code: "command_failed",
@@ -669,12 +683,12 @@ describe("Install", () => {
         operation: Effect.Effect<
           A,
           PackageManager.PackageManagerError,
-          PackageManager.PackageManager | Runtime.Runtime | FileSystem.FileSystem | Crypto.Crypto
+          PackageManager.PackageManager | Runtime.Runtime | FileSystem.FileSystem | EffectDigest.Digest
         >
       ) =>
         operation.pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service),
           Effect.provideService(Runtime.Runtime, runtimeService())
         )
@@ -691,7 +705,7 @@ describe("Install", () => {
       const service = managerService({ root, evidence })
       const measured = await Effect.runPromise(
         Install.executeMeasure().pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service)
         )
       )
@@ -708,7 +722,7 @@ describe("Install", () => {
       const evidence = await packageJsonDigest(root)
       const measured = await Effect.runPromise(
         Install.executeMeasure().pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, managerService({ root, evidence }))
         )
       )
@@ -723,7 +737,7 @@ describe("Install", () => {
       const error = await Effect.runPromise(
         Install.executeMeasure().pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(
             PackageManager.PackageManager,
             managerService({ root, evidence, lockfileName: "nested/pnpm-lock.yaml" })
@@ -758,7 +772,7 @@ describe("Install", () => {
             platform,
             lockfileDigest: overrides.lockfileDigest ?? content.lockfile.digest,
             npmrcDigest: overrides.npmrcDigest ?? null
-          }).pipe(Effect.provide(NodeServices.layer))
+          }).pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
         )
 
       for (
@@ -770,7 +784,7 @@ describe("Install", () => {
         const error = await Effect.runPromise(
           Install.executeLink({ content, store }).pipe(
             Effect.flip,
-            Effect.provide(NodeServices.layer),
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Effect.provideService(PackageManager.PackageManager, service),
             Effect.provideService(Runtime.Runtime, runtimeService())
           )
@@ -792,7 +806,7 @@ describe("Install", () => {
       const evidence = await packageJsonDigest(root)
       const content = await Effect.runPromise(
         Install.executeMeasure().pipe(
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, managerService({ root, evidence }))
         )
       )
@@ -802,7 +816,7 @@ describe("Install", () => {
       const fetched = (platformSensitive: boolean) =>
         Effect.runPromise(
           Install.executeFetch({ content }).pipe(
-            Effect.provide(NodeServices.layer),
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Effect.provideService(
               PackageManager.PackageManager,
               managerService({
@@ -845,7 +859,7 @@ describe("Install", () => {
       const error = await Effect.runPromise(
         Install.executeMeasure().pipe(
           Effect.flip,
-          Effect.provide(NodeServices.layer),
+          Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
           Effect.provideService(PackageManager.PackageManager, service)
         )
       )
@@ -945,7 +959,7 @@ describe("Install", () => {
             Layer.mergeAll(
               Layer.succeed(PackageManager.PackageManager)(service),
               Layer.succeed(Runtime.Runtime)(runtimeService()),
-              NodeServices.layer
+              EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)
             )
           )
         )
