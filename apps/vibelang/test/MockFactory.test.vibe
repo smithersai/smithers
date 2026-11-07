@@ -72,13 +72,43 @@ describe("MockFactory", () => {
     }
   })
 
-  it.live("keeps conversations apart", () => effect {
+  // Both followers stay live through both answers, including after another follower is cancelled.
+  it.live("keeps complete live transcripts apart and survives cancelling another follower", () => effect {
     provide MockFactory {
       const factory = try Factory
-      try factory.post("c4", "a", "Ada", "hi")
-      try factory.post("c5", "a", "Ada", "hello")
-      const four = try untilReplies("c4", 1)
-      try Effect.try(() => expect(four.filter((event) => event.type === "Posted").map((event) => event.seq)).toEqual([1]))
+      const four = try Ref.make<ReadonlyArray<Event>>([])
+      const five = try Ref.make<ReadonlyArray<Event>>([])
+      const done4 = try Deferred.make<void>()
+      const done5 = try Deferred.make<void>()
+      const follow4 = fork Stream.runForEach(factory.events("c4", 0), effect (event) => {
+        try Ref.update(four, (events) => [...events, event])
+        if (event.type === "ReplyFinished") try Deferred.succeed(done4, undefined)
+      })
+      const follow5 = fork Stream.runForEach(factory.events("c5", 0), effect (event) => {
+        try Ref.update(five, (events) => [...events, event])
+        if (event.type === "ReplyFinished") try Deferred.succeed(done5, undefined)
+      })
+      const cancelled = fork Stream.runDrain(factory.events("c4", 0))
+      try sleep("10 millis")
+      try factory.post("c4", "a", "Ada", "install")
+      try Fiber.interrupt(cancelled)
+      try factory.post("c5", "a", "Grace", "errors")
+      try Deferred.await(done4)
+      try Deferred.await(done5)
+      try Fiber.interrupt(follow4)
+      try Fiber.interrupt(follow5)
+      const [events4, events5] = try.all [Ref.get(four), Ref.get(five)]
+      try Effect.try(() => {
+        for (const [events, name, prompt] of [[events4, "Ada", "install"], [events5, "Grace", "errors"]] as const) {
+          expect(events.map((event) => event.seq)).toEqual(events.map((_, index) => index + 1))
+          const state = events.reduce(apply, empty)
+          expect(state.entries.map((entry) => [entry.name, entry.text, entry.done])).toEqual([
+            [name, prompt, true], ["VibeLang agent", mockReply(prompt), true],
+          ])
+          expect(events.filter((event) => event.type === "Posted")).toHaveLength(1)
+          expect(events.filter((event) => event.type === "ReplyFinished")).toHaveLength(1)
+        }
+      })
     }
-  })
+  }, 10_000)
 })

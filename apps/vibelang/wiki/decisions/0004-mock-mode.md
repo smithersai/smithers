@@ -26,3 +26,12 @@ and every answer against accepted prompt order. Disposal checks actual runtime f
 then advances the test clock to prove no queued work or publication resumes. The suite also interrupts an accepted
 posting fiber and checks its complete answer, and proves a busy room cannot delay another room's reply. It uses the
 app's existing Effect Semaphore, Queue, PubSub and Scope primitives (0001); no new dependency or model call.
+
+**Live room isolation (review finding 12).** Both followers subscribe before distinct posts and remain live through
+both complete answers; every sequence, author, prompt and answer must belong to its room. Cancelling an additional
+live follower leaves the other followers and workers running. The retained mutation check removes only
+`item.conversation === conversation &&` from the compiled factory and must fail this assertion:
+
+```sh
+pnpm exec vitest run --config test/mutations/room-isolation.config.ts test/MockFactory.test.vibe -t 'keeps complete live transcripts'
+```
