@@ -3,7 +3,8 @@ import { expect } from "@playwright/test"
 import { strictTest as test } from "./watch"
 import { renderToStaticMarkup } from "react-dom/server"
 import { createElement } from "react"
-import { Skeleton, smithersUiCss } from "@smthrs/ui"
+import { Skeleton } from "@smthrs/ui";
+import { uiCss as smithersUiCss } from "@smthrs/ui-css"
 import { spinnersSeen, watchForSpinners } from "./fixtures"
 
 test.beforeEach(async ({ page }) => {

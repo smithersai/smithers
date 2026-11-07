@@ -71,6 +71,7 @@
     "@smthrs/sync": "workspace:*",
     "@smthrs/terminal-frame": "workspace:*",
     "@smthrs/ui": "workspace:*",
+    "@smthrs/ui-css": "workspace:*",
     "@smthrs/views": "workspace:*",
     "@tanstack/browser-db-sqlite-persistence": "0.2.36",
     "@tanstack/db": "0.15.1",
