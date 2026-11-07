@@ -392,7 +392,7 @@ export const heartbeatLoop = (
           )
         )
         if (renewed) return
-        yield* Effect.logWarning("run lease lapsed; interrupting owned work").pipe(
+        return yield* Effect.logWarning("run lease lapsed; interrupting owned work").pipe(
           Effect.annotateLogs({ runId, unconfirmedMs }),
           Effect.andThen(options.onLapse?.(unconfirmedMs) ?? Effect.void),
           Effect.andThen(Effect.interrupt)

@@ -61,7 +61,7 @@ const Canonical: Schema.decodeTo<
 ```
 
 The same serialization as an [`effect/Schema`](https://effect.website) codec,
-built against Effect 4: the package declares `effect@4.0.5` as a peer
+built against Effect 4: the package declares `effect@4.1.1` as a peer
 dependency.
 
 **Decoding** takes any value, canonicalizes it, and returns the document

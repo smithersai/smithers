@@ -29,7 +29,7 @@
 
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Cause from "effect/Cause"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
@@ -194,8 +194,8 @@ export interface DigestMemo {
   readonly digest: (
     from: string,
     path: ReadonlyArray<string>,
-    compute: Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
-  ) => Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto>
+    compute: Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
+  ) => Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest>
 }
 
 /**
@@ -420,7 +420,7 @@ const decodeKey = Schema.decodeUnknownEffect(DerivedKey)
  */
 export const environmentIdentity = (
   environment?: EnvironmentIdentity
-): Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<StoredKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   Effect.gen(function*() {
     const captured = environment === undefined ? undefined : yield* decodeEnvironment(environment)
     return yield* decodeKey({
@@ -442,7 +442,7 @@ export const environmentIdentity = (
  */
 export const content = (
   identity: ContentIdentity
-): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   Effect.gen(function*() {
     const environment = identity.environment === undefined ? undefined : yield* decodeEnvironment(identity.environment)
     return yield* decodeKey({
@@ -467,7 +467,7 @@ export const content = (
  */
 export const ordinal = (
   identity: OrdinalIdentity
-): Effect.Effect<StepKey, Schema.SchemaError, Crypto.Crypto> => decodeKey({ kind: "ordinal", ...identity })
+): Effect.Effect<StepKey, Schema.SchemaError, EffectDigest.Digest> => decodeKey({ kind: "ordinal", ...identity })
 
 /**
  * Resolves graph-local references to dependency digests and constructs a
@@ -491,7 +491,7 @@ export const ordinal = (
 export const fromKeyMaterial = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> => {
+): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> => {
   if (material.kind !== "sealed") {
     return Effect.fail(
       new KeyMaterialError({
@@ -516,7 +516,7 @@ export const fromKeyMaterial = (
 export const planIdentity = (
   material: KeyMaterial.KeyMaterial,
   dependencyDigests: Readonly<Record<string, string>>
-): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   material.kind === "sealed" ?
     fromKeyMaterial(material, dependencyDigests) :
     materialIdentity(material, dependencyDigests).pipe(Effect.flatMap((identity) =>
@@ -706,7 +706,7 @@ export const dispatchIdentity = (options: {
   readonly environment?: EnvironmentIdentity | undefined
   /** Reuses projected-value digests while the corresponding settled values remain immutable. */
   readonly digestMemo?: DigestMemo | undefined
-}): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+}): Effect.Effect<StepKey, KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   Effect.gen(function*() {
     const material = options.material
     if (material.kind !== "sealed") {

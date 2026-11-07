@@ -2,7 +2,7 @@
 
 Release candidate scope, host requirements and compatibility review are defined in the [library support policy](https://github.com/smithersai/smithers/blob/main/RELEASE_SUPPORT.md).
 
-This package declares `effect` as an exact `4.0.5` peer dependency. Install one
+This package declares `effect` as an exact `4.1.1` peer dependency. Install one
 `effect` release at that version so all Smithers packages share one Effect
 runtime.
 
@@ -36,7 +36,7 @@ supplies:
 pnpm add @effect/platform-node @effect/platform-node-shared
 ```
 
-Node.js 22.19.0 or later, and `effect` `4.0.5` as a peer. Recording a plan
+Node.js 22.19.0 or later, and `effect` `4.1.1` as a peer. Recording a plan
 is [`@smthrs/plan-store`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/plan-store/docs), which owns the SQL
 and brings [`@smthrs/database`](https://github.com/smithersai/smithers/tree/main/packages/smithers/flows/database/docs) with it.
 

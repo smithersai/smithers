@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The dumb-HTTP action-cache protocol: `GET`/`PUT`/`DELETE /ac/{keyDigest}`,
  * mirroring `remote/http/HttpCacheClient.java` in bazelbuild/bazel.
@@ -1120,3 +1121,7 @@ describe("redirects", () => {
       expect(seen[0]?.cache).toBe("no-store")
     }))
 })
+
+/** Native test hosts inspect the arguments they actually execute. */
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

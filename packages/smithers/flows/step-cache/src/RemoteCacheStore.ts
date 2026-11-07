@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The shared step-result tier: a {@link CacheStore.Service} spoken over HTTP.
  *

@@ -1,8 +1,9 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { describe, expect, it } from "@effect/vitest"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Deferred from "effect/Deferred"
 import * as Effect from "effect/Effect"
+import * as Hex from "effect/encoding/Hex"
 import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
 import * as Option from "effect/Option"
@@ -481,14 +482,17 @@ describe("StepKey.dispatchIdentity", () => {
     Effect.gen(function*() {
       let digestCalls = 0
       const countingCrypto = Layer.effect(
-        Crypto.Crypto,
-        Effect.map(Crypto.Crypto, (crypto) =>
-          Crypto.Crypto.of({
+        EffectDigest.Digest,
+        Effect.map(EffectDigest.Digest, (crypto) =>
+          EffectDigest.Digest.of({
             ...crypto,
             digest: (algorithm, data) =>
               Effect.sync(() => {
                 digestCalls = digestCalls + 1
-              }).pipe(Effect.andThen(crypto.digest(algorithm, data)))
+              }).pipe(Effect.andThen(crypto.digest(algorithm, data))),
+            digestHex(algorithm, data) {
+              return Effect.map(this.digest(algorithm, data), Hex.encode)
+            }
           }))
       ).pipe(Layer.provide(NodeCrypto.layer))
       const inputs = [{ _tag: "Ref", from: "upstream", path: ["value"] }] as const

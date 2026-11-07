@@ -16,7 +16,7 @@
 
 import { canonicalize } from "@smthrs/canonical"
 import { digestSync, syncCrypto } from "@smthrs/crypto"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 
 /**
@@ -26,8 +26,8 @@ import * as Effect from "effect/Effect"
  * @category hashing
  * @since 1.0.0
  */
-export const provideSync = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> =>
-  Effect.provideService(effect, Crypto.Crypto, syncCrypto)
+export const provideSync = <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>): Effect.Effect<A, E> =>
+  Effect.provideService(effect, EffectDigest.Digest, syncCrypto)
 
 /**
  * Returns the full lowercase SHA-256 digest of UTF-8 string or byte input.

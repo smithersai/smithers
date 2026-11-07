@@ -39,7 +39,7 @@ answer must not depend on how the value was built.
 npm install @smthrs/canonical@next effect
 ```
 
-`effect` is a peer dependency at exactly `4.0.5`.
+`effect` is a peer dependency at exactly `4.1.1`.
 [Installation](./installation.md) covers the rest of the requirements.
 
 ## Derive a content key

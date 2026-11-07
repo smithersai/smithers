@@ -18,7 +18,7 @@ import * as AttemptStore from "@smthrs/run-store/AttemptStore"
 import type { OwnerId } from "@smthrs/run-store/Ownership"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import * as CacheStore from "@smthrs/step-cache/CacheStore"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -180,7 +180,7 @@ type StepEffect = Effect.Effect<string>
 
 const flowWiring = <ROut>(
   runtime: FlowRuntime.FlowRuntime["Service"],
-  implementation: Layer.Layer<ROut, never, Crypto.Crypto | Action.Implementations | FlowRuntime.FlowRuntime>
+  implementation: Layer.Layer<ROut, never, EffectDigest.Digest | Action.Implementations | FlowRuntime.FlowRuntime>
 ) =>
   implementation.pipe(
     Layer.provideMerge(Action.layerImplementations),

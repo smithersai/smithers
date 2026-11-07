@@ -18,7 +18,7 @@
  */
 
 import { DerivedKey, StoredKey } from "@smthrs/keys"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Inspectable from "effect/Inspectable"
 import * as Schema from "effect/Schema"
@@ -405,7 +405,7 @@ const digestOf = (
   planId: string,
   flow: string,
   nodes: ReadonlyArray<PlanNode>
-): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   StepKey.content(approvalPayload(planId, flow, nodes))
 
 /** @private */
@@ -632,7 +632,7 @@ const keyNodes = (
 ): Effect.Effect<
   ReadonlyArray<PlanNode>,
   PlanError | StepKey.KeyMaterialError | Schema.SchemaError,
-  Crypto.Crypto
+  EffectDigest.Digest
 > =>
   Effect.gen(function*() {
     const digests: Record<string, string> = Object.create(null) as Record<string, string>
@@ -708,7 +708,7 @@ export const compile = (options: {
   readonly planId: string
   readonly flow: string
   readonly nodes: ReadonlyArray<NodeDraft>
-}): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto> => {
+}): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> => {
   const captured = snapshot(options)
   return Effect.gen(function*() {
     const invalidIdentity = validateIdentity(captured.planId, captured.flow)
@@ -753,7 +753,7 @@ export const compile = (options: {
 export const append = (
   plan: Plan,
   drafts: ReadonlyArray<NodeDraft>
-): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto> => {
+): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> => {
   const candidate = frozenPlans.has(plan) ? plan : snapshot(plan)
   const capturedDrafts = snapshot(drafts)
   return Effect.gen(function*() {
@@ -797,7 +797,7 @@ export const append = (
  */
 export const verify = (
   input: unknown
-): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<Plan, PlanError | StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   Effect.gen(function*() {
     if (typeof input === "object" && input !== null && frozenPlans.has(input as Plan)) return input as Plan
     // Check the array ceiling before schema decoding copies its members.
@@ -930,5 +930,5 @@ export const isVerified = (input: unknown): input is Plan =>
  */
 export const prefixDigest = (
   plan: Plan
-): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<StepKey.StepKey, StepKey.KeyMaterialError | Schema.SchemaError, EffectDigest.Digest> =>
   digestOf(plan.planId, plan.flow, plan.nodes.filter((node) => node.generation < plan.generation))

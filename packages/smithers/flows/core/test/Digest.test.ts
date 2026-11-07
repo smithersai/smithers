@@ -12,7 +12,7 @@ import { expect } from "vitest"
 // split the agent side's fingerprints from the main tree's keys, so every
 // assertion below compares the two paths rather than a checked-in constant.
 
-const platform = <A, E>(effect: Effect.Effect<A, E, never | import("effect/Crypto").Crypto>) =>
+const platform = <A, E>(effect: Effect.Effect<A, E, never | import("effect/crypto/Digest").Digest>) =>
   Effect.provide(effect, NodeCrypto.layer)
 
 const vectors: ReadonlyArray<string> = [
