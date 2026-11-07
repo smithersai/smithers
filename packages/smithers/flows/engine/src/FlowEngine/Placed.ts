@@ -18,8 +18,8 @@ import { RpcClientError } from "effect/rpc/RpcClientError"
 import * as Schedule from "effect/Schedule"
 import type * as Scope from "effect/Scope"
 import * as FlowProxy from "../FlowProxy.ts"
-import { type Binding, Hosts } from "../Hosts.vibe"
-import { requestedAuthority } from "./Authority.vibe"
+import { type Binding, Hosts } from "#vibelang/emitted/src/Hosts"
+import { requestedAuthority } from "#vibelang/emitted/src/FlowEngine/Authority"
 
 /**
  * A binding to another engine.

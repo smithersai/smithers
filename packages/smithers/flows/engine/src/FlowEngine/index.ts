@@ -12,10 +12,10 @@
  * @category identity
  * @since 1.0.0
  */
-export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "./ActionKey.vibe"
-export * from "./Authority.vibe"
-export * from "./Encoded.vibe"
-export * from "./FlowInstance.vibe"
+export { ActionKeyEncoding, type KeyEncoding, keyEncodings } from "#vibelang/emitted/src/FlowEngine/ActionKey"
+export * from "#vibelang/emitted/src/FlowEngine/Authority"
+export * from "#vibelang/emitted/src/FlowEngine/Encoded"
+export * from "#vibelang/emitted/src/FlowEngine/FlowInstance"
 export * from "./layerMemory.ts"
 /**
  * @category models
@@ -27,8 +27,8 @@ export * from "./make.ts"
  * @category models
  * @since 0.1.0
  */
-export * as Round from "./Round.vibe"
-export * from "./SnapshotBoundary.vibe"
+export * as Round from "#vibelang/emitted/src/FlowEngine/Round"
+export * from "#vibelang/emitted/src/FlowEngine/SnapshotBoundary"
 /**
  * The trampoline hosts the loop that raises these two refusals; the loop
  * itself is engine-private, so only the refusals are published.

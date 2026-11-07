@@ -18,10 +18,10 @@ import * as Predicate from "effect/Predicate"
 import * as Result from "effect/Result"
 import * as Schema from "effect/Schema"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
-import { toJsonExit } from "../internal/JsonExit.vibe"
-import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.vibe"
+import { toJsonExit } from "#vibelang/emitted/src/internal/JsonExit"
+import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "#vibelang/emitted/src/FlowEngine/ActionKey"
 import type { ActionExecuteOptions, Encoded } from "./Encoded.vibe"
-import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.vibe"
+import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "#vibelang/emitted/src/FlowEngine/SnapshotBoundary"
 
 type Instance = FlowRuntime.FlowInstance["Service"]
 

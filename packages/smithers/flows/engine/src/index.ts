@@ -23,14 +23,14 @@ export * as FlowEngine from "./FlowEngine/index.ts"
  *
  * @since 1.0.0
  */
-export * as Hosts from "./Hosts.vibe"
+export * as Hosts from "#vibelang/emitted/src/Hosts"
 
 /**
  * Runs one action's body on the host its placement names.
  *
  * @since 1.0.0
  */
-export * as PlacedAction from "./PlacedAction.vibe"
+export * as PlacedAction from "#vibelang/emitted/src/PlacedAction"
 
 /**
  * Client-side flow proxies.

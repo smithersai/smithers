@@ -16,7 +16,7 @@ import * as Clock from "effect/Clock";
 import * as Effect from "effect/Effect";
 import * as Option from "effect/Option";
 import * as Schema from "effect/Schema";
-import * as Round from "./Round.js";
+import * as Round from "#vibelang/emitted/src/FlowEngine/Round";
 /**
  * A suspended execution spent the caller's resume retry policy.
  *

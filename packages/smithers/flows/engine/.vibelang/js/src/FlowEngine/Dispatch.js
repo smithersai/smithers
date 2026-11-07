@@ -18,9 +18,9 @@ import * as Predicate from "effect/Predicate";
 import * as Result from "effect/Result";
 import * as Schema from "effect/Schema";
 import { renderDiagnostic } from "../internal/Diagnostic.js";
-import { toJsonExit } from "../internal/JsonExit.js";
-import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "./ActionKey.js";
-import { SnapshotBoundary, SnapshotBoundaryRequired } from "./SnapshotBoundary.js";
+import { toJsonExit } from "#vibelang/emitted/src/internal/JsonExit";
+import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKey } from "#vibelang/emitted/src/FlowEngine/ActionKey";
+import { SnapshotBoundary, SnapshotBoundaryRequired } from "#vibelang/emitted/src/FlowEngine/SnapshotBoundary";
 // An action can open an independent child flow. Only invocations in this same
 // execution inherit its allocation scope; a child must replay the same keys
 // when a different process resumes it without its original caller's context.

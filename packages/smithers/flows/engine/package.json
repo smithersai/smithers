@@ -214,5 +214,52 @@
   },
   "peerDependencies": {
     "effect": "4.1.1"
+  },
+  "imports": {
+    "#vibelang/emitted/src/internal/JsonExit": {
+      "types": "./.vibe/declarations/src/internal/JsonExit.d.vibe.ts",
+      "vibelang-source": "./src/internal/JsonExit.vibe",
+      "default": "./.vibelang/js/src/internal/JsonExit.js"
+    },
+    "#vibelang/emitted/src/FlowEngine/ActionKey": {
+      "types": "./.vibe/declarations/src/FlowEngine/ActionKey.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngine/ActionKey.vibe",
+      "default": "./.vibelang/js/src/FlowEngine/ActionKey.js"
+    },
+    "#vibelang/emitted/src/FlowEngine/SnapshotBoundary": {
+      "types": "./.vibe/declarations/src/FlowEngine/SnapshotBoundary.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngine/SnapshotBoundary.vibe",
+      "default": "./.vibelang/js/src/FlowEngine/SnapshotBoundary.js"
+    },
+    "#vibelang/emitted/src/Hosts": {
+      "types": "./.vibe/declarations/src/Hosts.d.vibe.ts",
+      "vibelang-source": "./src/Hosts.vibe",
+      "default": "./.vibelang/js/src/Hosts.js"
+    },
+    "#vibelang/emitted/src/FlowEngine/Authority": {
+      "types": "./.vibe/declarations/src/FlowEngine/Authority.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngine/Authority.vibe",
+      "default": "./.vibelang/js/src/FlowEngine/Authority.js"
+    },
+    "#vibelang/emitted/src/FlowEngine/Round": {
+      "types": "./.vibe/declarations/src/FlowEngine/Round.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngine/Round.vibe",
+      "default": "./.vibelang/js/src/FlowEngine/Round.js"
+    },
+    "#vibelang/emitted/src/FlowEngine/Encoded": {
+      "types": "./.vibe/declarations/src/FlowEngine/Encoded.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngine/Encoded.vibe",
+      "default": "./.vibelang/js/src/FlowEngine/Encoded.js"
+    },
+    "#vibelang/emitted/src/FlowEngine/FlowInstance": {
+      "types": "./.vibe/declarations/src/FlowEngine/FlowInstance.d.vibe.ts",
+      "vibelang-source": "./src/FlowEngine/FlowInstance.vibe",
+      "default": "./.vibelang/js/src/FlowEngine/FlowInstance.js"
+    },
+    "#vibelang/emitted/src/PlacedAction": {
+      "types": "./.vibe/declarations/src/PlacedAction.d.vibe.ts",
+      "vibelang-source": "./src/PlacedAction.vibe",
+      "default": "./.vibelang/js/src/PlacedAction.js"
+    }
   }
 }
