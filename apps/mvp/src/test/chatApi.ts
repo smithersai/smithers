@@ -80,7 +80,7 @@ import * as BugsApi from "../../worker/bugs/Api.ts"
 import * as FeedsApi from "../../worker/feeds/Api.ts"
 import * as FleetApi from "../../worker/runners/FleetApi.ts"
 import { FEED_DOCUMENTS_TABLE } from "../features/feeds/contract"
-import { digestSync } from "@smthrs/crypto"
+import { Crypto, digestSync } from "@smthrs/crypto"
 import { BUG_REPORTS_TABLE } from "../features/bugs/contract"
 import * as ModelFlows from "../../worker/personal/ModelFlows.ts"
 import { PersonalModels } from "../../worker/personal/Models.ts"
@@ -1331,7 +1331,7 @@ const leaderWorker = (api: TestChatApi["Service"], name: string, store: EngineSt
     workerRegistrations(channel.port1, { origin: api.origin, name, partsEvery: "20 millis" }).pipe(Layer.provide(http))
   ).pipe(
     Layer.provide(
-      NodeRuntime.storage(store.filename).pipe(Layer.provide(Layer.merge(NodeHost.layer, NodeHost.NodeCrypto.layer)))
+      NodeRuntime.storage(store.filename).pipe(Layer.provide(Layer.merge(NodeHost.layer, Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest))))
     )
   )
   const observedEngine = Layer.effectDiscard(Effect.sync(() => {
