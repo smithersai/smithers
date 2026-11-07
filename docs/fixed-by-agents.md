@@ -1,3 +1,3 @@
 - 2026-10-18 · [#4255](https://github.com/smithersai/smithers/issues/4255) Resume uncaptured flow callbacks after host restart → [bceaa7ea](https://github.com/smithersai/smithers/commit/bceaa7ea58a19c64bcb0096e49874d9d302ebd23)
-- 2026-10-18 · [#4002](https://github.com/smithersai/smithers/issues/4002) Install the CLI and authoring packages with Effect 4.1.0 → [28986e29](https://github.com/smithersai/smithers/commit/28986e29bafb0ce6e9eb2a672cef9e26a82bebbe)
+- 2026-10-18 · [#4002](https://github.com/smithersai/smithers/issues/4002) Install the CLI and authoring packages with Effect 4.0.5 → [28986e29](https://github.com/smithersai/smithers/commit/28986e29bafb0ce6e9eb2a672cef9e26a82bebbe)
 - 2026-10-14 · [#3905](https://github.com/smithersai/smithers/issues/3905) Pair unchanged plan steps after positional IDs move → [d8c2152a](https://github.com/smithersai/smithers/commit/d8c2152a2227f6f547ade5c81067ca8afb70d070)
