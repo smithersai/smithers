@@ -1,5 +1,5 @@
 import { Config, Schema } from "effect"
-import { COMMAND_LIMIT_SECONDS } from "./contract"
+import { COMMAND_LIMIT_SECONDS } from "./contract.ts"
 
 // The deployment's sandbox settings that its Worker and its build both read (decision 0088: a program's configuration
 // is captured when it is built), so the browser's tools state the limits ChatApi holds their calls to. Only Effect
