@@ -1,9 +1,11 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { DurableEngineState } from "@smthrs/engine-store"
 import { Action } from "@smthrs/flow"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Cause, Effect, FileSystem, Layer } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { chmod, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -117,7 +119,9 @@ printf '{"commitId":"${revision.commitId}","changeId":"${revision.changeId}","tr
       }
     }
     const sourceDirectory = mode.startsWith("external-cache-") ? join(temporary, "install-source") : undefined
-    const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+    const fs = await Effect.runPromise(
+      FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+    )
     const outcome = await Effect.runPromise(
       checkDelegate.execute(invocation, { executionId: `equality-${mode}` }).pipe(
         Effect.result,
@@ -125,8 +129,8 @@ printf '{"commitId":"${revision.commitId}","changeId":"${revision.changeId}","tr
         Effect.provide(
           engineLayer(
             checkLayers({ repositoryPath, exporterPath, sourceDirectory, fs, environment: { PATH: "/usr/bin:/bin" } })
-              .pipe(Layer.provide(NodeServices.layer))
-          ).pipe(Layer.provideMerge(NodeServices.layer))
+              .pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+          ).pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
         )
       )
     )
@@ -242,12 +246,12 @@ test("tree-writing check stops the correction flow before a repair or another ch
               apply: () => Effect.die("no repair"),
               publishOriginalSource: () => Effect.die("no publication")
             })),
-            Layer.provide(NodeServices.layer),
+            Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
             Layer.provideMerge(
               Layer.mergeAll(MemoryStore.layerNoop(), RunStore.layerNoop(), DurableEngineState.layerMemory)
             )
           )
-        ).pipe(Layer.provideMerge(NodeServices.layer))
+        ).pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
       )
     )
   )

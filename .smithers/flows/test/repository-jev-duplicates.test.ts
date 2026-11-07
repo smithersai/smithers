@@ -1,8 +1,10 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/Jj.ts"
@@ -102,7 +104,9 @@ const runStep = async (
 ) => {
   const asked: Array<PairState> = []
   const seat: Array<string> = []
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const fs = await Effect.runPromise(
+    FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+  )
   const scripted = evaluator ?? Evaluator.layerScripted((request) => {
     const state = request.state as PairState
     asked.push(state)
@@ -132,7 +136,7 @@ const runStep = async (
       Layer.provide([Jj.layerNoop({}), Layer.succeed(NativeCoding, undefined as never)]),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   try {

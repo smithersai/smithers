@@ -1,3 +1,5 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import * as EffectLayer from "effect/Layer"
 /** Executable boundary only: Node-compatible process APIs also run under Bun. */
 import { NodeServices } from "@effect/platform-node"
 import { Effect, Layer, Schema } from "effect"
@@ -42,7 +44,7 @@ if (values.help) {
       JSON.stringify(
         await Effect.runPromise(
           operations({ root, output: requestedOutput }).check(pages, values.verified).pipe(
-            Effect.provide(NodeServices.layer)
+            Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
           )
         ),
         null,
@@ -61,7 +63,7 @@ if (values.help) {
     }
     const [output, database] = await Effect.runPromise(
       Effect.all([publicationRoot, containedWikiOutput(root, requestedDatabase)]).pipe(
-        Effect.provide(NodeServices.layer)
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
     const [{ Action, Interpreter }, { Capability }, { default: Wiki }, { actionLayers, agentLayers, hostEvaluator }] =
@@ -98,7 +100,7 @@ if (values.help) {
       .pipe(Layer.provideMerge(Action.layerImplementations))
     await Effect.runPromise(
       Effect.forEach(pages, (page) => operations({ root, output }).collect(page)).pipe(
-        Effect.provide(NodeServices.layer)
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
     )
     // The verified-snapshot seal key lives beside the output (operations.ts).

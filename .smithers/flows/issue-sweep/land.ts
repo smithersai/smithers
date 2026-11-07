@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Landing one agent's change on `main`: rebase it onto the current `main`,
  * run the tests of the packages it touches, and push it when they pass.
@@ -11,7 +12,7 @@
  */
 import { Fault, type FlowRuntime } from "@smthrs/flow"
 import { Cause, Deferred, Duration, Effect, Option, Result, Schema, Semaphore } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { existsSync, readFileSync, renameSync, writeFileSync } from "node:fs"
 import { homedir, tmpdir } from "node:os"
 import { matchesGlob } from "node:path"
@@ -500,7 +501,10 @@ const syncDocs = (workspace: string, change: string, files: ReadonlyArray<string
  * and `redOnMain` answers which of `labels` are already red on `main` at a
  * commit.
  */
-type RetryServices = FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Crypto.Crypto
+type RetryServices =
+  | FlowRuntime.FlowInstance
+  | FlowRuntime.FlowRuntime
+  | (EffectDigest.Digest | SecureRandom.SecureRandom)
 
 export interface Checks<R = never> {
   readonly prepare: (

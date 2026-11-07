@@ -1,3 +1,4 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import * as Digest from "@smthrs/core/Digest"
 import { FlowEngine } from "@smthrs/engine"
@@ -325,7 +326,7 @@ const runCheck = async (
       Layer.provide(Jj.layerNoop({})),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(Layer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   try {

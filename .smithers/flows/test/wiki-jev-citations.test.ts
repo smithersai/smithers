@@ -1,8 +1,10 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -28,9 +30,9 @@ const run = <A, E>(
   effect: Effect.Effect<
     A,
     E,
-    import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto
+    import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/crypto/Digest").Digest
   >
-) => Effect.runPromise(effect.pipe(Effect.provide(NodeServices.layer)))
+) => Effect.runPromise(effect.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))))
 
 const fixture = async (t: TestContext) => {
   const root = await realpath(await mkdtemp(join(tmpdir(), "smithers-wiki-jev-")))
@@ -295,7 +297,7 @@ const runWiki = async (t: TestContext, script: Evaluator.Script, executionId: st
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   const result = await Effect.runPromiseExit(Effect.scoped(
     Wiki.execute(

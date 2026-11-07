@@ -1,8 +1,10 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, FileSystem, Layer, ManagedRuntime, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { mkdir, mkdtemp, realpath, rm, writeFile } from "node:fs/promises"
@@ -84,7 +86,9 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
       parentCommitIds: value.parents
     }
   }
-  const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(NodeServices.layer)))
+  const fs = await Effect.runPromise(
+    FileSystem.FileSystem.pipe(Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+  )
   const options = {
     repositoryPath: root,
     fs,
@@ -118,7 +122,7 @@ async function fixture(t: TestContext, mode: "snapshot" | "immutable") {
         })
     })
   )
-    .pipe(Layer.provideMerge(NodeServices.layer))
+    .pipe(Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
   return {
     root,
     pinned,
@@ -335,7 +339,7 @@ async function harness(t: TestContext, mode: "snapshot" | "immutable") {
       Layer.provide(f.owned),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(NodeServices.layer)
+      Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   t.after(() => runtime.dispose())

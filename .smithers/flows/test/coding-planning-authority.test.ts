@@ -1,3 +1,4 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import * as Agent from "@smthrs/agent/Agent"
@@ -15,6 +16,7 @@ import { ModelEvent } from "@smthrs/model/ModelEvent"
 import { Node } from "@smthrs/plan"
 import * as Registry from "@smthrs/registry/Registry"
 import { Context, Effect, Exit, FileSystem, Layer, ManagedRuntime, Option, Path, Schema, Scope, Stream } from "effect"
+import * as EffectLayer from "effect/Layer"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import assert from "node:assert/strict"
@@ -136,8 +138,10 @@ const fixture = async (t: TestContext, contributed = false) => {
   const platform = Layer.mergeAll(KernelFileSystem.layer, KernelSpawner.layer).pipe(
     Layer.provideMerge(ProcessConfinement.layer()),
     Layer.provideMerge(Layer.mergeAll(grants, workspace)),
-    Layer.provideMerge(AtomicFileSystem.layer.pipe(Layer.provide(NodeServices.layer))),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(
+      AtomicFileSystem.layer.pipe(Layer.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)))
+    ),
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   const layer = Layer.unwrap(Effect.gen(function*() {
     const fs = yield* FileSystem.FileSystem, path = yield* Path.Path, spawner = yield* ChildProcessSpawner

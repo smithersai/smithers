@@ -139,12 +139,12 @@ test("admission snapshot failures distinguish changed source, refusals and outag
       fault: code === "conflict" ? "factory" : code === "invalid_ref" || code === "snapshot_refused" ? "user" : "infra"
     })),
     {
-      error: new Permission.PermissionDenied({ capability, reason: "No write grant" }),
+      error: Permission.PermissionDenied.new({ capability, reason: "No write grant" }),
       code: "source_refused",
       fault: "user"
     },
     {
-      error: new Permission.PermissionRequired({ requestId, capability, tier: "compensable", meta: {} }),
+      error: Permission.PermissionRequired.new({ requestId, capability, tier: "compensable", meta: {} }),
       code: "source_refused",
       fault: "user"
     },

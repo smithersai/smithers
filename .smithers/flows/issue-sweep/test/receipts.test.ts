@@ -1,5 +1,6 @@
 import { Effect, Exit } from "effect"
 import assert from "node:assert/strict"
+import { createHash } from "node:crypto"
 import { promises as fs } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
@@ -21,7 +22,8 @@ test("long durable identities persist in bounded filenames and reconstruct witho
   assert.equal(await Effect.runPromise(restored.get(other)), "second")
   assert.equal(await Effect.runPromise(restored.get("absent")), undefined)
   assert.equal(await Effect.runPromise(restored.size), 3)
-  for (const name of await fs.readdir(join(root, "receipts"))) assert.match(name, /^[a-f0-9]{64}\.json$/)
+  assert.deepEqual([...await Effect.runPromise(restored.keys)].sort(), [key, other, "../../outside"].sort())
+  for (const name of await fs.readdir(join(root, "receipts"))) assert.match(name, /^[a-f0-9]{64}\.receipt\.json$/)
   await Effect.runPromise(restored.remove(other))
   await Effect.runPromise(restored.remove(other))
   assert.equal(await Effect.runPromise(restored.get(other)), undefined)
@@ -85,4 +87,21 @@ test("cold preload restores account holds before new starts and skips collected 
   const available = picker.reserve(pools, 2)!
   assert.equal(available.account, "codex-1", "repeated preload creates one hold and ignores other receipt shapes")
   available.release()
+})
+
+test("legacy values remain literal even when they resemble a versioned envelope", async (t) => {
+  const root = await fs.mkdtemp(join(tmpdir(), "issue-sweep-legacy-receipt-"))
+  t.after(() => fs.rm(root, { recursive: true, force: true }))
+  const directory = join(root, ".flows", "issue-sweep-jobs")
+  const store = await Effect.runPromise(make(directory))
+  const raw = JSON.stringify({ receiptVersion: 1, key: "unrelated", value: "must not replace the raw value" })
+  const name = createHash("sha256").update("legacy").digest("hex") + ".json"
+  await fs.writeFile(join(directory, name), raw)
+  assert.equal(await Effect.runPromise(store.get("legacy")), raw)
+  assert.deepEqual(await Effect.runPromise(values(root)), [raw])
+  assert.ok(Exit.isFailure(await Effect.runPromiseExit(store.keys)))
+  await Effect.runPromise(store.set("legacy", "upgraded"))
+  assert.deepEqual(await Effect.runPromise(store.keys), ["legacy"])
+  assert.equal(await Effect.runPromise(store.size), 1)
+  assert.equal(await Effect.runPromise(store.get("legacy")), "upgraded")
 })

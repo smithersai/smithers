@@ -1,3 +1,4 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { NodeRuntime } from "@smthrs/platform-node"
@@ -6,6 +7,7 @@ import * as Discovery from "@smthrs/registry/Discovery"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect, FileSystem, Layer, ManagedRuntime } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { execFileSync } from "node:child_process"
 import { access, mkdir, mkdtemp, readFile, realpath, rm, writeFile } from "node:fs/promises"
@@ -63,7 +65,9 @@ test("native wiki check captures immutable pages, returns owner findings, reuses
     join(root, ".smithers", "flows", "checks", "wiki", "flow.mdx"),
     "---\ndescription: Semantic wiki check.\nflows: [coding/WikiCheck]\ncapabilities: ['*']\nsmithersCodingWikiPolicy: modeled-override\n---\nReview the configured wiki.\n"
   )
-  const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
+  const platform = process.versions.bun
+    ? (await import("@effect/platform-bun/BunServices")).layer
+    : EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)
   const runtime = process.versions.bun ? (await import("@smthrs/platform-bun")).BunRuntime : NodeRuntime
   const fs = await Effect.runPromise(FileSystem.FileSystem.pipe(Effect.provide(platform)))
   const scratch: Array<string> = []

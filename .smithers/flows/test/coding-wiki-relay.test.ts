@@ -1,5 +1,7 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { createServer } from "node:http"
 import { test } from "node:test"
@@ -46,7 +48,9 @@ test("planning captures the authorized relay response, including an edit after s
         implementation: "coding/implementation",
         checks: [],
         wikiProvider: provider
-      }, { prompt: "Retry deliveries", feedback: "" }).pipe(Effect.provide(NodeServices.layer))
+      }, { prompt: "Retry deliveries", feedback: "" }).pipe(
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+      )
     )
     assert.deepEqual(result.pages.map((page) => page.citation), [{
       pageID: "42",
@@ -189,7 +193,9 @@ test("a person-edited generated slug is authored without a generated inventory",
       implementation: "coding/implementation",
       checks: [],
       wikiProvider: provider
-    }, { prompt: "Retry deliveries", feedback: "" }).pipe(Effect.provide(NodeServices.layer))
+    }, { prompt: "Retry deliveries", feedback: "" }).pipe(
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+    )
   )
   assert.equal(result.pages[0]!.generated, false)
   assert.deepEqual(result.pages[0]!.citation, { pageID: "42", slug: "generated-runtime", revision: 7, digest })

@@ -1,6 +1,8 @@
+import * as SecureRandom from "effect/crypto/SecureRandom"
 /** Files, hashing and publication checks use injected Effect platform services. */
 import { canonical } from "@smthrs/core/Digest"
-import { Crypto, Effect, FileSystem, Path } from "effect"
+import { Effect, FileSystem, Path } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { reviewEvidence, visibleLine } from "./evidence.ts"
 import type { Provenance } from "./reuse.ts"
 import { type PageSpec, type Receipt, type ReviewedPage, WikiError } from "./schema.ts"
@@ -12,15 +14,15 @@ const assessmentPolicy = "exact-single-line-ascii-boundary-trim-v1"
 const fail = (code: WikiError["code"], message: string) => new WikiError({ code, message })
 export const digest = (text: string) =>
   Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
-    const bytes = yield* crypto.digest("SHA-256", new TextEncoder().encode(text))
+    const crypto = yield* EffectDigest.Digest
+    const bytes = yield* crypto.digest(EffectDigest.sha256, new TextEncoder().encode(text))
     return hex(bytes)
   })
 const hex = (bytes: Uint8Array) => [...bytes].map((value) => value.toString(16).padStart(2, "0")).join("")
 /** HMAC-SHA256 (RFC 2104) over the injected Crypto digest; the key is 32 bytes. */
 const hmac = (key: Uint8Array, message: string) =>
   Effect.gen(function*() {
-    const crypto = yield* Crypto.Crypto
+    const crypto = yield* EffectDigest.Digest
     const block = new Uint8Array(64)
     block.set(key)
     const text = new TextEncoder().encode(message)
@@ -29,8 +31,8 @@ const hmac = (key: Uint8Array, message: string) =>
     inner.set(text, 64)
     const outer = new Uint8Array(96)
     outer.set(block.map((value) => value ^ 0x5c))
-    outer.set(yield* crypto.digest("SHA-256", inner), 64)
-    return hex(yield* crypto.digest("SHA-256", outer))
+    outer.set(yield* crypto.digest(EffectDigest.sha256, inner), 64)
+    return hex(yield* crypto.digest(EffectDigest.sha256, outer))
   })
 const sealMessage = (artifactDigest: string) => `smithers-wiki-verified-v1\n${artifactDigest}`
 const privateSegment = /^(?:node_modules|Smithers-Ops)$/i
@@ -324,8 +326,8 @@ export const operations = (
       const path = yield* Path.Path
       const location = path.join(path.dirname(root), `.${path.basename(root)}.seal-key`)
       if (create && !(yield* fs.exists(location))) {
-        const crypto = yield* Crypto.Crypto
-        yield* fs.writeFileString(location, hex(yield* crypto.randomBytes(32)) + "\n", { flag: "wx", mode: 0o600 })
+        const random = yield* SecureRandom.SecureRandom
+        yield* fs.writeFileString(location, hex(yield* random.randomBytes(32)) + "\n", { flag: "wx", mode: 0o600 })
           .pipe(Effect.catch((error) =>
             fs.exists(location).pipe(Effect.flatMap((exists) => exists ? Effect.void : Effect.fail(error)))
           ))
@@ -505,8 +507,8 @@ export const operations = (
       const seal = verification === "verified"
         ? { seal: yield* hmac(yield* sealKey(fs, root, true), sealMessage(artifactDigest)) }
         : {}
-      const crypto = yield* Crypto.Crypto
-      const stage = path.join(root, `.staging-${yield* crypto.randomUUIDv4()}`)
+      const crypto = yield* EffectDigest.Digest
+      const stage = path.join(root, `.staging-${yield* (yield* SecureRandom.SecureRandom).uuidV4()}`)
       yield* fs.makeDirectory(stage)
       yield* Effect.gen(function*() {
         for (const [name, text] of Object.entries(files)) {
@@ -532,7 +534,7 @@ export const operations = (
               yield* verifyExisting
             })
           ))}
-        const pointer = path.join(root, `.current-${yield* crypto.randomUUIDv4()}.json`)
+        const pointer = path.join(root, `.current-${yield* (yield* SecureRandom.SecureRandom).uuidV4()}.json`)
         yield* fs.writeFileString(
           pointer,
           JSON.stringify(

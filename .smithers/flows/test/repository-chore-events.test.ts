@@ -1,9 +1,11 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { ControlRuntime } from "@smthrs/control/ControlRuntime"
 import * as DurableEngineState from "@smthrs/engine-store/DurableEngineState"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Layer, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import * as SqlClient from "effect/sql/SqlClient"
 import assert from "node:assert/strict"
 import { test } from "node:test"
@@ -304,7 +306,11 @@ const registerCandidate = (mode: "trial" | "enabled", input: SetupInput) =>
     )
       .execute.pipe(Effect.provide(services), Effect.result)
     return { calls, outcome }
-  }).pipe(Effect.scoped, Effect.provide(NodeServices.layer), Effect.runPromise)
+  }).pipe(
+    Effect.scoped,
+    Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
+    Effect.runPromise
+  )
 
 const message = (outcome: { _tag: string; failure?: unknown }) =>
   outcome._tag === "Failure" ? String((outcome.failure as { message?: unknown }).message) : ""
@@ -449,7 +455,7 @@ const checkFailure = async (work: ReturnType<typeof checkWork>) => {
   const outcome = await Effect.runPromise(
     Effect.result(captureChecks({} as never, work as never)).pipe(
       Effect.provideService(Jj.Jj, undefined as never),
-      Effect.provide(NodeServices.layer)
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   return outcome._tag === "Failure" ? String((outcome.failure as { message?: unknown }).message) : "completed"

@@ -1,3 +1,5 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
+import * as EffectLayer from "effect/Layer"
 /**
  * The install's scripted model (@smthrs/testing BuiltinScript, served by the
  * real-run stand-in) reviews the pages the wiki flow really builds. Each test
@@ -122,7 +124,7 @@ const refresh = async (root: string, pages: ReadonlyArray<PageSpec>) => {
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   const receipt = await Effect.runPromise(Effect.scoped(
     Wiki.execute({ pages, mode: "verified", reviewer: "scripted-install" }, { executionId: "wiki-scripted" })

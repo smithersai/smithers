@@ -1,8 +1,10 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Effect } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { lstat, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { join } from "node:path"
@@ -33,8 +35,8 @@ test("host execution snapshots stay outside source and restore the prior closure
       return Descriptor.executionDigest(descriptor)!
     })
     const digest = await Effect.runPromise(publish.pipe(
-      Effect.provide(HostRegistry.layer(root, state, NodeServices.layer)),
-      Effect.provide(NodeServices.layer),
+      Effect.provide(HostRegistry.layer(root, state, EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))),
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
       Effect.scoped
     ))
     assert.equal(await readFile(entry, "utf8"), source)
@@ -46,8 +48,8 @@ test("host execution snapshots stay outside source and restore the prior closure
         const registry = yield* Registry.Registry
         return yield* registry.snapshots!.restore(digest)
       }).pipe(
-        Effect.provide(HostRegistry.layer(root, state, NodeServices.layer)),
-        Effect.provide(NodeServices.layer),
+        Effect.provide(HostRegistry.layer(root, state, EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))),
+        Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer)),
         Effect.scoped
       )
     )

@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /** Std boundary tests with a test-only atomic provider; no machine qualification. */
 import { NodeServices } from "@effect/platform-node"
 import * as StandardFlows from "@smthrs/agent/StandardFlows"
@@ -300,17 +301,17 @@ test("installed coding std tools use daemon single and batch clients and validat
       if (command._tag !== "StandardCommand") return yield* Effect.die("unexpected pipe")
       assert.equal(command.command, "/opt/smithers/bin/smithers-machined")
       assert.equal(command.options.cwd, "/workspace")
-      assert.equal(command.args[0], "client")
-      const batch = command.args[1] === "write-files"
-      if (batch) assert.equal(command.args.length, 2, "no actor is sent")
+      assert.equal(command.args.map(plainWord)[0], "client")
+      const batch = command.args.map(plainWord)[1] === "write-files"
+      if (batch) assert.equal(command.args.map(plainWord).length, 2, "no actor is sent")
       else {
-        assert.equal(command.args[1], "write-file")
-        assert.equal(command.args[3], "--base")
-        assert.equal(command.args.length, 5, "the client derives the run; no actor is sent")
+        assert.equal(command.args.map(plainWord)[1], "write-file")
+        assert.equal(command.args.map(plainWord)[3], "--base")
+        assert.equal(command.args.map(plainWord).length, 5, "the client derives the run; no actor is sent")
       }
       assert.ok(Stream.isStream(command.options.stdin))
       const content = yield* Stream.mkString(Stream.decodeText(command.options.stdin as Stream.Stream<Uint8Array>))
-      calls.push(command.args)
+      calls.push(command.args.map(plainWord))
       let output = reply, exit = status
       if (mode === "success" && batch) {
         const changes = JSON.parse(content) as Array<
@@ -332,7 +333,7 @@ test("installed coding std tools use daemon single and batch clients and validat
         exit = 0
       } else if (mode === "success") {
         assert.ok(content === "hello" || content === "world")
-        yield* Effect.promise(() => writeFile(join(root, command.args[2]!), content))
+        yield* Effect.promise(() => writeFile(join(root, command.args.map(plainWord)[2]!), content))
         output = JSON.stringify({ post_digest: content === "hello" ? hello : world })
         exit = 0
       } else if (mode === "stale") {
@@ -600,3 +601,6 @@ for (const defect of [false, true]) {
     )
   })
 }
+
+const plainWord = (value: string | Redacted.Redacted<string>): string =>
+  Redacted.isRedacted(value) ? Redacted.value(value) : value

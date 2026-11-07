@@ -12,7 +12,7 @@ import * as RequestExecutor from "@smthrs/model/RequestExecutor"
 import * as Executable from "@smthrs/registry/Executable"
 import * as Registry from "@smthrs/registry/Registry"
 import { Context, Effect, FileSystem, Layer, Option, Schema } from "effect"
-import * as Crypto from "effect/Crypto"
+import * as EffectDigest from "effect/crypto/Digest"
 import { join, resolve } from "node:path"
 import type * as Application from "../../../packages/smithers/src/Application.ts"
 import * as NativeControl from "../../../packages/smithers/src/internal/NativeControl.ts"
@@ -618,7 +618,7 @@ export const roleSeats = (options: Options, suppliedSeats?: SeatResolver.Service
                 if (callKey === undefined) return yield* current()
                 const instance = yield* Effect.serviceOption(FlowRuntime.FlowInstance)
                 const runtime = yield* Effect.serviceOption(FlowRuntime.FlowRuntime)
-                const crypto = yield* Effect.serviceOption(Crypto.Crypto)
+                const crypto = yield* Effect.serviceOption(EffectDigest.Digest)
                 if (Option.isNone(instance) || Option.isNone(runtime) || Option.isNone(crypto)) {
                   return yield* Effect.fail(
                     new Seat.SeatUnresolved({ seat, message: "Factory model journal is unavailable" })
@@ -634,7 +634,7 @@ export const roleSeats = (options: Options, suppliedSeats?: SeatResolver.Service
                 }).pipe(
                   Effect.provideService(FlowRuntime.FlowInstance, instance.value),
                   Effect.provideService(FlowRuntime.FlowRuntime, runtime.value),
-                  Effect.provideService(Crypto.Crypto, crypto.value)
+                  Effect.provideService(EffectDigest.Digest, crypto.value)
                 )
               })
             const initial = yield* current().pipe(Effect.orDie)

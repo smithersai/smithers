@@ -517,10 +517,13 @@ test("an accepted write whose response is lost is re-sent with the same id, gets
     assert.equal(cursor.submitted, true)
     assert.equal(cursor.waitMs, 0)
     assert.equal(fake.writes.size, 1, "re-sending must reuse the accepted write")
-    assert.deepEqual(fake.posts(/writes$/).map((entry) => [entry.writeId, entry.status]), [[writeId, null], [
-      writeId,
-      200
-    ]])
+    assert.deepEqual(
+      fake.posts(/writes$/).map((entry: { writeId: string; status: number | null }) => [entry.writeId, entry.status]),
+      [[writeId, null], [
+        writeId,
+        200
+      ]]
+    )
     assert.equal(fake.submissions.get(writeId), 2)
 
     fake.pending = () => false
@@ -553,7 +556,7 @@ for (const status of [503, 429, 502, 504, "reset"]) {
       cursor = await replayRound(cursor)
       assert.equal(cursor.stage, "link")
       assert.equal(fake.writes.size, 1)
-      assert.equal(new Set(fake.posts(/writes$/).map((entry) => entry.writeId)).size, 1)
+      assert.equal(new Set(fake.posts(/writes$/).map((entry: { writeId: string }) => entry.writeId)).size, 1)
     } finally {
       await fake.close()
     }
@@ -620,7 +623,7 @@ for (const status of [400, 404, 409, 413, 422]) {
         const next = await replayRound(cursor)
         assert.equal(next.index, cursor.index + 1)
         assert.deepEqual(next.exceptions, [`draft:retry:1:${stage}: refused: HTTP ${status} invalid`])
-        assert.equal(fake.log.filter((entry) => entry.method === "POST").length, 1)
+        assert.equal(fake.log.filter((entry: { method: string }) => entry.method === "POST").length, 1)
       } finally {
         await fake.close()
       }
@@ -790,10 +793,15 @@ test("a shape body disconnect cannot advance its offset or duplicate a row filed
     assert.equal(cursor.stage, "link")
     assert.equal(cursor.number, 77)
     assert.equal(fake.writes.size, 0)
-    assert.deepEqual(fake.log.filter((entry) => entry.path === "/api/shapes/items").map((entry) => entry.offset), [
-      "-1",
-      "-1"
-    ])
+    assert.deepEqual(
+      fake.log.filter((entry: { path: string }) => entry.path === "/api/shapes/items").map((
+        entry: { offset: string | null }
+      ) => entry.offset),
+      [
+        "-1",
+        "-1"
+      ]
+    )
   } finally {
     await fake.close()
   }

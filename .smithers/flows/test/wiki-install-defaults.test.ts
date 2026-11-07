@@ -1,5 +1,7 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { Effect } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { spawnSync } from "node:child_process"
 import { mkdir, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
@@ -9,7 +11,10 @@ import { test } from "node:test"
 import { fileURLToPath } from "node:url"
 import { operations } from "../wiki/operations.ts"
 
-const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
+const platform = EffectLayer.mergeAll(
+  process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer,
+  NativeCrypto.layer
+)
 
 test(
   "install wiki inventories collect a newly merged export without changing the declaration",
@@ -135,7 +140,10 @@ test("300-entry install repository publishes overview and architecture summaries
     effect: Effect.Effect<
       A,
       E,
-      import("effect/FileSystem").FileSystem | import("effect/Path").Path | import("effect/Crypto").Crypto
+      | import("effect/FileSystem").FileSystem
+      | import("effect/Path").Path
+      | import("effect/crypto/Digest").Digest
+      | import("effect/crypto/SecureRandom").SecureRandom
     >
   ) => Effect.runPromise(effect.pipe(Effect.provide(platform)))
   const pages = await Promise.all(specs.map((spec) => run(ops.collect(spec))))

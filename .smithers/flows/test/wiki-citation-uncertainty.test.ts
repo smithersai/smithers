@@ -1,8 +1,10 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Interpreter } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { mkdir, mkdtemp, readFile, realpath, rm, stat, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
@@ -53,7 +55,9 @@ const fixture = async (t: TestContext, sections = 1) => {
   }
   const output = join(root, "output")
   const evidence = await Effect.runPromise(
-    operations({ root, output }).collect(spec).pipe(Effect.provide(NodeServices.layer))
+    operations({ root, output }).collect(spec).pipe(
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
+    )
   )
   const review: Review = {
     sections: evidence.sections.map((section) => ({
@@ -100,7 +104,7 @@ const execute = async (
   ).pipe(
     Layer.provideMerge(Action.layerImplementations),
     Layer.provideMerge(FlowEngine.layerMemory),
-    Layer.provideMerge(NodeServices.layer)
+    Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
   )
   const result = await Effect.runPromiseExit(Effect.scoped(
     Wiki.execute({ pages: [f.spec], mode: "verified", reviewer: "scripted-test" }, {
@@ -225,7 +229,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   f.spec = { ...f.spec, inputs: [...f.spec.inputs, ...policySources] }
   f.evidence = await Effect.runPromise(
     operations({ root: f.root, output: f.output }).collect(f.spec).pipe(
-      Effect.provide(NodeServices.layer)
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   let reviewerCalls = 0, citationCalls = 0
@@ -288,7 +292,7 @@ test("SQLite incremental reuse re-reviews a prior uncertain citation", { timeout
   const { digest } = await import("../wiki/operations.ts")
   const sectionsDigest = await Effect.runPromise(
     digest(canonical(f.evidence.sections)).pipe(
-      Effect.provide(NodeServices.layer)
+      Effect.provide(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
     )
   )
   const prior = snapshot.pages[0].verification.provenance

@@ -1,8 +1,10 @@
+import { NodeCrypto as NativeCrypto } from "@effect/platform-node"
 import { NodeServices } from "@effect/platform-node"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import * as Evaluator from "@smthrs/model/Evaluator"
 import { Effect, Layer, ManagedRuntime, Schema } from "effect"
+import * as EffectLayer from "effect/Layer"
 import assert from "node:assert/strict"
 import { test } from "node:test"
 import { evaluationLayers, ScoreCase, ScoreExecution, SeatScore } from "../repository/evaluation.ts"
@@ -85,7 +87,7 @@ const score = async (evaluator: Layer.Layer<Evaluator.Evaluator>) => {
       .pipe(
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(NodeServices.layer)
+        Layer.provideMerge(EffectLayer.mergeAll(NodeServices.layer, NativeCrypto.layer))
       )
   )
   try {

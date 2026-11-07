@@ -39,9 +39,9 @@ import { scriptedSeats } from "../review/tests/workflow/scriptedSeats.ts"
 import Todo from "../todo/flow.ts"
 import { systemFlows } from "./fixtures/system-flows.ts"
 
-import * as Command from "../../../packages/smithers/agent/fs/src/Command.ts"
-import * as FileRouter from "../../../packages/smithers/agent/fs/src/FileRouter.ts"
-import * as FlowInvoker from "../../../packages/smithers/agent/fs/src/FlowInvoker.ts"
+import { Command } from "@smthrs/fs"
+import { FileRouter } from "@smthrs/fs"
+import { FlowInvoker } from "@smthrs/fs"
 
 const platform = process.versions.bun ? (await import("@effect/platform-bun/BunServices")).layer : NodeServices.layer
 const policy = "a".repeat(64)
