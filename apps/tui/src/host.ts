@@ -60,7 +60,7 @@ import * as Approvals from "./approvals.ts"
 import * as Box from "./box.ts"
 import * as Changes from "./changes.ts"
 import * as Context from "./context.ts"
-import * as Credit from "./credit.ts"
+import * as Credit from "#vibelang/emitted/src/credit"
 import {
   type Available,
   delegateModels,
@@ -70,7 +70,7 @@ import {
   workerFallbackSeats
 } from "./models.ts"
 import * as Monitors from "./monitors.ts"
-import * as Panels from "./panels.ts"
+import * as Panels from "#vibelang/emitted/src/panels"
 import * as Reads from "./reads.ts"
 import * as Replay from "./replay.ts"
 import * as Runtime from "./runtime.ts"

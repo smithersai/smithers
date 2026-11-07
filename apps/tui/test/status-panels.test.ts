@@ -1,5 +1,5 @@
 import { expect, test } from "bun:test"
-import * as Panels from "../src/panels.ts"
+import * as Panels from "../src/panels.vibe"
 import * as Session from "../src/session.ts"
 
 const base: Panels.Panel = { id: "status", title: "Worker", summary: "Requested", rows: [] }

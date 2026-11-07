@@ -1,5 +1,5 @@
 import { expect, it } from "bun:test"
-import * as Panels from "../src/panels.ts"
+import * as Panels from "../src/panels.vibe"
 import * as Smithers from "../src/smithers.ts"
 
 const discovered = new Set(["review", "release"])

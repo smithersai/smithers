@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import * as Activity from "../src/activity.ts"
+import * as Activity from "../src/activity.vibe"
 import * as DevTools from "../src/devtools.ts"
 import type * as Flows from "../src/flows.ts"
 

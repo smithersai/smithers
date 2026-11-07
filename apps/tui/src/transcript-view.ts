@@ -6,10 +6,10 @@
  */
 import type { CliRenderer, MouseEvent, ScrollBoxRenderable } from "@opentui/core"
 import { useCallback, useLayoutEffect, useMemo, useRef, useState } from "react"
-import type * as Activity from "./activity.ts"
+import type * as Activity from "./activity.vibe"
 import * as DragScroll from "./drag-scroll.ts"
 import type { Run } from "./flows.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 import * as RunCard from "./run-card.ts"
 import * as Scrubber from "./scrubber.ts"
 import * as Subagents from "./subagents.ts"

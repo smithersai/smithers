@@ -10,7 +10,7 @@ import * as Agents from "./agents.ts"
 import * as Extension from "./extension.ts"
 import type { DelegateModel } from "./models.ts"
 import type * as Monitors from "./monitors.ts"
-import * as Panels from "./panels.ts"
+import * as Panels from "#vibelang/emitted/src/panels"
 import type { Vendor } from "./wrapped.ts"
 
 export interface Ports {

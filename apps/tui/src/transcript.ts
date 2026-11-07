@@ -7,12 +7,12 @@
  * settlement attach to that same cell.
  */
 import type * as AgentEvent from "@smthrs/harness/AgentEvent"
-import * as Activity from "./activity.ts"
+import * as Activity from "#vibelang/emitted/src/activity"
 import * as Approvals from "./approvals.ts"
 import * as Changes from "./changes.ts"
-import * as Credit from "./credit.ts"
+import * as Credit from "#vibelang/emitted/src/credit"
 import * as Models from "./models.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 import * as Shell from "./shell.ts"
 
 /** `stopped` is a person's stop: neither done nor failed. */

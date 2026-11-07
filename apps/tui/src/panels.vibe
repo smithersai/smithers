@@ -1,5 +1,4 @@
 /** Runtime-authored, serializable UI. Cells construct these values; the host owns rendering and keys. */
-import { Schema } from "effect"
 
 const short = Schema.String.check(Schema.isMinLength(1), Schema.isMaxLength(240))
 const content = Schema.String.check(Schema.isMaxLength(200_000))
@@ -80,8 +79,8 @@ export const keep = (panels: Map<string, Panel>, panel: Panel): void => {
 
 export const decode = (value: unknown): Panel => {
   const panel = Schema.decodeUnknownSync(Panel)(value)
-  if (JSON.stringify(panel).length > 1_000_000) throw new Error("Panel exceeds 1 MB")
-  if (new Set(panel.rows.map((row) => row.id)).size !== panel.rows.length) throw new Error("Row ids must be unique")
+  if (JSON.stringify(panel).length > 1_000_000) $raise(new Error("Panel exceeds 1 MB"))
+  if (new Set(panel.rows.map((row) => row.id)).size !== panel.rows.length) $raise(new Error("Row ids must be unique"))
   return panel
 }
 
@@ -112,3 +111,10 @@ export const navigate = (state: Navigation, key: string, rows: ReadonlyArray<Row
 }
 export const teaching =
   `Use ui.publish to build custom terminal UI whenever a view makes the answer easier to inspect: comparisons, plans, choices, or results. Write JavaScript cells that construct a panel and call the flow; do not print UI JSON. Panels have {id,title,summary,rows:[{id,label,status?,details:[blocks],action?}]}. Blocks are {kind:"text",text}, {kind:"code",code,language?}, {kind:"diff",path,patch} or {kind:"table",columns,rows}. A row action is {label,prompt} or {label,action}; an action is {kind:"prompt",prompt}, {kind:"flow",flow,input?}, {kind:"agent",agent,prompt?} or {kind:"open",surface}. A bare panel opens a tab; publish {kind:"panel",placement:"card",panel} for a live card in the chat, {kind:"status",status:{id,text,tone?,action?}} for a footer item (24 characters), or {kind:"key",key:{id,key:"alt+z",label,action}} for a key (ctrl or alt required). Reuse the panel id to update it. Keep summary to one sentence (e.g. "Investigation requested.", never "running" for a requested receipt) and row labels to concise human English. Details hold actual evidence and code. Actions run ONLY when the user chooses them. Publishing never changes keyboard focus. Prefer useful UI to long prose. Never invent actions the user did not request, nor keys or status items. placement:"main" opens a main view with chat beside it, and bind:{tree:rootId} adds live worker rows. The host owns run status; publish only useful results or controls, never status panels.`
+
+module $throw$ts {
+  export function raise(value: unknown): never {
+    throw value
+  }
+}
+import { raise as $raise } from $throw$ts

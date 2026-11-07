@@ -5,7 +5,7 @@
  * value the app's run card and `smthrs runs show` show.
  */
 import type { ControlSchema } from "@smthrs/control"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 
 /** When the run's deadline passes, from the newest run fact that names one. */
 export const deadlineAt = (events: ReadonlyArray<ControlSchema.ControlEvent>): number | undefined => {

@@ -11,7 +11,7 @@
 import { traceFromJournal } from "@smthrs/gateway/RunTrace"
 import type { AgentEvent } from "@smthrs/harness/AgentEvent"
 import { readFileSync } from "node:fs"
-import * as Activity from "../src/activity.ts"
+import * as Activity from "#vibelang/emitted/src/activity"
 
 const rows = readFileSync(new URL("../test/fixtures/fix-add.jsonl", import.meta.url), "utf8").trim().split("\n")
   .map((line) => JSON.parse(line) as { event: AgentEvent; at: number })

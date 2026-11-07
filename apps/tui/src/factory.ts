@@ -19,7 +19,7 @@ import * as StackIssues from "@smthrs/rpc/StackIssues"
 import { itemReason, itemStateLabel, itemTitle } from "@smthrs/rpc/StackView"
 import * as Failures from "./failures.ts"
 import * as Log from "./log.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 
 /** Where a repository lives on Cloud: `owner/name`. */
 export type Repository = string

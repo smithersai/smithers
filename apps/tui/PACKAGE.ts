@@ -15,7 +15,7 @@ const cwd = "apps/tui"
 
 /** The app, its recorded fixture, and the suite beside them. */
 const sources = [
-  Smithers.glob("//apps/tui/src/**/*.ts"),
+  Smithers.glob("//apps/tui/src/**/*.{ts,vibe}"),
   Smithers.glob("//apps/tui/src/**/*.tsx"),
   Smithers.glob("//apps/tui/test/**/*"),
   Smithers.glob("//apps/tui/e2e/**/*"),
@@ -76,7 +76,7 @@ const e2eTests = Smithers.NodeTest({
  * @category lint
  */
 const lint = Smithers.EsLint({
-  sources: [Smithers.glob("src/**/*.ts"), Smithers.glob("src/**/*.tsx")],
+  sources: [Smithers.glob("src/**/*.{ts,vibe}"), Smithers.glob("src/**/*.tsx")],
   configs: [Smithers.file("eslint.config.js"), Smithers.file("//eslint.invariants.js")],
   deps: [],
   maxWarnings: 0,
@@ -193,7 +193,7 @@ const securityReview = Smithers.SecurityReview({
         "`Contributions` letting a runtime or repo owner override a built-in or plugin key, or exceed `limits`.",
         "`perform` in app.tsx starting a flow run that skips the approval gate the same flow gets from a model call."
       ],
-      paths: ["src/extension.ts", "src/panels.ts", "src/contributions.ts", "src/app.tsx", "src/surfaces.ts"]
+      paths: ["src/extension.ts", "src/panels.vibe", "src/contributions.ts", "src/app.tsx", "src/surfaces.ts"]
     },
     {
       id: "child-process-argv",
@@ -230,7 +230,7 @@ const securityReview = Smithers.SecurityReview({
         "src/view.tsx",
         "src/app-view.tsx",
         "src/subagent-view.tsx",
-        "src/panels.ts"
+        "src/panels.vibe"
       ]
     },
     {

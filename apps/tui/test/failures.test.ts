@@ -11,7 +11,7 @@ import * as Log from "../src/log.ts"
 import { MonitorError } from "../src/monitors.ts"
 import * as Search from "../src/search.ts"
 import * as Session from "../src/session.ts"
-import { TabError } from "../src/tab-error.ts"
+import { TabError } from "../src/tab-error.vibe"
 import { AgentDepthExceeded } from "../src/workspace.ts"
 
 // Every raw message below carries this, so one check proves none reached the sentence.

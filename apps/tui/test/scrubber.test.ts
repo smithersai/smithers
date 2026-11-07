@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test"
-import * as Activity from "../src/activity.ts"
+import * as Activity from "../src/activity.vibe"
 import * as Scrubber from "../src/scrubber.ts"
 import * as Session from "../src/session.ts"
 import * as Transcript from "../src/transcript.ts"

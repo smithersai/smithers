@@ -1,5 +1,5 @@
 /** Evidence-first summary, projected onto exactly the same panel contract agents publish. */
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 import * as Runtime from "./runtime.ts"
 import * as Transcript from "./transcript.ts"
 import * as Undo from "./undo.ts"

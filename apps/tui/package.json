@@ -59,5 +59,32 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "file:../../.vibelang-toolchain/vibelang-0.0.11-71bb3aebbfe6.tgz"
+  },
+  "imports": {
+    "#vibelang/emitted/src/activity": {
+      "types": "./.vibe/declarations/src/activity.d.vibe.ts",
+      "vibelang-source": "./src/activity.vibe",
+      "default": "./.vibelang/js/src/activity.js"
+    },
+    "#vibelang/emitted/src/key-dispatch": {
+      "types": "./.vibe/declarations/src/key-dispatch.d.vibe.ts",
+      "vibelang-source": "./src/key-dispatch.vibe",
+      "default": "./.vibelang/js/src/key-dispatch.js"
+    },
+    "#vibelang/emitted/src/panels": {
+      "types": "./.vibe/declarations/src/panels.d.vibe.ts",
+      "vibelang-source": "./src/panels.vibe",
+      "default": "./.vibelang/js/src/panels.js"
+    },
+    "#vibelang/emitted/src/tab-error": {
+      "types": "./.vibe/declarations/src/tab-error.d.vibe.ts",
+      "vibelang-source": "./src/tab-error.vibe",
+      "default": "./.vibelang/js/src/tab-error.js"
+    },
+    "#vibelang/emitted/src/credit": {
+      "types": "./.vibe/declarations/src/credit.d.vibe.ts",
+      "vibelang-source": "./src/credit.vibe",
+      "default": "./.vibelang/js/src/credit.js"
+    }
   }
 }

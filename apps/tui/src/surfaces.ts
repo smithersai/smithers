@@ -7,7 +7,7 @@
 import { useRef, useState } from "react"
 import type { Run } from "./flows.ts"
 import { settled } from "./lifecycle.ts"
-import * as Panels from "./panels.ts"
+import * as Panels from "#vibelang/emitted/src/panels"
 import type { Chip } from "./tabs-view.tsx"
 import type { Snapshot, Tab } from "./workspace.ts"
 

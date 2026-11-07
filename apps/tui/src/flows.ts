@@ -15,9 +15,9 @@ import * as Deadline from "./deadline.ts"
 import * as Extension from "./extension.ts"
 import * as Failures from "./failures.ts"
 import * as Lifecycle from "./lifecycle.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 import type * as Session from "./session.ts"
-import { TabError } from "./tab-error.ts"
+import { TabError } from "#vibelang/emitted/src/tab-error"
 import * as Transcript from "./transcript.ts"
 
 type ControlEvent = ControlSchema.ControlEvent

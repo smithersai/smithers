@@ -9,7 +9,6 @@ import {
 } from "@smthrs/gateway/RunTrace"
 import type { AgentEvent } from "@smthrs/harness/AgentEvent"
 import { CallIdentity, displayDescriptor } from "@smthrs/harness/Cell"
-import { Schema } from "effect"
 
 /** Stored model calls keep timing and identity without the growing request. */
 export type Unrequested = Omit<Extract<AgentEvent, { _tag: "model-requested" }>, "request"> & {

@@ -1,6 +1,6 @@
 /** The Smithers surface: the factory's issues and the apps its homepage declares. Runs live in Summary, flows in `/flows`. */
 import type * as Home from "./home.ts"
-import type * as Panels from "./panels.ts"
+import type * as Panels from "./panels.vibe"
 
 const text = (value: string | undefined): Array<Panels.Block> =>
   value === undefined || value === "" ? [] : [{ kind: "text", text: value.slice(0, 200_000) }]

@@ -1,6 +1,6 @@
 import { expect, test } from "bun:test"
 import * as Catalog from "../src/catalog.ts"
-import * as Credit from "../src/credit.ts"
+import * as Credit from "../src/credit.vibe"
 import type * as Extension from "../src/extension.ts"
 import * as Models from "../src/models.ts"
 import * as Palette from "../src/palette.ts"
