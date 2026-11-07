@@ -5,7 +5,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 
 const discovery = vi.hoisted(() => ({
-  scan: undefined as undefined | ((options: unknown) => Effect<unknown, unknown>)
+  scan: undefined as undefined | ((options: unknown) => unknown!unknown)
 }))
 
 vi.mock("@smthrs/registry/Discovery", (importOriginal) =>
@@ -35,18 +35,18 @@ const descriptor = (path: string): Descriptor.FlowDescriptor => ({
 const result = (entries: ReadonlyArray<Descriptor.FlowDescriptor>) => ({ entries, warnings: [] })
 
 // A stub whose methods may fail with a foreign error a real file system never raises.
-const fileSystem = (methods: { exists: () => Effect<boolean, unknown>; realPath?: () => Effect<string, unknown> }) =>
+const fileSystem = (methods: { exists: () => boolean!unknown; realPath?: () => string!unknown }) =>
   methods as unknown as FileSystem.FileSystem
 
 /** Scans `/flows` over the mocked discovery, a stub file system, and the real path service. */
-function scanFlows(files: FileSystem.FileSystem = fileSystem({ exists: () => false })) {
+effect function scanFlows(files: FileSystem.FileSystem = fileSystem({ exists: effect () => false })) {
   provide FileSystem.FileSystem = files, NodePath.layer {
-    return FileRouter.scan({ root: "/flows" })
+    return try FileRouter.scan({ root: "/flows" })
   }
 }
 
 describe("FileRouter failure projection", () => {
-  it.effect("preserves every registry discovery category and sanitizes foreign failures") {
+  it.effect("preserves every registry discovery category and sanitizes foreign failures", effect () => {
     for (
       const [source, expected] of [
         ["root_missing", "root_missing"],
@@ -55,48 +55,53 @@ describe("FileRouter failure projection", () => {
         ["unknown", "discovery_failed"]
       ] as const
     ) {
-      discovery.scan = () => throw discoveryError({ code: source, method: "scan" })
-      expect(failureOf(scanFlows()).code).toBe(expected)
+      discovery.scan = effect () => { throw (try sync(() => discoveryError({ code: source, method: "scan" }))) }
+      expect((try failureOf(scanFlows())).code).toBe(expected)
     }
 
     // @vibelang-diagnostics-next-line EK4804:off
-    discovery.scan = () => throw new Error("TOP-SECRET")
-    const foreign = failureOf(scanFlows())
+    discovery.scan = effect () => { throw new Error("TOP-SECRET") }
+    const foreign = try failureOf(scanFlows())
     expect(foreign.code).toBe("discovery_failed")
     expect(JSON.stringify(foreign)).not.toContain("TOP-SECRET")
-  }
+  })
 
-  it.effect("bounds scan results before inspecting route companions") {
-    discovery.scan = () =>
+  it.effect("bounds scan results before inspecting route companions", effect () => {
+    discovery.scan = effect () =>
       result(Array.from({ length: CommandTree.maximumRoutes + 1 }, (_, index) => descriptor(`/flows/r${index}/flow.ts`)))
-    expect(failureOf(scanFlows()).code).toBe("resource_limit")
-  }
+    expect((try failureOf(scanFlows())).code).toBe("resource_limit")
+  })
 
-  it.effect("skips root entries and refuses paths collapsing to one route") {
-    discovery.scan = () => result([descriptor("/flows/flow.ts"), descriptor("/flows/kept/flow.ts")])
-    expect(scanFlows().routes.map((route) => route.name)).toEqual(["kept"])
+  it.effect("skips root entries and refuses paths collapsing to one route", effect () => {
+    discovery.scan = effect () => result([descriptor("/flows/flow.ts"), descriptor("/flows/kept/flow.ts")])
+    expect((try scanFlows()).routes.map((route) => route.name)).toEqual(["kept"])
 
-    discovery.scan = () => result([descriptor("/flows/duplicate/flow.ts"), descriptor("/flows/duplicate/other.ts")])
-    expect(failureOf(scanFlows()).code).toBe("duplicate_route")
-  }
+    discovery.scan = effect () => result([descriptor("/flows/duplicate/flow.ts"), descriptor("/flows/duplicate/other.ts")])
+    expect((try failureOf(scanFlows())).code).toBe("duplicate_route")
+  })
 
-  it.effect("maps companion inspection failures without retaining their cause") {
-    discovery.scan = () => result([descriptor("/flows/route/flow.ts")])
+  it.effect("maps companion inspection failures without retaining their cause", effect () => {
+    discovery.scan = effect () => result([descriptor("/flows/route/flow.ts")])
     // @vibelang-diagnostics-next-line EK4804:off
-    const error = failureOf(scanFlows(fileSystem({ exists: () => throw new Error("TOP-SECRET") })))
+    const error = try failureOf(scanFlows(fileSystem({ exists: effect () => { throw new Error("TOP-SECRET") } })))
     expect(error.code).toBe("read_failed")
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
-  }
+  })
 
-  it.effect("refuses a UI companion whose real path cannot be resolved") {
-    discovery.scan = () => result([descriptor("/flows/route/flow.ts")])
+  it.effect("refuses a UI companion whose real path cannot be resolved", effect () => {
+    discovery.scan = effect () => result([descriptor("/flows/route/flow.ts")])
     const unresolvable = fileSystem({
-      exists: () => true,
+      exists: effect () => true,
       // @vibelang-diagnostics-next-line EK4804:off
-      realPath: () => throw new Error("TOP-SECRET")
+      realPath: effect () => { throw new Error("TOP-SECRET") }
     })
-    const error = failureOf(scanFlows(unresolvable))
+    const error = try failureOf(scanFlows(unresolvable))
     expect(error.code).toBe("read_failed")
     expect(JSON.stringify(error)).not.toContain("TOP-SECRET")
-  }
+  })
 })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

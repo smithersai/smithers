@@ -7,16 +7,16 @@ import { visibleModule } from "./modules.ts"
 export { invalidModule, recordedModule, refinedModule, specialModule, visibleModule } from "./modules.ts"
 
 /** How many times the import-recording fixture has been evaluated. */
-export const recordedImports = (): number => (globalThis as { fsRecordedImports?: number }).fsRecordedImports ?? 0
+export { recordedImports } from "./modules.ts"
 
 /**
  * The expected failure a program fails with; a success or a defect fails the
  * test. The program may need services that the enclosing block provides.
  */
-export function failureOf<E, R>(program: Effect<unknown, E, R>): Effect<E, never, R> {
-  return match (exit(program)) {
-    when Exit.Failure(let cause): Cause.findErrorOption(cause).getOrThrow();
-    default: assert.fail("expected the program to fail");
+export effect function failureOf<E, R>(program: unknown!E!R): E!never!R {
+  return match (try exit(program)) {
+    when Exit.Failure(let cause): try sync(() => Option.getOrThrow(Cause.findErrorOption(cause)));
+    default: try sync(() => assert.fail("expected the program to fail"));
   }
 }
 
@@ -46,7 +46,7 @@ export const makeRoute = (
  * an in-flight fiber without real timers.
  */
 export const latchedInvoke = (): {
-  invoke: FlowInvoker.FlowInvoker["invoke"]
+  invoke: FlowInvoker.FlowInvoker.Shape["invoke"]
   started: Promise<void>
   finalized: Promise<void>
   release: () => void
@@ -64,15 +64,13 @@ export const latchedInvoke = (): {
     release = () => resolve({ accepted: true, number: 0 })
   })
   return {
-    invoke: (_invocation) => {
-      try {
-        return sync(async (begin, gate) => {
-          begin()
-          return gate
-        }, begin, gate)
-      } finally (exit) {
-        if (exit is Exit.Failure(let cause) && cause.hasInterrupts()) finish()
-      }
+    invoke: effect (_invocation) => {
+      return try onExit(promise(async () => {
+        begin()
+        return gate
+      }), effect (result) => {
+        if (Exit.isFailure(result) && Cause.hasInterrupts(result.cause)) finish()
+      })
     },
     started,
     finalized,

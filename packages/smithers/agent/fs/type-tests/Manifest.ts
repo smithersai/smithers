@@ -19,21 +19,21 @@ declare module "../src/Route.vibe" {
 
 declare const surface: Command.CommandSurface
 
-surface.call("typed/review", { title: "review" })
+const _call0 = surface.call("typed/review", { title: "review" })
 const input: Route.Input<"typed/review"> = { title: "review" }
 const output: Route.Output<"typed/review"> = { accepted: true }
 void input
 void output
 
 // @ts-expect-error unknown route names are rejected once a manifest is installed
-surface.call("typed/typo", { title: "review" })
+const _call1 = surface.call("typed/typo", { title: "review" })
 // @ts-expect-error route-specific input is checked
-surface.call("typed/review", { title: 1 })
+const _call2 = surface.call("typed/review", { title: 1 })
 
 const scalar: Effect.Effect<number, FsError, FlowInvoker.FlowInvoker> = surface.call("typed/scalar", 42)
 void scalar
 // @ts-expect-error encoded strings are not decoded numeric input
-surface.call("typed/scalar", "42")
+const _call3 = surface.call("typed/scalar", "42")
 
 const when: Route.Input<"typed/date"> = new Date("2026-01-01T00:00:00.000Z")
 const at: Route.Output<"typed/date"> = new Date("2026-01-01T00:00:00.000Z")
@@ -42,4 +42,4 @@ void at
 const dated: Effect.Effect<Date, FsError, FlowInvoker.FlowInvoker> = surface.call("typed/date", when)
 void dated
 // @ts-expect-error encoded strings are not decoded date input
-surface.call("typed/date", "2026-01-01T00:00:00.000Z")
+const _call4 = surface.call("typed/date", "2026-01-01T00:00:00.000Z")

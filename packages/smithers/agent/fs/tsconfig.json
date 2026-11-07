@@ -36,6 +36,5 @@
       }
     ]
   },
-  "include": ["src/**/*"],
-  "vibelang": { "trustedPackages": ["@smthrs/*", "@vitest/*", "incur", "vitest", "zod"] }
+  "include": ["src/**/*"]
 }

@@ -1,8 +1,13 @@
+import { metadataGlobals, createMetadataFixture, removeMetadataFixture, nativeConsole } from "./modules.ts"
+import { Request } from "./modules.ts"
+
+import { $platform$4 } from "./Incur.test.platform.js";
+import { $platform$3 } from "./Incur.test.platform.js";
+import { $platform$2 } from "./Incur.test.platform.js";
+import { $platform$1 } from "./Incur.test.platform.js";
+import { $platform } from "./Incur.test.platform.js";
 import * as Descriptor from "@smthrs/registry/Descriptor"
 import { describe, expect, it, type Mock, vi } from "@effect/vitest"
-import { mkdtemp, rm, writeFile } from "node:fs/promises"
-import { tmpdir } from "node:os"
-import { join } from "node:path"
 import * as FlowInvoker from "../src/FlowInvoker.vibe"
 import { FsError } from "../src/FsError.vibe"
 import * as Incur from "../src/Incur.vibe"
@@ -17,13 +22,13 @@ import { failureOf, latchedInvoke, makeRoute, recordedImports, recordedModule, r
 type Cli = Effect.Success<ReturnType<typeof Incur.createCli>>
 
 /** Waits for a host promise; a rejection fails the test as a defect. */
-function awaited<A>(promise: PromiseLike<A>): Effect<A> {
-  return sync(async (promise) => promise, promise)
+effect function awaited<A>(pending: () => PromiseLike<A>): A!! {
+  return try promise(async () => await pending())
 }
 
 /** Fails the test when a host wait outlasts its real-time deadline. */
-function within<A, E>(program: Effect<A, E>, milliseconds: number): Effect<A, E, infer R> {
-  return Effect.timeoutOrElse(program, {
+effect function within<A, E>(program: A!E, milliseconds: number): A!E {
+  return try Effect.timeoutOrElse(program, {
     duration: milliseconds,
     orElse: () => die(new Error("Metadata wait exceeded test deadline"))
   })
@@ -43,33 +48,33 @@ const makeGate = (): Gate => {
 }
 
 /** A metadata load that waits for a gate and records its interruption. */
-function gatedLoad(gate: Promise<void>, interrupted?: Mock) {
-  try {
-    awaited(gate)
+effect function gatedLoad(gate: Promise<void>, interrupted?: Mock) {
+  return try onExit(effect {
+    try awaited(() => gate)
     return visible
-  } finally (exit) {
-    if (exit is Exit.Failure(let cause) && cause.hasInterrupts()) interrupted?.()
-  }
+  }, effect (result) => {
+    if (Exit.isFailure(result) && Cause.hasInterrupts(result.cause)) try sync(() => interrupted?.())
+  })
 }
 
-function makeCli(routes: ReadonlyArray<Route.Route> = [makeRoute("review")], invoke?: FlowInvoker.FlowInvoker["invoke"]) {
+effect function makeCli(routes: ReadonlyArray<Route.Route> = [makeRoute("review")], invoke?: FlowInvoker.FlowInvoker.Shape["invoke"]) {
   const seen: Array<FlowInvoker.Invocation> = []
   const invoker = FlowInvoker.make({
-    invoke: invoke ?? ((invocation) => {
+    invoke: invoke ?? (effect (invocation) => {
       seen.push(invocation)
       const number = (invocation.input as { number: number }).number
       return { accepted: true, number }
     })
   })
   provide FlowInvoker.FlowInvoker = invoker {
-    return { cli: Incur.createCli("flows", routes), seen }
+    return { cli: try Incur.createCli("flows", routes), seen }
   }
 }
 
 /** Creates a CLI whose host logs at debug level through the given logger layer. */
-function debugCli(loggers: Layer.Layer<never>, invoker: FlowInvoker.FlowInvoker) {
+effect function debugCli(loggers: Layer.Layer<never>, invoker: FlowInvoker.FlowInvoker.Shape) {
   provide loggers, References.MinimumLogLevel = "Debug", FlowInvoker.FlowInvoker = invoker {
-    return Incur.createCli("flows", [makeRoute("review")])
+    return try Incur.createCli("flows", [makeRoute("review")])
   }
 }
 
@@ -88,13 +93,13 @@ const capture = () => {
 
 /** Captures `process.stdout` writes until the returned spy is restored. */
 function spyOnStdout(writes: Array<string>) {
-  return sync((writes) =>
-    vi.spyOn(process.stdout, "write").mockImplementation(
+  return sync(() =>
+    vi.spyOn($platform(), "write").mockImplementation(
       ((chunk: unknown) => {
         writes.push(String(chunk))
         return true
       }) as typeof process.stdout.write
-    ), writes)
+    ))
 }
 
 /** Starts a discovery request; the pending promise resolves to the sorted OpenAPI paths. */
@@ -112,9 +117,9 @@ const mcpRequest = (name: string, args: Readonly<Record<string, unknown>>, signa
   })
 
 /** Calls one tool on the MCP surface and returns the JSON-RPC payload. */
-function tool(cli: Cli, name: string, args: Readonly<Record<string, unknown>>) {
-  const response = awaited(cli.fetch(mcpRequest(name, args)))
-  return awaited(response.json()) as {
+effect function tool(cli: Cli, name: string, args: Readonly<Record<string, unknown>>) {
+  const response = try awaited(() => cli.fetch(mcpRequest(name, args)))
+  return try awaited(() => response.json()) as {
     result: {
       isError?: boolean
       content: ReadonlyArray<{ text: string }>
@@ -124,227 +129,227 @@ function tool(cli: Cli, name: string, args: Readonly<Record<string, unknown>>) {
 
 const transports = ["HTTP", "CLI", "MCP"] as const
 
-function call(cli: Cli, transport: typeof transports[number]) {
+effect function call(cli: Cli, transport: typeof transports[number]) {
   if (transport === "HTTP") {
-    const response = awaited(cli.fetch(new Request("http://localhost/review?number=42")))
-    return { failed: response.status >= 400, body: awaited(response.text()) }
+    const response = try awaited(() => cli.fetch(new Request("http://localhost/review?number=42")))
+    return { failed: response.status >= 400, body: try awaited(() => response.text()) }
   }
   if (transport === "CLI") {
     const run = capture()
-    awaited(cli.serve(["review", "--number", "42", "--format", "json"], run.options))
+    try awaited(() => cli.serve(["review", "--number", "42", "--format", "json"], run.options))
     return { failed: run.exits.includes(1), body: run.writes.join("") }
   }
-  const response = tool(cli, "call_write_tool", { name: "review", arguments: { number: 42 } })
+  const response = try tool(cli, "call_write_tool", { name: "review", arguments: { number: 42 } })
   return { failed: response.result.isError === true, body: JSON.stringify(response) }
 }
 
 describe("Incur projection", () => {
-  it.live("bounds a native import stuck in top-level await and discovers sibling routes") {
+  it.live("bounds a native import stuck in top-level await and discovers sibling routes", effect () => {
     const gate = makeGate()
-    const globals = globalThis as { mutable fsMetadataGate?: Promise<void> }
+    const globals = metadataGlobals
     globals.fsMetadataGate = gate.promise
-    const { directory, source } = sync(async () => {
-      const directory = await mkdtemp(join(tmpdir(), "fs-metadata-"))
-      const source = join(directory, "stuck.mjs")
-      await writeFile(source, "await globalThis.fsMetadataGate; export default null\n")
-      return { directory, source }
-    })
-    const { cli } = makeCli([makeRoute("a-stuck", source), makeRoute("review")])
-    const discovery = paths(cli)
-    try {
-      expect(within(awaited(discovery), 8_000)).toEqual(["/a-stuck", "/review"])
-      const called = tool(cli, "call_write_tool", { name: "a-stuck", arguments: {} })
+    const { directory, source } = try promise(() => createMetadataFixture())
+    const { cli } = try makeCli([makeRoute("a-stuck", source), makeRoute("review")])
+    const discovery = try Effect.orDie(Effect.try({ try: () => paths(cli), catch: (error) => error }))
+    try ensuring(effect {
+      expect(try within(awaited(() => discovery), 8_000)).toEqual(["/a-stuck", "/review"])
+      const called = try tool(cli, "call_write_tool", { name: "a-stuck", arguments: {} })
       expect(called.result.isError).toBe(true)
       expect(called.result.content[0]!.text).toContain("The route metadata load timed out")
-      expect(call(cli, "MCP").failed).toBe(false)
-    } finally {
+      expect((try call(cli, "MCP")).failed).toBe(false)
+    }, effect {
       // Release this otherwise unbounded module only after the deadline
       // assertions so teardown leaves no outstanding module evaluation.
       gate.release()
-      awaited(discovery.catch(() => undefined))
+      try awaited(() => discovery.catch(() => undefined))
       delete globals.fsMetadataGate
-      sync(async (directory) => rm(directory, { recursive: true, force: true }), directory)
-    }
-  }
-
-  it.live.each(["/openapi.json", "/missing"])("cancels only the waiter for %s", (path) => {
-    const gate = makeGate()
-    const load = vi.spyOn(Route, "load").mockReturnValue(gatedLoad(gate.promise))
-    const { cli } = makeCli()
-    const controller = new AbortController()
-    const reason = new Error("request cancelled")
-    const request = cli.fetch(new Request(`http://localhost${path}`, { signal: controller.signal }))
-    const other = paths(cli)
-    try {
-      awaited(vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)))
-      controller.abort(reason)
-      within(awaited(expect(request).rejects.toBe(reason)), 500)
-      expect(load).toHaveBeenCalledTimes(1)
-      gate.release()
-      expect(awaited(other)).toEqual(["/review"])
-    } finally {
-      gate.release()
-      awaited(Promise.allSettled([request, other]))
-      load.mockRestore()
-    }
+      try promise(() => removeMetadataFixture(directory))
+    })
   })
 
-  it.live("does not start a metadata build for an already aborted request") {
+  it.live.each(["/openapi.json", "/missing"])("cancels only the waiter for %s", effect (path) => {
+    const gate = makeGate()
+    const load = vi.spyOn(Route, "load").mockReturnValue(gatedLoad(gate.promise))
+    const { cli } = try makeCli()
+    const controller = new AbortController()
+    const reason = new Error("request cancelled")
+    const request = try Effect.sync(() => cli.fetch(new Request(`http://localhost${path}`, { signal: controller.signal })))
+    const other = try Effect.sync(() => paths(cli))
+    try ensuring(effect {
+      try awaited(() => vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)))
+      controller.abort(reason)
+      try (within(awaited(() => expect(request).rejects.toBe(reason)), 500))
+      expect(load).toHaveBeenCalledTimes(1)
+      gate.release()
+      expect(try awaited(() => other)).toEqual(["/review"])
+    }, effect {
+      gate.release()
+      try awaited(() => Promise.allSettled([request, other]))
+      load.mockRestore()
+    })
+  })
+
+  it.live("does not start a metadata build for an already aborted request", effect () => {
     const load = vi.spyOn(Route, "load")
-    const { cli } = makeCli()
+    const { cli } = try makeCli()
     const controller = new AbortController()
     const reason = new Error("already cancelled")
     controller.abort(reason)
-    try {
-      awaited(
+    try ensuring(effect {
+      try (awaited(() => 
         expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
           .rejects.toBe(reason)
-      )
+      ))
       expect(load).not.toHaveBeenCalled()
-    } finally {
+    
+    }, effect {
       load.mockRestore()
-    }
-  }
+    })
+  })
 
-  it.live("retries a rejected shared metadata build on the next request") {
+  it.live("retries a rejected shared metadata build on the next request", effect () => {
     const load = vi.spyOn(Route, "load").mockReturnValueOnce(die(new Error("build failed once")))
-    const { cli } = makeCli()
-    try {
-      awaited(expect(paths(cli)).rejects.toThrow("build failed once"))
-      expect(awaited(paths(cli))).toEqual(["/review"])
-      expect(awaited(paths(cli))).toEqual(["/review"])
+    const { cli } = try makeCli()
+    try ensuring(effect {
+      try awaited(() => expect(paths(cli)).rejects.toThrow("build failed once"))
+      expect(try awaited(() => paths(cli))).toEqual(["/review"])
+      expect(try awaited(() => paths(cli))).toEqual(["/review"])
       expect(load).toHaveBeenCalledTimes(2)
-    } finally {
+    
+    }, effect {
       load.mockRestore()
-    }
-  }
+    })
+  })
 
-  it.live("cancels a request aborted synchronously while its shared build starts") {
+  it.live("cancels a request aborted synchronously while its shared build starts", effect () => {
     const controller = new AbortController()
     const reason = new Error("cancelled during startup")
     // The abort runs when the build calls `load`, before its program runs.
-    const load = vi.spyOn(Route, "load").mockImplementationOnce((): Effect<typeof visible> => {
+    const load = vi.spyOn(Route, "load").mockImplementationOnce((): typeof visible!! => {
       controller.abort(reason)
-      return () => visible
+      return effect { return visible }
     })
-    const { cli } = makeCli()
-    try {
-      awaited(
+    const { cli } = try makeCli()
+    try ensuring(effect {
+      try (awaited(() => 
         expect(cli.fetch(new Request("http://localhost/openapi.json", { signal: controller.signal })))
           .rejects.toBe(reason)
-      )
-      expect(awaited(paths(cli))).toEqual(["/review"])
+      ))
+      expect(try awaited(() => paths(cli))).toEqual(["/review"])
       expect(load).toHaveBeenCalledTimes(1)
-    } finally {
+    
+    }, effect {
       load.mockRestore()
-    }
-  }
+    })
+  })
 
   describe("request cancellation", () => {
-    it.live("never invokes a flow for an already aborted request") {
-      const { cli, seen } = makeCli()
+    it.live("never invokes a flow for an already aborted request", effect () => {
+      const { cli, seen } = try makeCli()
       const controller = new AbortController()
       const reason = new Error("cancelled before dispatch")
       controller.abort(reason)
-      awaited(
+      try (awaited(() => 
         expect(cli.fetch(new Request("http://localhost/review?number=42", { signal: controller.signal })))
           .rejects.toBe(reason)
-      )
-      awaited(
+      ))
+      try (awaited(() => 
         expect(
           cli.fetch(mcpRequest("call_write_tool", { name: "review", arguments: { number: 42 } }, controller.signal))
         ).rejects.toBe(reason)
-      )
+      ))
       expect(seen).toEqual([])
-    }
+    })
 
-    it.live("interrupts route selection when the request aborts") {
+    it.live("interrupts route selection when the request aborts", effect () => {
       const gate = makeGate()
       const interrupted = vi.fn()
       const load = vi.spyOn(Route, "load").mockReturnValue(gatedLoad(gate.promise, interrupted))
-      const { cli, seen } = makeCli()
+      const { cli, seen } = try makeCli()
       const controller = new AbortController()
-      const request = cli.fetch(new Request("http://localhost/review?number=42", { signal: controller.signal }))
-      try {
-        awaited(vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)))
+      const request = try Effect.sync(() => cli.fetch(new Request("http://localhost/review?number=42", { signal: controller.signal })))
+      try ensuring(effect {
+        try awaited(() => vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)))
         controller.abort(new Error("cancelled during selection"))
-        within(awaited(expect(request).rejects.toThrow("All fibers interrupted")), 500)
+        try (within(awaited(() => expect(request).rejects.toThrow("All fibers interrupted")), 500))
         expect(interrupted).toHaveBeenCalledTimes(1)
         expect(seen).toEqual([])
-      } finally {
+      
+    }, effect {
         gate.release()
-        awaited(Promise.allSettled([request]))
+        try awaited(() => Promise.allSettled([request]))
         load.mockRestore()
-      }
-    }
+    })
+    })
 
     it.live.each(["HTTP", "MCP"] as const)(
       "interrupts an in-flight %s invocation when the request aborts",
-      (transport) => {
+      effect (transport) => {
         const latch = latchedInvoke()
-        const { cli } = makeCli(undefined, latch.invoke)
+        const { cli } = try makeCli(undefined, latch.invoke)
         const controller = new AbortController()
         const request = transport === "HTTP"
           ? new Request("http://localhost/review?number=42", { signal: controller.signal })
           : mcpRequest("call_write_tool", { name: "review", arguments: { number: 42 } }, controller.signal)
-        const response = cli.fetch(request)
-        const settled = Promise.allSettled([response])
-        try {
-          within(awaited(latch.started), 8_000)
+        const response = try Effect.sync(() => cli.fetch(request))
+        const settled = try Effect.sync(() => Promise.allSettled([response]))
+        try ensuring(effect {
+          try (within(awaited(() => latch.started), 8_000))
           controller.abort(new Error("client went away"))
           // The abort interrupts the invocation fiber, which runs its finalizers
           // before the request settles.
-          within(awaited(latch.finalized), 500)
-          const [outcome] = awaited(settled)
+          try (within(awaited(() => latch.finalized), 500))
+          const [outcome] = try awaited(() => settled)
           if (outcome!.status === "fulfilled") {
             const result = outcome!.value
             if (transport === "HTTP") {
               expect(result.status).toBeGreaterThanOrEqual(400)
             } else {
-              const payload = awaited(result.json()) as {
+              const payload = try awaited(() => result.json()) as {
                 error?: unknown
                 result?: { isError?: boolean }
               }
               expect(payload.error !== undefined || payload.result?.isError === true).toBe(true)
             }
           }
-        } finally {
+        }, effect {
           latch.release()
-          awaited(settled)
-        }
+          try awaited(() => settled)
+        })
       }
     )
   })
 
-  it.live("closes the host by interrupting the build before projecting more routes") {
+  it.live("closes the host by interrupting the build before projecting more routes", effect () => {
     const interrupted = vi.fn()
     const gate = makeGate()
     const load = vi.spyOn(Route, "load").mockReturnValue(gatedLoad(gate.promise, interrupted))
-    const { cli } = makeCli([makeRoute("first"), makeRoute("second")])
-    const pending = paths(cli)
+    const { cli } = try makeCli([makeRoute("first"), makeRoute("second")])
+    const pending = try Effect.orDie(Effect.try({ try: () => paths(cli), catch: (error) => error }))
     // Install a rejection handler before closing the host.
-    const settled = Promise.allSettled([pending])
-    try {
-      awaited(vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)))
-      within(awaited(cli.close()), 500)
+    const settled = try Effect.orDie(Effect.try({ try: () => Promise.allSettled([pending]), catch: (error) => error }))
+    try ensuring(effect {
+      try awaited(() => vi.waitFor(() => expect(load).toHaveBeenCalledTimes(1)))
+      try (within(awaited(() => cli.close()), 500))
       expect(interrupted).toHaveBeenCalledTimes(1)
-      expect(awaited(settled)[0]!.status).toBe("rejected")
-      awaited(expect(paths(cli)).rejects.toThrow("The CLI is closed"))
-      awaited(expect(cli.fetch(new Request("http://localhost/first"))).rejects.toThrow("The CLI is closed"))
-      awaited(expect(cli.serve(["--llms"], capture().options)).rejects.toThrow("The CLI is closed"))
-      awaited(cli.close())
+      expect((try awaited(() => settled))[0]!.status).toBe("rejected")
+      try awaited(() => expect(paths(cli)).rejects.toThrow("The CLI is closed"))
+      try awaited(() => expect(cli.fetch(new Request("http://localhost/first"))).rejects.toThrow("The CLI is closed"))
+      try awaited(() => expect(cli.serve(["--llms"], capture().options)).rejects.toThrow("The CLI is closed"))
+      try awaited(() => cli.close())
       expect(load).toHaveBeenCalledTimes(1)
-    } finally {
+    
+    }, effect {
       gate.release()
-      awaited(settled)
+      try awaited(() => settled)
       load.mockRestore()
-    }
-  }
+    })
+  })
 
-  it.live("carries typed inputs consistently over GET and JSON POST") {
-    const { cli, seen } = makeCli()
-    const get = awaited(cli.fetch(new Request("http://localhost/review?number=42&enabled=true")))
-    const post = awaited(cli.fetch(
+  it.live("carries typed inputs consistently over GET and JSON POST", effect () => {
+    const { cli, seen } = try makeCli()
+    const get = try awaited(() => cli.fetch(new Request("http://localhost/review?number=42&enabled=true")))
+    const post = try awaited(() => cli.fetch(
       new Request("http://localhost/review", {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -353,29 +358,30 @@ describe("Incur projection", () => {
     ))
 
     expect(get.status).toBe(200)
-    expect(awaited(get.json()).data).toEqual({ accepted: true, number: 42 })
+    expect((try awaited(() => get.json())).data).toEqual({ accepted: true, number: 42 })
     expect(post.status).toBe(200)
-    expect(awaited(post.json()).data).toEqual({ accepted: true, number: 43 })
+    expect((try awaited(() => post.json())).data).toEqual({ accepted: true, number: 43 })
     expect(seen.map((invocation) => invocation.input)).toEqual([
       { number: 42, enabled: true },
       { number: 43, tags: ["a", "b"] }
     ])
-  }
+  })
 
-  it.live("accepts declared flags from the CLI projection") {
-    const { cli, seen } = makeCli()
+  it.live("accepts declared flags from the CLI projection", effect () => {
+    const { cli, seen } = try makeCli()
     const writes: Array<string> = []
-    const write = spyOnStdout(writes)
-    try {
-      awaited(cli.serve(["review", "--number", "44", "--format", "json"]))
-    } finally {
-      write.mockRestore()
-    }
+    const write = try spyOnStdout(writes)
+    try ensuring(effect {
+      try awaited(() => cli.serve(["review", "--number", "44", "--format", "json"]))
+    
+    }, effect {
+      try sync(() => write.mockRestore())
+    })
     expect(seen[0]?.input).toEqual({ number: 44 })
     expect(writes.join("")).toContain("44")
-  }
+  })
 
-  it.live("carries an explicit null scalar input over a JSON body and MCP arguments") {
+  it.live("carries an explicit null scalar input over a JSON body and MCP arguments", effect () => {
     const flow = {
       capabilities: [],
       effects: undefined,
@@ -383,14 +389,14 @@ describe("Incur projection", () => {
       input: Schema.NullOr(Schema.String),
       output: Schema.NullOr(Schema.String)
     } as const
-    vi.spyOn(Route, "load").mockImplementation(() => flow)
-    try {
+    vi.spyOn(Route, "load").mockImplementation(effect () => flow)
+    try ensuring(effect {
       const inputs: Array<unknown> = []
-      const { cli } = makeCli([makeRoute("scalar")], ({ input }) => {
+      const { cli } = try makeCli([makeRoute("scalar")], effect ({ input }) => {
         inputs.push(input)
         return input
       })
-      const post = awaited(cli.fetch(
+      const post = try awaited(() => cli.fetch(
         new Request("http://localhost/scalar", {
           method: "POST",
           headers: { "content-type": "application/json" },
@@ -398,16 +404,16 @@ describe("Incur projection", () => {
         })
       ))
       expect(post.status).toBe(200)
-      const called = tool(cli, "call_write_tool", { name: "scalar", arguments: { input: null } })
+      const called = try tool(cli, "call_write_tool", { name: "scalar", arguments: { input: null } })
       expect(called.result.isError).not.toBe(true)
       expect(inputs).toEqual([null, null])
-    } finally {
+    }, effect {
       vi.restoreAllMocks()
-    }
-  }
+    })
+  })
 
-  it.live("advertises the real input schema on every discovery surface") {
-    const { cli } = makeCli()
+  it.live("advertises the real input schema on every discovery surface", effect () => {
+    const { cli } = try makeCli()
     // The flow's own JSON Schema is the yardstick: a discovery surface that
     // publishes anything narrower or vaguer misdescribes what the flow takes.
     const declared = Schema.toJsonSchemaDocument(visible.input).schema as {
@@ -415,8 +421,8 @@ describe("Incur projection", () => {
       required: ReadonlyArray<string>
     }
 
-    const details = tool(cli, "get_tool_details", { name: "review" })
-    const advertised = JSON.parse(details.result.content[0]!.text) as {
+    const details = try tool(cli, "get_tool_details", { name: "review" })
+    const advertised = (try ((foreignSyntaxErrorClass: typeof SyntaxError) => Effect.catch(Effect.try({ try: () => JSON.parse(details.result.content[0]!.text), catch: (error) => error }), (error) => error instanceof foreignSyntaxErrorClass ? Effect.fail(error) : Effect.die(error)))(SyntaxError)) as {
       inputSchema: {
         properties: Readonly<Record<string, unknown>>
         required: ReadonlyArray<string>
@@ -425,7 +431,8 @@ describe("Incur projection", () => {
     expect(advertised.inputSchema.properties).toEqual(declared.properties)
     expect(advertised.inputSchema.required).toEqual(declared.required)
 
-    const spec = awaited(awaited(cli.fetch(new Request("http://localhost/openapi.json"))).json()) as {
+    const specResponse = try awaited(() => cli.fetch(new Request("http://localhost/openapi.json")))
+    const spec = try awaited(() => specResponse.json()) as {
       paths: {
         "/review": {
           post: {
@@ -445,86 +452,86 @@ describe("Incur projection", () => {
     )
 
     const help = capture()
-    awaited(cli.serve(["review", "--schema"], help.options))
+    try awaited(() => cli.serve(["review", "--schema"], help.options))
     expect(help.writes.join("")).toContain("number")
-  }
+  })
 
-  it.live("carries MCP tool arguments through to the invoked flow") {
-    const { cli, seen } = makeCli()
-    const called = tool(cli, "call_write_tool", { name: "review", arguments: { number: 42 } })
+  it.live("carries MCP tool arguments through to the invoked flow", effect () => {
+    const { cli, seen } = try makeCli()
+    const called = try tool(cli, "call_write_tool", { name: "review", arguments: { number: 42 } })
     expect(called.result.isError).toBeUndefined()
     expect(called.result.content[0]!.text).toContain("42")
     expect(seen.map((invocation) => invocation.input)).toEqual([{ number: 42 }])
-  }
+  })
 
-  it.live("keeps an unprojectable route advertised and answers with its typed failure") {
+  it.live("keeps an unprojectable route advertised and answers with its typed failure", effect () => {
     const unsupported = makeRoute("bad", undefined, { input: new Descriptor.SchemaRefMarkdownOutput({}) })
-    const { cli, seen } = makeCli([makeRoute("review"), unsupported])
+    const { cli, seen } = try makeCli([makeRoute("review"), unsupported])
 
     // A route that cannot be projected is still dispatchable, so hiding it from
     // discovery would be the one failure this projection exists to prevent.
-    expect(awaited(paths(cli))).toEqual(["/bad", "/review"])
-    const called = tool(cli, "call_write_tool", { name: "bad", arguments: {} })
+    expect(try awaited(() => paths(cli))).toEqual(["/bad", "/review"])
+    const called = try tool(cli, "call_write_tool", { name: "bad", arguments: {} })
     expect(called.result.isError).toBe(true)
     expect(called.result.content[0]!.text).toContain("An output locator cannot describe command input")
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("loads only the dispatched module until a discovery surface needs the rest") {
-    const { cli, seen } = makeCli([makeRoute("review"), makeRoute("recorded", recordedModule)])
-    expect(recordedImports()).toBe(0)
+  it.live("loads only the dispatched module until a discovery surface needs the rest", effect () => {
+    const { cli, seen } = try makeCli([makeRoute("review"), makeRoute("recorded", recordedModule)])
+    expect(try sync(() => recordedImports())).toBe(0)
 
-    expect(awaited(cli.fetch(new Request("http://localhost/review?number=1"))).status).toBe(200)
+    expect((try awaited(() => cli.fetch(new Request("http://localhost/review?number=1")))).status).toBe(200)
     expect(seen.map((invocation) => invocation.name)).toEqual(["review"])
-    expect(recordedImports()).toBe(0)
+    expect(try sync(() => recordedImports())).toBe(0)
 
     // Discovery must publish real schemas, so it projects every command once
     // and reuses that projection.
-    expect(awaited(paths(cli))).toEqual(["/recorded", "/review"])
-    expect(recordedImports()).toBe(1)
-    expect(awaited(paths(cli))).toEqual(["/recorded", "/review"])
-    expect(recordedImports()).toBe(1)
-  }
+    expect(try awaited(() => paths(cli))).toEqual(["/recorded", "/review"])
+    expect(try sync(() => recordedImports())).toBe(1)
+    expect(try awaited(() => paths(cli))).toEqual(["/recorded", "/review"])
+    expect(try sync(() => recordedImports())).toBe(1)
+  })
 
-  it.live("keeps parent routes and nested routes independently executable") {
-    const { cli, seen } = makeCli([makeRoute("domains"), makeRoute("domains/list")])
-    expect(awaited(cli.fetch(new Request("http://localhost/domains?number=1"))).status).toBe(200)
-    const nested = awaited(cli.fetch(new Request("http://localhost/domains/list?number=2")))
-    expect(nested.status, awaited(nested.clone().text())).toBe(200)
+  it.live("keeps parent routes and nested routes independently executable", effect () => {
+    const { cli, seen } = try makeCli([makeRoute("domains"), makeRoute("domains/list")])
+    expect((try awaited(() => cli.fetch(new Request("http://localhost/domains?number=1")))).status).toBe(200)
+    const nested = try awaited(() => cli.fetch(new Request("http://localhost/domains/list?number=2")))
+    expect(nested.status, try awaited(() => nested.clone().text())).toBe(200)
     expect(seen.map((invocation) => invocation.name)).toEqual(["domains", "domains/list"])
-  }
+  })
 
-  it.live("advertises a route that also has children under the reserved self segment") {
-    const { cli, seen } = makeCli([makeRoute("domains"), makeRoute("domains/list")])
-    expect(awaited(paths(cli))).toEqual(["/domains/list", "/domains/self"])
+  it.live("advertises a route that also has children under the reserved self segment", effect () => {
+    const { cli, seen } = try makeCli([makeRoute("domains"), makeRoute("domains/list")])
+    expect(try awaited(() => paths(cli))).toEqual(["/domains/list", "/domains/self"])
 
     const manifest = capture()
-    awaited(cli.serve(["--llms"], manifest.options))
+    try awaited(() => cli.serve(["--llms"], manifest.options))
     expect(manifest.writes.join("")).toContain("domains self")
 
-    const self = awaited(cli.fetch(new Request("http://localhost/domains/self?number=3")))
-    expect(self.status, awaited(self.clone().text())).toBe(200)
-    expect(awaited(self.json()).data).toEqual({ accepted: true, number: 3 })
+    const self = try awaited(() => cli.fetch(new Request("http://localhost/domains/self?number=3")))
+    expect(self.status, try awaited(() => self.clone().text())).toBe(200)
+    expect((try awaited(() => self.json())).data).toEqual({ accepted: true, number: 3 })
 
     const cliRun = capture()
-    awaited(cli.serve(["domains", "self", "--number", "5", "--format", "json"], cliRun.options))
+    try awaited(() => cli.serve(["domains", "self", "--number", "5", "--format", "json"], cliRun.options))
     expect(cliRun.writes.join("")).toContain("5")
     expect(seen.map((invocation) => invocation.name)).toEqual(["domains", "domains"])
-  }
+  })
 
-  it.live("refuses a child route that claims the reserved self segment") {
+  it.live("refuses a child route that claims the reserved self segment", effect () => {
     provide FlowInvoker.layerNoop() {
-      expect(failureOf(Incur.createCli("flows", [makeRoute("domains"), makeRoute(`domains/${Incur.selfSegment}`)])))
+      expect(try failureOf(Incur.createCli("flows", [makeRoute("domains"), makeRoute(`domains/${Incur.selfSegment}`)])))
         .toMatchObject({ code: "duplicate_route", path: "domains/self" })
     }
-  }
+  })
 
-  it.live("surfaces a hydration failure instead of falling back to help output") {
+  it.live("surfaces a hydration failure instead of falling back to help output", effect () => {
     const unsupported = makeRoute("bad", undefined, { input: new Descriptor.SchemaRefMarkdownOutput({}) })
-    const { cli, seen } = makeCli([unsupported])
+    const { cli, seen } = try makeCli([unsupported])
 
-    const response = awaited(cli.fetch(new Request("http://localhost/bad?number=1")))
-    const body = awaited(response.json())
+    const response = try awaited(() => cli.fetch(new Request("http://localhost/bad?number=1")))
+    const body = try awaited(() => response.json())
     expect(response.status).toBeGreaterThanOrEqual(400)
     expect(body.error).toMatchObject({
       code: "unsupported_schema",
@@ -532,110 +539,108 @@ describe("Incur projection", () => {
     })
 
     const run = capture()
-    awaited(cli.serve(["bad", "--number", "1"], run.options))
+    try awaited(() => cli.serve(["bad", "--number", "1"], run.options))
     expect(run.writes.join("")).toContain("unsupported_schema")
     expect(run.exits).toContain(1)
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("reports a resolution resource limit before dispatch on both surfaces") {
-    const { cli, seen } = makeCli()
+  it.live("reports a resolution resource limit before dispatch on both surfaces", effect () => {
+    const { cli, seen } = try makeCli()
     const oversized = "x".repeat(5_000)
 
-    const response = awaited(cli.fetch(new Request(`http://localhost/${oversized}`)))
+    const response = try awaited(() => cli.fetch(new Request(`http://localhost/${oversized}`)))
     expect(response.status).toBe(400)
-    expect(awaited(response.json()).error).toMatchObject({ code: "resource_limit" })
+    expect((try awaited(() => response.json())).error).toMatchObject({ code: "resource_limit" })
 
     const run = capture()
-    awaited(cli.serve([oversized], run.options))
+    try awaited(() => cli.serve([oversized], run.options))
     expect(run.writes.join("")).toContain("resource_limit")
     expect(run.exits).toEqual([1])
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("writes a pre-dispatch failure to stdout and exits when no overrides are supplied") {
-    const { cli } = makeCli()
+  it.live("writes a pre-dispatch failure to stdout and exits when no overrides are supplied", effect () => {
+    const { cli } = try makeCli()
     const writes: Array<string> = []
-    const write = spyOnStdout(writes)
+    const write = try spyOnStdout(writes)
     const exits: Array<number> = []
-    const exit = sync((exits) =>
-      vi.spyOn(process, "exit").mockImplementation(
+    const exit = try sync(() =>
+      vi.spyOn($platform$1(), "exit").mockImplementation(
         ((code: number) => {
           exits.push(code)
         }) as never
-      ), exits)
-    try {
-      awaited(cli.serve(["x".repeat(5_000)]))
-    } finally {
-      write.mockRestore()
+      ))
+    try ensuring(effect {
+      try awaited(() => cli.serve(["x".repeat(5_000)]))
+    
+    }, effect {
+      try sync(() => write.mockRestore())
       exit.mockRestore()
-    }
+    })
     expect(writes.join("")).toContain("resource_limit")
     expect(exits).toEqual([1])
-  }
+  })
 
-  it.live("percent-decodes and NFC-normalizes request paths") {
+  it.live("percent-decodes and NFC-normalizes request paths", effect () => {
     const composed = "café"
     const decomposed = "café"
     // The route is declared decomposed, as a macOS directory name arrives, and
     // requested composed, as a browser or an agent sends it.
-    const { cli, seen } = makeCli([makeRoute(decomposed)])
+    const { cli, seen } = try makeCli([makeRoute(decomposed)])
 
-    const unicode = awaited(cli.fetch(new Request(`http://localhost/${encodeURIComponent(composed)}?number=9`)))
-    expect(unicode.status, awaited(unicode.clone().text())).toBe(200)
+    const unicode = try awaited(() => cli.fetch(new Request(`http://localhost/${encodeURIComponent(composed)}?number=9`)))
+    expect(unicode.status, try awaited(() => unicode.clone().text())).toBe(200)
     expect(seen.map((invocation) => invocation.name)).toEqual([composed])
 
     // An encoded slash decodes inside one segment and never invents a boundary.
-    expect(awaited(cli.fetch(new Request("http://localhost/%2Fcaf%C3%A9?number=1"))).status).toBe(404)
+    expect((try awaited(() => cli.fetch(new Request("http://localhost/%2Fcaf%C3%A9?number=1")))).status).toBe(404)
 
-    const malformed = awaited(cli.fetch(new Request("http://localhost/%E0%A4%A")))
+    const malformed = try awaited(() => cli.fetch(new Request("http://localhost/%E0%A4%A")))
     expect(malformed.status).toBe(400)
-    expect(awaited(malformed.json()).error).toMatchObject({
+    expect((try awaited(() => malformed.json())).error).toMatchObject({
       code: "parse_failed",
       message: "The request path contains a malformed percent escape"
     })
     expect(seen).toHaveLength(1)
-  }
+  })
 
-  it.live("treats COMPLETE as truthy exactly as incur does") {
-    const { cli, seen } = makeCli()
-    const previous = sync(() => process.env.COMPLETE)
+  it.live("treats COMPLETE as truthy exactly as incur does", effect () => {
+    const { cli, seen } = try makeCli()
+    const previous = try $platform$2()
     const empty = capture()
     const shell = capture()
-    try {
-      sync(() => {
-        process.env.COMPLETE = ""
-      })
-      awaited(cli.serve(["review", "--number", "4", "--format", "json"], empty.options))
-      sync(() => {
-        process.env.COMPLETE = "zsh"
-      })
-      awaited(cli.serve(["review", "--number", "6", "--format", "json"], shell.options))
-    } finally {
-      sync((previous) => {
+    try ensuring(effect {
+      try $platform$3()
+      try awaited(() => cli.serve(["review", "--number", "4", "--format", "json"], empty.options))
+      try $platform$4()
+      try awaited(() => cli.serve(["review", "--number", "6", "--format", "json"], shell.options))
+    
+    }, effect {
+      try (sync(() => {
         if (previous === undefined) delete process.env.COMPLETE
         else process.env.COMPLETE = previous
-      }, previous)
-    }
+      }))
+    })
     expect(empty.writes.join("")).toContain("4")
     expect(shell.writes.join("")).not.toContain("6")
     expect(seen.map((invocation) => invocation.input)).toEqual([{ number: 4 }])
-  }
+  })
 
-  it.live("accepts slash names and metadata-only groups through the CLI") {
-    const { cli, seen } = makeCli([makeRoute("nested/visible"), makeRoute("domains/list")])
+  it.live("accepts slash names and metadata-only groups through the CLI", effect () => {
+    const { cli, seen } = try makeCli([makeRoute("nested/visible"), makeRoute("domains/list")])
     const writes: Array<string> = []
-    awaited(cli.serve(["nested/visible", "--number", "7", "--format", "json"], {
+    try (awaited(() => cli.serve(["nested/visible", "--number", "7", "--format", "json"], {
       stdout: (value) => writes.push(value),
       exit: () => undefined
-    }))
+    })))
     expect(seen.map((entry) => entry.name)).toEqual(["nested/visible"])
     expect(writes.join("")).toContain("7")
-    expect(awaited(cli.fetch(new Request("http://localhost/openapi.json"))).status).toBe(200)
-  }
+    expect((try awaited(() => cli.fetch(new Request("http://localhost/openapi.json")))).status).toBe(200)
+  })
 
-  it.live("refuses a surplus positional on every route before invoking its flow") {
-    const { cli, seen } = makeCli([
+  it.live("refuses a surplus positional on every route before invoking its flow", effect () => {
+    const { cli, seen } = try makeCli([
       makeRoute("review"),
       makeRoute("nested/visible"),
       makeRoute("domains"),
@@ -645,52 +650,52 @@ describe("Incur projection", () => {
       const path of [["review"], ["nested/visible"], ["nested", "visible"], ["domains", "self"], ["domains", "list"]]
     ) {
       const run = capture()
-      awaited(cli.serve([...path, "surplus", "--number", "1", "--format", "json"], run.options))
+      try awaited(() => cli.serve([...path, "surplus", "--number", "1", "--format", "json"], run.options))
       expect(run.exits, path.join(" ")).toEqual([1])
-      expect(JSON.parse(run.writes.join(""))).toMatchObject({
+      expect(try ((foreignSyntaxErrorClass: typeof SyntaxError) => Effect.catch(Effect.try({ try: () => JSON.parse(run.writes.join("")), catch: (error) => error }), (error) => error instanceof foreignSyntaxErrorClass ? Effect.fail(error) : Effect.die(error)))(SyntaxError)).toMatchObject({
         code: "UNEXPECTED_ARGUMENT",
         message: "Unexpected argument: surplus"
       })
     }
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("keeps CLI discovery and unknown commands metadata-only") {
-    const { cli, seen } = makeCli()
+  it.live("keeps CLI discovery and unknown commands metadata-only", effect () => {
+    const { cli, seen } = try makeCli()
     const writes: Array<string> = []
     const exits: Array<number> = []
     const options = {
       stdout: (value: string) => writes.push(value),
       exit: (code: number) => exits.push(code)
     }
-    awaited(cli.serve(["--help"], options))
-    awaited(cli.serve(["missing"], options))
+    try awaited(() => cli.serve(["--help"], options))
+    try awaited(() => cli.serve(["missing"], options))
     expect(writes.join("")).toContain("review")
     expect(exits).toContain(1)
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("never mounts hidden or unsupported routes") {
-    const { cli } = makeCli([
+  it.live("never mounts hidden or unsupported routes", effect () => {
+    const { cli } = try makeCli([
       makeRoute("visible"),
       makeRoute("hidden", undefined, { modelInvocable: false }),
       makeRoute("markdown", undefined, { kind: "markdown" }),
       makeRoute("skill", undefined, { kind: "skill" })
     ])
     for (const name of ["hidden", "markdown", "skill"]) {
-      expect(awaited(cli.fetch(new Request(`http://localhost/${name}?number=1`))).status).toBe(404)
+      expect((try awaited(() => cli.fetch(new Request(`http://localhost/${name}?number=1`)))).status).toBe(404)
     }
-    const spec = awaited(cli.fetch(new Request("http://localhost/openapi.json")))
+    const spec = try awaited(() => cli.fetch(new Request("http://localhost/openapi.json")))
     expect(spec.status).toBe(200)
-    expect(awaited(spec.text())).not.toContain("hidden")
-  }
+    expect(try awaited(() => spec.text())).not.toContain("hidden")
+  })
 
-  it.live("refuses input its advertised schema rejects without echoing the value") {
-    const { cli, seen } = makeCli()
+  it.live("refuses input its advertised schema rejects without echoing the value", effect () => {
+    const { cli, seen } = try makeCli()
     // The advertised schema is enforced, not decorative: the refusal names the
     // field that failed and never repeats what the caller sent.
-    const response = awaited(cli.fetch(new Request("http://localhost/review?number=not-a-number")))
-    const body = awaited(response.json()) as {
+    const response = try awaited(() => cli.fetch(new Request("http://localhost/review?number=not-a-number")))
+    const body = try awaited(() => response.json()) as {
       error: { fieldErrors: ReadonlyArray<{ path: string }> }
     }
     expect(response.status).toBeGreaterThanOrEqual(400)
@@ -698,127 +703,133 @@ describe("Incur projection", () => {
     expect(JSON.stringify(body)).not.toContain("not-a-number")
 
     const run = capture()
-    awaited(cli.serve(["review", "--number", "not-a-number", "--format", "json"], run.options))
+    try awaited(() => cli.serve(["review", "--number", "not-a-number", "--format", "json"], run.options))
     expect(run.writes.join("")).toContain("\"path\": \"number\"")
     expect(run.writes.join("")).not.toContain("not-a-number")
     expect(seen).toEqual([])
-  }
+  })
 
-  it.live("returns a stable typed refusal when only the flow schema can reject the input") {
+  it.live("returns a stable typed refusal when only the flow schema can reject the input", effect () => {
     // `Schema.NonEmptyString` projects to `string`, so the empty title passes
     // the advertised schema and the authoritative decoder is what refuses it.
-    const { cli, seen } = makeCli([makeRoute("refined", refinedModule)])
-    const response = awaited(cli.fetch(new Request("http://localhost/refined?title=")))
-    const body = awaited(response.json())
+    const { cli, seen } = try makeCli([makeRoute("refined", refinedModule)])
+    const response = try awaited(() => cli.fetch(new Request("http://localhost/refined?title=")))
+    const body = try awaited(() => response.json())
     expect(response.status).toBeGreaterThanOrEqual(400)
     expect(body.error).toMatchObject({ code: "decode_failed" })
     expect(seen).toEqual([])
-  }
+  })
 
   describe.each(transports)("%s invocation boundary", (transport) => {
-    it.live.each([false, true])("enforces authorization after metadata initialized: %s", (initialized) => {
-      const { cli, seen } = makeCli()
-      if (initialized) awaited(paths(cli))
+    it.live.each([false, true])("enforces authorization after metadata initialized: %s", effect (initialized) => {
+      const { cli, seen } = try makeCli()
+      if (initialized) try awaited(() => paths(cli))
       const guards: Array<string> = []
-      expect(cli.use((_context, next) => {
+      expect(try sync(() => cli.use((_context, next) => {
         guards.push("first")
         return next()
-      })).toBe(cli)
-      cli.use((context) => {
+      }))).toBe(cli)
+      try sync(() => cli.use((context) => {
         guards.push("deny")
         return context.error({ code: "UNAUTHORIZED", message: "Denied" })
-      })
-      const response = call(cli, transport)
+      }))
+      const response = try call(cli, transport)
       expect(response.failed).toBe(true)
       expect(response.body).toContain(transport === "MCP" ? "Denied" : "UNAUTHORIZED")
       expect(guards).toEqual(["first", "deny"])
       expect(seen).toEqual([])
     })
 
-    it.live.each(["die", "throw", "failure"])("sanitizes an invoker %s", (kind) => {
+    it.live.each(["die", "throw", "failure"])("sanitizes an invoker %s", effect (kind) => {
       const sentinel = "SECRET_SENTINEL_credential_from_backend"
-      const invoke: FlowInvoker.FlowInvoker["invoke"] = kind === "throw"
+      const invoke: FlowInvoker.FlowInvoker.Shape["invoke"] = kind === "throw"
         // A plain function that throws instead of returning a program.
-        ? sync((sentinel) => (): never => {
-          throw new Error(sentinel)
-        }, sentinel)
+        ? try sync(() => (): never => {
+          $raise(new Error(sentinel))
+        })
         : kind === "die"
         ? () => die(new Error(sentinel))
         // A JavaScript host can violate the service's typed failure contract.
-        : ((): Effect<never, Error, infer R> => {
+        : (effect (): never!Error => {
           // @vibelang-diagnostics-next-line EK4804:off
           throw new Error(sentinel)
-        }) as unknown as FlowInvoker.FlowInvoker["invoke"]
-      const { cli } = makeCli(undefined, invoke)
-      const response = call(cli, transport)
+        }) as unknown as FlowInvoker.FlowInvoker.Shape["invoke"]
+      const { cli } = try makeCli(undefined, invoke)
+      const response = try call(cli, transport)
       expect(response.failed).toBe(true)
       expect(response.body).not.toContain(sentinel)
       if (transport !== "MCP") expect(response.body).toContain("invocation_unavailable")
       expect(response.body).toContain("The flow invocation failed")
     })
 
-    it.live.each([false, true])("preserves interruption with a concurrent defect: %s", (defect) => {
+    it.live.each([false, true])("preserves interruption with a concurrent defect: %s", effect (defect) => {
       const sentinel = "SECRET_SENTINEL_interrupted_backend"
-      const { cli } = makeCli(undefined, () => {
-        throw Cause.fromReasons<never>([
+      const { cli } = try makeCli(undefined, () => {
+        return Effect.failCause(Cause.fromReasons<never>([
           ...Cause.interrupt().reasons,
           ...(defect ? Cause.die(new Error(sentinel)).reasons : [])
-        ])
+        ]))
       })
-      const response = call(cli, transport)
+      const response = try call(cli, transport)
       expect(response.failed).toBe(true)
       expect(response.body.toLowerCase()).toContain("interrupt")
       expect(response.body).not.toContain("invocation_unavailable")
       expect(response.body).not.toContain(sentinel)
     })
 
-    it.live("preserves deliberately public typed failures") {
-      const { cli } = makeCli(undefined, () => {
-        throw new FsError({
+    it.live("preserves deliberately public typed failures", effect () => {
+      const { cli } = try makeCli(undefined, () => {
+        return fail(new FsError({
           code: "invocation_unavailable",
           method: "test.invoke",
           description: "Public refusal"
-        })
+        }))
       })
-      const response = call(cli, transport)
+      const response = try call(cli, transport)
       expect(response.failed).toBe(true)
       if (transport !== "MCP") expect(response.body).toContain("invocation_unavailable")
       expect(response.body).toContain("Public refusal")
-    }
+    })
   })
 
-  it.live("retains unexpected causes only in the host's private debug logger") {
+  it.live("retains unexpected causes only in the host's private debug logger", effect () => {
     const defect = new Error("SECRET_SENTINEL_private_diagnostics")
     const logged: Array<{ message: unknown; cause: Cause.Cause<unknown> }> = []
     const logger = Logger.make((entry) => {
       logged.push(entry)
     })
-    const cli = debugCli(Logger.layer([logger]), FlowInvoker.make({ invoke: () => die(defect) }))
-    const response = call(cli, "HTTP")
+    const cli = try debugCli(Logger.layer([logger]), FlowInvoker.make({ invoke: () => die(defect) }))
+    const response = try call(cli, "HTTP")
     expect(response.failed).toBe(true)
     expect(response.body).not.toContain(defect.message)
     expect(logged).toHaveLength(1)
     expect(logged[0]!.message).toEqual(["Incur invocation failed"])
-    expect(logged[0]!.cause.squash()).toBe(defect)
-  }
+    expect(Cause.squash(logged[0]!.cause)).toBe(defect)
+  })
 
-  it.live("keeps built-in debug diagnostics off CLI stdout") {
+  it.live("keeps built-in debug diagnostics off CLI stdout", effect () => {
     const sentinel = "SECRET_SENTINEL_debug_console"
-    const cli = debugCli(
+    const cli = try debugCli(
       Logger.layer([Logger.defaultLogger]),
       FlowInvoker.make({ invoke: () => die(new Error(sentinel)) })
     )
-    const stdout = vi.spyOn(console, "log").mockImplementation(() => undefined)
-    const stderr = vi.spyOn(console, "error").mockImplementation(() => undefined)
-    try {
-      const response = call(cli, "CLI")
+    const stdout = vi.spyOn(nativeConsole, "log").mockImplementation(() => undefined)
+    const stderr = vi.spyOn(nativeConsole, "error").mockImplementation(() => undefined)
+    try ensuring(effect {
+      const response = try call(cli, "CLI")
       expect(response.failed).toBe(true)
       expect(response.body).not.toContain(sentinel)
       expect(stdout).not.toHaveBeenCalled()
       expect(JSON.stringify(stderr.mock.calls)).toContain(sentinel)
-    } finally {
+    
+    }, effect {
       stdout.mockRestore()
       stderr.mockRestore()
-    }
-  }
+    })
+  })
 })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

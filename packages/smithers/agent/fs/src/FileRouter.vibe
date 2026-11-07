@@ -64,14 +64,14 @@ const discoveryFailure = (cause: unknown): FsError =>
 
 const readFailure = (): FsError => failure("read_failed", "A route companion could not be inspected")
 
-function snapshotRoot(config: ScanConfig, path: Path.Path): Effect<string, FsError, infer R> {
-  const admitted = Boundary.inspectRecord(config, ["root"])
+effect function snapshotRoot(config: ScanConfig, path: Path.Path): string!FsError {
+  const admitted = try sync(() => Boundary.inspectRecord(config, ["root"]))
   const root = admitted.ok ? admitted.value.root : undefined
   if (
     typeof root !== "string" || root.length === 0 || root.length > Route.maximumPathLength ||
-    root.includes("\0") || !Boundary.isWellFormedText(root)
+    root.includes("\0") || !(try sync(() => Boundary.isWellFormedText(root)))
   ) throw failure("invalid_root", "The flow root must be bounded, well-formed text")
-  return path.resolve(root)
+  return try sync(() => path.resolve(root))
 }
 
 const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
@@ -92,21 +92,21 @@ const warningSnapshot = (warning: Descriptor.DiscoveryWarning): Warning =>
  * @category constructors
  * @since 0.1.0
  */
-export function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem.FileSystem | Path.Path> {
-  const fileSystem = FileSystem.FileSystem()
-  const path = Path.Path()
-  const root = snapshotRoot(config, path)
-  const discovery = Discovery.make(fileSystem, path)
+export effect function scan(config: ScanConfig): ScanResult!FsError!(FileSystem.FileSystem | Path.Path) {
+  const fileSystem = try FileSystem.FileSystem
+  const path = try Path.Path
+  const root = try snapshotRoot(config, path)
+  const discovery = try sync(() => Discovery.make(fileSystem, path))
   // Confinement makes discovery refuse any entry or directory whose real
   // path leaves the root, so a symlink in a cloned repository cannot route
   // a module that lives elsewhere on the host.
   const result = discovery.scan({ source: "flows", root, naming: "path", confinementRoot: root })
-    catch (cause) => throw discoveryFailure(cause)
+    catch effect (cause) => { throw discoveryFailure(cause) }
   // Discovery confines entries, not companions: a UI module is recorded only
   // when its real path stays inside the root's real path.
-  const withinRoot = (location: string): Effect<boolean, FsError, infer R> => {
-    const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch throw readFailure()
-    return real.startsWith(path.join(realRoot, path.sep))
+  const withinRoot = effect (location: string): boolean!FsError => {
+    const [realRoot, real] = all([fileSystem.realPath(root), fileSystem.realPath(location)]) catch effect () => { throw readFailure() }
+    return real.startsWith(try sync(() => path.join(realRoot, path.sep)))
   }
 
   if (result.entries.length > CommandTree.maximumRoutes) {
@@ -129,8 +129,8 @@ export function scan(config: ScanConfig): Effect<ScanResult, FsError, FileSystem
     }
     const directory = path.dirname(sourcePath)
     const uiPath = path.join(directory, "ui.tsx")
-    const hasUi = (fileSystem.exists(uiPath) catch throw readFailure()) && withinRoot(uiPath)
-    const route = Route.snapshot({
+    const hasUi = (fileSystem.exists(uiPath) catch effect () => { throw readFailure() }) && (try withinRoot(uiPath))
+    const route = try Route.snapshot({
       name,
       segments,
       kind: kindOf(descriptor),
