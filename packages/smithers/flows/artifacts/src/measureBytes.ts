@@ -6,7 +6,7 @@
  */
 
 import { Sha256 } from "@smthrs/crypto"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import type { Digest } from "./ArtifactStore.ts"
 import { ArtifactStoreError } from "./ArtifactStoreError.ts"
@@ -24,5 +24,5 @@ const digestFailure = (cause: unknown): ArtifactStoreError =>
  * @category utilities
  * @since 1.0.0-rc.0
  */
-export const measureBytes = (bytes: Uint8Array): Effect.Effect<Digest, ArtifactStoreError, Crypto.Crypto> =>
+export const measureBytes = (bytes: Uint8Array): Effect.Effect<Digest, ArtifactStoreError, EffectDigest.Digest> =>
   Sha256.digest(bytes).pipe(Effect.mapError(digestFailure))

@@ -1,3 +1,4 @@
+import * as Redacted from "effect/Redacted"
 /**
  * The shared artifact tier: an {@link ArtifactStore.Service} spoken over HTTP.
  *
@@ -812,3 +813,4 @@ export const layer = (
   options: Options
 ): Layer.Layer<ArtifactStore.ArtifactStore, ArtifactStore.ArtifactStoreError, HttpClient.HttpClient> =>
   Layer.effect(ArtifactStore.ArtifactStore)(make(options))
+

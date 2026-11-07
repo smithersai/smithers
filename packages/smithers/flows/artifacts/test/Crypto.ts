@@ -1,6 +1,6 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { Sha256 } from "@smthrs/crypto"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 
@@ -13,7 +13,7 @@ export const sha256 = (input: string | Uint8Array): typeof Sha256.Digest.Type =>
   )
 
 /** Provides concrete Node cryptography to a test Effect. */
-export const withCrypto = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> =>
+export const withCrypto = <A, E>(effect: Effect.Effect<A, E, EffectDigest.Digest>): Effect.Effect<A, E> =>
   Effect.provide(effect, NodeCrypto.layer)
 
 /** UTF-8 bytes, the shape every artifact fixture is written in. */
