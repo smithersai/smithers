@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The low-level engine contract a durable store implements. `makeUnsafe`
  * adapts it into the typed `FlowRuntime` port that `@smthrs/flow` declares;
@@ -25,7 +26,7 @@
  */
 
 import type { Action, DurableClock, DurableDeferred, Flow, FlowRuntime } from "@smthrs/flow"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Effect from "effect/Effect"
 import type * as Exit from "effect/Exit"
 import type * as Option from "effect/Option"
@@ -55,7 +56,9 @@ export interface ActionExecuteOptions {
    * executing the action. Never evaluate it for a journal hit or a joined
    * dispatch. The engine diffs only attempts that evaluated this effect.
    */
-  readonly snapshot?: Effect.Effect<unknown, never, FlowRuntime.FlowInstance | Crypto.Crypto> | undefined
+  readonly snapshot?:
+    | Effect.Effect<unknown, never, FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)>
+    | undefined
 }
 
 /**
@@ -215,12 +218,16 @@ export interface Encoded {
       derive: (
         executionId: string,
         runScoped: boolean
-      ) => Effect.Effect<string, Schema.SchemaError, Crypto.Crypto>,
+      ) => Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>,
       legacy: (
         executionId: string,
         runScoped: boolean
-      ) => Effect.Effect<ReadonlyArray<string>, Schema.SchemaError, Crypto.Crypto>
-    ) => Effect.Effect<string, Schema.SchemaError, FlowRuntime.FlowInstance | Crypto.Crypto>)
+      ) => Effect.Effect<ReadonlyArray<string>, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+    ) => Effect.Effect<
+      string,
+      Schema.SchemaError,
+      FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    >)
     | undefined
   /**
    * Recognizes live or persisted engine failures and returns their JSON fields.
@@ -234,7 +241,7 @@ export interface Encoded {
   ) => Effect.Effect<
     Flow.Result<unknown, unknown>,
     never,
-    FlowRuntime.FlowInstance | Crypto.Crypto
+    FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
   >
   /**
    * The durable wall-clock origin of an action's retry sequence: the
@@ -256,7 +263,11 @@ export interface Encoded {
   readonly actionRetryOrigin?:
     | ((options: {
       readonly key: string
-    }) => Effect.Effect<Option.Option<number>, never, FlowRuntime.FlowInstance | Crypto.Crypto>)
+    }) => Effect.Effect<
+      Option.Option<number>,
+      never,
+      FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    >)
     | undefined
   /**
    * The highest persisted attempt number for `key`, when attempts survive.
@@ -270,7 +281,11 @@ export interface Encoded {
   readonly actionLatestAttempt?:
     | ((options: {
       readonly key: string
-    }) => Effect.Effect<Option.Option<number>, never, FlowRuntime.FlowInstance | Crypto.Crypto>)
+    }) => Effect.Effect<
+      Option.Option<number>,
+      never,
+      FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    >)
     | undefined
   /**
    * The pre-attempt snapshot of the earliest recorded compensable attempt for
@@ -287,7 +302,11 @@ export interface Encoded {
   readonly actionSnapshot?:
     | ((options: {
       readonly key: string
-    }) => Effect.Effect<Option.Option<unknown>, never, FlowRuntime.FlowInstance | Crypto.Crypto>)
+    }) => Effect.Effect<
+      Option.Option<unknown>,
+      never,
+      FlowRuntime.FlowInstance | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    >)
     | undefined
   readonly deferredResult: (
     deferred: DurableDeferred.Any

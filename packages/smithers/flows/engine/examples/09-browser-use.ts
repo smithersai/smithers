@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Use the library from a browser bundle.
  *
@@ -18,7 +19,7 @@
 import { FlowEngine } from "@smthrs/engine"
 import { Action, Flow, Interpreter } from "@smthrs/flow"
 import { deriveKey } from "@smthrs/keys"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
@@ -53,13 +54,15 @@ export interface Summary {
   readonly stepKey: string
 }
 
-export const main: Effect.Effect<Summary, never, Crypto.Crypto> = Effect.gen(function*() {
-  const result = yield* Compile.execute({ target: "web" })
+export const main: Effect.Effect<Summary, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> = Effect.gen(
+  function*() {
+    const result = yield* Compile.execute({ target: "web" })
 
-  const key = yield* deriveKey({
-    body: "examples/compile/v1",
-    target: "web"
-  })
+    const key = yield* deriveKey({
+      body: "examples/compile/v1",
+      target: "web"
+    })
 
-  return { result, stepKey: key }
-}).pipe(Effect.provide(CompileLayer), Effect.orDie)
+    return { result, stepKey: key }
+  }
+).pipe(Effect.provide(CompileLayer), Effect.orDie)

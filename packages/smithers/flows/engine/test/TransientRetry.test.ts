@@ -2,7 +2,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Fault, Flow, FlowRuntime, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Unreachable } from "@smthrs/kernel"
 import { Clock, Effect, Exit, Fiber, Layer, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
@@ -33,13 +34,17 @@ const run = (
     execution: Effect.Effect<
       number,
       unknown,
-      FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<`Transient/${string}/action`>
+      | FlowRuntime.FlowRuntime
+      | (EffectDigest.Digest | SecureRandom.SecureRandom)
+      | Action.Requirement<`Transient/${string}/action`>
     >,
     cancel: Effect.Effect<void, unknown, FlowRuntime.FlowRuntime>
   ) => Effect.Effect<
     void,
     unknown,
-    FlowRuntime.FlowRuntime | Crypto.Crypto | Action.Requirement<`Transient/${string}/action`>
+    | FlowRuntime.FlowRuntime
+    | (EffectDigest.Digest | SecureRandom.SecureRandom)
+    | Action.Requirement<`Transient/${string}/action`>
   >
 ) => {
   const action = Action.make(`Transient/${name}/action`, {

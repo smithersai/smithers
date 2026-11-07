@@ -1,4 +1,6 @@
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import { expectTypeOf } from "vitest"
 /**
  * Issue #111: keyless same-declaration actions dispatched concurrently
  * take their ordinals from fiber arrival order, so a crash-resume that
@@ -57,8 +59,12 @@ const drive = (
   program: (
     engine: FlowRuntime.FlowRuntime["Service"],
     gate: Deferred.Deferred<void>
-  ) => Effect.Effect<unknown, unknown, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Crypto.Crypto>
-): Effect.Effect<Exit.Exit<unknown, unknown>, never, Crypto.Crypto> =>
+  ) => Effect.Effect<
+    unknown,
+    unknown,
+    FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
+): Effect.Effect<Exit.Exit<unknown, unknown>, never, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.gen(function*() {
     const gate = yield* Deferred.make<void>()
     const engine = gatedEngine(gate)
@@ -238,9 +244,9 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error drive provides only the flow instance and runtime, not Unprovided
-  drive("probe", () => Effect.map(Unprovided, (service) => service.value))
-  drive("probe", (engine) => engine.actionExecute(keylessFetch, 1))
+  const unmet = () => Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof drive>[1]>()
+  const _provided = drive("probe", (engine) => engine.actionExecute(keylessFetch, 1))
 }
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {

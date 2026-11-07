@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Round identity inside a trampoline lineage.
  *
@@ -25,7 +26,7 @@
 
 import { Sha256 } from "@smthrs/crypto"
 import { Flow } from "@smthrs/flow"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { isWellFormedUtf16 } from "../internal/Utf16.ts"
@@ -117,7 +118,9 @@ export const initial = <Id extends string>(executionId: Id extends JournalLineag
  * @since 0.1.0
  * @category constructors
  */
-export const executionId = (round: Round): Effect.Effect<string, InvalidRound, Crypto.Crypto> =>
+export const executionId = (
+  round: Round
+): Effect.Effect<string, InvalidRound, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   Effect.suspend(() => {
     const refusal = validate(round)
     if (refusal !== undefined) return Effect.fail(refusal)
@@ -167,7 +170,7 @@ export const next = (round: Round, options: {
 }): Effect.Effect<
   { readonly round: Round; readonly executionId: string },
   Flow.MaxRoundsExceeded | InvalidRound,
-  Crypto.Crypto
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
 > =>
   Effect.gen(function*() {
     const budget = options.maxRounds

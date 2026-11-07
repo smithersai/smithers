@@ -2,13 +2,16 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Effect, Fiber, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 import { TestClock } from "effect/testing"
 import { FlowEngine, FlowProxy } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
+const effect = (
+  name: string,
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 describe("FlowProxy", () => {
   const flow = Flow.make("FlowProxy/round-trip", {

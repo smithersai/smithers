@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * Derives the step identity an action dispatch is recorded under.
  *
@@ -11,7 +12,7 @@ import { Action, Flow, StepIdentity } from "@smthrs/flow"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
 import * as Node from "@smthrs/plan/Node"
 import * as Context from "effect/Context"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import * as Effect from "effect/Effect"
 import * as Exit from "effect/Exit"
 import * as Option from "effect/Option"
@@ -109,7 +110,7 @@ const fileBoundary = (
 export const ordinalScope = (
   action: Action.Any,
   site?: string | undefined
-): Effect.Effect<string, Schema.SchemaError, Crypto.Crypto> =>
+): Effect.Effect<string, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)> =>
   StepIdentity.allocationScope({
     kind: "action",
     name: action.name,
@@ -227,7 +228,7 @@ export const actionKey = Effect.fnUntraced(function*(
   environment: Action.CacheEnvironment | undefined,
   scope: string,
   encoding: KeyEncoding = keyEncodings[0]
-): Effect.fn.Return<StoredKey, Schema.SchemaError, Crypto.Crypto> {
+): Effect.fn.Return<StoredKey, Schema.SchemaError, (EffectDigest.Digest | SecureRandom.SecureRandom)> {
   if (action.tier === "sealed" && action.idempotencyKey !== undefined) {
     // Skyframe's SkyKey is (functionName, argument): a string idempotencyKey
     // is namespaced by the action name so two distinct actions sharing an

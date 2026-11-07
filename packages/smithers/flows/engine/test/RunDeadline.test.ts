@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * A flow's `deadline` bounds one execution on the in-memory engine: a parked
  * execution is woken and settled at the deadline, a running one is stopped by
@@ -8,14 +9,16 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, DurableDeferred, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Clock, Context, Effect, Exit, Fiber, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import type * as Duration from "effect/Duration"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
-const effect = (name: string, body: () => Effect.Effect<void, unknown, Crypto.Crypto>) =>
-  it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
+const effect = (
+  name: string,
+  body: () => Effect.Effect<void, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+) => it.effect(name, () => withCrypto(body().pipe(Effect.provide(TestClock.layer()))))
 
 const Wait = Action.make("RunDeadline/wait", { payload: { id: Schema.String }, success: Schema.String })
 const gate = DurableDeferred.make("RunDeadline/gate", { success: Schema.String })

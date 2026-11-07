@@ -1,13 +1,16 @@
 import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
 import { DerivedKey, type StoredKey } from "@smthrs/keys"
-import { Crypto, Effect, Schema } from "effect"
+import { Effect, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 
 /** Provides concrete Node cryptography to a test Effect. */
-export const withCrypto = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): Effect.Effect<A, E> =>
-  Effect.provide(effect, NodeCrypto.layer)
+export const withCrypto = <A, E>(
+  effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>
+): Effect.Effect<A, E> => Effect.provide(effect, NodeCrypto.layer)
 
 /** Runs a synchronous test Effect with concrete Node cryptography. */
-export const runSync = <A, E>(effect: Effect.Effect<A, E, Crypto.Crypto>): A =>
+export const runSync = <A, E>(effect: Effect.Effect<A, E, (EffectDigest.Digest | SecureRandom.SecureRandom)>): A =>
   Effect.runSync(Effect.provide(effect, NodeCrypto.layer))
 
 /** Derives a canonical key with concrete test cryptography. */

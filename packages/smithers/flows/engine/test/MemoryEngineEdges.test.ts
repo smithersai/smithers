@@ -1,3 +1,4 @@
+import * as Hex from "effect/encoding/Hex"
 /**
  * Edges of the in-memory engine the broader suites only pass through: a
  * cancellation landing between two rounds, a deferred completed twice, a
@@ -9,7 +10,8 @@ import { describe, expect } from "@effect/vitest"
 import { syncCrypto } from "@smthrs/crypto"
 import { DurableClock, DurableDeferred, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Cause, Crypto, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import { Cause, Deferred, Effect, Exit, Fiber, Option, Schema } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { TestClock } from "effect/testing"
 import { FlowEngine } from "../src/index.ts"
 import { effect, pollUntil } from "./Harness.ts"
@@ -32,15 +34,15 @@ describe("a lineage cancelled between rounds", () => {
 
   /** SHA-256 that announces each digest on `reached` and computes it once `open` completes. */
   const gatedCrypto = (reached: Deferred.Deferred<void>, open: Deferred.Deferred<void>) =>
-    Crypto.make({
-      randomBytes: () => {
-        throw new Error("the gated crypto computes digests only")
-      },
+    EffectDigest.Digest.of({
       digest: (algorithm, input) =>
         Deferred.succeed(reached, undefined).pipe(
           Effect.andThen(Deferred.await(open)),
           Effect.andThen(syncCrypto.digest(algorithm, input))
-        )
+        ),
+      digestHex(algorithm, data) {
+        return Effect.map(this.digest(algorithm, data), Hex.encode)
+      }
     })
 
   effect(
@@ -65,7 +67,7 @@ describe("a lineage cancelled between rounds", () => {
         const reached = yield* Deferred.make<void>()
         const open = yield* Deferred.make<void>()
         yield* engine.execute(Round, { executionId: "gap", payload: { ordinal: 0 }, discard: true }).pipe(
-          Effect.provideService(Crypto.Crypto, gatedCrypto(reached, open))
+          Effect.provideService(EffectDigest.Digest, gatedCrypto(reached, open))
         )
         yield* Deferred.await(reached)
         yield* engine.interrupt(Round, "gap")

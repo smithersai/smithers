@@ -12,7 +12,8 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import * as StepIdentity from "@smthrs/flow/StepIdentity"
 import { Node } from "@smthrs/plan"
-import { Cause, Crypto, Effect, Exit, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import { Cause, Effect, Exit, Layer, PlatformError, Schema, SchemaIssue } from "effect"
+import * as EffectDigest from "effect/crypto/Digest"
 import { schemaErrorPath } from "../src/FlowEngine/ActionKey.ts"
 import { FlowEngine } from "../src/index.ts"
 import { invocationKey, runSync, withCrypto } from "./Crypto.ts"
@@ -61,7 +62,7 @@ describe("rejected declaration material surfaces typed, not as fiber death (issu
     "reports a second-digest failure after ordinal allocation without executing the action",
     () =>
       Effect.gen(function*() {
-        const crypto = yield* Crypto.Crypto
+        const crypto = yield* EffectDigest.Digest
         const engine = yield* FlowRuntime.FlowRuntime
         let hashes = 0
         let allocations = 0
@@ -94,7 +95,7 @@ describe("rejected declaration material surfaces typed, not as fiber death (issu
               }
             }
           }),
-          Effect.provideService(Crypto.Crypto, {
+          Effect.provideService(EffectDigest.Digest, {
             ...crypto,
             digest: (algorithm, data) =>
               Effect.suspend(() => {

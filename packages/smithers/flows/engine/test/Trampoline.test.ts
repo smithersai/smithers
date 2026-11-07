@@ -1,3 +1,4 @@
+import type * as SecureRandom from "effect/crypto/SecureRandom"
 /**
  * The trampoline on the in-memory engine: a counter that reaches its target by
  * handing off, the derived round identity underneath it, the round budget, and
@@ -7,7 +8,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Action, Flow, FlowRuntime, Interpreter } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { Cause, Effect, Exit, Layer, Option, Schema } from "effect"
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
 import { FlowEngine } from "../src/index.ts"
 import { withCrypto } from "./Crypto.ts"
 
@@ -208,35 +209,36 @@ describe("FlowEngine.Round", () => {
         rootExecutionId: "round-\ud83d\ude80",
         ordinal: 0
       })
-      const invalid: ReadonlyArray<Effect.Effect<unknown, unknown, Crypto.Crypto>> = [
-        FlowEngine.Round.executionId(roundOf("", 0)),
-        FlowEngine.Round.executionId(roundOf("run", -1)),
-        FlowEngine.Round.executionId(roundOf("run", Number.NaN)),
-        FlowEngine.Round.executionId(roundOf("run", 1.5)),
-        FlowEngine.Round.next(roundOf("run", Number.MAX_SAFE_INTEGER), {
-          flowName: "f",
-          maxRounds: undefined
-        }),
-        FlowEngine.Round.next(roundOf("run", 0), {
-          flowName: "f",
-          maxRounds: Number.POSITIVE_INFINITY
-        }),
-        FlowEngine.Round.next(roundOf("", 0), {
-          flowName: "f",
-          maxRounds: undefined
-        }),
-        FlowEngine.Round.next(
-          Object.defineProperty({}, "rootExecutionId", {
-            get: () => {
-              throw new Error("hostile round getter")
-            }
-          }) as FlowEngine.Round.Round,
-          {
+      const invalid: ReadonlyArray<Effect.Effect<unknown, unknown, (EffectDigest.Digest | SecureRandom.SecureRandom)>> =
+        [
+          FlowEngine.Round.executionId(roundOf("", 0)),
+          FlowEngine.Round.executionId(roundOf("run", -1)),
+          FlowEngine.Round.executionId(roundOf("run", Number.NaN)),
+          FlowEngine.Round.executionId(roundOf("run", 1.5)),
+          FlowEngine.Round.next(roundOf("run", Number.MAX_SAFE_INTEGER), {
             flowName: "f",
             maxRounds: undefined
-          }
-        )
-      ]
+          }),
+          FlowEngine.Round.next(roundOf("run", 0), {
+            flowName: "f",
+            maxRounds: Number.POSITIVE_INFINITY
+          }),
+          FlowEngine.Round.next(roundOf("", 0), {
+            flowName: "f",
+            maxRounds: undefined
+          }),
+          FlowEngine.Round.next(
+            Object.defineProperty({}, "rootExecutionId", {
+              get: () => {
+                throw new Error("hostile round getter")
+              }
+            }) as FlowEngine.Round.Round,
+            {
+              flowName: "f",
+              maxRounds: undefined
+            }
+          )
+        ]
       for (const candidate of invalid) {
         const exit = yield* withCrypto(Effect.exit(candidate))
         const error = Exit.isFailure(exit) ? exit.cause.reasons.find(Cause.isFailReason)?.error : undefined

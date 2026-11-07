@@ -1,4 +1,6 @@
-import type * as Crypto from "effect/Crypto"
+import type * as EffectDigest from "effect/crypto/Digest"
+import type * as SecureRandom from "effect/crypto/SecureRandom"
+import { expectTypeOf } from "vitest"
 /**
  * Issue #73: invocation keys must not depend on fiber scheduling order.
  *
@@ -65,7 +67,11 @@ const scriptedEngine = (keys: Array<{ readonly name: string; readonly key: strin
 const drive = (
   executionId: string,
   actions: ReadonlyArray<Action.Action>
-): Effect.Effect<ReadonlyArray<{ readonly name: string; readonly key: string }>, never, Crypto.Crypto> => {
+): Effect.Effect<
+  ReadonlyArray<{ readonly name: string; readonly key: string }>,
+  never,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> => {
   const keys: Array<{ readonly name: string; readonly key: string }> = []
   return Effect.gen(function*() {
     const engine = yield* FlowRuntime.FlowRuntime
@@ -130,8 +136,16 @@ const driveProgram = (
   executionId: string,
   program: (
     engine: FlowRuntime.FlowRuntime["Service"]
-  ) => Effect.Effect<unknown, unknown, FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | Crypto.Crypto>
-): Effect.Effect<ReadonlyArray<{ readonly name: string; readonly key: string }>, unknown, Crypto.Crypto> => {
+  ) => Effect.Effect<
+    unknown,
+    unknown,
+    FlowRuntime.FlowInstance | FlowRuntime.FlowRuntime | (EffectDigest.Digest | SecureRandom.SecureRandom)
+  >
+): Effect.Effect<
+  ReadonlyArray<{ readonly name: string; readonly key: string }>,
+  unknown,
+  (EffectDigest.Digest | SecureRandom.SecureRandom)
+> => {
   const keys: Array<{ readonly name: string; readonly key: string }> = []
   const engine = scriptedEngine(keys)
   return Effect.gen(function*() {
@@ -492,9 +506,9 @@ class Unprovided extends Context.Service<Unprovided, { readonly value: string }>
 
 /** Never called; tsc checks it (#2704). */
 const unprovidedServiceProbe = () => {
-  // @ts-expect-error driveProgram provides only the flow instance and runtime, not Unprovided
-  driveProgram("probe", () => Effect.map(Unprovided, (service) => service.value))
-  driveProgram("probe", (engine) => engine.actionExecute(chargeCard, 1))
+  const unmet = () => Effect.map(Unprovided, (service) => service.value)
+  expectTypeOf<typeof unmet>().not.toExtend<Parameters<typeof driveProgram>[1]>()
+  const _provided = driveProgram("probe", (engine) => engine.actionExecute(chargeCard, 1))
 }
 
 describe("regression: provide-then-cast test helpers erase layer requirements (#2704)", () => {
