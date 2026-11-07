@@ -17,7 +17,8 @@ shows a **Mock** pill whenever it runs.
   snippets). `test/scriptedReplies.test.ts` extracts every fenced `vibe` block from every scripted answer, including
   the fallback, and compiles each independently with the installed compiler. The full `--noEmit` typecheck must exit zero with no diagnostics; malformed syntax and invalid types are negative controls. Examples declare their own services/layers; the test
   supplies no hidden prelude. Recovery runs inside effect code, never at module scope.
-- Until the live agent lands (roadmap 1b), the mock is the only backend, including on the deployment.
+- The mock stays every suite's default backend. A page uses the live agent only when its origin's `/api/health`
+  says `live` (0010); `?agent=mock` or the `vibelang.agent` storage key forces the mock, as deployed browser suites do.
 
 **Regression evidence (review findings 1, 2, 4).** Factory integration tests use the real service with a
 `Scheduler.MixedScheduler` subclass yielding every 6, 7 or 11 checks. They compare the complete live event sequence

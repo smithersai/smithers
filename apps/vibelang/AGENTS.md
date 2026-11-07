@@ -15,7 +15,10 @@ as its code (VL-23).
 - **The core is the `Factory` service** ([0002](wiki/decisions/0002-core-is-an-effect-api.md)). Every surface (web,
   CLI, MCP server, skill) calls it; none reaches the network another way.
 - **Mock mode always works** (VL-13, [0004](wiki/decisions/0004-mock-mode.md)). A feature lands with its mock layer
-  and a browser test that passes against it.
+  and a browser test that passes against it. The live agent ([0010](wiki/decisions/0010-live-agent.md)) is chosen only
+  when the origin's `/api/health` says `live`; `?agent=mock` forces the mock anywhere.
+- **Everything is a flow** (VL-11). Agent work runs as `@smthrs/flow` steps; a model call is `@smthrs/agent`'s
+  `ModelStep`, never a raw provider call.
 - **Styles come from Smithers.** Chat parts use `@smthrs/ui-css` classes (`sui-*`), the stylesheet smithers.sh's React
   chat uses; only the frame and splash are this app's (`src/web/styles.css`).
 - **Fix upstream** (VL-7). A bug in VibeLang, Foldkit's VibeLang support, Effect or a Smithers package is fixed there
@@ -28,8 +31,12 @@ From this directory, after `pnpm install` at the repository root (the app is a w
 ```sh
 pnpm dev            # http://localhost:5178
 pnpm typecheck      # vibelang -p tsconfig.json
-pnpm test           # properties, integration, scenes
-pnpm e2e            # browser tests against the built app (dark, light, phone)
-pnpm run deploy     # Alchemy, with Cloudflare credentials and VIBELANG_DOMAIN set
+pnpm test           # properties, integration, scenes, surfaces (mock backend)
+pnpm test:workerd   # the API Worker's Durable Objects in local workerd, through LiveFactory, the protocol and the CLI
+pnpm agent-context  # regenerate worker/agentContext.ts after a VibeLang upgrade
+pnpm e2e            # browser tests against the built app (dark, light, phone), on the mock
+pnpm exec alchemy dev --stage dev   # site + API Worker locally at http://localhost:1337 (NODE_OPTIONS=--import=vibelang/register)
+E2E_LIVE_URL=http://localhost:1337 pnpm exec playwright test e2e/live.spec.ts   # the live agent in a browser
+pnpm run deploy     # Alchemy, with Cloudflare credentials, VIBELANG_DOMAIN and the model's key set (0010)
 E2E_BASE_URL=https://vibelang.smithers.sh pnpm e2e   # the same tests against the deployment
 ```

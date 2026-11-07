@@ -22,16 +22,18 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0007](decisions/0007-multiplayer.md) | Multiplayer is the sequencer's event stream; no CRDTs |
 | [0008](decisions/0008-testing.md) | Suites: property, scene, integration, browser e2e, then benchmarks and fuzzing |
 | [0009](decisions/0009-surfaces.md) | One Schema command registry derives the Factory CLI, MCP tools and agent manifest |
+| [0010](decisions/0010-live-agent.md) | The live agent: a Durable Object per conversation runs the sequencer and its reply's durable flow; LiveFactory over HTTP and SSE |
 
 ## Layout
 
 ```
 apps/vibelang/
-  src/core/       the state machine (conversation.ts) and the Effect API (Factory.vibe, MockFactory.vibe)
+  src/core/       the state machine (conversation.ts), the Effect API (Factory.vibe, MockFactory.vibe, LiveFactory.vibe)
+                  and the HTTP protocol (wire.vibe)
   src/surfaces/   the shared command registry, CLI, MCP server and discovery manifest
   skills/         agent instructions for the Factory CLI
   src/web/        the Foldkit program (main.vibe), its view (view.ts) and styles
-  worker/         the Cloudflare Worker
+  worker/         the site Worker (index.ts) and the API Worker (Api.vibe): sequencer, reply flow, budget
   infra/          the Alchemy stack (Stack.vibe; alchemy.run.ts re-exports it)
   test/ e2e/      unit, property and scene tests; browser tests
   wiki/           this wiki

@@ -105,3 +105,8 @@ an applied restart of the streaming reply keeps every entry and empties that rep
 restart only for the reply that streams. Every existing invariant covers the new case. Two executable mutations prove
 both can fail (`apply-restart-text`, `decide-restart-guard`). Linux receipts on nyc-01: `pnpm verify` **28 verified, 0
 errors** in 27.9 s; `pnpm verify:broken` rejected **50/50** mutations in 480.1 s with two workers.
+
+**Total, said in the source (2026-11-07).** Each exported function's JSDoc now carries `@throws {never}`, so VibeLang
+lets Effect code (the live sequencer, 0010) call the machine directly; LemmaScript reads only `//@` lines, and the
+mutation copies were regenerated with byte-identical contracts. Receipts: `pnpm verify` **28 verified, 0 errors** in
+20.8 s; `pnpm verify:broken` rejected **50/50** in 375.2 s.

@@ -27,11 +27,11 @@ existing sequencer state and event log in one Ref read, selects touched ids and 
 state-machine transition changes; every write still uses `decide` and `apply` (0003, 0005). The later live layer
 implements this same snapshot method as well as `post` and `events`.
 
-**Backend choice is at the edge.** `--mock` or `VIBELANG_FACTORY=mock` selects `MockFactory`; otherwise a layer fails
-with typed `LiveBackendNotDeployed`: “The live Factory backend is not deployed yet. Use --mock or
-VIBELANG_FACTORY=mock.” Roadmap 1b replaces that layer and exposes the live selection flag. Neither handlers nor
-schemas change. An MCP process builds one Factory for all its tool calls. A separate CLI invocation has a fresh
-mock world; the skill and manifest state this explicitly. There is no invented disk persistence.
+**Backend choice is at the edge.** `--mock` or `VIBELANG_FACTORY=mock` selects `MockFactory`; otherwise the live
+Factory (0010) at `VIBELANG_FACTORY_URL`, default `https://vibelang.smithers.sh`. The layer first reads that origin's
+`/api/health`: a deployment that runs the mock agent fails with typed `LiveBackendNotDeployed` (“The live Factory
+backend is not deployed at <origin>. Use --mock or VIBELANG_FACTORY=mock.”), and one that can't be reached says so in
+the same error. Neither handlers nor schemas changed.
 
 **Boundaries.** Only the `.ts` executable entries read process arguments/environment or run the program. All Effect
 logic is `.vibe`. Emission uses `tsconfig.surfaces.json` into ignored `dist-factory/`; the package bin is

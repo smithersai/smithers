@@ -6,11 +6,13 @@ Bricks in order. A brick is done when its end-to-end test passes against the dep
 brick                                   state         proof
 1a  splash, ⌘K, chat, mock agent        done          e2e/ (dark, light, phone) passes against the deployment; Astra and Fable
                                                       reviews fixed (25 findings), each with a test that failed first
-1b  live agent on Cloudflare            next          a Durable Object per conversation runs the sequencer; the reply is an
-                                                      @smthrs/agent flow step (VL-11); LiveFactory replaces MockFactory
+1b  live agent on Cloudflare            done (local)  0010: a Durable Object per conversation runs the sequencer and its reply's
+                                                      durable flow (@smthrs/agent ModelStep, engine in the object's SQLite);
+                                                      LiveFactory over HTTP + SSE. `pnpm test:workerd` 8 passed (+1 opt-in
+                                                      real-model case); `alchemy dev` + e2e/live.spec.ts pass. Deploy is next.
 1c  dogfooding surfaces                 done (mock)   CLI, MCP server and skill over Factory; 21 surface tests plus the existing
                                                       25 tests; emitted CLI + stdio McpClient + exact schema parity (0009).
-                                                      Live dogfooding awaits 1b; local and deployed browser suites pass.
+                                                      Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
 1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.ts; `pnpm verify:broken`: 48/48
                                                       mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)

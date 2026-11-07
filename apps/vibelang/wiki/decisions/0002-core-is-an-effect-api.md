@@ -4,7 +4,7 @@
 
 **Decision.** One Effect service, `Factory` (`src/core/Factory.vibe`), is the whole API: `post` records a person's
 message and `events` streams a conversation's numbered events. The web app, the CLI, the MCP server and the skill are
-clients that differ only in the layer they provide: `MockFactory` (0004) or the live one (roadmap 1b).
+clients that differ only in the layer they provide: `MockFactory` (0004) or `LiveFactory` (0010).
 
 ```
 web (Foldkit) ─┐
