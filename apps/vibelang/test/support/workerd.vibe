@@ -2,6 +2,7 @@
 // Worker's Durable Objects over the app's real code, or the site Worker alone, each listening on a free loopback port.
 // The suites start one in `beforeAll` with `await runPromise(serveApi())` and stop it in `afterAll`.
 import * as NodeServices from "@effect/platform-node/NodeServices"
+import { SecureRandom } from "effect/crypto"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import vibelang from "vibelang-unplugin/esbuild"
@@ -79,8 +80,8 @@ export effect function serveSite() {
 
 /** A fresh conversation id, so cases share no object. */
 export effect function room(name: string) {
-  provide Experimental.Crypto.layerWebCrypto {
-    const id = try (try Experimental.Crypto.Crypto).randomUUIDv4()
+  provide SecureRandom.layerWebCrypto {
+    const id = try (try SecureRandom.SecureRandom).uuidV4()
     return `${name}-${id.slice(0, 8)}`
   }
 }

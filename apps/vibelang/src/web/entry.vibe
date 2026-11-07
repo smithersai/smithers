@@ -2,10 +2,12 @@
 // The live Factory when this origin's `/api/health` says `agent: "live"` (wiki/decisions/0010-live-agent.md); the mock
 // otherwise, with no backend and no model (0004): on `pnpm dev` and `vite preview`, on a deployment without the API
 // Worker, and whenever the page asks for it with `?agent=mock` or the `vibelang.agent` storage key set to `mock`.
-// The page's window, document, media queries and randomness come from VibeLang's browser services.
+// The page's window, document and media queries come from VibeLang's browser services, its randomness from Web
+// Crypto through Effect's SecureRandom.
+import { SecureRandom } from "effect/crypto"
 import { FetchHttpClient } from "effect/http"
 import { Runtime } from "foldkit"
-import { ExperimentalBrowserServices } from "vibelang-runtime/experimental/platform-browser"
+import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
 import { MockFactory } from "../core/MockFactory.vibe"
 import { Flags, init, Message, Model, subscriptions, update, viewTransition } from "./main.vibe"
@@ -44,7 +46,7 @@ export effect function main() {
     return document.getElementById("root")!
   })
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
-  const session = (try (try Experimental.Crypto.Crypto).randomUUIDv4()).slice(0, 8)
+  const session = (try (try SecureRandom.SecureRandom).uuidV4()).slice(0, 8)
   const flags: Flags = { session, mode: live ? "live" : "mock", name: "Guest", reducedMotion }
   const application = try Effect.try(() => Runtime.makeApplication({
     Model,
@@ -61,5 +63,10 @@ export effect function main() {
   return { application, flags }
 }
 
-const { application, flags } = await runPromise(Effect.provide(main(), ExperimentalBrowserServices.layer) |> Effect.orDie(%))
+/** What `main` reads from the page: its window, document and media queries, and Web Crypto. */
+const page = Layer.mergeAll(
+  ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
+)
+
+const { application, flags } = await runPromise(Effect.provide(main(), page) |> Effect.orDie(%))
 Runtime.run(application, { flags: succeed(flags) })

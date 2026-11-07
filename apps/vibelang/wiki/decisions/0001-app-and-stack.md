@@ -11,9 +11,11 @@ and `vibelang-unplugin`, the versions apps/mvp pins.
 
 **Language (VL-4).** Every file is VibeLang (`.vibe`), Effect code or not: Will, 2026-11-07, "We are writing it in
 vibelang". This overrides the repository rule that files with no Effect code stay `.ts`. Platform access goes through
-Effect's and VibeLang's services (`Stdio`, `Config`, `FileSystem`, `Path`, `ChildProcess`, `HttpClient`, and
-`Experimental.Window`, `Document`, `MediaQuery`, `Crypto` and `Process`). The state machine is VibeLang too; LemmaScript
-proves an exact `.ts` copy of its text (0005). A file stays `.ts` only when a tool reads nothing else, and its first
+Effect's and VibeLang's services (`Stdio`, `Config`, `FileSystem`, `Path`, `ChildProcess`, `HttpClient`,
+`SecureRandom`, and `Experimental.Window`, `Document`, `MediaQuery` and `Process`). The browser services add 45 KB
+(15 KB gzipped) to the page until vibelang-runtime declares `sideEffects`, which brings that to 5.5 KB
+(`upstream-bugs/vibelang-runtime-tree-shaking`). The state machine is VibeLang too; LemmaScript proves an exact `.ts`
+copy of its text (0005). A file stays `.ts` only when a tool reads nothing else, and its first
 line says which:
 
 | Files | The tool that requires `.ts` |

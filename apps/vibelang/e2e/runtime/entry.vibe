@@ -1,6 +1,6 @@
 // Built only in e2e mode. It runs the real app with a faulty transport layer and exposes read-only observations.
 import { Runtime } from "foldkit"
-import { ExperimentalBrowserServices } from "vibelang-runtime/experimental/platform-browser"
+import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
 import { application } from "../../test/support/application.vibe"
 import { init } from "../../src/web/main.vibe"
@@ -34,6 +34,8 @@ export effect function main() {
   return program
 }
 
-Runtime.run(await runPromise(Effect.provide(main(), ExperimentalBrowserServices.layer) |> Effect.orDie(%)), {
+const page = Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)
+
+Runtime.run(await runPromise(Effect.provide(main(), page) |> Effect.orDie(%)), {
   flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest" }),
 })
