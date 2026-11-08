@@ -22,7 +22,7 @@ export const HISTORY_INSTRUCTION = [
 function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly payloadSchema: I; readonly successSchema: O }) {
   return {
     name: flow._tag,
-    description: flow.description ?? flow._tag,
+    description: flow.description,
     input: flow.payloadSchema,
     output: flow.successSchema,
     capabilities: [],

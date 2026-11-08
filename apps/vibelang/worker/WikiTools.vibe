@@ -5,11 +5,11 @@ import { pages } from "../src/core/wiki.vibe"
 export const WIKI_INSTRUCTION = "Open VibeLang docs with vibelang/docs/open when asked. Open project wiki pages with vibelang/wiki/open when asked. The tool acts on the conversation's pane. Available page ids: " + pages.map(page => page.id).join(", ")
 export function wikiTools(actor: string, tours: Tours.Shape): FlowBinding.Source {
   return FlowBinding.source("vibelang-wiki", [FlowBinding.make({
-    flow: { name: OpenWiki._tag, description: OpenWiki.description ?? "Open a wiki page", input: OpenWiki.payloadSchema,
+    flow: { name: OpenWiki._tag, description: OpenWiki.description, input: OpenWiki.payloadSchema,
       output: OpenWiki.successSchema, capabilities: [], effects: undefined, modelInvocable: true },
     handler: (input: { readonly page: string }) => Effect.provideService(openWiki(actor, input.page), Tours, tours),
   }), FlowBinding.make({
-    flow: { name: OpenDocs._tag, description: OpenDocs.description ?? "Open docs", input: OpenDocs.payloadSchema,
+    flow: { name: OpenDocs._tag, description: OpenDocs.description, input: OpenDocs.payloadSchema,
       output: OpenDocs.successSchema, capabilities: [], effects: undefined, modelInvocable: true },
     handler: (input: { readonly path: string }) => Effect.provideService(withSpan(openDocs(actor, input.path), "vibelang.docs.open"), Tours, tours),
   })])

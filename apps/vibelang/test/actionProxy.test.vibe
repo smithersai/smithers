@@ -1,0 +1,47 @@
+// Product action proxy: calls wait for the actual service, cancellation leaks no request, and every door keeps its result.
+import { expect, it } from "@effect/vitest"
+import { Actions } from "../src/actions/Actions.vibe"
+import { deferredActions } from "../src/actions/agent.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+function settled(actions: Actions.Shape, id: string) {
+  return Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state !== "running" && run.state !== "queued")))
+}
+
+it.live("cancels waiting calls without submitting them, then forwards every operation to the selected product service", () => scoped(effect {
+  provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+    const product = try Actions
+    const proxy = try deferredActions()
+    const abandoned = try Effect.timeoutOption(proxy.actions.command("/post Cancelled before binding", "agent"), "20 millis")
+    const abandonedFollow = try Effect.timeoutOption(Stream.runLast(proxy.actions.follow("not-admitted")), "20 millis")
+    const before = try product.runs("vibelang/Post")
+    try proxy.resolve(product)
+    const catalog = try proxy.actions.list()
+    const commands = try proxy.actions.commands()
+    const id = try proxy.actions.command("/post How do services compose?", "agent")
+    const result = try settled(proxy.actions, id)
+    const read = try proxy.actions.read(id)
+    const again = try proxy.actions.rerun(id)
+    const repeated = try settled(proxy.actions, again)
+    const runs = try proxy.actions.runs("vibelang/Post")
+    const tour = try proxy.actions.start("vibelang/Tour", {}, "agent")
+    try proxy.actions.cancel(tour)
+    const cancelled = try settled(proxy.actions, tour)
+    const missing = try Effect.flip(proxy.actions.read("missing-run"))
+    try Effect.try(() => {
+      expect(Option.isNone(abandoned)).toBe(true)
+      expect(Option.isNone(abandonedFollow)).toBe(true)
+      expect(before).toEqual([])
+      expect(catalog.some(flow => flow.name === "vibelang/Post")).toBe(true)
+      expect(commands.some(command => command.command === "/post")).toBe(true)
+      expect(Option.isSome(result) && result.value.state).toBe("passed")
+      expect(read).toMatchObject({ id, door: "agent", flow: "vibelang/Post", state: "passed" })
+      expect(again).not.toBe(id)
+      expect(Option.isSome(repeated) && repeated.value.state).toBe("passed")
+      expect(runs.map(run => run.id)).toEqual([again, id])
+      expect(Option.isSome(cancelled) && cancelled.value.state).toBe("cancelled")
+      expect(missing.code).toBe("not-found")
+    })
+  }
+}), 30_000)

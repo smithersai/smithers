@@ -1,0 +1,41 @@
+// Actual agent-cell bindings share the product action service, its completed runs and durable cancellation.
+import { expect, it } from "@effect/vitest"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { Actions, type Run } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { actionTools } from "../src/actions/tools.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+it.live("lists, starts, announces, reads and cancels through real agent cells", () => scoped(effect {
+  provide MockActions({ role: "contributor", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+    const actions = try Actions
+    const announced = try Ref.make<ReadonlyArray<Run>>([])
+    const catalog = try FlowBinding.catalog([actionTools(actions, run => Ref.update(announced, before => [...before, run]))])
+    effect function call(name: string, input: Schema.Json, ordinal: number) {
+      const binding = catalog.bindings.get(name)!
+      const request = try Effect.try(() => new Cell.Call({ flowName: name, input, capabilities: [],
+        effects: { reads: [], writes: [], mode: "expected", onConflict: "serialize", tier: "irreversible" }, placement: Option.none(),
+        identity: new Cell.CallIdentity({ session: "action-bindings", frame: 0, cell: "action", ordinal, declaration: Cell.declarationDigest(binding.descriptor), layers: [] }),
+      }))
+      return try binding.run(request)
+    }
+    const listed = try call("vibelang/actions/List", {}, 0)
+    const started = try call("vibelang/actions/Start", { flow: "vibelang/Post", input: { text: "How do service layers compose?" } }, 1)
+    const { id } = try Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.String }))(started.value)
+    try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state === "passed")))
+    const read = try call("vibelang/actions/Read", { id }, 2)
+    const tour = try call("vibelang/actions/Start", { flow: "vibelang/Tour", input: {} }, 3)
+    const selected = try Schema.decodeUnknownEffect(Schema.Struct({ id: Schema.String }))(tour.value)
+    const cancelled = try call("vibelang/actions/Cancel", { id: selected.id }, 4)
+    const terminal = try Stream.runLast(actions.follow(selected.id).pipe(Stream.takeUntil(run => run.state === "cancelled")))
+    const notices = try Ref.get(announced)
+    try Effect.try(() => {
+      for (const result of [listed, started, read, tour, cancelled]) expect(result.outcome).toBe("success")
+      expect(listed.value).toEqual(expect.arrayContaining([expect.objectContaining({ name: "vibelang/Post" })]))
+      expect(read.value).toMatchObject({ id, flow: "vibelang/Post", state: "passed", actor: "agent", door: "agent" })
+      expect(notices.map(run => run.id)).toEqual([id, selected.id])
+      expect(cancelled.value).toEqual({ id: selected.id })
+      expect(Option.isSome(terminal) && terminal.value.state).toBe("cancelled")
+    })
+  }
+}), 30_000)

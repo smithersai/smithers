@@ -600,7 +600,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-2506 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+2502 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -711,17 +711,13 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/actions/MockActions.vibe:164` | `MockActions/callback@20/cancel` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/actions/MockActions.vibe:171` | `MockActions/callback@20/cancel/callback@171` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/actions/MockActions.vibe:172` | `MockActions/callback@20/cancel/callback@172` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:7` | `body` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:8` | `body` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:9` | `body` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:10` | `body` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:11` | `declared` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/tools.vibe:14` | `actionTools` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:16` | `actionTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:17` | `actionTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/tools.vibe:22` | `actionTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/tools.vibe:23` | `actionTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/tools.vibe:14` | `actionTools/callback@14` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/tools.vibe:10` | `declared` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/tools.vibe:13` | `actionTools` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/tools.vibe:15` | `actionTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/tools.vibe:16` | `actionTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/tools.vibe:21` | `actionTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/tools.vibe:22` | `actionTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/tools.vibe:13` | `actionTools/callback@13` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/conversation.vibe:156` | `apply` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
 | `src/core/conversation.vibe:166` | `apply/callback@166` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
 | `src/core/conversation.vibe:169` | `apply/callback@169` | pure logic | Production state machine: exact entry/role frames, pending source positions, unanswered order, replay cursor bounds, guards and policy contracts with executable mutations; stated integer/UTF-16 domain. |
@@ -2653,7 +2649,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/HistoryObject.vibe:139` | `bootstrap/callback@139` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
 | `worker/HistoryObject.vibe:159` | `write` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
 | `worker/HistoryObject.vibe:171` | `write/callback@171` | effectful shell | Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved. |
-| `worker/HistoryTools.vibe:22` | `declared` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/HistoryTools.vibe:22` | `declared` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/HistoryTools.vibe:35` | `historyTools` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/HistoryTools.vibe:37` | `historyTools/handler` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/HistoryTools.vibe:39` | `historyTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -3077,7 +3073,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/VipDraft.vibe:53` | `callback@39/draft/callback@53` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/VipDraft.vibe:54` | `callback@39/draft/callback@54` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/WikiTools.vibe:5` | `callback@5` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/WikiTools.vibe:6` | `wikiTools` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/WikiTools.vibe:6` | `wikiTools` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/WikiTools.vibe:10` | `wikiTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/WikiTools.vibe:14` | `wikiTools/handler` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `scripts/agent-context.vibe:11` | `callback@11` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |

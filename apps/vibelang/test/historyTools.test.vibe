@@ -48,6 +48,7 @@ describe("the history's tools", () => {
         "vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note",
       ])
       expect(bindings.every((binding) => binding.descriptor.modelInvocable)).toBe(true)
+      expect(bindings.every((binding) => binding.descriptor.description.length > 0)).toBe(true)
       expect(REPLY_CALLS).toBeGreaterThan(0)
     })
   })
