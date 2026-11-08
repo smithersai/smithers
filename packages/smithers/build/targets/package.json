@@ -34,11 +34,7 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": {
-      "types": "./src/index.ts",
-      "vibelang-source": "./src/index.ts",
-      "default": "./.vibelang/js/src/index.js"
-    },
+    ".": "./src/index.ts",
     "./internal/*": null,
     "./index": null,
     "./ReviewLint": null,
