@@ -24,3 +24,10 @@ export function hasAsk(): boolean { return document.querySelector(".vl-ask") !==
 export function activeId(): string | undefined { return document.activeElement?.id }
 export function focusComposer(): void { document.querySelector<HTMLTextAreaElement>("[data-docked] textarea")!.focus() }
 export function remove(node: HTMLElement): void { node.remove() }
+/** Browser host primitives shared by the startup fault service and runtime tests. */
+export function healthResponse(agent: "mock" | "live"): Response {
+  return Response.json({ ok: true, agent })
+}
+export function commandK(): void {
+  document.dispatchEvent(new KeyboardEvent("keydown", { key: "k", ctrlKey: true, bubbles: true, cancelable: true }))
+}

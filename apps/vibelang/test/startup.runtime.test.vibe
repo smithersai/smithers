@@ -1,0 +1,31 @@
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { Runtime } from "foldkit"
+import { main, page } from "../src/web/startup.vibe"
+import { heldHealth } from "./support/heldHealth.vibe"
+import { activeId, commandK, container, hasAsk, remove, send } from "./support/browser.ts"
+
+it.live("renders and handles Command K and a post while health is still unresolved", () => scoped(effect {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  node.id = "root"
+  const health = try heldHealth()
+  const boot = fork Effect.provide(effect {
+    const { application, flags } = try main()
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    try Effect.never
+  }, Layer.merge(page, health.layer))
+  try promise(() => vi.waitFor(() => expect(health.snapshot().calls).toBe(1)))
+  // Health cannot answer during either assertion. The old startup blocks here until its three-second timeout.
+  try promise(() => vi.waitFor(() => expect(hasAsk()).toBe(true), { timeout: 500 }))
+  try sync(commandK)
+  try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt"), { timeout: 500 }))
+  try sync(() => send("What is a service?"))
+  try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false }))
+  try health.release("mock")
+  try promise(() => vi.waitFor(() => expect(node.querySelector("[data-role='assistant'][data-done='true']")).not.toBeNull(), { timeout: 4000 }))
+  try Effect.try(() => {
+    expect(node.querySelector(".vl-pill")?.textContent).toBe("Mock")
+    expect(health.snapshot()).toEqual({ calls: 1, settled: true })
+  })
+  try Fiber.interrupt(boot)
+}))

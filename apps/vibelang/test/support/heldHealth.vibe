@@ -1,0 +1,20 @@
+// A faulty HttpClient service: health stays unresolved until the test releases it. No request interception.
+import { HttpClient, HttpClientResponse } from "effect/http"
+import { healthResponse } from "./browser.ts"
+
+export effect function heldHealth() {
+  const answer = try Deferred.make<"mock" | "live">()
+  let calls = 0
+  let settled = false
+  const client = HttpClient.make(effect (request) => {
+    calls++
+    const agent = try Deferred.await(answer)
+    settled = true
+    return HttpClientResponse.fromWeb(request, try orDie(Effect.try(() => healthResponse(agent))))
+  })
+  return {
+    layer: Layer.succeed(HttpClient.HttpClient, client),
+    release: (mode: "mock" | "live") => Deferred.succeed(answer, mode),
+    snapshot: () => ({ calls, settled }),
+  }
+}

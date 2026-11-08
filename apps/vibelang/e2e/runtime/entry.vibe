@@ -5,6 +5,8 @@ import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
 import { application } from "../../test/support/application.vibe"
 import { init } from "../../src/web/main.vibe"
 import { stylesheet } from "../../src/web/styles.vibe"
+import { main as startup, page as startupPage } from "../../src/web/startup.vibe"
+import { heldHealth } from "../../test/support/heldHealth.vibe"
 import { canonical } from "./probe.vibe"
 
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
@@ -36,6 +38,17 @@ export effect function main() {
 
 const page = Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)
 
-Runtime.run(await runPromise(Effect.provide(main(), page) |> Effect.orDie(%)), {
-  flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest" }),
-})
+const window = await runPromise(Effect.provide(effect { return try (try Experimental.Window.Window).current }, page))
+if (new URLSearchParams(window.location.search).get("fault") === "health") {
+  // Finish loading the fault host while the production startup program is waiting, so the browser can send keys.
+  runFork(Effect.provide(effect {
+    const health = try heldHealth()
+    window.startup = { snapshot: health.snapshot, release: () => runPromise(health.release("mock")) }
+    const { application, flags } = try Effect.provide(startup(), health.layer)
+    try Effect.try(() => Runtime.run(application, { flags: succeed(flags) }))
+  }, startupPage) |> Effect.orDie(%))
+} else {
+  Runtime.run(await runPromise(Effect.provide(main(), page) |> Effect.orDie(%)), {
+    flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest" }),
+  })
+}
