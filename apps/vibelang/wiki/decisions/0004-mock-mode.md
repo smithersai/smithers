@@ -10,7 +10,12 @@ unanswered post first, one at a time per conversation. Independent conversations
 publication are one uninterruptible operation under that conversation's sequencer lock. One `forkIn` worker per room
 starts the replies; it, the engines and the shared PubSub belong to the layer's scope. Scope closure waits for
 in-flight acceptance, interrupts workers, shuts down engines and subscriptions, and refuses further calls. The page
-loads the mock's module only when it runs the mock, and shows a **Mock** pill whenever it does.
+renders and starts listening to the keyboard before backend selection or a module download. Its immediately available
+Factory (`src/web/backend.vibe`) starts one scoped selection: `post`, `read` and `events` share its result and wait only
+for that selection. The page starts with mode `pending`; a Foldkit `ResolvedMode` message sets the chosen mode and
+shows the **Mock** pill after the mock is ready. The mock's module loads only when chosen, including forced mock
+mode. Cancelling an individual caller leaves selection running; disposing the runtime cancels selection and closes
+the chosen layer.
 
 **Rules.**
 - Every new feature ships its mock layer in the same change, and its browser test runs against the mock first.
@@ -19,7 +24,7 @@ loads the mock's module only when it runs the mock, and shows a **Mock** pill wh
   the fallback, and compiles each independently with the installed compiler. The full `--noEmit` typecheck must exit zero with no diagnostics; malformed syntax and invalid types are negative controls. Examples declare their own services/layers; the test
   supplies no hidden prelude. Recovery runs inside effect code, never at module scope.
 - The mock stays every suite's default backend. A page uses the live agent only when its origin's `/api/health`
-  says `live` (0010); `?agent=mock` or the `vibelang.agent` storage key forces the mock, as deployed browser suites do.
+  says `live` within three seconds (0010); `?agent=mock` or the `vibelang.agent` storage key forces the mock, as deployed browser suites do.
 
 **Regression evidence (review findings 1, 2, 4).** Factory integration tests use the real service with a
 `Scheduler.MixedScheduler` subclass yielding every 6, 7 or 11 checks. They compare the complete live event sequence
@@ -36,3 +41,8 @@ live follower leaves the other followers and workers running. The retained mutat
 ```sh
 pnpm exec vitest run --config test/mutations/room-isolation.config.ts test/MockFactory.test.vibe -t 'keeps complete live transcripts'
 ```
+
+**Startup regression.** `test/startup.runtime.test.vibe` and `e2e/startup.spec.ts` run the production startup with an
+injected HttpClient whose health answer stays open until released. First render, ⌘K, Tab and a pending post work
+before health answers, then the chosen mock answers that post. `test/backend.test.vibe` checks shared selection,
+cancellation, the three-second fallback and forced mock without health. No request interception.

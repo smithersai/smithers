@@ -1,4 +1,4 @@
-// The browser boundary: picks the backend, injects the stylesheet and starts the Foldkit runtime, once.
+// Browser startup: prepares styles and Foldkit without waiting for backend selection.
 // The live Factory when this origin's `/api/health` says `agent: "live"` (wiki/decisions/0010-live-agent.md); the mock
 // otherwise, with no backend and no model (0004): on `pnpm dev` and `vite preview`, on a deployment without the API
 // Worker, and whenever the page asks for it with `?agent=mock` or the `vibelang.agent` storage key set to `mock`.
@@ -7,9 +7,9 @@
 // live page never runs.
 import { SecureRandom } from "effect/crypto"
 import { HttpClient } from "effect/http"
-import { Runtime } from "foldkit"
+import { Runtime, Subscription } from "foldkit"
 import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
-import { health, LiveFactory } from "../core/LiveFactory.vibe"
+import { AgentBackend, BrowserFactory } from "./backend.vibe"
 import { Flags, init, Message, Model, subscriptions, update, viewTransition } from "./main.vibe"
 import { stylesheet } from "./styles.vibe"
 import { view } from "./view.vibe"
@@ -24,17 +24,15 @@ function askedForMock(window: Window): boolean {
   }
 }
 
-/** Whether `origin`'s API runs the live agent; anything else within three seconds, or no answer, means the mock. */
-effect function isLive(origin: string) {
-  {
-    const answer = (health(origin) |> timeout(%, "3 seconds")) catch () => undefined
-    return answer?.agent === "live"
-  }
-}
-
-/** The mock Factory's module, fetched only for a page that runs the mock. */
-effect function mockFactory() {
-  return (try promise(() => import("../core/MockFactory.vibe"))).MockFactory
+/** One notification when backend selection finishes, even before the first post. */
+function backendMode() {
+  return Subscription.make<Model, Message, AgentBackend>()(() => ({
+    backend: Subscription.persistentEntry(Stream.fromEffect(effect {
+      const backend = try AgentBackend
+      const mode = try backend.ready
+      return try orDie(Effect.try(() => Message.ResolvedMode({ mode })))
+    })),
+  }))
 }
 
 /** The Foldkit application for this page, and the flags it starts with. */
@@ -43,7 +41,6 @@ export effect function main() {
   const document = try (try Experimental.Document.Document).current
   const client = try HttpClient.HttpClient
   const origin = window.location.origin
-  const live = !askedForMock(window) && try isLive(origin)
   const css = try stylesheet()
   const root = try Effect.try(() => {
     const style = document.createElement("style")
@@ -51,17 +48,17 @@ export effect function main() {
     document.head.append(style)
     return document.getElementById("root")!
   })
-  const resources = live ? LiveFactory(origin).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))) : try mockFactory()
+  const resources = BrowserFactory(origin, askedForMock(window)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
   const session = (try (try SecureRandom.SecureRandom).uuidV4()).slice(0, 8)
-  const flags: Flags = { session, mode: live ? "live" : "mock", name: "Guest", reducedMotion }
+  const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion }
   const application = try Effect.try(() => Runtime.makeApplication({
     Model,
     Flags,
     init,
     update,
     view,
-    subscriptions: subscriptions(document, document),
+    subscriptions: Subscription.aggregate(subscriptions(document, document), backendMode()),
     viewTransition,
     resources,
     container: root,
@@ -74,4 +71,3 @@ export effect function main() {
 export const page = Layer.mergeAll(
   ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer, SecureRandom.layerWebCrypto,
 )
-

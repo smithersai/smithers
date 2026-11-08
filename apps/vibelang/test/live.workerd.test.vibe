@@ -10,6 +10,7 @@ import { afterAll, beforeAll } from "vitest"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
 import { REASONS } from "../worker/Reply.vibe"
 import { modelKey, room, serveApi, type Served } from "./support/workerd.vibe"
 
@@ -69,6 +70,24 @@ describe("the live Factory in local workerd, with no model key", () => {
           { type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unconfigured },
         ])
         expect(snapshot).toEqual({ seq: 3, entries: events.reduce(apply, empty).entries })
+      })
+    }
+  })
+
+  it.live("the browser selects the real live backend and delegates post, read and events to it", () => effect {
+    provide BrowserFactory(api!.origin, false).pipe(Layer.provide(FetchHttpClient.layer)) {
+      const factory = try Factory
+      const backend = try AgentBackend
+      const mode = try backend.ready
+      const conversation = try room("browser-startup")
+      try factory.post(conversation, "startup", "Guest", "How do services work?")
+      const events = try untilSettled(conversation, 1)
+      const snapshot = try factory.read(conversation, 0)
+      try Effect.try(() => {
+        expect(mode).toBe("live")
+        expect(factory.mode).toBe("live")
+        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", reason: REASONS.unconfigured })
+        expect(snapshot.entries).toEqual(events.reduce(apply, empty).entries)
       })
     }
   })

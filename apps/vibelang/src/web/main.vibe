@@ -12,10 +12,10 @@ import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
 
-/** What the page knows when it starts: a random id for this tab's posts, the backend, and the name posts carry. */
+/** What the page knows when it starts: a random id for this tab's posts, the backend (pending until selected), and the name posts carry. */
 export schema Flags {
   readonly session: string
-  readonly mode: "mock" | "live"
+  readonly mode: "mock" | "live" | "pending"
   readonly name: string
   readonly reducedMotion?: boolean
 }
@@ -35,7 +35,7 @@ export schema Model {
   readonly sent: number
   readonly conversation: string
   readonly client: Client
-  readonly mode: "mock" | "live"
+  readonly mode: "mock" | "live" | "pending"
   /** The event stream: `closed` before the first post, `open` while it follows, `failed` after it broke. */
   readonly stream: "closed" | "open" | "failed"
   /** Bumped to start the event stream again from `from`. */
@@ -57,6 +57,7 @@ export const HOME_CONVERSATION = "home"
 // MESSAGE
 
 export const Message = defineMessageUnion({
+  ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
   PressedCommandK: {},
   PressedEscape: {},
   ClickedAsk: {},
@@ -107,6 +108,7 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
 
 export function update(model: Model, message: Message): Update.Return<Model, Message, Factory> {
   return Message.match<Update.Return<Model, Message, Factory>>(message, {
+    ResolvedMode: ({ mode }) => ({ model: { ...model, mode } }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
     PressedEscape: () => model.palette ? openPalette(model, false) : minimizeSplash(model),

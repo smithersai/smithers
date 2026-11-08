@@ -38,3 +38,20 @@ for (const input of ["Command K", "Tab"] as const) {
     expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 1, settled: true })
   })
 }
+
+for (const preference of ["query", "storage"] as const) {
+  test(`${preference} forces the working mock without probing health`, async ({ page }) => {
+    if (preference === "storage") {
+      await page.addInitScript(() => localStorage.setItem("vibelang.agent", "mock"))
+    }
+    await page.goto(`/e2e/runtime/index.html?fault=health${preference === "query" ? "&agent=mock" : ""}`)
+    await page.keyboard.press("ControlOrMeta+k")
+    const prompt = page.getByRole("textbox", { name: "Message" })
+    await expect(prompt).toBeFocused()
+    await prompt.fill("install")
+    await prompt.press("Enter")
+    await expect(page.locator(".vl-pill")).toHaveText("Mock")
+    await expect(page.locator("[data-role='assistant'][data-done='true']")).toHaveCount(1)
+    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 0, settled: false })
+  })
+}

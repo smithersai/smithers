@@ -7,7 +7,11 @@ import { activeId, commandK, container, hasAsk, remove, send } from "./support/b
 
 it.live("renders and handles Command K and a post while health is still unresolved", () => scoped(effect {
   const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
-  node.id = "root"
+  try Effect.try(() => {
+    const root = node.ownerDocument.createElement("div")
+    root.id = "root"
+    node.append(root)
+  })
   const health = try heldHealth()
   const boot = fork Effect.provide(effect {
     const { application, flags } = try main()

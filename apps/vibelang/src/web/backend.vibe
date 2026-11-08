@@ -1,0 +1,46 @@
+// The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
+import { HttpClient } from "effect/http"
+import { Factory, type Mode } from "../core/Factory.vibe"
+import { health, LiveFactory } from "../core/LiveFactory.vibe"
+
+/** The chosen mode becomes a Foldkit message, independently of any post or event subscription. */
+export service AgentBackend {
+  readonly ready: Mode!!
+}
+
+export function BrowserFactory(origin: string, forceMock: boolean) {
+  return Layer.effectContext(effect {
+    const scope = try Scope.Scope
+    const client = try HttpClient.HttpClient
+    let current: Mode | "pending" = "pending"
+    const selected = try forkIn(Effect.interruptible(effect {
+      const answer = forceMock ? undefined : ((health(origin) |> timeout(%, "3 seconds")) catch () => undefined)
+      const mode: Mode = answer?.agent === "live" ? "live" : "mock"
+      // The mock carries the flow engine (0011). Live pages never load that module.
+      const layer = mode === "live"
+        ? LiveFactory(origin)
+        : (try promise(() => import("../core/MockFactory.vibe"))).MockFactory
+      const context = try Layer.buildWithScope(layer.pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client))), scope)
+      const factory = Context.get(context, Factory)
+      current = mode
+      return { mode, factory }
+    }), scope)
+    const ready = Fiber.join(selected)
+    const factory: Factory.Shape = {
+      get mode() { return current },
+      post: effect (conversation, clientId, name, text) => {
+        const { factory } = try ready
+        return try factory.post(conversation, clientId, name, text)
+      },
+      read: effect (conversation, after) => {
+        const { factory } = try ready
+        return try factory.read(conversation, after)
+      },
+      events: (conversation, after) => Stream.unwrap(effect {
+        const { factory } = try ready
+        return factory.events(conversation, after)
+      }),
+    }
+    return Context.make(Factory, factory).pipe(Context.add(AgentBackend, { ready: map(ready, (choice) => choice.mode) }))
+  })
+}

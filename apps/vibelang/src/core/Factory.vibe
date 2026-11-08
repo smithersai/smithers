@@ -1,6 +1,6 @@
 // The factory's API: one Effect service every surface calls, the web app, the CLI, the MCP server and the skill
-// (wiki/decisions/0002-core-is-an-effect-api.md). Two layers provide it: `MockFactory` (no backend, no model) and the
-// live one that talks to vibelang.smithers.sh.
+// (wiki/decisions/0002-core-is-an-effect-api.md). Its backends are `MockFactory` (no backend, no model) and the live
+// one that talks to vibelang.smithers.sh. The browser wrapper selects one after rendering.
 import type { Event } from "./conversation.vibe"
 import { ReadSnapshot } from "./schemas.vibe"
 export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
@@ -20,7 +20,8 @@ export error Refused { refusal: string }
  * above `after`, then follows new ones until the stream is closed.
  */
 export service Factory {
-  readonly mode: Mode
+  /** The browser resolves its backend after rendering; operations wait while mode is pending. */
+  readonly mode: Mode | "pending"
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
   read(conversation: string, after: number): ReadSnapshot!Unavailable
   events(conversation: string, after: number): Stream.Stream<Event, Unavailable>

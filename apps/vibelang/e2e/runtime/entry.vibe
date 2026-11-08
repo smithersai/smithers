@@ -38,7 +38,9 @@ export effect function main() {
 
 const page = Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)
 
-const window = await runPromise(Effect.provide(effect { return try (try Experimental.Window.Window).current }, page))
+const window = await runPromise(effect {
+  provide page { return try (try Experimental.Window.Window).current }
+})
 if (new URLSearchParams(window.location.search).get("fault") === "health") {
   // Finish loading the fault host while the production startup program is waiting, so the browser can send keys.
   runFork(Effect.provide(effect {
