@@ -1,0 +1,52 @@
+import { Fuzz } from "@smthrs/fuzz"
+import { expect, it } from "@effect/vitest"
+import { emptySandboxLedger } from "../src/core/sandboxDecision.vibe"
+import { meter, monthOf } from "../src/core/sandboxMeter.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+
+const Delta = Schema.Int.check(Schema.isBetween({ minimum: -120, maximum: 120 }))
+const Input = Schema.Struct({ deltas: Schema.Array(Delta).check(Schema.isMaxLength(30)), count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })) })
+it.live("feedback fuzz: the durable meter matches an independent millisecond-by-millisecond UTC oracle", () => effect {
+  const report = try Fuzz.run(Arbitrary.schema(Input), effect ({ deltas, count }) => {
+    let high = Date.UTC(2026, 10, 30, 23, 59, 59, 990)
+    let now = high
+    let ledger = { ...emptySandboxLedger("u", "contributor", 36000, monthOf(high), high), sandboxes: Array.from({ length: count }, (_, n) => ({ id: `s${n}`, conversation: `c${n}`, running: true })) }
+    let months: Readonly<Record<string, number>> = {}
+    const expected: Record<string, number> = { [monthOf(high)]: 0 }
+    for (const delta of deltas) {
+      now += delta
+      try Fuzz.observe(now < high ? "rollback" : monthOf(now) !== ledger.month ? "boundary" : "advance")
+      const end = Math.max(high, now)
+      for (let second = high; second < end; second++) expected[String(monthOf(second))] = (expected[String(monthOf(second))] ?? 0) + count
+      high = end
+      const next = try meter(ledger, months, now, 36000)
+      ledger = { ...next.ledger, sandboxes: [...next.ledger.sandboxes] }
+      months = next.months
+      if (ledger.lastMeteredAt !== high || ledger.usedMilliseconds < 0) return false
+      for (const [month, used] of Object.entries(months)) if (used !== (expected[month] ?? 0)) return false
+    }
+    return true
+  }, { executions: 1000, seed: 24 })
+  try Effect.try(() => expect(report._tag, Fuzz.formatReport(report)).toBe("Passed"))
+}, 60000)
+
+it.live("feedback fuzz: role gates, operation replay, generations and file bytes through Factory flows", () => effect {
+  const report = try Fuzz.run(Arbitrary.schema(Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), value: Schema.Int })), ({ role, value }) => scoped(effect {
+    provide mockFactoryFor(role) {
+      const factory = try Factory
+      const start = try Effect.result(factory.startSandbox("fuzz", "start"))
+      if (role !== "contributor" && role !== "maintainer") return start._tag === "Failure"
+      if (start._tag === "Failure") return false
+      const first = start.success
+      try factory.sandboxCommand("fuzz", "write", `echo ${value} > keep`, first.generation)
+      try factory.stopSandbox("fuzz", "stop", first.generation)
+      const second = try factory.startSandbox("fuzz", "restart")
+      try factory.stopSandbox("fuzz", "stop", first.generation)
+      const bytes = try factory.sandboxCommand("fuzz", "read", "cat keep", second.generation)
+      const snapshot = try factory.sandbox("fuzz")
+      return bytes === `${value}\n` && snapshot.generation === first.generation + 1 && snapshot.status === "running" && snapshot.remaining > 0
+    }
+  }), { executions: 40, seed: 25 })
+  try Effect.try(() => expect(report._tag, Fuzz.formatReport(report)).toBe("Passed"))
+}, 60000)

@@ -65,6 +65,10 @@ for (const earlier of ["skipped", "later"] as const) {
       events: () => Stream.fromIterable(log),
       tour: () => die(new Error("Ask never tours")),
       endTour: () => die(new Error("Ask never tours")),
+      sandbox: () => die(new Error("Ask never reads a sandbox")),
+      startSandbox: () => die(new Error("Ask never starts a sandbox")),
+      stopSandbox: () => die(new Error("Ask never stops a sandbox")),
+      sandboxCommand: () => die(new Error("Ask never runs a sandbox command")),
     })
     const actual = try effect {
       provide layer {

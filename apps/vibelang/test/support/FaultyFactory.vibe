@@ -37,6 +37,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       read: base.read,
       tour: base.tour,
       endTour: base.endTour,
+      sandbox: base.sandbox,
+      startSandbox: base.startSandbox,
+      stopSandbox: base.stopSandbox,
+      sandboxCommand: base.sandboxCommand,
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         const ending = fault === "end" && !observation.faulted

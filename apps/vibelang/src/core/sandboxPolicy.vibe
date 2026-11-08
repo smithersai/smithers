@@ -1,0 +1,13 @@
+// Decision 0019: this is the only caller/policy seam for compute. Live hosts supply a trusted session resolver.
+import type { Role } from "./sandboxDecision.vibe"
+import { mayStart } from "./sandboxDecision.vibe"
+
+export interface SandboxPrincipal { readonly owner: string; readonly role: Role }
+export service SandboxPolicy {
+  current(): SandboxPrincipal!!
+}
+export const signedOut = Layer.succeed(SandboxPolicy, { current: () => succeed({ owner: "", role: "viewer" as const }) })
+export function mockPolicy(role: Role) {
+  return Layer.succeed(SandboxPolicy, { current: () => succeed({ owner: "mock-person", role }) })
+}
+export { mayStart }

@@ -27,7 +27,7 @@ brick                                   state         proof
 5   mythical history                    done (local)  0020: the History machine proved (linearity, no loss, exactly one), the
                                                       bootstrap of 6,737 real commits, the flows, the live object and /history;
                                                       read by page (lane vl-mythical2); live writes wait for 0019's policy
-6   sandboxes with minutes              later         VL-25
+6   sandboxes with minutes              in progress   0024: mock UI and shared flows; durable allowance/Container hosts; live policy and binding gated
 7   Electrobun desktop app              later         VL-6
 ```
 
@@ -60,3 +60,5 @@ brick                                   state         proof
 - **Source coverage (0016, lane vl-coverage): in progress.** Boundary tests and Alchemy graph coverage; prepared
   100% gates remain below target. Two upstream reproductions await Will; precise coverage could not be enabled on
   the installed workerd 1.20261019.1 inspector.
+
+- Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.

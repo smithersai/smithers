@@ -9,6 +9,7 @@ import { SecureRandom } from "effect/crypto"
 import { HttpClient } from "effect/http"
 import { Runtime, Subscription } from "foldkit"
 import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { ROLES } from "../history/roles.vibe"
 import { AgentBackend, BrowserFactory } from "./backend.vibe"
 import { Flags, init, Message, Model, subscriptions, update, viewTransition } from "./main.vibe"
 import { stylesheet } from "./styles.vibe"
@@ -49,7 +50,9 @@ export effect function main() {
     document.head.append(style)
     return document.getElementById("root")!
   })
-  const resources = BrowserFactory(origin, askedForMock(window)).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
+  const selectedRole = new URLSearchParams(window.location.search).get("role")
+  const role = ROLES.find((each) => each === selectedRole) ?? "viewer"
+  const resources = BrowserFactory(origin, askedForMock(window), role).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
   const session = (try (try SecureRandom.SecureRandom).uuidV4()).slice(0, 8)
   const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion }

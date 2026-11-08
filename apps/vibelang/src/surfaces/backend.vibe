@@ -2,7 +2,7 @@ import { liveHealth, prefersMock } from "../core/protocolDecision.vibe"
 
 import { FetchHttpClient } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
-import { MockFactory } from "../core/MockFactory.vibe"
+import { mockFactoryFor, MockFactory } from "../core/MockFactory.vibe"
 import { LiveMythical } from "../history/LiveMythical.vibe"
 import { MockMythical } from "../history/MockMythical.vibe"
 import type { Principal } from "../history/roles.vibe"
@@ -39,7 +39,7 @@ const live = Layer.unwrap(effect {
   return Layer.merge(LiveFactory(origin), LiveMythical(origin))
 }).pipe(Layer.provide(FetchHttpClient.layer))
 
-const mock = Layer.merge(MockFactory, MockMythical(SURFACE_PRINCIPAL))
+const mock = Layer.merge(mockFactoryFor(SURFACE_PRINCIPAL.role), MockMythical(SURFACE_PRINCIPAL))
 
 /** Backend choice belongs to the host: `--mock` or `VIBELANG_FACTORY=mock` for the mock, else the live Factory. */
 export function backend(useMock: boolean, environment: string | undefined) {

@@ -152,3 +152,6 @@ combined cold startup exceeded the implicit five seconds after engine observatio
 10-second limit and browser assertions are unchanged; whole-history replay under coverage measured 23.5 seconds.
 
 **Concurrent post acceptance (0017).** The two-follower Factory test checks person order, reply identity and complete scripted answers, contiguous event numbers, and serialized reply starts/finishes. It permits the first reply to start before the second post is accepted; asynchronous module/engine scheduling can select either valid interleaving. The former global entry-name order failed on a real run.
+
+**Sandbox lane tool review (0024).** `@smthrs/fuzz` is the monorepo's existing feedback-fuzz tool, added as a test dependency, awaiting Will's VL-5 approval. Sandbox fuzz uses fixed seeds and a millisecond-by-millisecond clock oracle; the benchmark checks 100 actual mock lifecycle cycles. Neither is a whole-app coverage or live-container performance claim.
+

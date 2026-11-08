@@ -1,0 +1,271 @@
+// One serialized, persisted writer shared by the product mock and the live Durable Object. A pending operation is
+// committed before host I/O; recovery finishes it before admitting another operation. No container receipt is inferred.
+import { ALLOWANCES, applySandbox, decideSandbox, emptySandboxLedger, leaseMilliseconds, remainingMilliseconds, runningCount, type SandboxLedger } from "./sandboxDecision.vibe"
+import { Factory, Refused, Unavailable, type SandboxSnapshot } from "./Factory.vibe"
+import { meter, monthOf, nextMonth, millisecondOf, snapshotOf } from "./sandboxMeter.vibe"
+import { mayStart, SandboxPolicy } from "./sandboxPolicy.vibe"
+
+export interface Pending { readonly kind: "start" | "stop" | "command" | "cancel-start"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
+export interface Receipt { readonly request: Pending; readonly snapshot: SandboxSnapshot; readonly output: string; readonly refusal: string }
+export interface SandboxState {
+  readonly ledger: SandboxLedger
+  readonly months: Readonly<Record<string, number>>
+  readonly generations: Readonly<Record<string, number>>
+  readonly outputs: Readonly<Record<string, string>>
+  readonly pending: Pending | null
+  readonly meterFailure?: { readonly from: number; readonly to: number; readonly count: number; readonly reason: string }
+}
+/** Record keys arrive from a public conversation id; inherited prototype properties are never state. */
+function generationOf(state: SandboxState, conversation: string): number {
+  const value = state.generations[conversation]
+  return typeof value === "number" ? value : 0
+}
+function outputOf(state: SandboxState, conversation: string): string {
+  const value = state.outputs[conversation]
+  return typeof value === "string" ? value : ""
+}
+
+export interface Store {
+  read(): (SandboxState | undefined)!!
+  receipt(id: string): (Receipt | undefined)!!
+  write(state: SandboxState, receipt?: Receipt): void!!
+  alarm(at: number | null): void!!
+}
+/** A host must fence every I/O by generation and make start/stop replayable. Commands are at most once. */
+export interface Machines {
+  start(id: string, generation: number): void!Unavailable
+  stop(id: string, generation: number): void!Unavailable
+  lease(id: string, generation: number, milliseconds: number): boolean!Unavailable
+  command(id: string, generation: number, operationId: string, command: string): string!Unavailable
+}
+export const steps = Metric.counter("vibelang_sandbox_steps", { incremental: true })
+export effect function observed<A, E, R>(step: string, work: A!E!R) {
+  return try work.pipe(
+    Effect.tap(() => Metric.update(Metric.withAttributes(steps, { step, outcome: "done" }), 1)),
+    Effect.tap(() => Effect.logInfo("vibelang.sandbox").pipe(Effect.annotateLogs({ step, outcome: "done" }))),
+    Effect.tapError(() => effect {
+      try Metric.update(Metric.withAttributes(steps, { step, outcome: "failed" }), 1)
+      try Effect.logWarning("vibelang.sandbox").pipe(Effect.annotateLogs({ step, outcome: "failed" }))
+    }),
+    Effect.withSpan(`vibelang.sandbox.${step}`),
+  )
+}
+
+export effect function makeSandboxHost(store: Store, machines: Machines) {
+  const gate = try Semaphore.make(1)
+  const activeCommands = new Set<string>()
+  const policy = try SandboxPolicy
+  const locked = <A, E, R>(work: A!E!R) => Semaphore.withPermits(gate, 1)(work)
+
+  effect function load() {
+    const principal = try policy.current()
+    const saved = try store.read()
+    const now = millisecondOf(try Clock.currentTimeMillis) catch effect (error) => {
+      if (saved !== undefined) try emergency(saved, saved.ledger.lastMeteredAt, error)
+      throw error
+    }
+    const ledger = saved?.ledger ?? emptySandboxLedger(principal.owner, principal.role, ALLOWANCES[principal.role] * 60000, monthOf(now), now)
+    if (ledger.owner !== principal.owner) throw new Refused({ refusal: "forbidden" })
+    const state: SandboxState = saved ?? { ledger, months: {}, generations: {}, outputs: {}, pending: null }
+    return { state, principal, now }
+  }
+  function view(state: SandboxState, conversation: string) {
+    return snapshotOf(state.ledger, conversation, generationOf(state, conversation), outputOf(state, conversation))
+  }
+  effect function arm(state: SandboxState) {
+    const count = runningCount(state.ledger.sandboxes)
+    // Sample every second; a delayed alarm records all actual running time, including overage, without saturation.
+    try store.alarm(count > 0 || state.pending !== null ? (try Clock.currentTimeMillis) + 1000 : null)
+  }
+  effect function transition(state: SandboxState, pending: Pending, now: number) {
+    if (!Number.isSafeInteger(state.ledger.sequence) || state.ledger.sequence < 0 || state.ledger.sequence >= Number.MAX_SAFE_INTEGER) throw new Unavailable({ reason: "sequence-overflow" })
+    const decision = decideSandbox(state.ledger, { type: pending.kind === "start" ? "start" : "stop", owner: state.ledger.owner, role: state.ledger.role, allowanceMilliseconds: state.ledger.allowanceMilliseconds, conversation: pending.conversation, sandboxId: state.ledger.sandboxes.length === 0 ? "sturdy-goggles" : `quiet-otter-${state.ledger.sandboxes.length}`, operationId: pending.operationId, now: state.ledger.lastMeteredAt, month: state.ledger.month })
+    if (!decision.ok) return state
+    return { ...state, ledger: applySandbox(state.ledger, decision.event) }
+  }
+  effect function complete(state: SandboxState, pending: Pending, now: number) {
+    const recorded = try store.receipt(pending.operationId)
+    if (recorded !== undefined) return { ...state, pending: null }
+    const id = `${state.ledger.owner}/${pending.conversation}`
+    let next = state
+    let output = ""
+    let refusal = ""
+    if (pending.kind === "start") {
+      const started = try Effect.result(observed("provision", machines.start(id, pending.generation)))
+      if (started._tag === "Failure") {
+        const cancelled: Pending = { ...pending, kind: "cancel-start" }
+        const cancelling = { ...state, pending: cancelled }
+        try store.write(cancelling)
+        try arm(cancelling)
+        return try complete(cancelling, cancelled, now)
+      }
+      const measured = try meter(state.ledger, state.months, try millisecondOf(try Clock.currentTimeMillis), state.ledger.allowanceMilliseconds)
+      if (remainingMilliseconds(measured.ledger.allowanceMilliseconds, measured.ledger.usedMilliseconds) === 0) {
+        const cancelled: Pending = { ...pending, kind: "cancel-start" }
+        const cancelling = { ...state, ...measured, pending: cancelled }
+        try store.write(cancelling)
+        return try complete(cancelling, cancelled, now)
+      }
+      next = try transition({ ...state, ...measured }, pending, now)
+      next = { ...next, generations: { ...next.generations, [pending.conversation]: pending.generation } }
+    } else if (pending.kind === "cancel-start") {
+      try observed("cancel-start", machines.stop(id, pending.generation))
+      refusal = "start-failed"
+    } else if (pending.kind === "stop") {
+      try observed("stop", machines.stop(id, pending.generation))
+      const measured = try meter(state.ledger, state.months, try millisecondOf(try Clock.currentTimeMillis), state.ledger.allowanceMilliseconds)
+      next = try transition({ ...state, ...measured }, pending, now)
+    } else {
+      const result = try Effect.result(observed("command", machines.command(id, pending.generation, pending.operationId, pending.command)))
+      if (result._tag === "Failure") refusal = "command-uncertain"
+      else output = result.success
+      next = { ...state, outputs: { ...state.outputs, [pending.conversation]: `${outputOf(state, pending.conversation)}$ ${pending.command}\n${output}\n`.slice(-32768) } }
+    }
+    const receipt: Receipt = { request: pending.kind === "cancel-start" ? { ...pending, kind: "start" } : pending, snapshot: view(next, pending.conversation), output, refusal }
+    next = { ...next, pending: null }
+    try store.write(next, receipt)
+    try arm(next)
+    return next
+  }
+  effect function metered(state: SandboxState, now: number, role: SandboxLedger["role"]) {
+    const measured = try observed("meter", meter(state.ledger, state.months, now, ALLOWANCES[role] * 60000))
+    let next: SandboxState = { ...state, ...measured, ledger: { ...measured.ledger, role } }
+    try store.write(next)
+    if (remainingMilliseconds(next.ledger.allowanceMilliseconds, next.ledger.usedMilliseconds) === 0 || !mayStart(role)) {
+      for (const box of next.ledger.sandboxes) {
+        if (!box.running) continue
+        const pending: Pending = { kind: "stop", conversation: box.conversation, operationId: `exhaust/${next.ledger.month}/${box.id}/${generationOf(next, box.conversation)}`, generation: generationOf(next, box.conversation), command: "" }
+        next = { ...next, pending }
+        try store.write(next)
+        try arm(next)
+        next = try complete(next, pending, now)
+      }
+    }
+    for (const box of next.ledger.sandboxes) {
+      if (!box.running) continue
+      const alive = try observed("lease", machines.lease(`${next.ledger.owner}/${box.conversation}`, generationOf(next, box.conversation), leaseMilliseconds(Math.ceil(remainingMilliseconds(next.ledger.allowanceMilliseconds, next.ledger.usedMilliseconds) / runningCount(next.ledger.sandboxes)))))
+      if (!alive) {
+        const pending: Pending = { kind: "stop", conversation: box.conversation, operationId: `ended/${box.id}/${generationOf(next, box.conversation)}`, generation: generationOf(next, box.conversation), command: "" }
+        next = { ...next, pending }
+        try store.write(next)
+        next = try complete(next, pending, now)
+      }
+    }
+    try arm(next)
+    return next
+  }
+  /** Fail closed with actual Stop receipts; preserve both the exact old total and the rejected raw interval. */
+  effect function emergency(state: SandboxState, now: number, error: Unavailable) {
+    let next: SandboxState = { ...state, pending: null, meterFailure: { from: state.ledger.lastMeteredAt, to: now, count: runningCount(state.ledger.sandboxes), reason: error.reason } }
+    for (const box of state.ledger.sandboxes) {
+      if (!box.running) continue
+      const stop: Pending = { kind: "stop", conversation: box.conversation, operationId: `fault/${box.id}/${generationOf(state, box.conversation)}`, generation: generationOf(state, box.conversation), command: "" }
+      const receipt = try Effect.result(observed("meter-fail-closed", machines.stop(`${state.ledger.owner}/${box.conversation}`, stop.generation)))
+      if (receipt._tag === "Success") next = try transition(next, stop, state.ledger.lastMeteredAt)
+      else next = { ...next, pending: stop }
+      try store.write(next)
+    }
+    try store.write(next)
+    try arm(next)
+  }
+  effect function sampled(state: SandboxState, now: number, role: SandboxLedger["role"]) {
+    return meter(state.ledger, state.months, now, ALLOWANCES[role] * 60000) catch effect (error) => {
+      try emergency(state, now, error)
+      throw error
+    }
+  }
+  effect function current() {
+    const { state, principal, now } = try load()
+    const measured = try sampled(state, now, principal.role)
+    let next: SandboxState = { ...state, ...measured, ledger: { ...measured.ledger, role: principal.role } }
+    try store.write(next)
+    if (next.pending !== null) {
+      if (next.pending.kind === "start" && !mayStart(principal.role)) {
+        try machines.stop(`${next.ledger.owner}/${next.pending.conversation}`, next.pending.generation)
+        next = { ...next, pending: null }
+        try store.write(next)
+      } else if (next.pending.kind === "command") {
+        if (!activeCommands.has(next.pending.operationId)) {
+          const receipt: Receipt = { request: next.pending, snapshot: view(next, next.pending.conversation), output: "", refusal: "command-uncertain" }
+          next = { ...next, pending: null }
+          try store.write(next, receipt)
+        }
+      } else next = try complete(next, next.pending, now)
+    }
+    return { state: try metered(next, now, principal.role), principal, now }
+  }
+
+  effect function admit(request: Pending) {
+    if (!/^[a-zA-Z0-9._/-]{1,160}$/.test(request.operationId) || !/^[a-zA-Z0-9._-]{1,120}$/.test(request.conversation)) throw new Refused({ refusal: "invalid" })
+    const { state, principal, now } = try current()
+    if (principal.owner === "" || !mayStart(principal.role)) throw new Refused({ refusal: "forbidden" })
+    const old = try store.receipt(request.operationId)
+    if (old !== undefined) {
+      if (old.request.kind !== request.kind || old.request.conversation !== request.conversation || old.request.command !== request.command || (request.kind !== "start" && old.request.generation !== request.generation)) throw new Refused({ refusal: "operation-conflict" })
+      if (old.refusal !== "") throw new Unavailable({ reason: old.refusal })
+      return { type: "receipt" as const, receipt: old }
+    }
+    const snapshot = view(state, request.conversation)
+    if (request.kind !== "start" && request.generation !== snapshot.generation) throw new Refused({ refusal: "stale-generation" })
+    if (request.kind !== "start" && snapshot.status !== "running") throw new Refused({ refusal: "stopped" })
+    if (request.kind === "start" && snapshot.remaining === 0) throw new Refused({ refusal: "out-of-minutes" })
+    if (request.kind === "start" && snapshot.status === "running") {
+      const receipt: Receipt = { request, snapshot, output: "", refusal: "" }
+      try store.write(state, receipt)
+      return { type: "receipt" as const, receipt }
+    }
+    if (activeCommands.has(request.operationId)) throw new Refused({ refusal: "busy" })
+    if (!Number.isSafeInteger(snapshot.generation) || snapshot.generation < 0 || snapshot.generation >= Number.MAX_SAFE_INTEGER) throw new Unavailable({ reason: "generation-overflow" })
+    const pending = { ...request, generation: request.kind === "start" ? snapshot.generation + 1 : request.generation }
+    const next = { ...state, pending, generations: request.kind === "start" ? { ...state.generations, [request.conversation]: pending.generation } : state.generations }
+    try store.write(next)
+    try arm(next)
+    return { type: "pending" as const, state: next, pending, now }
+  }
+  effect function run(request: Pending) {
+    const admitted = try admit(request)
+    if (admitted.type === "receipt") return admitted.receipt
+    try complete(admitted.state, admitted.pending, admitted.now)
+    const receipt = (try store.receipt(request.operationId))!
+    if (receipt.refusal !== "") throw new Unavailable({ reason: receipt.refusal })
+    return receipt
+  }
+  effect function command(conversation: string, operationId: string, text: string, generation: number) {
+    const request: Pending = { kind: "command", conversation, operationId, generation, command: text }
+    const admitted = try locked(effect {
+      const admitted = try admit(request)
+      if (admitted.type === "pending") activeCommands.add(operationId)
+      return admitted
+    })
+    if (admitted.type === "receipt") return admitted.receipt.output
+    const perform = effect {
+      const result = try Effect.result(observed("command", machines.command(`${admitted.state.ledger.owner}/${conversation}`, generation, operationId, text)))
+      return try locked(effect {
+        const existing = try store.receipt(operationId)
+        if (existing !== undefined) {
+          if (existing.refusal !== "") throw new Unavailable({ reason: existing.refusal })
+          return existing.output
+        }
+        const { state } = try current()
+        const snapshot = view(state, conversation)
+        const stale = snapshot.generation !== generation || snapshot.status !== "running"
+        const refusal = stale ? "stale-generation" : result._tag === "Failure" ? "command-uncertain" : ""
+        const output = result._tag === "Success" && !stale ? result.success : ""
+        const next = { ...state, pending: state.pending?.operationId === operationId ? null : state.pending, outputs: refusal === "" ? { ...state.outputs, [conversation]: `${outputOf(state, conversation)}$ ${text}\n${output}\n`.slice(-32768) } : state.outputs }
+        const receipt: Receipt = { request, snapshot: view(next, conversation), output, refusal }
+        try store.write(next, receipt)
+        try arm(next)
+        if (refusal !== "") throw new Unavailable({ reason: refusal })
+        return output
+      })
+    }
+    return try Effect.ensuring(perform, sync(() => { activeCommands.delete(operationId) }))
+  }
+  return {
+    snapshot: (conversation: string) => locked(observed("read", effect { const { state } = try load(); return view(state, conversation) })),
+    start: (conversation: string, operationId: string) => locked(observed("start", effect { return (try run({ kind: "start", conversation, operationId, generation: 0, command: "" })).snapshot })),
+    stop: (conversation: string, operationId: string, generation: number) => locked(observed("stop-request", effect { return (try run({ kind: "stop", conversation, operationId, generation, command: "" })).snapshot })),
+    command,
+    tick: () => locked(effect { try current() }),
+  }
+}

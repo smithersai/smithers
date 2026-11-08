@@ -91,11 +91,13 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
         CONVERSATION: { type: "durable-object", worker: "api", exportName: "Conversation" },
         BUDGET: { type: "durable-object", worker: "api", exportName: "Budget" },
         HISTORY: { type: "durable-object", worker: "api", exportName: "History" },
+        SANDBOX_LEDGER: { type: "durable-object", worker: "api", exportName: "SandboxLedger" },
       },
       exports: {
         Conversation: { type: "durable-object", storage: "sqlite" },
         Budget: { type: "durable-object", storage: "sqlite" },
         History: { type: "durable-object", storage: "sqlite" },
+        SandboxLedger: { type: "durable-object", storage: "sqlite" },
       },
     })
   }

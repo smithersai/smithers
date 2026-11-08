@@ -5,12 +5,13 @@ import { responseKind } from "./protocolDecision.vibe"
 // conversation's Durable Object; this layer only carries intents to it and its numbered events back.
 import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
-import { EventSchema, Factory, ReadSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
+import { EventSchema, Factory, ReadSnapshot, SandboxSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
 import { conversationPath, Health, HEALTH_PATH, Refusal, TOUR_PATH } from "./wire.vibe"
 
 const decodeHealth = Schema.decodeUnknownEffect(Health)
 const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
 const decodeRefusal = Schema.decodeUnknownEffect(Refusal)
+const decodeSandbox = Schema.decodeUnknownEffect(SandboxSnapshot)
 const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
 
 /** `Unavailable`, naming what failed; never a response body, which could carry anything. */
@@ -61,6 +62,34 @@ export function LiveFactory(origin: string) {
         const response = try Effect.mapError(client.execute(request), unavailable("end tour unreachable"))
         try refusable(response, "end tour")
       },
+      sandbox: effect (conversation: string) => {
+        const response = try Effect.mapError(client.get(origin + `/api/sandboxes/${encodeURIComponent(conversation)}`), unavailable("sandbox unreachable"))
+        if (response.status !== 200) throw new Unavailable({ reason: `sandbox answered ${response.status}` })
+        return try Effect.mapError(decodeSandbox(try Effect.mapError(response.json, unavailable("sandbox is not JSON"))), unavailable("sandbox is not the protocol"))
+      },
+      startSandbox: effect (conversation: string, operationId: string) => {
+        const request = HttpClientRequest.post(origin + `/api/sandboxes/${encodeURIComponent(conversation)}/start`).pipe(HttpClientRequest.bodyJsonUnsafe({ operationId }))
+        const response = try Effect.mapError(client.execute(request), unavailable("sandbox start unreachable"))
+        try sandboxRefusal(response)
+        if (response.status !== 200) throw new Unavailable({ reason: `sandbox start answered ${response.status}` })
+        return try Effect.mapError(decodeSandbox(try Effect.mapError(response.json, unavailable("sandbox start is not JSON"))), unavailable("sandbox start is not the protocol"))
+      },
+      stopSandbox: effect (conversation: string, operationId: string, generation: number) => {
+        const request = HttpClientRequest.post(origin + `/api/sandboxes/${encodeURIComponent(conversation)}/stop`).pipe(HttpClientRequest.bodyJsonUnsafe({ operationId, generation }))
+        const response = try Effect.mapError(client.execute(request), unavailable("sandbox stop unreachable"))
+        try sandboxRefusal(response)
+        if (response.status !== 200) throw new Unavailable({ reason: `sandbox stop answered ${response.status}` })
+        return try Effect.mapError(decodeSandbox(try Effect.mapError(response.json, unavailable("sandbox stop is not JSON"))), unavailable("sandbox stop is not the protocol"))
+      },
+      sandboxCommand: effect (conversation: string, operationId: string, command: string, generation: number) => {
+        const request = HttpClientRequest.post(origin + `/api/sandboxes/${encodeURIComponent(conversation)}/command`).pipe(HttpClientRequest.bodyJsonUnsafe({ operationId, command, generation }))
+        const response = try Effect.mapError(client.execute(request), unavailable("terminal unreachable"))
+        try sandboxRefusal(response)
+        if (response.status !== 200) throw new Unavailable({ reason: `terminal answered ${response.status}` })
+        const body = try Effect.mapError(response.json, unavailable("terminal is not JSON"))
+        if (typeof body !== "object" || body === null || !("output" in body) || typeof body.output !== "string") throw new Unavailable({ reason: "terminal is not the protocol" })
+        return body.output
+      },
       read: effect (conversation: string, after: number) => {
         const url = origin + conversationPath(conversation) + `?after=${after}`
         const response = try Effect.mapError(client.get(url), unavailable("read unreachable"))
@@ -83,4 +112,12 @@ export function LiveFactory(origin: string) {
         }),
     }
   })
+}
+
+effect function sandboxRefusal(response: HttpClientResponse.HttpClientResponse) {
+  if (response.status !== 403 && response.status !== 409) return
+  const body = try Effect.mapError(response.json, unavailable("refusal is not JSON"))
+  const schema = Schema.Struct({ refusal: Schema.String })
+  const refusal = try Effect.mapError(Schema.decodeUnknownEffect(schema)(body), unavailable("refusal is not the protocol"))
+  throw new Refused({ refusal: refusal.refusal })
 }

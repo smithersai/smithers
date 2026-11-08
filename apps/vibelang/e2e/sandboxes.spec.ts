@@ -1,0 +1,37 @@
+// Playwright discovers JS/TS specs only (decision 0001).
+import { expect, test } from "@playwright/test"
+
+test("sandbox: write, stop, restart and read bytes", async ({ page }) => {
+  await page.goto("/?agent=mock&role=contributor")
+  await page.getByRole("button", { name: "Ask the agent" }).click()
+  await page.getByRole("dialog").getByRole("textbox").fill("hello")
+  await page.getByRole("dialog").getByRole("button", { name: "Send" }).click()
+  await page.getByRole("button", { name: "Sandboxes", exact: true }).click()
+  await page.getByRole("button", { name: "New sandbox" }).click()
+  await expect(page.getByRole("status", { name: "Sandbox" })).toHaveText("Running")
+  const command = page.getByRole("textbox", { name: "Terminal command" })
+  await command.fill("echo saved > keep.txt")
+  await command.press("Enter")
+  await expect(command).toBeEnabled()
+  await page.getByRole("button", { name: "Stop", exact: true }).click()
+  await expect(page.getByRole("status", { name: "Sandbox" })).toHaveText("Stopped")
+  await page.getByRole("button", { name: "Start", exact: true }).click()
+  await expect(page.getByRole("status", { name: "Sandbox" })).toHaveText("Running")
+  await command.fill("cat keep.txt")
+  await command.press("Enter")
+  await expect(page.getByLabel("Terminal output")).toContainText("saved")
+  await page.getByRole("button", { name: "Maximize Sandboxes" }).click()
+  await expect(page.getByRole("table", { name: "Minutes by role" })).toBeVisible()
+  await page.keyboard.press("Escape")
+  await expect(page.getByRole("table", { name: "Minutes by role" })).toBeHidden()
+})
+
+test("signed out has no start control", async ({ page }) => {
+  await page.goto("/?agent=mock")
+  await page.getByRole("button", { name: "Ask the agent" }).click()
+  await page.getByRole("dialog").getByRole("textbox").fill("hello")
+  await page.getByRole("dialog").getByRole("button", { name: "Send" }).click()
+  await page.getByRole("button", { name: "Sandboxes", exact: true }).click()
+  await expect(page.getByText("Sign in to start a sandbox", { exact: true })).toBeVisible()
+  await expect(page.getByRole("button", { name: "New sandbox" })).toHaveCount(0)
+})

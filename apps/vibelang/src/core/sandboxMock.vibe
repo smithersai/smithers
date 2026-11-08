@@ -1,0 +1,74 @@
+// VL-13's product mock: a real in-memory filesystem, a deliberately small shell, and the SAME meter/flows as live.
+// Unsupported commands say so; the mock never fabricates test, install, repository or network success.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { SecureRandom } from "effect/crypto"
+import { FlowRuntime } from "@smthrs/flow"
+import { Factory, Unavailable } from "./Factory.vibe"
+import { SandboxCommand, SandboxHost, SandboxMeter, SandboxStart, SandboxStop, sandboxRegistration } from "./flows.vibe"
+import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from "./sandboxHost.vibe"
+import { mockPolicy } from "./sandboxPolicy.vibe"
+import type { Role } from "./sandboxDecision.vibe"
+
+export effect function makeMockSandboxes(role: Role) {
+  const random = try Effect.provide(SecureRandom.SecureRandom, WebCrypto.layer)
+  effect function execution(prefix: string) { return `${prefix}/${try random.uuidV4()}` }
+  const state = try Ref.make<SandboxState | undefined>(undefined)
+  const receipts = new Map<string, Receipt>()
+  const machines = memoryMachines()
+  const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: () => Effect.void }, machines), mockPolicy(role))
+  const runtime = sandboxRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.succeed(SandboxHost, host)),
+    Layer.provide(WebCrypto.layer),
+  )
+  const context = try Layer.build(runtime)
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  // The real clock's alarm is a scoped fiber in product mock mode, never a backend or model.
+  let ticks = 0
+  try Effect.forkScoped(Effect.forever(effect {
+    try sleep("1 second")
+    try Effect.ignore(engine.execute(SandboxMeter, { executionId: `meter/${++ticks}`, payload: {} }))
+  }))
+
+  const service: Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand"> = {
+    sandbox: effect (conversation) => {
+      try Effect.mapError(engine.execute(SandboxMeter, { executionId: `read/${++ticks}`, payload: {} }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" }))
+      return try host.snapshot(conversation)
+    },
+    startSandbox: effect (conversation, operationId) => { return try Effect.mapError(engine.execute(SandboxStart, { executionId: try execution("start"), payload: { conversation, operationId } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
+    stopSandbox: effect (conversation, operationId, generation) => { return try Effect.mapError(engine.execute(SandboxStop, { executionId: try execution("stop"), payload: { conversation, operationId, generation } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
+    sandboxCommand: effect (conversation, operationId, command, generation) => { return try Effect.mapError(engine.execute(SandboxCommand, { executionId: try execution("command"), payload: { conversation, operationId, command, generation } }), (error) => error._tag === "Refused" || error._tag === "Unavailable" ? error : new Unavailable({ reason: "sandbox-flow" })) },
+  }
+  return service
+}
+
+/** The product mock device; retained across writer incarnations by recovery tests. */
+export function memoryMachines(): Machines {
+  const disk = new Map<string, Map<string, string>>()
+  const active = new Map<string, number>()
+  const outputs = new Map<string, string>()
+  const machines: Machines = {
+    start: (id, generation) => sync(() => { active.set(id, generation); if (!disk.has(id)) disk.set(id, new Map()) }),
+    lease: (id, generation) => succeed(active.get(id) === generation),
+    stop: (id, generation) => sync(() => { if (active.get(id) === generation) active.delete(id) }),
+    command: effect (id, generation, operationId, command) => {
+      if (active.get(id) !== generation) throw new Unavailable({ reason: "stale-generation" })
+      const key = `${id}/${generation}/${operationId}`
+      if (outputs.has(key)) return outputs.get(key)!
+      const files = disk.get(id)!
+      const write = /^echo (.*?)\s*>\s*([a-zA-Z0-9._/-]+)$/.exec(command)
+      const read = /^cat ([a-zA-Z0-9._/-]+)$/.exec(command)
+      let output = ""
+      if (write) files.set(write[2]!, write[1]!.replace(/^['"]|['"]$/g, "") + "\n")
+      else if (read) output = files.get(read[1]!) ?? "cat: No such file"
+      else if (command === "pwd") output = "/workspace"
+      else if (command === "ls") output = [...files.keys()].join("  ")
+      else if (command.startsWith("echo ")) output = command.slice(5)
+      else if (command.trim() !== "") output = "Command unavailable in mock mode"
+      outputs.set(key, output)
+      return output
+    },
+  }
+  return machines
+}

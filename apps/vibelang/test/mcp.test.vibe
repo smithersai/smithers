@@ -30,7 +30,7 @@ describe("built MCP stdio server through McpClient", () => {
         name: section.split("\n")[0], ...JSON.parse(section.split("```json\n")[1]!.split("\n```")[0]!),
       })))
       try Effect.try(() => {
-        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note"])
+        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run"])
         expect(discovered).toEqual(tools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema })))
         // Compact discovery: about 1,000 characters per command on average.
         expect(markdown.length).toBeLessThan(1000 * tools.length)

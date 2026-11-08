@@ -1,0 +1,44 @@
+import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveApi, type Served } from "./support/workerd.vibe"
+
+describe("sandbox HTTP boundary in real workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi()) }, 120000)
+  afterAll(async () => { await api?.dispose() })
+  it.live("shows signed-out state and ignores a forged role on compute requests", () => effect {
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      const read = try client.get(api!.origin + "/api/sandboxes/home")
+      const start = try client.execute(HttpClientRequest.post(api!.origin + "/api/sandboxes/home/start").pipe(HttpClientRequest.setHeader("x-role", "maintainer"), HttpClientRequest.bodyJsonUnsafe({ operationId: "forged", role: "maintainer" })))
+      try Effect.try(() => { expect(read.status).toBe(200); expect(start.status).toBe(403) })
+      const body = try read.json
+      try Effect.try(() => expect(body).toMatchObject({ role: "viewer", remaining: 0, status: "stopped" }))
+    }
+  })
+  it.live("persists starts, commands, stop receipts and A/B/A replay in the object's SQLite engine", () => effect {
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      const call = effect (kind: string, operationId: string, generation = 0, command = "") => {
+        const response = try client.execute(HttpClientRequest.post(api!.origin + "/sandbox-ledger/run").pipe(HttpClientRequest.bodyJsonUnsafe({ kind, operationId, generation, command, conversation: "home" })))
+        return try response.json
+      }
+      const started = try call("start", "start-a")
+      try call("command", "write", 1, "echo saved > keep")
+      const stopped = try call("stop", "stop-a", 1)
+      const restarted = try call("start", "start-b")
+      try call("stop", "stop-a", 1)
+      const bytes = try call("command", "read", 2, "cat keep")
+      const runs = try (try client.get(api!.origin + "/sandbox-ledger/runs")).json
+      const receipts = try (try client.get(api!.origin + "/sandbox-ledger/receipts")).json
+      try Effect.try(() => {
+        expect(started).toMatchObject({ _tag: "Success", value: { status: "running", generation: 1 } })
+        expect(stopped).toMatchObject({ _tag: "Success", value: { status: "stopped" } })
+        expect(restarted).toMatchObject({ _tag: "Success", value: { generation: 2 } })
+        expect(bytes).toMatchObject({ _tag: "Success", value: "saved\n" })
+        expect(runs).toHaveLength(6)
+        expect(receipts).toHaveLength(5)
+      })
+    }
+  })
+})

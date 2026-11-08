@@ -263,3 +263,46 @@ export const tourRegistration = Layer.effectDiscard(effect {
   try engine.register(StartTour, () => withSpan(startTour(), "vibelang.tour.start"))
   try engine.register(EndTour, () => withSpan(endTour(), "vibelang.tour.end"))
 })
+
+// ── Sandboxes: all surfaces and agents run the same typed, journaled steps. ─────────────────────────────────────
+import { SandboxSnapshot, Refused, Unavailable } from "./Factory.vibe"
+export service SandboxHost {
+  snapshot(conversation: string): SandboxSnapshot!(Unavailable | Refused)
+  start(conversation: string, operationId: string): SandboxSnapshot!(Unavailable | Refused)
+  stop(conversation: string, operationId: string, generation: number): SandboxSnapshot!(Unavailable | Refused)
+  command(conversation: string, operationId: string, command: string, generation: number): string!(Unavailable | Refused)
+  tick(): void!(Unavailable | Refused)
+}
+const SandboxError = Schema.Union([Unavailable, Refused])
+const SandboxStartAction = Action.make("vibelang/sandbox/start/commit", { payload: { conversation: Schema.String, operationId: Schema.String }, success: SandboxSnapshot, error: SandboxError })
+const SandboxStopAction = Action.make("vibelang/sandbox/stop/commit", { payload: { conversation: Schema.String, operationId: Schema.String, generation: Schema.Number }, success: SandboxSnapshot, error: SandboxError })
+const SandboxCommandAction = Action.make("vibelang/sandbox/command/commit", { payload: { conversation: Schema.String, operationId: Schema.String, command: Schema.String, generation: Schema.Number }, success: Schema.String, error: SandboxError })
+const SandboxMeterAction = Action.make("vibelang/sandbox/meter/commit", { payload: {}, success: Schema.Void, error: SandboxError })
+export const SandboxStart = Flow.make("vibelang/sandbox/start", {
+  description: "Starts or resumes the person's sandbox using their minutes.", modelInvocable: true,
+  payload: { conversation: Schema.String, operationId: Schema.String }, success: SandboxSnapshot, error: SandboxError,
+  body: (payload) => SandboxStartAction.call(payload),
+})
+export const SandboxStop = Flow.make("vibelang/sandbox/stop", {
+  description: "Stops a sandbox generation and retains its files.", modelInvocable: true,
+  payload: { conversation: Schema.String, operationId: Schema.String, generation: Schema.Number }, success: SandboxSnapshot, error: SandboxError,
+  body: (payload) => SandboxStopAction.call(payload),
+})
+export const SandboxCommand = Flow.make("vibelang/sandbox/command", {
+  description: "Runs a terminal command in a sandbox generation.", modelInvocable: true,
+  payload: { conversation: Schema.String, operationId: Schema.String, command: Schema.String, generation: Schema.Number }, success: Schema.String, error: SandboxError,
+  body: (payload) => SandboxCommandAction.call(payload),
+})
+export const SandboxMeter = Flow.make("vibelang/sandbox/meter", {
+  description: "Meters running sandboxes and stops exhausted generations.", modelInvocable: false,
+  payload: {}, success: Schema.Void, error: SandboxError,
+  body: (payload) => SandboxMeterAction.call(payload),
+})
+export const sandboxRegistration = Layer.effectDiscard(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  const host = try SandboxHost
+  try engine.register(SandboxStart, (p) => Action.make({ name: "vibelang/sandbox/start/commit", success: SandboxSnapshot, error: SandboxError, execute: host.start(p.conversation, p.operationId) }))
+  try engine.register(SandboxStop, (p) => Action.make({ name: "vibelang/sandbox/stop/commit", success: SandboxSnapshot, error: SandboxError, execute: host.stop(p.conversation, p.operationId, p.generation) }))
+  try engine.register(SandboxCommand, (p) => Action.make({ name: "vibelang/sandbox/command/commit", success: Schema.String, error: SandboxError, execute: host.command(p.conversation, p.operationId, p.command, p.generation) }))
+  try engine.register(SandboxMeter, () => Action.make({ name: "vibelang/sandbox/meter/commit", error: SandboxError, execute: host.tick() }))
+})

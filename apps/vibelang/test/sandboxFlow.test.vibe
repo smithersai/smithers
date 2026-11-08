@@ -1,0 +1,34 @@
+import { expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { makeSandboxHost, type Store, type Receipt, type SandboxState } from "../src/core/sandboxHost.vibe"
+import { memoryMachines } from "../src/core/sandboxMock.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import { SandboxHost, SandboxStart, SandboxCommand, SandboxStop, sandboxRegistration } from "../src/core/flows.vibe"
+it.live("the real engine stops a generation while its command step remains unresolved", () => scoped(effect {
+  const state = try Ref.make<SandboxState | undefined>(undefined)
+  const receipts = new Map<string, Receipt>()
+  const store: Store = { read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => effect { if (receipt) receipts.set(receipt.request.operationId, receipt); try Ref.set(state, next) }, alarm: () => Effect.void }
+  const base = memoryMachines()
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  const machines = { ...base, command: (id: string, gen: number, op: string, command: string) => effect {
+    const result = try base.command(id, gen, op, command)
+    try Deferred.succeed(entered, undefined)
+    try Deferred.await(release)
+    return result
+  } }
+  const host = try Effect.provide(makeSandboxHost(store, machines), mockPolicy("contributor"))
+  const layer = sandboxRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(SandboxHost, host)), Layer.provide(WebCrypto.layer))
+  const engine = Context.get(try Layer.build(layer), FlowRuntime.FlowRuntime)
+  const first = try engine.execute(SandboxStart, { executionId: "start-1", payload: { conversation: "home", operationId: "start-1" } })
+  const command = try Effect.forkChild(Effect.result(engine.execute(SandboxCommand, { executionId: "slow", payload: { conversation: "home", operationId: "slow", generation: first.generation, command: "echo late" } })))
+  try Deferred.await(entered)
+  const stop = try engine.execute(SandboxStop, { executionId: "stop", payload: { conversation: "home", operationId: "stop", generation: first.generation } })
+  const second = try engine.execute(SandboxStart, { executionId: "start-2", payload: { conversation: "home", operationId: "start-2" } })
+  try Deferred.succeed(release, undefined)
+  const old = try Fiber.join(command)
+  const final = try host.snapshot("home")
+  try Effect.try(() => { expect(stop.status).toBe("stopped"); expect(old._tag).toBe("Failure"); expect(final.generation).toBe(second.generation); expect(final.output).not.toContain("late") })
+}))

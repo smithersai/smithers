@@ -39,3 +39,5 @@ Workers.
 **Consequence.** Foldkit needs Effect `~4.1.0`; the app installed on its own until the monorepo moved to Effect
 4.1.1. Since 2026-11-07 it is a workspace package: `pnpm install` at the root installs it, its Smithers packages are
 `workspace:*`, and `PACKAGE.ts` declares its targets.
+
+**0024 SDK declaration.** The app now declares `@smthrs/sandbox` directly (it was already in the `@smthrs/platform-cloudflare` transitive closure) to use its command fences and bounded tools. No external runtime library is added. `@smthrs/fuzz` is a monorepo development tool; 0008 records its VL-5 review status.

@@ -5,6 +5,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
 import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { render } from "./markdown.vibe"
+import { sandboxPane } from "./sandboxView.vibe"
 
 type H = HtmlBuilder<AppMessage>
 
@@ -156,6 +157,7 @@ function chat(model: Model, h: H): Html {
   return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max")], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
+      sandboxPane(model, h),
       ...(conversation.pane === "" || model.tour || model.docs === "max" ? [] : [docsPane(model, h)]),
       ...conversation.entries.map((entry) => entryView(entry, model.session, h)),
       ...pending.map((post) => pendingView(post, h)),

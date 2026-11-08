@@ -17,6 +17,8 @@ import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Principal } from "../history/roles.vibe"
 import { type HistoryReader, show } from "../history/tools.vibe"
 import { matches } from "./mockDecision.vibe"
+import { makeMockSandboxes } from "./sandboxMock.vibe"
+import type { Role } from "./sandboxDecision.vibe"
 import { chunks, HISTORY_WORDS, historyReply, mockReply, TOUR } from "./mockReplies.vibe"
 
 /** Who the scripted agent reads the mythical history as: the agent for a person who has not signed in. */
@@ -56,6 +58,8 @@ effect function scripted(
   record: (intent: Intent) => Decision!!,
   post: string,
   history: HistoryReader!!,
+  conversation: string,
+  sandboxTools: Pick<Factory.Shape, "startSandbox">,
 ) {
   const id = replyIdOf(post)
   const started = try Action.make({
@@ -80,7 +84,10 @@ effect function scripted(
   if (!started) return null
   const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
   // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
-  const text = matches(prompt.toLowerCase(), HISTORY_WORDS)
+  const text = /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+    const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
+    return `Started ${snapshot.id}.`
+  } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)
     ? try Action.make({
       name: "vibelang/history/show",
       success: Schema.String,
@@ -106,12 +113,14 @@ effect function cryptoOf() {
 }
 
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
-export const MockFactory = Layer.effect(Factory, effect {
+export function mockFactoryFor(role: Role = "viewer") {
+return Layer.effect(Factory, effect {
   const scope = try Effect.scope
   const rooms = try Ref.make(new Map<string, Room>())
   const published = try acquireRelease(PubSub.unbounded<Published>(), PubSub.shutdown)
   const ids = try Ref.make(0)
   const executions = try Ref.make(0)
+  const sandboxes = try makeMockSandboxes(role)
   // The engine digests what it journals, with the platform's Web Crypto.
   const crypto = try cryptoOf()
   // The mythical history the scripted agent reads, built (and its snapshot downloaded) only when first asked about.
@@ -224,7 +233,7 @@ export const MockFactory = Layer.effect(Factory, effect {
         tourRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
-          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post, history), "vibelang.reply")))
+          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post, history, conversation, sandboxes), "vibelang.reply")))
           try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
         }),
       ).pipe(
@@ -263,6 +272,7 @@ export const MockFactory = Layer.effect(Factory, effect {
       const refusal = try Effect.orDie(room.engine.execute(EndTour, { executionId, payload: {} }))
       if (refusal !== null) throw new Refused({ refusal })
     },
+    ...sandboxes,
     read: effect (conversation: string, after: number) => {
       // Reading never opens a room: a conversation nobody posted to or followed is empty.
       const room = (try Ref.get(rooms)).get(conversation)
@@ -289,3 +299,6 @@ export const MockFactory = Layer.effect(Factory, effect {
       }),
   }
 })
+
+}
+export const MockFactory = mockFactoryFor()

@@ -1,0 +1,14 @@
+import { expect, it } from "@effect/vitest"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { StartSandbox, StopSandbox, RunSandbox, Sandboxes } from "../src/surfaces/commands.vibe"
+it.live("CLI/MCP schemas run the same sandbox flow and retain file bytes across generations", () => effect {
+  provide mockFactoryFor("contributor") {
+    const first = try StartSandbox.run({ operationId: "start-1" })
+    try RunSandbox.run({ operationId: "write", generation: first.generation, command: "echo saved > keep" })
+    try StopSandbox.run({ operationId: "stop", generation: first.generation })
+    const second = try StartSandbox.run({ operationId: "start-2" })
+    const bytes = try RunSandbox.run({ operationId: "read", generation: second.generation, command: "cat keep" })
+    const snapshot = try Sandboxes.run({})
+    try Effect.try(() => { expect(bytes.output).toBe("saved\n"); expect(snapshot.remaining).toBeGreaterThan(0); expect(snapshot.generation).toBe(second.generation) })
+  }
+})

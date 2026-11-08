@@ -1,0 +1,121 @@
+// Per-person allowance objects, bound only when the deployment supplies a container image. Policy resolution is a
+// server-only service (0019); until the roles lane supplies it, every live request remains Viewer.
+import * as Cloudflare from "@alchemy.run/cloudflare"
+import { RuntimeContext } from "alchemy"
+import { HttpServerRequest } from "effect/http"
+import { Factory, Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
+import { SandboxPolicy, type SandboxPrincipal, mayStart } from "../src/core/sandboxPolicy.vibe"
+import type { Role } from "../src/core/sandboxDecision.vibe"
+import { SandboxHost } from "../src/core/flows.vibe"
+import type { Machines } from "../src/core/sandboxHost.vibe"
+import { SandboxMachine, machineLive, type MachineShape } from "./SandboxMachine.vibe"
+import * as Sandboxes from "./Sandboxes.vibe"
+import { signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
+
+/** Implement this adapter with 0019's Accounts.current and Policy.authorize; only server code can provide it. */
+export service SandboxIdentity {
+  request(): SandboxPrincipal!!HttpServerRequest.HttpServerRequest
+  role(owner: string): Role!!
+}
+export const noIdentity = Layer.succeed(SandboxIdentity, { request: () => succeed({ owner: "", role: "viewer" as const }), role: () => succeed("viewer" as const) })
+export service SandboxGateway { readonly gateway: Gateway<RuntimeContext> }
+interface Answer { readonly snapshot: SandboxSnapshot; readonly output: string; readonly refusal: string }
+interface AccountShape {
+  run(owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string): Answer!!RuntimeContext
+  alarm(): void!!RuntimeContext
+}
+export class SandboxAccount extends Cloudflare.DurableObject<SandboxAccount, AccountShape>()("VibelangSandboxAccount") {}
+const accountLive = SandboxAccount.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const namespace = (try SandboxMachine) as Cloudflare.DurableObject<MachineShape>
+  const identity = try SandboxIdentity
+  return effect {
+    const runtime = try RuntimeContext
+    const call = effect (id: string, kind: "start" | "stop" | "command" | "lease", generation: number, operationId = "", command = "") => {
+      const answer = try Effect.mapError(Effect.try(() => namespace.getByName(id)), () => new Unavailable({ reason: "container-binding" })).pipe(
+        Effect.flatMap((stub) => Effect.provideService(stub.apply(kind, generation, operationId, command), RuntimeContext, runtime)),
+      )
+      if (!answer.ok) throw new Unavailable({ reason: "container-operation" })
+      return answer.output
+    }
+    const machines: Machines = { lease: (id, generation, milliseconds) => Effect.map(call(id, "lease", generation, "", String(milliseconds)), (status) => status === "running"), start: (id, generation) => Effect.asVoid(call(id, "start", generation)), stop: (id, generation) => Effect.asVoid(call(id, "stop", generation)), command: (id, generation, operationId, command) => call(id, "command", generation, operationId, command) }
+    const policy = Layer.succeed(SandboxPolicy, { current: effect () => {
+      const owner = (try promise(() => state.raw.storage.get<string>("owner"))) ?? ""
+      return { owner, role: try identity.role(owner) }
+    } })
+    const host = try Effect.provide(Sandboxes.open(state.raw.storage, machines), policy)
+    const id = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const gate = try Semaphore.make(1)
+    return {
+      run: effect (owner: string, kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
+        const work = effect {
+          const saved = try promise(() => state.raw.storage.get<string>("owner"))
+          if (owner === "" || saved !== undefined && saved !== owner) throw new Refused({ refusal: "forbidden" })
+          if (!mayStart(try identity.role(owner))) throw new Refused({ refusal: "forbidden" })
+          if (saved === undefined) try promise(() => state.raw.storage.put("owner", owner))
+          const answer = try Sandboxes.execute(id, state.raw.storage, host, kind === "read" ? "meter" : kind, conversation, operationId, generation, command)
+          return { snapshot: try host.snapshot(conversation), output: typeof answer === "string" ? answer : "", refusal: "" }
+        }
+        return (kind === "command" ? work : Semaphore.withPermits(gate, 1)(work)) catch effect (error) => {
+          // A failed stop is still running in the persisted ledger; no success receipt is returned.
+          return { snapshot: try Effect.orDie(host.snapshot(conversation)), output: "", refusal: error._tag === "Refused" ? error.refusal : "unavailable" }
+        }
+      },
+      alarm: effect () => {
+        // Arm the retry BEFORE work: a failed container stop must not strand a running machine.
+        try promise(() => state.raw.storage.setAlarm(Date.now() + 1000))
+        try Semaphore.withPermits(gate, 1)(Effect.ignore(Sandboxes.execute(id, state.raw.storage, host, "meter", "", `alarm/${Date.now()}`, 0, "")))
+      },
+    }
+  }
+})
+
+/** Container bindings are absent entirely when no image digest was configured. */
+export const gatewayWithIdentity = Layer.unwrap(effect {
+  const image = try Effect.orDie(Config.option(Config.String("VIBELANG_SANDBOX_IMAGE")))
+  if (Option.isNone(image)) return Layer.succeed(SandboxGateway, { gateway: signedOutGateway })
+  return Layer.effect(SandboxGateway, effect {
+    const namespace = (try SandboxAccount) as Cloudflare.DurableObject<AccountShape>
+    const identity = try SandboxIdentity
+    const request = effect (kind: "read" | "start" | "stop" | "command", conversation: string, operationId: string, generation: number, command: string) => {
+      const runtime = try RuntimeContext
+      const principal = try identity.request()
+      if (principal.owner === "" || !mayStart(principal.role)) {
+        if (kind === "read") return { snapshot: try signedOutGateway.sandbox(conversation), output: "", refusal: "" }
+        throw new Refused({ refusal: "forbidden" })
+      }
+      const stub = try Effect.mapError(Effect.try(() => namespace.getByName(principal.owner)), () => new Unavailable({ reason: "sandbox-binding" }))
+      const answer = try Effect.provideService(stub.run(principal.owner, kind, conversation, operationId, generation, command), RuntimeContext, runtime)
+      if (answer.refusal !== "") throw new Refused({ refusal: answer.refusal })
+      return answer
+    }
+    // Resolve the current principal for every HTTP operation, before any journal replay can return a result.
+    const gateway: Gateway<RuntimeContext> = {
+      sandbox: (c) => Effect.map(request("read", c, `read/${Date.now()}`, 0, ""), (r) => r.snapshot),
+      startSandbox: (c, op) => Effect.map(request("start", c, op, 0, ""), (r) => r.snapshot),
+      stopSandbox: (c, op, gen) => Effect.map(request("stop", c, op, gen, ""), (r) => r.snapshot),
+      sandboxCommand: (c, op, command, gen) => Effect.map(request("command", c, op, gen, command), (r) => r.output),
+    }
+    return { gateway }
+  }).pipe(Layer.provide(accountLive), Layer.provide(machineLive))
+})
+export const gatewayLive = gatewayWithIdentity.pipe(Layer.provide(noIdentity))
+
+/** Connect the 0019 account host's trusted request identity, current grant lookup and Policy.authorize interface. */
+export function identityFromPolicy(
+  current: () => SandboxPrincipal!!HttpServerRequest.HttpServerRequest,
+  roleOf: (owner: string) => Role!!,
+  policy: { readonly authorize: (actor: string, action: "sandbox") => void!unknown },
+) {
+  return Layer.succeed(SandboxIdentity, {
+    request: effect () => {
+      const principal = try current()
+      const admitted = policy.authorize(principal.owner, "sandbox").pipe(Effect.as(true)) catch () => false
+      return admitted ? principal : { owner: principal.owner, role: "viewer" as const }
+    },
+    role: effect (owner: string) => {
+      const admitted = policy.authorize(owner, "sandbox").pipe(Effect.as(true)) catch () => false
+      return admitted ? try roleOf(owner) : "viewer" as const
+    },
+  })
+}

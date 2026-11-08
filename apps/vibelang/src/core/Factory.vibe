@@ -2,17 +2,31 @@
 // (wiki/decisions/0002-core-is-an-effect-api.md). Its backends are `MockFactory` (no backend, no model) and the live
 // one that talks to vibelang.smithers.sh. The browser wrapper selects one after rendering.
 import type { Event } from "./conversation.vibe"
-import { ReadSnapshot } from "./schemas.vibe"
+import { Seq, ReadSnapshot } from "./schemas.vibe"
 export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
 
 /** Which backend a `Factory` talks to. */
 export type Mode = "mock" | "live"
 
+/** The sandbox visible in a conversation. Minutes are per role and UTC month; terminal output is user content. */
+export schema SandboxSnapshot {
+  readonly id: string
+  readonly generation: Seq
+  readonly sequence: Seq
+  readonly status: "stopped" | "starting" | "running" | "failed"
+  readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"
+  readonly allowance: number
+  readonly used: number
+  readonly remaining: number
+  readonly resetAt: number
+  readonly output: string
+}
+
 /** vibelang.smithers.sh couldn't be reached, or answered with something that isn't the protocol. */
-export error Unavailable { reason: string }
+export schema error Unavailable { reason: string }
 
 /** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy` or `not-replying`. */
-export error Refused { refusal: string }
+export schema error Refused { refusal: string }
 
 /**
  * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every
@@ -29,4 +43,13 @@ export service Factory {
   tour(conversation: string): void!(Unavailable | Refused)
   /** Ends the tour that runs in `conversation`; `not-replying` when none runs. */
   endTour(conversation: string): void!(Unavailable | Refused)
+  /** The one sandbox attached to a conversation, or a stopped empty snapshot. */
+  sandbox(conversation: string): SandboxSnapshot!(Unavailable | Refused)
+  /** Starts or resumes that sandbox through its durable flow. */
+  startSandbox(conversation: string, operationId: string): SandboxSnapshot!(Unavailable | Refused)
+  /** Stops its container while retaining its files. */
+  stopSandbox(conversation: string, operationId: string, generation: number): SandboxSnapshot!(Unavailable | Refused)
+  /** Sends one terminal command and returns output; production connects through the container terminal protocol. */
+  sandboxCommand(conversation: string, operationId: string, command: string, generation: number): string!(Unavailable | Refused)
 }
+

@@ -3,7 +3,7 @@ import { commandConversation } from "../core/protocolDecision.vibe"
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
-import { Factory } from "../core/Factory.vibe"
+import { Factory, SandboxSnapshot } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { CommitPage, Head, Outline } from "../history/pages.vibe"
@@ -251,4 +251,23 @@ export const AddNote = define("note", "Add a note to a mythical commit: tried, e
   text: Argument.String("text"),
 }, note, (output) => `Noted ${output.id}.`, HISTORY_REFUSED)
 
-export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote] as const
+const operationId = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+export schema SandboxInput { readonly conversation: conversation; readonly operationId: operationId }
+export schema SandboxGenerationInput { readonly conversation: conversation; readonly operationId: operationId; readonly generation: Seq }
+export schema SandboxRunInput { readonly conversation: conversation; readonly operationId: operationId; readonly generation: Seq; readonly command: string }
+export schema TerminalOutput { readonly output: string }
+const sandboxFlags = { conversation: Flag.String("conversation").pipe(Flag.withDefault("home")), operationId: Flag.String("operation-id").pipe(Flag.withDefault("")) }
+export const Sandboxes = define("sandboxes", "Read the sandbox and minutes in a conversation.", ReadInput, SandboxSnapshot, { conversation: sandboxFlags.conversation, after: Flag.Int("after").pipe(Flag.withSchema(Seq)).pipe(Flag.withDefault(0)) }, effect (input) => (try (try Factory).sandbox(input.conversation)), (s) => `${s.id || "Sandboxes"}  ${s.status}  ${s.remaining} min`)
+export const StartSandbox = define("sandbox-start", "Start a sandbox through the shared allowance flow.", SandboxInput, SandboxSnapshot, sandboxFlags, effect (input) => {
+  const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
+  return try (try Factory).startSandbox(input.conversation, id)
+}, (s) => `${s.id}  ${s.status}  ${s.remaining} min`)
+export const StopSandbox = define("sandbox-stop", "Stop a sandbox generation and retain its files.", SandboxGenerationInput, SandboxSnapshot, { ...sandboxFlags, generation: Flag.Int("generation").pipe(Flag.withSchema(Seq)) }, effect (input) => {
+  const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
+  return try (try Factory).stopSandbox(input.conversation, id, input.generation)
+}, (s) => `${s.id}  ${s.status}`)
+export const RunSandbox = define("sandbox-run", "Run a terminal command in a sandbox generation.", SandboxRunInput, TerminalOutput, { ...sandboxFlags, generation: Flag.Int("generation").pipe(Flag.withSchema(Seq)), command: Argument.String("command") }, effect (input) => {
+  const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
+  return { output: try (try Factory).sandboxCommand(input.conversation, id, input.command, input.generation) }
+}, (s) => s.output)
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox] as const

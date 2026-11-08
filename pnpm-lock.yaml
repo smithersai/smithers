@@ -960,6 +960,9 @@ importers:
       '@smthrs/registry':
         specifier: workspace:*
         version: link:../../packages/smithers/agent/registry
+      '@smthrs/sandbox':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/sandbox
       '@smthrs/ui-css':
         specifier: workspace:*
         version: link:../../packages/smithers/ui/ui-css
@@ -997,6 +1000,9 @@ importers:
       '@playwright/test':
         specifier: 1.62.1
         version: 1.62.1
+      '@smthrs/fuzz':
+        specifier: workspace:*
+        version: link:../../packages/fuzz
       '@types/node':
         specifier: 26.6.6
         version: 26.6.6

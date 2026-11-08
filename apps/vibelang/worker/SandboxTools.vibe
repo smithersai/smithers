@@ -1,0 +1,34 @@
+// The chat agent's tools bind a server-owned conversation and use Factory's durable flows, never a guest credential.
+import { digestSync } from "@smthrs/crypto"
+import { type Cell, FlowBinding } from "@smthrs/harness"
+import { Factory, Refused } from "../src/core/Factory.vibe"
+import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
+import { Seq } from "../src/core/schemas.vibe"
+
+type Tools = Pick<Factory.Shape, "startSandbox" | "stopSandbox" | "sandboxCommand">
+/** Supplied only when a post's originating identity has been resolved by 0019, never by the model or its payload. */
+export service SandboxAgent { readonly factory: Tools; readonly conversation: string }
+export const closed: SandboxAgent.Shape = {
+  conversation: "",
+  factory: {
+    startSandbox: () => Effect.fail(new Refused({ refusal: "forbidden" })),
+    stopSandbox: () => Effect.fail(new Refused({ refusal: "forbidden" })),
+    sandboxCommand: () => Effect.fail(new Refused({ refusal: "forbidden" })),
+  },
+}
+export const SANDBOX_INSTRUCTION = "When asked to start a sandbox, call vibelang/sandbox/start. Stop and command use the generation it returns. Report only the tool's actual result; a refusal grants no compute."
+
+/** Stable across a resumed cell; independent of model-provided operation names and safe for telemetry boundaries. */
+effect function operation(call: Cell.Call) {
+  return `agent/${try Effect.try(() => digestSync(JSON.stringify([call.identity.session, call.identity.frame, call.identity.cell, call.identity.ordinal, call.identity.declaration, call.identity.layers])))}`
+}
+function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly successSchema: O }, input: I) {
+  return { name: flow._tag, description: flow.description ?? flow._tag, input, output: flow.successSchema, capabilities: [], effects: undefined, modelInvocable: true }
+}
+export function sandboxTools(factory: Tools, conversation: string): FlowBinding.Source {
+  return FlowBinding.source("vibelang-sandbox", [
+    FlowBinding.make({ flow: declared(SandboxStart, Schema.Struct({})), handler: effect (_input, call) => { return try factory.startSandbox(conversation, try operation(call)) } }),
+    FlowBinding.make({ flow: declared(SandboxStop, Schema.Struct({ generation: Seq })), handler: effect (input, call) => { return try factory.stopSandbox(conversation, try operation(call), input.generation) } }),
+    FlowBinding.make({ flow: declared(SandboxCommand, Schema.Struct({ generation: Seq, command: Schema.String })), handler: effect (input, call) => { return try factory.sandboxCommand(conversation, try operation(call), input.command, input.generation) } }),
+  ])
+}

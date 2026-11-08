@@ -10,7 +10,7 @@
 import { Command, Dom, Render, Subscription, type Runtime, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
-import { EventSchema, Factory } from "../core/Factory.vibe"
+import { SandboxSnapshot, EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
 import { escapeAction, canMinimize, hasContent, toggleDocs, scrollFollow, follows, failedTourKeepsControl, paletteChange, tourStream, completedEvent, answerAnnouncement, screenKey } from "./screenDecision.vibe"
 import { transcriptViewport } from "./viewport.vibe"
@@ -60,6 +60,15 @@ export schema Model {
   readonly tourError: string
   /** The docs pane: in the conversation, or maximized over it. */
   readonly docs: "pane" | "max"
+  readonly sandboxPane?: "closed" | "pane" | "max"
+  readonly sandbox?: SandboxSnapshot
+  readonly sandboxOperation?: "start" | "stop" | "command" | ""
+  readonly sandboxBusy?: boolean
+  readonly sandboxRequest?: number
+  readonly sandboxError?: string
+  readonly terminalDraft?: string
+  readonly minuteNotice?: string
+  readonly warnedMonth?: number
 }
 
 /** The conversation every visitor of the home page joins until conversations have their own pages. */
@@ -99,6 +108,14 @@ export const Message = defineMessageUnion({
   FailedTour: { reason: Schema.String },
   FailedEndTour: {},
   ClickedDocs: {},
+  ClickedSandboxes: {},
+  MaximizedSandboxes: {},
+  StartedSandbox: {},
+  StoppedSandbox: {},
+  UpdatedTerminal: { value: Schema.String },
+  SubmittedTerminal: {},
+  LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot },
+  FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String },
 })
 export type Message = typeof Message.Type
 
@@ -141,6 +158,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ClickedAsk: () => openPalette(model, true),
     // Escape first takes control back from the agent, then closes what is open, innermost first.
     PressedEscape: () => {
+      if (!model.tour && !touringHere(model) && !model.palette && model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
       switch (escapeAction(model.tour, touringHere(model), model.palette, model.surface, model.docs)) {
         case "tour": return endTour(model)
         case "palette": return openPalette(model, false)
@@ -156,6 +174,19 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     FailedTour: ({ reason }) => ({ model: { ...model, tour: failedTourKeepsControl(reason, touringHere(model)), docs: failedTourKeepsControl(reason, touringHere(model)) ? "max" : "pane", tourError: reason } }),
     // The end never reached the agent: it still drives, so Esc comes back.
     FailedEndTour: () => ({ model: { ...model, tour: touringHere(model), docs: touringHere(model) ? "max" : model.docs } }),
+    ClickedSandboxes: () => ({ model: { ...model, sandboxPane: model.sandboxPane === "closed" || model.sandboxPane === undefined ? "pane" : "closed" } }),
+    MaximizedSandboxes: () => ({ model: { ...model, sandboxPane: model.sandboxPane === "max" ? "pane" : "max" } }),
+    StartedSandbox: () => sandboxAction(model, "start"),
+    StoppedSandbox: () => sandboxAction(model, "stop"),
+    UpdatedTerminal: ({ value }) => ({ model: { ...model, terminalDraft: value } }),
+    SubmittedTerminal: () => sandboxAction(model, "command"),
+    LoadedSandbox: ({ conversation, request, snapshot }) => {
+      if (conversation !== model.conversation || request !== (model.sandboxRequest ?? 0)) return { model }
+      const zero = snapshot.remaining === 0 && snapshot.id !== "" && snapshot.status === "stopped"
+      const low = snapshot.remaining > 0 && snapshot.remaining <= 10 && model.warnedMonth !== snapshot.resetAt
+      return { model: { ...model, sandbox: snapshot, sandboxPane: snapshot.status === "running" && model.sandbox?.status !== "running" ? "pane" : model.sandboxPane ?? "closed", sandboxBusy: false, sandboxOperation: "", sandboxError: "", minuteNotice: zero ? `Out of minutes — ${snapshot.id} stopped` : low ? `${snapshot.remaining} minutes left` : model.sandbox?.resetAt !== snapshot.resetAt ? "" : model.minuteNotice ?? "", warnedMonth: low ? snapshot.resetAt : model.warnedMonth ?? 0 } }
+    },
+    FailedSandbox: ({ conversation, request, reason }) => conversation !== model.conversation || request !== (model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
     ClickedDocs: () => ({ model: { ...model, docs: toggleDocs(model.docs) } }),
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
     ClickedChat: () => minimizeSplash(model),
@@ -263,6 +294,7 @@ export function hasConversation(model: Model): boolean {
 function submit(model: Model): Update.Return<Model, Message, Factory> {
   const text = model.draft.trim()
   if (text === "") return { model }
+  if (text === "/sandbox") return sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
   const clientId = `${model.session}-${model.sent + 1}`
   return {
     model: {
@@ -459,6 +491,21 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         ),
       },
     ),
+    sandbox: entry(
+      { conversation: Schema.String, request: Schema.Number, active: Schema.Boolean },
+      {
+        modelToDependencies: (model: Model) => ({ conversation: model.conversation, request: model.sandboxRequest ?? 0, active: model.surface === "chat" && !model.sandboxBusy }),
+        dependenciesToStream: ({ conversation, request, active }) => Stream.when(
+          Stream.fromEffect(effect {
+            const factory = try Factory
+            return effect {
+              const snapshot = try factory.sandbox(conversation)
+              return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
+            } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
+          }).pipe(Stream.repeat(Schedule.spaced("1 second"))), sync(() => active),
+        ),
+      },
+    ),
     events: entry(
       { conversation: Schema.String, epoch: Schema.Number, from: Schema.Number, open: Schema.Boolean },
       {
@@ -494,3 +541,23 @@ export function subscriptions(keys: EventTarget, page?: Document) {
  */
 export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) =>
   previousModel.surface === model.surface ? false : { types: [model.surface === "chat" ? "to-chat" : "to-splash"] }
+
+function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update.Return<Model, Message, Factory> {
+  if ((model.sandboxBusy && kind !== "stop") || (kind === "command" && !(model.terminalDraft ?? "").trim())) return { model }
+  const request = (model.sandboxRequest ?? 0) + 1
+  return { model: { ...model, surface: "chat", palette: false, sandboxPane: "pane", sandboxOperation: kind, sandboxBusy: true, sandboxError: "", sandboxRequest: request, terminalDraft: "" }, commands: [SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${request}`, request, kind, generation: model.sandbox?.generation ?? 0, command: model.terminalDraft ?? "" })] }
+}
+export const SandboxAction = Command.define("SandboxAction", {
+  args: { conversation: Schema.String, operationId: Schema.String, request: Schema.Number, kind: Schema.Literals(["start", "stop", "command"]), generation: Schema.Number, command: Schema.String },
+  messages: [Message.LoadedSandbox, Message.FailedSandbox],
+  execute: effect ({ conversation, operationId, request, kind, generation, command }) => {
+    const factory = try Factory
+    return effect {
+      if (kind === "start") { const snapshot = try factory.startSandbox(conversation, operationId); return try message(() => Message.LoadedSandbox({ conversation, request, snapshot })) }
+      if (kind === "stop") { const snapshot = try factory.stopSandbox(conversation, operationId, generation); return try message(() => Message.LoadedSandbox({ conversation, request, snapshot })) }
+      try factory.sandboxCommand(conversation, operationId, command, generation)
+      const snapshot = try factory.sandbox(conversation)
+      return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
+    } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
+  },
+})

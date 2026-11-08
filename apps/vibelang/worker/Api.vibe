@@ -16,6 +16,7 @@ import { afterOf, eventStream, handle, type Conversations, type Histories } from
 import { githubMain } from "./MainLog.vibe"
 import * as Objects from "./Objects.vibe"
 import type { Spend } from "./Reply.vibe"
+import { SandboxGateway, gatewayLive } from "./SandboxAccounts.vibe"
 import { Unreachable } from "./Unreachable.vibe"
 
 export interface ConversationShape {
@@ -160,6 +161,7 @@ export const props = {
 
 const program = effect {
   const conversations = (try Conversation) as Namespace<ConversationShape>
+  const { gateway } = try SandboxGateway
   const histories = (try History) as Namespace<HistoryShape>
   // Bound when the Worker deploys, as its objects read them.
   try Effect.orDie(chatModel())
@@ -205,7 +207,7 @@ const program = effect {
           return try reached(runtime, "history", object.fetch(request))
         },
       }
-      return try handle(api, history)
+      return try handle(api, history, gateway)
     },
   }
 }
@@ -213,6 +215,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive)),
+  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive), Effect.provide(gatewayLive)),
 ) {}
 

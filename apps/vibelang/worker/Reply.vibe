@@ -16,6 +16,7 @@ import { Registry } from "@smthrs/registry"
 import { patient, Reply, replyIdOf } from "../src/core/flows.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { HISTORY_INSTRUCTION, historyTools, HistoryTools, REPLY_CALLS } from "./HistoryTools.vibe"
+import { closed, SandboxAgent, sandboxTools, SANDBOX_INSTRUCTION } from "./SandboxTools.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
 import { Unreachable } from "./Unreachable.vibe"
 import { reasonCode, failureCode } from "./replyReasons.vibe"
@@ -117,7 +118,7 @@ export const Respond = AgentAction.make("vibelang/reply/agent", {
   payload: { turns: Schema.Array(Turn) },
   output: Schema.String,
   seat: AGENT_SEAT,
-  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION],
+  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION, SANDBOX_INSTRUCTION],
   profile: "conversation",
   prompt: promptOf,
   maxFrames: MAX_FRAMES,
@@ -243,7 +244,8 @@ effect function respond(reply: string, model: HostModel["Service"], turns: Reado
 /** One run of `vibelang/reply/agent`, as the journaled step its declaration makes, its tools the history's. */
 effect function run(model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
   const { history } = try HistoryTools
-  provide agentOf(Respond.layer, model, sink, [historyTools(history)], REPLY_CALLS), EventSink.EventSink = sink {
+  const sandbox = Option.getOrElse(try Effect.serviceOption(SandboxAgent), () => closed)
+  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation)], REPLY_CALLS), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }

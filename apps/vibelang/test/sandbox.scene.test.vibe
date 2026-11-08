@@ -1,0 +1,62 @@
+import { it } from "@effect/vitest"
+import { Command, click, scene, given, expect, role, Subscription, text } from "foldkit/scene"
+import { init, update, Message, SandboxAction } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+const home = init({ session: "scene", name: "Ada", mode: "mock" }).model
+const snapshot = { id: "", generation: 0, sequence: 0, status: "stopped" as const, role: "contributor" as const, allowance: 600, remaining: 600, used: 0, resetAt: 100, output: "" }
+const chat = { ...home, surface: "chat" as const, sandbox: snapshot }
+it("shows the allowance before opening the pane", () => {
+  scene({ update, view }, given(chat), expect(role("button", { name: "Sandboxes" })).toExist(), expect(text("600 min")).toExist())
+})
+it("has no work pane on the maximized splash", () => {
+  scene({ update, view }, given(home), expect(role("button", { name: "Sandboxes" })).toBeAbsent())
+})
+it("keeps Viewer and Community compute controls absent", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandbox: { ...snapshot, role: "viewer" } }), expect(text("Sign in to start a sandbox")).toExist(), expect(role("button", { name: "New sandbox" })).toBeAbsent())
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandbox: { ...snapshot, role: "community", allowance: 240, remaining: 240 } }), expect(text("Contributor required")).toExist(), expect(role("button", { name: "New sandbox" })).toBeAbsent())
+})
+it("shows Starting until the operation's actual result and maximizes with Escape to minimize", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane" }), click(role("button", { name: "New sandbox" })),
+    Command.expectExact(SandboxAction({ conversation: "home", operationId: "scene/sandbox/1", request: 1, kind: "start", generation: 0, command: "" })),
+    expect(role("status", { name: "Sandbox" })).toHaveText("Starting"),
+    Command.resolve(SandboxAction, Message.LoadedSandbox({ conversation: "home", request: 1, snapshot: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } })),
+    expect(role("status", { name: "Sandbox" })).toHaveText("Running"),
+    click(role("button", { name: "Maximize Sandboxes" })), expect(role("table", { name: "Minutes by role" })).toExist(),
+    Subscription.emit(Message.PressedEscape()), expect(role("table", { name: "Minutes by role" })).toBeAbsent())
+})
+it("ignores an old completion and keeps Stop absent at zero", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandboxRequest: 2, sandbox: { ...snapshot, id: "sturdy-goggles", generation: 2, status: "stopped", remaining: 0 } }),
+    Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 1, snapshot: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } })),
+    expect(role("status", { name: "Sandbox" })).toHaveText("Stopped"), expect(role("button", { name: "Stop" })).toBeAbsent(),
+    expect(role("button", { name: "Start" })).toHaveAttr("disabled", "true"))
+})
+it("warns once, then shows a stop at zero; a new month clears the old notice", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandbox: { ...snapshot, id: "sturdy-goggles", status: "running" } }),
+    Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 0, snapshot: { ...snapshot, id: "sturdy-goggles", status: "running", remaining: 9 } })), expect(role("status", { name: "Sandbox minutes" })).toHaveText("9 minutes left"),
+    Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 0, snapshot: { ...snapshot, id: "sturdy-goggles", status: "running", remaining: 8 } })), expect(role("status", { name: "Sandbox minutes" })).toHaveText("9 minutes left"),
+    Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 0, snapshot: { ...snapshot, id: "sturdy-goggles", status: "stopped", remaining: 0 } })), expect(role("status", { name: "Sandbox minutes" })).toHaveText("Out of minutes — sturdy-goggles stopped"),
+    Subscription.emit(Message.LoadedSandbox({ conversation: "home", request: 0, snapshot: { ...snapshot, id: "sturdy-goggles", resetAt: 200 } })), expect(role("status", { name: "Sandbox minutes" })).toBeAbsent())
+})
+
+it("keeps Stop available while a command is unresolved", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandboxBusy: true, sandboxOperation: "command", sandboxRequest: 2, sandbox: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } }),
+    click(role("button", { name: "Stop" })),
+    Command.expectExact(SandboxAction({ conversation: "home", operationId: "scene/sandbox/3", request: 3, kind: "stop", generation: 1, command: "" })),
+    Command.resolve(SandboxAction, Message.LoadedSandbox({ conversation: "home", request: 3, snapshot: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "stopped" } })),
+    expect(role("status", { name: "Sandbox" })).toHaveText("Stopped"))
+})
+
+it("a failed Stop offers Stop again, never Start", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandboxRequest: 1, sandboxBusy: true, sandboxOperation: "stop", sandbox: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } }),
+    Subscription.emit(Message.FailedSandbox({ conversation: "home", request: 1, reason: "unavailable" })),
+    expect(role("alert")).toHaveText("Couldn't stop the sandboxRetry"),
+    click(role("button", { name: "Retry" })),
+    Command.expectExact(SandboxAction({ conversation: "home", operationId: "scene/sandbox/2", request: 2, kind: "stop", generation: 1, command: "" })),
+    Command.resolve(SandboxAction, Message.LoadedSandbox({ conversation: "home", request: 2, snapshot: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "stopped" } })),
+    expect(role("status", { name: "Sandbox" })).toHaveText("Stopped"))
+})
+it("an uncertain command reports failure without offering an unsafe automatic rerun", () => {
+  scene({ update, view }, given({ ...chat, sandboxPane: "pane", sandboxRequest: 1, sandboxBusy: true, sandboxOperation: "command", sandbox: { ...snapshot, id: "sturdy-goggles", generation: 1, status: "running" } }),
+    Subscription.emit(Message.FailedSandbox({ conversation: "home", request: 1, reason: "unavailable" })),
+    expect(role("alert")).toHaveText("Command failed"), expect(role("button", { name: "Retry" })).toBeAbsent())
+})

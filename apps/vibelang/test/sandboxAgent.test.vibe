@@ -1,0 +1,38 @@
+import { expect, it } from "@effect/vitest"
+import { Cell } from "@smthrs/harness"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { SandboxCommand, SandboxStart, SandboxStop } from "../src/core/flows.vibe"
+import { sandboxTools } from "../worker/SandboxTools.vibe"
+
+function call(name: string, input: Schema.Json, ordinal: number): Cell.Call {
+  return new Cell.Call({ flowName: name, input, capabilities: [], effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }, placement: Option.none(), identity: new Cell.CallIdentity({ session: "reply", frame: 0, cell: "cell", ordinal, declaration: "flow", layers: [] }) })
+}
+it.live("the chat's bound tools write, stop, restart and read through the same flows; replay cannot stop a new generation", () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    const bindings = try sandboxTools(factory, "chat").bindings()
+    try Effect.try(() => expect(bindings.map((b) => b.descriptor.name)).toEqual([SandboxStart._tag, SandboxStop._tag, SandboxCommand._tag]))
+    const start = bindings[0]!, stop = bindings[1]!, command = bindings[2]!
+    const first = try start.run(call(SandboxStart._tag, {}, 0))
+    const a = try factory.sandbox("chat")
+    try command.run(call(SandboxCommand._tag, { generation: a.generation, command: "echo saved > file" }, 1))
+    try stop.run(call(SandboxStop._tag, { generation: a.generation }, 2))
+    try start.run(call(SandboxStart._tag, {}, 3))
+    const b = try factory.sandbox("chat")
+    try stop.run(call(SandboxStop._tag, { generation: a.generation }, 2))
+    const read = try command.run(call(SandboxCommand._tag, { generation: b.generation, command: "cat file" }, 4))
+    const current = try factory.sandbox("chat")
+    const other = try factory.sandbox("other")
+    try Effect.try(() => { expect(first.outcome).toBe("success"); expect(read.value).toBe("saved\n"); expect(current.status).toBe("running"); expect(b.generation).toBe(a.generation + 1); expect(other.status).toBe("stopped") })
+  }
+})
+it.live("the agent's tool cannot spend a Viewer's allowance", () => effect {
+  provide mockFactoryFor("viewer") {
+    const factory = try Factory
+    const bindings = try sandboxTools(factory, "chat").bindings()
+    const result = try bindings[0]!.run(call(SandboxStart._tag, {}, 0))
+    const current = try factory.sandbox("chat")
+    try Effect.try(() => { expect(result.outcome).toBe("failure"); expect(current.status).toBe("stopped"); expect(current.used).toBe(0) })
+  }
+})

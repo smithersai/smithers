@@ -1,0 +1,19 @@
+import { expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+it.live("logs steps and outcomes without commands, output or caller-supplied operation text", () => effect {
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const capture = Logger.layer([Logger.make((options) => {
+    Effect.runSync(Ref.update(lines, (all) => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  provide capture {
+    provide mockFactoryFor("contributor") {
+      const factory = try Factory
+      const box = try factory.startSandbox("home", "PRIVATE_OPERATION_123")
+      try factory.sandboxCommand("home", "PRIVATE_COMMAND_ID", "echo PRIVATE_CONTENT_789", box.generation)
+      try factory.stopSandbox("home", "PRIVATE_STOP_ID", box.generation)
+    }
+  }
+  const output = (try Ref.get(lines)).join("\n")
+  try Effect.try(() => { expect(output).toContain("vibelang.sandbox"); expect(output).not.toContain("PRIVATE_") })
+})

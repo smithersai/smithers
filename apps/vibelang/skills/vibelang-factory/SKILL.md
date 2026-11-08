@@ -62,3 +62,12 @@ Use `--json` when consuming results as data. Successful commands exit 0; invalid
 arguments, refused messages and unavailable backends exit nonzero with a plain error
 on stderr. Do not interpret an unavailable live backend as a successful post. A
 failed reply's reason (no model, a spent daily budget) is the agent's, not yours.
+
+
+Sandbox commands share the person's allowance flows. `sandboxes` reads status, minutes and generation;
+`sandbox-start --operation-id <stable-id>` starts it. Pass the read generation to
+`sandbox-run --generation <n> --operation-id <stable-id> <command>` or `sandbox-stop --generation <n>`.
+Reuse the operation id only when retrying the same operation. A stale generation is refused. Mock mode supports
+`pwd`, `ls`, `echo`, redirection and `cat`; it reports unsupported commands honestly. Live compute requires
+Contributor, the authenticated 0019 policy, and the deployment's Container binding. Never put a credential in a
+command or environment. Do not claim a requested or failed operation succeeded.

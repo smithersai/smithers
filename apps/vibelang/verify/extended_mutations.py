@@ -1,5 +1,8 @@
 """Executable mutations of production decisions; contracts are never edited."""
 cases = [
+('src/core/sandboxDecision.vibe', 'clock-highwater', 'elapsedMilliseconds', 'earlier < later ? later - earlier : 0', 'later - earlier', 'rollback never subtracts previously metered usage'),
+('src/core/sandboxDecision.vibe', 'usage-overdraw', 'remainingMilliseconds', 'spent < allowance ? allowance - spent : 0', 'allowance - spent', 'remaining allowance is never negative after overuse'),
+('src/core/sandboxDecision.vibe', 'parallel-undercount', 'runningCount', 'if (sandboxes[i]!.running) count++', 'if (sandboxes[i]!.running) count += 0', 'all running containers contribute their concurrent count'),
  ('src/core/flowDecision.vibe', 'tour-read-floor', 'readingHold', 'millis < 4000 ? 4000 : millis', 'millis < 4000 ? 0 : millis', 'short paragraphs retain a four-second floor'),
  ('src/core/flowDecision.vibe', 'tour-read-rate', 'readingHold', 'wordCount * 300 + 1000', 'wordCount * 299 + 1000', 'reading time allows 200 words per minute'),
  ('src/core/flowDecision.vibe', 'tour-read-orient', 'readingHold', 'wordCount * 300 + 1000', 'wordCount * 300', 'each stop includes one second to orient'),

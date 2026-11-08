@@ -1,3 +1,4 @@
+import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
 import { validBodyLength } from "../src/core/protocolDecision.vibe"
 
 // The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
@@ -123,9 +124,10 @@ effect function answerHistory(route: HistoryRoute, url: URL, histories: Historie
 }
 
 /** Answers the current request; health answers itself, history routes reach `histories`, the rest `conversations`. */
-export effect function handle(conversations: Conversations, histories: Histories) {
+export effect function handle<R = never>(conversations: Conversations, histories: Histories, sandboxes: Gateway<R> = signedOutGateway) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "http://api.invalid")
+  if (url.pathname.startsWith("/api/sandboxes/")) return try sandboxRequest(sandboxes)
   if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
   const history = historyRouteOf(request.method, url.pathname, url.searchParams)
   if (history !== undefined) {

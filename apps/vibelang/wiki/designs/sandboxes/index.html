@@ -1,0 +1,580 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibeLang · Sandboxes</title>
+<style>
+:root {
+  color-scheme: dark;
+  --font-sans: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;
+  --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace;
+  --bg: #0d1514; --text: #ece7db; --text-muted: #a8a193; --text-faint: #969083; --text-placeholder: #958f82;
+  --surface: #131b1a; --surface-2: #1a2422; --surface-3: #202b29;
+  --surface-glass: rgba(19,27,26,0.72); --surface-glass-strong: rgba(19,27,26,0.85);
+  --border: rgba(236,231,219,0.1); --border-strong: rgba(236,231,219,0.18); --border-solid: #293532;
+  --hover: #1a2422; --hover-subtle: rgba(236,231,219,0.05);
+  --inverse-bg: #ece7db; --inverse-text: #211d18;
+  --code-bg: #101917; --code-text: #ece7db; --inline-code-bg: rgba(236,231,219,0.08);
+  --brand: #45c4b2; --success: #7fbfb3; --danger: #d97757; --warning: #f0c169; --info: #82a8b8;
+  --shadow-rgb: 0 0 0;
+  --shadow-1: 0 1px 2px rgb(var(--shadow-rgb) / 0.24), 0 1px 3px rgb(var(--shadow-rgb) / 0.32);
+  --shadow-2: 0 1px 2px rgb(var(--shadow-rgb) / 0.24), 0 12px 32px rgb(var(--shadow-rgb) / 0.4);
+  --shadow-3: 0 4px 12px rgb(var(--shadow-rgb) / 0.45), 0 16px 48px rgb(var(--shadow-rgb) / 0.5);
+  --r-1: 6px; --r-2: 10px; --r-full: 999px; --r-bubble: 18px; --ctl-h: 32px; --fs-2: 12px;
+  --brand-soft: color-mix(in srgb, var(--brand) 10%, var(--surface));
+  --brand-soft-strong: color-mix(in srgb, var(--brand) 16%, var(--surface));
+  --brand-border: color-mix(in srgb, var(--brand) 40%, transparent);
+  --success-soft: color-mix(in srgb, var(--success) 10%, var(--surface));
+  --success-border: color-mix(in srgb, var(--success) 40%, transparent);
+  --warning-soft: color-mix(in srgb, var(--warning) 10%, var(--surface));
+  --warning-border: color-mix(in srgb, var(--warning) 40%, transparent);
+  --danger-soft: color-mix(in srgb, var(--danger) 10%, var(--surface));
+  --danger-border: color-mix(in srgb, var(--danger) 40%, transparent);
+  --ring: color-mix(in srgb, var(--brand) 22%, transparent); --ring-border: var(--brand);
+  --vl-cyan: #41d1ff; --vl-violet: #747bff; --vl-magenta: #bd34fe;
+  --vl-gradient: linear-gradient(120deg, var(--vl-cyan) 8%, var(--vl-violet) 48%, var(--vl-magenta) 88%);
+  --brand: var(--vl-violet);
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; }
+
+/* ── @smthrs/ui-css (sui-*), copied from the live stylesheet ── */
+.sui-button { min-height: var(--ctl-h,32px); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border-solid); border-radius: var(--r-1); background: var(--surface); color: var(--text); font-size: 13px; text-decoration: none; cursor: pointer; white-space: nowrap; user-select: none; transition: background-color .12s, border-color .12s, color .12s; }
+.sui-button:hover { background: var(--hover); }
+.sui-button:focus-visible { outline: none; border-color: var(--ring-border); box-shadow: 0 0 0 3px var(--ring); }
+.sui-button:disabled { cursor: not-allowed; opacity: .45; }
+.sui-button-default { border-color: color-mix(in srgb, var(--brand) 40%, transparent); background: color-mix(in srgb, var(--brand) 10%, var(--surface)); color: var(--brand); font-weight: 650; }
+.sui-button-default:hover { border-color: color-mix(in srgb, var(--brand) 65%, transparent); }
+.sui-button-ghost { border-color: transparent; background: transparent; }
+.sui-button-ghost:hover { background: var(--hover); }
+.sui-button-destructive { border-color: color-mix(in srgb, var(--danger) 38%, transparent); background: var(--surface); color: var(--danger); }
+.sui-button-destructive:hover { background: color-mix(in srgb, var(--danger) 8%, var(--surface)); }
+.sui-button-sm { min-height: 26px; padding: 0 8px; font-size: 12px; }
+.sui-badge { display: inline-flex; align-items: center; gap: 6px; min-width: 0; max-width: 100%; min-height: 22px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-full); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.sui-badge-default { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); }
+.sui-badge-secondary { border-color: var(--border); background: var(--hover-subtle); color: var(--text-muted); }
+.sui-badge-warning { border-color: var(--warning-border); background: var(--warning-soft); color: var(--warning); }
+.sui-badge-destructive { border-color: var(--danger-border); background: var(--danger-soft); color: var(--danger); }
+.sui-status-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: var(--r-full); background: currentcolor; }
+.sui-chat-messages { display: flex; flex-direction: column; gap: 18px; width: min(100%,720px); min-height: 100%; margin: 0 auto; padding: 36px 24px 156px; }
+.sui-chat-message { display: grid; max-width: 100%; }
+.sui-chat-message[data-role="user"] { justify-items: end; }
+.sui-chat-message[data-role="assistant"] { justify-items: start; }
+.sui-chat-message[data-role="system"] { justify-items: center; }
+.sui-chat-bubble { max-width: 80%; padding: 10px 14px; border-radius: var(--r-bubble); background: var(--hover); color: var(--text); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.sui-chat-message[data-role="user"] .sui-chat-bubble { border-bottom-right-radius: var(--r-1); background: var(--inverse-bg); color: var(--inverse-text); white-space: pre-wrap; }
+.sui-chat-message[data-role="assistant"] .sui-chat-bubble { border-bottom-left-radius: var(--r-1); }
+.sui-chat-message[data-role="system"] .sui-chat-bubble { max-width: min(92%,620px); border: 1px solid var(--border); background: var(--surface-glass-strong); color: var(--text-muted); font-size: 13px; text-align: center; }
+.sui-chat-message-label { max-width: 80%; padding: 0 8px; color: var(--text-muted); font-size: 11px; line-height: 1.4; margin-bottom: 4px; font-weight: 650; }
+.sui-chat-bubble p { margin: 0 0 10px; }
+.sui-chat-bubble p:last-child { margin-bottom: 0; }
+.sui-chat-bubble code { padding: 1px 5px; border-radius: 4px; background: var(--code-bg); font-family: var(--font-mono); font-size: .88em; }
+.sui-chat-composer { position: relative; display: grid; gap: 12px; width: min(100%,720px); margin: 0 auto; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface-glass); backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 1px 2px rgb(var(--shadow-rgb) / .04), 0 16px 40px rgb(var(--shadow-rgb) / .10); }
+.sui-chat-composer[data-docked="true"] { position: fixed; right: 24px; bottom: max(18px, env(safe-area-inset-bottom)); left: 24px; z-index: 40; }
+.sui-chat-composer-input { width: 100%; min-width: 0; min-height: 28px; max-height: 160px; padding: 2px 4px; resize: none; overflow-y: auto; border: 0; outline: 0; background: transparent; color: var(--text); font-family: inherit; font-size: 16px; line-height: 1.5; }
+.sui-chat-composer-input::placeholder { color: var(--text-placeholder); }
+.sui-chat-composer-toolbar { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sui-chat-composer-status { min-width: 0; color: var(--text-muted); font-size: 11px; }
+.sui-chat-composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex: 0 0 auto; }
+.sui-chat-composer-send { width: 34px; height: 34px; min-height: 34px; border-radius: var(--r-2); font-size: 18px; }
+.sui-kpi { min-width: 0; display: grid; gap: 4px; padding: 14px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); box-shadow: var(--shadow-2); }
+.sui-kpi-value { color: var(--text); font-size: 20px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.sui-kpi-label { color: var(--text-muted); font-size: 11px; font-weight: 650; text-transform: uppercase; letter-spacing: .05em; }
+.sui-kpi-hint { color: var(--text-faint); font-size: 11px; }
+.sui-progress { position: relative; width: 100%; height: 6px; overflow: hidden; border-radius: var(--r-full); background: var(--hover); }
+.sui-progress-indicator { width: 100%; height: 100%; border-radius: var(--r-full); background: var(--brand); transition: transform .3s; }
+.sui-row-button { min-width: 0; display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); color: var(--text); font-size: 13px; text-align: left; cursor: pointer; box-shadow: var(--shadow-1); transition: background-color .12s, border-color .12s; }
+.sui-row-button:hover { background: var(--hover); }
+.sui-row-button:focus-visible { outline: none; border-color: var(--ring-border); box-shadow: 0 0 0 3px var(--ring); }
+.sui-alert { min-width: 0; display: grid; gap: 4px; padding: 12px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); color: var(--text-muted); font-size: 13px; }
+.sui-alert-title { color: var(--text); font-size: 13px; font-weight: 650; }
+.sui-alert-destructive { border-color: color-mix(in srgb, var(--danger) 45%, transparent); color: var(--danger); }
+.sui-alert-destructive .sui-alert-title { color: var(--danger); }
+.sui-empty { min-width: 0; display: grid; justify-items: center; gap: 6px; padding: 24px; color: var(--text-muted); text-align: center; }
+.sui-empty-icon { color: var(--text-faint); }
+.sui-empty-title { color: var(--text); font-size: 13px; font-weight: 650; }
+.sui-empty-action { margin-top: 6px; }
+.sui-table-container { min-width: 0; width: 100%; overflow-x: auto; }
+.sui-table-container[data-variant="card"] { border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); color: var(--text); box-shadow: var(--shadow-2); }
+.sui-table-container[data-variant="card"] .sui-table th, .sui-table-container[data-variant="card"] .sui-table td { padding: 10px 14px; vertical-align: middle; }
+.sui-table-container[data-variant="card"] .sui-table tbody tr:last-child > td { border-bottom: 0; }
+.sui-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.sui-table th, .sui-table td { padding: 8px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+.sui-table th { background: var(--surface); color: var(--text-muted); font-size: 11px; text-transform: uppercase; letter-spacing: .04em; font-weight: 650; }
+.sui-table caption { padding: 8px 10px; color: var(--text-muted); font-size: 11px; text-align: left; caption-side: bottom; }
+.sui-table td:last-child, .sui-table th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+.sui-skeleton { display: block; min-height: 14px; border-radius: var(--r-1); background-color: color-mix(in srgb, var(--text-muted) 14%, transparent); animation: vl-skel 1.6s ease-in-out 500ms infinite; }
+@keyframes vl-skel { 50% { background-color: color-mix(in srgb, var(--text-muted) 8%, transparent); } }
+@keyframes vl-pulse { 50% { opacity: .4; } }
+@keyframes vl-ind { 0% { transform: translateX(-100%); } 100% { transform: translateX(250%); } }
+
+/* ── app frame (vl-*), copied from src/web/styles.css ── */
+.vl-app { min-height: 100dvh; display: flex; flex-direction: column; }
+.vl-top { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 82%, transparent); backdrop-filter: blur(12px); }
+.vl-home { display: inline-flex; align-items: center; padding: 4px; border: 0; border-radius: var(--r-1); background: transparent; cursor: pointer; }
+.vl-logo { display: inline-flex; }
+.vl-logo img { height: 24px; width: auto; display: block; }
+.vl-nav { display: flex; align-items: center; gap: 4px; }
+.vl-nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-1); color: var(--text-muted); font-size: 14px; font-weight: 500; text-decoration: none; transition: color .15s, background .15s; }
+.vl-nav-link:hover { background: var(--hover); color: var(--text); }
+.vl-mark { width: 16px; height: 16px; fill: currentcolor; }
+.vl-away { color: var(--text-faint); font-size: 12px; }
+.vl-icon { width: 16px; height: 16px; fill: none; stroke: currentcolor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.vl-link { padding: 0; border: 0; background: none; color: var(--brand); font-size: 14px; text-decoration: none; cursor: pointer; }
+.vl-link:hover { text-decoration: underline; }
+.vl-pill { padding: 2px 8px; border: 1px solid var(--brand-border); border-radius: var(--r-full); background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.vl-chat { flex: 1; display: flex; flex-direction: column; }
+.vl-pane { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); color: var(--text-muted); text-align: left; cursor: pointer; transition: border-color .15s; }
+.vl-pane:hover { border-color: var(--border-strong); }
+.vl-pane:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+.vl-pane .vl-logo img { height: 20px; }
+.vl-chat .sui-chat-composer[data-docked="true"] { width: auto; max-width: 720px; margin: 0 auto; }
+@media (max-width: 600px) {
+  .vl-chat .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; }
+  .vl-top { padding: 12px 16px; }
+  .vl-nav-link { padding: 6px 8px; }
+  .vl-away { display: none; }
+}
+@media (max-width: 620px) {
+  .sui-chat-messages { padding: 24px 14px 146px; }
+  .sui-chat-bubble { max-width: 90%; }
+}
+.vl-pane-text { flex: 1; font-size: 13px; }
+.vl-pane-expand { display: inline-flex; color: var(--text-faint); }
+.vl-docs { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); }
+.vl-docs-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-docs-page { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vl-docs-page code { font-family: var(--font-mono); font-size: 12px; color: var(--text); }
+.vl-docs-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.vl-docs-toggle { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1); background: transparent; color: var(--text-muted); cursor: pointer; }
+.vl-docs-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.vl-docs[data-maximized="true"] { position: fixed; inset: 60px 0 0; z-index: 45; border-radius: 0; border-width: 1px 0 0; }
+
+/* ── sandboxes (new, vl-sb-*) ── */
+.vl-sb-body { display: grid; align-content: start; gap: 8px; padding: 12px; overflow-y: auto; max-height: min(56vh, 540px); min-height: 0; }
+.vl-docs[data-maximized="true"] .vl-sb-body { max-height: none; flex: 1; }
+.vl-sb-head { display: flex; align-items: stretch; justify-content: space-between; gap: 10px; flex-wrap: wrap; }
+.vl-sb-kpi { flex: 1 1 220px; display: grid; gap: 8px; }
+.vl-sb-new { align-self: center; }
+.vl-sb { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.vl-sb-name { min-width: 0; color: var(--text); font-family: var(--font-mono); font-size: 12px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-sb-meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.vl-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--text-muted); }
+.vl-dot-run { background: var(--brand); animation: vl-pulse 1.2s ease-in-out infinite; }
+.vl-term { border-top: 1px solid var(--border); background: var(--code-bg); min-width: 0; }
+.vl-term-body { margin: 0; padding: 12px 14px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 150px; max-height: min(50vh, 480px); overflow-y: auto; }
+.vl-docs[data-maximized="true"] .vl-term { flex: 1; display: flex; flex-direction: column; }
+.vl-docs[data-maximized="true"] .vl-term-body { flex: 1; max-height: none; }
+.vl-term-p { color: var(--brand); }
+.vl-term-ok { color: var(--success); }
+.vl-term-dim { color: var(--text-muted); }
+.vl-term-off { opacity: .55; }
+.vl-sb-starting { display: grid; gap: 8px; padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); box-shadow: var(--shadow-1); }
+.vl-sb-starting-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vl-ind { width: 40%; height: 100%; border-radius: inherit; background: var(--brand); animation: vl-ind 1.2s ease-in-out infinite; }
+@media (max-width: 700px) {
+  .vl-sb-meta { display: none; }
+}
+
+/* ── demo switcher (not product UI) ── */
+.demo-bar { position: fixed; top: 0; left: 0; right: 0; z-index: 100; display: flex; align-items: center; gap: 2px; padding: 6px 10px; overflow-x: auto; scrollbar-width: none; background: #090e0d; border-bottom: 1px solid var(--border-solid); font-family: var(--font-mono); font-size: 11px; }
+.demo-bar b { color: var(--text-faint); font-weight: 650; margin-right: 6px; white-space: nowrap; }
+.demo-bar button { flex: 0 0 auto; padding: 3px 8px; border: 1px solid transparent; border-radius: 4px; background: transparent; color: var(--text-muted); font: inherit; cursor: pointer; white-space: nowrap; }
+.demo-bar button:hover { color: var(--text); background: var(--surface-2); }
+.demo-bar button[data-on="true"] { color: var(--brand); border-color: var(--brand-border); background: var(--brand-soft); }
+body[data-chrome="1"] { padding-top: 37px; }
+body[data-chrome="1"] .vl-top { top: 37px; }
+body[data-chrome="1"] .vl-docs[data-maximized="true"] { inset: 97px 0 0; }
+body[data-chrome="0"] .demo-bar { display: none; }
+.demo-screen { display: none; }
+.demo-screen[data-on="true"] { display: block; }
+</style>
+</head>
+<body data-chrome="1">
+<nav class="demo-bar" id="demo-bar" aria-label="Screens"><b>sandboxes /</b></nav>
+
+<!-- 1 · chat: the Sandboxes pane collapsed in the conversation -->
+<section class="demo-screen" data-screen="chat">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <button class="vl-pane" type="button" aria-label="Expand the VibeLang home page">
+          <span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span>
+          <span class="vl-pane-text">Effect, as a language</span>
+          <span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span>
+        </button>
+        <button class="vl-pane" type="button" aria-label="Open Sandboxes">
+          <svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg>
+          <span class="vl-pane-text">Sandboxes</span>
+          <span class="sui-badge sui-badge-default"><span class="sui-status-dot"></span>48 min</span>
+          <span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span>
+        </button>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 2 · pane: minutes and sandboxes, inline -->
+<section class="demo-screen" data-screen="pane">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <section class="vl-docs" aria-label="Sandboxes">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page">Sandboxes</span>
+            <span class="vl-docs-actions">
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize Sandboxes"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-sb-body">
+            <div class="vl-sb-head">
+              <div class="sui-kpi vl-sb-kpi">
+                <span class="sui-kpi-value">48</span>
+                <span class="sui-kpi-label">min left of 600</span>
+                <span class="sui-progress"><span class="sui-progress-indicator" style="transform:translateX(-92%)"></span></span>
+                <span class="sui-kpi-hint">Resets monthly</span>
+              </div>
+              <button class="sui-button sui-button-default vl-sb-new" type="button">New sandbox</button>
+            </div>
+            <button class="sui-row-button vl-sb" type="button">
+              <span class="vl-dot vl-dot-run"></span><span class="vl-sb-name">sturdy-goggles</span><span class="sui-badge sui-badge-default"><span class="sui-status-dot"></span>Running</span>
+            </button>
+            <button class="sui-row-button vl-sb" type="button">
+              <span class="vl-dot"></span><span class="vl-sb-name">quiet-otter</span><span class="sui-badge sui-badge-secondary">Stopped</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 3 · max: the pane maximized, allowances by role -->
+<section class="demo-screen" data-screen="max">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation"></div>
+    </main>
+    <section class="vl-docs" data-maximized="true" aria-label="Sandboxes">
+      <div class="vl-docs-bar">
+        <span class="vl-docs-page">Sandboxes</span>
+        <span class="vl-docs-actions">
+          <button class="vl-docs-toggle" type="button" aria-label="Minimize Sandboxes"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"/></svg></button>
+        </span>
+      </div>
+      <div class="vl-sb-body" style="max-width:720px; width:100%; margin:0 auto">
+        <div class="vl-sb-head">
+          <div class="sui-kpi vl-sb-kpi">
+            <span class="sui-kpi-value">48</span>
+            <span class="sui-kpi-label">min left of 600</span>
+            <span class="sui-progress"><span class="sui-progress-indicator" style="transform:translateX(-92%)"></span></span>
+            <span class="sui-kpi-hint">Resets monthly</span>
+          </div>
+          <button class="sui-button sui-button-default vl-sb-new" type="button">New sandbox</button>
+        </div>
+        <button class="sui-row-button vl-sb" type="button">
+          <span class="vl-dot vl-dot-run"></span><span class="vl-sb-name">sturdy-goggles</span><span class="sui-badge sui-badge-default"><span class="sui-status-dot"></span>Running</span>
+        </button>
+        <button class="sui-row-button vl-sb" type="button">
+          <span class="vl-dot"></span><span class="vl-sb-name">quiet-otter</span><span class="sui-badge sui-badge-secondary">Stopped</span>
+        </button>
+        <div class="sui-table-container" data-variant="card">
+          <table class="sui-table">
+            <caption>Minutes reset monthly</caption>
+            <thead><tr><th>Role</th><th>Minutes</th></tr></thead>
+            <tbody>
+              <tr><td>Viewer</td><td>—</td></tr>
+              <tr><td>New</td><td>60</td></tr>
+              <tr><td>Community</td><td>240</td></tr>
+              <tr><td>Contributor</td><td>600</td></tr>
+              <tr><td>Maintainer</td><td>2,000</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 4 · starting: provisioning -->
+<section class="demo-screen" data-screen="starting">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <section class="vl-docs" aria-label="Sandboxes">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page">Sandboxes</span>
+            <span class="vl-docs-actions">
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize Sandboxes"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-sb-body">
+            <div class="vl-sb-starting">
+              <div class="vl-sb-starting-top">
+                <span class="vl-sb-name">sturdy-goggles</span>
+                <span class="vl-sb-meta">Starting</span>
+              </div>
+              <span class="sui-progress"><span class="vl-ind"></span></span>
+            </div>
+            <button class="sui-row-button vl-sb" type="button">
+              <span class="vl-dot"></span><span class="vl-sb-name">quiet-otter</span><span class="sui-badge sui-badge-secondary">Stopped</span>
+            </button>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 5 · running: a terminal in the chat -->
+<section class="demo-screen" data-screen="running">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <article class="sui-chat-message" data-role="user">
+          <div class="sui-chat-message-label">You</div>
+          <div class="sui-chat-bubble">/sandbox</div>
+        </article>
+        <article class="sui-chat-message" data-role="assistant">
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <div class="sui-chat-bubble"><p>Started <code>sturdy-goggles</code>.</p></div>
+        </article>
+        <section class="vl-docs" aria-label="sturdy-goggles">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page"><code>sturdy-goggles</code></span>
+            <span class="vl-docs-actions">
+              <span class="sui-badge sui-badge-default"><span class="sui-status-dot"></span>48 min left</span>
+              <button class="sui-button sui-button-destructive sui-button-sm" type="button">Stop</button>
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize the sandbox"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-term">
+            <pre class="vl-term-body" tabindex="0" aria-label="Terminal"><span class="vl-term-p">$</span> cd ~/vibelang
+<span class="vl-term-p">$</span> pnpm dev
+
+  <span class="vl-term-ok">➜</span> <span class="vl-term-dim">local:</span> http://localhost:5178
+
+<span class="vl-term-p">$</span> ▌</pre>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 6 · agent: the agent working in a sandbox -->
+<section class="demo-screen" data-screen="agent">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <article class="sui-chat-message" data-role="user">
+          <div class="sui-chat-message-label">You</div>
+          <div class="sui-chat-bubble">run the e2e suite somewhere throwaway</div>
+        </article>
+        <article class="sui-chat-message" data-role="assistant">
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <div class="sui-chat-bubble"><p>Running it in a sandbox.</p></div>
+        </article>
+        <section class="vl-docs" aria-label="sturdy-goggles">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page"><code>sturdy-goggles</code></span>
+            <span class="vl-docs-actions">
+              <span class="sui-badge sui-badge-default"><span class="sui-status-dot"></span>46 min left</span>
+              <button class="sui-button sui-button-destructive sui-button-sm" type="button">Stop</button>
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize the sandbox"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-term">
+            <pre class="vl-term-body" tabindex="0" aria-label="Terminal"><span class="vl-term-dim"># vibelang agent</span>
+<span class="vl-term-p">$</span> pnpm e2e
+<span class="vl-term-ok">✓</span> dark-splash <span class="vl-term-dim">412ms</span>
+<span class="vl-term-ok">✓</span> dark-tour <span class="vl-term-dim">388ms</span>
+<span class="vl-term-ok">✓</span> phone-splash <span class="vl-term-dim">▌</span></pre>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 7 · low: ten minutes left -->
+<section class="demo-screen" data-screen="low">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <article class="sui-chat-message" data-role="system">
+          <div class="sui-chat-bubble">9 minutes left</div>
+        </article>
+        <section class="vl-docs" aria-label="sturdy-goggles">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page"><code>sturdy-goggles</code></span>
+            <span class="vl-docs-actions">
+              <span class="sui-badge sui-badge-warning"><span class="sui-status-dot"></span>9 min left</span>
+              <button class="sui-button sui-button-destructive sui-button-sm" type="button">Stop</button>
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize the sandbox"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-term">
+            <pre class="vl-term-body" tabindex="0" aria-label="Terminal"><span class="vl-term-p">$</span> pnpm test
+<span class="vl-term-ok">✓</span> 175 passed
+<span class="vl-term-p">$</span> ▌</pre>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 8 · zero: out of minutes, the sandbox stopped -->
+<section class="demo-screen" data-screen="zero">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <article class="sui-chat-message" data-role="system">
+          <div class="sui-chat-bubble">Out of minutes — <code>sturdy-goggles</code> stopped</div>
+        </article>
+        <section class="vl-docs" aria-label="sturdy-goggles">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page"><code>sturdy-goggles</code></span>
+            <span class="vl-docs-actions">
+              <span class="sui-badge sui-badge-destructive"><span class="sui-status-dot"></span>0 min</span>
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize the sandbox"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-term vl-term-off">
+            <pre class="vl-term-body" aria-label="Terminal, stopped"><span class="vl-term-p">$</span> pnpm test
+<span class="vl-term-ok">✓</span> 175 passed
+<span class="vl-term-p">$</span> </pre>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 9 · stopped: start again -->
+<section class="demo-screen" data-screen="stopped">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <section class="vl-docs" aria-label="Sandboxes">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page">Sandboxes</span>
+            <span class="vl-docs-actions">
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize Sandboxes"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-sb-body">
+            <div class="vl-sb-head">
+              <div class="sui-kpi vl-sb-kpi">
+                <span class="sui-kpi-value">48</span>
+                <span class="sui-kpi-label">min left of 600</span>
+                <span class="sui-progress"><span class="sui-progress-indicator" style="transform:translateX(-92%)"></span></span>
+                <span class="sui-kpi-hint">Resets monthly</span>
+              </div>
+              <button class="sui-button sui-button-default vl-sb-new" type="button">New sandbox</button>
+            </div>
+            <div class="sui-row-button vl-sb" role="button" tabindex="0">
+              <span class="vl-dot"></span><span class="vl-sb-name">sturdy-goggles</span><span class="sui-button sui-button-ghost sui-button-sm">Start</span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 10 · viewer: signed out -->
+<section class="demo-screen" data-screen="viewer">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <section class="vl-docs" aria-label="Sandboxes">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page">Sandboxes</span>
+            <span class="vl-docs-actions">
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize Sandboxes"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-sb-body">
+            <div class="sui-empty">
+              <span class="sui-empty-icon"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true" style="width:24px;height:24px"><polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/></svg></span>
+              <span class="sui-empty-title">Sign in to start a sandbox</span>
+              <span class="sui-empty-action"><button class="sui-button sui-button-default" type="button">Sign in</button></span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<!-- 11 · error: start failed -->
+<section class="demo-screen" data-screen="error">
+  <div class="vl-app" data-top>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <section class="vl-docs" aria-label="Sandboxes">
+          <div class="vl-docs-bar">
+            <span class="vl-docs-page">Sandboxes</span>
+            <span class="vl-docs-actions">
+              <button class="vl-docs-toggle" type="button" aria-label="Maximize Sandboxes"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+            </span>
+          </div>
+          <div class="vl-sb-body">
+            <div class="sui-alert sui-alert-destructive" role="alert">
+              <span class="sui-alert-title">Couldn't start a sandbox</span>
+              <span><button class="vl-link" type="button" style="font-size:13px">Retry</button></span>
+            </div>
+          </div>
+        </section>
+      </div>
+    </main>
+    <div data-composer></div>
+  </div>
+</section>
+
+<script>
+const GITHUB_MARK = '<svg viewBox="0 0 16 16" aria-hidden="true" class="vl-mark"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>';
+const TOP = '<header class="vl-top"><button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button><nav class="vl-nav"><span class="vl-pill">Mock</span><a class="vl-nav-link" href="#">Docs<span aria-hidden="true" class="vl-away">↗</span></a><a class="vl-nav-link" href="#">' + GITHUB_MARK + 'GitHub<span aria-hidden="true" class="vl-away">↗</span></a></nav></header>';
+const COMPOSER = '<form class="sui-chat-composer" data-docked="true"><textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea><div class="sui-chat-composer-toolbar"><span class="sui-chat-composer-status"></span><div class="sui-chat-composer-actions"><button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send" disabled>↑</button></div></div></form>';
+
+document.querySelectorAll("[data-top]").forEach((app) => app.insertAdjacentHTML("afterbegin", TOP));
+document.querySelectorAll("[data-composer]").forEach((slot) => (slot.outerHTML = COMPOSER));
+
+const screens = [...document.querySelectorAll(".demo-screen")].map((s) => s.dataset.screen);
+const bar = document.getElementById("demo-bar");
+screens.forEach((name) => {
+  const b = document.createElement("button");
+  b.type = "button";
+  b.textContent = name;
+  b.dataset.go = name;
+  bar.appendChild(b);
+});
+function show(name) {
+  if (!screens.includes(name)) name = screens[0];
+  document.querySelectorAll(".demo-screen").forEach((s) => (s.dataset.on = String(s.dataset.screen === name)));
+  document.querySelectorAll(".demo-bar button[data-go]").forEach((b) => (b.dataset.on = String(b.dataset.go === name)));
+  if (location.hash.slice(1) !== name) history.replaceState(null, "", "#" + name);
+}
+bar.addEventListener("click", (e) => { const go = e.target.dataset && e.target.dataset.go; if (go) show(go); });
+window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+const params = new URLSearchParams(location.search);
+if (params.get("chrome") === "0") document.body.dataset.chrome = "0";
+show(location.hash.slice(1) || screens[0]);
+</script>
+</body>
+</html>

@@ -23,6 +23,29 @@ import type { Spend } from "../../worker/Reply.vibe"
 import type { Sequencer } from "../../worker/Sequencer.vibe"
 import { Unreachable } from "../../worker/Unreachable.vibe"
 
+import * as Sandboxes from "../../worker/Sandboxes.vibe"
+import { memoryMachines } from "../../src/core/sandboxMock.vibe"
+import { mockPolicy } from "../../src/core/sandboxPolicy.vibe"
+import type { SandboxHost } from "../../src/core/flows.vibe"
+
+/** The real per-person SQL writer and flow engine, hosted against VL-13's explicit product device. Not a container. */
+export class SandboxLedger {
+  readonly host: Promise<SandboxHost.Shape>
+  constructor(readonly state: { readonly id: { toString(): string }; readonly storage: Sandboxes.SandboxStorage }) {
+    this.host = Effect.runPromise(Effect.provide(Sandboxes.open(state.storage, memoryMachines()), mockPolicy("contributor")))
+  }
+  async fetch(request: Request): Promise<Response> {
+    const host = await this.host
+    const path = new URL(request.url).pathname
+    if (path === "/runs") return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms").toArray())
+    if (path === "/receipts") return json(this.state.storage.sql.exec("SELECT id FROM vibelang_sandbox_receipts ORDER BY id").toArray())
+    const body = await request.json() as { readonly kind: "start" | "stop" | "command"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
+    const result = await Effect.runPromise(Effect.result(Sandboxes.execute(this.state.id.toString(), this.state.storage, host, body.kind, body.conversation, body.operationId, body.generation, body.command)))
+    return json(result)
+  }
+  async alarm(): Promise<void> { /* The suite advances the real meter explicitly through its flows. */ }
+}
+
 interface Namespace {
   idFromName(name: string): unknown
   get(id: unknown): { fetch(input: string | Request, init?: RequestInit): Promise<Response> }
@@ -31,6 +54,7 @@ interface Namespace {
 interface Env {
   readonly CONVERSATION: Namespace
   readonly BUDGET: Namespace
+  readonly SANDBOX_LEDGER: Namespace
   readonly HISTORY: Namespace
   readonly [name: string]: unknown
 }
@@ -211,6 +235,11 @@ export class History {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
+    const sandbox = new URL(request.url).pathname.match(/^\/sandbox-ledger\/(runs|receipts|run)$/)
+    if (sandbox !== null) {
+      const object = env.SANDBOX_LEDGER.get(env.SANDBOX_LEDGER.idFromName("sandbox-test"))
+      return await object.fetch(`https://object/${sandbox[1]}`, { method: request.method, ...(request.method === "POST" ? { body: await request.text() } : {}) })
+    }
     // The suite's window into a conversation object's engine: /runs/<conversation>.
     const boundary = new URL(request.url).pathname.match(/^\/(reading-tour|parked|release-park)\/(.+)$/)
     if (boundary !== null) return json(await call(env.CONVERSATION, decodeURIComponent(boundary[2]!), boundary[1]!, {}))
