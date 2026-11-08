@@ -12,8 +12,10 @@ export const registrations = McpServer.toolkit(toolkit).pipe(Layer.provide(toolk
   const factory = try Factory
   const mythical = try Mythical
   const actions = try Actions
+  const files = try FileSystem.FileSystem
+  const path = try Path.Path
   return Object.fromEntries(commands.map((command) => [command.name, effect (input: unknown) => {
-    provide Factory = factory, Mythical = mythical, Actions = actions {
+    provide Factory = factory, Mythical = mythical, Actions = actions, FileSystem.FileSystem = files, Path.Path = path {
       return try command.run(input)
     }
   }])) as Handlers

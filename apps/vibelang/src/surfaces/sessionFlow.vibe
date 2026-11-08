@@ -1,0 +1,63 @@
+// Native sign-in actions use the SDK's durable SQLite host. Only bounded statuses reach its journal;
+// credentials remain in the private settings files or inside an action's transport, never in flow payloads/results.
+import { Action, Flow, FlowRuntime, Interpreter, Poll, Sleep } from "@smthrs/flow"
+import { NodeRuntime } from "@smthrs/platform-node"
+import { Node } from "@smthrs/plan"
+import { SecureRandom } from "effect/crypto"
+import { privateSettings } from "./session.vibe"
+
+export schema error SignInFailed { readonly message: string }
+export const Status = Schema.Literals(["started", "pending", "signed-in", "signed-out", "declined", "expired", "failed"])
+export type Status = typeof Status.Type
+
+const Operation = Flow.make("vibelang/Session", {
+  description: "Changes the CLI and MCP sign-in through a private journaled action.",
+  payload: { step: Schema.Literals(["login", "poll", "logout"]) }, success: Status, error: SignInFailed,
+  body: () => Node.succeed("pending" as const),
+})
+const Check = Action.make("vibelang/session/check", { payload: {}, success: Poll.CheckResult(Status) })
+const Wait = Poll.make("vibelang/SessionWait", {
+  input: {}, result: Status, intervalMs: 1000, maxAttempts: 3600,
+  check: () => Check.call({}),
+})
+
+effect function observe(step: string, program: Status!SignInFailed) {
+  return try withSpan(onExit(program, result => effect {
+    const outcome = Exit.isSuccess(result) ? result.value : "failed"
+    try logInfo("vibelang.session").pipe(annotateLogs({ step, outcome }))
+    try Metric.update(Metric.withAttributes(Metric.counter("vibelang_session_steps", { incremental: true }), { step, outcome }), 1)
+  }), "vibelang.session." + step)
+}
+
+effect function runtime<R>(registration: Layer.Layer<never, never, R>) {
+  const root = try privateSettings()
+  return NodeRuntime.layerHost({ filename: (try Path.Path).join(root, "flows.db"), workspaceRoot: root, owner: { hostId: "vibelang-session" }, signals: [] }, registration)
+}
+
+/** A session mutation. The action's only result is its status; its error contains a safe product message. */
+export effect function sessionOperation<R>(step: "login" | "poll" | "logout", body: Status!SignInFailed!R) {
+  const captured = try context<R>()
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Operation, () => Action.make({ name: "vibelang/session/" + step, success: Status, error: SignInFailed,
+      execute: observe(step, Effect.provide(body, captured)),
+    }))
+  })
+  const id = try Effect.provide(effect { return try (try SecureRandom.SecureRandom).uuidV4() }, SecureRandom.layerWebCrypto)
+  const host = try runtime(registration)
+  return try scoped(Effect.provide(Operation.execute({ step }, { executionId: "session/" + id }), host))
+}
+
+/** SDK polling owns repetitions and durable waits. GitHub's own interval/slow-down is enforced by the check. */
+export effect function waitForSignIn<R>(check: Status!SignInFailed!R) {
+  const captured = try context<R>()
+  const implementations = Check.toLayer(() => effect {
+    const output = observe("poll", Effect.provide(check, captured)) catch () => "failed" as const
+    return { satisfied: output !== "pending", output }
+  })
+  const registration = Interpreter.layer(Wait).pipe(Layer.provideMerge(implementations), Layer.provideMerge(Poll.layer), Layer.provideMerge(Sleep.layer), Layer.provideMerge(Action.layerImplementations))
+  const root = try privateSettings()
+  const id = try Effect.provide(effect { return try (try SecureRandom.SecureRandom).uuidV4() }, SecureRandom.layerWebCrypto)
+  const host = NodeRuntime.layerHost({ filename: (try Path.Path).join(root, "flows.db"), workspaceRoot: root, owner: { hostId: "vibelang-session" }, signals: [] }, registration)
+  return try scoped(Effect.provide(Wait.execute({}, { executionId: "session-wait/" + id }), host))
+}

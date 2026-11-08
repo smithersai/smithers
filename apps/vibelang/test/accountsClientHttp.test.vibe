@@ -25,7 +25,7 @@ it.live("reads a real signed session, grants and follows a role, then signs out 
     try promise(() => storage.put("person/1", { id: "1", login: "will" }))
     try promise(() => storage.put("person/7", { id: "7", login: "ada" }))
     const product = try Accounts.make("live-accounts-client", storage, {
-      origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", github,
+      origin, signingSecret, encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="), initialMaintainer: "1", clientId: "fixture-client-id", github,
     })
     try HttpServer.serveEffect(product.fetch)
     const native = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)

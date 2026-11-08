@@ -1,0 +1,53 @@
+// @vitest-environment node
+import { expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { readSession, writeSession, removeSession, writePending, readPending, privateSettings } from "../src/surfaces/session.vibe"
+
+it.live("stores complete private settings, replaces credentials, and expires a pending grant without exposing it", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const directory = try fs.makeTempDirectoryScoped()
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })) {
+      const root = path.join(directory, "vibelang-factory")
+      try fs.makeDirectory(root, { mode: 0o755 })
+      try writeSession({ origin: "https://factory.example", cookie: "private-first", login: "ada" })
+      const first = try readSession()
+      const folder = try fs.stat(root)
+      const file = try fs.stat(path.join(root, "session.json"))
+      try writeSession({ origin: "https://factory.example", cookie: "private-second", login: "will" })
+      const replaced = try readSession()
+      try writePending({ origin: "https://factory.example", clientId: "fixture", nextPollAt: 1, deviceCode: "private-device", userCode: "ABCD-EFGH", verificationUri: "https://github.com/login/device", intervalSeconds: 5, expiresAt: 1 })
+      const expired = try readPending()
+      const pendingExists = try fs.exists(path.join(root, "device.json"))
+      try removeSession()
+      try removeSession()
+      const removed = try readSession()
+      try Effect.try(() => {
+        expect(first).toMatchObject({ cookie: "private-first", login: "ada" })
+        expect(folder.mode & 0o777).toBe(0o700)
+        expect(file.mode & 0o777).toBe(0o600)
+        expect(replaced).toMatchObject({ cookie: "private-second", login: "will" })
+        expect(expired).toBeUndefined()
+        expect(pendingExists).toBe(false)
+        expect(removed).toBeUndefined()
+      })
+    }
+  }
+}))
+
+it.live("refuses a failed private-directory permission change before storing a credential", () => scoped(effect {
+  provide NodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const directory = try fs.makeTempDirectoryScoped()
+    const broken = { ...fs, chmod: () => fail(new PlatformError.PlatformError(new PlatformError.SystemError({ module: "FileSystem", method: "chmod", _tag: "PermissionDenied" }))) }
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), FileSystem.FileSystem = broken {
+      const refused = try Effect.result(privateSettings())
+      const exists = try fs.exists((try Path.Path).join(directory, "vibelang-factory", "session.json"))
+      try Effect.try(() => {
+        expect(refused._tag).toBe("Failure")
+        expect(exists).toBe(false)
+      })
+    }
+  }
+}))

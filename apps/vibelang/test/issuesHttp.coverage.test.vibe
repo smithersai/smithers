@@ -40,6 +40,7 @@ function setupWith(githubService: GitHub.Auth.GitHubAuth["Service"]): Accounts.S
   return {
     origin: ORIGIN,
     initialMaintainer: "1",
+  clientId: "fixture-client-id",
     signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
     encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
     github: githubService,

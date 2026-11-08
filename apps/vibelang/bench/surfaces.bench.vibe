@@ -175,7 +175,7 @@ it("sandbox CLI and persistent MCP lifecycle latency", async ({ bench }) => {
   const lifecycle = await runPromise(Effect.provide(effect {
     const client = try McpClient.McpClient
     const tools = try client.listTools()
-    try Effect.try(() => expect(tools.map((tool) => tool.name).sort()).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun"].sort()))
+    try Effect.try(() => expect(tools.map((tool) => tool.name).sort()).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun", "wiki", "login", "logout"].sort()))
     const tool = (name: string) => tools.find((tool) => tool.name === name)!
     let sample = 0
     const measured = try Effect.try(() => workload(bench, "mcp-sandbox-file-restart", async () => {

@@ -21,6 +21,7 @@ import type { Write } from "../../src/history/wire.vibe"
 import * as HistoryObject from "../../worker/HistoryObject.vibe"
 import { githubMain } from "../../worker/MainLog.vibe"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
+import { postName } from "../../src/core/roles.vibe"
 import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "../../worker/Http.vibe"
 import { chargeKeyOf } from "../../worker/budgetDecision.vibe"
@@ -258,7 +259,7 @@ export class History {
   readonly sequencer: Promise<HistorySequencer>
   readonly main = githubMain("smithersai/vibelang", Effect.runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)), undefined)
 
-  constructor(readonly state: State, env: Env) {
+  constructor(readonly state: State, readonly env: Env) {
     const main = this.main
     this.sequencer = Effect.runPromise(Effect.flatMap(HistoryObject.history(state.storage), (sequencer) =>
       Effect.flatMap(sequencer.read(), (history) =>
@@ -279,9 +280,26 @@ export class History {
     if (url.pathname === "/runs") {
       return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
     }
-    const args = await request.json() as { readonly name: Write; readonly body: unknown; readonly principal?: Principal; readonly operation?: string }
-    // `act` is the objects' own write as a principal; `write` is the API's, whoever asks a viewer until sign-in.
-    const principal = url.pathname === "/act" ? args.principal! : HistoryObject.principalOf(request)
+    const args = await request.json() as { readonly name: Write; readonly body: unknown; readonly principal?: Principal; readonly operation?: string; readonly cookie?: string; readonly origin?: string }
+    // `act` is the objects' own write as a principal; `write` is the API's, deriving its principal from the
+    // request's session exactly as worker/Api.vibe does: a visitor is a viewer, an agent session carries the
+    // person's role with the agent mark, and the history machine refuses agents approve and fold. The caller's
+    // cookie and origin travel in the call's body, as the object's fetch carries none of the original's headers.
+    if (url.pathname !== "/act") {
+      const account = this.env.ACCOUNTS.get(this.env.ACCOUNTS.idFromName("project"))
+      const session = await account.fetch("https://object/api/auth/session", { headers: { cookie: args.cookie ?? "" } })
+      const identity = await session.json() as { readonly id: string; readonly login: string; readonly role: Principal["role"]; readonly agent?: boolean }
+      if (identity.id !== "" && args.origin !== this.env.VIBELANG_ORIGIN) {
+        return json({ id: "", folded: 0, refusal: "forbidden" })
+      }
+      const principal: Principal = identity.id === ""
+        ? { role: "viewer", name: "Guest", agent: false }
+        : { role: identity.role, name: identity.login, agent: identity.agent === true }
+      return json(await Effect.runPromise(HistoryObject.write(
+        this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body, args.operation,
+      )))
+    }
+    const principal = args.principal!
     return json(await Effect.runPromise(HistoryObject.write(
       this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body, args.operation,
     )))
@@ -293,7 +311,7 @@ export class ActionIndex {
   constructor(readonly state: State, readonly env: Env) {}
   async fetch(request: Request): Promise<Response> {
     const url = new URL(request.url)
-    const args = await request.json() as { readonly flow: string; readonly id: string; readonly request: RunRequest; readonly role: Role; readonly next: string; readonly owner: string }
+    const args = await request.json() as { readonly flow: string; readonly id: string; readonly request: RunRequest; readonly role: Role; readonly next: string; readonly owner: string; readonly caller?: { readonly name: string; readonly actor: "person" | "agent" } }
     const env = this.env
     const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
     const runs: ActionDirectory.Runs = {
@@ -305,7 +323,7 @@ export class ActionIndex {
     const directory = ActionDirectory.directory(this.state.id.toString(), this.state.storage, runs, actionIdentity(env))
     if (url.pathname === "/list") return json(await Effect.runPromise(directory.list(args.flow)))
     if (url.pathname === "/start") return json(await Effect.runPromise(directory.start(args.request, args.role)))
-    if (url.pathname === "/rerun") return json(await Effect.runPromise(directory.rerun(args.id, args.next, args.role, args.owner)))
+    if (url.pathname === "/rerun") return json(await Effect.runPromise(directory.rerun(args.id, args.next, args.role, args.owner, args.caller)))
     return json(await Effect.runPromise(directory.cancel(args.id, args.role, args.owner)))
   }
 }
@@ -343,9 +361,9 @@ export default {
         reach("conversation", async () => {
           const account = env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project"))
           const headers = { cookie: request.headers.get("cookie") ?? "" }
-          const identity = await (await account.fetch("https://object/api/auth/session", { headers })).json() as { readonly id: string; readonly login: string }
+          const identity = await (await account.fetch("https://object/api/auth/session", { headers })).json() as { readonly id: string; readonly login: string; readonly agent?: boolean }
           if (identity.id !== "" && request.headers.get("origin") !== env.VIBELANG_ORIGIN) return "forbidden"
-          const result = await call(env.CONVERSATION, conversation, "post", { ...body, name: identity.login || "Guest" }) as { readonly refusal: string | null }
+          const result = await call(env.CONVERSATION, conversation, "post", { ...body, name: postName(identity) }) as { readonly refusal: string | null }
           if (result.refusal === null && identity.id !== "") await account.fetch("https://object/__fixture/participation", { headers })
           return result.refusal
         }),
@@ -369,7 +387,10 @@ export default {
     const histories: Histories = {
       page: (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
       write: (name, body) =>
-        reach("history", () => call(env.HISTORY, "vibelang", "write", { name, body }) as Promise<HistoryObject.Answered>),
+        Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
+          reach("history", () => call(env.HISTORY, "vibelang", "write", {
+            name, body, cookie: incoming.headers.cookie ?? "", origin: incoming.headers.origin ?? "",
+          }) as Promise<HistoryObject.Answered>)),
       events: () =>
         Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
           reach("history", async () => {
@@ -380,7 +401,7 @@ export default {
     }
     const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
     const actions: ActionsApi = {
-      rerun: (id, next, role, owner) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "rerun", { id, next, role, owner }) as Promise<string | null>),
+      rerun: (id, next, role, owner, caller) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "rerun", { id, next, role, owner, caller }) as Promise<string | null>),
       list: (flow) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "list", { flow }) as Promise<ReadonlyArray<Run>>),
       start: (request, role) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "start", { request, role }) as Promise<string | null>),
       cancel: (id, role, owner) => reach("actions", () => call(env.ACTION_INDEX, "vibelang", "cancel", { id, role, owner }) as Promise<string | null>),

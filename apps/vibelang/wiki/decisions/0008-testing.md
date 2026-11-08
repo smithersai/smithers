@@ -333,3 +333,12 @@ approvedAt fields before persisting; only saved local receipts restore them. Act
 also cover comments, parent links, task commitment, invalid content, missing targets and unchanged issue truth.
 
 Walkthrough counter extension (0018, batch20): actual private visit/hold identities use exact BigInt plus-one; pause/seek/clock choices carry contracts and 12 new mutants. Seven regression cases include the observed native-number collision beyond 2**53. No new dependency.
+
+**CLI/MCP identity (0028).** Real CLI processes and a persistent stdio McpClient exercise shared-device sign-in,
+signed author labels, logout/revocation, refused sign-in and failed remote logout. Local workerd checks forged
+names/roles/doors, current grants after demotion, person-only refusals, registered Post actions and reruns. Product
+Mock sign-in has no network and preserves live credentials in a separate fixture file. The native wait uses the
+already declared SDK SQLite host and Poll; its actual journal must omit device/access/session secrets. Private
+settings use 0700 directories and atomic 0600 files, with faulty FileSystem permission denial. The existing label
+renders the fixture agent in Chromium, and the opt-in live suite expects the agent label only with a configured
+test session. No tool or dependency was added by this lane.

@@ -2,6 +2,7 @@ import { requestedSpecificationReview } from "./specification.vibe"
 import { MockJournal } from "./MockJournal.vibe"
 import { firstUndispatched } from "./flowDecision.vibe"
 import * as MockAccounts from "./MockAccounts.vibe"
+import { postName, type Identity } from "./roles.vibe"
 import type { IssuesApi } from "./issueSchemas.vibe"
 import { makeIssueFactory, makeIssueStore } from "./IssuesFactory.vibe"
 import { makeWikiFactory, makeWikiStore } from "./WikiFactory.vibe"
@@ -365,11 +366,12 @@ return Layer.effect(Factory, effect {
   const issueStore = try cached(makeIssueStore())
   const issueActors = new Map<string, IssuesApi>()
   const issueLock = try Semaphore.make(1)
-  const issuesForPerson = (person: { readonly id: string; readonly login: string }) => Semaphore.withPermits(issueLock, 1)(effect {
-    let api = issueActors.get(person.id)
+  const issuesForPerson = (person: Pick<Identity, "id" | "login" | "agent">) => Semaphore.withPermits(issueLock, 1)(effect {
+    const actorKey = person.id + (person.agent === true ? "/agent" : "/person")
+    let api = issueActors.get(actorKey)
     if (api === undefined) {
-      api = try Effect.provideService(makeIssueFactory(effect () => ({ ...person, role: try accounts.role(person.id) }), id => Effect.orDie(accounts.participated(id)), try issueStore), Scope.Scope, scope)
-      issueActors.set(person.id, api)
+      api = try Effect.provideService(makeIssueFactory(effect () => ({ ...person, kind: person.agent === true ? "agent" as const : "person" as const, role: try accounts.role(person.id) }), id => Effect.orDie(accounts.participated(id)), try issueStore), Scope.Scope, scope)
+      issueActors.set(actorKey, api)
     }
     return api
   })
@@ -381,11 +383,12 @@ return Layer.effect(Factory, effect {
   const wikiStore = try cached(makeWikiStore())
   const wikiActors = new Map<string, WikiApi>()
   const wikiLock = try Semaphore.make(1)
-  const wikiForPerson = (person: { readonly id: string; readonly login: string }) => Semaphore.withPermits(wikiLock, 1)(effect {
-    let api = wikiActors.get(person.id)
+  const wikiForPerson = (person: Pick<Identity, "id" | "login" | "agent">) => Semaphore.withPermits(wikiLock, 1)(effect {
+    const actorKey = person.id + (person.agent === true ? "/agent" : "/person")
+    let api = wikiActors.get(actorKey)
     if (api === undefined) {
-      api = try Effect.provideService(makeWikiFactory(effect () => ({ ...person, role: try accounts.role(person.id) }), try wikiStore), Scope.Scope, scope)
-      wikiActors.set(person.id, api)
+      api = try Effect.provideService(makeWikiFactory(effect () => ({ ...person, kind: person.agent === true ? "agent" as const : "person" as const, role: try accounts.role(person.id) }), try wikiStore), Scope.Scope, scope)
+      wikiActors.set(actorKey, api)
     }
     return api
   })
@@ -404,7 +407,7 @@ return Layer.effect(Factory, effect {
       const identity = try Effect.orDie(accounts.current())
       const room = try openRoom(conversation)
       const executionId = `post/${try Ref.updateAndGet(executions, (value) => value + 1)}`
-      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name: identity.login || name, text, owner: identity.id } }))
+      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name: postName(identity, name), text, owner: identity.id } }))
       if (refusal !== null) throw new Refused({ refusal })
       try Effect.orDie(accounts.participated(identity.id))
     },

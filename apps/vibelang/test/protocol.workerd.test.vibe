@@ -8,7 +8,13 @@ import { notDeployed } from "../src/surfaces/backend.vibe"
 import { REASONS } from "../worker/Reply.vibe"
 import { node, run } from "./support/processes.vibe"
 import { room, serveApi, serveSite, type Served } from "./support/workerd.vibe"
-import { cliPath } from "./surface-host.vibe"
+import { cliPath, serverPath } from "./surface-host.vibe"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { McpClient, McpProtocol } from "effect/ai"
+import { ChildProcess } from "effect/process"
+import { LoginOutput, LogoutOutput } from "../src/surfaces/signin.vibe"
+import { ReadOutput, AskOutput } from "../src/surfaces/commands.vibe"
 
 /** The platform the suites run on: Node.js's services, this Node.js executable, and fetch. */
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer, FetchHttpClient.layer)
@@ -109,4 +115,216 @@ describe("the site Worker without the API Worker", () => {
       })
     }
   }, 120_000)
+})
+
+
+/** The entries a CLI `read --json` printed, empty when its output isn't the expected JSON. */
+function entriesOf(text: string) {
+  try {
+    return (JSON.parse(text) as { readonly entries: ReadonlyArray<{ readonly name: string; readonly text: string }> }).entries
+  } catch {
+    return []
+  }
+}
+
+describe("the signed-in CLI process in local workerd", () => {
+  let device: Served | undefined
+  // The CLI is a separate process on the real socket, so the deployment's origin is the socket's: the same-origin
+  // mutation checks see exactly what production sees.
+  let deviceOrigin = ""
+  beforeAll(async () => {
+    const port = await runPromise(scoped(effect {
+      provide NodeHttpServer.layerTest {
+        const address = (try HttpServer.HttpServer).address
+        return address._tag === "UnixPathAddress" ? 0 : address.port
+      }
+    }))
+    deviceOrigin = `http://127.0.0.1:${port}`
+    device = await runPromise(serveApi({
+      VIBELANG_ORIGIN: deviceOrigin, VIBELANG_INITIAL_MAINTAINER_ID: "1",
+      GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+      SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      ACCOUNT_DEVICE_FIXTURE: "1",
+    }, port))
+  }, 120_000)
+  afterAll(async () => { await device?.dispose() })
+
+  /** An external identity provider fixture over a real socket; the shared GitHub adapter makes every request. */
+  effect function provider() {
+    const status = try Ref.make("authorization_pending")
+    const calls = try Ref.make(0)
+    const address = (try HttpServer.HttpServer).address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    try HttpServer.serveEffect(effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const path = new URL(request.url, origin).pathname
+      if (path === "/login/device/code") return HttpServerResponse.jsonUnsafe({ device_code: "private-device-code", user_code: "ABCD-EFGH", verification_uri: origin + "/device", expires_in: 600, interval: 1 })
+      if (path === "/login/oauth/access_token") {
+        try Ref.update(calls, count => count + 1)
+        const answer = try Ref.get(status)
+        return HttpServerResponse.jsonUnsafe(answer === "authorized" ? { access_token: "device-token-9", token_type: "bearer", scope: "read:user" } : { error: answer })
+      }
+      return HttpServerResponse.empty({ status: 404 })
+    })
+    return { origin, status, calls }
+  }
+
+  it.live("CLI device sign-in persists across processes, then logout revokes the session and a denied login fails", () => scoped(effect {
+    provide platform, NodeHttpServer.layerTest {
+      const github = try provider()
+      const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const env = { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: device!.origin, VIBELANG_GITHUB_WEB: github.origin, XDG_CONFIG_HOME: settings, NO_COLOR: "1" }
+      const command = effect (args: ReadonlyArray<string>) => try run(try node(), [try cliPath(), ...args], env)
+      const started = try command(["--json", "login", "--wait", "false"])
+      try Ref.set(github.status, "authorized")
+      try sleep("1100 millis")
+      const signed = try command(["--json", "login", "--wait", "false"])
+      const fs = try FileSystem.FileSystem
+      const sessionPath = (try Path.Path).join(settings, "vibelang-factory", "session.json")
+      const raw = try fs.readFileString(sessionPath)
+      const credential = try Effect.try(() => JSON.parse(raw) as { cookie: string })
+      const conversation = try room("device-cli")
+      try command(["ask", "device signed CLI", "--conversation", conversation])
+      const posted = entriesOf((try command(["--json", "read", "--conversation", conversation])).stdout)
+      const logout = try command(["logout"])
+      // layerTest also supplies a client pointed at the identity-provider fixture. Use native fetch for workerd.
+      const native = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+      const oldResponse = try native.execute(HttpClientRequest.get(device!.origin + "/api/auth/session").pipe(HttpClientRequest.setHeader("cookie", credential.cookie)))
+      const oldText = try oldResponse.text
+      try Effect.try(() => { expect(oldResponse.status, oldText).toBe(200); expect(oldText).not.toBe("") })
+      const old = try Effect.try(() => JSON.parse(oldText) as unknown)
+      try Ref.set(github.status, "access_denied")
+      try command(["login", "--wait", "false"])
+      try sleep("1100 millis")
+      const refused = try command(["login", "--wait", "false"])
+      try Effect.try(() => {
+        expect(started.status, started.stderr).toBe(0)
+        expect(JSON.parse(started.stdout)).toMatchObject({ status: "started", userCode: "ABCD-EFGH" })
+        expect(signed.status, signed.stderr).toBe(0)
+        expect(JSON.parse(signed.stdout)).toMatchObject({ status: "signed-in", login: "fixture-person-9" })
+        expect(posted.find(entry => entry.text === "device signed CLI")?.name).toBe("fixture-person-9 (agent)")
+        expect(logout.status).toBe(0)
+        expect(old, `HTTP ${oldResponse.status}: ${oldText}`).toMatchObject({ id: "", role: "viewer" })
+        expect(refused.status).toBe(1)
+        expect(refused.stderr).toContain("Sign-in declined")
+        expect(started.stdout + started.stderr + signed.stdout + signed.stderr + logout.stdout + refused.stderr).not.toMatch(/private-device-code|device-token-9|__Host-vibelang-session/)
+      })
+    }
+  }), 120_000)
+
+  it.live("the CLI waits through the SDK poll flow without journaling a device code, access token or cookie", () => scoped(effect {
+    provide platform, NodeHttpServer.layerTest {
+      const github = try provider()
+      try Ref.set(github.status, "authorized")
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const settings = try fs.makeTempDirectoryScoped()
+      const result = try run(try node(), [try cliPath(), "--json", "login"], { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: device!.origin, VIBELANG_GITHUB_WEB: github.origin, XDG_CONFIG_HOME: settings })
+      try Effect.try(() => { expect(result.status, result.stderr).toBe(0); expect(JSON.parse(result.stdout)).toMatchObject({ status: "signed-in" }) })
+      const root = path.join(settings, "vibelang-factory")
+      const credential = try fs.readFileString(path.join(root, "session.json"))
+      const cookie = try Effect.try(() => (JSON.parse(credential) as { cookie: string }).cookie)
+      const database = try fs.readFile(path.join(root, "flows.db"))
+      const journal = try Effect.try(() => new TextDecoder().decode(database))
+      try Effect.try(() => {
+        expect(journal).toContain("vibelang/SessionWait")
+        expect(journal).not.toContain("private-device-code")
+        expect(journal).not.toContain("device-token-9")
+        expect(journal).not.toContain(cookie)
+        expect(result.stdout + result.stderr).not.toContain(cookie)
+        expect(result.stdout + result.stderr).not.toContain("private-device-code")
+      })
+    }
+  }), 120_000)
+
+  it.live("a running stdio MCP server uses a new device session immediately and stops using it on logout", () => scoped(effect {
+    provide platform, NodeHttpServer.layerTest {
+      const github = try provider()
+      const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+      const env = { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: device!.origin, VIBELANG_GITHUB_WEB: github.origin, XDG_CONFIG_HOME: settings }
+      const command = ChildProcess.make(try node(), [try serverPath()], { env, extendEnv: true })
+      provide McpClient.layerStdio({ name: "Device sign-in test", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "20 seconds", command }) {
+        const client = try McpClient.McpClient
+        const tools = try client.listTools()
+        const login = tools.find(tool => tool.name === "login")!
+        const logout = tools.find(tool => tool.name === "logout")!
+        const ask = tools.find(tool => tool.name === "ask")!
+        const read = tools.find(tool => tool.name === "read")!
+        const started = try client.callTool({ tool: login, schema: LoginOutput, arguments: { wait: false } })
+        try Ref.set(github.status, "slow_down")
+        try sleep("1100 millis")
+        const slowed = try client.callTool({ tool: login, schema: LoginOutput, arguments: { wait: false } })
+        const calls = try Ref.get(github.calls)
+        const early = try client.callTool({ tool: login, schema: LoginOutput, arguments: { wait: false } })
+        const afterEarly = try Ref.get(github.calls)
+        try Ref.set(github.status, "authorized")
+        // Another process completes the shared grant while this MCP host stays running.
+        const signedCli = try run(try node(), [try cliPath(), "--json", "login"], env)
+        try Effect.try(() => expect(signedCli.status, signedCli.stderr).toBe(0))
+        const conversation = try room("device-mcp")
+        // A model is deliberately unconfigured; a refused reply still leaves the accepted post in the transcript.
+        try Effect.result(client.callTool({ tool: ask, schema: AskOutput, arguments: { conversation, text: "signed MCP" } }))
+        const posted = try client.callTool({ tool: read, schema: ReadOutput, arguments: { conversation } })
+        const signed = try client.callTool({ tool: login, schema: LoginOutput, arguments: {} })
+        try client.callTool({ tool: logout, schema: LogoutOutput, arguments: {} })
+        try Effect.result(client.callTool({ tool: ask, schema: AskOutput, arguments: { conversation, text: "unsigned MCP" } }))
+        const after = try client.callTool({ tool: read, schema: ReadOutput, arguments: { conversation } })
+        try Ref.set(github.status, "access_denied")
+        try client.callTool({ tool: login, schema: LoginOutput, arguments: { wait: false } })
+        try sleep("1100 millis")
+        const refused = try Effect.result(client.callTool({ tool: login, schema: LoginOutput, arguments: { wait: false } }))
+        try Effect.try(() => {
+          expect(started.status).toBe("started")
+          expect([slowed.status, early.status]).toEqual(["pending", "pending"])
+          expect(calls).toBe(1)
+          expect(afterEarly).toBe(calls)
+          expect(signed.status).toBe("signed-in")
+          expect(posted.entries.find(entry => entry.text === "signed MCP")?.name).toBe("fixture-person-9 (agent)")
+          expect(after.entries.find(entry => entry.text === "unsigned MCP")?.name).toBe("Guest")
+          expect(refused._tag).toBe("Failure")
+        })
+      }
+    }
+  }), 120_000)
+
+  it.live("posts as the person's agent while signed in, as Guest after logout, and never prints the cookie", () => effect {
+    provide platform {
+      const origin = device!.origin
+      const client = try HttpClient.HttpClient
+      // A completed device sign-in's end state, stored where the CLI keeps its settings; the flow itself and its
+      // refusals are covered in accounts.workerd.test.vibe.
+      const issued = try json(try client.execute(HttpClientRequest.post(origin + "/api/auth/device").pipe(
+        HttpClientRequest.setHeader("origin", deviceOrigin),
+        HttpClientRequest.bodyJsonUnsafe({ token: "device-token-9" }),
+      )))
+      const cookie = (issued as { readonly cookie: string }).cookie
+      const fs = try FileSystem.FileSystem
+      const path = try Path.Path
+      const settings = try fs.makeTempDirectory()
+      try fs.makeDirectory(path.join(settings, "vibelang-factory"), { recursive: true })
+      try fs.writeFileString(path.join(settings, "vibelang-factory", "session.json"), JSON.stringify({ origin, cookie, login: "fixture-person-9" }))
+      const env = { VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: origin, NO_COLOR: "1", XDG_CONFIG_HOME: settings }
+      const cliEnv = effect (args: ReadonlyArray<string>) => { return try run(try node(), [try cliPath(), ...args], env) }
+      const storedBack = try fs.readFileString(path.join(settings, "vibelang-factory", "session.json"))
+      try Effect.try(() => expect(storedBack).toContain("fixture-person-9"))
+      const conversation = try room("signed-cli")
+      // The reply fails for want of a model key, as every unconfigured workerd reply does; the post is recorded first.
+      const asked = try cliEnv(["ask", "by the signed-in CLI", "--conversation", conversation])
+      const read = try cliEnv(["--json", "read", "--conversation", conversation])
+      const signed = entriesOf(read.stdout)
+      const logout = try cliEnv(["logout"])
+      const removed = try fs.exists(path.join(settings, "vibelang-factory", "session.json"))
+      try cliEnv(["ask", "after logout", "--conversation", conversation])
+      const guest = entriesOf((try cliEnv(["--json", "read", "--conversation", conversation])).stdout)
+      try Effect.try(() => {
+        expect(signed.filter((entry) => entry.text === "by the signed-in CLI").map((entry) => entry.name)).toEqual(["fixture-person-9 (agent)"])
+        expect(asked.stderr).toContain("reply failed")
+        expect(logout.status).toBe(0)
+        expect(logout.stdout).toBe("Signed out.\n")
+        expect(removed).toBe(false)
+        expect(guest.filter((entry) => entry.text === "after logout").map((entry) => entry.name)).toEqual(["Guest"])
+        expect(asked.stdout + asked.stderr + read.stdout + logout.stdout + logout.stderr).not.toContain(cookie.split("=")[1]!)
+      })
+    }
+  })
 })

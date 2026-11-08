@@ -6,6 +6,7 @@ import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { ActionList, AskOutput, ReadOutput, RunId } from "../src/surfaces/commands.vibe"
 import { Registered, Run } from "../src/actions/Actions.vibe"
+import { LoginOutput, LogoutOutput } from "../src/surfaces/signin.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
 import { node } from "./support/processes.vibe"
 import { cliManifest, serverPath } from "./surface-host.vibe"
@@ -13,19 +14,24 @@ import { cliManifest, serverPath } from "./surface-host.vibe"
 /** The platform the suites run on: Node.js's services and this Node.js executable. */
 const platform = Layer.mergeAll(NodeServices.layer, ExperimentalNodeServices.layer)
 
-const clientLayer = Layer.unwrap(effect {
-  const command = ChildProcess.make(try node(), [try serverPath(), "--mock"])
-  return McpClient.layerStdio({
-    name: "Factory surface tests", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command,
-  })
-}).pipe(Layer.provide(platform))
+/** A server with its own empty settings directory, so a sign-in test never touches another's (or a real one). */
+function clientLayer(settings: string) {
+  return Layer.unwrap(effect {
+    const command = ChildProcess.make(try node(), [try serverPath(), "--mock"], { env: { XDG_CONFIG_HOME: settings }, extendEnv: true })
+    return McpClient.layerStdio({
+      name: "Factory surface tests", version: "1", protocol: McpProtocol.v2025_11_25, timeout: "10 seconds", command,
+    })
+  }).pipe(Layer.provide(platform))
+}
 
 // Match the CLI process suite: allow startup plus the MCP client's ten-second protocol deadline.
 const LIMIT = 30_000
 
 describe("built MCP stdio server through McpClient", () => {
   it.live("discovers the exact same names and schemas as the CLI manifest", () => effect {
-    provide clientLayer, platform {
+    provide platform {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+      provide clientLayer(settings) {
       const client = try McpClient.McpClient
       const tools = try client.listTools()
       const markdown = try cliManifest()
@@ -34,16 +40,19 @@ describe("built MCP stdio server through McpClient", () => {
         name: section.split("\n")[0], ...JSON.parse(section.split("```json\n")[1]!.split("\n```")[0]!),
       })))
       try Effect.try(() => {
-        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun", "wiki"])
+        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun", "wiki", "login", "logout"])
         expect(discovered).toEqual(tools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema })))
         // Compact discovery: about 1,000 characters per command on average.
         expect(markdown.length).toBeLessThan(1000 * tools.length)
       })
+      }
     }
   }, LIMIT)
 
   it.live("requests four specification reviews over real stdio and cannot submit a VIP acceptance", () => effect {
-    provide clientLayer {
+    provide platform {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+      provide clientLayer(settings) {
       const client = try McpClient.McpClient
       const issue = (try client.listTools()).find(tool => tool.name === "issue")!
       const output = Schema.Struct({ detail: Schema.String })
@@ -55,11 +64,14 @@ describe("built MCP stdio server through McpClient", () => {
       }
       const refused = try Effect.result(client.callTool({ tool: issue, schema: output, arguments: { op: "accept", number: 45, key: "mcp-cannot-accept" } }))
       try Effect.try(() => expect(refused._tag).toBe("Failure"))
+      }
     }
   }, LIMIT)
 
   it.live("asks, reads, polls after a cursor, and shares state across tool calls", () => effect {
-    provide clientLayer {
+    provide platform {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+      provide clientLayer(settings) {
       const client = try McpClient.McpClient
       const tools = try client.listTools()
       const ask = tools.find((tool) => tool.name === "ask")!
@@ -77,11 +89,14 @@ describe("built MCP stdio server through McpClient", () => {
         expect(tail.entries).toEqual([])
         expect(other.entries).toEqual([])
       })
+      }
     }
   }, LIMIT)
 
   it.live("starts actions and reads their real results across MCP tool calls", () => effect {
-    provide clientLayer {
+    provide platform {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+      provide clientLayer(settings) {
       const client = try McpClient.McpClient
       const tools = try client.listTools()
       const list = tools.find(tool => tool.name === "actions")!
@@ -98,11 +113,14 @@ describe("built MCP stdio server through McpClient", () => {
         expect(result.steps.some(step => step.state === "passed")).toBe(true)
         expect(next.id).not.toBe(first.id)
       })
+      }
     }
   })
 
   it.live("returns declared refusals and rejects malformed input through the protocol", () => effect {
-    provide clientLayer {
+    provide platform {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+      provide clientLayer(settings) {
       const client = try McpClient.McpClient
       const tools = try client.listTools()
       const ask = tools.find((tool) => tool.name === "ask")!
@@ -118,13 +136,44 @@ describe("built MCP stdio server through McpClient", () => {
       })
       const healthy = try client.callTool({ tool: read, schema: ReadOutput, arguments: {} })
       try Effect.try(() => expect(healthy.entries).toEqual([]))
+      }
+    }
+  }, LIMIT)
+
+  it.live("signs in as the fixture person's agent, names its posts, and signs out", () => effect {
+    provide platform {
+      const settings = try (try FileSystem.FileSystem).makeTempDirectory()
+      provide clientLayer(settings) {
+        const client = try McpClient.McpClient
+        const tools = try client.listTools()
+        const login = tools.find((tool) => tool.name === "login")!
+        const logout = tools.find((tool) => tool.name === "logout")!
+        const ask = tools.find((tool) => tool.name === "ask")!
+        const read = tools.find((tool) => tool.name === "read")!
+        const before = try client.callTool({ tool: logout, schema: LogoutOutput, arguments: {} })
+        const signedIn = try client.callTool({ tool: login, schema: LoginOutput, arguments: {} })
+        try client.callTool({ tool: ask, schema: AskOutput, arguments: { text: "from the signed-in agent" } })
+        const signed = try client.callTool({ tool: read, schema: ReadOutput, arguments: {} })
+        const out = try client.callTool({ tool: logout, schema: LogoutOutput, arguments: {} })
+        try client.callTool({ tool: ask, schema: AskOutput, arguments: { text: "after logout" } })
+        const guest = try client.callTool({ tool: read, schema: ReadOutput, arguments: {} })
+        try Effect.try(() => {
+          expect(before).toEqual({ signedOut: false })
+          expect(signedIn).toMatchObject({ status: "signed-in", login: "will" })
+          expect(signed.entries.find((entry) => entry.text === "from the signed-in agent")).toMatchObject({ name: "will (agent)" })
+          expect(out).toEqual({ signedOut: true })
+          expect(guest.entries.find((entry) => entry.text === "after logout")).toMatchObject({ name: "Factory CLI" })
+        })
+      }
     }
   }, LIMIT)
 })
 
 import { WikiState } from "../src/core/wikiSchemas.vibe"
 it.live("wiki read, draft and person submission share one MCP factory without changing the source", () => effect {
-  provide clientLayer {
+  provide platform {
+    const settings = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    provide clientLayer(settings) {
     const client = try McpClient.McpClient
     const wiki = (try client.listTools()).find(tool => tool.name === "wiki")!
     const read = try client.callTool({ tool: wiki, schema: WikiState, arguments: { op: "read", page: "roadmap" } })
@@ -137,5 +186,6 @@ it.live("wiki read, draft and person submission share one MCP factory without ch
       expect(review.review).toMatch(/\/pull\/[0-9]+$/)
       expect(after.pages.find(page => page.id === "roadmap")?.source).toBe(base)
     })
+  }
   }
 }, LIMIT)

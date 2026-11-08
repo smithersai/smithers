@@ -4,6 +4,9 @@ import { measure } from "./coverage-reporter"
 import { resolve } from "node:path"
 
 test("Chromium remapping retains a tree-shaken export and an unvisited nested Effect branch", async ({ context }, info) => {
+  // Cold compiler startup and bundle remapping exceed the UI deadline on the shared lane host.
+  // Keep every positive control before the known mapping-defect assertion.
+  test.setTimeout(120_000)
   const page = await context.newPage()
   const maps = new Map<string, Promise<unknown>>()
   page.on("response", (response) => {

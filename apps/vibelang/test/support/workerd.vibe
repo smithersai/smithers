@@ -79,8 +79,8 @@ export interface Served {
   readonly fetch: (request: Request) => Promise<Response>
 }
 
-effect function listen(config: Record<string, unknown>, bundleMap: Record<string, unknown> | undefined) {
-  const options = { host: "127.0.0.1", port: 0, workers: [{ config }] } as ConstructorParameters<typeof Miniflare>[0]
+effect function listen(config: Record<string, unknown>, port = 0, bundleMap: Record<string, unknown> | undefined = undefined) {
+  const options = { host: "127.0.0.1", port, workers: [{ config }] } as ConstructorParameters<typeof Miniflare>[0]
   if (bundleMap !== undefined) options.inspectorPort = 0
   const worker = try Effect.try({ try: () => new Miniflare(options), catch: (cause) => new WorkerdFailed({ cause }) })
   const url = try tryPromise({ try: () => worker.ready, catch: (cause) => new WorkerdFailed({ cause }) })
@@ -105,7 +105,7 @@ effect function listen(config: Record<string, unknown>, bundleMap: Record<string
 let apiBundle: Bundle | undefined
 
 /** The API Worker with `env` as its configuration: the deployment's Config, as text bindings. */
-export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
+export effect function serveApi(env: Readonly<Record<string, string>> = {}, port = 0) {
   provide NodeServices.layer {
     apiBundle ??= try bundle("../workerd/worker.vibe")
     const modules = try modulesOf(apiBundle)
@@ -131,7 +131,7 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
         SandboxLedger: { type: "durable-object", storage: "sqlite" },
         ActionIndex: { type: "durable-object", storage: "sqlite" },
       },
-    }, apiBundle.bundleMap)
+    }, port, apiBundle.bundleMap)
   }
 }
 
@@ -148,7 +148,7 @@ export effect function serveSite(withAssets = false) {
         env: { ASSETS: { type: "assets" } },
       } : {}),
       manifest: { mainModule: "worker.js", modules },
-    }, bundled.bundleMap)
+    }, 0, bundled.bundleMap)
   }
 }
 
@@ -170,7 +170,7 @@ export effect function serveWikiHost() {
       manifest: { mainModule: "worker.js", modules },
       env: { WIKI: { type: "durable-object", worker: "wiki", exportName: "WikiObject" } },
       exports: { WikiObject: { type: "durable-object", storage: "sqlite" } },
-    }, bundled.bundleMap)
+    }, 0, bundled.bundleMap)
   }
 }
 
@@ -184,6 +184,6 @@ export effect function serveIssuesHost() {
       manifest: { mainModule: "worker.js", modules },
       env: { ISSUES: { type: "durable-object", worker: "issues", exportName: "IssuesObject" } },
       exports: { IssuesObject: { type: "durable-object", storage: "sqlite" } },
-    }, bundled.bundleMap)
+    }, 0, bundled.bundleMap)
   }
 }

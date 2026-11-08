@@ -184,7 +184,7 @@ describe("ActionIdentity", () => {
     const role = try trusted.role("1")
     const deniedRole = try trusted.role("9")
     try Effect.try(() => {
-      expect(mine).toEqual({ owner: "1", name: "Ada", role: "maintainer" })
+      expect(mine).toEqual({ owner: "1", name: "Ada", agent: true, role: "maintainer" })
       expect(role).toBe("maintainer")
       expect(deniedRole).toBe("viewer")
     })
@@ -212,7 +212,7 @@ describe("ActionIdentity", () => {
     const trusted = ActionIdentity.fromAccounts(accounts, { owner: "9" })
     const request = HttpServerRequest.fromWeb(try HttpClientRequest.toWeb(HttpClientRequest.get("https://a.test/")))
     const mine = try trusted.request().pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, request))
-    try Effect.try(() => expect(mine).toEqual({ owner: "9", name: "Guest", role: "viewer" }))
+    try Effect.try(() => expect(mine).toEqual({ owner: "9", name: "Guest", agent: true, role: "viewer" }))
   })
 
   it.effect("reads the trusted principal only from entrypoint props", () => effect {

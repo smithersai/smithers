@@ -1,6 +1,6 @@
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
-import { serveApi, type Served } from "./support/workerd.vibe"
+import { room, serveApi, type Served } from "./support/workerd.vibe"
 
 let server: Served
 beforeAll(async () => { server = await runPromise(serveApi()) })
@@ -12,10 +12,12 @@ describe("account boundary in local workerd", () => {
       const response = try HttpClient.get(server.origin + "/api/auth/session")
       const session = try response.json
       const signIn = try HttpClient.get(server.origin + "/api/auth/sign-in")
+      const device = try HttpClient.get(server.origin + "/api/auth/device")
       try Effect.try(() => {
         expect(response.status).toBe(200)
         expect(session).toEqual({ id: "", login: "", role: "viewer", available: false })
         expect(signIn.status).toBe(503)
+        expect(device.status).toBe(503)
       })
     }
   })
@@ -240,4 +242,126 @@ describe("OAuth exchange faults by injected GitHub service", () => {
       })
     }
   })
+})
+
+describe("the CLI and MCP device sign-in in real workerd storage", () => {
+  let device: Served
+  const deviceOrigin = "https://factory.example"
+  beforeAll(async () => { device = await runPromise(serveApi({
+    VIBELANG_ORIGIN: deviceOrigin, VIBELANG_INITIAL_MAINTAINER_ID: "1",
+    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+    SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    ACCOUNT_DEVICE_FIXTURE: "1",
+  })) }, 120_000)
+  afterAll(async () => { await device?.dispose() })
+  effect function call(path: string, cookie = "", body?: unknown) {
+    const client = try HttpClient.HttpClient
+    const req = body === undefined ? HttpClientRequest.get(device.origin + path) : HttpClientRequest.post(device.origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body))
+    return try client.execute(req.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", deviceOrigin)))
+  }
+  effect function deviceSession(token: string) {
+    const response = try call("/api/auth/device", "", { token })
+    return { status: response.status, body: response.status === 200 ? ((try response.json) as { readonly cookie: string; readonly id: string; readonly login: string }) : undefined } as const
+  }
+  it.live("serves the client id, and turns only a valid device token into the person's agent session", () => effect {
+    provide FetchHttpClient.layer {
+      const route = try (try call("/api/auth/device")).json
+      const issued = try deviceSession("device-token-7")
+      const session = issued.body === undefined ? undefined : try (try call("/api/auth/session", issued.body.cookie)).json
+      const refused = try deviceSession("not-a-token")
+      const client = try HttpClient.HttpClient
+      const crossOrigin = try client.execute(HttpClientRequest.post(device.origin + "/api/auth/device").pipe(HttpClientRequest.setHeader("origin", "https://elsewhere.example"), HttpClientRequest.bodyJsonUnsafe({ token: "device-token-7" })))
+      try Effect.try(() => {
+        expect(route).toEqual({ clientId: "Iv1.fixture" })
+        expect(issued.status).toBe(200)
+        expect(session).toMatchObject({ id: "7", login: "fixture-person-7", role: "new", agent: true, available: true })
+        expect(refused.status).toBe(401)
+        expect(crossOrigin.status).toBe(403)
+      })
+    }
+  })
+  it.live("names the agent's posts with its label, carries the person's role, and never lets it approve or fold", () => effect {
+    provide FetchHttpClient.layer {
+      const agent = (try deviceSession("device-token-1")).body!.cookie
+      const person = ((try (try call("/__fixture/issue?id=1&login=will")).json) as { readonly cookie: string }).cookie
+      const conversation = try room("agent-posts")
+      const client = try HttpClient.HttpClient
+      const posted = try client.execute(HttpClientRequest.post(device.origin + "/api/conversations/" + conversation + "/posts").pipe(
+        HttpClientRequest.setHeader("origin", deviceOrigin), HttpClientRequest.setHeader("cookie", agent),
+        HttpClientRequest.bodyJsonUnsafe({ clientId: "agent-post", name: "forged-name", text: "by the agent" }),
+      ))
+      const snapshot = try (try call("/api/conversations/" + conversation)).json
+      const plan = { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(auth): the device lane's plan", task: "t" }
+      const plannedByAgent = try (try call("/api/history/plan", agent, plan)).json
+      const approveByAgent = try (try call("/api/history/approve", agent, { id: (plannedByAgent as { readonly id: string }).id })).json
+      const approveByPerson = try (try call("/api/history/approve", person, { id: (plannedByAgent as { readonly id: string }).id })).json
+      const crossPost = try client.execute(HttpClientRequest.post(device.origin + "/api/conversations/" + conversation + "/posts").pipe(
+        HttpClientRequest.setHeader("origin", "https://elsewhere.example"), HttpClientRequest.setHeader("cookie", agent),
+        HttpClientRequest.bodyJsonUnsafe({ clientId: "agent-cross", name: "forged-name", text: "cross" }),
+      ))
+      try Effect.try(() => {
+        expect(posted.status).toBe(200)
+        expect(snapshot).toMatchObject({ entries: expect.arrayContaining([expect.objectContaining({ author: "person", name: "fixture-person-1 (agent)", text: "by the agent" })]) })
+        expect(plannedByAgent).toMatchObject({ id: expect.any(String) })
+        expect((plannedByAgent as { readonly refusal?: unknown }).refusal).toBeUndefined()
+        expect((approveByAgent as { readonly refusal: string | null }).refusal).toBe("forbidden")
+        expect((approveByPerson as { readonly refusal: string | null }).refusal).not.toBe("forbidden")
+        expect(crossPost.status).toBe(409)
+      })
+    }
+  })
+  it.live("rechecks the person's role after demotion and refuses agent approval, fold and credential connection", () => effect {
+    provide FetchHttpClient.layer {
+      const agent = (try deviceSession("device-token-7")).body!.cookie
+      const maintainer = ((try (try call("/__fixture/issue?id=1&login=will")).json) as { cookie: string }).cookie
+      const plan = { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(auth): current grant", task: "t" }
+      const low = try call("/api/history/plan", agent, { ...plan, role: "maintainer", agent: false })
+      try call("/api/roles", maintainer, { id: "7", role: "contributor" })
+      const allowed = try (try call("/api/history/plan", agent, plan)).json
+      try call("/api/roles", maintainer, { id: "7", role: "new" })
+      const demoted = try call("/api/history/plan", agent, plan)
+      const fold = try call("/api/history/fold", agent, {})
+      const connect = try call("/api/auth/github", agent)
+      const ownerAgent = (try deviceSession("device-token-1")).body!.cookie
+      const refusedApprove = try call("/api/history/approve", ownerAgent, { id: (allowed as { id: string }).id, agent: false, role: "maintainer" })
+      const refusedFold = try call("/api/history/fold", ownerAgent, {})
+      try Effect.try(() => {
+        expect(low.status).toBe(403)
+        expect(allowed).toMatchObject({ id: expect.stringMatching(/^m/) })
+        expect(demoted.status).toBe(403)
+        expect(fold.status).toBe(403)
+        expect(connect.status).toBe(403)
+        expect(refusedApprove.status).toBe(403)
+        expect(refusedFold.status).toBe(403)
+      })
+    }
+  })
+
+  effect function tryHttp(path: string, cookie: string, body?: unknown) {
+    const request = body === undefined ? HttpClientRequest.get(device.origin + path) : HttpClientRequest.post(device.origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body))
+    return try (try HttpClient.HttpClient).execute(request.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", device.origin)))
+  }
+  it.live("registered posts and reruns keep the session's agent identity even when a caller claims the button door", () => effect {
+    provide FetchHttpClient.layer {
+      const agent = (try deviceSession("device-token-1")).body!.cookie
+      const id = "a" + (try room("deviceaction")).replaceAll("-", "")
+      const actionCall = (path: string, body?: unknown) => (tryHttp(path, agent, body))
+      const started = try actionCall("/api/actions/runs", { id, flow: "vibelang/Post", door: "button", input: { text: "registered device post" }, actor: "person", name: "forged" })
+      const run = try (try actionCall("/api/actions/runs/" + id)).json
+      const posts = try (try call("/api/conversations/action-" + id)).json
+      const next = id + "r"
+      const rerun = try actionCall("/api/actions/runs/" + id + "/rerun", { id: next })
+      const repeated = try (try actionCall("/api/actions/runs/" + next)).json
+      const repeatedPosts = try (try call("/api/conversations/action-" + next)).json
+      try Effect.try(() => {
+        expect(started.status).toBe(202)
+        expect(run).toMatchObject({ actor: "agent" })
+        expect(posts).toMatchObject({ entries: expect.arrayContaining([expect.objectContaining({ name: "fixture-person-1 (agent)", text: "registered device post" })]) })
+        expect(rerun.status).toBe(202)
+        expect(repeated).toMatchObject({ actor: "agent" })
+        expect(repeatedPosts).toMatchObject({ entries: expect.arrayContaining([expect.objectContaining({ name: "fixture-person-1 (agent)" })]) })
+      })
+    }
+  })
+
 })

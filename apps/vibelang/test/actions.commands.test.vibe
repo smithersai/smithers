@@ -1,7 +1,9 @@
 import { expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { backend } from "../src/surfaces/backend.vibe"
 import { ListActions, RunWorkflow, ReadRun, Rerun } from "../src/surfaces/commands.vibe"
 it.live("agent surfaces discover real actions, run by schema, read results and re-run stored input", () => effect {
+  provide NodeServices.layer {
   provide backend(true, undefined) {
     const list = try ListActions.run({})
     const first = try RunWorkflow.run({ flow: "vibelang/Post", input: '{"text":"How do I install it?"}', wait: true })
@@ -15,5 +17,6 @@ it.live("agent surfaces discover real actions, run by schema, read results and r
       expect(repeated.id).not.toBe(first.id)
       expect(invalid).toBe("Invalid action input.")
     })
+  }
   }
 })

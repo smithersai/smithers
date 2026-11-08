@@ -65,10 +65,10 @@ export function directory(hostId: string, storage: Storage, runs: Runs, authorit
       return try (try FlowRuntime.FlowRuntime).execute(CancelAction, { executionId: `cancel/${id}`, payload: { id } })
     }, runtime))
   }
-  effect function rerun(id: string, next: string, role: Role, owner = "") {
+  effect function rerun(id: string, next: string, role: Role, owner = "", caller?: { readonly name: string; readonly actor: "person" | "agent" }) {
     const original = try Effect.orDie(runs.request(id))
     if (original === undefined) return "not-found"
-    return try start({ ...original, owner, id: next, door: "button", actor: "person" }, role)
+    return try start({ ...original, ...caller, owner, id: next, door: "button" }, role)
   }
   return { list, start, cancel, rerun }
 }

@@ -9,7 +9,7 @@ import type { Unreachable } from "./Unreachable.vibe"
 export interface ActionsApi {
   list(flow: string): ReadonlyArray<Run>!Unreachable
   start(request: RunRequest, role: Role): (string | null)!Unreachable
-  rerun(id: string, next: string, role: Role, owner: string): (string | null)!Unreachable
+  rerun(id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }): (string | null)!Unreachable
   cancel(id: string, role: Role, owner: string): (string | null)!Unreachable
   read(id: string): ReadonlyArray<Run>!Unreachable
   events(id: string): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
@@ -38,7 +38,7 @@ export effect function handle(api: ActionsApi, url: URL) {
     if (body === undefined || !/^a[a-zA-Z0-9-]{1,64}$/.test(body.id)) return json({ code: "input" }, 400)
     const entry = registration(body.flow)
     if (!allowed(principal.role, entry)) return json({ code: "forbidden" }, 403)
-    const refusal = try api.start({ ...body, owner: principal.owner, name: principal.name ?? "Guest", actor: body.door === "agent" ? "agent" : "person" }, principal.role)
+    const refusal = try api.start({ ...body, owner: principal.owner, name: principal.name ?? "Guest", actor: principal.agent === true || body.door === "agent" ? "agent" : "person" }, principal.role)
     return refusal === null ? json({ id: body.id }, 202) : json({ code: refusal }, refusal === "forbidden" ? 403 : 409)
   }
   const parts = url.pathname.slice(`${ACTIONS_PATH}/runs/`.length).split("/")
@@ -49,7 +49,7 @@ export effect function handle(api: ActionsApi, url: URL) {
     if (raw.status !== 200) return json({ code: "input" }, raw.status)
     const body = Schema.decodeUnknownEffect(Schema.fromJsonString(RerunBody))(raw.text) catch () => undefined
     if (body === undefined || !/^a[a-zA-Z0-9-]{1,64}$/.test(body.id)) return json({ code: "input" }, 400)
-    const refusal = try api.rerun(id, body.id, principal.role, principal.owner)
+    const refusal = try api.rerun(id, body.id, principal.role, principal.owner, { name: principal.name ?? "Guest", actor: principal.agent === true ? "agent" : "person" })
     return refusal === null ? json({ id: body.id }, 202) : json({ code: refusal }, refusal === "forbidden" ? 403 : 404)
   }
   if (request.method === "GET" && parts.length === 2 && parts[1] === "events") return try api.events(id)

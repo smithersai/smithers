@@ -301,3 +301,24 @@ it.effect("a fresh engine adopts the fixture repository's original keyed review 
   const proposals = try Ref.get(store.proposals)
   try Effect.try(() => { expect(recovered.review).toBe(submitted.review); expect(proposals).toHaveLength(1) })
 }))
+
+it.effect("a signed-in person's agent drafts with their role but cannot submit a wiki review, even after the person used the same mock", () => scoped(effect {
+  provide MockFactory {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    const wiki = factory.wiki!
+    try accounts.choose("maintainer")
+    const base = (try wiki.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+    const request = { op: "save" as const, page: "roadmap", base, text: base + "\nPerson review.\n", key: "same-person-review" }
+    const personReview = try wiki.act(request)
+    try accounts.signInAgent()
+    const draft = try wiki.act({ ...request, op: "draft", text: "Agent draft", key: "agent-draft" })
+    const replay = try Effect.result(wiki.act(request))
+    const proposal = try Effect.result(wiki.act({ ...request, op: "propose", key: "agent-propose" }))
+    try Effect.try(() => {
+      expect(personReview.review).toMatch(/\/pull\/[0-9]+$/)
+      expect(draft.draft?.text).toContain("Agent draft")
+      for (const refusal of [replay, proposal]) expect(refusal).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+    })
+  }
+}))

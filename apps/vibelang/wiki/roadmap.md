@@ -35,9 +35,9 @@ brick                                   state         proof
 
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 2,508 executable items. Seventeen modules carry contracts and 962 current mutant copies match actual Dafny rejections; unproved logic and tool boundaries remain explicit.
 
-- **CLI and MCP sign-in (VL-26).** Since sign-in (0019) the server names posts from the session, so the CLI's and
-  MCP server's posts read "Guest". They need a person's sign-in (GitHub device flow) so the agent's posts carry
-  that person's agent identity. Found by `e2e/live.spec.ts` against production, 2026-11-08.
+- **CLI and MCP sign-in (VL-26): implemented; lead deploys.** 0028: `login`/`logout` run GitHub's device flow through the shared
+  integrations auth; the server names the agent's posts `<login> (agent)`, carries the person's role and refuses it
+  approve, fold and merge. Journaled native flows, private shared settings and a persistent MCP host are covered. Live sign-in waits on device flow enabled on the GitHub OAuth app (the lane report).
 
 ## Open work outside this app
 

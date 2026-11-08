@@ -14,7 +14,7 @@ function commandFor<D extends (typeof commands)[number]>(definition: D, environm
   return Command.make(definition.name, definition.parameters, effect (input) => {
     const json = try Json
     const mock = try Mock
-    provide backend(mock, environment) {
+    provide backend(mock, environment, definition.name !== "login" && definition.name !== "logout") {
       try Console.log(try definition.render(input, json))
     }
   }).pipe(Command.withDescription(definition.description))

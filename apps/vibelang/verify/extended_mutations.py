@@ -4885,3 +4885,10 @@ cases.extend([('src/web/modelDecision.vibe', 'model-failure-text-grant', 'accoun
  ('src/web/modelDecision.vibe', 'model-sandbox-low-once', 'sandboxLowMinutes', ' && warnedMonth !== resetAt', '', 'one warning per reset month'),
  ('src/web/modelDecision.vibe', 'model-sandbox-pane-edge', 'sandboxPaneOpens', 'status === "running" && previous !== "running"', 'status === "running"', 'only the transition opens the pane'),
  ('src/web/modelDecision.vibe', 'model-sandbox-pane-running', 'sandboxPaneOpens', 'status === "running" && previous !== "running"', 'previous !== "running"', 'a stopped sandbox opens no pane')])
+
+# Session-derived agent presentation (0028). Each mutation keeps every production contract unchanged.
+cases.extend([('src/core/identityDecision.vibe', *case) for case in [
+  ('identity-guest', 'postLabel', 'if (id === "") return guest', 'if (id === "") return login', 'an unsigned caller never chooses the author'),
+  ('identity-agent', 'postLabel', 'return agent ? login + " (agent)" : login', 'return agent ? login : login', 'an agent session always carries its label'),
+  ('identity-person', 'postLabel', 'return agent ? login + " (agent)" : login', 'return agent ? login + " (agent)" : guest', 'a person keeps their authenticated login'),
+]])

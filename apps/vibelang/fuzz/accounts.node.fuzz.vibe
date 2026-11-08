@@ -25,6 +25,7 @@ const refused = new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unava
 const setup = (login: string) => ({
   origin: "https://fuzz.invalid",
   initialMaintainer: "1",
+  clientId: "fixture-client-id",
   signingSecret: Redacted.make("signing-secret-for-the-fuzz-target-32"),
   encryptionKey: Redacted.make("ZnV6ei1lbmNyeXB0aW9uLWtleS0zMi1ieXRlcy0wMDA="),
   github: {

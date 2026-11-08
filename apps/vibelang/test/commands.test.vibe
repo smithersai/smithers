@@ -1,4 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
 import { Ask, AskOutput, Read } from "../src/surfaces/commands.vibe"
 import { backend, unreachable } from "../src/surfaces/backend.vibe"
 import { Factory } from "../src/core/Factory.vibe"
@@ -94,7 +95,16 @@ describe("Factory commands", () => {
 })
 
 effect function withBackend(mock: boolean, environment: string | undefined) {
-  provide backend(mock, environment) {
-    return try Read.run({})
-  }
+  // An empty settings directory, composed over the ambient provider so the caller's overrides still win.
+  const isolated = ConfigProvider.layer(effect {
+    const current = try ConfigProvider.ConfigProvider
+    return ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: "/tmp/vibelang-factory-commands-test" }).pipe(ConfigProvider.orElse(current))
+  })
+  return try Effect.provide(effect {
+    provide NodeServices.layer {
+      provide backend(mock, environment) {
+        return try Read.run({})
+      }
+    }
+  }, isolated)
 }

@@ -2,7 +2,7 @@
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
-import { applyWikiEdits, emptyWikiEdits, wikiPermission, type Role, type WikiEdits, type WikiPageState } from "./conversation.vibe"
+import { applyWikiEdits, emptyWikiEdits, type Role, type WikiEdits, type WikiPageState } from "./conversation.vibe"
 import { WikiHost, wikiEditFlows, wikiEditRegistration, authorizeWiki, wikiExecutionId } from "./wikiFlows.vibe"
 import { WikiFailure, WikiRequest, type WikiApi } from "./wikiSchemas.vibe"
 import { pages } from "./wiki.vibe"
@@ -31,7 +31,8 @@ export effect function fixtureWikiHost(identity: FixtureIdentity, store: WikiFix
     perform: (request) => store.lock.withPermit(effect {
       const person = try personOf(identity)
       const instance = try FlowRuntime.FlowInstance
-      if (!instance.executionId.startsWith(`wiki/${person.id || "public"}/`) || !wikiPermission(person.role, request.op)) throw new WikiFailure({ reason: "forbidden" })
+      if (!instance.executionId.startsWith(`wiki/${person.id || "public"}/`)) throw new WikiFailure({ reason: "forbidden" })
+      try authorizeWiki(person.role, request.op, person.kind ?? "person")
       const before = try Ref.get(store.state)
       const known = request.page !== "decisions" && fixtureSource(request.page) !== undefined
       if (request.op === "read") {
@@ -85,7 +86,7 @@ export effect function makeWikiFactory(identity: FixtureIdentity = "maintainer",
     const person = try personOf(identity)
     const flow = wikiEditFlows.find((f) => f._tag === `vibelang/wiki/${request.op}`)
     if (flow === undefined) throw new WikiFailure({ reason: "invalid", unwritten: true })
-    try authorizeWiki(person.role, request.op)
+    try authorizeWiki(person.role, request.op, person.kind ?? "person")
     const { recovery: _recovery, ...payload } = request
     const executionId = try wikiExecutionId(person.id || "public", request.op, request.key)
     const result = try engine.execute(flow, { executionId, payload }).pipe(

@@ -4,7 +4,7 @@ import { Node } from "@smthrs/plan"
 import { WebCrypto } from "@smthrs/crypto"
 import { Digest } from "effect/crypto"
 import { apply, decide, empty, leastRole, roleOf, type Event, type GrantMode, type Role } from "./conversation.vibe"
-import { Denied, type Policy, type Accounts, type Identity, viewer } from "./roles.vibe"
+import { AccountUnavailable, Denied, type Policy, type Accounts, type Identity, viewer } from "./roles.vibe"
 
 const Change = Flow.make("vibelang/GrantRole", {
   description: "Records a project role grant through the shared sequencer.",
@@ -29,6 +29,8 @@ export effect function make() {
   const log = try Ref.make<ReadonlyArray<Event>>(seeded)
   const published = try acquireRelease(PubSub.unbounded<Event>(), PubSub.shutdown)
   const selected = try Ref.make("")
+  // Whether the selection is the person's agent (the surfaces' mock sign-in, decision 0028), never the person.
+  const agent = try Ref.make(false)
   const counter = try Ref.make(10)
   const people = try Ref.make<ReadonlyArray<{ readonly id: string; readonly login: string }>>([
     { id: "1", login: "will" }, { id: "2", login: "joss" }, { id: "3", login: "ada" }, { id: "4", login: "rira" }, { id: "5", login: "mina" },
@@ -66,7 +68,7 @@ export effect function make() {
     if (id === "") return viewer
     const person = (try Ref.get(people)).find(p => p.id === id)!
     const ledger = try Ref.get(state)
-    return { ...person, role: roleOf(ledger.roles, id), ledger } satisfies Identity
+    return { ...person, role: roleOf(ledger.roles, id), ...((try Ref.get(agent)) ? { agent: true as const } : {}), ledger } satisfies Identity
   }
   const policy: Policy.Shape = {
     authorize: effect (actor, action) => {
@@ -90,8 +92,21 @@ export effect function make() {
       const refused = try change(id, actor.id, role, "person")
       if (refused !== null) throw new Denied({ action: "roles", least: "maintainer" })
     },
-    signOut: () => Ref.set(selected, ""),
+    signOut: effect () => {
+      try Ref.set(agent, false)
+      try Ref.set(selected, "")
+    },
+    signInAgent: effect () => {
+      const grants = (try Ref.get(state)).roles
+      const maintainer = (try Ref.get(people)).find(person => roleOf(grants, person.id) === "maintainer")
+      if (maintainer === undefined) throw new AccountUnavailable({ reason: "no fixture" })
+      try Ref.set(selected, maintainer.id)
+      try Ref.set(agent, true)
+      return try current()
+    },
     choose: effect (role) => {
+      // Visit as is the person at a browser, never their agent.
+      try Ref.set(agent, false)
       if (role === "viewer") { try Ref.set(selected, ""); return viewer }
       const grants = (try Ref.get(state)).roles
       const existing = (try Ref.get(people)).find(person => roleOf(grants, person.id) === role)

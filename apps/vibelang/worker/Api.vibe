@@ -19,7 +19,7 @@ import * as ActionDirectory from "./ActionDirectory.vibe"
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy"
 import * as Accounts from "./Accounts.vibe"
-import type { Identity } from "../src/core/roles.vibe"
+import { postName, type Identity } from "../src/core/roles.vibe"
 import { HttpServerRequest } from "effect/http"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
@@ -65,7 +65,8 @@ export interface BudgetShape {
 
 export interface HistoryShape {
   readonly page: (request: PageRequest) => unknown!!RuntimeContext
-  readonly write: (name: Write, body: unknown) => HistoryObject.Answered!!RuntimeContext
+  /** A write as the request's signed-in identity (0028); a visitor is a viewer and is refused. */
+  readonly write: (name: Write, body: unknown, principal: Principal) => HistoryObject.Answered!!RuntimeContext
   /** A write as `principal`: only the API Worker's own objects call it (`HistoryObject.readerOver`). */
   readonly act: (name: Write, body: unknown, principal: Principal, operation: string) => HistoryObject.Answered!!RuntimeContext
 }
@@ -127,7 +128,7 @@ const AccountsLive = ProjectAccounts.make(effect {
 export interface ActionDirectoryShape {
   readonly list: (flow: string) => ReadonlyArray<Run>!!RuntimeContext
   readonly start: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
-  readonly rerun: (id: string, next: string, role: Role, owner: string) => (string | null)!!RuntimeContext
+  readonly rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => (string | null)!!RuntimeContext
   readonly cancel: (id: string, role: Role, owner: string) => (string | null)!!RuntimeContext
 }
 export class ActionIndex extends Cloudflare.DurableObject<ActionIndex, ActionDirectoryShape>()("ActionIndex") {}
@@ -181,8 +182,8 @@ const HistoryLive = History.make(effect {
     return {
       // Each page is computed here, beside the history, so a reader gets only what it shows.
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
-      write: (name: Write, body: unknown) =>
-        HistoryObject.write(hostId, state.raw.storage, sequencer, main, HistoryObject.principalOf(undefined), name, body),
+      write: (name: Write, body: unknown, principal: Principal) =>
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body),
       act: (name: Write, body: unknown, principal: Principal, operation: string) =>
         HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body, operation),
       fetch: effect {
@@ -308,7 +309,7 @@ const ActionIndexLive = ActionIndex.make(effect {
     return {
       list: directory.list,
       start: (request: RunRequest, role: Role) => Effect.orDie(directory.start(request, role)),
-      rerun: (id: string, next: string, role: Role, owner: string) => Effect.orDie(directory.rerun(id, next, role, owner)),
+      rerun: (id: string, next: string, role: Role, owner: string, caller?: { readonly name: string; readonly actor: "person" | "agent" }) => Effect.orDie(directory.rerun(id, next, role, owner, caller)),
       cancel: (id: string, role: Role, owner: string) => Effect.orDie(directory.cancel(id, role, owner)),
     }
   }
@@ -381,7 +382,7 @@ const program = effect {
           const account = try objectOf(accounts, "project", "accounts")
           const identity = try reached(runtime, "accounts", account.current(request.cookies[Accounts.SESSION]))
           if (identity.id !== "" && !Accounts.sameOrigin(request)) return "forbidden"
-          const refusal = try reached(runtime, "conversation", object.post(body.clientId, identity.login || "Guest", body.text, identity.id))
+          const refusal = try reached(runtime, "conversation", object.post(body.clientId, postName(identity), body.text, identity.id))
           if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(request.cookies[Accounts.SESSION]))
           return refusal
         },
@@ -418,7 +419,14 @@ const program = effect {
         },
         write: effect (name, body) => {
           const object = try objectOf(histories, REPOSITORY, "history")
-          return try reached(runtime, "history", object.write(name, body))
+          const account = try objectOf(accounts, "project", "accounts")
+          const identity = try reached(runtime, "accounts", account.current(request.cookies[Accounts.SESSION]))
+          if (identity.id !== "" && !Accounts.sameOrigin(request)) return { id: "", folded: 0, refusal: "forbidden" }
+          // The person acts, or their agent for them with their role; the history machine refuses agents approve and fold.
+          const principal: Principal = identity.id === ""
+            ? { role: "viewer", name: "Guest", agent: false }
+            : { role: identity.role, name: identity.login, agent: identity.agent === true }
+          return try reached(runtime, "history", object.write(name, body, principal))
         },
         events: effect () => {
           const request = try HttpServerRequest.HttpServerRequest
@@ -428,9 +436,9 @@ const program = effect {
       }
       const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
       const actionApi: ActionsApi = {
-        rerun: effect (id, next, role, owner) => {
+        rerun: effect (id, next, role, owner, caller) => {
           const object = try objectOf(actions, "vibelang", "actions")
-          return try reached(runtime, "actions", object.rerun(id, next, role, owner))
+          return try reached(runtime, "actions", object.rerun(id, next, role, owner, caller))
         },
         list: effect (flow) => {
           const object = try objectOf(actions, "vibelang", "actions")

@@ -47,6 +47,7 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
         members: effect () => { return try (try ready).factory.accounts!.members() },
         grant: effect (id, role) => { try (try ready).factory.accounts!.grant(id, role) },
         signOut: effect () => { try (try ready).factory.accounts!.signOut() },
+        signInAgent: effect () => { return try (try ready).factory.accounts!.signInAgent() },
         choose: effect (role) => { return try (try ready).factory.accounts!.choose(role) },
         participated: effect (id) => { try (try ready).factory.accounts!.participated(id) },
         events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts!.events(after) }),

@@ -13,6 +13,7 @@ import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutio
 import { IssueFailure, IssueRequest, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
 import type { Storage } from "./Objects.vibe"
 
+/** `kind: "agent"` marks a device sign-in (decision 0028); agents never approve, accept, decline or merge. */
 export interface Principal { readonly id: string; readonly login: string; readonly role: Role; readonly token: Redacted.Redacted<string>; readonly kind?: "person" | "agent" }
 export service IssueAuthority {
   current(): (Principal | undefined)!IssueFailure

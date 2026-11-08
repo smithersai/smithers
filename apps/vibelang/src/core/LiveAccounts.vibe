@@ -29,6 +29,7 @@ export effect function make(origin: string) {
     grant: (id, role) => post("/api/roles", { id, role }),
     signOut: () => post("/api/auth/sign-out", {}).pipe(Effect.mapError(failed)),
     choose: () => Effect.fail(failed()),
+    signInAgent: () => Effect.fail(failed()),
     participated: () => Effect.void,
     events: (after) => Stream.unwrap(effect {
       const response = try Effect.mapError(client.get(origin + "/api/roles/events?after=" + after), failed)

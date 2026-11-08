@@ -1,0 +1,64 @@
+// @vitest-environment node
+import { expect, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Login } from "../src/surfaces/commands.vibe"
+import { backend } from "../src/surfaces/backend.vibe"
+
+it.live("counts and observes real sign-in without names, cookies or device codes in telemetry", () => scoped(effect {
+  provide NodeServices.layer {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    const lines = try Ref.make<ReadonlyArray<string>>([])
+    const capture = Logger.layer([Logger.make(options => {
+      runSync(Ref.update(lines, rows => [...rows, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+    })])
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })), capture {
+      provide backend(true, undefined) {
+        const counter = Metric.withAttributes(Metric.counter("vibelang_session_steps", { incremental: true }), { step: "login", outcome: "signed-in" })
+        const before = try Metric.value(counter)
+        const result = try Login.run({})
+        const after = try Metric.value(counter)
+        const records = (try Ref.get(lines)).filter(line => line.includes('"vibelang.session"'))
+        try Effect.try(() => {
+          expect(result).toMatchObject({ status: "signed-in", login: "will" })
+          expect(Number(after.count)).toBe(Number(before.count) + 1)
+          expect(records).toHaveLength(1)
+          expect(records[0]).toContain("signed-in")
+          expect(records[0]).not.toMatch(/will|cookie|deviceCode|userCode/)
+        })
+      }
+    }
+  }
+}))
+
+it.live("mock login and logout preserve the live session and make no network request", () => scoped(effect {
+  const { HttpServer, HttpServerResponse } = try promise(() => import("effect/http"))
+  const NodeHttpServer = try promise(() => import("@effect/platform-node/NodeHttpServer"))
+  const { writeSession, readSession } = try promise(() => import("../src/surfaces/session.vibe"))
+  const { Logout } = try promise(() => import("../src/surfaces/commands.vibe"))
+  provide NodeServices.layer, NodeHttpServer.layerTest {
+    const directory = try (try FileSystem.FileSystem).makeTempDirectoryScoped()
+    const requests = try Ref.make(0)
+    try HttpServer.serveEffect(effect { try Ref.update(requests, n => n + 1); return HttpServerResponse.empty({ status: 503 }) })
+    const address = (try HttpServer.HttpServer).address
+    const origin = address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+    const session = { origin, cookie: "__Host-vibelang-session=private-live-session", login: "real-person" }
+    provide ConfigProvider.layer(ConfigProvider.fromUnknown({ XDG_CONFIG_HOME: directory })) {
+      try writeSession(session)
+      provide backend(true, undefined) {
+        const absentMockLogout = try Effect.result(Logout.run({}))
+        try Effect.try(() => expect(absentMockLogout._tag).toBe("Success"))
+        const fixture = try Login.run({})
+        const liveAfterLogin = try readSession()
+        try Logout.run({})
+        const liveAfterLogout = try readSession()
+        const count = try Ref.get(requests)
+        try Effect.try(() => {
+          expect(fixture).toMatchObject({ status: "signed-in", login: "will" })
+          expect(liveAfterLogin).toEqual(session)
+          expect(liveAfterLogout).toEqual(session)
+          expect(count).toBe(0)
+        })
+      }
+    }
+  }
+}))

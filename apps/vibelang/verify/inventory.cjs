@@ -9,6 +9,11 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
+  'src/core/roles.vibe': 'Post author formatting delegates to the proved identityDecision; role grants delegate to the existing proved policy. Session signature/expiry checks and Effect service execution remain host/library boundaries.',
+  'src/surfaces/session.vibe': 'Private atomic settings and credential-origin decoding are OS/FileSystem/Schema boundaries, exercised over real files and a faulty permissions service. No proof of filesystem permissions, atomic rename or JSON decoding is claimed.',
+  'src/surfaces/signin.vibe': 'GitHub device transport, interval persistence, session validation and logout run inside journaled native Actions. GitHub responses, clocks, HTTP, private settings and Effect execution remain tested host boundaries, not formal proofs.',
+  'src/surfaces/sessionFlow.vibe': 'Delegates mutations and polling/waits to the existing native SQLite flow host, Action, Poll and Sleep; bounded outcome-only observations and SDK execution remain host/library boundaries.',
+
   'src/web/historyApp.vibe': 'Calls proved role thresholds, live role reset, open-epic membership, plan initialization/validation/field selection. Remaining page merges, async response guards, complete model frames and command scheduling remain unproved.',
   'src/history/LiveMythical.vibe': 'Calls proved accepted/refused/unavailable HTTP outcome mapping. Native HTTP/SSE and JSON/Schema codecs remain boundaries.',
 
@@ -37,6 +42,8 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  'src/core/identityDecision.vibe': 'Proved exact unsigned guest, authenticated person and authenticated agent post labels. Signature verification and session persistence supplying the fields remain host/library boundaries (0028).',
+
   'src/web/modelDecision.vibe': 'Web update decisions: account failure text and retry routing, sign-in and role gates, people pane sizing, account-change and grant detection, stale-response fences for actions, issues and wiki, monotone actions clock, bounded slash highlight, sandbox minute notices and the running transition; proved (0018 batch 21).',
   'worker/replyProgressDecision.vibe': 'Complete event-kind routing, ignored/non-text identity transitions, closed bounded token invariant, zero base/exact sum recurrence, native-validation admission flags, text/retry/failure frames, latched malformed telemetry and completion precedence; proved over the established integer domain. Native Number.isSafeInteger observations and provider/DoneText decoding are host boundaries (safe-usage-integer.ts).',
   'worker/liveDispatchDecision.vibe': 'Proved exact scan cursor and first-unmarked selection, no skipped unmarked post, terminal idempotency and one engine attempt per invocation, including refusal; storage-mark truth and engine execution are host boundaries.',

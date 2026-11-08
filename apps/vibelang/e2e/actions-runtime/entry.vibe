@@ -2,6 +2,7 @@
 import { Runtime } from "foldkit"
 import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
+import { Factory } from "../../src/core/Factory.vibe"
 import { mockFactoryFor } from "../../src/core/MockFactory.vibe"
 import { MockActions } from "../../src/actions/MockActions.vibe"
 import type { Role } from "../../src/actions/Actions.vibe"
@@ -24,7 +25,15 @@ const program = await runPromise(effect {
       document.head.append(style)
       return document.getElementById("root")!
     })
-    const factory = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role)
+    const base = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role)
+    // A fixture agent's real Post flow, observed by a signed-out browser through the unchanged label component.
+    const factory = params.get("agent") === "yes" ? Layer.effect(Factory, effect {
+      const product = Context.get(try Layer.build(base), Factory)
+      try Effect.orDie(product.accounts!.signInAgent())
+      try Effect.orDie(product.post("home", "fixture-agent-post", "forged", "From the signed-in agent"))
+      try Effect.orDie(product.accounts!.signOut())
+      return product
+    }) : base
     return application(root, factory, () => {}, undefined, MockActions({ role, actor: "person" }))
   }
 })

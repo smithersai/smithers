@@ -19,6 +19,14 @@ export class ProjectAccounts {
       if (setup === undefined) return undefined
       const configured = env.ACCOUNT_FAULT === "exchange" ? {
         ...setup, github: { ...setup.github, exchange: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })) },
+      } : env.ACCOUNT_DEVICE_FIXTURE === "1" ? {
+        // The device flow's GitHub, fixed by the suite: `device-token-<id>` is that person's access token.
+        ...setup, github: { ...setup.github, user: (token: Redacted.Redacted<string>) => {
+          const id = Redacted.value(token).startsWith("device-token-") ? Number(Redacted.value(token).slice("device-token-".length)) : 0
+          return Number.isSafeInteger(id) && id > 0
+            ? succeed({ id, login: "fixture-person-" + id })
+            : fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" }))
+        } },
       } : setup
       return await runPromise(Accounts.make(state.id.toString(), state.storage, configured).pipe(Effect.provide(FetchHttpClient.layer)))
     })

@@ -10,6 +10,7 @@ import { Entry, Seq } from "../core/schemas.vibe"
 import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { CommitPage, Head, Outline } from "../history/pages.vibe"
+import { LoginInput, LoginOutput, LogoutOutput, SignInFailed, signIn, signOutSurface } from "./signin.vibe"
 
 export schema error CommandError { readonly message: string }
 
@@ -54,7 +55,7 @@ effect function read(input: ReadInput) {
   return { conversation: input.conversation, ...snapshot }
 }
 
-function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical | Actions>(
+function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical | Actions | FileSystem.FileSystem | Path.Path>(
   name: Name,
   description: string,
   input: I,
@@ -377,4 +378,16 @@ export const Wiki = define("wiki", "Read, draft, save or propose a project wiki 
   return result
 }, (output) => JSON.stringify({ seq: output.seq, pages: output.pages.map((page) => page.id), ...(output.review === undefined ? {} : { review: output.review }), ...(output.draft === undefined ? {} : { draft: output.draft.page }) }))
 
-export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue, ListActions, RunWorkflow, ReadRun, CancelRun, Rerun, Wiki] as const
+const signInError = (error: unknown) => new CommandError({ message: error instanceof SignInFailed ? error.message : "Sign-in failed." })
+
+export const Login = define("login", "Sign in with GitHub's device flow; posts carry your agent identity. With wait=false, returns the person's code and finishes on a later call.", LoginInput, LoginOutput, {
+  wait: Flag.Boolean("wait").pipe(Flag.withDefault(true)),
+}, effect (input) => {
+  return signIn(input) catch effect (error) => { throw signInError(error) }
+}, (output) => output.status === "signed-in" ? `Signed in as ${output.login}.` : `Open ${output.verificationUri} and enter ${output.userCode}.`)
+
+export const Logout = define("logout", "End the stored sign-in session.", Tool.EmptyParams, LogoutOutput, {}, effect () => {
+  return signOutSurface() catch effect (error) => { throw signInError(error) }
+}, (output) => output.signedOut ? "Signed out." : "Not signed in.")
+
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue, ListActions, RunWorkflow, ReadRun, CancelRun, Rerun, Wiki, Login, Logout] as const
