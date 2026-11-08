@@ -34,11 +34,7 @@
   "sideEffects": [],
   "exports": {
     "./package.json": "./package.json",
-    ".": {
-      "types": "./src/index.ts",
-      "vibelang-source": "./src/index.ts",
-      "default": "./.vibelang/js/src/index.js"
-    },
+    ".": "./src/index.ts",
     "./BrowserChildProcessSpawner": "./src/BrowserChildProcessSpawner/index.ts",
     "./BrowserChildProcessSpawner/*": null,
     "./BrowserFileSystem": "./src/BrowserFileSystem/index.ts",
@@ -47,11 +43,7 @@
     "./*/index": null,
     "./BrowserHost": "./src/BrowserHost.ts",
     "./BrowserServices": "./src/BrowserServices.ts",
-    "./index": {
-      "types": "./src/index.ts",
-      "vibelang-source": "./src/index.ts",
-      "default": "./.vibelang/js/src/index.js"
-    }
+    "./index": "./src/index.ts"
   },
   "imports": {
     "#access-handle-pool-vfs": {

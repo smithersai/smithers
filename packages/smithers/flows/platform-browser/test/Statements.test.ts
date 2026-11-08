@@ -4,7 +4,7 @@
  */
 import { describe, expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
-import * as Statements from "../src/internal/Statements.vibe"
+import * as Statements from "../src/internal/Statements.ts"
 import * as MemorySqlite from "./fixtures/MemorySqlite.ts"
 
 /** Which statements of `sql` `runAll` called last, in order. */

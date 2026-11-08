@@ -15,7 +15,7 @@
 import type { RunInspection } from "@smthrs/engine-store"
 import * as Schema from "effect/Schema"
 
-schema Value { text: string; bytes: number; clipped: boolean }
+const Value = Schema.Struct({ text: Schema.String, bytes: Schema.Number, clipped: Schema.Boolean })
 
 const Waiting = Schema.Struct({
   kind: Schema.Literals(["timer", "signal", "approval", "quota", "human", "other"]),

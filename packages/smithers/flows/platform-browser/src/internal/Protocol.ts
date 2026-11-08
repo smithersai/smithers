@@ -18,6 +18,7 @@
  */
 
 import { Flow } from "@smthrs/flow"
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
 const addressed = {

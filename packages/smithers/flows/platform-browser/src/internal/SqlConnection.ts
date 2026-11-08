@@ -41,9 +41,9 @@ import type * as Scope from "effect/Scope"
 import * as Semaphore from "effect/Semaphore"
 import type { SqlError } from "effect/sql/SqlError"
 import * as BrowserSqlite from "../BrowserSqlite.ts"
-import { statements } from "./Metrics.vibe"
-import * as SqlProtocol from "./SqlProtocol.vibe"
-import * as Statements from "./Statements.vibe"
+import { statements } from "./Metrics.ts"
+import * as SqlProtocol from "./SqlProtocol.ts"
+import * as Statements from "./Statements.ts"
 
 /**
  * What one statement returned: its rows, and whether it left a transaction

@@ -28,6 +28,7 @@
  * @since 1.0.0
  */
 
+import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 
 const addressed = {
@@ -210,7 +211,7 @@ const restore = (value: Kept): unknown =>
   value === null || typeof value !== "object" ?
     value
     : "integer" in value ?
-    $invoke(BigInt,value.integer)
+    BigInt(value.integer)
     : "real" in value ?
     Number(value.real)
     : new Uint8Array(value.blob)
@@ -235,7 +236,7 @@ export const encodeRows = (rows: ReadonlyArray<unknown>): string => JSON.stringi
  * @category protocol
  * @since 1.0.0
  */
-export const decodeRows = (text: string): Array<unknown> => restoreRows($invoke2(JSON,() => (text)) as Array<Record<string, Kept>>)
+export const decodeRows = (text: string): Array<unknown> => restoreRows(JSON.parse(text) as Array<Record<string, Kept>>)
 
 /**
  * Encodes a batch's rows, one array per statement, as {@link replies} keeps
@@ -254,14 +255,4 @@ export const encodeResults = (results: ReadonlyArray<ReadonlyArray<unknown>>): s
  * @since 1.0.0
  */
 export const decodeResults = (text: string): Array<Array<unknown>> =>
-  ($invoke2(JSON,() => (text)) as Array<Array<Record<string, Kept>>>).map(restoreRows)
-
-module $call$ts {
-export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
-}
-import { invoke as $invoke } from $call$ts
-
-module $call$ts2 {
-export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
-}
-import { invoke as $invoke2 } from $call$ts2
+  (JSON.parse(text) as Array<Array<Record<string, Kept>>>).map(restoreRows)

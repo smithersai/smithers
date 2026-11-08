@@ -44,8 +44,8 @@ import type { Connection } from "effect/sql/SqlConnection"
 import type { SqlError } from "effect/sql/SqlError"
 import * as Statement from "effect/sql/Statement"
 import * as Stream from "effect/Stream"
-import * as Statements from "./internal/Statements.vibe"
-import * as StorageDiagnostics from "./internal/StorageDiagnostics.vibe"
+import * as Statements from "./internal/Statements.ts"
+import * as StorageDiagnostics from "./internal/StorageDiagnostics.ts"
 import { bufferWalWrites } from "./internal/WalBuffer.ts"
 
 /**

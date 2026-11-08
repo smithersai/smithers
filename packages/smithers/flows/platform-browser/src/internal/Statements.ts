@@ -5,6 +5,7 @@
  * @since 1.0.0
  */
 
+import * as Record from "effect/Record"
 import { classifySqliteError, SqlError } from "effect/sql/SqlError"
 
 /**
@@ -41,7 +42,7 @@ const row = 100
  */
 const bindable = (value: unknown): unknown =>
   typeof value === "number" && Number.isSafeInteger(value) && (value | 0) !== value ?
-    $invoke(BigInt,value)
+    BigInt(value)
     : value instanceof Date ?
     value.toISOString()
     : value
@@ -157,8 +158,3 @@ export const runAll = async (
   const { columns, results } = await runEach(database, [{ sql, params }], shape, hooks)
   return { rows: results[0]!, columns }
 }
-
-module $call$ts {
-export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
-}
-import { invoke as $invoke } from $call$ts

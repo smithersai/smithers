@@ -30,11 +30,11 @@ import type * as Scope from "effect/Scope"
 import * as Stream from "effect/Stream"
 import { TabChannel, type TabChannelOverflow } from "../TabChannel.ts"
 import { WebLock } from "../WebLock.ts"
-import { leaderships, requests, statements, wakes } from "./Metrics.vibe"
+import { leaderships, requests, statements, wakes } from "./Metrics.ts"
 import * as Prepare from "./Prepare.ts"
-import * as Protocol from "./Protocol.vibe"
+import * as Protocol from "./Protocol.ts"
 import { type Service as Connection, SqlConnection, TransactionLost, TransactionUndecided } from "./SqlConnection.ts"
-import * as SqlProtocol from "./SqlProtocol.vibe"
+import * as SqlProtocol from "./SqlProtocol.ts"
 
 /**
  * The services {@link serve} reads from the engine it builds.
