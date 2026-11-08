@@ -1,0 +1,313 @@
+import { it } from "@effect/vitest"
+import { ALLOWANCES, emptySandboxLedger, type Role } from "../src/core/sandboxDecision.vibe"
+import { makeSandboxHost, type Machines, type Receipt, type SandboxState, type Store } from "../src/core/sandboxHost.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Op = Schema.Struct({
+  kind: Schema.Literals(["start", "stop", "command", "read", "tick"]),
+  conversation: Int,
+  reuse: Schema.Boolean,
+  staleGeneration: Schema.Boolean,
+  badOperationId: Schema.Boolean,
+  failStart: Schema.Boolean,
+  failStop: Schema.Boolean,
+  failCommand: Schema.Boolean,
+  failLease: Schema.Boolean,
+  text: Text,
+})
+const Input = Schema.Struct({
+  role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]),
+  steps: Schema.Array(Op).check(Schema.isMaxLength(24)),
+})
+
+interface MemoryStore extends Store {
+  readonly state: Ref.Ref<SandboxState | undefined>
+  readonly receipts: Ref.Ref<ReadonlyMap<string, Receipt>>
+}
+
+effect function memoryStore(preload?: { readonly state: SandboxState; readonly receipts: ReadonlyArray<Receipt> }) {
+  const state = try Ref.make<SandboxState | undefined>(preload?.state)
+  const receipts = try Ref.make<ReadonlyMap<string, Receipt>>(new Map((preload?.receipts ?? []).map((receipt) => [receipt.request.operationId, receipt])))
+  return {
+    state,
+    receipts,
+    read: () => Ref.get(state),
+    receipt: (id: string) => Ref.get(receipts).pipe(Effect.map((all) => all.get(id))),
+    write: (next: SandboxState, receipt?: Receipt) => Effect.andThen(Ref.set(state, next), receipt === undefined ? Effect.void : Ref.update(receipts, (all) => new Map(all).set(receipt.request.operationId, receipt))),
+    alarm: () => Effect.void,
+  }
+}
+
+const flags = { start: false, stop: false, command: false, lease: false }
+/** A wall clock whose impossible reading exercises the host's fail-closed meter path. */
+const brokenClock = Layer.succeed(Clock.Clock, {
+  currentTimeMillisUnsafe: () => Number.NaN,
+  currentTimeMillis: succeed(Number.NaN),
+  currentTimeNanosUnsafe: () => 0n,
+  currentTimeNanos: succeed(0n),
+  monotonicTimeNanosUnsafe: () => 0n,
+  monotonicTimeNanos: succeed(0n),
+  sleep: () => Effect.void,
+})
+const flakyMachines: Machines = {
+  start: () => flags.start ? fail(new Unavailable({ reason: "machine" })) : Effect.void,
+  stop: () => flags.stop ? fail(new Unavailable({ reason: "machine" })) : Effect.void,
+  lease: () => succeed(!flags.lease),
+  command: () => flags.command ? fail(new Unavailable({ reason: "machine" })) : succeed("ok"),
+}
+
+/** Every host answer is typed, receipts replay exactly, and machine faults never escape as defects. */
+it.live("sandbox/host-operations", () => run("sandbox/host-operations", Input, ({ role, steps }) => effect {
+  const store = try memoryStore()
+  provide mockPolicy(role) {
+  const host = try makeSandboxHost(store, flakyMachines)
+  const operations = new Map<string, { readonly kind: string; readonly conversation: string; readonly generation: number; readonly command: string }>()
+  const generations = new Map<string, number>()
+  let ok = true
+  for (const [at, step] of steps.entries()) {
+    flags.start = step.failStart
+    flags.stop = step.failStop
+    flags.command = step.failCommand
+    flags.lease = step.failLease
+    const conversation = `c${step.conversation % 3}`
+    const operationId = step.badOperationId ? `bad id ${at}` : step.reuse && operations.size > 0 ? [...operations.keys()][at % operations.size]! : `op-${at}`
+    const generation = step.staleGeneration ? (generations.get(conversation) ?? 0) + 1 : (generations.get(conversation) ?? 0)
+    const before = try exit(host.snapshot(conversation))
+    if (before._tag === "Failure" && Cause.hasDies(before.cause)) return false
+    const result: Exit.Exit<unknown, unknown> = step.kind === "start" ? try exit(host.start(conversation, operationId))
+        : step.kind === "stop" ? try exit(host.stop(conversation, operationId, generation))
+        : step.kind === "command" ? try exit(host.command(conversation, operationId, step.text, generation))
+        : step.kind === "tick" ? try exit(host.tick())
+        : try exit(host.snapshot(conversation))
+    if (result._tag === "Failure") {
+      if (Cause.hasDies(result.cause)) return false
+      const error = Cause.findError(result.cause)
+      const tag = error._tag === "Success" ? (error.success as { readonly _tag: string })._tag : ""
+      if (tag !== "Refused" && tag !== "Unavailable") return false
+      continue
+    }
+    const after = try exit(host.snapshot(conversation))
+    if (after._tag === "Failure" && Cause.hasDies(after.cause)) return false
+    const healthy = !step.failStart && !step.failStop && !step.failCommand && !step.failLease
+    if (step.kind === "start" && result._tag === "Success") {
+      const prior = operations.get(operationId)
+      const recorded = (result.value as { readonly generation: number }).generation
+      if (prior === undefined) {
+        if (healthy && (after._tag !== "Success" || after.value.status !== "running")) return false
+        if (after._tag === "Success") generations.set(conversation, after.value.generation)
+        operations.set(operationId, { kind: "start", conversation, generation: recorded, command: "" })
+      } else {
+        if (prior.kind !== "start" || prior.conversation !== conversation || recorded !== prior.generation) return false
+      }
+      const replay = try exit(host.start(conversation, operationId))
+      if (replay._tag === "Failure" && (healthy || Cause.hasDies(replay.cause))) return false
+      if (healthy && replay._tag === "Success" && replay.value.generation !== operations.get(operationId)!.generation) return false
+    }
+    if (step.kind === "command" && result._tag === "Success") {
+      const prior = operations.get(operationId)
+      if (prior !== undefined && (prior.kind !== "command" || prior.conversation !== conversation || prior.command !== step.text)) return false
+      if (prior === undefined) operations.set(operationId, { kind: "command", conversation, generation, command: step.text })
+      const replay = try exit(host.command(conversation, operationId, step.text, generation))
+      if (replay._tag === "Failure" && Cause.hasDies(replay.cause)) return false
+      if (healthy && replay._tag === "Failure") return false
+    }
+    if (step.kind === "stop" && result._tag === "Success" && healthy && after._tag === "Success" && after.value.status !== "stopped") return false
+    if (after._tag === "Success" && (after.value.remaining < 0 || after.value.used < 0)) ok = false
+  }
+  return ok
+  }
+}))
+
+/** Two commands with one operation id race; the loser is told busy or replayed, never both executed. */
+it.live("sandbox/concurrent-commands", () => run("sandbox/concurrent-commands", Schema.Struct({ role: Schema.Literals(["contributor", "maintainer"]), sameId: Schema.Boolean, slow: Schema.Boolean }), ({ role, sameId, slow }) => effect {
+  const store = try memoryStore()
+  const machines: Machines = {
+    start: () => Effect.void,
+    stop: () => Effect.void,
+    lease: () => succeed(true),
+    command: () => slow ? Effect.as(Effect.sleep("10 millis"), "ok") : succeed("ok"),
+  }
+  provide mockPolicy(role) {
+  const host = try makeSandboxHost(store, machines)
+  const started = try host.start("c0", "op-start")
+  const runs = try Effect.all([
+    Effect.exit(host.command("c0", "op-c", "echo a", started.generation)),
+    Effect.exit(host.command("c0", sameId ? "op-c" : "op-d", "echo b", started.generation)),
+  ], { concurrency: 2 })
+  let outputs = 0
+  for (const done of runs) {
+    if (done._tag === "Failure") {
+      if (Cause.hasDies(done.cause)) return false
+      continue
+    }
+    outputs++
+  }
+  const snapshot = try host.snapshot("c0")
+  return snapshot.status === "running" && (sameId ? outputs === 1 : outputs === 2)
+  }
+}))
+
+const PendingOp = Schema.Struct({
+  kind: Schema.Literals(["start", "stop", "command", "cancel-start"]),
+  conversation: Schema.Literals(["c0", "c1"]),
+  operationId: Schema.Literals(["op-0", "op-1"]),
+  generation: Int,
+  command: Text,
+})
+const Recovery = Schema.Struct({
+  role: Schema.Literals(["viewer", "contributor", "maintainer"]),
+  pending: Schema.NullOr(PendingOp),
+  running: Schema.Boolean,
+  failMachine: Schema.Boolean,
+  owner: Schema.Literals(["mock-person", "other"]),
+  sequence: Schema.Literals(["zero", "huge"]),
+  exhausted: Schema.Boolean,
+  refusedReceipt: Schema.Boolean,
+  clockFails: Schema.Boolean,
+  jumpClock: Schema.Boolean,
+  badMeteredAt: Schema.Boolean,
+  hugeGeneration: Schema.Boolean,
+})
+
+/** A recovered pending operation is completed or typed-refused, exactly once, without a defect. */
+it.live("sandbox/host-recovery", () => run("sandbox/host-recovery", Recovery, ({ role, pending, running, failMachine, owner, sequence, exhausted, refusedReceipt, clockFails, jumpClock, badMeteredAt, hugeGeneration }) => effect {
+  const now = try Clock.currentTimeMillis
+  const allowance = ALLOWANCES[role] * 60000
+  const ledger = {
+    ...emptySandboxLedger(owner === "other" ? "other" : "mock-person", role, allowance, 0, now),
+    sequence: sequence === "huge" ? Number.MAX_SAFE_INTEGER : 0,
+    usedMilliseconds: exhausted ? allowance : 0,
+    lastMeteredAt: badMeteredAt ? Number.NaN : now,
+    sandboxes: running ? [{ id: "s0", conversation: "c0", running: true }] : [],
+  }
+  const state: SandboxState = { ledger, months: {}, generations: { c0: hugeGeneration ? Number.MAX_SAFE_INTEGER : 1, c1: 0 }, outputs: {}, pending }
+  const snapshot0 = { id: "s0", generation: 1, sequence: 0, role, status: "running" as const, allowance, used: 0, remaining: allowance, resetAt: 0, output: "" }
+  const receipt: Receipt = { request: { kind: "start", conversation: "c0", operationId: "op-old", generation: 1, command: "" }, snapshot: snapshot0, output: "", refusal: refusedReceipt ? "start-failed" : "" }
+  const settled: Receipt = { request: { kind: "start", conversation: "c0", operationId: "op-0", generation: 1, command: "" }, snapshot: snapshot0, output: "", refusal: "" }
+  const store = try memoryStore({ state, receipts: [receipt, settled] })
+  flags.start = failMachine
+  flags.stop = failMachine
+  flags.command = failMachine
+  flags.lease = failMachine
+  provide mockPolicy(role) {
+  const jumped = try Ref.make(false)
+  const jumping: Machines = {
+    start: (id, generation) => Effect.andThen(failMachine ? fail(new Unavailable({ reason: "machine" })) : Effect.void, Ref.set(jumped, true)),
+    stop: flakyMachines.stop,
+    lease: flakyMachines.lease,
+    command: flakyMachines.command,
+  }
+  const host = try makeSandboxHost(store, jumpClock ? jumping : flakyMachines)
+  const jumpClockLayer = Layer.succeed(Clock.Clock, {
+    currentTimeMillisUnsafe: () => Number.NaN,
+    currentTimeMillis: Effect.map(Ref.get(jumped), (yes) => yes ? now + allowance : now),
+    currentTimeNanosUnsafe: () => 0n,
+    currentTimeNanos: succeed(0n),
+    monotonicTimeNanosUnsafe: () => 0n,
+    monotonicTimeNanos: succeed(0n),
+    sleep: () => Effect.void,
+  })
+  const clocked = <A, E, R>(work: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> => clockFails ? Effect.provide(work, brokenClock) : jumpClock ? Effect.provide(work, jumpClockLayer) : work
+  const answer = try exit(clocked(host.tick()))
+  if (answer._tag === "Failure") {
+    if (Cause.hasDies(answer.cause)) return false
+  }
+  const snapshotAnswer = try exit(clocked(host.snapshot("c0")))
+  if (snapshotAnswer._tag === "Failure") {
+    if (Cause.hasDies(snapshotAnswer.cause)) return false
+    return true
+  }
+  const snapshot = snapshotAnswer.value
+  if (snapshot.used < 0 || snapshot.remaining < 0) return false
+  const old = try exit(clocked(host.start("c0", "op-old")))
+  if (old._tag === "Failure" && Cause.hasDies(old.cause)) return false
+  if (old._tag === "Success" && refusedReceipt) return false
+  const fresh = try exit(clocked(host.start("c0", "op-fresh")))
+  if (fresh._tag === "Failure" && Cause.hasDies(fresh.cause)) return false
+  const other = try exit(clocked(host.start("c1", "op-other")))
+  if (other._tag === "Failure" && Cause.hasDies(other.cause)) return false
+  return true
+  }
+}))
+
+const MockCommand = Schema.Struct({ text: Schema.Union([Text, Schema.Literals(["pwd", "ls", "echo hi", "cat keep", "cat missing", "echo a > keep", "  ", "echo x > ../evil", "echo"]) ]), replay: Schema.Boolean })
+
+/** The product mock device: file writes persist across restarts; every command output is its documented rule. */
+it.live("sandbox/mock-device-commands", () => run("sandbox/mock-device-commands", Schema.Array(MockCommand).check(Schema.isMaxLength(16)), (commands) => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    const first = try factory.startSandbox("dev", "start")
+    const seen = new Map<string, string>()
+    let ok = true
+    const expected = (command: string, files: ReadonlyMap<string, string>) => {
+      const write = /^echo (.*?)\s*>\s*([a-zA-Z0-9._/-]+)$/.exec(command)
+      const read = /^cat ([a-zA-Z0-9._/-]+)$/.exec(command)
+      if (write) return ""
+      if (read) return files.get(read[1]!) ?? "cat: No such file"
+      if (command === "pwd") return "/workspace"
+      if (command === "ls") return [...files.keys()].join("  ")
+      if (command.startsWith("echo ")) return command.slice(5)
+      return command.trim() === "" ? "" : "Command unavailable in mock mode"
+    }
+    const files = new Map<string, string>()
+    for (const [at, command] of commands.entries()) {
+      const key = `c-${command.replay && seen.size > 0 ? 0 : at}`
+      const output = try exit(factory.sandboxCommand("dev", key, command.text, first.generation))
+      if (output._tag === "Failure" && Cause.hasDies(output.cause)) return false
+      if (output._tag !== "Success") continue
+      const write = /^echo (.*?)\s*>\s*([a-zA-Z0-9._/-]+)$/.exec(command.text)
+      if (write && !seen.has(key)) files.set(write[2]!, write[1]!.replace(/^['"]|['"]$/g, "") + "\n")
+      if (seen.has(key) && seen.get(key) !== output.value) return false
+      if (!seen.has(key)) {
+        seen.set(key, output.value)
+        if (output.value !== expected(command.text, files)) ok = false
+      }
+    }
+    try factory.stopSandbox("dev", "stop", first.generation)
+    const stale = try exit(factory.sandboxCommand("dev", "stale", "pwd", first.generation))
+    if (stale._tag === "Failure" && Cause.hasDies(stale.cause)) return false
+    const second = try factory.startSandbox("dev", "restart")
+    const kept = try factory.sandboxCommand("dev", "read-back", "cat keep", second.generation)
+    const expectedKeep = files.get("keep")
+    return ok && (expectedKeep === undefined || kept === expectedKeep)
+  }
+}))
+
+/** The mock device's real-clock alarm meters a running sandbox exactly as the live object's storage alarm does. */
+it.live("sandbox/mock-meter-alarm", () => run("sandbox/mock-meter-alarm", Schema.Null, () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    const started = try factory.startSandbox("metered", "alarm")
+    try Effect.sleep("1500 millis")
+    const snapshot = try factory.sandbox("metered")
+    return snapshot.status === "running" && snapshot.generation === started.generation && snapshot.used > 0 && snapshot.used < 1
+  }
+}))
+
+/** The documented limits: an exhausted allowance refuses a start, and a stop for a stopped sandbox records nothing. */
+it.live("sandbox/host-limits", () => run("sandbox/host-limits", Schema.Struct({ stop: Schema.Boolean, role: Schema.Literals(["contributor", "maintainer"]) }), ({ stop, role }) => effect {
+  const now = try Clock.currentTimeMillis
+  const allowance = ALLOWANCES[role] * 60000
+  const ledger = { ...emptySandboxLedger("mock-person", role, allowance, 0, now), usedMilliseconds: allowance }
+  const state: SandboxState = { ledger, months: {}, generations: {}, outputs: {}, pending: null }
+  const store = try memoryStore({ state, receipts: [] })
+  flags.start = false
+  flags.stop = false
+  flags.command = false
+  flags.lease = true
+  provide mockPolicy(role) {
+    const host = try makeSandboxHost(store, flakyMachines)
+    const started = try exit(host.start("c0", "op-limits"))
+    if (started._tag !== "Failure") return false
+    const error = Cause.findError(started.cause)
+    if (error._tag !== "Success" || (error.success as { readonly refusal?: string }).refusal !== "out-of-minutes") return false
+    if (stop) {
+      const stopped = try exit(host.stop("c0", "op-stop", 0))
+      if (stopped._tag === "Failure" && Cause.hasDies(stopped.cause)) return false
+    }
+    return true
+  }
+}))
