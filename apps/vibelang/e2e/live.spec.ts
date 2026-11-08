@@ -47,13 +47,15 @@ test.describe("the live agent", () => {
     await run(["ask", `From the CLI ${token}`])
     await page.getByRole("button", { name: "Minimize the VibeLang home page" }).click()
     const fromCli = page.locator(".sui-chat-message[data-role='user']").filter({ hasText: `From the CLI ${token}` })
-    await expect(fromCli.locator(".sui-chat-message-label")).toHaveText("Factory CLI", { timeout: 60_000 })
+    // The server names a post from its session, never from the caller (0019); the CLI is not signed in, so it posts as
+    // a guest. The roadmap's CLI and MCP sign-in brings back an agent identity for it.
+    await expect(fromCli.locator(".sui-chat-message-label")).toHaveText("Guest", { timeout: 60_000 })
     await page.keyboard.press("ControlOrMeta+k")
     await page.getByRole("textbox", { name: "Message" }).pressSequentially(`From the page ${token}`)
     await page.keyboard.press("Enter")
     await expect(page.locator(".sui-chat-message[data-role='assistant']").last()).toHaveAttribute("data-done", "true", { timeout: 120_000 })
     const read = await run(["--json", "read"])
     const entries = (JSON.parse(read.stdout) as { entries: ReadonlyArray<{ name: string; text: string }> }).entries
-    expect(entries.filter((entry) => entry.text.endsWith(token)).map((entry) => entry.name)).toEqual(["Factory CLI", "Guest"])
+    expect(entries.filter((entry) => entry.text.endsWith(token)).map((entry) => entry.name)).toEqual(["Guest", "Guest"])
   })
 })

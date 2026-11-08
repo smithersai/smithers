@@ -33,6 +33,10 @@ brick                                   state         proof
 
 - **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,582 executable items. Twelve modules carry proved contracts and 451 current mutations reject; unproved logic and tool boundaries remain explicit.
 
+- **CLI and MCP sign-in (VL-26).** Since sign-in (0019) the server names posts from the session, so the CLI's and
+  MCP server's posts read "Guest". They need a person's sign-in (GitHub device flow) so the agent's posts carry
+  that person's agent identity. Found by `e2e/live.spec.ts` against production, 2026-11-08.
+
 ## Open work outside this app
 
 - **Effect 4.1.1 upgrade landing (2026-11-07).** 57 commits in nyc-01 `~/vl/ws-effect41`; all typecheck/check gates
