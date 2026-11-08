@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 const input = (page: Page) => page.getByRole("textbox", { name: "Message" })
 

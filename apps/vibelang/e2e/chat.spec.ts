@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, type Page, test } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 /** Waits until no view transition runs, so a screenshot shows the page and not a transition's snapshot. */
 async function settled(page: Page) {

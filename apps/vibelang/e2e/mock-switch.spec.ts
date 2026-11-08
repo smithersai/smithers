@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, type Page, test } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 // Will, 2026-11-08: "I don't see any in app button to switch into mocked mode to use the entire app and every feature I
 // asked for." Ruling VL-13: the whole app works in mock mode, with no backend, no model and no sign-in. This test starts

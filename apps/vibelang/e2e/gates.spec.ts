@@ -1,5 +1,5 @@
 // Playwright discovers browser tests only by JS/TS extension.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 test("the maintainer proposal gate and four reviewer specification gate", async ({ page }) => {
   await page.goto("/?agent=mock")
   await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")

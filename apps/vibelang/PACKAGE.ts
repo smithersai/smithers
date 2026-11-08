@@ -77,6 +77,26 @@ const test = Smithers.Shell.Test({
   timeout: "20m"
 })
 
+/** Whole-app source coverage, with the same V8 provider and 100% per-file thresholds as the monorepo. */
+const coverage = Smithers.Shell.Test({
+  summary: "Measure every .vibe runtime source and fail below 100% lines, branches, functions or statements.",
+  shell: "cd apps/vibelang && pnpm test:coverage",
+  data: sources,
+  timeout: "30m",
+  sandbox: { network: "loopback" },
+  exclusive: true
+})
+
+/** Browser behavior and Chromium source coverage, kept independent from the unit coverage gate. */
+const browserCoverage = Smithers.Shell.Test({
+  summary: "Run the browser suite and report Chromium execution on the original .vibe sources.",
+  shell: "cd apps/vibelang && E2E_4502=4502 pnpm e2e:coverage",
+  data: sources,
+  timeout: "30m",
+  exclusive: true,
+  sandbox: { network: "loopback" }
+})
+
 /**
  * `pnpm test:workerd`: the API Worker and its Durable Objects in local workerd, with LiveFactory over HTTP.
  *
@@ -166,4 +186,4 @@ const fuzzCoverage = Smithers.Shell.Test({
   exclusive: true
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })
+export const Package = Smithers.Package({ targets: { typecheck, test, coverage, browserCoverage, workerd, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })

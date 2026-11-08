@@ -48406,6 +48406,246 @@
     }
   },
   {
+    "label": "//apps/vibelang:browserCoverage",
+    "package": "apps/vibelang",
+    "name": "browserCoverage",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "summary": "Run the browser suite and report Chromium execution on the original .vibe sources.",
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/public/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/worker/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/infra/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/test/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/fuzz/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/fuzz.config.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/bench/*.{vibe,ts,json,md}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/skills/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/wiki/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "patches/@vitest__coverage-v8@5.0.0.patch"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.surfaces.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.scripts.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.script-tests.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/playwright.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/index.html"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//.smithers/flows:vibelangFuzzSources"
+    ],
+    "source": {
+      "file": "apps/vibelang/PACKAGE.ts"
+    }
+  },
+  {
+    "label": "//apps/vibelang:coverage",
+    "package": "apps/vibelang",
+    "name": "coverage",
+    "rule": "Shell.Test",
+    "kinds": [
+      "test"
+    ],
+    "summary": "Measure every .vibe runtime source and fail below 100% lines, branches, functions or statements.",
+    "exclusive": true,
+    "cacheable": false,
+    "inputs": [
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/src/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/public/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/worker/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/infra/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/test/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/fuzz/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/fuzz.config.ts"
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/bench/*.{vibe,ts,json,md}",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/e2e/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/skills/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/scripts/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "glob",
+        "pattern": "apps/vibelang/wiki/**/*",
+        "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "patches/@vitest__coverage-v8@5.0.0.patch"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.surfaces.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.scripts.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.script-tests.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/playwright.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/vite.config.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/alchemy.run.ts"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/index.html"
+      }
+    ],
+    "outputs": [],
+    "dependencies": [
+      "//.smithers/flows:vibelangFuzzSources"
+    ],
+    "source": {
+      "file": "apps/vibelang/PACKAGE.ts"
+    }
+  },
+  {
     "label": "//apps/vibelang:fuzz",
     "package": "apps/vibelang",
     "name": "fuzz",

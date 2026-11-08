@@ -1,0 +1,10 @@
+/** A nested Effect branch left unvisited by Chromium. */
+export effect function answer(first: boolean) {
+  if (first) return 7
+  return 9
+}
+
+/** Deliberately tree-shaken from a partially used source file. */
+export function unused() {
+  return 11
+}

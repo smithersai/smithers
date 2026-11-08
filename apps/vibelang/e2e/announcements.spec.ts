@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 type Observation = { updates: string[]; streaming: Array<{ count: number; text: string; announcement: string }> }
 declare global { interface Window { answerObservation: Observation } }

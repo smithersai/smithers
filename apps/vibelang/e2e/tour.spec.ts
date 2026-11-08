@@ -1,5 +1,5 @@
 // Playwright discovers browser tests only in .ts/.js files.
-import { test, expect } from "@playwright/test"
+import { test, expect } from "./coverage"
 test("Learn more remains primary with Ask the agent and Contribute secondary", async ({ page }) => {
   await page.goto("/?agent=mock")
   await expect(page.getByRole("button", { name: "Learn more", exact: true })).toHaveClass("vl-primary")

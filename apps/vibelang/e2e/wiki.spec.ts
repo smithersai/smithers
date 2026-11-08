@@ -1,5 +1,5 @@
 // Playwright discovers browser specs only by JS/TS extension.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 const pane = (page: import("@playwright/test").Page) => page.getByRole("region", { name: "Wiki", exact: true })
 
 test("Wiki opens, navigates real pages, filters, maximizes and returns to chat", async ({ page }, info) => {

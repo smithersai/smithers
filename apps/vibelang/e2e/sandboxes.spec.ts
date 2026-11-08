@@ -1,5 +1,5 @@
 // Playwright discovers JS/TS specs only (decision 0001).
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 
 test("sandbox: write, stop, restart and read bytes", async ({ page }) => {
   await page.goto("/?agent=mock&role=contributor")

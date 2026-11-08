@@ -1,5 +1,5 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, type Page, test } from "@playwright/test"
+import { expect, type Page, test } from "./coverage"
 
 // View transitions (VL-17): moving between the maximized splash and the chat runs a view transition typed by its
 // direction; opening ⌘K runs none. The page records which typed transitions it renders; nothing is intercepted.

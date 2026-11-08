@@ -1,5 +1,5 @@
 // Playwright discovers and loads test files only by JavaScript/TypeScript extension.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 
 async function chat(page: import("@playwright/test").Page) {
   await page.goto("/?agent=mock")

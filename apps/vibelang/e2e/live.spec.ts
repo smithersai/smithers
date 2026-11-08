@@ -2,7 +2,7 @@
 import { execFile } from "node:child_process"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 
 // The live agent in a real browser (wiki/decisions/0010-live-agent.md), opt in: `E2E_LIVE_URL` names a deployment or
 // a local `alchemy dev` (http://localhost:1337) whose API Worker is bound. The page must choose the live Factory, and

@@ -1,5 +1,5 @@
 // Stays .ts: Playwright collects browser tests by JS/TS extension only.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 
 test("every role's view works without a backend", async ({ page }, testInfo) => {
   await page.goto("/?agent=mock")

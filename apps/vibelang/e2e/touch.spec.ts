@@ -1,5 +1,5 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 
 test.use({ hasTouch: true })
 

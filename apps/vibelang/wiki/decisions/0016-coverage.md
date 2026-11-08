@@ -4,8 +4,10 @@
 
 The goal remains 100% lines, branches, functions and statements for each production file, independently per suite.
 That goal has **not been achieved**. No source file is excluded. This decision records landed behavioral tests and
-the coverage prototype retained by lane `vl-coverage`; the new coverage commands and PACKAGE gates are not yet on
-main because the gate is red and the lane's landing instruction requires green parts.
+the coverage commands. `pnpm e2e` measures and reports Chromium coverage without failing on it. The strict gates
+`pnpm test:coverage` and `pnpm e2e:coverage` are the exclusive PACKAGE targets `coverage` and `browserCoverage`: a
+person asks for them, no wildcard selects them, and they stay red until every file reaches 100%. Exclusive is the
+same pattern as `benchCoverage` and `fuzzCoverage`. Exclusive is not a threshold change: both gates hold 100%.
 
 ## Landed behavior
 

@@ -1,5 +1,5 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only.
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 
 const local = `http://127.0.0.1:${process.env.E2E_PORT ?? process.env.E2E_4510 ?? process.env.E2E_4508 ?? process.env.E2E_4505 ?? process.env.E2E_4501 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173}`
 

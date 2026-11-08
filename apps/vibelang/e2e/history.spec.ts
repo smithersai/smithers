@@ -1,5 +1,6 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, type Page, test } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 // The mythical history's page (wiki/decisions/0020-mythical-history.md), on the mock: VibeLang's real bootstrapped
 // history, read by epic and commit, and a task walked through the history's flows from plan to landed. Set

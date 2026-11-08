@@ -12,6 +12,7 @@ process.env.E2E_PORT = String(port)
 
 export default defineConfig({
   testDir: "e2e",
+  reporter: [["list"], ["./e2e/coverage-reporter.ts"]],
   timeout: 30_000,
   // Keep the original three-browser concurrency as the suite gains files; this machine also runs other lanes.
   workers: 3,

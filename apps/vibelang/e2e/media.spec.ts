@@ -1,5 +1,5 @@
 // Playwright collects browser tests only from JS/TS files.
-import { test, expect, type Page, type Locator } from "@playwright/test"
+import { test, expect, type Page, type Locator } from "./coverage"
 test.beforeEach(async ({ page }, info) => {
   if (info.project.name === "phone") await page.setViewportSize({ width: 390, height: 844 })
 })

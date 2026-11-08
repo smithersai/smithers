@@ -1,5 +1,5 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only (upstream-bugs/playwright-vibe-specs).
-import { expect, test } from "@playwright/test"
+import { expect, test } from "./coverage"
 import type { Client, Conversation } from "../src/core/conversation.vibe"
 
 declare global {

@@ -1,5 +1,6 @@
 // Playwright collects browser specs only by JS/TS extension.
-import { expect, test, type Page } from "@playwright/test"
+import { expect, test } from "./coverage"
+import type { Page } from "./coverage"
 
 async function maintainer(page: Page) {
   await page.getByRole("combobox", { name: "Visit as" }).selectOption("maintainer")

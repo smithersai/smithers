@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
   resolve: { dedupe: ["vitest"] },
   build: {
     target: "es2022", sourcemap: true,
-    ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html", "e2e/actions-runtime/index.html"] } } : {}),
+    ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html", "e2e/actions-runtime/index.html", "e2e/coverage-fixtures/index.html"] } } : {}),
   },
   server: { port: 5178 },
   test: {
@@ -25,6 +25,15 @@ export default defineConfig(({ mode }) => ({
     include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
     exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],
     ...(mode === "workerd" ? { testTimeout: 120_000, hookTimeout: 120_000 } : {}),
+    coverage: {
+      provider: "v8",
+      autoAttachSubprocess: true,
+      include: ["src/**/*.vibe", "worker/**/*.vibe", "scripts/**/*.vibe", "infra/**/*.vibe", "dist-factory/**/*.js", "dist-scripts/**/*.js", "dist-script-tests/**/*.js"],
+      reporter: ["text", "json", "json-summary", "html", "lcov"],
+      reportsDirectory: mode === "workerd" ? "coverage/workerd" : "coverage/unit",
+      reportOnFailure: true,
+      thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 },
+    },
     // Transform the Effect adapter so Vite can deduplicate its Vitest peer with the running CLI.
     server: { deps: { inline: ["foldkit", "@effect/vitest"] } },
   },

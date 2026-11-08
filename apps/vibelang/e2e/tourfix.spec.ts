@@ -1,5 +1,6 @@
 // Playwright discovers browser tests only in .ts/.js files.
-import { test, expect, type Page, type Locator } from "@playwright/test"
+import { test, expect } from "./coverage"
+import type { Page, Locator } from "./coverage"
 async function inside(page: Page, locator: Locator) {
   const box = (await locator.boundingBox())!, viewport = page.viewportSize()!
   expect(box.x).toBeGreaterThanOrEqual(0)

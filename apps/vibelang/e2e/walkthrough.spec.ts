@@ -1,5 +1,6 @@
 // Playwright discovers browser tests only in .ts/.js files.
-import { test, expect, type Page } from "@playwright/test"
+import { test, expect } from "./coverage"
+import type { Page } from "./coverage"
 const bar = (page: Page) => page.getByRole("region", { name: "Walkthrough" })
 async function step(page: Page, n: number) { await expect(bar(page)).toHaveAttribute("data-step", String(n), { timeout: 15000 }) }
 async function skip(page: Page, n: number) { await page.getByRole("button", { name: "Skip", exact: true }).click(); await step(page, n) }
