@@ -5,7 +5,7 @@
  * @since 0.1.0
  */
 import { spawnSync } from "node:child_process"
-import { existsSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs"
+import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs"
 import { createRequire } from "node:module"
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path"
 import { fileURLToPath } from "node:url"
@@ -46,14 +46,41 @@ const within = (directory, file) => {
   return path !== "" && !path.startsWith("..") && !isAbsolute(path)
 }
 
-// The generation project lists only native files, so a compiler computing the source root
-// from them would place sidecars relative to their common directory (often src). TypeScript
-// pairs a source with its sidecar through rootDirs instead, so generate with the deepest
-// rootDirs entry that holds every native source as the source root.
+// The compiler places each sidecar relative to the common directory of every source in the
+// generation program. That directory depends on which files the program reaches: only src when
+// the native files all sit there, or a workspace ancestor once the vibelang-source condition
+// pulls in another package's sources. TypeScript pairs a source with its sidecar through
+// rootDirs, so the sidecar belongs under the deepest rootDirs entry that holds every native source.
 const sourceRoot = project => (project.parsed.options.rootDirs ?? [])
   .map(directory => resolve(directory))
   .filter(directory => project.native.every(file => within(directory, file)))
   .sort((a, b) => b.length - a.length)[0]
+
+const sidecarName = (from, file) => relative(from, file).replace(/\.vibe$/, ".d.vibe.ts")
+
+// Move each native source's sidecar from wherever the compiler wrote it to the path rootDirs
+// pairs with the source, then drop what the program wrote for other packages' sources. The
+// compiler used one common directory for the whole program: the deepest ancestor of the native
+// sources under which every one of their sidecars exists.
+const relocate = project => {
+  let common = project.native.map(dirname).reduce((a, b) => {
+    while (!within(a, b) && a !== b) a = dirname(a)
+    return a
+  })
+  while (!project.native.every(file => existsSync(join(project.sidecarDir, sidecarName(common, file))))) {
+    if (dirname(common) === common) throw new Error("No sidecars were generated for " + project.config)
+    common = dirname(common)
+  }
+  const staging = project.sidecarDir + ".relocating-" + process.pid
+  rmSync(staging, { recursive: true, force: true })
+  for (const file of project.native) {
+    const staged = join(staging, sidecarName(project.rootDir, file))
+    mkdirSync(dirname(staged), { recursive: true })
+    renameSync(join(project.sidecarDir, sidecarName(common, file)), staged)
+  }
+  rmSync(project.sidecarDir, { recursive: true, force: true })
+  renameSync(staging, project.sidecarDir)
+}
 
 const generatedDeclaration = file => /\.d\.vibe\.ts$|\.vibe\.[^/]+\.d\.[cm]?ts$/.test(file)
 
@@ -97,8 +124,11 @@ export const sidecarProjects = (root = repository) => {
   return [...projects.values()].filter(project => project.native.length).map(project => {
     const ambient = ambientContext(project)
     const rootDir = sourceRoot(project)
+    const sidecarDir = project.parsed.raw?.vibe?.sidecarDir
     return {
       ...(rootDir === undefined ? {} : { rootDir }),
+      ...(rootDir === undefined || typeof sidecarDir !== "string" ? {} : { sidecarDir: resolve(dirname(project.config), sidecarDir) }),
+      native: [...project.native].sort(),
       config: project.config,
       files: [...new Set([...project.native, ...ambient.files])].sort(),
       libs: ambient.libs,
@@ -125,19 +155,16 @@ export const prepareSidecars = (root = repository, { stdio = "inherit" } = {}) =
     const temporary = join(directory, ".tsconfig.vibelang-sidecars-" + process.pid + ".json")
     writeFileSync(temporary, JSON.stringify({
       extends: "./tsconfig.json",
-      compilerOptions: {
-        noEmit: true,
-        customConditions: project.conditions,
-        ...(project.libs.length ? { lib: project.libs } : {}),
-        ...(project.rootDir === undefined ? {} : { rootDir: slash(relative(directory, project.rootDir)) || "." })
-      },
+compilerOptions: { noEmit: true, customConditions: project.conditions, ...(project.libs.length ? { lib: project.libs } : {}) },
       files: project.files.map(file => "./" + slash(relative(directory, file))),
       include: [],
       exclude: []
     }) + "\n")
     try {
       if (stdio === "inherit") console.log("Generating declarations: " + slash(relative(root, project.config)))
+      if (project.sidecarDir !== undefined) rmSync(project.sidecarDir, { recursive: true, force: true })
       const result = spawnSync(process.execPath, [compiler, "-p", temporary], { cwd: directory, stdio, encoding: "utf8" })
+      if (!result.error && result.status === 0 && project.sidecarDir !== undefined) relocate(project)
       if (result.error || result.status !== 0) failed.push(
         slash(relative(root, project.config)) + ": declaration generation failed (" + (result.status ?? result.error?.message ?? result.signal) + ")" +
         (stdio === "pipe" ? "\n" + (result.stdout ?? "") + (result.stderr ?? "") : "")

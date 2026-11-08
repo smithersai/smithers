@@ -166,3 +166,33 @@ test("sidecars land where rootDirs pairs them when every native source sits unde
   const found = ts.resolveModuleName("./value.vibe", join(dir, "src/consumer.ts"), parsed.options, ts.sys).resolvedModule
   assert.equal(found?.resolvedFileName, join(dir, ".vibe/declarations/src/value.d.vibe.ts"))
 }))
+
+test("sidecars stay paired when a project's program reaches another package's native sources", () => fixture(dir => {
+  // The program for app reaches lib's source, so the compiler's common directory is the
+  // workspace root and it writes app/.vibe/declarations/app/src/main.d.vibe.ts plus lib's
+  // sidecar. Generation must leave app's sidecar where rootDirs pairs it and nothing of lib's.
+  symlinkSync(join(root, "node_modules"), join(dir, "node_modules"), "dir")
+  writeFileSync(join(dir, "package.json"), JSON.stringify({ name: "declaration-reach-fixture", type: "module" }))
+  const project = name => {
+    mkdirSync(join(dir, name, "src/same"), { recursive: true })
+    writeFileSync(join(dir, name, "tsconfig.json"), JSON.stringify({
+      vibe: { sidecarDir: ".vibe/declarations" },
+      compilerOptions: {
+        target: "ES2022", module: "NodeNext", moduleResolution: "NodeNext", strict: true,
+        skipLibCheck: true, noEmit: true, rootDirs: [".", ".vibe/declarations"], allowArbitraryExtensions: true
+      },
+      include: ["src/**/*"]
+    }))
+  }
+  project("lib")
+  project("app")
+  writeFileSync(join(dir, "lib/src/value.vibe"), "export const value = 1\n")
+  writeFileSync(join(dir, "app/src/main.vibe"), 'import { value } from "../../lib/src/value.vibe"\nexport const main = value + 1\n')
+  writeFileSync(join(dir, "app/src/same/main.vibe"), "export const nested = 2\n")
+  assert.equal(prepareSidecars(dir, { stdio: "pipe" }), 2)
+  const listed = name => readdirSync(join(dir, name, ".vibe/declarations"), { recursive: true })
+    .filter(file => file.endsWith(".d.vibe.ts")).map(file => file.split("\\").join("/")).sort()
+  assert.deepEqual(listed("app"), ["src/main.d.vibe.ts", "src/same/main.d.vibe.ts"])
+  assert.deepEqual(listed("lib"), ["src/value.d.vibe.ts"])
+  assert.match(readFileSync(join(dir, "app/.vibe/declarations/src/same/main.d.vibe.ts"), "utf8"), /nested/)
+}))
