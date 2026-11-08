@@ -79,3 +79,7 @@ maximizing); `test/live.workerd.test.vibe` (the live tour's flows in local worke
 on a model nobody answers); `e2e/tour.spec.ts` (all of it in a browser, reduced motion included). With
 `CEREBRAS_API_KEY` set, the opt-in workerd case asks the real model for the tour; no key was available on the build
 host, so it was not run.
+
+**Coverage regression (2026-11-07).** Ending a tour now returns keyboard focus to the composer after the render.
+The removed Esc button previously left focus on the page body, including after an unavailable end was retried.
+Scene checks require the focus command; browser checks require the actual composer focus after Escape, Esc and recovery.

@@ -286,8 +286,9 @@ describe("Learn more: the agent's tour", () => {
       given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
       ...started,
       Subscription.emit(Message.PressedEscape()),
-      Command.expectExact(EndTourCommand({ conversation: TOUR })),
+      Command.expectExact(EndTourCommand({ conversation: TOUR }), FocusComposer({})),
       Command.resolve(EndTourCommand, Message.FocusedPrompt()),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
       expect(role("button", { name: "Esc" })).toBeAbsent(),
       expect(title("VibeLang docs")).toHaveAttr("src", "https://vibelang.sh/"),
       expect(text("VibeLang is Effect as its own language.")).toExist(),
@@ -303,8 +304,9 @@ describe("Learn more: the agent's tour", () => {
       given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
       ...started,
       click(role("button", { name: "Esc" })),
-      Command.expectExact(EndTourCommand({ conversation: TOUR })),
+      Command.expectExact(EndTourCommand({ conversation: TOUR }), FocusComposer({})),
       Command.resolve(EndTourCommand, Message.FocusedPrompt()),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
       expect(role("button", { name: "Esc" })).toBeAbsent(),
       expect(role("region", { name: "Docs" })).toExist(),
     )
@@ -316,8 +318,9 @@ describe("Learn more: the agent's tour", () => {
       given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: false }),
       ...started,
       Subscription.emit(Message.PressedEscape()),
-      Command.expectExact(EndTourCommand({ conversation: TOUR })),
+      Command.expectExact(EndTourCommand({ conversation: TOUR }), FocusComposer({})),
       Command.resolve(EndTourCommand, Message.FocusedPrompt()),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
     )
   })
 
@@ -350,7 +353,7 @@ describe("Learn more: the agent's tour", () => {
     const ended = update(learning.model, Message.PressedEscape())
     const named = (commands: ReadonlyArray<{ readonly name: string; readonly args?: unknown }> | undefined) =>
       commands?.map((command) => [command.name, command.args])
-    assert(named(ended.commands)).toEqual([["EndTour", { conversation: TOUR }]])
+    assert(named(ended.commands)).toEqual([["EndTour", { conversation: TOUR }], ["FocusComposer", {}]])
     assert(named(update(ended.model, Message.SucceededTour()).commands)).toEqual([["EndTour", { conversation: TOUR }]])
     assert(update(learning.model, Message.SucceededTour()).commands).toBeUndefined()
   })
@@ -390,6 +393,7 @@ describe("Learn more: the agent's tour", () => {
       ...started,
       click(role("button", { name: "Esc" })),
       Command.resolve(EndTourCommand, Message.FailedEndTour()),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
       expect(role("button", { name: "Esc" })).toExist(),
     )
   })

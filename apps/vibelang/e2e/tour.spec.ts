@@ -86,6 +86,7 @@ test.describe("the agent's tour", () => {
       else await page.getByRole("button", { name: "Esc" }).click()
       await expect(page.locator(".vl-glow")).toBeHidden()
       await expect(page.getByRole("button", { name: "Esc" })).toBeHidden()
+      await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
       await expect(narration(page)).toHaveAttribute("data-done", "true")
       const said = await narration(page).innerText()
       // Long past the next stop: the agent said nothing more and moved nothing.
