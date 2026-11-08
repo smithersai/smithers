@@ -1,0 +1,216 @@
+// Real happy-dom input, the page's actual startup and Foldkit runtime, and the product MockMythical flows.
+import "../src/history/MockMythical.vibe"
+import { expect, it } from "@effect/vitest"
+import { vi } from "vitest"
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
+import { Runtime } from "foldkit"
+import { historyMain, mockRole } from "../src/web/historyStartup.vibe"
+import { page } from "../src/web/startup.vibe"
+import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
+import type { History } from "../src/history/mythical.vibe"
+import { container, remove } from "./support/browser.ts"
+import { heldHealth } from "./support/heldHealth.vibe"
+
+/** An actual window with the page's root; restore this host's URL, storage and styles when it closes. */
+effect function host() {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const window = node.ownerDocument.defaultView!
+  const before = try Effect.try(() => ({ url: window.location.href, state: window.history.state, title: node.ownerDocument.title, role: window.localStorage.getItem("vibelang.role"), agent: window.localStorage.getItem("vibelang.agent"), styles: [...node.ownerDocument.head.querySelectorAll("style")] }))
+  try Effect.addFinalizer(() => sync(() => {
+    window.history.replaceState(before.state, "", before.url)
+    node.ownerDocument.title = before.title
+    for (const [key, value] of [["vibelang.role", before.role], ["vibelang.agent", before.agent]] as const) {
+      if (value === null) window.localStorage.removeItem(key)
+      else window.localStorage.setItem(key, value)
+    }
+    for (const style of node.ownerDocument.head.querySelectorAll("style")) if (!before.styles.includes(style)) style.remove()
+  }))
+  try sync(() => {
+    const root = node.ownerDocument.createElement("div")
+    root.id = "root"
+    node.append(root)
+  })
+  return { node, window }
+}
+
+/** A faulty Window service over the real host: storage is unavailable; other host operations still use it. */
+effect function withoutStorage(window: Window) {
+  let reads = 0
+  const add = try Effect.try(() => window.addEventListener.bind(window))
+  const remove = try Effect.try(() => window.removeEventListener.bind(window))
+  const style = try Effect.try(() => window.getComputedStyle.bind(window))
+  const current = try Effect.try(() => new Proxy(window, {
+    get(target, property) {
+      if (property === "localStorage") { reads++; return undefined }
+      if (property === "addEventListener") return add
+      if (property === "removeEventListener") return remove
+      return target[property as keyof Window]
+    },
+  }))
+  return {
+    layer: Layer.succeed(Experimental.Window.Window, Experimental.Window.make({ window: () => current, computedStyle: style })),
+    reads: () => reads,
+  }
+}
+
+const choices = [
+  ["", null, "maintainer"],
+  ["", "", "maintainer"],
+  ["?role=", null, "maintainer"],
+  ["?role=viewer", null, "viewer"],
+  ["?role=contributor", null, "contributor"],
+  ["?role=maintainer", null, "maintainer"],
+  ["?role=viewer", "viewer", "viewer"],
+  ["?role=viewer", "contributor", "viewer"],
+  ["?role=contributor", "contributor", "contributor"],
+  ["?role=contributor", "maintainer", "contributor"],
+  ["?role=maintainer", "viewer", "maintainer"],
+  ["?role=maintainer", "maintainer", "maintainer"],
+  ["", "viewer", "viewer"],
+  ["", "contributor", "contributor"],
+  ["", "maintainer", "maintainer"],
+  ["", "viewer ", "maintainer"],
+  ["?role=viewer", "maintainer", "viewer"],
+  ["?role=contributor", "viewer", "contributor"],
+  ["?role=maintainer", "contributor", "maintainer"],
+  ["?role=unknown", "contributor", "maintainer"],
+  ["?role=VIEWER", "viewer", "maintainer"],
+  ["?role=", "contributor", "contributor"],
+  ["?role=viewer&role=maintainer", "contributor", "viewer"],
+  ["?role=&role=viewer", "contributor", "contributor"],
+] as const
+
+for (const [query, stored, wanted] of choices) {
+  it.live(`chooses the mock role from ${query || "no query"} and ${stored ?? "no stored role"}`, () => scoped(effect {
+    const { window } = try host()
+    try sync(() => {
+      window.history.replaceState(null, "", `/history${query}`)
+      if (stored === null) window.localStorage.removeItem("vibelang.role")
+      else window.localStorage.setItem("vibelang.role", stored)
+    })
+    try Effect.try(() => expect(mockRole(window)).toBe(wanted))
+  }))
+}
+
+for (const [query, wanted, reads] of [["", "maintainer", true], ["?role=viewer", "viewer", false], ["?role=unknown", "maintainer", false]] as const) {
+  it.live(`chooses ${wanted} with unavailable storage and ${query || "no query"}`, () => scoped(effect {
+    const { window } = try host()
+    try sync(() => window.history.replaceState(null, "", `/history${query}`))
+    const faulty = try withoutStorage(window)
+    provide faulty.layer {
+      const current = try (try Experimental.Window.Window).current
+      try Effect.try(() => {
+        expect(mockRole(current)).toBe(wanted)
+        expect(faulty.reads() > 0).toBe(reads)
+      })
+    }
+  }))
+}
+
+for (const denied of [false, true]) {
+it.live(`starts a usable mock history when health${denied ? " and storage are" : " is"} unavailable`, () => scoped(effect {
+  const { node, window } = try host()
+  try sync(() => {
+    window.history.replaceState(null, "", "/history")
+    window.localStorage.removeItem("vibelang.role")
+    window.localStorage.removeItem("vibelang.agent")
+  })
+  const faulty = try withoutStorage(window)
+  let probes = 0
+  const client = HttpClient.make((request) => {
+    probes++
+    return fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+  })
+  provide Layer.mergeAll(page, Layer.succeed(HttpClient.HttpClient, client), denied ? faulty.layer : Layer.empty) {
+    const { application, flags } = try historyMain()
+    try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    try promise(() => vi.waitFor(() => {
+      const frame = node.querySelector("[data-surface='history']")
+      expect(frame?.getAttribute("data-role")).toBe("maintainer")
+      expect(frame?.getAttribute("data-mode")).toBe("mock")
+      expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+    }, { timeout: 5000 }))
+    try Effect.try(() => {
+      expect(faulty.reads() > 0).toBe(denied)
+      expect(probes).toBe(1)
+    })
+  }
+}), 30_000)
+}
+
+it.live("disposing the mounted history cancels an unresolved health selection", () => scoped(effect {
+  const { node, window } = try host()
+  try sync(() => {
+    window.history.replaceState(null, "", "/history")
+    window.localStorage.removeItem("vibelang.agent")
+  })
+  const health = try heldHealth()
+  const mounted = try acquireRelease(Scope.make(), (scope) => Scope.close(scope, Exit.succeed(undefined)))
+  provide Layer.merge(page, health.layer) {
+    const { application, flags } = try historyMain()
+    provide Scope.Scope = mounted {
+      try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+    }
+    try promise(() => vi.waitFor(() => {
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: false })
+      expect(node.querySelector("[data-surface='history']")?.getAttribute("data-mode")).toBe("pending")
+    }, { timeout: 1000 }))
+    try Scope.close(mounted, Exit.succeed(undefined))
+    try promise(() => vi.waitFor(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true })))
+  }
+}), 30_000)
+
+for (const [role, force, initialHash] of [["viewer", "query", ""], ["contributor", "storage", ""], ["maintainer", "query", ""], ["viewer", "query", "m1"], ["maintainer", "storage", "e1"]] as const) {
+  it.live(`starts the ${role}'s history at #${initialHash} through ${force} mock selection and follows real hash navigation`, () => scoped(effect {
+    const { node, window } = try host()
+    try sync(() => {
+      window.history.replaceState(null, "", `/history?role=${role}${force === "query" ? "&agent=mock" : ""}${initialHash ? `#${initialHash}` : ""}`)
+      window.localStorage.removeItem("vibelang.agent")
+      if (force === "storage") window.localStorage.setItem("vibelang.agent", "mock")
+    })
+    const seed = try Effect.try(() => JSON.parse(HISTORY_JSON) as History)
+    const epicTitle = try Effect.try(() => seed.epics.find((epic) => epic.id === "e1")!.title)
+    const title = try Effect.try(() => seed.commits.find((commit) => commit.id === "m1")!.title)
+    provide Layer.merge(page, FetchHttpClient.layer) {
+      const { application, flags } = try historyMain()
+      try Effect.try(() => expect(flags).toEqual({ mode: "pending", role, hash: initialHash }))
+      try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+      try promise(() => vi.waitFor(() => {
+        const frame = node.querySelector("[data-surface='history']")
+        expect(frame?.getAttribute("data-role")).toBe(role)
+        expect(frame?.getAttribute("data-mode")).toBe("mock")
+      }, { timeout: 5000 }))
+      if (initialHash === "") {
+        try promise(() => vi.waitFor(() => expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull(), { timeout: 5000 }))
+        const buttons = try Effect.try(() => Array.from(node.querySelectorAll("button"), (button) => button.textContent))
+        try Effect.try(() => {
+          expect(buttons.includes("Plan work")).toBe(role !== "viewer")
+          expect(buttons.includes("Fold")).toBe(role === "maintainer")
+        })
+        try sync(() => node.querySelector<HTMLElement>(".mh-epics [role='button']")!.click())
+        try promise(() => vi.waitFor(() => expect(node.querySelector("a[href='#e1']")).not.toBeNull(), { timeout: 5000 }))
+        try sync(() => node.querySelector<HTMLAnchorElement>("a[href='#e1']")!.click())
+      }
+      if (initialHash !== "m1") {
+        // The expanded outline already has commit links. Require the epic page itself before following one.
+        try promise(() => vi.waitFor(() => {
+          expect(window.location.hash).toBe("#e1")
+          expect(node.querySelector("h1")?.textContent).toBe(epicTitle)
+          expect(node.querySelector("a[href='#m1']")).not.toBeNull()
+        }, { timeout: 5000 }))
+        try sync(() => node.querySelector<HTMLAnchorElement>("a[href='#m1']")!.click())
+      }
+      try promise(() => vi.waitFor(() => {
+        expect(window.location.hash).toBe("#m1")
+        expect(node.querySelector("h1")?.textContent).toBe(title)
+      }, { timeout: 5000 }))
+      const history = try Effect.try(() => node.querySelector<HTMLAnchorElement>("a[href='#']")!)
+      try Effect.try(() => expect(history.textContent).toBe("History"))
+      try sync(() => history.click())
+      try promise(() => vi.waitFor(() => {
+        expect(window.location.hash).toBe("")
+        expect(node.querySelector(".mh-epics [role='button']")).not.toBeNull()
+      }, { timeout: 5000 }))
+    }
+  }), 30_000)
+}

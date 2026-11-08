@@ -95,3 +95,9 @@ separate and remains unresolved.
 Native touch assertions use the actual first touchmove position. Under instrumentation the answer grew between
 the earlier CDP measurement (1425) and first move (1743); the valid swipe ended at 1508 with following paused.
 Comparing to the stale pre-gesture position was incorrect. Read-only native event evidence retains that failure.
+
+History startup now has35 boundary cases over a real window and the mounted Foldkit application: query/stored-role combinations, missing/empty/invalid/duplicate role input, unavailable storage through a faulty
+Window service, unavailable health through a faulty HttpClient, cancellation on disposal, role-specific controls,
+direct epic/commit hashes and native link navigation back to the outline. Happy paths use the product MockMythical
+flows and real browser-host services. The module independently measures100% lines, branches, functions and
+statements (27/27,10/10,9/9,32/32); that per-module validation does not replace the red whole-app gate.
