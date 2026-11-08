@@ -47875,6 +47875,18 @@
       },
       {
         "kind": "file",
+        "path": "apps/vibelang/tsconfig.scripts.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.script-tests.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/playwright.config.ts"
+      },
+      {
+        "kind": "file",
         "path": "apps/vibelang/vite.config.ts"
       },
       {
@@ -47949,6 +47961,18 @@
       {
         "kind": "file",
         "path": "apps/vibelang/tsconfig.surfaces.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.scripts.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.script-tests.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/playwright.config.ts"
       },
       {
         "kind": "file",
@@ -48118,6 +48142,18 @@
       {
         "kind": "file",
         "path": "apps/vibelang/tsconfig.surfaces.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.scripts.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.script-tests.json"
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/playwright.config.ts"
       },
       {
         "kind": "file",

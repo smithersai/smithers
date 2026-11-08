@@ -6,7 +6,9 @@
     "outDir": "dist-factory",
     "types": [
       "node"
-    ]
+    ],
+    "sourceMap": true,
+    "inlineSources": true
   },
   "include": [
     "src/surfaces",

@@ -25,6 +25,9 @@ const sources = [
   Smithers.file("//apps/vibelang/package.json"),
   Smithers.file("//apps/vibelang/tsconfig.json"),
   Smithers.file("//apps/vibelang/tsconfig.surfaces.json"),
+  Smithers.file("//apps/vibelang/tsconfig.scripts.json"),
+  Smithers.file("//apps/vibelang/tsconfig.script-tests.json"),
+  Smithers.file("//apps/vibelang/playwright.config.ts"),
   Smithers.file("//apps/vibelang/vite.config.ts"),
   Smithers.file("//apps/vibelang/alchemy.run.ts"),
   Smithers.file("//apps/vibelang/index.html")

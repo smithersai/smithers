@@ -12,3 +12,7 @@ verify/.checks/
 verify/run-*.config.json
 verify/__pycache__/
 .verify-run-*.config.json
+
+dist-scripts/
+coverage/
+dist-script-tests/

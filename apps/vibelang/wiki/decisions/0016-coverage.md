@@ -75,3 +75,11 @@ Final snapshot pending.
 Browser boundary cases additionally cover the default answer, rejected/unavailable tour starts, retry after an
 unavailable end, and native touch end/cancellation followed by Latest. Read-only native event evidence distinguishes
 an earlier follow scroll's end from the actual gesture ending; the test waits for the latter before tapping.
+
+The source-map control and generator-process checkpoint declares the root's patched coverage provider and matching
+Vitest 5.0.0 (provider declaration awaiting VL-5 approval). `build:scripts` emits operational scripts and a separate
+ignored test tree, both with source maps and inline sources. Tests execute those actual emissions, retaining their
+maps for subprocess collection. Context tests cover missing, current, changed and written output. The mythical seed
+command reads a real two-commit jj main and JSONL queue, skips malformed entries, resolves both revset batches,
+groups a landed stack and rejection notes, repeats deterministically, and preserves the previous seed when jj or
+queue input fails. These are passing behavioral tests; installing the provider is not a 100% coverage claim.

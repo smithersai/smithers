@@ -9,8 +9,8 @@ import { node, run } from "./support/processes.vibe"
 
 it.live("is generated from the installed VibeLang skill", () => effect {
   provide NodeServices.layer, ExperimentalNodeServices.layer {
-    const script = try (try Path.Path).fromFileUrl(new URL("../scripts/agent-context.vibe", import.meta.url))
-    const check = try run(try node(), ["--import=vibelang/register", script, "--check"])
+    const script = try (try Path.Path).fromFileUrl(new URL("../dist-scripts/agent-context.js", import.meta.url))
+    const check = try run(try node(), [script, "--check"])
     try Effect.try(() => {
       expect(check.status, check.stderr).toBe(0)
       expect(AGENT_CONTEXT).toContain("You are the VibeLang agent on vibelang.smithers.sh")
@@ -19,3 +19,35 @@ it.live("is generated from the installed VibeLang skill", () => effect {
     })
   }
 }, 30_000)
+
+it.live("writes an isolated context and rejects missing or changed generated output", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    // Keep the compiler-emitted executable and its maps until the coverage provider has collected child processes.
+    // Its relative output lives in this ignored fixture tree, never in the app's worker directory.
+    const root = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
+    const script = path.join(root, "scripts/agent-context.js")
+    const target = path.join(root, "worker/agentContext.vibe")
+    try fs.makeDirectory(path.join(root, "worker"), { recursive: true })
+    try fs.remove(target, { force: true })
+    try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
+    const executable = try node()
+    const missing = try run(executable, [script, "--check"])
+    const written = try run(executable, [script])
+    const generated = try fs.readFileString(target)
+    const current = try run(executable, [script, "--check"])
+    try fs.writeFileString(target, "changed")
+    const changed = try run(executable, [script, "--check"])
+    try Effect.try(() => {
+      expect(written.status, written.stderr).toBe(0)
+      expect(current.status, current.stderr).toBe(0)
+      expect(generated).toContain(JSON.stringify(AGENT_CONTEXT))
+      for (const failed of [missing, changed]) {
+        expect(failed.status).toBe(1)
+        expect(failed.stderr).toContain("worker/agentContext.vibe is stale")
+      }
+      expect(changed.stderr).not.toContain(AGENT_CONTEXT)
+    })
+  }
+}), 30_000)

@@ -1,0 +1,33 @@
+// @vitest-environment node
+// The test assertion passes in the child; only an uncovered .vibe branch may fail its coverage gate.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import { node, run } from "./support/processes.vibe"
+
+const Report = Schema.fromJsonString(Schema.Record(Schema.String, Schema.Unknown))
+
+it.live("maps an unvisited Effect branch to its .vibe line and fails the 100% gate", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const path = try Path.Path
+    const fs = try FileSystem.FileSystem
+    const fixture = try path.fromFileUrl(new URL("./coverage-fixtures/", import.meta.url))
+    const vitest = try path.fromFileUrl(new URL("../node_modules/vitest/vitest.mjs", import.meta.url))
+    const directory = try fs.makeTempDirectoryScoped()
+    const result = try run(try node(), [vitest, "run", "--config", path.join(fixture, "vite.config.ts"), "--coverage.reportsDirectory", directory, "--maxWorkers=1"])
+    const summary = try Schema.decodeUnknownEffect(Report)(try fs.readFileString(path.join(directory, "coverage-summary.json")))
+    const raw = try Schema.decodeUnknownEffect(Report)(try fs.readFileString(path.join(directory, "coverage-final.json")))
+    const file = path.join(fixture, "fixture.vibe")
+    const coverage = raw[file] as { s: Record<string, number>; statementMap: Record<string, { start: { line: number } }> }
+    const metrics = summary[file] as { lines: { pct: number }; branches: { pct: number } }
+    try Effect.try(() => {
+      expect(result.status).toBe(1)
+      expect(result.stdout + result.stderr).toContain("1 passed")
+      expect(result.stdout + result.stderr).toContain("threshold (100%)")
+      expect(Object.keys(raw)).toEqual([file])
+      expect(metrics.lines.pct).toBeLessThan(100)
+      expect(metrics.branches.pct).toBeLessThan(100)
+      expect(Object.entries(coverage.s).filter(([, hits]) => hits === 0).map(([id]) => coverage.statementMap[id]!.start.line)).toContain(4)
+    })
+  }
+}), 60_000)

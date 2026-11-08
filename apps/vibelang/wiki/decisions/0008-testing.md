@@ -110,7 +110,7 @@ checks controls and paused state, then the reduced-motion poster, fade and real 
 **Proof CI (0018).** Both proof targets run in the normal CI tier. Their inputs include all production VibeLang
 modules and the verification tools; the positive gate also checks function-inventory drift. No new dependency is added.
 
-**Shared-host determinism (2026-11-07).** Vitest uses four workers per lane. The cross-conversation lifecycle
+**Shared-host determinism (2026-11-07).** Vitest uses three workers per lane. The cross-conversation lifecycle
 case waits for the independent room's actual completed reply, then asserts the busy room has not completed one.
 A fixed count of scheduler yields did not guarantee that the durable engine had finished its due work under coverage.
 
@@ -169,3 +169,11 @@ asserted; no request interception or synthetic events are used.
 **Accounting bounds and ordered context (0018).** Three failing-first budget regressions cover overflow, corrupt
 persisted totals and admission; the final safe charge/replay stays green. Model-history integration preserves the
 requested prefix and excludes tour narration. The shared CLI/MCP and sequence policies add 44 rejected mutants.
+
+**Source-map and script controls (0016).** Vitest and `@vitest/coverage-v8` now both use the root's **5.0.0**, including
+its provider patch. The added provider declaration awaits Will's **VL-5 approval**. A child suite with a passing
+assertion must still exit 1 for its unvisited Effect return at original `.vibe` line 4. CLI/MCP and script emissions
+retain maps and inline source text. Generator process tests use a separate ignored compiler-output tree whose maps
+remain available until reporting; they never overwrite the app's generated context or history seed. The seed command
+reads real jj commits and queue entries, including known commits in its second revset batch, and must preserve output
+after failed reads. `ast-v8-to-istanbul` 1.0.5 and whole-app coverage gates remain proposed in the measurement prototype.

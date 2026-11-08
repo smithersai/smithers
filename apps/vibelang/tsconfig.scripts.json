@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "rootDir": "scripts",
+    "outDir": "dist-scripts",
+    "types": [
+      "node"
+    ],
+    "sourceMap": true,
+    "inlineSources": true
+  },
+  "include": [
+    "scripts/agent-context.vibe"
+  ]
+}

@@ -9,18 +9,19 @@
     "build": "vite build",
     "preview": "vite preview --port 4173 --strictPort",
     "typecheck": "vibelang -p tsconfig.json --noEmit && vibelang -p worker/tsconfig.json --noEmit",
-    "test": "pnpm build:surfaces && vitest run",
+    "test": "pnpm build:surfaces && pnpm build:scripts && vitest run",
     "test:workerd": "pnpm build:surfaces && vitest run --mode workerd",
     "e2e": "playwright test",
     "plan": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy plan --stage prod",
     "deploy": "NODE_OPTIONS=\"${NODE_OPTIONS:-} --import=vibelang/register\" alchemy deploy --stage prod",
     "build:surfaces": "vibelang -p tsconfig.surfaces.json && chmod +x dist-factory/surfaces/*-entry.js",
-    "agent-context": "node --import=vibelang/register scripts/agent-context.vibe",
+    "agent-context": "pnpm build:scripts && node dist-scripts/agent-context.js",
     "mythical-seed": "node --import=vibelang/register scripts/mythical-seed.vibe",
     "cli": "pnpm build:surfaces && node dist-factory/surfaces/cli-entry.js",
     "mcp": "pnpm build:surfaces >&2 && node dist-factory/surfaces/mcp-entry.js",
     "verify": "bash verify/check.sh",
-    "verify:broken": "bash verify/broken.sh"
+    "verify:broken": "bash verify/broken.sh",
+    "build:scripts": "vibelang -p tsconfig.scripts.json && vibelang -p tsconfig.script-tests.json && ln -sfn ../node_modules dist-script-tests/node_modules"
   },
   "dependencies": {
     "@smthrs/agent": "workspace:*",
@@ -52,6 +53,7 @@
     "@playwright/test": "1.62.1",
     "@smthrs/fuzz": "workspace:*",
     "@types/node": "26.6.6",
+    "@vitest/coverage-v8": "5.0.0",
     "alchemy": "2.0.0-beta.85",
     "esbuild": "0.28.2",
     "happy-dom": "20.14.6",
@@ -60,7 +62,7 @@
     "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vite": "8.3.4",
-    "vitest": "5.0.5"
+    "vitest": "5.0.0"
   },
   "bin": {
     "vibelang-factory": "dist-factory/surfaces/cli-entry.js"
