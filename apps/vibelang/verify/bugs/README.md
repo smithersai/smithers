@@ -51,3 +51,6 @@ claims. Both sources strictly typecheck.
 
 - `union-widening.ts`: a strict TypeScript return widens a string union, but LemmaScript emits incompatible Dafny
   datatypes. Exact value contracts remain in the fixture; no production workaround is added.
+
+- `real-rounding.ts`: exact-real subtraction proves a threshold result that native IEEE-754 rounding violates.
+  The proof succeeds and the native assertion intentionally fails; no native arithmetic theorem is claimed.

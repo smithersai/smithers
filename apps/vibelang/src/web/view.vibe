@@ -1,4 +1,5 @@
-import { postFailure } from "./screenDecision.vibe"
+import { failureOf, postFailure, statusLabel, sendKey, canSend, entryDisplay, showMedia, mediaDecision } from "./viewDecision.vibe"
+export { failureOf } from "./viewDecision.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
 // way it does on smithers.sh; the splash and the frame are this app's (`vl-*`, styles.css).
 import { Option } from "effect"
@@ -17,9 +18,7 @@ export const SOURCE_URL = "https://github.com/smithersai/vibelang"
 export const INSTALL = "npm create vibelang@latest my-app"
 
 /** What a failed answer says: the agent's reason (a spent budget, no model), or that it failed when it gave none. */
-export function failureOf(reason: string): string {
-  return reason === "" || reason === "failed" ? "Answer failed" : reason
-}
+
 
 export function view(model: Model, h: H): Document {
   return {
@@ -189,18 +188,18 @@ function chat(model: Model, h: H): Html {
 }
 
 function entryView(entry: Entry, session: string, h: H): Html {
-  const role = entry.author === "person" ? "user" : "assistant"
-  const body = entry.author === "agent" ? render(h, entry.text) : [entry.text]
+  const display = entryDisplay(entry.author, entry.text, entry.done, entry.error)
+  const body = display.markdown ? render(h, entry.text) : [entry.text]
   return h.article(
-    [h.Class("sui-chat-message"), h.DataAttribute("role", role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
+    [h.Class("sui-chat-message"), h.DataAttribute("role", display.role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [
       h.div([h.Class("sui-chat-message-label")], [entry.author === "person" && ownPost(entry.clientId, session) ? "You" : entry.name]),
       // A reply that failed before any text has nothing to show but its reason.
-      ...(entry.text === "" && entry.done ? [] : [h.div(
-        [h.Class(entry.text === "" && !entry.done ? "sui-chat-bubble vl-thinking" : "sui-chat-bubble")],
-        entry.text === "" && !entry.done ? [h.span([h.Class("vl-dots"), h.Role("status"), h.AriaLabel("Thinking")], [])] : body,
+      ...(!display.showBody ? [] : [h.div(
+        [h.Class(display.thinking ? "sui-chat-bubble vl-thinking" : "sui-chat-bubble")],
+        display.thinking ? [h.span([h.Class("vl-dots"), h.Role("status"), h.AriaLabel("Thinking")], [])] : body,
       )]),
-      ...(entry.error === "" ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [failureOf(entry.error)])]),
+      ...(!display.failed ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [failureOf(entry.error)])]),
     ],
   )
 }
@@ -223,6 +222,7 @@ function ownPost(clientId: string, session: string): boolean {
 }
 
 
+
 function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): Html {
   return h.textarea([
     h.Id(id),
@@ -233,7 +233,7 @@ function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): H
     h.Value(model.draft),
     h.OnInput((value) => Message.UpdatedDraft({ value })),
     h.OnKeyDownPreventDefault((key, modifiers) =>
-      key === "Enter" && !modifiers.shiftKey ? Option.some(Message.SubmittedDraft()) : Option.none()
+      sendKey(key, modifiers.shiftKey) ? Option.some(Message.SubmittedDraft()) : Option.none()
     ),
   ])
 }
@@ -246,7 +246,7 @@ function composer(model: Model, h: H): Html {
       h.div([h.Class("sui-chat-composer-toolbar")], [
         h.span([h.Class("sui-chat-composer-status")], [statusText(model)]),
         h.div([h.Class("sui-chat-composer-actions")], [
-          h.button([h.Class("vl-send sui-chat-composer-send"), h.Type("submit"), h.AriaLabel("Send"), h.Disabled(model.draft.trim() === "")], ["↑"]),
+          h.button([h.Class("vl-send sui-chat-composer-send"), h.Type("submit"), h.AriaLabel("Send"), h.Disabled(!canSend(model.draft))], ["↑"]),
         ]),
       ]),
     ],
@@ -254,11 +254,7 @@ function composer(model: Model, h: H): Html {
 }
 
 function statusText(model: Model): string {
-  const { conversation } = model.client
-  if (model.stream === "failed") return "Disconnected"
-  if (model.tourError !== "") return postFailure(model.tourError)
-  if (conversation.agent === "working") return "Answering"
-  return ""
+  return statusLabel(model.stream, model.tourError, model.client.conversation.agent)
 }
 
 // ── ⌘K ──────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -277,7 +273,7 @@ function palette(model: Model, h: H): Html {
         h.div([h.Class("sui-chat-composer-toolbar")], [
           h.span([h.Class("sui-chat-composer-status")], [h.kbd([h.Class("vl-kbd")], ["⏎"]), " to send · ", h.kbd([h.Class("vl-kbd")], ["esc"]), " to close"]),
           h.div([h.Class("sui-chat-composer-actions")], [
-            h.button([h.Class("vl-send sui-chat-composer-send"), h.Type("submit"), h.AriaLabel("Send"), h.Disabled(model.draft.trim() === "")], ["↑"]),
+            h.button([h.Class("vl-send sui-chat-composer-send"), h.Type("submit"), h.AriaLabel("Send"), h.Disabled(!canSend(model.draft))], ["↑"]),
           ]),
         ]),
       ],
@@ -293,15 +289,15 @@ function mediaForStop(model: Model, h: H, page: string): ReadonlyArray<Html> {
 
 /** Loading videos show their native poster. A failed image or video removes its whole figure. */
 function media(model: Model, h: H, className: string, asset: StopMedia, controls = false): ReadonlyArray<Html> {
-  if (model.failedMedia?.includes(asset.src)) return []
+  if (!showMedia(model.failedMedia ?? [], asset.src)) return []
   const source = (src: string) => model.mediaSources?.[src] ?? src
-  const video = asset.poster !== undefined
-  const failed = Message.FailedMedia({ src: asset.src, kind: video ? "video" : "image" })
-  const still = video && model.reducedMotion && !controls ? asset.poster! : asset.src
+  const choice = mediaDecision(asset.poster !== undefined, model.reducedMotion, controls)
+  const failed = Message.FailedMedia({ src: asset.src, kind: choice.kind })
+  const still = choice.poster ? asset.poster! : asset.src
   return [h.figure([h.Class(className), h.Key(asset.src)], [
-    ...(video && (!model.reducedMotion || controls) ? [h.video([
+    ...(choice.video ? [h.video([
       h.Key(asset.src), h.Src(source(asset.src)), h.Poster(source(asset.poster!)),
-      h.Autoplay(!model.reducedMotion), h.Muted(true), h.Playsinline(true), h.Loop(asset.loop ?? false), h.Controls(controls),
+      h.Autoplay(choice.autoplay), h.Muted(true), h.Playsinline(true), h.Loop(asset.loop ?? false), h.Controls(controls),
       h.AriaLabel(asset.alt), h.OnError(failed), h.OnPlay(Message.LoadedMedia({ kind: "video" })),
     ], [])] : [h.img([
       h.Key(still), h.Src(source(still)), h.Alt(asset.alt), h.OnError(failed), h.OnLoad(Message.LoadedMedia({ kind: "image" })),

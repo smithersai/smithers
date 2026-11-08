@@ -1,3 +1,4 @@
+import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
 // The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.vibe`); this file only adds what a
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
@@ -12,7 +13,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
 import { SandboxSnapshot, EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
-import { escapeAction, canMinimize, hasContent, toggleDocs, scrollFollow, follows, failedTourKeepsControl, paletteChange, tourStream, completedEvent, answerAnnouncement, screenKey } from "./screenDecision.vibe"
+import { escapeAction, canMinimize, hasContent, scrollFollow, follows, paletteChange, tourStream, completedEvent, answerAnnouncement, screenKey, showSplash, endScreenTour, setScreenPalette, minimizeScreen, beginScreenTour, failScreenTour, failedScreenEnd, completeScreenTour, latestScreen, toggleScreenDocs } from "./screenDecision.vibe"
 import { MediaSources, observeMedia } from "./media.vibe"
 import { Identity, viewer } from "../core/roles.vibe"
 import { Navigation } from "foldkit"
@@ -290,24 +291,24 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     // Ended before the tour was even recorded: end it now that it is.
     SucceededTour: () => model.tour ? { model } : { model, commands: [EndTourCommand({ conversation: model.conversation })] },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
-    FailedTour: ({ reason }) => ({ model: { ...model, tour: failedTourKeepsControl(reason, touringHere(model)), docs: failedTourKeepsControl(reason, touringHere(model)) ? "max" : "pane", tourError: reason } }),
+    FailedTour: ({ reason }) => ({ model: { ...model, ...failScreenTour(model, reason, touringHere(model)) } }),
     // The end never reached the agent: it still drives, so Esc comes back.
-    FailedEndTour: () => ({ model: { ...model, tour: touringHere(model), docs: touringHere(model) ? "max" : model.docs } }),
-    ClickedSandboxes: () => ({ model: { ...model, sandboxPane: model.sandboxPane === "closed" || model.sandboxPane === undefined ? "pane" : "closed" } }),
-    MaximizedSandboxes: () => ({ model: { ...model, sandboxPane: model.sandboxPane === "max" ? "pane" : "max" } }),
+    FailedEndTour: () => ({ model: { ...model, ...failedScreenEnd(model, touringHere(model)) } }),
+    ClickedSandboxes: () => ({ model: { ...model, sandboxPane: toggleSandbox(model.sandboxPane ?? "closed") } }),
+    MaximizedSandboxes: () => ({ model: { ...model, sandboxPane: maximizeSandbox(model.sandboxPane ?? "closed") } }),
     StartedSandbox: () => sandboxAction(model, "start"),
     StoppedSandbox: () => sandboxAction(model, "stop"),
     UpdatedTerminal: ({ value }) => ({ model: { ...model, terminalDraft: value } }),
     SubmittedTerminal: () => sandboxAction(model, "command"),
     LoadedSandbox: ({ conversation, request, snapshot }) => {
-      if (conversation !== model.conversation || request !== (model.sandboxRequest ?? 0)) return { model }
+      if (!currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0)) return { model }
       const zero = snapshot.remaining === 0 && snapshot.id !== "" && snapshot.status === "stopped"
       const low = snapshot.remaining > 0 && snapshot.remaining <= 10 && model.warnedMonth !== snapshot.resetAt
       return { model: { ...model, sandbox: snapshot, sandboxPane: snapshot.status === "running" && model.sandbox?.status !== "running" ? "pane" : model.sandboxPane ?? "closed", sandboxBusy: false, sandboxOperation: "", sandboxError: "", minuteNotice: zero ? `Out of minutes — ${snapshot.id} stopped` : low ? `${snapshot.remaining} minutes left` : model.sandbox?.resetAt !== snapshot.resetAt ? "" : model.minuteNotice ?? "", warnedMonth: low ? snapshot.resetAt : model.warnedMonth ?? 0 } }
     },
-    FailedSandbox: ({ conversation, request, reason }) => conversation !== model.conversation || request !== (model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
-    ClickedDocs: () => ({ model: { ...model, docs: toggleDocs(model.docs) } }),
-    ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
+    FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
+    ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) } }),
+    ClickedSplash: () => ({ model: { ...model, ...showSplash(model) } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
     SubmittedDraft: () => submit(model),
@@ -332,12 +333,11 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       return {
         model: {
           ...model,
+          ...completeScreenTour(model, toured, event.type),
           client,
           connection: model.stream === "open" ? "Connected" : model.connection,
           answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
           announced: completed ? model.announced + 1 : model.announced,
-          tour: toured ? false : model.tour,
-          docs: toured && event.type !== "ReplyFinished" ? "pane" : model.docs,
         },
       }
     },
@@ -349,7 +349,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       if (next.stale) return { model }
       return { model: { ...model, following: next.following, followIntent: next.followIntent } }
     },
-    ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FocusComposer({})] }),
+    ClickedLatest: () => ({ model: { ...model, ...latestScreen(model) }, commands: [FocusComposer({})] }),
   })
 }
 
@@ -367,12 +367,7 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory> {
   return {
     model: {
       ...model,
-      surface: "chat",
-      palette: false,
-      tour: true,
-      tourError: "",
-      docs: "max",
-      following: true,
+      ...beginScreenTour(model),
       conversation,
       client: fresh ? Machine.newClient : model.client,
       epoch: stream.epoch,
@@ -391,18 +386,18 @@ function touringHere(model: Model): boolean {
 
 /** Escape or Esc: the agent stops at once; the person keeps the conversation and the docs pane. */
 function endTour(model: Model): Update.Return<Model, Message, Factory> {
-  return { model: { ...model, tour: false, docs: "pane" }, commands: [EndTourCommand({ conversation: model.conversation }), FocusComposer({})] }
+  return { model: { ...model, ...endScreenTour(model) }, commands: [EndTourCommand({ conversation: model.conversation }), FocusComposer({})] }
 }
 
 function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
   const next = paletteChange(open)
-  return { model: { ...model, palette: next.palette }, commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
+  return { model: { ...model, ...setScreenPalette(model, next.palette) }, commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
 }
 
 /** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
 function minimizeSplash(model: Model): Update.Return<Model, Message, Factory> {
   if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length)) return { model }
-  return { model: { ...model, surface: "chat" }, commands: [FocusComposer({})] }
+  return { model: { ...model, ...minimizeScreen(model, model.client.conversation.entries.length, model.client.pending.length) }, commands: [FocusComposer({})] }
 }
 
 /** Whether there is a conversation to go back to. */
@@ -690,11 +685,13 @@ export function subscriptions(keys: EventTarget, page?: Document) {
  * Moving between the splash and the chat morphs the splash into its pane and the prompt into the composer. Nothing
  * else animates: the ⌘K prompt opens at once, and a view transition would swallow clicks while it runs.
  */
-export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) =>
-  previousModel.surface === model.surface ? false : { types: [model.surface === "chat" ? "to-chat" : "to-splash"] }
+export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) => {
+  const transition = surfaceTransition(previousModel.surface, model.surface)
+  return transition === "none" ? false : { types: [transition] }
+}
 
 function sandboxAction(model: Model, kind: "start" | "stop" | "command"): Update.Return<Model, Message, Factory> {
-  if ((model.sandboxBusy && kind !== "stop") || (kind === "command" && !(model.terminalDraft ?? "").trim())) return { model }
+  if (!canSandboxAction(model.sandboxBusy ?? false, kind, model.terminalDraft ?? "")) return { model }
   const request = (model.sandboxRequest ?? 0) + 1
   return { model: { ...model, surface: "chat", palette: false, sandboxPane: "pane", sandboxOperation: kind, sandboxBusy: true, sandboxError: "", sandboxRequest: request, terminalDraft: "" }, commands: [SandboxAction({ conversation: model.conversation, operationId: `${model.session}/sandbox/${request}`, request, kind, generation: model.sandbox?.generation ?? 0, command: model.terminalDraft ?? "" })] }
 }

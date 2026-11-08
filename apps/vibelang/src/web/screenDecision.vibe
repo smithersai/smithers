@@ -1,3 +1,6 @@
+// LemmaScript real parameters cover finite fractional coordinates; native IEEE arithmetic remains a host boundary.
+type real = number
+
 // Pure screen decisions. Foldkit and the DOM execute the returned choices; they do not choose a second policy.
 export interface Follow { readonly following: boolean; readonly followIntent: number; readonly stale: boolean }
 export interface NativeScroll { readonly paused: boolean; readonly intent: number; readonly bottom: boolean }
@@ -74,7 +77,7 @@ export function nativeFollow(authorized: number, current: number, active: boolea
 //@ ensures \result.intent == intent || \result.intent == intent + 1
 //@ ensures !\result.bottom && !paused ==> \result.intent == intent + 1
 //@ ensures \result.bottom || paused ==> \result.intent == intent
-export function nativeScroll(atBottom: boolean, paused: boolean, y: number, previousY: number, intent: number): NativeScroll {
+export function nativeScroll(atBottom: boolean, paused: boolean, y: real, previousY: real, intent: number): NativeScroll {
   const bottom = atBottom && (!paused || y > previousY)
   return { bottom, paused: !bottom, intent: !bottom && !paused ? intent + 1 : intent }
 }
@@ -89,7 +92,7 @@ export function canPause(active: boolean, scrollable: boolean): boolean {
 /** Wheel zoom belongs to the browser; only a plain upward wheel pauses chat following. */
 //@ verify
 //@ ensures \result == (delta < 0 && !control)
-export function wheelPauses(delta: number, control: boolean): boolean {
+export function wheelPauses(delta: real, control: boolean): boolean {
   return delta < 0 && !control
 }
 
@@ -103,7 +106,7 @@ export function keyPauses(key: string, prevented: boolean, editor: boolean): boo
 /** A touch moving down moves the page up. */
 //@ verify
 //@ ensures \result == (current > previous)
-export function touchPauses(current: number, previous: number): boolean {
+export function touchPauses(current: real, previous: real): boolean {
   return current > previous
 }
 
@@ -171,24 +174,88 @@ export function screenKey(normalized: string, escape: boolean, meta: boolean, co
   return ""
 }
 
-/** The public refusal code as the person reads it. */
-//@ verify
-//@ ensures reason == "empty" ==> \result == "Empty message"
-//@ ensures reason == "too-long" ==> \result == "Message too long"
-//@ ensures reason == "duplicate" ==> \result == "Already sent"
-//@ ensures reason == "busy" ==> \result == "Agent busy"
-//@ ensures reason == "not-replying" ==> \result == "Answer unavailable"
-//@ ensures reason == "full" ==> \result == "Conversation full"
-//@ ensures reason != "empty" && reason != "too-long" && reason != "duplicate" && reason != "busy" && reason != "not-replying" && reason != "full" ==> \result == "Send failed"
-export function postFailure(reason: string): string {
-  switch (reason) {
-    case "empty": return "Empty message"
-    case "too-long": return "Message too long"
-    case "duplicate": return "Already sent"
-    case "busy": return "Agent busy"
-    case "not-replying": return "Answer unavailable"
-    case "full": return "Conversation full"
-    default: return "Send failed"
-  }
+/** The screen projection updated by surface and tour actions; the host retains its other model fields. */
+export interface ScreenState {
+  readonly surface: "splash" | "chat"
+  readonly palette: boolean
+  readonly tour: boolean
+  readonly tourError: string
+  readonly docs: "pane" | "max"
+  readonly following: boolean
 }
 
+//@ verify
+//@ ensures \result.surface == "splash" && !\result.palette
+//@ ensures \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
+export function showSplash(state: ScreenState): ScreenState {
+  return { surface: "splash", palette: false, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures !\result.tour && \result.docs == "pane"
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
+export function endScreenTour(state: ScreenState): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: false, tourError: state.tourError, docs: "pane", following: state.following }
+}
+
+//@ verify
+//@ ensures \result.palette == open
+//@ ensures \result.surface == state.surface && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
+export function setScreenPalette(state: ScreenState, open: boolean): ScreenState {
+  return { surface: state.surface, palette: open, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures !canMinimize(state.surface, entries, pending) ==> \result == state
+//@ ensures canMinimize(state.surface, entries, pending) ==> \result.surface == "chat"
+//@ ensures \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs && \result.following == state.following
+export function minimizeScreen(state: ScreenState, entries: number, pending: number): ScreenState {
+  if (!canMinimize(state.surface, entries, pending)) return state
+  return { surface: "chat", palette: state.palette, tour: state.tour, tourError: state.tourError, docs: state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures state.tour ==> \result == state
+//@ ensures !state.tour ==> \result.surface == "chat" && !\result.palette && \result.tour && \result.tourError == "" && \result.docs == "max" && \result.following
+export function beginScreenTour(state: ScreenState): ScreenState {
+  if (state.tour) return state
+  return { surface: "chat", palette: false, tour: true, tourError: "", docs: "max", following: true }
+}
+
+//@ verify
+//@ ensures \result.tour == failedTourKeepsControl(reason, touring)
+//@ ensures \result.docs == (failedTourKeepsControl(reason, touring) ? "max" : "pane") && \result.tourError == reason
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.following == state.following
+export function failScreenTour(state: ScreenState, reason: string, touring: boolean): ScreenState {
+  const keep = failedTourKeepsControl(reason, touring)
+  return { surface: state.surface, palette: state.palette, tour: keep, tourError: reason, docs: keep ? "max" : "pane", following: state.following }
+}
+
+//@ verify
+//@ ensures \result.tour == touring && \result.docs == (touring ? "max" : state.docs)
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
+export function failedScreenEnd(state: ScreenState, touring: boolean): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: touring, tourError: state.tourError, docs: touring ? "max" : state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures \result.tour == (toured ? false : state.tour)
+//@ ensures \result.docs == (toured && kind != "ReplyFinished" ? "pane" : state.docs)
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tourError == state.tourError && \result.following == state.following
+export function completeScreenTour(state: ScreenState, toured: boolean, kind: string): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: toured ? false : state.tour, tourError: state.tourError, docs: toured && kind !== "ReplyFinished" ? "pane" : state.docs, following: state.following }
+}
+
+//@ verify
+//@ ensures \result.following
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.docs == state.docs
+export function latestScreen(state: ScreenState): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: state.tour, tourError: state.tourError, docs: state.docs, following: true }
+}
+
+//@ verify
+//@ ensures \result.docs == toggleDocs(state.docs)
+//@ ensures \result.surface == state.surface && \result.palette == state.palette && \result.tour == state.tour && \result.tourError == state.tourError && \result.following == state.following
+export function toggleScreenDocs(state: ScreenState): ScreenState {
+  return { surface: state.surface, palette: state.palette, tour: state.tour, tourError: state.tourError, docs: toggleDocs(state.docs), following: state.following }
+}

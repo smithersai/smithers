@@ -1,0 +1,127 @@
+// Pure presentation choices shared by the view and the screen update.
+
+//@ verify
+//@ ensures (reason == "" || reason == "failed") ==> \result == "Answer failed"
+//@ ensures reason != "" && reason != "failed" ==> \result == reason
+export function failureOf(reason: string): string {
+  return reason === "" || reason === "failed" ? "Answer failed" : reason
+}
+
+//@ verify
+//@ ensures reason == "empty" ==> \result == "Empty message"
+//@ ensures reason == "too-long" ==> \result == "Message too long"
+//@ ensures reason == "duplicate" ==> \result == "Already sent"
+//@ ensures reason == "busy" ==> \result == "Agent busy"
+//@ ensures reason == "not-replying" ==> \result == "Answer unavailable"
+//@ ensures reason == "full" ==> \result == "Conversation full"
+//@ ensures reason != "empty" && reason != "too-long" && reason != "duplicate" && reason != "busy" && reason != "not-replying" && reason != "full" ==> \result == "Send failed"
+export function postFailure(reason: string): string {
+  if (reason === "empty") return "Empty message"
+  if (reason === "too-long") return "Message too long"
+  if (reason === "duplicate") return "Already sent"
+  if (reason === "busy") return "Agent busy"
+  if (reason === "not-replying") return "Answer unavailable"
+  if (reason === "full") return "Conversation full"
+  return "Send failed"
+}
+
+//@ verify
+//@ ensures stream == "failed" ==> \result == "Disconnected"
+//@ ensures stream != "failed" && tourError != "" ==> \result == postFailure(tourError)
+//@ ensures stream != "failed" && tourError == "" && agent == "working" ==> \result == "Answering"
+//@ ensures stream != "failed" && tourError == "" && agent != "working" ==> \result == ""
+export function statusLabel(stream: string, tourError: string, agent: string): string {
+  if (stream === "failed") return "Disconnected"
+  if (tourError !== "") return postFailure(tourError)
+  if (agent === "working") return "Answering"
+  return ""
+}
+
+//@ verify
+//@ ensures \result == (key == "Enter" && !shift)
+export function sendKey(key: string, shift: boolean): boolean {
+  return key === "Enter" && !shift
+}
+
+//@ verify
+//@ ensures \result == (draft.trim() != "")
+export function canSend(draft: string): boolean {
+  return draft.trim() !== ""
+}
+
+export interface EntryDisplay {
+  readonly role: "user" | "assistant"
+  readonly markdown: boolean
+  readonly showBody: boolean
+  readonly thinking: boolean
+  readonly failed: boolean
+}
+//@ verify
+//@ ensures (\result.role == "user") == (author == "person")
+//@ ensures \result.markdown == (author == "agent")
+//@ ensures \result.showBody == (text != "" || !done)
+//@ ensures \result.thinking == (text == "" && !done)
+//@ ensures \result.failed == (error != "")
+export function entryDisplay(author: "person" | "agent", text: string, done: boolean, error: string): EntryDisplay {
+  return { role: author === "person" ? "user" : "assistant", markdown: author === "agent", showBody: text !== "" || !done, thinking: text === "" && !done, failed: error !== "" }
+}
+
+//@ verify
+//@ ensures previous == current ==> \result == "none"
+//@ ensures previous != current && current == "chat" ==> \result == "to-chat"
+//@ ensures previous != current && current != "chat" ==> \result == "to-splash"
+export function surfaceTransition(previous: "splash" | "chat", current: "splash" | "chat"): "none" | "to-chat" | "to-splash" {
+  return previous === current ? "none" : current === "chat" ? "to-chat" : "to-splash"
+}
+
+
+export type SandboxPane = "closed" | "pane" | "max"
+export type SandboxAction = "start" | "stop" | "command"
+
+//@ verify
+//@ ensures pane == "closed" ==> \result == "pane"
+//@ ensures pane != "closed" ==> \result == "closed"
+export function toggleSandbox(pane: SandboxPane): SandboxPane {
+  return pane === "closed" ? "pane" : "closed"
+}
+
+//@ verify
+//@ ensures pane == "max" ==> \result == "pane"
+//@ ensures pane != "max" ==> \result == "max"
+export function maximizeSandbox(pane: SandboxPane): SandboxPane {
+  return pane === "max" ? "pane" : "max"
+}
+
+//@ verify
+//@ ensures \result == (conversation == currentConversation && request == currentRequest)
+export function currentSandbox(conversation: string, currentConversation: string, request: number, currentRequest: number): boolean {
+  return conversation === currentConversation && request === currentRequest
+}
+
+//@ verify
+//@ ensures \result == ((!busy || kind == "stop") && (kind != "command" || draft.trim() != ""))
+export function canSandboxAction(busy: boolean, kind: SandboxAction, draft: string): boolean {
+  return (!busy || kind === "stop") && (kind !== "command" || draft.trim() !== "")
+}
+
+//@ verify
+//@ ensures \result == !exists(i, 0 <= i && i < failed.length && failed[i] == source)
+export function showMedia(failed: ReadonlyArray<string>, source: string): boolean {
+  return !failed.includes(source)
+}
+
+export interface MediaDecision {
+  readonly video: boolean
+  readonly poster: boolean
+  readonly autoplay: boolean
+  readonly kind: "video" | "image"
+}
+//@ verify
+//@ ensures \result.video == (hasPoster && (!reduced || controls))
+//@ ensures \result.poster == (hasPoster && reduced && !controls)
+//@ ensures \result.autoplay == !reduced
+//@ ensures (\result.kind == "video") == hasPoster
+//@ ensures \result.video ==> !\result.poster
+export function mediaDecision(hasPoster: boolean, reduced: boolean, controls: boolean): MediaDecision {
+  return { video: hasPoster && (!reduced || controls), poster: hasPoster && reduced && !controls, autoplay: !reduced, kind: hasPoster ? "video" : "image" }
+}

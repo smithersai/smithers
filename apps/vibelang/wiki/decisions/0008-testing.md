@@ -245,3 +245,7 @@ and real HTTP runtime tests cover planning, every note section, approval/folding
 read/write recovery, with persisted-state assertions. Amendment focuses Task and reopening is checked in Chromium.
 Dated per-file unit, browser and Node-only workerd tables are recorded in 0016; whole-app 100% remains unfinished.
 The strict all-four thresholds and Playwright coverage collector remain in the retained measurement prototype.
+
+**Web decision extraction (0018).** Existing scene, media, viewport, tour and roles tests check the production
+callbacks after pure decision extraction. Executable mutations cover every new projected field and guard. The
+real-rounding fixture intentionally disagrees with native execution and remains a tool-boundary reproduction.

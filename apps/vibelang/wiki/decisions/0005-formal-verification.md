@@ -146,3 +146,7 @@ its batch count is recorded separately from ordinary obligations. Stored convers
 History replay (0018) now carries every apply contract through a maximum-cursor wrapper. Its production fold proves
 safe cursor and rank preservation and exact numbering for contiguous events; this is not a proof of journal ordering
 or full replay-state equivalence. Every decide clause is retained through the writer's capacity wrapper.
+
+Web decisions (0018) now include exact six-field screen projections and presentation/media guards. Finite coordinate
+comparisons use the backend's real type; native subtraction remains outside the proof, with a retained rounding
+counterexample. Host Model composition and account/People transitions are not inferred from the projection proof.
