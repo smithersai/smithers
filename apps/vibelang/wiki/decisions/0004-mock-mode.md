@@ -46,3 +46,13 @@ pnpm exec vitest run --config test/mutations/room-isolation.config.ts test/MockF
 injected HttpClient whose health answer stays open until released. First render, ⌘K, Tab and a pending post work
 before health answers, then the chosen mock answers that post. `test/backend.test.vibe` checks shared selection,
 cancellation, the three-second fallback and forced mock without health. No request interception.
+
+## The switch (2026-11-08, ruling VL-30)
+
+The top bar shows the mode the page runs, **Live** or **Mock**, and a click switches: it loads the page with
+`?agent=mock` or `?agent=live`. Startup saves the choice in the `vibelang.agent` storage key (`?agent=live` clears it),
+so it survives reloads, signed in or out. ⌘K's slash menu lists `/mock` or `/live` beside the registered actions; they
+are not flows, only a page load. The history page has the same switch. In Mock, the "Visit as" picker plays each of the
+five roles, and chat, the tour, the wiki, issues and VIPs, actions, the mythical history and sandboxes all run with no
+backend, no model and no sign-in. `e2e/mock-switch.spec.ts` switches with the top bar and uses each of them, locally and
+against the deployment. `/api/health` reports the deployed commit (`VIBELANG_COMMIT`, set by the deploy).

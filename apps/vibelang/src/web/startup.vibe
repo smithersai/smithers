@@ -2,6 +2,8 @@
 // The live Factory when this origin's `/api/health` says `agent: "live"` (wiki/decisions/0010-live-agent.md); the mock
 // otherwise, with no backend and no model (0004): on `pnpm dev` and `vite preview`, on a deployment without the API
 // Worker, and whenever the page asks for it with `?agent=mock` or the `vibelang.agent` storage key set to `mock`.
+// The nav's Live/Mock switch and ⌘K's /mock and /live load `?agent=mock` or `?agent=live`; the choice is saved, so it
+// survives reloads, signed in or out (ruling VL-13).
 // The page's window, document and media queries come from VibeLang's browser services, its randomness from Web
 // Crypto through Effect's SecureRandom. The mock loads only when chosen: it carries the flow engine (0011), which a
 // live page never runs.
@@ -18,7 +20,15 @@ import { view } from "./view.vibe"
 
 /** Whether this page asked for the mock agent. Storage can be unavailable; that asks for nothing. */
 function askedForMock(window: Window): boolean {
-  if (new URLSearchParams(window.location.search).get("agent") === "mock") return true
+  const asked = new URLSearchParams(window.location.search).get("agent")
+  try {
+    if (asked === "mock") window.localStorage.setItem("vibelang.agent", "mock")
+    if (asked === "live") window.localStorage.removeItem("vibelang.agent")
+  } catch {
+    // Storage can be unavailable (a private window): the query still chooses for this page.
+  }
+  if (asked === "mock") return true
+  if (asked === "live") return false
   try {
     return window.localStorage.getItem("vibelang.agent") === "mock"
   } catch {

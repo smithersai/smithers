@@ -13,7 +13,15 @@ import { stylesheet } from "./styles.vibe"
 
 /** The page asked for the mock agent, as the chat's startup reads it. Storage can be unavailable; that asks for nothing. */
 function askedForMock(window: Window): boolean {
-  if (new URLSearchParams(window.location.search).get("agent") === "mock") return true
+  const asked = new URLSearchParams(window.location.search).get("agent")
+  try {
+    if (asked === "mock") window.localStorage.setItem("vibelang.agent", "mock")
+    if (asked === "live") window.localStorage.removeItem("vibelang.agent")
+  } catch {
+    // Storage can be unavailable (a private window): the query still chooses for this page.
+  }
+  if (asked === "mock") return true
+  if (asked === "live") return false
   try {
     return window.localStorage.getItem("vibelang.agent") === "mock"
   } catch {

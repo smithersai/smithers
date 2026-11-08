@@ -123,6 +123,11 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   `github.com/smithersai/effect`, whose `effect/Fuzz`, `effect/testing/FuzzSimulation` and `it.effect.fuzz` are the
   code to copy.
 
+- **VL-30. A visible switch into Mock mode, where every feature works.** Will, 2026-11-08 (relayed 19:20Z): "I don't
+  see any in app button to switch into mocked mode to use the entire app and every feature I asked for. There should be
+  nothing blocking that and that allows me to verify we are at least building the correct thing earlier." The top bar's
+  Live/Mock switch and ⌘K's `/mock` and `/live` do it; see decision 0004.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the

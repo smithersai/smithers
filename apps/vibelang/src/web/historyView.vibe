@@ -3,6 +3,7 @@
 // (`sui-*`), the app's frame (`vl-*`) and the design's own (`mh-*`, history.css). Only actions the reader's role may
 // take render.
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
+import { modeSwitch } from "./modeSwitch.vibe"
 import type { Commit } from "../history/mythical.vibe"
 import type { CommitPage, EpicCount, Head } from "../history/pages.vibe"
 import { BOOTSTRAP } from "../history/seed.vibe"
@@ -61,7 +62,7 @@ function top(model: HistoryModel, h: H): Html {
   return h.header([h.Class("vl-top")], [
     h.a([h.Class("vl-home"), h.Href("/"), h.AriaLabel("Home")], [h.span([h.Class("vl-logo")], [h.img([h.Src("/media/logo-dark.svg"), h.Alt("VibeLang")])])]),
     h.nav([h.Class("vl-nav")], [
-      ...(model.mode === "mock" ? [h.span([h.Class("vl-pill")], ["Mock"])] : []),
+      ...(model.mode === "pending" ? [] : [modeSwitch(model.mode, h)]),
       h.a([h.Class("vl-nav-link"), h.Href(DOCS_URL)], ["Docs", away(h)]),
       h.a([h.Class("vl-nav-link"), h.Href(REPOSITORY_URL)], ["GitHub", away(h)]),
     ]),

@@ -139,7 +139,7 @@ effect function answerHistory(route: HistoryRoute, url: URL, histories: Historie
 }
 
 /** Answers the current request; health answers itself, history routes reach `histories`, the rest `conversations`. */
-export effect function handle<R = never>(conversations: Conversations, histories: Histories, sandboxes: Gateway<R> = signedOutGateway, actions?: ActionsHttp.ActionsApi) {
+export effect function handle<R = never>(conversations: Conversations, histories: Histories, sandboxes: Gateway<R> = signedOutGateway, actions?: ActionsHttp.ActionsApi, commit?: string) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "http://api.invalid")
   if (url.pathname.startsWith("/api/sandboxes/")) return try sandboxRequest(sandboxes)
@@ -150,7 +150,7 @@ export effect function handle<R = never>(conversations: Conversations, histories
     try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: "actions", status: answered.status }))
     return answered
   }
-  if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
+  if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live", ...(commit === undefined ? {} : { commit }) })
   const history = historyRouteOf(request.method, url.pathname, url.searchParams)
   if (history !== undefined) {
     const answered = try withSpan(effect {

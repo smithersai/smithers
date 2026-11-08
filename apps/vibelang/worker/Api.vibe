@@ -339,7 +339,8 @@ const program = effect {
   const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
   const actions = (try ActionIndex) as Namespace<ActionDirectoryShape>
   const histories = (try History) as Namespace<HistoryShape>
-  // Bound when the Worker deploys, as its objects read them.
+  // Bound when the Worker deploys, as its objects read them. The commit lets /api/health say what is deployed.
+  const commit = Option.getOrUndefined(try Effect.orDie(Config.option(Config.String("VIBELANG_COMMIT"))))
   try Effect.orDie(chatModel())
   try Effect.orDie(dailyTokens)
   return {
@@ -426,7 +427,7 @@ const program = effect {
           return try reached(runtime, "action", object.fetch(request))
         },
       }
-      return try handle(api, history, gateway, actionApi).pipe(Effect.provideService(ActionIdentity, actionIdentity(accounts, runtime, trustedOf(try (try Cloudflare.WorkerExecutionContext).props))))
+      return try handle(api, history, gateway, actionApi, commit).pipe(Effect.provideService(ActionIdentity, actionIdentity(accounts, runtime, trustedOf(try (try Cloudflare.WorkerExecutionContext).props))))
     },
   }
 }

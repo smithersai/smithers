@@ -441,7 +441,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const menu = completions(model)
       return { model: { ...model, actions: { ...actionsOf(model), highlight: menu.length === 0 ? 0 : (actionsOf(model).highlight + delta + menu.length) % menu.length } } }
     },
-    PickedSlash: ({ name }) => launchAction(model, name, "slash"),
+    PickedSlash: ({ name }) => name.startsWith("mode/") ? switchMode(model, name.slice("mode/".length)) : launchAction(model, name, "slash"),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
     ClickedRetry: ({ clientId }) => {
@@ -566,8 +566,15 @@ export function hasConversation(model: Model): boolean {
   return hasContent(model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)
 }
 
+/** ⌘K's /mock and /live load the page in that mode, the way the nav's switch does (startup.vibe saves it). */
+function switchMode(model: Model, to: string): Update.Return<Model, Message, Factory | Actions> {
+  if (to !== "mock" && to !== "live") return { model }
+  return { model: { ...model, draft: "", palette: false, actions: { ...actionsOf(model), slash: false } }, commands: [SwitchMode({ to })] }
+}
+
 function submit(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const text = model.draft.trim()
+  if (text === "/mock" || text === "/live") return switchMode(model, text.slice(1))
   if (text === "/sandbox") {
     const next = sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
     return { ...next, commands: [...(next.commands ?? []), ClosePalette({ dock: true })] }
@@ -1041,6 +1048,12 @@ export const ChooseIdentity = Command.define("ChooseIdentity", {
     const factory = try Factory
     const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose(role) catch () => undefined)
     return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+  },
+})
+export const SwitchMode = Command.define("SwitchMode", {
+  args: { to: Schema.Literals(["mock", "live"]) }, messages: [Message.FocusedPrompt], execute: effect ({ to }) => {
+    try Navigation.load(`?agent=${to}`)
+    return try message(() => Message.FocusedPrompt())
   },
 })
 export const SignInAccount = Command.define("SignInAccount", {

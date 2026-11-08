@@ -6,7 +6,7 @@ test("Wiki opens, navigates real pages, filters, maximizes and returns to chat",
   await page.goto("/?agent=mock")
   await page.getByRole("button", { name: "Wiki", exact: true }).click()
   await expect(pane(page).getByRole("heading", { name: "VibeLang factory wiki" })).toBeVisible()
-  await expect(pane(page)).toContainText("VL-29")
+  await expect(pane(page)).toContainText("VL-30")
   await expect(page.getByAltText("The compiler says what to write instead: VibeLang diagnostics with the fix to write")).toHaveCount(0)
   await expect(page.getByRole("button", { name: "Wiki", exact: true })).toHaveCSS("font-weight", "650")
   expect((await pane(page).getByRole("link", { name: "Home", exact: true }).boundingBox())!.height).toBeGreaterThanOrEqual(24)

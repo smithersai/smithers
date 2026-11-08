@@ -20,10 +20,16 @@ export schema ActionView {
 }
 export const initial: ActionView = { open: false, maximized: false, selected: "", run: "", loading: false, starting: false, error: "", input: "", highlight: 0, slash: false, entries: [], commands: [], runs: [] }
 export function actionsOf(model: { readonly actions?: ActionView }): ActionView { return model.actions ?? initial }
-export function completions(model: { readonly actions?: ActionView; readonly draft: string }) {
+/** The page's own commands: switching between the live agent and the mock (VL-13). Not flows: a page load. */
+export function modeCommands(mode: string | undefined): ReadonlyArray<Registered> {
+  const entry = (to: "mock" | "live"): Registered => ({ name: `mode/${to}`, title: to === "mock" ? "Mock mode" : "Live mode", detail: to === "mock" ? "Mock mode" : "Live mode", command: `/${to}`, runnable: true, least: "viewer", input: "none" })
+  return mode === "live" ? [entry("mock")] : mode === "mock" ? [entry("live")] : []
+}
+
+export function completions(model: { readonly actions?: ActionView; readonly draft: string; readonly mode?: string }) {
   const actions = actionsOf(model)
   const query = model.draft.trim().split(/\s+/)[0] ?? ""
-  return actions.slash && query.startsWith("/") ? actions.commands.filter((entry) => entry.command.startsWith(query)) : []
+  return actions.slash && query.startsWith("/") ? [...actions.commands, ...modeCommands(model.mode)].filter((entry) => entry.command.startsWith(query)) : []
 }
 
 /** A slower list/read response cannot roll back a live card or a terminal receipt. */
