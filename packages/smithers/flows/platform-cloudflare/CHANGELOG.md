@@ -4,6 +4,14 @@
 
 ### Added
 
+- `CloudflareRuntime.Options.retention`: a Durable Object's own engine store
+  deletes its settled history as the runtime is built. One bounded
+  `Retention.collect` pass from `@smthrs/engine-store`, over terminal runs that
+  finished at least `olderThanMs` ago and no live run stands above or below,
+  with the driven execution pinned; observed as
+  `smithers.cloudflare.retention` and `smithers_cloudflare_retention_passes`
+  and `smithers_cloudflare_retention_runs_deleted`, and never failing the
+  execution.
 - `CloudflareHost.layer`: the closed Host surface in a Worker or a Durable
   Object. WebCrypto as `effect/Crypto` (`WebCrypto.layer` from
   `@smthrs/crypto`), an `OwnerIdentity` with a drawn incarnation number, POSIX

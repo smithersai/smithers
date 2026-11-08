@@ -210,7 +210,7 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
     }
     const bundled = await build({
       plugins: [vibelang()],
-    entryPoints: [entry],
+      entryPoints: [entry],
       bundle: true,
       write: false,
       format: "esm",

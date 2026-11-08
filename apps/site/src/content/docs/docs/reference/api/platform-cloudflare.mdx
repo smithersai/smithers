@@ -94,12 +94,56 @@ drives the execution.
 interface Options {
   readonly hostId: string
   readonly executionId: string
+  readonly flow?: string
+  readonly retention?: CloudflareRuntime.Retention
 }
 ```
 
 - `hostId`: the Durable Object, the same for every incarnation of it. Pass
   `ctx.id.toString()`.
 - `executionId`: the one execution this runtime drives.
+- `flow`: the persisted intent's flow tag; recovery skips unrelated
+  registrations.
+- `retention`: delete this store's settled history as the runtime is built.
+  Unset, nothing is deleted.
+
+### `CloudflareRuntime.Retention`
+
+```ts
+interface Retention {
+  readonly olderThanMs: number
+  readonly limit?: number // CloudflareRuntime.defaultRetentionLimit, 100
+}
+```
+
+Nothing else deletes from a Durable Object's own engine store: `smithers gc`
+runs on a host's files. An object that runs one execution per invocation, such
+as one object per person that meters usage or answers writes, grows by one run
+each time. With `retention`, the runtime runs one pass of `@smthrs/engine-store`'s
+`Retention.collect` over the object's SQLite before the engine's migrations and
+recovery, in the same invocation:
+
+- only a `completed`, `failed` or `cancelled` run that finished at least
+  `olderThanMs` ago is deleted, never one a live run stands above or below;
+- the execution this runtime drives is pinned, so driving an aged settled
+  execution again still answers its recorded result;
+- each run goes with its journal, attempts, timers and completions, at most
+  `limit` runs a pass, in one `storage.transaction()`.
+
+A deleted execution id no longer deduplicates, so choose `olderThanMs` longer
+than any caller retries an id. A failed pass deletes nothing and never fails
+the execution. Each pass writes a `smithers.cloudflare.retention` line and span
+with its `outcome` (`deleted`, `none` or `failed`), the `runs` it deleted,
+`durationMs` and, on failure, `error.type`; never a run id. It counts
+`smithers_cloudflare_retention_passes` by outcome and
+`smithers_cloudflare_retention_runs_deleted`.
+
+```ts
+CloudflareRuntime.layer(
+  { hostId: ctx.id.toString(), executionId, flow: Meter._tag, retention: { olderThanMs: 86_400_000 } },
+  registration
+).pipe(Layer.provide(ObjectDatabase.layer(ctx.storage)))
+```
 
 ## ExecutionObject
 
