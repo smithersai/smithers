@@ -1,0 +1,279 @@
+import { it, expect as assert } from "@effect/vitest"
+import { scene, given, expect, role, text, type SceneStep } from "foldkit/scene"
+import * as P from "../src/history/pages.vibe"
+import { BOOTSTRAP } from "../src/history/seed.vibe"
+import { HistoryMessage, init as initHistory, noOutline, update as updateHistory, type HistoryModel } from "../src/web/historyApp.vibe"
+import { view as historyView, refusalText } from "../src/web/historyView.vibe"
+import { init, Message, update, signedOut, issueStateOf, type Model } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { initialIssues, issuesUpdate, issueRequest } from "../src/web/issues.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { initial as initialActions, actionsOf, completions, mergeRuns, selectedStep } from "../src/web/actionModel.vibe"
+import { registration } from "../src/actions/catalog.vibe"
+import type { Commit } from "../src/history/mythical.vibe"
+import type { CommitPage } from "../src/history/pages.vibe"
+import type { Run } from "../src/actions/Actions.vibe"
+import { plannedHistory } from "./fixtures.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const home = init({ session: "bench", mode: "mock", name: "Guest" }).model
+
+it("history view renders every page, state and role control", async ({ bench }) => {
+  const history = plannedHistory(3)
+  const outline = P.outlineOf(history)
+  const page = P.epicPageOf(history, "e1", 0)
+  const base = { ...initHistory({ mode: "mock", role: "maintainer", hash: "" }).model, status: "ready" as const, outline, pages: [page], open: ["e1"] }
+  const noted: Commit = {
+    id: "m1", epic: "e1", rank: 0, title: "Measured", state: "working", task: "Task", lane: "bench",
+    notes: [
+      { section: "tried", text: "First attempt.", by: BOOTSTRAP },
+      { section: "evidence", text: "Proof.", by: "Bench" },
+      { section: "superseded", text: "Older plan.", by: "Bench" },
+    ],
+  }
+  const detail: CommitPage = { seq: 1, commit: noted, real: [{ sha: "abc123", change: "", title: "Real commit", mythical: "m1" }] }
+  const renders: Array<[string, HistoryModel, Array<SceneStep<HistoryModel, HistoryMessage, undefined>>]> = [
+    ["loading", { ...base, status: "loading" as const }, [expect(role("button", { name: "Fold" })).toBeAbsent()]],
+    ["failed", { ...base, status: "failed" as const }, [expect(text("Couldn't load the history.")).toExist(), expect(role("button", { name: "Retry" })).toExist()]],
+    ["empty", { ...base, outline: noOutline }, [expect(text("No mythical history yet.")).toExist()]],
+    ["list", base, [expect(role("list", { name: "Planned" })).toExist(), expect(role("button", { name: "Fold" })).toExist(), expect(role("button", { name: "Plan work" })).toExist()]],
+    ["list-viewer", { ...base, role: "viewer" as const }, [expect(role("button", { name: "Fold" })).toBeAbsent(), expect(role("button", { name: "Plan work" })).toBeAbsent()]],
+    ["list-folded", { ...base, outline: { ...outline, main: "deadbeef" } }, [expect(text("deadbeef")).toExist()]],
+    ["list-filtered", { ...base, filter: "Commit 1", matches: { seq: 1, query: "Commit 1", commits: P.matchesOf(history, "Commit 1").commits } }, [expect(role("list", { name: "Matching commits" })).toExist()]],
+    ["list-filtering", { ...base, filter: "Commit", matches: { seq: 0, query: "", commits: [] } }, [expect(role("list", { name: "Matching commits" })).toExist()]],
+    ["list-error", { ...base, error: "forbidden" }, [expect(text("Your role can't do that.")).toExist()]],
+    ["epic", { ...base, hash: "e1" }, [expect(text("Performance")).toExist()]],
+    ["epic-unread", { ...base, hash: "e1", pages: [] }, [expect(role("list", { name: "Performance" })).toExist()]],
+    ["commit-skeleton", { ...base, hash: "m2", commitId: "" }, [expect(role("button", { name: "Fold" })).toBeAbsent()]],
+    ["commit-working", { ...base, hash: "m1", commit: detail, commitId: "m1" }, [
+      expect(text("Tried")).toExist(), expect(text("Evidence")).toExist(), expect(text("Superseded")).toExist(),
+      expect(text("Proof.")).toExist(), expect(text(" · Bench")).toExist(), expect(text("First attempt.")).toExist(),
+      expect(text("abc123")).toExist(), expect(role("button", { name: "Approve" })).toExist(),
+      expect(role("button", { name: "Insert before…" })).toExist(), expect(role("textbox", { name: "Note" })).toExist(),
+      expect(role("link", { name: "Open the real commits on GitHub ↗" })).toExist(),
+    ]],
+    ["commit-planned-contributor", { ...base, role: "contributor" as const, hash: "m2", commit: { seq: 1, commit: { ...noted, id: "m2", rank: 1, state: "planned" as const, lane: "", notes: [] }, real: [] }, commitId: "m2" }, [
+      expect(role("textbox", { name: "Lane" })).toExist(), expect(role("button", { name: "Start" })).toBeDisabled(),
+      expect(role("button", { name: "Approve" })).toBeAbsent(), expect(role("button", { name: "Insert before…" })).toBeAbsent(),
+    ]],
+    ["commit-landed-maintainer", { ...base, hash: "m3", commit: { seq: 1, commit: { ...noted, id: "m3", rank: 2, state: "landed" as const, task: "", lane: "", notes: [] }, real: [] }, commitId: "m3" }, [
+      expect(role("button", { name: "Amend…" })).toExist(), expect(role("button", { name: "Insert before…" })).toExist(),
+    ]],
+    ["commit-landed-empty-task", { ...base, hash: "m3", commit: { seq: 1, commit: { ...noted, id: "m3", rank: 2, state: "landed" as const, task: "", lane: "", notes: [] }, real: [] }, commitId: "m3" }, [expect(role("list", { name: "Progress" })).toBeAbsent()]],
+    ["commit-viewer", { ...base, role: "viewer" as const, hash: "m1", commit: detail, commitId: "m1" }, [
+      expect(role("button", { name: "Approve" })).toBeAbsent(), expect(role("textbox", { name: "Note" })).toBeAbsent(),
+    ]],
+    ["plan-append", { ...base, dialog: true, form: { how: "append" as const, epic: "e1", newEpic: "", title: "T", task: "", target: "" } }, [
+      expect(role("dialog", { name: "Plan work" })).toExist(), expect(role("textbox", { name: "Commit" })).toExist(), expect(role("textbox", { name: "Task" })).toExist(),
+    ]],
+    ["plan-new-epic", { ...base, dialog: true, form: { how: "append" as const, epic: "new", newEpic: "Fresh", title: "", task: "", target: "" } }, [expect(role("textbox", { name: "New epic" })).toExist()]],
+    ["plan-insert", { ...base, dialog: true, hash: "m1", commit: detail, commitId: "m1", form: { how: "insert" as const, epic: "", newEpic: "", title: "", task: "", target: "m1" } }, [
+      expect(role("dialog", { name: "Plan work" })).toExist(), expect(text("m1 Measured")).toExist(),
+    ]],
+    ["plan-amend", { ...base, dialog: true, hash: "m1", commit: detail, commitId: "m1", form: { how: "amend" as const, epic: "", newEpic: "", title: "", task: "", target: "m1" } }, [expect(role("dialog", { name: "Amend" })).toExist()]],
+    ["plan-missing-target", { ...base, dialog: true, form: { how: "insert" as const, epic: "", newEpic: "", title: "", task: "", target: "m9" } }, [expect(text("m9")).toExist()]],
+  ]
+  const result = await workload(bench, "history-view-matrix", () => {
+    for (const [, model, expectations] of renders) scene({ update: updateHistory, view: historyView }, given(model), ...expectations)
+    assert(refusalText("forbidden")).toBe("Your role can't do that.")
+    assert(refusalText("empty")).toBe("Needs a title.")
+    assert(refusalText("too-long")).toBe("Too long.")
+    assert(refusalText("duplicate")).toBe("Already there.")
+    assert(refusalText("unknown")).toBe("No such epic or commit.")
+    assert(refusalText("state")).toBe("Not in that state.")
+    assert(refusalText("full")).toBe("History full.")
+    assert(refusalText("unavailable")).toBe("The history can't be reached.")
+    assert(refusalText("other")).toBe("other")
+    const amended = updateHistory({ ...base, hash: "m1", commit: detail, commitId: "m1" }, HistoryMessage.ClickedApprove({ id: "m1" }))
+    assert(amended.model.busy).toBe(true)
+  }).run(quick)
+  await runPromise(artifact("history-view-matrix", "Vitest built-in bench; Foldkit scenes render the history list, epic, commit and plan pages across roles, states, filters, errors and dialog variants with exact control presence/absence assertions; refusal wording table included.", ["Scene rendering without layout/paint; the same journeys with real events run in Chromium and workerd benchmarks."], result))
+})
+
+it("issues reducer covers every control and retry recovery", async ({ bench }) => {
+  const maintainer = { ...initialIssues, role: "maintainer" as const, status: "ready" as const }
+  const result = await workload(bench, "issues-reducer", () => {
+    assert(issuesUpdate(maintainer, "close", "").ui.open).toBe(false)
+    assert(issuesUpdate(maintainer, "roles", "").ui.screen).toBe("roles")
+    assert(issuesUpdate(maintainer, "list", "").ui.screen).toBe("list")
+    assert(issuesUpdate(maintainer, "select", "42").ui.selected).toBe(42)
+    assert(issuesUpdate(maintainer, "kind", "VIPs").ui.kind).toBe("VIPs")
+    assert(issuesUpdate(maintainer, "kind-key", "Tasks").ui.kind).toBe("Tasks")
+    assert(issuesUpdate(maintainer, "state", "closed").ui.state).toBe("closed")
+    assert(issuesUpdate(maintainer, "query", "tuple").ui.query).toBe("tuple")
+    assert(issuesUpdate(maintainer, "title", "T").ui.title).toBe("T")
+    assert(issuesUpdate(maintainer, "summary", "S").ui.summary).toBe("S")
+    assert(issuesUpdate(maintainer, "example", "E").ui.example).toBe("E")
+    assert(issuesUpdate(maintainer, "prior", "P").ui.prior).toBe("P")
+    assert(issuesUpdate(maintainer, "comment-text", "C").ui.comment).toBe("C")
+    assert(issuesUpdate(maintainer, "parent", "38").ui.parent).toBe("38")
+    assert(issuesUpdate(maintainer, "assignee", "Will").ui.assignee).toBe("Will")
+    assert(issuesUpdate(maintainer, "cancel", "").focusCommit).toBe(true)
+    assert(issuesUpdate({ ...maintainer, step: 3 }, "back", "").ui.step).toBe(2)
+    assert(issuesUpdate(maintainer, "continue", "").ui.error).toBe("Name the feature.")
+    assert(issuesUpdate({ ...maintainer, title: "T" }, "continue", "").ui.error).toBe("Add a summary.")
+    assert(issuesUpdate({ ...maintainer, title: "T", summary: "S" }, "continue", "").ui.step).toBe(2)
+    assert(issuesUpdate({ ...maintainer, title: "T", summary: "S", step: 2 }, "continue", "").ui.error).toBe("Add an example.")
+    assert(issuesUpdate({ ...maintainer, title: "T", summary: "S", step: 3, example: "E" }, "continue", "").ui.error).toBe("Add prior art.")
+    assert(issuesUpdate({ ...maintainer, title: "T", summary: "S", step: 3, example: "E", prior: "P" }, "continue", "").ui.step).toBe(4)
+    assert(issuesUpdate({ ...maintainer, step: 4, title: "T", summary: "S", example: "E", prior: "P" }, "continue", "").ui.step).toBe(4)
+    const saved = { op: "new" as const, number: 0, parent: 0, title: "Saved", text: "Body", assignee: "", example: "", prior: "", key: "k", recovery: "r" }
+    assert(issuesUpdate({ ...maintainer, retry: saved }, "new-form", "").ui.error).toBe("Retry the saved action.")
+    assert(issuesUpdate({ ...initialIssues, role: "viewer" as const }, "new-form", "").ui.screen).toBe("list")
+    assert(issuesUpdate(maintainer, "new-form", "").ui.screen).toBe("new")
+    assert(issuesUpdate(maintainer, "vip-form", "").ui.screen).toBe("vip")
+    assert(issuesUpdate({ ...initialIssues, role: "community" as const }, "vip-form", "").ui.screen).toBe("vip")
+    assert(issuesUpdate({ ...maintainer, retry: saved }, "commit-dialog", "").ui.error).toBe("Retry the saved action.")
+    assert(issuesUpdate({ ...initialIssues, role: "viewer" as const }, "commit-dialog", "").ui.dialog).toBe("")
+    assert(issuesUpdate(maintainer, "commit-dialog", "").ui.dialog).toBe("commit")
+    assert(issuesUpdate(maintainer, "split-dialog", "").ui.dialog).toBe("split")
+    assert(issuesUpdate(maintainer, "link-dialog", "").ui.dialog).toBe("link")
+    assert(issuesUpdate({ ...maintainer, busy: true }, "comment", "").request).toBe(undefined)
+    assert(issuesUpdate(maintainer, "read", "").request).toMatchObject({ op: "read", key: "1" })
+    assert(issuesUpdate(maintainer, "nope", "").request).toBe(undefined)
+    assert(issuesUpdate({ ...initialIssues, role: "viewer" as const }, "commit", "").request).toBe(undefined)
+    assert(issuesUpdate(maintainer, "new", "").ui.error).toBe("Add a title.")
+    assert(issuesUpdate({ ...maintainer, screen: "vip" as const }, "propose", "").ui.error).toBe("Name the feature.")
+    assert(issuesUpdate({ ...maintainer, title: "T" }, "new", "").request).toMatchObject({ op: "new", title: "T", key: "1" })
+    assert(issuesUpdate({ ...maintainer, title: "T" }, "new", "").ui.retry).toMatchObject({ title: "T" })
+    assert(issuesUpdate({ ...maintainer, title: "T", retry: saved }, "new", "").request).toBe(saved)
+    assert(issuesUpdate({ ...maintainer, retry: saved }, "commit", "").ui.error).toBe("Retry the saved action.")
+    assert(issuesUpdate({ ...maintainer, retry: saved }, "read", "").request).toBeDefined()
+    const busy = issuesUpdate({ ...maintainer, busy: true, retry: saved }, "retry", "")
+    assert(busy.request).toBe(undefined)
+    const retried = issuesUpdate(maintainer, "retry", "")
+    assert(retried.request).toBe(undefined)
+    const ready = issuesUpdate({ ...maintainer, keyPrefix: "s", retry: saved }, "retry", "")
+    assert(ready.request).toMatchObject({ op: "new", recovery: "s-1" })
+    assert(ready.ui.busy).toBe(true)
+    assert(issuesUpdate({ ...initialIssues, role: "viewer" as const, retry: saved }, "retry", "").request).toBe(undefined)
+    assert(issueRequest({ ...maintainer, comment: "Note", serial: 4 }, "comment")).toEqual({ op: "comment", number: 0, parent: 0, title: "", text: "Note", assignee: "VibeLang agent", example: "", prior: "", key: "5" })
+    assert(issueRequest({ ...maintainer, keyPrefix: "s-1", serial: 4, parent: "38", title: "T", summary: "S" }, "split").key).toBe("s-1-5")
+  }).run(quick)
+  await runPromise(artifact("issues-reducer", "Vitest built-in bench; the full issues control table: navigation, filters, wizard steps with each validation, per-role forms and dialogs, saved-action retry identity and recovery keys, and request construction.", ["Pure reducer; the durable flows and views are benchmarked separately."], result))
+})
+
+it("issues pane renders lists, detail, wizard and gates", async ({ bench }) => {
+  const data = { seq: 0, items: fixtureIssues }
+  const base = { ...home, account: { ...signedOut, identity: { id: "1", login: "will", role: "maintainer" as const } }, issues: { ...initialIssues, status: "ready" as const, data, role: "maintainer" as const } }
+  const scenes: Array<[Model, Array<SceneStep<Model, Message, undefined>>]> = [
+    [base, [expect(role("link", { name: "Case branches on tuples" })).toExist(), expect(role("button", { name: "New issue" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, kind: "VIPs" as const } }, [expect(role("link", { name: "Pattern matching in case" })).toExist(), expect(role("button", { name: "Propose a VIP" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, kind: "Tasks" as const } }, [expect(text("Formatter can't resolve its shipped binary on Linux")).toExist()]],
+    [{ ...base, issues: { ...base.issues, state: "closed" as const } }, [expect(text("Rename effect to fx")).toExist()]],
+    [{ ...base, issues: { ...base.issues, query: "tuple" } }, [expect(role("link", { name: "Case branches on tuples" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "detail" as const, selected: 42 } }, [
+      expect(role("heading", { name: "Case branches on tuples #42" })).toExist(), expect(role("button", { name: "Commit" })).toExist(),
+      expect(text("Rust lets the binding sit inside the pattern. Worth copying.")).toExist(),
+    ]],
+    [{ ...base, issues: { ...base.issues, screen: "detail" as const, selected: 45 } }, [expect(role("button", { name: "Accept" })).toExist(), expect(role("button", { name: "Decline" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "detail" as const, selected: 42, dialog: "commit" as const } }, [expect(role("dialog", { name: "Commit #42 as a task" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "detail" as const, selected: 42, dialog: "split" as const } }, [expect(role("dialog", { name: "Split #42" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "detail" as const, selected: 42, dialog: "link" as const } }, [expect(role("dialog", { name: "Link #42" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "new" as const } }, [expect(role("textbox", { name: "Title" })).toExist(), expect(role("button", { name: "New issue" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "vip" as const, title: "T", summary: "S", step: 2 } }, [expect(role("textbox", { name: "Example" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, screen: "roles" as const } }, [expect(role("table")).toExist()]],
+    [{ ...base, mode: "live" as const, issues: { ...base.issues, data: { ...data, connected: false } } }, [expect(role("link", { name: "Connect GitHub" })).toExist(), expect(role("button", { name: "New issue" })).toBeAbsent()]],
+    [{ ...base, issues: { ...base.issues, status: "loading" as const } }, [expect(role("link", { name: "Case branches on tuples" })).toBeAbsent()]],
+    [{ ...base, issues: { ...base.issues, status: "error" as const } }, [expect(role("button", { name: "Retry" })).toExist()]],
+    [{ ...base, issues: { ...base.issues, error: "Sign in again." } }, [expect(text("Sign in again.")).toExist()]],
+  ]
+  const result = await workload(bench, "issues-view-matrix", () => {
+    for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
+  }).run(quick)
+  await runPromise(artifact("issues-view-matrix", "Vitest built-in bench; Foldkit scenes over the real app update/view render the issues pane list kinds, state and query filters, detail with notes and VIP review, commit/split/link dialogs, new and VIP wizard steps, the role matrix, connect gating, loading, failure and inline errors.", ["Scene rendering without layout/paint or a GitHub call; the write boundary runs in the issues fixture and workerd benchmarks."], result))
+})
+
+it("wiki pane renders navigation, decisions and recovery", async ({ bench }) => {
+  const chat = { ...home, surface: "chat" as const }
+  const opened = update(chat, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/index" } })).model
+  const decision = update(chat, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/decisions/0014-agent-tour" } })).model
+  const scenes: Array<[Model, Array<SceneStep<Model, Message, undefined>>]> = [
+    [opened, [expect(role("region", { name: "Wiki" })).toExist(), expect(role("link", { name: "Rulings" })).toExist()]],
+    [decision, [expect(role("button", { name: "Decisions" })).toExist()]],
+    [{ ...opened, wikiStatus: "loading" as const }, [expect(role("region", { name: "Wiki" })).toExist()]],
+    [{ ...opened, wikiStatus: "error" as const, wikiRequested: "index" }, [expect(role("button", { name: "Retry" })).toExist()]],
+    [{ ...opened, wikiQuery: "zzz-no-match" }, [expect(text('No pages match "zzz-no-match"')).toExist()]],
+    [{ ...opened, wikiQuery: "rulings" }, [expect(role("link", { name: "Rulings" })).toExist()]],
+    [{ ...opened, tour: true }, [expect(role("region", { name: "Wiki" })).toHaveAttr("data-maximized", "true")]],
+    [update(chat, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/nope" } })).model, [expect(role("region", { name: "Wiki" })).toExist()]],
+  ]
+  const result = await workload(bench, "wiki-view-matrix", () => {
+    for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
+  }).run(quick)
+  await runPromise(artifact("wiki-view-matrix", "Vitest built-in bench; Foldkit scenes over the real update/view render the wiki pane's index, decision chrome, loading skeleton, error with retry, filtered and empty navigation and tour-maximized state.", ["Scene rendering without layout/paint; the durable open flow is benchmarked through the mock factory and workerd."], result))
+})
+
+it("actions pane renders catalog, runs, trace and slash completion", async ({ bench }) => {
+  const chat = { ...home, surface: "chat" as const }
+  const failed: Run = { id: "a1", flow: "vibelang/Tour", door: "button", actor: "person", state: "failed", started: 0, at: 3000, result: "Action failed", steps: [
+    { key: "first", name: "vibelang/tour/start", attempt: 1, state: "passed", started: 0, at: 1000 },
+    { key: "second", name: "vibelang/tour/say", attempt: 1, state: "failed", started: 1000, at: 3000 },
+  ] }
+  const running: Run = { id: "a2", flow: "vibelang/Post", door: "slash", actor: "agent", state: "running", started: 0, at: 1000, result: "", steps: [] }
+  const open = { ...chat, actions: { ...initialActions, open: true, selected: failed.flow, run: failed.id, entries: [registration("vibelang/Tour"), registration("vibelang/Post")], commands: [registration("vibelang/Tour"), registration("vibelang/Post")], runs: [running, failed] } }
+  const scenes: Array<[Model, Array<SceneStep<Model, Message, undefined>>]> = [
+    [chat, [expect(role("button", { name: "Expand Actions" })).toExist()]],
+    [{ ...chat, actions: { ...initialActions, runs: [running] } }, [expect(role("button", { name: "Expand Actions" })).toExist()]],
+    [{ ...chat, actions: { ...initialActions, open: true, selected: "vibelang/Reply", entries: [registration("vibelang/Reply"), registration("vibelang/Tour")], commands: [registration("vibelang/Tour")], runs: [] } }, [expect(text("No runs yet")).toExist(), expect(role("button", { name: "Run" })).toBeAbsent()]],
+    [open, [expect(text("say · failed")).toExist(), expect(text("Action failed")).toExist()]],
+    [{ ...open, actions: { ...open.actions, run: "" } }, [expect(role("button", { name: "Run" })).toExist()]],
+    [{ ...open, actions: { ...open.actions, maximized: true } }, [expect(role("region", { name: "Actions" })).toHaveAttr("data-maximized", "true")]],
+  ]
+  const result = await workload(bench, "actions-view-matrix", () => {
+    for (const [model, expectations] of scenes) scene({ update, view }, given(model), ...expectations)
+    assert(actionsOf({})).toEqual(initialActions)
+    assert(completions({ actions: { ...initialActions, slash: true, commands: [registration("vibelang/Tour")] }, draft: "/to" }).map((entry) => entry.command)).toEqual(["/tour"])
+    assert(completions({ actions: initialActions, draft: "/to" })).toEqual([])
+    assert(completions({ actions: { ...initialActions, slash: true, commands: [registration("vibelang/Tour")] }, draft: "plain" })).toEqual([])
+    const older = { ...running, state: "passed" as const, at: 2000 }
+    assert(mergeRuns([running], [{ ...running, state: "passed" as const, at: 500 }])[0]?.state).toBe("running")
+    assert(mergeRuns([], [older]).map((run) => run.id)).toEqual(["a2"])
+    assert(mergeRuns([running], [{ ...running, at: 3000 }])[0]?.at).toBe(3000)
+    assert(selectedStep(failed)?.key).toBe("second")
+    assert(selectedStep(failed, "first/1")?.key).toBe("first")
+    assert(selectedStep({ ...failed, steps: [] })).toBe(undefined)
+  }).run(quick)
+  await runPromise(artifact("actions-view-matrix", "Vitest built-in bench; Foldkit scenes render the actions pane collapsed with its latest badge, open and empty, the failed-run trace, per-selection run control and maximized state; merge/selection/completion decisions checked against slower or terminal snapshots.", ["Scene rendering and pure decisions; live runs stream through the mock and workerd action benchmarks."], result))
+})
+
+it("main reducer visits the wiki, launches actions and drives sandbox controls", async ({ bench }) => {
+  const result = await workload(bench, "main-reducer-boundaries", () => {
+    const issues = issueStateOf({ ...home, issues: { ...initialIssues, retry: { op: "new", number: 0, parent: 0, title: "T", text: "", assignee: "", example: "", prior: "", key: "k", recovery: "r" } } })
+    assert(issues.keyPrefix).toBe("bench")
+    assert(issues.role).toBe("viewer")
+    assert(issues.connection).toBe("/api/auth/github?resume-op=new&resume-key=k&resume-recovery=r")
+    assert(issueStateOf(home).connection).toBe("/api/auth/github")
+    const visiting = update({ ...home, sandboxPane: "max", account: { ...signedOut, people: "max" } }, Message.ClickedWiki({ page: "rulings" }))
+    assert(visiting.model.wikiRequested).toBe("rulings")
+    assert(visiting.model.wikiStatus).toBe("loading")
+    assert(visiting.model.sandboxPane).toBe("pane")
+    assert(visiting.model.account?.people).toBe("pane")
+    const again = update({ ...visiting.model, stream: "open" as const }, Message.ClickedWiki({ page: "roadmap" }))
+    assert(again.model.epoch).toBe(visiting.model.epoch)
+    const actionable = { ...home, surface: "chat" as const, draft: "", actions: { ...initialActions, open: true, selected: "vibelang/Tour", entries: [registration("vibelang/Tour")], commands: [registration("vibelang/Tour")], input: "" } }
+    const launched = update(actionable, Message.ClickedRunAction())
+    assert(launched.model.actions?.starting).toBe(true)
+    assert(launched.commands).toHaveLength(1)
+    const blocked = update({ ...actionable, actions: { ...actionable.actions, starting: true } }, Message.ClickedRunAction())
+    assert(blocked.commands ?? []).toHaveLength(0)
+    const unknown = update({ ...actionable, actions: { ...actionable.actions, selected: "vibelang/nope" } }, Message.ClickedRunAction())
+    assert(unknown.commands ?? []).toHaveLength(0)
+    const slashed = update({ ...actionable, draft: "/tour please", actions: { ...actionable.actions, slash: true } }, Message.PickedSlash({ name: "vibelang/Tour" }))
+    assert(slashed.model.draft).toBe("")
+    assert(slashed.commands).toHaveLength(1)
+    const started = update(home, Message.StartedSandbox())
+    assert(started.model.sandboxBusy).toBe(true)
+    assert(started.commands).toHaveLength(1)
+    const busyStart = update(started.model, Message.StartedSandbox())
+    assert(busyStart.commands ?? []).toHaveLength(0)
+    const stopped = update(started.model, Message.StoppedSandbox())
+    assert(stopped.commands).toHaveLength(1)
+    const terminal = update({ ...started.model, sandboxBusy: false, terminalDraft: "ls" }, Message.SubmittedTerminal())
+    assert(terminal.model.terminalDraft).toBe("")
+    assert(terminal.commands).toHaveLength(1)
+    const blankTerminal = update({ ...started.model, sandboxBusy: false, terminalDraft: "  " }, Message.SubmittedTerminal())
+    assert(blankTerminal.commands ?? []).toHaveLength(0)
+  }).run(quick)
+  await runPromise(artifact("main-reducer-boundaries", "Vitest built-in bench; issue connection state with resume links, durable wiki visits with pane/people restoration and epoch reuse, action dispatch gating by selection and in-flight starts, slash dispatch clearing the draft, and sandbox start/stop/terminal controls with busy and blank-command refusals; exact emitted commands checked.", ["Reducer and command construction; the commands' durable execution is benchmarked through the mock factory."], result))
+})
