@@ -1,0 +1,169 @@
+// @vitest-environment node
+// src/actions/LiveActions.vibe against a canned HttpClient and src/actions/execution.vibe's prepare: every verb,
+// the slash-command parser, refusal codes and the run event stream; every invocation kind and its input failures.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { prepare } from "../src/actions/execution.vibe"
+import { Actions, ActionFailure } from "../src/actions/Actions.vibe"
+
+interface Canned { readonly status: number; readonly body: string }
+
+/** A client answering `routes` (keyed `METHOD path?query`) and recording what was asked. */
+function canned(routes: Record<string, Canned>) {
+  const seen: Array<string> = []
+  const client = HttpClient.make((request) => {
+    const url = new URL(request.url)
+    const key = `${request.method} ${url.pathname}${url.search}`
+    seen.push(key)
+    return routes[key] === undefined
+      ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+      : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(routes[key]!.body, { status: routes[key]!.status }))))
+  })
+  return { client, seen }
+}
+
+const registered = JSON.stringify([{ name: "vibelang/Post", title: "Post", detail: "Ask the agent", command: "/post", runnable: true, least: "contributor", input: "text" }])
+const run = JSON.stringify({ id: "a-1", flow: "vibelang/Post", door: "button", actor: "person", state: "queued", started: 1, at: 1, result: "", steps: [] })
+
+/** The ActionFailure code a call fails with, or `ok`. */
+effect function codeOf(work: unknown!ActionFailure) {
+  return work.pipe(Effect.map(() => "ok")) catch (error) => error.code
+}
+
+describe("LiveActions", () => {
+  it.effect("lists, starts, reruns, reads, cancels and follows a run over the wire", () => effect {
+    const { client, seen } = canned({
+      "GET /api/actions": { status: 200, body: registered },
+      "GET /api/actions/commands": { status: 200, body: registered },
+      "GET /api/actions/runs?flow=vibelang%2FPost": { status: 200, body: `[${run}]` },
+      "GET /api/actions/runs/a-1": { status: 200, body: run },
+      "POST /api/actions/runs": { status: 202, body: JSON.stringify({ id: "a-2" }) },
+      "POST /api/actions/runs/a-1/rerun": { status: 202, body: JSON.stringify({ id: "a-3" }) },
+      "DELETE /api/actions/runs/a-1": { status: 200, body: "{}" },
+      "GET /api/actions/runs/a-1/events": { status: 200, body: `data: ${JSON.stringify({ type: "ActionRequested", seq: 1, id: "a-1", flow: "vibelang/Post", door: "button", actor: "person", at: 1 })}\n\ndata: ${JSON.stringify({ type: "ActionSettled", seq: 2, id: "a-1", state: "passed", result: "null", at: 2 })}\n\n` },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const actions = try Actions
+      const list = try actions.list()
+      const commands = try actions.commands()
+      const runs = try actions.runs("vibelang/Post")
+      const found = try actions.read("a-1")
+      const started = try actions.start("vibelang/Post", { text: "hi" }, "button")
+      const reran = try actions.rerun("a-1")
+      try actions.cancel("a-1")
+      const followed = try Stream.runCollect(actions.follow("a-1"))
+      try Effect.try(() => {
+        expect(list[0]?.command).toBe("/post")
+        expect(commands).toHaveLength(1)
+        expect(runs[0]?.id).toBe("a-1")
+        expect(found.state).toBe("queued")
+        expect(started).toBe("a-2")
+        expect(reran).toBe("a-3")
+        expect(followed.map((entry) => entry.state)).toEqual(["queued", "passed"])
+        expect(seen).toHaveLength(8)
+      })
+    }
+    }
+  })
+
+  it.effect("parses a slash command, refusing the unknown and the malformed", () => effect {
+    const { client } = canned({
+      "GET /api/actions/commands": { status: 200, body: registered },
+      "POST /api/actions/runs": { status: 202, body: JSON.stringify({ id: "a-9" }) },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const actions = try Actions
+      const started = try actions.command("/post hello there")
+      const unknown = try codeOf(actions.command("/nope"))
+      try Effect.try(() => {
+        expect(started).toBe("a-9")
+        expect(unknown).toBe("unknown-command")
+      })
+    }
+    }
+  })
+
+  it.effect("parses a json command's input and refuses the malformed", () => effect {
+    const jsonEntry = JSON.stringify([{ name: "vibelang/history/Plan", title: "Plan", detail: "Plan", command: "/plan", runnable: true, least: "contributor", input: "json" }])
+    const { client } = canned({
+      "GET /api/actions/commands": { status: 200, body: jsonEntry },
+      "POST /api/actions/runs": { status: 202, body: JSON.stringify({ id: "a-7" }) },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const actions = try Actions
+      const started = try actions.command(`/plan {"title":"t"}`)
+      const empty = try actions.command("/plan")
+      const malformed = try codeOf(actions.command("/plan {oops"))
+      try Effect.try(() => {
+        expect(started).toBe("a-7")
+        expect(empty).toBe("a-7")
+        expect(malformed).toBe("input")
+      })
+    }
+    }
+  })
+
+  it.effect("carries the server's failure code, and unavailable when it is not the protocol", () => effect {
+    const { client } = canned({
+      "POST /api/actions/runs": { status: 409, body: JSON.stringify({ code: "busy" }) },
+      "GET /api/actions": { status: 500, body: "not json" },
+      "GET /api/actions/runs/a-1/events": { status: 503, body: "" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+    provide LiveActions("https://a.test") {
+      const actions = try Actions
+      const busy = try codeOf(actions.start("vibelang/Post", {}, "button"))
+      const offline = try codeOf(actions.list())
+      const eventsFailed = try Effect.exit(Stream.runCollect(actions.follow("a-1")))
+      const unreachable = try codeOf(actions.commands())
+      try Effect.try(() => {
+        expect(busy).toBe("busy")
+        expect(offline).toBe("unavailable")
+        expect(eventsFailed._tag).toBe("Failure")
+        expect(unreachable).toBe("unavailable")
+      })
+    }
+    }
+  })
+})
+
+describe("prepare", () => {
+  it.effect("builds every invocation kind, with the request id as the operation", () => effect {
+    const post = try prepare("vibelang/Post", { text: "hi" }, "a-1")
+    const tour = try prepare("vibelang/Tour", null, "a-2")
+    const end = try prepare("vibelang/EndTour", {}, "a-3")
+    const show = try prepare("vibelang/history/show", {}, "a-4")
+    const plan = try prepare("vibelang/history/Plan", { how: "append", epic: "", newEpic: "Docs", target: "", title: "t", task: "d" }, "a-5")
+    const start = try prepare("vibelang/history/Start", { id: "m1", lane: "lane" }, "a-6")
+    const note = try prepare("vibelang/history/Note", { id: "m1", section: "tried", text: "it" }, "a-7")
+    const sandboxStart = try prepare("vibelang/sandbox/start", {}, "a-8")
+    const sandboxStop = try prepare("vibelang/sandbox/stop", { conversation: "c-1", generation: 2 }, "a-9")
+    const sandboxCommand = try prepare("vibelang/sandbox/command", { command: "ls", generation: 2 }, "a-10")
+    try Effect.try(() => {
+      expect(post.kind).toBe("post")
+      expect(post.payload).toMatchObject({ clientId: "a-1", text: "hi" })
+      expect(tour.payload).toEqual({ tour: "a-2" })
+      expect(end.kind).toBe("end")
+      expect(show.payload).toEqual({ what: "outline" })
+      expect(plan.kind).toBe("plan")
+      expect(start.kind).toBe("start")
+      expect(note.kind).toBe("note")
+      expect(sandboxStart.payload).toMatchObject({ conversation: "home", operationId: "a-8" })
+      expect(sandboxStop.payload).toMatchObject({ conversation: "c-1", operationId: "a-9" })
+      expect(sandboxCommand.payload).toMatchObject({ conversation: "home", command: "ls" })
+    })
+  })
+
+  it.effect("refuses an unknown flow and a malformed input", () => effect {
+    const unknown = try codeOf(prepare("vibelang/nope", {}, "a-1"))
+    const malformed = try codeOf(prepare("vibelang/history/Note", { id: "m1" }, "a-2"))
+    try Effect.try(() => {
+      expect(unknown).toBe("not-found")
+      expect(malformed).toBe("input")
+    })
+  })
+})
