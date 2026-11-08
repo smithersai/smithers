@@ -145,7 +145,10 @@ smithers.sh's agent as flows, as the tour's pane tools were: `vibelang/history/s
 `epic`, `commit`, `search`), and `vibelang/history/Plan`, `Start` and `Note` run in the History object's engine, which
 checks who asks. There is no tool to approve or fold. A tool call is a journaled step of the reply; a write reaches the
 History object through its internal `act`, as `CHAT_AGENT`: the agent for the person who posted, a viewer until 0019
-lands, so its writes are refused `forbidden` as that person's would be. No request reaches `act`. At most eight calls a
+lands, so its writes are refused `forbidden` as that person's would be. No request reaches `act`. Each write's
+execution is `history-<write>/<operation>`, where `operation` is the tool call's identity (`SandboxTools.operation`):
+a call the harness re-executes after a crash meets its recorded execution and records once
+(`test/history.workerd.test.vibe`). A person's HTTP write is its own execution each time. At most eight calls a
 cell (`REPLY_CALLS`); `vibelang_history_tool_calls{tool, outcome}` and `vibelang.history.tool.<tool>` logs count them,
 with no text. The mock's scripted agent answers a question about the history (`mythical`, `history`, `epic`) by
 running `vibelang/history/show` as a step over the mock history, built only when first asked. When lane `vl-actions`

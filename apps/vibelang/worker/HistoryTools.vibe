@@ -6,6 +6,7 @@
 import { FlowBinding } from "@smthrs/harness"
 import { Note, Plan, Start } from "../src/history/flows.vibe"
 import { type HistoryReader, note, plan, Show, show, start } from "../src/history/tools.vibe"
+import { operation } from "./SandboxTools.vibe"
 
 /** The most tool calls one cell of a reply may make: a few reads and a write, with room for a retry. */
 export const REPLY_CALLS = 8
@@ -34,12 +35,17 @@ function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _
 export function historyTools(history: HistoryReader): FlowBinding.Source {
   return FlowBinding.source("vibelang-history", [
     FlowBinding.make({ flow: declared(Show), handler: (input: Parameters<typeof show>[1]) => show(history, input) }),
-    FlowBinding.make({ flow: declared(Plan), handler: (input: Parameters<typeof plan>[1]) => plan(history, input) }),
-    FlowBinding.make({ flow: declared(Start), handler: (input: { readonly id: string; readonly lane: string }) => start(history, input.id, input.lane) }),
+    // Each write is keyed by its call: a call the harness re-executes after a crash records once.
+    FlowBinding.make({ flow: declared(Plan), handler: effect (input: Parameters<typeof plan>[1], call) => { return try plan(history, input, try operation(call)) } }),
+    FlowBinding.make({
+      flow: declared(Start),
+      handler: effect (input: { readonly id: string; readonly lane: string }, call) => { return try start(history, input.id, input.lane, try operation(call)) },
+    }),
     FlowBinding.make({
       flow: declared(Note),
-      handler: (input: { readonly id: string; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }) =>
-        note(history, input.id, input.section, input.text),
+      handler: effect (input: { readonly id: string; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }, call) => {
+        return try note(history, input.id, input.section, input.text, try operation(call))
+      },
     }),
   ])
 }

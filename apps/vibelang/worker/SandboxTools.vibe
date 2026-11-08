@@ -18,8 +18,11 @@ export const closed: SandboxAgent.Shape = {
 }
 export const SANDBOX_INSTRUCTION = "When asked to start a sandbox, call vibelang/sandbox/start. Stop and command use the generation it returns. Report only the tool's actual result; a refusal grants no compute."
 
-/** Stable across a resumed cell; independent of model-provided operation names and safe for telemetry boundaries. */
-effect function operation(call: Cell.Call) {
+/**
+ * A tool call's operation id: stable across a resumed cell; independent of model-provided operation names and safe
+ * for telemetry boundaries. The history tools key their writes by it too (HistoryTools.vibe).
+ */
+export effect function operation(call: Cell.Call) {
   return `agent/${try Effect.try(() => digestSync(JSON.stringify([call.identity.session, call.identity.frame, call.identity.cell, call.identity.ordinal, call.identity.declaration, call.identity.layers])))}`
 }
 function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly successSchema: O }, input: I) {

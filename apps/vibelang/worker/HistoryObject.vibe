@@ -84,19 +84,21 @@ export const CHAT_AGENT: Principal = { ...VIEWER, agent: true }
 
 /**
  * The history as the chat agent's tools reach it (src/history/tools.vibe), over the History object's `page` and an
- * internal `act` that runs a write's flow as `CHAT_AGENT`. No request reaches `act`: only the API Worker's own objects
- * call it, so no client names a principal.
+ * internal `act` that runs a write's flow as `principal` (`CHAT_AGENT` until 0019 names the person who posted), keyed
+ * by the tool call's `operation`. No request reaches `act`: only the API Worker's own objects call it, so no client
+ * names a principal.
  */
 export function readerOver(
   page: (request: PageRequest) => unknown!Unreachable,
-  act: (name: Write, body: unknown, principal: Principal) => Answered!Unreachable,
+  act: (name: Write, body: unknown, principal: Principal, operation: string) => Answered!Unreachable,
+  principal: Principal = CHAT_AGENT,
 ): HistoryReader {
   effect function read<S extends Schema.Top>(request: PageRequest, schema: S) {
     const value = try Effect.mapError(page(request), () => new Unavailable({ reason: "history unreachable" }))
     return try Effect.mapError(Schema.decodeUnknownEffect(schema)(value), () => new Unavailable({ reason: "history is not the protocol" }))
   }
-  effect function written(name: Write, body: unknown) {
-    const answer = try Effect.mapError(act(name, body, CHAT_AGENT), () => new Unavailable({ reason: "history unreachable" }))
+  effect function written(name: Write, body: unknown, operation: string) {
+    const answer = try Effect.mapError(act(name, body, principal, operation), () => new Unavailable({ reason: "history unreachable" }))
     if (answer.refusal !== null) throw new Refused({ refusal: answer.refusal })
     return answer.id
   }
@@ -105,9 +107,9 @@ export function readerOver(
     epic: (id, from) => read({ what: "epic", id, from }, EpicPageSchema),
     commit: (id) => read({ what: "commit", id }, CommitPageSchema),
     search: (query) => read({ what: "search", query }, MatchesSchema),
-    plan: (request) => written("plan", request),
-    start: (id, lane) => Effect.asVoid(written("start", { id, lane })),
-    note: (id, section, text) => Effect.asVoid(written("note", { id, section, text })),
+    plan: (request, operation) => written("plan", request, operation),
+    start: (id, lane, operation) => Effect.asVoid(written("start", { id, lane }, operation)),
+    note: (id, section, text, operation) => Effect.asVoid(written("note", { id, section, text }, operation)),
   }
 }
 
@@ -149,7 +151,11 @@ export interface Answered {
   readonly refusal: string | null
 }
 
-/** Runs one write's flow in the request that asks, as `principal`: its own execution, on the engine in the object's SQLite. */
+/**
+ * Runs one write's flow in the request that asks, as `principal`, on the engine in the object's SQLite. An `operation`
+ * (an agent's tool call) names its execution, so asking again answers the recorded result instead of writing again;
+ * without one (a person's request) each write is its own execution.
+ */
 export effect function write(
   hostId: string,
   storage: Storage,
@@ -158,8 +164,9 @@ export effect function write(
   principal: Principal,
   name: Write,
   payload: unknown,
+  operation?: string,
 ) {
-  const executionId = try postExecutionId(`history-${name}`)
+  const executionId = operation === undefined ? try postExecutionId(`history-${name}`) : `history-${name}/${operation}`
   const tag = { plan: Plan, start: Start, note: Note, approve: Approve, fold: Fold }[name]._tag
   return try Effect.orDie(effect {
     provide runtime(hostId, executionId, tag, storage, sequencer, principal, main) {

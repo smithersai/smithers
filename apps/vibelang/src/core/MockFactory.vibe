@@ -15,7 +15,7 @@ import {
 } from "./flows.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Principal } from "../history/roles.vibe"
-import { type HistoryReader, show } from "../history/tools.vibe"
+import { type HistoryPages, show } from "../history/tools.vibe"
 import { matches } from "./mockDecision.vibe"
 import { makeMockSandboxes } from "./sandboxMock.vibe"
 import type { Role } from "./sandboxDecision.vibe"
@@ -57,7 +57,7 @@ effect function scripted(
   state: Ref.Ref<State>,
   record: (intent: Intent) => Decision!!,
   post: string,
-  history: HistoryReader!!,
+  history: HistoryPages!!,
   conversation: string,
   sandboxTools: Pick<Factory.Shape, "startSandbox">,
 ) {
@@ -126,7 +126,7 @@ return Layer.effect(Factory, effect {
   // The mythical history the scripted agent reads, built (and its snapshot downloaded) only when first asked about.
   const history = try Effect.cached(effect {
     const { MockMythical } = try promise(() => import("../history/MockMythical.vibe"))
-    const reader: HistoryReader = Context.get(try Layer.buildWithScope(MockMythical(MOCK_AGENT), scope), Mythical)
+    const reader: HistoryPages = Context.get(try Layer.buildWithScope(MockMythical(MOCK_AGENT), scope), Mythical)
     return reader
   })
   // This lock only creates rooms. Acceptance and replies use each room's own lock and engine.

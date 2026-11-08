@@ -140,6 +140,32 @@ describe("the History object in local workerd", () => {
     }
   })
 
+  it.live("records an agent's re-executed write once: the tool call's identity keys its flow", () => effect {
+    provide platform {
+      const origin = api!.origin
+      const request = { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): recorded once", task: "t" }
+      const ask = (ordinal: number) => at(origin, "/history-tool/agent-once", JSON.stringify({ tool: "bound", input: request, ordinal }))
+      const titled = effect () => {
+        const found = try Schema.decodeUnknownEffect(Matches)(try (try at(origin, `/api/history/search?q=${encodeURIComponent("recorded once")}`)).json)
+        return found.commits.length
+      }
+      // The History object records the write; the reply crashes before the call settles in its journal, so the
+      // answer is lost.
+      try ask(0)
+      // Recovery re-executes the same unsettled call: the same session, frame, cell and ordinal.
+      const again = try (try ask(0)).json
+      const afterReplay = try titled()
+      // The cell's next call is a new write.
+      try ask(1)
+      const afterNext = try titled()
+      try Effect.try(() => {
+        expect(again).toMatchObject({ outcome: "success", value: { refusal: null } })
+        expect(afterReplay).toBe(1)
+        expect(afterNext).toBe(2)
+      })
+    }
+  })
+
   it.live("serves LiveMythical: the same history, and a refusal typed as Refused", () => effect {
     provide platform {
       const result = try effect {

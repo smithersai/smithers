@@ -5,6 +5,9 @@
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
 // Its own answers are Effect's HTTP responses, converted to the platform's here.
 import { FlowRuntime } from "@smthrs/flow"
+import { Cell } from "@smthrs/harness"
+import { Plan } from "../../src/history/flows.vibe"
+import { historyTools } from "../../worker/HistoryTools.vibe"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { Tour, toured, Tours, walk } from "../../src/core/flows.vibe"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -117,10 +120,18 @@ export class Conversation {
     if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
     // The agent's history tools as a reply's cell calls them, from this conversation's object.
     if (url.pathname === "/history-tool") {
-      const input = args as unknown as { readonly tool: string; readonly show: ShowInput; readonly id: string; readonly text: string }
+      const input = args as unknown as { readonly tool: string; readonly show: ShowInput; readonly id: string; readonly text: string; readonly input: Schema.Json; readonly ordinal: number }
+      // The agent's real Plan binding as a cell calls it, for a person who may plan: the call's identity is the cell's.
+      if (input.tool === "bound") {
+        const maintainer: Principal = { role: "maintainer", name: "Ada", agent: true }
+        const bindings = await Effect.runPromise(historyTools(historyOf(this.env, maintainer)).bindings())
+        const call = new Cell.Call({ flowName: Plan._tag, input: input.input, capabilities: [], effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }, placement: Option.none(), identity: new Cell.CallIdentity({ session: "reply", frame: 0, cell: "cell", ordinal: input.ordinal, declaration: "flow", layers: [] }) })
+        const result = await Effect.runPromise(bindings.find((binding) => binding.descriptor.name === Plan._tag)!.run(call))
+        return json({ outcome: result.outcome, value: result.value })
+      }
       const history = historyOf(this.env)
       if (input.tool === "show") return json(await Effect.runPromise(show(history, input.show)))
-      return json(await Effect.runPromise(note(history, input.id, "tried", input.text)))
+      return json(await Effect.runPromise(note(history, input.id, "tried", input.text, "test/note")))
     }
     if (url.pathname === "/tour") return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
     if (url.pathname === "/end-tour") return json({ refusal: await Effect.runPromise(Objects.endTour(this.state.id.toString(), this.state.storage, sequencer)) })
@@ -148,10 +159,11 @@ export class Conversation {
 }
 
 /** VibeLang's History object as a conversation's agent reaches it, as worker/Api.vibe's objects do. */
-function historyOf(env: Env) {
+function historyOf(env: Env, principal?: Principal) {
   return HistoryObject.readerOver(
     (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
-    (name, body, principal) => reach("history", () => call(env.HISTORY, "vibelang", "act", { name, body, principal }) as Promise<HistoryObject.Answered>),
+    (name, body, principal, operation) => reach("history", () => call(env.HISTORY, "vibelang", "act", { name, body, principal, operation }) as Promise<HistoryObject.Answered>),
+    principal,
   )
 }
 
@@ -224,11 +236,11 @@ export class History {
     if (url.pathname === "/runs") {
       return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
     }
-    const args = await request.json() as { readonly name: Write; readonly body: unknown; readonly principal?: Principal }
+    const args = await request.json() as { readonly name: Write; readonly body: unknown; readonly principal?: Principal; readonly operation?: string }
     // `act` is the objects' own write as a principal; `write` is the API's, whoever asks a viewer until sign-in.
     const principal = url.pathname === "/act" ? args.principal! : HistoryObject.principalOf(request)
     return json(await Effect.runPromise(HistoryObject.write(
-      this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body,
+      this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body, args.operation,
     )))
   }
 }

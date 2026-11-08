@@ -13,8 +13,19 @@ import type { CommitPage, EpicPage, Matches, Outline, PageRequest } from "./page
 import { CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, Matches as MatchesSchema, Outline as OutlineSchema } from "./schemas.vibe"
 import type { PlanRequest } from "./Sequencer.vibe"
 
-/** What the agent's tools need of the history: its pages and the writes the agent may ask for. */
-export type HistoryReader = Pick<Mythical.Shape, "outline" | "epic" | "commit" | "search" | "plan" | "start" | "note">
+/** The history's pages, as a reader asks for them. */
+export type HistoryPages = Pick<Mythical.Shape, "outline" | "epic" | "commit" | "search">
+
+/**
+ * What the agent's tools need of the history: its pages and the writes the agent may ask for. Each write is keyed by
+ * `operation`, the tool call that asks: a call the harness re-executes after a crash runs the same flow execution,
+ * so it records once.
+ */
+export interface HistoryReader extends HistoryPages {
+  plan(request: PlanRequest, operation: string): string!(Unavailable | Refused)
+  start(id: string, lane: string, operation: string): void!(Unavailable | Refused)
+  note(id: string, section: Section, text: string, operation: string): void!(Unavailable | Refused)
+}
 
 /** The page a read answers. */
 export const ShowPage = Schema.Union([OutlineSchema, EpicPageSchema, CommitPageSchema, MatchesSchema])
@@ -64,7 +75,7 @@ effect function counted(tool: string, outcome: string) {
 }
 
 /** `vibelang/history/show`'s body: the page asked for; `unavailable` fails the call. */
-export effect function show(history: HistoryReader, input: ShowInput) {
+export effect function show(history: HistoryPages, input: ShowInput) {
   const request = requestOf(input)
   const page: Outline | EpicPage | CommitPage | Matches = match (request) {
     when { what: "outline" }: try history.outline();
@@ -86,16 +97,16 @@ effect function answered(tool: string, write: string!(Refused | Unavailable)) {
 }
 
 /** `vibelang/history/Plan` as the agent's tool. */
-export function plan(history: HistoryReader, request: PlanRequest) {
-  return answered("plan", history.plan(request))
+export function plan(history: HistoryReader, request: PlanRequest, operation: string) {
+  return answered("plan", history.plan(request, operation))
 }
 
 /** `vibelang/history/Start` as the agent's tool. */
-export function start(history: HistoryReader, id: string, lane: string) {
-  return answered("start", Effect.as(history.start(id, lane), id))
+export function start(history: HistoryReader, id: string, lane: string, operation: string) {
+  return answered("start", Effect.as(history.start(id, lane, operation), id))
 }
 
 /** `vibelang/history/Note` as the agent's tool. */
-export function note(history: HistoryReader, id: string, section: Section, text: string) {
-  return answered("note", Effect.as(history.note(id, section, text), id))
+export function note(history: HistoryReader, id: string, section: Section, text: string, operation: string) {
+  return answered("note", Effect.as(history.note(id, section, text, operation), id))
 }

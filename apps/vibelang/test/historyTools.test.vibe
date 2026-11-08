@@ -72,10 +72,10 @@ describe("the history's tools", () => {
   })
 
   it.effect("write through the history's flows as the agent for its person, signed as the agent", () => reading({ role: "contributor", name: "Ada", agent: true }, effect (history) => {
-    const planned = try plan(history, { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "t" })
-    const started = try start(history, planned.id, "lane-a")
-    const noted = try note(history, planned.id, "tried", "A cache; it went stale.")
-    const retold = try plan(history, { how: "insert", epic: "", newEpic: "", target: "m1", title: "fix(compiler): zero", task: "t" })
+    const planned = try plan(history, { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "t" }, "op-1")
+    const started = try start(history, planned.id, "lane-a", "op-2")
+    const noted = try note(history, planned.id, "tried", "A cache; it went stale.", "op-3")
+    const retold = try plan(history, { how: "insert", epic: "", newEpic: "", target: "m1", title: "fix(compiler): zero", task: "t" }, "op-4")
     const page = try history.commit(planned.id)
     try Effect.try(() => {
       expect([planned, started, noted]).toEqual([{ id: "m4", refusal: null }, { id: "m4", refusal: null }, { id: "m4", refusal: null }])
@@ -89,9 +89,9 @@ describe("the history's tools", () => {
   it.effect("answer the chat agent's writes `forbidden` while its person is a viewer, changing nothing", () => reading(CHAT_AGENT, effect (history) => {
     const before = try history.outline()
     const answers = [
-      try plan(history, { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "" }),
-      try start(history, "m1", "lane"),
-      try note(history, "m1", "tried", "x."),
+      try plan(history, { how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): four", task: "" }, "op-5"),
+      try start(history, "m1", "lane", "op-6"),
+      try note(history, "m1", "tried", "x.", "op-7"),
     ]
     const after = try history.outline()
     try Effect.try(() => {
@@ -102,11 +102,11 @@ describe("the history's tools", () => {
   }))
 
   it.effect("answer a sequencer's refusal, and `unavailable` when the history can't be reached", () => effect {
-    const refused = try reading({ role: "maintainer", name: "Ada", agent: true }, (history) => note(history, "m99", "tried", "x."))
+    const refused = try reading({ role: "maintainer", name: "Ada", agent: true }, (history) => note(history, "m99", "tried", "x.", "op-refused"))
     const writes = [
-      try plan(unreachable, { how: "append", epic: "e1", newEpic: "", target: "", title: "x", task: "" }),
-      try start(unreachable, "m1", "lane"),
-      try note(unreachable, "m1", "tried", "x."),
+      try plan(unreachable, { how: "append", epic: "e1", newEpic: "", target: "", title: "x", task: "" }, "op-8"),
+      try start(unreachable, "m1", "lane", "op-9"),
+      try note(unreachable, "m1", "tried", "x.", "op-10"),
     ]
     const read = show(unreachable, { what: "outline" }) catch (error) => error._tag
     try Effect.try(() => {

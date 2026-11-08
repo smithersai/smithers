@@ -36,7 +36,7 @@ export interface HistoryShape {
   readonly page: (request: PageRequest) => unknown!!RuntimeContext
   readonly write: (name: Write, body: unknown) => HistoryObject.Answered!!RuntimeContext
   /** A write as `principal`: only the API Worker's own objects call it (`HistoryObject.readerOver`). */
-  readonly act: (name: Write, body: unknown, principal: Principal) => HistoryObject.Answered!!RuntimeContext
+  readonly act: (name: Write, body: unknown, principal: Principal, operation: string) => HistoryObject.Answered!!RuntimeContext
 }
 
 /** One conversation's sequencer and current reply, named by the conversation's id. */
@@ -85,8 +85,8 @@ const HistoryLive = History.make(effect {
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
       write: (name: Write, body: unknown) =>
         HistoryObject.write(hostId, state.raw.storage, sequencer, main, HistoryObject.principalOf(undefined), name, body),
-      act: (name: Write, body: unknown, principal: Principal) =>
-        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body),
+      act: (name: Write, body: unknown, principal: Principal, operation: string) =>
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body, operation),
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
         return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://history.invalid")) ?? 0))
@@ -135,9 +135,9 @@ const ConversationLive = Conversation.make(effect {
             const object = try objectOf(histories, REPOSITORY, "history")
             return try reached(runtime, "history", object.page(request))
           },
-          (name, body, principal) => effect {
+          (name, body, principal, operation) => effect {
             const object = try objectOf(histories, REPOSITORY, "history")
-            return try reached(runtime, "history", object.act(name, body, principal))
+            return try reached(runtime, "history", object.act(name, body, principal, operation))
           },
         )
         try Objects.alarm(hostId, state.raw.storage, sequencer, spend, model, history)
