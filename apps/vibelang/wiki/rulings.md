@@ -103,6 +103,10 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
 - **VL-25. Sandboxes with minute allowances.** "Users should be able to spin up sandboxes and get different amoutns of
   minutes."
 
+- **VL-27. Dark only, for now.** On 2026-11-07, Will said the splash's videos and pictures looked bad in light
+  mode: "they should be light mode in light mode and dark mode in dark mode for all the pictures and stuff". Then:
+  "Do the opposite for now and just make vibelang dark mode only and leave a note in wiki why". See decision 0013.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the

@@ -1,18 +1,15 @@
 /* vibelang.smithers.sh's frame and splash. Colors come from the Smithers theme (@smthrs/ui-styleguide); chat parts use
-   @smthrs/ui-css's `sui-*` classes. VibeLang's brand adds its gradient and violet accent (launch kit brand/BRIEF.md). */
+   @smthrs/ui-css's `sui-*` classes. VibeLang's brand adds its gradient and violet accent (launch kit brand/BRIEF.md).
+   Dark only: index.html sets data-theme="dark" (wiki/decisions/0013-dark-only.md). */
 
 :root {
   --vl-cyan: #41d1ff;
   --vl-violet: #747bff;
   --vl-magenta: #bd34fe;
   --vl-gradient: linear-gradient(120deg, var(--vl-cyan) 8%, var(--vl-violet) 48%, var(--vl-magenta) 88%);
-  --brand: #5b61e8;
-  color-scheme: light dark;
+  --brand: var(--vl-violet);
+  color-scheme: dark;
 }
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) { --brand: var(--vl-violet); }
-}
-:root[data-theme="dark"] { --brand: var(--vl-violet); }
 
 * { box-sizing: border-box; }
 html, body { margin: 0; min-height: 100%; }
@@ -27,13 +24,6 @@ button { font: inherit; }
 .vl-home:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .vl-logo { display: inline-flex; }
 .vl-logo img { height: 24px; width: auto; display: block; }
-.vl-logo-on-light { display: none !important; }
-@media (prefers-color-scheme: light) {
-  :root:not([data-theme="dark"]) .vl-logo-on-dark { display: none !important; }
-  :root:not([data-theme="dark"]) .vl-logo-on-light { display: block !important; }
-}
-:root[data-theme="light"] .vl-logo-on-dark { display: none !important; }
-:root[data-theme="light"] .vl-logo-on-light { display: block !important; }
 .vl-nav { display: flex; align-items: center; gap: 4px; }
 .vl-nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: var(--r-1, 6px); color: var(--text-muted); font-size: 14px; font-weight: 500; text-decoration: none; transition: color .15s ease, background .15s ease; }
 .vl-nav-link:hover { background: var(--hover, var(--surface-2)); color: var(--text); }

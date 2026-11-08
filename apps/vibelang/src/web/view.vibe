@@ -37,12 +37,9 @@ export function view(model: Model, h: H): Document {
   }
 }
 
-/** The wordmark; styles.css shows the version whose text suits the theme. */
+/** The wordmark, light text for the dark page. */
 function logo(h: H): Html {
-  return h.span([h.Class("vl-logo")], [
-    h.img([h.Class("vl-logo-on-dark"), h.Src("/media/logo-dark.svg"), h.Alt("VibeLang")]),
-    h.img([h.Class("vl-logo-on-light"), h.Src("/media/logo-light.svg"), h.Alt("VibeLang")]),
-  ])
+  return h.span([h.Class("vl-logo")], [h.img([h.Src("/media/logo-dark.svg"), h.Alt("VibeLang")])])
 }
 
 function top(model: Model, h: H): Html {

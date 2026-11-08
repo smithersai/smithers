@@ -11,10 +11,12 @@ test.describe("splash and chat", () => {
   test("a visitor asks the agent from the splash and reads its answer", async ({ page }, testInfo) => {
     await page.goto("/")
     await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
-    // The wordmark whose text suits the theme, and a poster before the video plays (2026-11-07).
-    const light = testInfo.project.name === "light"
-    await expect(page.locator(".vl-top .vl-logo-on-light")).toBeVisible({ visible: light })
-    await expect(page.locator(".vl-top .vl-logo-on-dark")).toBeVisible({ visible: !light })
+    // Dark only, whatever the visitor's system prefers: the marketing media are dark (wiki/decisions/0013-dark-only.md).
+    await expect(page.locator("html")).toHaveAttribute("data-theme", "dark")
+    const background = await page.evaluate(() => getComputedStyle(document.body).backgroundColor)
+    const [r = 255, g = 255, b = 255] = background.match(/\d+/g)?.map(Number) ?? []
+    expect(0.2126 * r + 0.7152 * g + 0.0722 * b, background).toBeLessThan(64)
+    await expect(page.locator(".vl-top .vl-logo img")).toHaveAttribute("src", "/media/logo-dark.svg")
     await expect(page.locator(".vl-media video")).toHaveAttribute("poster", "/media/contract-poster.jpg")
     await page.screenshot({ path: testInfo.outputPath("1-splash.png") })
 

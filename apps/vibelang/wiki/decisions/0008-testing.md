@@ -9,7 +9,7 @@
 | Properties and units | `test/conversation.test.vibe` | `pnpm test` |
 | Integration of the Effect API | `test/MockFactory.test.vibe` | `pnpm test` |
 | Scenes: the real view and update, driven by role and text, no browser | `test/app.scene.test.vibe` | `pnpm test` |
-| Browser end to end: dark, light, phone | `e2e/chat.spec.ts` | `pnpm e2e`; `E2E_BASE_URL=https://vibelang.smithers.sh pnpm e2e` |
+| Browser end to end: dark, light-preferring (still dark, 0013), phone | `e2e/chat.spec.ts` | `pnpm e2e`; `E2E_BASE_URL=https://vibelang.smithers.sh pnpm e2e` |
 | Agent surfaces | `test/{commands,cli,mcp}.test.*`: Factory commands, emitted CLI process, stdio McpClient, skill and schema parity | `pnpm test` |
 | Proofs | `src/core/conversation.vibe` contracts | `pnpm verify` (roadmap 1d) |
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |

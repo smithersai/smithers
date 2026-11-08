@@ -5,7 +5,7 @@ next. Every decision lands here in the same change as the code it shapes.
 
 | Page | What it holds |
 | --- | --- |
-| [Rulings](rulings.md) | Will's words, VL-1 to VL-26. The source of truth. |
+| [Rulings](rulings.md) | Will's words, VL-1 to VL-27. The source of truth. |
 | [Roadmap](roadmap.md) | The bricks: done, in progress, next. |
 | [Decisions](decisions/) | One record per consequential choice, numbered. |
 
@@ -25,6 +25,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0010](decisions/0010-live-agent.md) | The live agent: a Durable Object per conversation runs the sequencer and its reply's durable flow; LiveFactory over HTTP and SSE |
 | [0011](decisions/0011-post-flow.md) | A person's post is a durable `vibelang/Post` flow: record, then dispatch the reply; the mock runs the same flows in memory |
 | [0012](decisions/0012-smithers-agent.md) | The reply is smithers.sh's agent: `@smthrs/agent`'s `AgentAction` on a workerd QuickJS sandbox, VibeLang's skill as context |
+| [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
 
 ## Layout
 

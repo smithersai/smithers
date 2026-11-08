@@ -24,6 +24,7 @@ export default defineConfig({
   },
   projects: [
     { name: "dark", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, colorScheme: "dark" } },
+    // A visitor whose system prefers light still gets the dark page (wiki/decisions/0013-dark-only.md).
     { name: "light", use: { ...devices["Desktop Chrome"], viewport: { width: 1280, height: 800 }, colorScheme: "light" } },
     { name: "phone", use: { ...devices["Pixel 7"], colorScheme: "dark" } },
   ],
