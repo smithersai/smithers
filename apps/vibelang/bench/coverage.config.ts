@@ -4,7 +4,7 @@ import config from "./config.ts"
 export default mergeConfig(config, defineConfig({ test: {
   benchmark: { enabled: false },
   coverage: {
-    provider: "v8", autoAttachSubprocess: true, excludeAfterRemap: true, include: ["src/**/*.vibe", "worker/**/*.vibe", "infra/**/*.vibe", "scripts/**/*.vibe", "dist-factory/**/*.js", "dist/assets/*.js"],
+    provider: "v8", autoAttachSubprocess: true, excludeAfterRemap: true, include: ["src/**/*.vibe", "worker/**/*.vibe", "infra/**/*.vibe", "scripts/**/*.vibe", "dist-factory/**/*.js", "dist-scripts/**/*.js", "dist-script-tests/**/*.js", "dist/assets/*.js"],
     // Generated bundler bootstrap has no production source; reason recorded in decision 0017.
     exclude: ["dist/assets/rolldown-runtime-*.js"],
     reporter: ["text", "json", "json-summary", "html", "lcov"], reportsDirectory: "coverage/bench",

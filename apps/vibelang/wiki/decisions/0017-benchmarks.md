@@ -87,3 +87,14 @@ workerd; it is not qualified as this suite's collector and contributes no covera
 **Media and input completeness.** All five stop assets, reduced-motion posters, fault mapping/fallback, model dispatch and bounded telemetry have benchmark assertions. Chromium observes a real hero frame and native programmatic pause/play, with automation/cache/decoder limits. Public media files are declared target inputs so an asset-only change invalidates the test cache. Keyed history replay additionally runs the real binding and SQLite write path in workerd, once per identical cell call.
 
 **Accounts and role views (0019).** Added real MockAccounts lifecycle/replay, LiveAccounts faulty-transport cases, real workerd session signatures/expiry/revocation and durable current-role authorization, disabled configuration and an injected GitHub exchange failure. The trusted test host issues synthetic sessions; no successful provider exchange or actual account mutation is claimed. Native UI visits all five roles, People permissions, confirmation/cancel/Escape, account-menu keys, sign-out, mock sign-in/retry and participation promotion. No session token or cookie is retained in result JSON.
+
+**Maintenance scripts and emitted-script evidence.** `bench/scripts.bench.vibe` times the emitted maintenance
+scripts as real child processes: the mythical seed over a fixture jj repository and merge queue (write, determinism,
+failed reads leaving prior output) and the agent context generator (missing/stale check rejection, write, fresh
+check). The coverage command's include list gained `dist-scripts/**/*.js` and `dist-script-tests/**/*.js`: the
+provider's extended-context path filters by the executed file before remapping, so the emitted scripts' V8 evidence
+was previously dropped before their maps could credit `scripts/*.vibe`. The seed's `Refused` guard
+(scripts/mythical-seed.vibe line 103) is unreachable from real input: `intentsOf` guarantees by construction that
+`decide` accepts every seeded intent, and `decideWithinCapacity` refuses only at 2^53 events. It is a defensive
+guard against a `seedOf` defect, not behavior a benchmark should reach; exclusion reason recorded here per the
+lane rule, enforced when the merged gate lands with the workerd collector.
