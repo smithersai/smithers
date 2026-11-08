@@ -1,11 +1,11 @@
 // The bootstrap of a mythical history from real history (wiki/decisions/0020-mythical-history.md): grouping, epics,
 // notes, buckets, and the committed snapshot of VibeLang's own history, replayed through the real sequencer.
 import { describe, expect, it } from "@effect/vitest"
-import { MAX_TITLE } from "../src/history/mythical.vibe"
+import { MAX_NOTE, MAX_TITLE } from "../src/history/mythical.vibe"
 import { History as HistorySchema } from "../src/history/schemas.vibe"
 import {
-  areaOf, bucketsOf, evidenceOf, FOUNDATIONS, intentsOf, type QueueEntry, type RawCommit, replay, sanitize, scopeOf,
-  seedFrom, seedOf, titleOf, UNTITLED,
+  areaOf, BOOTSTRAP, bucketsOf, endsSentence, evidenceOf, FOUNDATIONS, intentsOf, type QueueEntry, type RawCommit, replay,
+  sanitize, scopeOf, seedFrom, seedOf, titleOf, UNTITLED, wholeSentences,
 } from "../src/history/seed.vibe"
 import { HISTORY_JSON, REPOSITORY } from "../src/history/seed/vibelang.vibe"
 
@@ -40,17 +40,41 @@ describe("reading commit messages", () => {
     expect(areaOf("weird(unknown-scope): d")).toBe(FOUNDATIONS)
   })
 
-  it("keeps no local path or host in a note, and bounds its length", () => {
-    expect(sanitize("failed in /home/lane/vibe/mq/x.log on nyc-01, see ~/vl/a")).toBe("failed in <path> on <host>, see <path>")
-    expect(sanitize("a\n  b")).toBe("a b")
-    const long = sanitize("x".repeat(1000), 20)
-    expect(long.length).toBe(20)
-    expect(long.endsWith("…")).toBe(true)
+  it("keeps no local path or host in a note, and ends it as a sentence", () => {
+    expect(sanitize("failed in /home/lane/vibe/mq/x.log on nyc-01, see ~/vl/a")).toBe("failed in <path> on <host>, see <path>.")
+    expect(sanitize("a\n  b")).toBe("a b.")
+    expect(sanitize("Tests pass (41).")).toBe("Tests pass (41).")
+    expect(sanitize("Before: it fails;")).toBe("Before: it fails.")
+  })
+
+  it("bounds a note by whole sentences, never cutting one", () => {
+    expect(wholeSentences("One is short. Two is longer than the rest. Three.", 20)).toBe("One is short.")
+    expect(wholeSentences("One is short. Two is longer than the rest. Three.", 45)).toBe("One is short. Two is longer than the rest.")
+    // An abbreviation or a path's dots end no sentence.
+    expect(wholeSentences("See e.g. the docs. Then go test ./... runs. Done.", 25)).toBe("See e.g. the docs.")
+    // A first sentence longer than the bound is kept whole up to the note's limit, else dropped.
+    expect(wholeSentences(`${"word ".repeat(30)}end. Next.`, 20)).toBe(`${"word ".repeat(30)}end.`)
+    expect(wholeSentences("x".repeat(MAX_NOTE + 1), 20)).toBe("")
+    expect(wholeSentences(" , ", 20)).toBe("")
+  })
+
+  it("reads an evidence paragraph whole, with the lines it wraps onto", () => {
+    // 4b88900e5414 in VibeLang: the seed once kept "Before: TestShortTargetsBudgeted fails for".
+    const message = [
+      "test(fuzz): budget the registry allowance fuzz target", "",
+      "FuzzRegistryDeclarationAllowances lacked startShortBudget, so", "TestShortTargetsBudgeted failed on vibe.", "",
+      "Before: TestShortTargetsBudgeted fails for", "FuzzRegistryDeclarationAllowances. After: it passes.", "",
+    ].join("\n")
+    expect(evidenceOf(message)).toEqual(["Before: TestShortTargetsBudgeted fails for FuzzRegistryDeclarationAllowances. After: it passes."])
+    // A paragraph ends at a blank line, another `Key:` line or a list item.
+    expect(evidenceOf("Tests: 3 pass,\nall green\nCo-Authored-By: someone\n- item\nAfter: ok\n- item\n\nprose")).toEqual([
+      "Tests: 3 pass, all green.", "After: ok.",
+    ])
   })
 
   it("reads evidence lines and titles a commit with no description", () => {
     expect(evidenceOf("fix: a\n\nValidation: unit and e2e\nTests: 12 passed\nOther: no\nRegression: fails before")).toEqual([
-      "Validation: unit and e2e", "Tests: 12 passed", "Regression: fails before",
+      "Validation: unit and e2e.", "Tests: 12 passed.", "Regression: fails before.",
     ])
     expect(titleOf("")).toBe(UNTITLED)
     expect(titleOf("  fix: a  \nbody")).toBe("fix: a")
@@ -92,9 +116,9 @@ describe("grouping into mythical commits", () => {
     expect(all.map((commit) => commit.title)).toEqual(["fix(compiler): first", "docs: a page", UNTITLED])
     const first = all[0]!
     expect(first.notes).toEqual([
-      { section: "tried", text: "Rejected in the merge queue (lane-q1): conflicts in <path>" },
+      { section: "tried", text: "Rejected in the merge queue (lane-q1): conflicts in <path>." },
       { section: "evidence", text: "Landed by the merge queue from lane lane-q2 through gate-q2 (matched by title)." },
-      { section: "evidence", text: "Validation: unit" },
+      { section: "evidence", text: "Validation: unit." },
     ])
     expect(all[1]!.notes).toEqual([{ section: "tried", text: "Reverted in aaaaaaaaaaa5." }])
     // Every real commit, in main's order, folds into exactly one mythical commit.
@@ -121,6 +145,17 @@ describe("VibeLang's bootstrapped history", () => {
       expect(rebuilt).toEqual(history)
       expect(new Set(history.real.map((real) => real.sha)).size).toBe(history.real.length)
       expect(history.real.length).toBeGreaterThan(6000)
+    })
+  }, 20_000)
+
+  it.effect("ends every note the bootstrap wrote with a whole sentence", () => effect {
+    const history = try Schema.decodeUnknownEffect(Schema.fromJsonString(HistorySchema))(HISTORY_JSON)
+    const notes = history.commits.flatMap((commit) => commit.notes.filter((note) => note.by === BOOTSTRAP))
+    // A note the bootstrap cut ended in "…" or mid-line; a message's own "…" inside a sentence is its text.
+    const cut = notes.filter((note) => !endsSentence(note.text)).map((note) => note.text)
+    try Effect.try(() => {
+      expect(notes.filter((note) => note.section === "evidence").length).toBeGreaterThan(4000)
+      expect(cut).toEqual([])
     })
   }, 20_000)
 })

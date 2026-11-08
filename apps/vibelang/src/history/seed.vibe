@@ -216,14 +216,45 @@ export function areaOf(title: string): string {
   return FOUNDATIONS
 }
 
-/** Text safe to publish in a note: no local paths or host names, one line, at most `max` characters. */
+/**
+ * Text safe to publish in a note: no local paths or host names, one line of whole sentences. It keeps as many whole
+ * sentences as fit in `max` characters; a first sentence longer than that is kept whole up to `MAX_NOTE`, and a
+ * longer one is dropped (`""`), never cut.
+ */
 export function sanitize(text: string, max = MAX_SEED_NOTE): string {
   const clean = text
     .replace(/(?:~|\/home|\/Users|\/tmp|\/private|\/var)\/[^\s'"`),;]*/g, "<path>")
     .replace(/\bnyc-\d+\b/g, "<host>")
     .replace(/\s+/g, " ")
     .trim()
-  return clean.length <= max ? clean : clean.slice(0, max - 1).trimEnd() + "…"
+  return wholeSentences(clean, max)
+}
+
+/** Text ends a sentence: `.`, `!` or `?`, then any closing quotes, brackets or backticks. */
+const ENDED = /[.!?]["'`)\]]*$/
+
+/** A sentence's end inside text: its punctuation and closers, then a space and what starts a sentence. */
+const BOUNDARY = /[.!?]["'`)\]]*(?=\s+["'`(\[]?[A-Z0-9])/g
+
+/** Whether `text` ends a sentence, so a note never stops mid-sentence. */
+export function endsSentence(text: string): boolean {
+  return ENDED.test(text)
+}
+
+/**
+ * `text` as whole sentences, at most `max` characters: ended with a period when its last sentence has no end of its
+ * own, cut only after a sentence's end. A first sentence longer than `max` is kept up to `MAX_NOTE`; past that, `""`.
+ */
+export function wholeSentences(text: string, max: number): string {
+  const trimmed = text.trim().replace(/[\s,;:]+$/, "")
+  if (trimmed === "") return ""
+  const ended = endsSentence(trimmed) ? trimmed : `${trimmed}.`
+  if (ended.length <= max) return ended
+  const ends = [...ended.matchAll(BOUNDARY)].map((match) => match.index + match[0].length)
+  const fits = ends.filter((end) => end <= max)
+  if (fits.length > 0) return ended.slice(0, fits[fits.length - 1])
+  const first = ended.slice(0, ends[0] ?? ended.length)
+  return first.length <= MAX_NOTE ? first : ""
 }
 
 /** The title of a commit with no description. */
@@ -237,14 +268,29 @@ export function titleOf(description: string): string {
 
 const TRAILERS = /^(Validation|Tests?|Regression|Before|After):\s*(.+)$/
 
-/** Evidence a commit's message states: its `Validation`, `Tests`, `Regression`, `Before` and `After` lines. */
+/** A line that starts something of its own: another `Key:` line or a list item. */
+const OWN_LINE = /^(?:[A-Z][\w-]*:\s|[-*•]\s|\d+[.)]\s)/
+
+/**
+ * Evidence a commit's message states: its `Validation`, `Tests`, `Regression`, `Before` and `After` paragraphs, each
+ * with the lines it wraps onto (up to a blank line or a line of its own), as whole sentences.
+ */
 export function evidenceOf(description: string): ReadonlyArray<string> {
-  const lines: Array<string> = []
-  for (const line of description.split("\n")) {
-    const match = TRAILERS.exec(line.trim())
-    if (match !== null) lines.push(sanitize(`${match[1]}: ${match[2]}`))
+  const paragraphs: Array<string> = []
+  let open = false
+  for (const raw of description.split("\n")) {
+    const line = raw.trim()
+    const match = TRAILERS.exec(line)
+    if (match !== null) {
+      paragraphs.push(`${match[1]}: ${match[2]}`)
+      open = true
+    } else if (open && line !== "" && !OWN_LINE.test(line)) {
+      paragraphs[paragraphs.length - 1] += ` ${line}`
+    } else {
+      open = false
+    }
   }
-  return lines
+  return paragraphs.map((paragraph) => sanitize(paragraph)).filter((line) => line !== "")
 }
 
 const REGENERATED = /^chore\(docs\): regenerate\b/

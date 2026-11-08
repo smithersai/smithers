@@ -49,6 +49,9 @@ writes the history they built (`src/history/seed/vibelang.vibe`, generated, neve
 - The commits one landed queue entry carried form one mythical commit; `chore(docs): regenerate …` folds into the one
   before it; `Revert "X"` folds into X's and adds a `tried` line: 5,703 mythical commits.
 - Epics by scope (`AREAS`), in the order the project first touched them: 11.
+- Evidence is a message's `Validation`, `Tests`, `Regression`, `Before` and `After` paragraphs, each with the lines it
+  wraps onto. Every note is whole sentences: a long one keeps the sentences that fit in 300 characters and is never cut
+  mid-sentence (a first sentence up to 1,000 is kept whole). `test/seed.test.vibe` checks every note of the seed.
 - The queue lands copies under new change ids, so a commit finds its queue entries **by title**. That is an evidence
   citation, never an attribution (Sol): it only writes notes, and the landing line says "(matched by title)".
 - The live object loads the snapshot once, on first start (`vibelang/history/Bootstrap`), so the deployed view shows
