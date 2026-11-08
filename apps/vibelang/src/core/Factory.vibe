@@ -2,6 +2,7 @@
 // (wiki/decisions/0002-core-is-an-effect-api.md). Its backends are `MockFactory` (no backend, no model) and the live
 // one that talks to vibelang.smithers.sh. The browser wrapper selects one after rendering.
 import type { Accounts } from "./roles.vibe"
+import type { IssuesApi } from "./issueSchemas.vibe"
 import type { Event } from "./conversation.vibe"
 import { Seq, ReadSnapshot } from "./schemas.vibe"
 export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
@@ -35,6 +36,8 @@ export schema error Refused { refusal: string }
  * above `after`, then follows new ones until the stream is closed.
  */
 export service Factory {
+  readonly issues?: IssuesApi
+
   /** The browser resolves its backend after rendering; operations wait while mode is pending. */
   readonly mode: Mode | "pending"
   readonly accounts?: Accounts.Shape

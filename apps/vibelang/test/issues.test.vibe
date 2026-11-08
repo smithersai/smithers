@@ -57,7 +57,7 @@ it.effect("a proposal is drafted before explicit submission, then review does no
     expect(vip.vip).toBe("In review")
     expect(vip.path).toMatch(/^docs\/design\/vips\//)
     expect(vip.review).toContain("/pull/")
-    expect(vip.body).toContain("## Prior art")
+    expect(vip.body).toContain(drafted.draft!.prior)
   })
   const accepted = try api.act({ ...request, op: "accept", number: vip.number, key: "accept" })
   try Effect.try(() => expect(accepted.items.find((i) => i.number === vip.number)).toMatchObject({ vip: "Accepted", task: "", state: "open" }))

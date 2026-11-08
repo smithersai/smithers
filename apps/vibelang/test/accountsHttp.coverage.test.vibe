@@ -3,13 +3,16 @@
 // sessions, grants, events and recovery, with an injected GitHub auth service. No request is intercepted.
 import { describe, expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
-import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { GitHub } from "@smthrs/integrations"
 import * as Accounts from "../worker/Accounts.vibe"
 import type { Storage } from "../worker/Objects.vibe"
 import { objectStorage } from "./support/objectStorage.ts"
 
 const ORIGIN = "https://factory.example"
+
+/** The issues routes take the ambient client; these tests never reach GitHub. */
+const offline = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
 
 interface Person { readonly id: number; readonly login: string }
 
@@ -366,7 +369,7 @@ describe("grants over the object's real HTTP boundary", () => {
   }), 30_000)
 
   it.effect("refuses a request whose absolute URL names another origin, whatever its method", () => effect {
-    const accounts = try Accounts.make("absolute", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([])))
+    const accounts = try Accounts.make("absolute", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([]))).pipe(Effect.provideService(HttpClient.HttpClient, offline))
     const foreignRead = HttpServerRequest.fromWeb(
       try HttpClientRequest.toWeb(HttpClientRequest.get("http://other.example/api/auth/session")),
     ).modify({ url: "http://other.example/api/auth/session" })
@@ -436,7 +439,7 @@ describe("the principal seam and the disabled host", () => {
 
 describe("direct identity and permission answers", () => {
   it.effect("resolves the bootstrap maintainer, every action's least role, and records participation once", () => effect {
-    const accounts = try Accounts.make("direct", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([])))
+    const accounts = try Accounts.make("direct", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([]))).pipe(Effect.provideService(HttpClient.HttpClient, offline))
     const anonymous = try accounts.current(undefined)
     const bootstrap = try accounts.role("1")
     const newcomer = try accounts.role("9")
@@ -459,7 +462,7 @@ describe("direct identity and permission answers", () => {
   })
 
   it.effect("skips the bootstrap grant when the configured maintainer is not a numeric id", () => effect {
-    const accounts = try Accounts.make("no-bootstrap", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([]), "0"))
+    const accounts = try Accounts.make("no-bootstrap", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([]), "0")).pipe(Effect.provideService(HttpClient.HttpClient, offline))
     const role = try accounts.role("1")
     const allowed = try accounts.allowed("1", "roles")
     try Effect.try(() => {

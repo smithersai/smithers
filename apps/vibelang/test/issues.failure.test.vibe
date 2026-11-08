@@ -1,0 +1,8 @@
+import { expect, it } from "@effect/vitest"
+import { issueFailureOf } from "../worker/Issues.vibe"
+it("preserves rate-limited 403 classification and delay before permission handling", () => {
+  expect(issueFailureOf({ details: { status: 403, rateLimited: true, retryAfterMillis: 4000, body: "private-text" } })).toMatchObject({ reason: "rate-limited", code: "rate-limited", retryAfterMillis: 4000 })
+  expect(issueFailureOf({ details: { incomplete: true, retryable: false } }).reason).toBe("partial")
+  expect(issueFailureOf({ details: { status: 403 } }).reason).toBe("forbidden")
+  expect(JSON.stringify(issueFailureOf({ details: { status: 403, rateLimited: true, body: "private-text", token: "private-key" } }))).not.toMatch(/private-text|private-key/)
+})

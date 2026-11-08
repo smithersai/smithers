@@ -58,7 +58,7 @@ it.effect("an injected account failure becomes a safe UI failure without changin
     const base = try Factory
     const accounts = base.accounts!
     try accounts.choose("maintainer")
-    const faulty: Factory.Shape = { sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, mode: base.mode, post: base.post, read: base.read, events: base.events, tour: base.tour, endTour: base.endTour, accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) } }
+    const faulty: Factory.Shape = { mode: base.mode, post: base.post, read: base.read, events: base.events, tour: base.tour, endTour: base.endTour, sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, ...(base.issues === undefined ? {} : { issues: base.issues }), accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) } }
     const command = try Effect.try(() => GrantRole({ id: "4", role: "maintainer" }))
     const result = try Effect.provideService(command.effect, Factory, faulty)
     const people = try accounts.members()

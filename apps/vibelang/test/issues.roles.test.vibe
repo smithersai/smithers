@@ -1,0 +1,95 @@
+import { expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+const request = { op: "commit" as const, number: 42, parent: 0, title: "", text: "", assignee: "VibeLang agent", example: "", prior: "", key: "roles-commit" }
+it.effect("checks current roles before replay and promotes only accepted participation", () => scoped(effect {
+  provide MockFactory {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    const issues = factory.issues!
+    const anonymous = try Effect.result(issues.act(request))
+    try Effect.try(() => expect(anonymous._tag).toBe("Failure"))
+    try accounts.choose("maintainer")
+    const task = try issues.act(request)
+    try Effect.try(() => expect(task.items.find(i => i.number === 42)?.task).toBe("Queued"))
+    try accounts.choose("viewer")
+    const replay = try Effect.result(issues.act(request))
+    try Effect.try(() => expect(replay._tag).toBe("Failure"))
+    try accounts.choose("new")
+    const vip = try Effect.result(issues.act({ ...request, op: "propose", title: "One feature", text: "Summary", example: "const pair = [1, 2]", prior: "Rust", key: "roles-vip" }))
+    try Effect.try(() => expect(vip._tag).toBe("Failure"))
+    try issues.act({ ...request, op: "new", title: "A tuple issue", text: "One issue", key: "roles-participation" })
+    const identity = try accounts.current()
+    try Effect.try(() => expect(identity.role).toBe("community"))
+  }
+}))
+
+it.effect("counts a denied replay without logging its title, text, assignee or write key", () => scoped(effect {
+  const { References } = try promise(() => import("effect"))
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const capture = Logger.layer([Logger.make(options => {
+    runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  provide capture {
+    provide MockFactory {
+      const counter = Metric.withAttributes(Metric.counter("vibelang_issue_access", { incremental: true }), { op: "commit", outcome: "forbidden" })
+      const before = try Metric.value(counter)
+      const outcome = try Effect.result((try Factory).issues!.act({ ...request, title: "private-title", text: "private-body", assignee: "private-person", key: "private-key" }))
+      const after = try Metric.value(counter)
+      const records = (try Ref.get(lines)).filter(line => line.includes("vibelang.issues"))
+      try Effect.try(() => {
+        expect(outcome._tag).toBe("Failure")
+        expect(Number(after.count)).toBe(Number(before.count) + 1)
+        expect(records.some(line => line.includes("forbidden"))).toBe(true)
+        for (const line of records) expect(line).not.toMatch(/private-title|private-body|private-person|private-key/)
+      })
+    }
+  }
+}))
+
+
+it.effect("shares the role picker with sandbox admission after the parallel-lane integration", () => scoped(effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.accounts!.choose("contributor")
+    const started = try factory.startSandbox("roles", "role-contributor-start")
+    try Effect.try(() => expect(started.status).toBe("running"))
+    try factory.accounts!.choose("viewer")
+    const refused = try Effect.result(factory.sandboxCommand("roles", "after-revoke", "pwd", started.generation))
+    try Effect.try(() => expect(refused._tag).toBe("Failure"))
+  }
+}))
+
+it.live("filing an issue whose title mentions starting a sandbox performs only the requested issue action", () => scoped(effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.accounts!.choose("maintainer")
+    const before = try factory.sandbox("issue-title")
+    try factory.post("issue-title", "file-sandbox-title", "will", "File an issue: Start a sandbox for tuple tests")
+    try Stream.runDrain(factory.events("issue-title", 0).pipe(Stream.filter(event => event.type === "ReplyFinished"), Stream.take(1)))
+    const after = try factory.sandbox("issue-title")
+    const issues = try factory.issues!.read()
+    try Effect.try(() => {
+      expect(issues.items.some(issue => issue.title === "Start a sandbox for tuple tests")).toBe(true)
+      expect(after.id).toBe(before.id)
+      expect(after.status).toBe(before.status)
+    })
+  }
+}))
+
+
+it.effect("uses bounded, person-scoped runtime IDs that cannot disclose caller keys", () => effect {
+  const { issueExecutionId, issueRecoveryId } = try promise(() => import("../src/core/issueFlows.vibe"))
+  const first = try issueExecutionId("42", "new", "private-feature-key")
+  const same = try issueExecutionId("42", "new", "private-feature-key")
+  const other = try issueExecutionId("43", "new", "private-feature-key")
+  const split = try issueExecutionId("42", "split", "private-feature-key")
+  const recovery = try issueRecoveryId(first, "private-recovery-key")
+  try Effect.try(() => {
+    expect(first).toMatch(/^issues\/42\/new\/[0-9a-f]{64}$/)
+    expect(first).toBe(same)
+    expect(other).not.toBe(first)
+    expect(split).not.toBe(first)
+    expect(recovery).not.toMatch(/private-feature-key|private-recovery-key/)
+  })
+})

@@ -105,6 +105,9 @@ cases=[
 ]
 cases=[('src/core/conversation.vibe', *case) for case in cases] + extended_cases
 cases.extend([("src/core/conversation.vibe", *case) for case in [
+('issues-vip-author','vipDocumentMatches','issueAuthor !== reviewAuthor','false','a VIP review belongs to the issue author'),
+('issues-vip-file','vipDocumentMatches','file.filename === path','true','the exact repository document must be changed'),
+('issues-vip-removed','vipDocumentMatches','file.status !== "removed"','true','a removed file cannot back a VIP'),
 ('issues-review-replay','reviewActions','vip === "In review" || vip === (accepted ? "Accepted" : "Declined")','vip === "In review"','a partially completed human review can resume'),
 ('issues-decline-close','reviewActions','close: allowed && !accepted && state === "open"','close: false','a declined open VIP must still be closed'),
 ('issues-stale','applyIssues','if (event.seq !== state.seq + 1) return state','if (false) return state','stale observations cannot replace the projection'),

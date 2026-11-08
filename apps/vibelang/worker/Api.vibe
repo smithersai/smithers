@@ -1,3 +1,7 @@
+import { accountRoute } from "../src/core/protocolDecision.vibe"
+import { publicIssues } from "./Issues.vibe"
+import { writerLayer } from "./VipDraft.vibe"
+import { ChatModel, Spend as IssueSpend } from "./Reply.vibe"
 // The API Worker (wiki/decisions/0006-hosting.md, 0010-live-agent.md): an Effect-native Alchemy Worker that answers
 // /api/* for the site Worker and hosts the two Durable Object classes Objects.vibe describes, one per conversation
 // and one per UTC day. Alchemy runs every handler; nothing here runs an Effect itself.
@@ -61,11 +65,28 @@ export class ProjectAccounts extends Cloudflare.DurableObject<ProjectAccounts, A
 
 const AccountsLive = ProjectAccounts.make(effect {
   const state = try Cloudflare.DurableObjectState
+  const budgets = (try Budget) as Namespace<BudgetShape>
+  const model = try Effect.orDie(chatModel())
   const setup = try Effect.orDie(Accounts.configured().pipe(Effect.provide(FetchHttpClient.layer)))
   return effect {
-    if (setup === undefined) return { current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void, fetch: Accounts.disabled() }
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
-    return try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup))
+    if (setup === undefined) return {
+      current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void,
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage)
+        return try Accounts.disabled()
+      },
+    }
+    const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provide(FetchHttpClient.layer)))
+    return {
+      ...accounts,
+      fetch: effect {
+        const runtime = try RuntimeContext
+        const spend = spendOf(runtime, budgets)
+        return try accounts.fetch.pipe(Effect.provide(writerLayer.pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
+      },
+    }
   }
 })
 
@@ -79,6 +100,20 @@ function objectOf<Shape>(namespace: Namespace<Shape>, name: string, what: string
 /** `call` with the request's runtime, its failures `Unreachable`. */
 function reached<A, E>(runtime: RuntimeContext["Service"], what: string, call: A!E!RuntimeContext) {
   return Effect.mapError(Effect.provideService(call, RuntimeContext, runtime), () => new Unreachable({ what }))
+}
+
+/** The same daily token ledger serves conversation answers and explicit VIP drafts. */
+function spendOf(runtime: RuntimeContext["Service"], budgets: Namespace<BudgetShape>): Spend.Shape {
+  return {
+    admit: (day) => effect {
+      const object = try objectOf(budgets, day, "budget")
+      return try reached(runtime, "budget", object.admit())
+    },
+    spend: (day, reply, tokens) => effect {
+      const object = try objectOf(budgets, day, "budget")
+      try reached(runtime, "budget", object.spend(reply, tokens))
+    },
+  }
 }
 
 const BudgetLive = Budget.make(effect {
@@ -139,16 +174,7 @@ const ConversationLive = Conversation.make(effect {
       },
       alarm: () => effect {
         const runtime = try RuntimeContext
-        const spend: Spend.Shape = {
-          admit: (day) => effect {
-            const object = try objectOf(budgets, day, "budget")
-            return try reached(runtime, "budget", object.admit())
-          },
-          spend: (day, reply, tokens) => effect {
-            const object = try objectOf(budgets, day, "budget")
-            try reached(runtime, "budget", object.spend(reply, tokens))
-          },
-        }
+        const spend = spendOf(runtime, budgets)
         // The agent's history tools reach VibeLang's History object, as the API's routes do.
         const history = HistoryObject.readerOver(
           (request) => effect {
@@ -213,7 +239,7 @@ const program = effect {
       const runtime = try RuntimeContext
       const request = try HttpServerRequest.HttpServerRequest
       const path = new URL(request.url, "http://api.invalid").pathname
-      if (path.startsWith("/api/auth/") || path.startsWith("/api/roles")) {
+      if (accountRoute(path)) {
         const object = try Effect.orDie(objectOf(accounts, "project", "accounts"))
         return try Effect.orDie(reached(runtime, "accounts", object.fetch(request)))
       }
@@ -268,6 +294,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive)),
+  program.pipe(Effect.provide(ConversationLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive)),
 ) {}
 

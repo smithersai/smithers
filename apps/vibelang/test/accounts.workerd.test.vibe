@@ -148,6 +148,27 @@ describe("configured sessions and grants in real workerd storage", () => {
       })
     }
   })
+  it.live("requires a bound GitHub connection and fresh role before issue writes", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const person = try issue("20", "issue-new")
+      const maintainer = try issue("1", "will")
+      const body = { op: "commit", key: "denied", number: 42, parent: 0, title: "", text: "", assignee: "will", example: "", prior: "", role: "maintainer", actor: "1" }
+      const denied = try request("/api/issues", person, body)
+      const unsigned = try request("/api/issues", "", { ...body, op: "new" })
+      const disconnected = try request("/api/issues", maintainer, { ...body, op: "new" })
+      const connectAnonymous = try request("/api/auth/github")
+      const start = try request("/api/auth/github", person)
+      const state = new URL(start.headers.location!).searchParams.get("state")!
+      const stateCookie = start.headers["set-cookie"]!.split(";")[0]!
+      const differentPerson = try request("/api/auth/callback?state=" + state + "&code=unused", stateCookie + "; " + maintainer)
+      const client = try HttpClient.HttpClient
+      const crossOrigin = try client.execute(HttpClientRequest.post(api.origin + "/api/issues").pipe(HttpClientRequest.setHeader("cookie", maintainer), HttpClientRequest.setHeader("origin", "https://elsewhere.example"), HttpClientRequest.bodyJsonUnsafe(body)))
+      const huge = try request("/api/issues", maintainer, { ...body, padding: "x".repeat(33_000) })
+      try Effect.try(() => {
+        expect([denied.status, unsigned.status, disconnected.status, connectAnonymous.status, start.status, differentPerson.status, crossOrigin.status, huge.status]).toEqual([403, 401, 401, 401, 302, 403, 403, 413])
+      })
+    }
+  })
   it.live("binds OAuth state to its signed cookie and exact callback before any token exchange", () => effect {
     provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
       const client = try HttpClient.HttpClient

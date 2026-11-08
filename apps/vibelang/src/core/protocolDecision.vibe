@@ -68,3 +68,10 @@ export function liveHealth(agent: string): boolean {
 export function prefersMock(flag: boolean, environment: string | undefined): boolean {
   return flag || environment === "mock"
 }
+
+/** The account host owns sign-in, roles and person-authenticated issue operations. */
+//@ verify
+//@ ensures \result == (path == "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles"))
+export function accountRoute(path: string): boolean {
+  return path === "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles")
+}

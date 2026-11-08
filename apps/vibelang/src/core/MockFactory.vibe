@@ -1,5 +1,7 @@
 import { firstUndispatched } from "./flowDecision.vibe"
 import * as MockAccounts from "./MockAccounts.vibe"
+import type { IssuesApi } from "./issueSchemas.vibe"
+import { makeIssueFactory, makeIssueStore } from "./IssuesFactory.vibe"
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
 // (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
 // conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
@@ -60,6 +62,7 @@ effect function scripted(
   state: Ref.Ref<State>,
   record: (intent: Intent) => Decision!!,
   post: string,
+  issues: IssuesApi,
   history: HistoryPages!!,
   conversation: string,
   sandboxTools: Pick<Factory.Shape, "startSandbox">,
@@ -87,7 +90,7 @@ effect function scripted(
   if (!started) return null
   const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
   // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
-  const text = /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+  const text = prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
     const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
     return `Started ${snapshot.id}.`
   } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)
@@ -100,7 +103,22 @@ effect function scripted(
       },
     })
     : mockReply(prompt)
-  const pieces = chunks(text)
+  let answer = text
+  const request = { number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "" }
+  if (prompt.startsWith("File an issue:")) {
+    const title = prompt.slice("File an issue:".length).trim()
+    const result = try Effect.result(issues.act({ ...request, op: "new", title, text: title, key: `${conversation}-${post}-file` }))
+    answer = result._tag === "Failure" ? "No issue filed." : `Filed #${result.success.selected}.\n\n[Open issue](#issue-${result.success.selected})`
+  } else if (prompt === "Split #38 into three children, linked under it.") {
+    let completed = 0
+    for (const [index, title] of ["Resolve module exports", "Check module cycles", "Document module imports"].entries()) {
+      const result = try Effect.result(issues.act({ ...request, op: "split", number: 38, title, text: title, key: `${conversation}-${post}-split-${index}` }))
+      if (result._tag === "Failure") break
+      completed += 1
+    }
+    answer = completed === 3 ? "Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)" : `Filed ${completed} children.\n\n[Open #38](#issue-38)`
+  }
+  const pieces = chunks(answer)
   for (let index = 0; index < pieces.length; index++) {
     try sleep(MOCK_DELTA_DELAY)
     try Action.make({ name: `vibelang/reply/append/${index}`, execute: Effect.asVoid(record({ type: "AppendReply", id, text: pieces[index]! })) })
@@ -214,11 +232,12 @@ return Layer.effect(Factory, effect {
       const record = recorder(state, gate, conversation)
       // Recorded with the accepted post; delayed replies never borrow the currently selected identity.
       const postOwners = new Map<string, string>()
+      const postPeople = new Map<string, { readonly id: string; readonly login: string }>()
       const posts: Posts.Shape = {
         record: effect (clientId: string, name: string, text: string, owner?: string) => {
           const id = try nextId("m")
           const decision = try record({ type: "Post", id, clientId, name, text })
-          if (decision.ok) postOwners.set(id, owner ?? "")
+          if (decision.ok) { postOwners.set(id, owner ?? ""); postPeople.set(id, { id: owner ?? "", login: name }) }
           return decision.ok ? null : decision.refusal
         },
         dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
@@ -263,9 +282,17 @@ return Layer.effect(Factory, effect {
         tourRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
-          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post, history, conversation, {
-            startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
-          }), "vibelang.reply")))
+          effect function reply(payload: { readonly post: string }) {
+            const person = postPeople.get(payload.post) ?? { id: "", login: "Guest" }
+            const forPoster: IssuesApi = {
+              read: effect () => try (try issuesForPerson(person)).read(),
+              act: effect (request) => try (try issuesForPerson(person)).act(request),
+            }
+            return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, history, conversation, {
+              startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
+            }), "vibelang.reply"))
+          }
+          try engine.register(Reply, reply)
           try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
         }),
       ).pipe(
@@ -283,10 +310,27 @@ return Layer.effect(Factory, effect {
     }))
   }
 
+  // Each actor has its own journal and fresh policy, while every actor reads the same project and atomic writer.
+  const issueStore = try cached(makeIssueStore())
+  const issueActors = new Map<string, IssuesApi>()
+  const issueLock = try Semaphore.make(1)
+  const issuesForPerson = (person: { readonly id: string; readonly login: string }) => Semaphore.withPermits(issueLock, 1)(effect {
+    let api = issueActors.get(person.id)
+    if (api === undefined) {
+      api = try Effect.provideService(makeIssueFactory(effect () => ({ ...person, role: try accounts.role(person.id) }), id => Effect.orDie(accounts.participated(id)), try issueStore), Scope.Scope, scope)
+      issueActors.set(person.id, api)
+    }
+    return api
+  })
+  const issues: IssuesApi = {
+    read: effect () => try (try issuesForPerson(try Effect.orDie(accounts.current()))).read(),
+    act: effect (request) => try (try issuesForPerson(try Effect.orDie(accounts.current()))).act(request),
+  }
   const mode: Mode = "mock"
   return {
     mode,
     accounts,
+    issues,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
       const identity = try Effect.orDie(accounts.current())
       const room = try openRoom(conversation)

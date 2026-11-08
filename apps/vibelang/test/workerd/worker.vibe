@@ -1,3 +1,4 @@
+import { accountRoute } from "../../src/core/protocolDecision.vibe"
 export { ProjectAccounts } from "./accounts.vibe"
 // The workerd test's API Worker (test/live.workerd.test.vibe): plain Durable Objects over the same code the Alchemy ones
 // in worker/Api.vibe run (worker/Objects.vibe, worker/Http.vibe), so local workerd runs the real sequencer, the real
@@ -267,7 +268,7 @@ export default {
     const tool = new URL(request.url).pathname.match(/^\/history-tool\/(.+)$/)
     if (tool !== null) return json(await call(env.CONVERSATION, decodeURIComponent(tool[1]!), "history-tool", await request.json()))
     const path = new URL(request.url).pathname
-    if (path.startsWith("/api/auth/") || path.startsWith("/api/roles") || path.startsWith("/__fixture/")) {
+    if (accountRoute(path) || path.startsWith("/__fixture/")) {
       return await env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project")).fetch(request)
     }
     const conversations: Conversations = {

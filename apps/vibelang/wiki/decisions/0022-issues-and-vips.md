@@ -1,6 +1,6 @@
 # 0022. GitHub issues, committed tasks, and VIP review changes
 
-Status: verified core and durable fixture flows landed; browser and GitHub host integration next. Live chat binding held by the documented compiler gap, 2026-11-08. Rulings: VL-4, VL-8 to VL-15, VL-17 to VL-23, VL-29; GH-1, FLOW-3.
+Status: browser, Factory and GitHub host implemented; live chat binding held by the documented compiler gap, 2026-11-08. Rulings: VL-4, VL-8 to VL-15, VL-17 to VL-23, VL-29; GH-1, FLOW-3.
 
 ## Authority and policy
 
@@ -46,8 +46,10 @@ host and token budget. The fixture writer works without backend or model. Drafti
 person can edit the generated draft; Submit VIP is the explicit write.
 
 Submission creates a branch and a fenced commit in the person's fork, under `docs/design/vips/`, then opens that
-person's pull request for review and a GitHub issue tracking it. A hidden marker in the issue names its document and
-review URL. The VIP's displayed number is the tracking issue's GitHub number. Paths use the operation identity to
+person's pull request for review and a GitHub issue tracking it. A hidden marker in the issue claims its document and review URL. Classification verifies the exact configured
+repository PR URL, matching positive numeric issue/PR authors and that document in the complete native PR file
+listing. Removed documents and invalid or missing PRs remain ordinary issues, retaining their marker text.
+Incomplete listings and changed PR heads fail closed; a marker alone never establishes a VIP. The VIP's displayed number is the tracking issue's GitHub number. Paths use the operation identity to
 avoid concurrent proposal filename collisions. A VIP requires a title, summary, example and prior art; one-feature
 semantics are checked by the drafting instruction and human review, not claimed as a syntactic proof.
 
@@ -77,7 +79,7 @@ explicitly required by this lane. The Cloudflare SDK directly declares the monor
 ## Verification boundaries
 
 The contracts prove ordered observations, role gates, commitment identity/content/tree preservation, explicit
-assignment, uncommit, and human review state without task commitment. Executable mutations retain unchanged
+assignment, uncommit, human review state without task commitment, and document/author admission for VIPs. Executable mutations retain unchanged
 contracts and must fail Dafny obligations. Browser and scene suites exercise actual views and commands; workerd
 asserts real persisted run receipts and repeated execution identity. The real GitHub suite targets only
 `roninjin10/smithers-github-tests`, uses `GITHUB_TEST_TOKEN`, and states its skip reason when absent.
@@ -115,3 +117,7 @@ The independent projection review confirms it. Live chat issue bindings are held
 authorizes the requested compiler-behavior fix and it lands through the VibeLang merge queue. No app workaround is
 used. Browser actions, the real VIP drafting agent, CLI/MCP flows and fixture chat are independent of that shape.
 The report names the reproduction and candidate patch. This decision does not claim the held live chat screens work.
+
+The phone issue surface follows 0019’s shared header height, including the taller fixture role picker, so list and VIP controls stay below navigation. Fixture chat retains the accepted post’s person and resolves that person’s current role at execution; changing the role picker never changes queued issue attribution. Person-scoped fixture engines share one project projection and atomic writer.
+
+The designed public Roles matrix is reachable from the Issues header because the design-only screen switcher is excluded. Every cell calls the same 0019 predicate as its control. New cannot propose a VIP; Community cannot link issues. The matrix lists implemented actions: the design’s label-triage and generic-close rows are omitted because 0019 reserves future permission names without claiming implemented features. Its caption states the human-only review and role-grant boundary.

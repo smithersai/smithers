@@ -1,7 +1,7 @@
 // GitHub projection and action protocol; no credential, role or actor is accepted in an action payload.
 import { DurableText } from "./wire.vibe"
 export const IssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"])
-export const IssueNote = Schema.Struct({ author: Schema.String, text: Schema.String, event: Schema.Boolean })
+export const IssueNote = Schema.Struct({ age: Schema.String.pipe(Schema.withDecodingDefaultKey(succeed(""))), author: Schema.String, text: Schema.String, event: Schema.Boolean })
 export const IssueRecord = Schema.Struct({
   number: Schema.Number, githubId: Schema.Number, title: Schema.String, body: Schema.String, author: Schema.String,
   age: Schema.String, state: Schema.Literals(["open", "closed"]), labels: Schema.Array(Schema.String), parent: Schema.Number,
@@ -25,4 +25,9 @@ export interface IssuesApi {
 /** Person-readable Markdown, persisted in the repository, one feature per review. */
 export function vipDocument(request: IssueRequest): string {
   return `# ${request.title.trim()}\n\n## Summary\n\n${request.text.trim()}\n\n## Example\n\n\`\`\`vibe\n${request.example.trim()}\n\`\`\`\n\n## Prior art\n\n${request.prior.trim()}\n`
+}
+
+/** The tracking issue mirrors the designer's compact proposal; the canonical repository document keeps its headings. */
+export function vipIssueBody(request: IssueRequest): string {
+  return `${request.text.trim()}\n\n\`\`\`vibe\n${request.example.trim()}\n\`\`\`\n\n${request.prior.trim()}`
 }

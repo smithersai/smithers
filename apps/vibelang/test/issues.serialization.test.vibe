@@ -1,0 +1,29 @@
+import { expect, it } from "@effect/vitest"
+import { IssuesState, vipDocument, vipIssueBody } from "../src/core/issueSchemas.vibe"
+import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
+
+it.effect("reads an older issue receipt without inventing a missing comment timestamp", () => effect {
+  const prior = { seq: 3, items: [{ ...fixtureIssues[0]!, notes: [{ author: "jun", text: "Retained comment", event: false }] }] }
+  const decoded = try Schema.decodeUnknownEffect(IssuesState)(prior)
+  try Effect.try(() => {
+    expect(decoded.items[0]?.notes[0]).toEqual({ age: "", author: "jun", text: "Retained comment", event: false })
+    expect(decoded.seq).toBe(3)
+  })
+})
+
+it("keeps the canonical VIP sections and compact tracking body free of private request metadata", () => {
+  const request = { op: "propose" as const, number: 0, parent: 0, title: "Tuple patterns", text: "Bind named tuple elements.", example: "const pair = [1, 2]", prior: "Rust tuple patterns", assignee: "private-assignee", key: "private-request-key" }
+  const document = vipDocument(request)
+  const issue = vipIssueBody(request)
+  for (const body of [document, issue]) {
+    expect(body).toContain(request.text)
+    expect(body).toContain(request.example)
+    expect(body).toContain(request.prior)
+    expect(body).not.toMatch(/private-assignee|private-request-key/)
+  }
+  expect(document).toMatch(/^# Tuple patterns/)
+  expect(document).toContain("## Summary")
+  expect(document).toContain("## Example")
+  expect(document).toContain("## Prior art")
+  expect(issue).not.toMatch(/^#/)
+})

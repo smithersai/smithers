@@ -1,0 +1,21 @@
+import { Factory } from "../src/core/Factory.vibe"
+import { describe, expect, it } from "@effect/vitest"
+import { Issues, Issue } from "../src/surfaces/commands.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+describe("issues across agent surfaces", () => {
+  it.effect("lists, files, assigns and comments through the same command registry", () => effect {
+    provide MockFactory {
+      try (try Factory).accounts!.choose("maintainer")
+      const before = try Issues.run({})
+      const filed = try Issue.run({ op: "new", title: "A command-filed issue", text: "Reproduction", key: "filed" })
+      const issue = filed.items[0]!
+      const committed = try Issue.run({ op: "commit", number: issue.number, assignee: "Will", key: "commit" })
+      const commented = try Issue.run({ op: "comment", number: issue.number, text: "A person requested this comment.", key: "comment" })
+      try Effect.try(() => {
+        expect(filed.items).toHaveLength(before.items.length + 1)
+        expect(committed.items.find((i) => i.number === issue.number)).toMatchObject({ task: "Queued", assignee: "Will" })
+        expect(JSON.parse(commented.detail).notes.at(-1)?.text).toBe("A person requested this comment.")
+      })
+    }
+  })
+})

@@ -1,3 +1,4 @@
+import { publicIssues } from "../../worker/Issues.vibe"
 // Local workerd host for the production account service. Fixture issuance uses real cookie signatures and storage.
 import { Core, GitHub } from "@smthrs/integrations"
 import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -19,7 +20,7 @@ export class ProjectAccounts {
       const configured = env.ACCOUNT_FAULT === "exchange" ? {
         ...setup, github: { ...setup.github, exchange: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })) },
       } : setup
-      return await runPromise(Accounts.make(state.id.toString(), state.storage, configured))
+      return await runPromise(Accounts.make(state.id.toString(), state.storage, configured).pipe(Effect.provide(FetchHttpClient.layer)))
     })
   }
   async fetch(request: Request): Promise<Response> {
@@ -28,7 +29,7 @@ export class ProjectAccounts {
     const url = new URL(request.url)
     const incoming = HttpServerRequest.fromWeb(request).modify({ url: (setup?.origin ?? url.origin) + url.pathname + url.search })
     if (service === undefined || setup === undefined) return HttpServerResponse.toWeb(await runPromise(
-      Accounts.disabled().pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)),
+      (url.pathname === "/api/issues" ? publicIssues(this.state.id.toString(), this.state.storage) : Accounts.disabled()).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)),
     ))
     // Only this unshipped test host can issue a fixture session; the live callback owns issuance.
     if (url.pathname === "/__fixture/issue") {

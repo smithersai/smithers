@@ -21,7 +21,7 @@ brick                                   state         proof
                                                       all logic; fuzzing from the Effect fork as @smthrs/fuzz
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   done (local)         0019: shared GitHub auth, five mock identities, numbered grants; live callback setup/deploy remain (VL-21)
-3   issues as a tree, tasks, VIPs       in progress   0022: GitHub-backed issue flows, commitments, sub-issues and repository VIP review changes
+3   issues as a tree, tasks, VIPs       in progress   0022: browser/CLI/MCP, GitHub sub-issues, commitments and repository VIP reviews; live chat held by issues-nested-effect
 4   actions and slash commands          held          0023: registry catalog and engine step telemetry landed; app held at
                                                       actions-service-spread (VibeLang inference); compiler-policy approval pending
 5   mythical history                    done (local)  0020: the History machine proved (linearity, no loss, exactly one), the
@@ -31,7 +31,7 @@ brick                                   state         proof
 7   Electrobun desktop app              done (local)  0025: shared Foldkit UI, native folder picker and local model; Linux native e2e; macOS build is the lead's
 ```
 
-- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,582 executable items. Twelve modules carry proved contracts and 451 current mutations reject; unproved logic and tool boundaries remain explicit.
+- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,822 executable items. Twelve modules carry proved contracts and 451 current mutations reject; unproved logic and tool boundaries remain explicit.
 
 - **CLI and MCP sign-in (VL-26).** Since sign-in (0019) the server names posts from the session, so the CLI's and
   MCP server's posts read "Guest". They need a person's sign-in (GitHub device flow) so the agent's posts carry

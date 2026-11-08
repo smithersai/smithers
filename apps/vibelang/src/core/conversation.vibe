@@ -733,7 +733,7 @@ export function grantPolicy(id: string, by: string, current: Role, actor: Role, 
 
 // ── GitHub's issue projection (0022). GitHub owns content and edges; these numbered observations drive every surface.
 export type IssueOperation = "read" | "new" | "comment" | "link" | "split" | "commit" | "uncommit" | "propose" | "accept" | "decline" | "draft"
-export interface IssueNote { readonly author: string; readonly text: string; readonly event: boolean }
+export interface IssueNote { readonly age: string; readonly author: string; readonly text: string; readonly event: boolean }
 export interface IssueRecord {
   readonly number: number
   readonly githubId: number
@@ -938,4 +938,16 @@ export function acknowledgedPending(pending: ReadonlyArray<Pending>, clientId: s
     i++
   }
   return result
+}
+
+
+export interface VipFile { readonly filename: string; readonly status: string }
+/** The host supplies complete native PR facts and a validated repository document path. */
+//@ verify
+//@ ensures \result ==> issueAuthor > 0 && issueAuthor == reviewAuthor && path != ""
+//@ ensures \result ==> exists(i, 0 <= i && i < files.length && files[i].filename == path && files[i].status != "removed")
+//@ ensures (issueAuthor <= 0 || issueAuthor != reviewAuthor || path == "") ==> !\result
+export function vipDocumentMatches(issueAuthor: number, reviewAuthor: number, path: string, files: ReadonlyArray<VipFile>): boolean {
+  if (issueAuthor <= 0 || issueAuthor !== reviewAuthor || path === "") return false
+  return files.some(file => file.filename === path && file.status !== "removed")
 }

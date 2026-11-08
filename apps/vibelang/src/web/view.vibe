@@ -1,11 +1,12 @@
 import { failureOf, postFailure, statusLabel, sendKey, canSend, entryDisplay, showMedia, mediaDecision } from "./viewDecision.vibe"
 export { failureOf } from "./viewDecision.vibe"
+import { issuesView, issueChatCard } from "./issuesView.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
 // way it does on smithers.sh; the splash and the frame are this app's (`vl-*`, styles.css).
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
-import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
+import { CONTRIBUTE_URL, hasConversation, issueStateOf, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { accountNotice, accountOverlays, identityNav, peoplePane } from "./roleView.vibe"
 import { render } from "./markdown.vibe"
 import { STOPS, type StopMedia } from "../core/tourStops.vibe"
@@ -27,7 +28,7 @@ export function view(model: Model, h: H): Document {
       [h.Class("vl-app"), h.DataAttribute("surface", model.surface), h.DataAttribute("mode", model.mode), h.DataAttribute("tour", model.tour ? "on" : "off")],
       [
         top(model, h),
-        model.surface === "splash" ? splash(model, h) : chat(model, h),
+        model.issues?.open ? issuesView(issueStateOf(model), h, (action, value = "") => Message.IssueUi({ action, value })) : model.surface === "splash" ? splash(model, h) : chat(model, h),
         ...(model.surface === "chat" && model.client.conversation.pane !== "" && (model.tour || model.docs === "max") ? [docsPane(model, h)] : []),
         palette(model, h),
         ...accountOverlays(model, h),
@@ -53,9 +54,12 @@ function top(model: Model, h: H): Html {
   return h.header([h.Class("vl-top")], [
     h.button([h.Class("vl-home"), h.Type("button"), h.AriaLabel("Home"), h.OnClick(Message.ClickedSplash())], [logo(h)]),
     h.nav([h.Class("vl-nav")], [
+      h.div([h.Class("vl-nav-links")], [
+      h.button([h.Class("vl-nav-link"), h.Type("button"), h.AriaLabel("Issues"), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-nav-issue-label")], ["Issues"]), h.svg([h.Class("vl-nav-issue-icon"), h.ViewBox("0 0 16 16"), h.Width("16"), h.Height("16"), h.AriaHidden(true)], [h.circle([h.Cx("8"), h.Cy("8"), h.R("6.75"), h.Fill("none"), h.Stroke("currentColor"), h.StrokeWidth("1.5")], []), h.circle([h.Cx("8"), h.Cy("8"), h.R("2.5"), h.Fill("currentColor")], [])])]),
       h.a([h.Class("vl-nav-link"), h.Href("/history")], ["History"]),
       h.a([h.Class("vl-nav-link vl-ext"), h.Href(DOCS_URL)], ["Docs", away(h)]),
       h.a([h.Class("vl-nav-link vl-ext"), h.Href(SOURCE_URL)], [githubMark(h), "GitHub", away(h)]),
+      ]),
       ...identityNav(model, h),
     ]),
   ])
@@ -167,11 +171,12 @@ function chat(model: Model, h: H): Html {
       sandboxPane(model, h),
       ...peoplePane(model, h),
       ...accountNotice(model, h),
+      h.button([h.Class("vl-pane"), h.Type("button"), h.Style({ viewTransitionName: "issues" }), h.OnClick(Message.ClickedIssues())], [h.span([h.Class("vl-pane-text")], [model.issues?.data === undefined ? "Issues" : `Issues · ${model.issues.data.items.filter(i => i.state === "open").length} open`]), h.span([h.Class("vl-pane-expand")], [paneIcon(h, MAXIMIZE)])]),
       ...(conversation.pane === "" || model.tour || model.docs === "max" ? [] : [docsPane(model, h)]),
       ...(conversation.entries.length === 0 && pending.length === 0 ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
         src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",
       }))] : []),
-      ...conversation.entries.map((entry) => entryView(entry, model.session, h)),
+      ...conversation.entries.map((entry) => entryView(entry, model, h)),
       ...pending.map((post) => pendingView(post, h)),
       ...(model.stream === "failed"
         ? [h.div([h.Class("sui-chat-message"), h.DataAttribute("role", "system")], [
@@ -187,18 +192,23 @@ function chat(model: Model, h: H): Html {
   ])
 }
 
-function entryView(entry: Entry, session: string, h: H): Html {
+function entryView(entry: Entry, model: Model, h: H): Html {
   const display = entryDisplay(entry.author, entry.text, entry.done, entry.error)
-  const body = display.markdown ? render(h, entry.text) : [entry.text]
+  const linked = /\[([^\]]+)\]\(#issue-([1-9][0-9]*)\)/.exec(entry.text)
+  const issue = linked === null ? undefined : model.issues?.data.items.find((i) => i.number === Number(linked[2]))
+  const text = issue === undefined ? entry.text : entry.text.replace(linked![0], "").trim()
+  const body = display.markdown ? render(h, text) : [entry.text]
+  const card = entry.author === "agent" && issue !== undefined && linked !== null ? issueChatCard(h, issue, model.issues?.data.items ?? [], linked[1]!, model.issues?.data.absoluteDates === true, number => Message.OpenIssueCard({ number })) : undefined
   return h.article(
     [h.Class("sui-chat-message"), h.DataAttribute("role", display.role), h.DataAttribute("done", String(entry.done)), h.Key(entry.id), h.DataAttribute("in-reply-to", entry.inReplyTo)],
     [
-      h.div([h.Class("sui-chat-message-label")], [entry.author === "person" && ownPost(entry.clientId, session) ? "You" : entry.name]),
+      h.div([h.Class("sui-chat-message-label")], [entry.author === "person" && ownPost(entry.clientId, model.session) ? "You" : entry.name]),
       // A reply that failed before any text has nothing to show but its reason.
       ...(!display.showBody ? [] : [h.div(
         [h.Class(display.thinking ? "sui-chat-bubble vl-thinking" : "sui-chat-bubble")],
         display.thinking ? [h.span([h.Class("vl-dots"), h.Role("status"), h.AriaLabel("Thinking")], [])] : body,
       )]),
+      ...(card === undefined ? [] : [card]),
       ...(!display.failed ? [] : [h.div([h.Class("sui-chat-message-meta vl-error")], [failureOf(entry.error)])]),
     ],
   )

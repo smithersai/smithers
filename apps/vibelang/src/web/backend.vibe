@@ -2,6 +2,7 @@ import { liveHealth } from "../core/protocolDecision.vibe"
 
 // The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
 import { HttpClient } from "effect/http"
+import { IssueFailure } from "../core/issueSchemas.vibe"
 import { Factory, type Mode } from "../core/Factory.vibe"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
 
@@ -38,6 +39,18 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
         choose: effect (role) => { return try (try ready).factory.accounts!.choose(role) },
         participated: effect (id) => { try (try ready).factory.accounts!.participated(id) },
         events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts!.events(after) }),
+      },
+      issues: {
+        read: effect () => {
+          const { factory } = try ready
+          if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
+          return try factory.issues.read()
+        },
+        act: effect (request) => {
+          const { factory } = try ready
+          if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
+          return try factory.issues.act(request)
+        },
       },
       post: effect (conversation, clientId, name, text) => {
         const { factory } = try ready

@@ -1,0 +1,60 @@
+// The agent drafts one feature through its journaled AgentAction, using the existing model host and budget.
+import { AgentAction, EventSink, Budget } from "@smthrs/agent"
+import { Action, FlowRuntime } from "@smthrs/flow"
+import { Digest, SecureRandom } from "effect/crypto"
+import { ModelRequest } from "@smthrs/model"
+import { VipDraft, VipWriter } from "../src/core/VipWriter.vibe"
+import { IssueFailure, type IssueRequest } from "../src/core/issueSchemas.vibe"
+import { AGENT_CONTEXT } from "./agentContext.vibe"
+import { agentOf, ChatModel, dayOf, Spend, patient } from "./Reply.vibe"
+export const DraftVip = AgentAction.make("vibelang/vip/draft-agent", {
+  payload: { title: Schema.String, text: Schema.String, example: Schema.String, prior: Schema.String },
+  output: VipDraft, seat: "agent", profile: "conversation", maxFrames: 8,
+  system: [AGENT_CONTEXT, "Draft one VibeLang language feature, with a concrete example and relevant prior art. Return the draft with ctx.done({title, summary, example, prior}). Keep the person's feature and flag uncertainty in the draft. Never submit, approve or merge anything."],
+  prompt: (request) => JSON.stringify(request), modelParams: ModelRequest.GenerationParams.make({ maxTokens: 2048 }),
+})
+export service DraftAgent {
+  readonly available: boolean
+  run(request: IssueRequest, meter: Budget.Service): VipDraft!IssueFailure!(FlowRuntime.FlowRuntime | FlowRuntime.FlowInstance | Digest.Digest | SecureRandom.SecureRandom)
+}
+export const agentLayer = Layer.effect(DraftAgent, effect {
+  const chat = try ChatModel
+  return {
+    available: chat.model !== undefined,
+    run: effect (request, meter) => {
+      const model = chat.model
+      if (model === undefined) throw new IssueFailure({ reason: "no-model" })
+      const sink: EventSink.Service = { emit: (event) => Metric.update(Metric.withAttributes(Metric.counter("vibelang_vip_agent_events", { incremental: true }), { event: event._tag }), 1) }
+      const result = try Effect.result(effect {
+        provide agentOf(DraftVip.layer, model, sink, [], 0, meter), EventSink.EventSink = sink {
+          return try (try DraftVip.requirement).action({ title: request.title, text: request.text, example: request.example, prior: request.prior })
+        }
+      })
+      if (result._tag === "Failure") throw new IssueFailure({ reason: "draft" })
+      return try Schema.decodeUnknownEffect(VipDraft)(result.success).pipe(Effect.mapError(() => new IssueFailure({ reason: "draft" })))
+    },
+  }
+})
+/** Public service seam: faults replace the agent, while metering and the real durable engine remain unchanged. */
+export const writer = Layer.effect(VipWriter, effect {
+  const agent = try DraftAgent
+  const spend = try Spend
+  return {
+    draft: effect (request) => {
+      if (!agent.available) throw new IssueFailure({ reason: "no-model" })
+      const instance = try FlowRuntime.FlowInstance
+      const admission = try Action.make({ name: "vibelang/vip/admit", success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }), error: IssueFailure, execute: effect {
+        const day = dayOf(try Clock.currentTimeMillis)
+        return { day, admitted: try spend.admit(day).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) }
+      } })
+      if (!admission.admitted) throw new IssueFailure({ reason: "budget" })
+      const meter = try Budget.make({}).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+      const result = try Effect.result(agent.run(request, meter))
+      const usage = try meter.usageOf(instance.executionId).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" })))
+      try Action.make({ name: "vibelang/vip/spend", error: IssueFailure, retryPolicy: patient, execute: spend.spend(admission.day, `vip-draft/${instance.executionId}`, usage.tokens).pipe(Effect.mapError(() => new IssueFailure({ reason: "budget" }))) })
+      if (result._tag === "Failure") throw result.failure
+      return result.success
+    },
+  }
+})
+export const writerLayer = writer.pipe(Layer.provide(agentLayer))

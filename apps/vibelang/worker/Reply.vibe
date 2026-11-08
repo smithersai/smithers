@@ -181,6 +181,7 @@ export function agentOf<ROut, E, RIn>(
   sink: EventSink.Service,
   flows: ReadonlyArray<FlowBinding.Source> = [],
   calls = 0,
+  budget: Budget.Service = Budget.makeUnbounded(),
 ) {
   const seat = Seat.make({
     id: AGENT_SEAT,
@@ -206,7 +207,7 @@ export function agentOf<ROut, E, RIn>(
       Agent.layer,
       EventSink.layer(sink),
     )),
-    Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Budget.layerUnbounded())),
+    Layer.provide(Layer.mergeAll(QuotaPolicy.layerDefault(), Layer.succeed(Budget.Budget, budget))),
     Layer.provide(Layer.mergeAll(Agent.layerDefaultsWithVariant, Evaluator.layerUnavailable())),
     Layer.provide(QuickJSWorkerd.variant),
   )

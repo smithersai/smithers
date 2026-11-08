@@ -1,4 +1,6 @@
 import { surfaceTransition, toggleSandbox, maximizeSandbox, currentSandbox, canSandboxAction } from "./viewDecision.vibe"
+import { IssuesUi, initialIssues, issuesUpdate } from "./issues.vibe"
+import { IssueFailure, IssueRequest, IssuesState, IssueOperation } from "../core/issueSchemas.vibe"
 // The web app's Foldkit program: Model, Messages, update, Commands and Subscriptions. The view is `view.vibe`. Every
 // change to the conversation goes through the shared machine (`../core/conversation.vibe`); this file only adds what a
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
@@ -29,6 +31,10 @@ export schema Flags {
   readonly mediaSources?: MediaSources
   readonly reducedMotion?: boolean
   readonly signInFailed?: boolean
+  readonly openIssues?: boolean
+  readonly resumeRecovery?: string
+  readonly resumeOp?: string
+  readonly resumeKey?: string
 }
 
 export schema AccountState {
@@ -48,11 +54,17 @@ export schema AccountState {
 }
 export const signedOut: AccountState = { identity: viewer, menu: false, people: "closed", members: [], target: "", targetRole: "community", pending: false, error: "", retry: "sign-in", notice: "", ledger: Machine.newClient, epoch: 0, from: 0 }
 export function accountOf(model: Model): AccountState { return model.account ?? signedOut }
+export function issueStateOf(model: Model): IssuesUi {
+  const ui = model.issues ?? initialIssues
+  return { ...ui, keyPrefix: model.session, role: accountOf(model).identity.role, connection: "/api/auth/github" + (ui.retry === undefined ? "" : `?resume-op=${ui.retry.op}&resume-key=${ui.retry.key}` + (ui.retry.recovery === undefined ? "" : `&resume-recovery=${ui.retry.recovery}`)) }
+}
 
 // MODEL
 
 export schema Model {
   readonly account?: AccountState
+  readonly issues?: IssuesUi
+
   /** `splash`: the home page fills the window. `chat`: the conversation, with the home page as its first pane. */
   readonly surface: "splash" | "chat"
   /** Whether the ⌘K prompt is open. */
@@ -136,6 +148,15 @@ export const Message = defineMessageUnion({
   FailedRoles: {},
   DismissedAccountError: {},
   RetriedAccount: {},
+  ClickedIssues: {},
+  IssueUi: { action: Schema.String, value: Schema.String },
+  IssuesLoaded: { data: IssuesState, created: Schema.Boolean, op: Schema.optionalKey(IssueOperation), key: Schema.optionalKey(Schema.String), role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
+  IssuesFailed: { unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.String, op: Schema.optionalKey(IssueOperation), key: Schema.optionalKey(Schema.String) },
+  IssueDialogFocused: {},
+  OpenIssueCard: { number: Schema.Number },
+  IssueProjectionLoaded: { data: IssuesState },
+  IssueDetailsLoaded: { data: IssuesState, number: Schema.Number },
+  IssueDetailsFailed: { number: Schema.Number },
   ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
   PressedCommandK: {},
   PressedEscape: {},
@@ -199,17 +220,20 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       tour: false,
       tourError: "",
       docs: "pane",
+      ...(flags.openIssues ? { issues: initialIssues } : {}),
     },
+    ...(flags.openIssues ? { commands: [LoadIssues({ ...(flags.resumeRecovery === undefined ? {} : { resumeRecovery: flags.resumeRecovery }), ...(flags.resumeOp === undefined ? {} : { resumeOp: flags.resumeOp }), ...(flags.resumeKey === undefined ? {} : { resumeKey: flags.resumeKey }) })] } : {}),
   }
 }
 
 // UPDATE
 
 export function update(model: Model, message: Message): Update.Return<Model, Message, Factory> {
-  return Message.match<Update.Return<Model, Message, Factory>>(message, {
+  const next = Message.match<Update.Return<Model, Message, Factory>>(message, {
     ObservedMedia: () => ({ model }),
     LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
     FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
+
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode }, commands: [LoadAccount({})] }),
     AccountLoaded: ({ identity }) => {
       const { ledger: snapshot, ...person } = identity
@@ -270,6 +294,38 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         : SignInAccount({ mock: model.mode === "mock" })],
     }),
     DismissedAccountError: () => ({ model: { ...model, account: { ...accountOf(model), error: "" } } }),
+    OpenIssueCard: ({ number }) => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true, screen: "detail", selected: number } }, commands: [LoadIssues({}), ...(model.mode === "live" ? [LoadIssueDetails({ number, key: `${model.session}-card-${number}-${(model.issues?.serial ?? 0) + 1}` })] : [])] }),
+    IssueProjectionLoaded: ({ data }) => data.seq < (model.issues?.data.seq ?? 0) ? { model } : { model: { ...model, issues: { ...(model.issues ?? { ...initialIssues, open: false }), data, status: "ready", role: data.role ?? (model.mode === "mock" ? "maintainer" : "viewer") } } },
+    ClickedIssues: () => ({ model: { ...model, issues: { ...(model.issues ?? initialIssues), open: true } }, commands: model.issues?.busy ? [] : [LoadIssues({})] }),
+    IssueUi: ({ action, value }) => {
+      const before = issueStateOf(model)
+      const result = issuesUpdate(before, action, value)
+      return { model: { ...model, issues: action === "select" && model.mode === "live" ? { ...result.ui, serial: before.serial + 1 } : result.ui, ...(action === "close" ? { surface: "chat" } : {}) }, commands: [
+        ...(action === "select" && model.mode === "live" ? [LoadIssueDetails({ number: Number(value), key: `${model.session}-detail-${before.serial + 1}` })] : []),
+        ...(result.request === undefined ? [] : [ActOnIssue({ request: result.request })]),
+        ...(action === "kind-key" || action === "focus" ? [FocusIssueControl({ id: action === "kind-key" ? `ix-kind-${value}` : value })] : []),
+        ...(before.dialog === "" && result.ui.dialog !== "" ? [ShowIssueDialog({})] : []),
+        ...(before.dialog !== "" && result.ui.dialog === "" ? [CloseIssueDialog({})] : []),
+      ] }
+    },
+    IssuesLoaded: ({ data, created, role, op, key }) => {
+      const ui = model.issues ?? initialIssues
+      if (data.saved !== undefined) {
+        const { request, status, unwritten, selected } = data.saved
+        const completed = status === "completed"
+        return { model: { ...model, issues: { ...ui, keyPrefix: model.session, data, role, status: "ready", busy: false, screen: completed ? "detail" : request.op === "new" ? "new" : request.op === "propose" ? "vip" : "detail", step: 4, selected, title: request.title, summary: request.text, comment: request.op === "comment" ? request.text : "", example: request.example, prior: request.prior, parent: String(request.parent), assignee: request.assignee, retry: completed || unwritten ? undefined : request, error: completed || unwritten ? "" : "Couldn't save. Retry." } } }
+      }
+      const settled = ui.retry === undefined || (ui.retry.op === op && key === ui.retry.key)
+      return { model: { ...model, issues: { ...ui, data: data.draft === undefined && data.seq >= ui.data.seq ? data : ui.data, status: "ready", role, ...(data.draft === undefined ? {} : { title: data.draft.title, summary: data.draft.summary, example: data.draft.example, prior: data.draft.prior }), busy: settled ? false : ui.busy, retry: settled ? undefined : ui.retry, error: settled ? "" : ui.error, comment: settled ? "" : ui.comment, dialog: settled ? "" : ui.dialog, ...(data.assignees === undefined ? {} : { assignee: data.assignees.some((a) => a.login === ui.assignee) ? ui.assignee : data.assignees.find((a) => a.label === "VibeLang agent")?.login ?? "" }), ...(created && settled ? { screen: "detail", selected: data.selected ?? Math.max(...data.items.map((i) => i.number)) } : {}) } }, commands: !settled || ui.dialog === "" ? [] : [CloseIssueDialog({})] }
+    },
+    IssuesFailed: ({ reason, op, key, unwritten }) => {
+      const ui = model.issues ?? initialIssues
+      const relevant = ui.retry === undefined || (op === ui.retry.op && key === ui.retry.key)
+      return { model: { ...model, issues: { ...ui, status: ui.data.items.length === 0 ? "error" : "ready", ...(relevant ? { busy: false, ...(unwritten === true ? { retry: undefined } : {}), error: reason === "connect" ? "Connect GitHub." : reason === "forbidden" ? "Not allowed" : reason === "tree" ? "Choose another parent." : reason === "assignee" ? "Choose an assignee." : reason === "closed" ? "Issue closed." : "Couldn't save. Retry." } : {}) } } }
+    },
+    IssueDetailsLoaded: ({ data, number }) => model.issues?.selected !== number || data.seq < model.issues.data.seq ? { model } : { model: { ...model, issues: { ...model.issues, data } } },
+    IssueDetailsFailed: ({ number }) => model.issues?.selected !== number || model.issues.retry !== undefined ? { model } : { model: { ...model, issues: { ...model.issues, error: "Couldn't load comments. Retry." } } },
+    IssueDialogFocused: () => ({ model }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
     // Escape first takes control back from the agent, then closes what is open, innermost first.
@@ -278,8 +334,10 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       if (action === "tour") return endTour(model)
       const account = accountOf(model)
       if (account.target !== "") return { model: { ...model, account: { ...account, target: "", error: "" } }, commands: [CloseRoleDialog({})] }
+      if (model.issues?.open && model.issues.dialog !== "") return { model: { ...model, issues: { ...model.issues, dialog: "" } }, commands: [CloseIssueDialog({})] }
       if (action === "palette") return openPalette(model, false)
       if (account.menu) return { model: { ...model, account: { ...account, menu: false } }, commands: [FocusAccountMenu({ open: false })] }
+      if (model.issues?.open) return { model: { ...model, issues: { ...model.issues, open: false } } }
       if (model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
       switch (action) {
         case "docs": return { model: { ...model, docs: "pane" } }
@@ -308,7 +366,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     },
     FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
     ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) } }),
-    ClickedSplash: () => ({ model: { ...model, ...showSplash(model) } }),
+    ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
     SubmittedDraft: () => submit(model),
@@ -339,6 +397,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
           announced: completed ? model.announced + 1 : model.announced,
         },
+        ...(completed && /\]\(#issue-[1-9][0-9]*\)/.test(answer?.text ?? "") ? { commands: [RefreshIssueProjection({})] } : {}),
       }
     },
     FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
@@ -351,6 +410,14 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     },
     ClickedLatest: () => ({ model: { ...model, ...latestScreen(model) }, commands: [FocusComposer({})] }),
   })
+  const before = accountOf(model).identity
+  const after = accountOf(next.model).identity
+  const issues = next.model.issues
+  if (issues !== undefined && (before.role !== after.role || before.id !== after.id)) {
+    const close = issues.dialog !== "" && !Machine.issuePermission(after.role, issues.dialog)
+    return { ...next, model: { ...next.model, issues: { ...issues, role: after.role, dialog: close ? "" : issues.dialog, ...(before.id === after.id ? {} : { retry: undefined, busy: false }) } }, commands: [...(next.commands ?? []), ...(close ? [CloseIssueDialog({})] : [])] }
+  }
+  return next
 }
 
 /**
@@ -414,6 +481,7 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
     model: {
       ...model,
       surface: "chat",
+      ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }),
       palette: false,
       draft: "",
       sent: model.sent + 1,
@@ -637,6 +705,17 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         },
       },
     ),
+    issueCount: entry(
+      { active: Schema.Boolean },
+      {
+        modelToDependencies: (model: Model) => ({ active: model.mode !== "pending" && model.surface === "chat" && model.issues === undefined }),
+        dependenciesToStream: ({ active }) => active ? Stream.fromEffect(effect {
+          const api = (try Factory).issues
+          const result = try Effect.result(api === undefined ? Effect.fail(new IssueFailure({ reason: "unavailable" })) : api.read())
+          return try message(() => result._tag === "Success" ? Message.IssueProjectionLoaded({ data: result.success }) : Message.IssueDialogFocused())
+        }) : Stream.empty,
+      },
+    ),
     roles: entry(
       { person: Schema.String, epoch: Schema.Number, from: Schema.Number },
       {
@@ -686,6 +765,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
  * else animates: the ⌘K prompt opens at once, and a view transition would swallow clicks while it runs.
  */
 export const viewTransition: Runtime.ViewTransitionConfig<Model, Message> = ({ previousModel, model }) => {
+  if (!!previousModel.issues?.open !== !!model.issues?.open) return { types: [model.issues?.open ? "to-issues" : "from-issues"] }
   const transition = surfaceTransition(previousModel.surface, model.surface)
   return transition === "none" ? false : { types: [transition] }
 }
@@ -770,3 +850,74 @@ export const FocusAccountMenu = Command.define("FocusAccountMenu", { args: { ope
   Dom.focus(open ? "#vl-account-people" : "#vl-account", { preventScroll: true }) catch () => undefined
   return try message(() => Message.FocusedPrompt())
 } })
+
+
+export const LoadIssues = Command.define("LoadIssues", {
+  args: { resumeRecovery: Schema.optionalKey(Schema.String), resumeOp: Schema.optionalKey(Schema.String), resumeKey: Schema.optionalKey(Schema.String) }, messages: [Message.IssuesLoaded, Message.IssuesFailed],
+  execute: effect ({ resumeRecovery, resumeOp, resumeKey }) => {
+    const factory = try Factory
+    const result = try Effect.result(effect {
+      if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
+      return resumeOp === undefined || resumeKey === undefined ? try factory.issues.read() : try factory.issues.act({ op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: `resume-${try Clock.currentTimeMillis}`, resumeOp, resumeKey, ...(resumeRecovery === undefined ? {} : { resumeRecovery }) })
+    })
+    if (factory.mode === "live" && result._tag === "Success" && result.success.saved?.status === "completed") try Navigation.replaceUrl("/?issues=1")
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: false, role: result._tag === "Success" && result.success.role !== undefined ? result.success.role : factory.mode === "mock" ? "maintainer" : "viewer" }) : Message.IssuesFailed({ reason: result.failure.reason }))
+  },
+})
+export const ActOnIssue = Command.define("ActOnIssue", {
+  args: { request: IssueRequest }, messages: [Message.IssuesLoaded, Message.IssuesFailed],
+  execute: effect ({ request }) => {
+    const factory = try Factory
+    if (factory.mode === "live" && request.op !== "read" && request.op !== "draft") try Navigation.replaceUrl(`/?issues=1&resume-op=${request.op}&resume-key=${request.key}` + (request.recovery === undefined ? "" : `&resume-recovery=${request.recovery}`))
+    const result = try Effect.result(effect {
+      if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
+      return try factory.issues.act(request)
+    })
+    if (factory.mode === "live" && request.op !== "read" && request.op !== "draft" && (result._tag === "Success" || result.failure.unwritten === true)) try Navigation.replaceUrl("/?issues=1")
+    return try message(() => result._tag === "Success" ? Message.IssuesLoaded({ data: result.success, created: ["new", "split", "propose"].includes(request.op), op: request.op, key: request.key, role: result._tag === "Success" && result.success.role !== undefined ? result.success.role : factory.mode === "mock" ? "maintainer" : "viewer" }) : Message.IssuesFailed({ reason: result.failure.reason, op: request.op, key: request.key, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+  },
+})
+export const ShowIssueDialog = Command.define("ShowIssueDialog", {
+  args: {}, messages: [Message.IssueDialogFocused],
+  execute: effect () => {
+    try Render.afterCommit
+    Dom.showDialog("#ix-dialog", { isModal: true }) catch () => false
+    return try message(() => Message.IssueDialogFocused())
+  },
+})
+export const CloseIssueDialog = Command.define("CloseIssueDialog", {
+  args: {}, messages: [Message.IssueDialogFocused],
+  execute: effect () => {
+    Dom.closeDialog("#ix-dialog") catch () => false
+    Dom.focus("#ix-commit") catch () => undefined
+    return try message(() => Message.IssueDialogFocused())
+  },
+})
+
+export const FocusIssueControl = Command.define("FocusIssueControl", {
+  args: { id: Schema.String }, messages: [Message.IssueDialogFocused],
+  execute: effect ({ id }) => {
+    try Render.afterCommit
+    try Dom.focus("#" + id).pipe(Effect.ignore)
+    return try message(() => Message.IssueDialogFocused())
+  },
+})
+
+export const LoadIssueDetails = Command.define("LoadIssueDetails", {
+  args: { number: Schema.Number, key: Schema.String }, messages: [Message.IssueDetailsLoaded, Message.IssueDetailsFailed],
+  execute: effect ({ number, key }) => {
+    const api = (try Factory).issues
+    const result = try Effect.result(api === undefined ? Effect.fail(new IssueFailure({ reason: "unavailable" })) : api.act({ op: "read", number, key, parent: 0, title: "", text: "", assignee: "", example: "", prior: "" }))
+    return try message(() => result._tag === "Success" ? Message.IssueDetailsLoaded({ number, data: result.success }) : Message.IssueDetailsFailed({ number }))
+  },
+})
+
+export const RefreshIssueProjection = Command.define("RefreshIssueProjection", {
+  args: {}, messages: [Message.IssueProjectionLoaded, Message.IssueDialogFocused],
+  execute: effect () => {
+    const api = (try Factory).issues
+    if (api === undefined) return try message(() => Message.IssueDialogFocused())
+    const result = try Effect.result(api.read())
+    return try message(() => result._tag === "Success" ? Message.IssueProjectionLoaded({ data: result.success }) : Message.IssueDialogFocused())
+  },
+})

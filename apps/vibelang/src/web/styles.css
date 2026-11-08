@@ -99,7 +99,7 @@ button { font: inherit; }
 @keyframes vl-fade { from { opacity: 0; } }
 
 /* ── view transitions: the splash shrinks into its pane, the prompt docks into the composer ─────────────────────── */
-::view-transition-group(splash), ::view-transition-group(prompt) { animation-duration: .38s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
+::view-transition-group(splash), ::view-transition-group(prompt), ::view-transition-group(issues) { animation-duration: .38s; animation-timing-function: cubic-bezier(.2, .8, .2, 1); }
 ::view-transition-old(splash), ::view-transition-new(splash) { height: 100%; object-fit: cover; overflow: hidden; }
 @media (prefers-reduced-motion: reduce) {
   .vl-dots, .vl-palette-scrim { animation: none !important; }
@@ -232,4 +232,82 @@ html { overflow-anchor: none; }
   .vl-top:has(.vl-identity-tools) .vl-home .vl-logo { width:24px; overflow:hidden; }
   .vl-visit .sui-select-trigger { min-width:0; max-width:116px; }
   .vl-people[data-maximized="true"] { inset:calc(var(--vl-header-height, 60px) + 10px) 12px 130px; }
+}
+
+/* VIP step indicator */
+.ix-steps { display: flex; flex-wrap: wrap; gap: 4px; margin: 0; padding: 0; list-style: none; }
+.ix-steps li { display: inline-flex; align-items: center; gap: 8px; padding: 5px 10px; border-radius: var(--r-full, 999px); color: var(--text-muted); font-size: 12px; font-weight: 650; }
+.ix-steps .ix-n { display: inline-grid; place-items: center; width: 18px; height: 18px; border: 1px solid var(--border-strong); border-radius: var(--r-full, 999px); font-size: 10px; }
+.ix-steps li[data-done="true"] .ix-n { border-color: var(--brand); background: var(--brand); color: var(--inverse-text); }
+.ix-steps li[aria-current="step"] { background: var(--brand-soft); color: var(--brand); }
+.ix-steps li[aria-current="step"] .ix-n { border-color: var(--brand-border-strong); color: var(--brand); }
+
+/* Issue tree */
+.ix-tree { display: grid; gap: 6px; }
+.ix-tree-parent { color: var(--text-muted); font-size: 12px; }
+.ix-tree-parent a { color: var(--brand); text-decoration: none; }
+.ix-tree-parent a:hover { text-decoration: underline; text-underline-offset: 3px; }
+.ix-tree-list { display: grid; gap: 1px; margin: 0; padding: 0; list-style: none; }
+.ix-tree-kids { margin-left: 10px; padding-left: 8px; border-left: 1px solid var(--border); }
+.ix-tree-row { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 5px 6px; border-radius: var(--r-1, 6px); font-size: 13px; }
+.ix-tree-row:hover { background: var(--hover-subtle); }
+.ix-tree-row > a { min-width: 0; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ix-tree-row > a:hover { color: var(--brand); }
+.ix-tree-meta { display: inline-flex; align-items: center; gap: 6px; margin-left: auto; flex: 0 0 auto; color: var(--text-muted); font-size: 11px; }
+
+/* Avatar (initials) */
+.ix-avatar { display: inline-grid; place-items: center; width: 20px; height: 20px; flex: 0 0 auto; border-radius: var(--r-full, 999px); background: var(--brand-soft); color: var(--brand); font-size: 10px; font-weight: 650; }
+.ix-avatar[data-agent="true"] { background: var(--warning-soft); color: var(--warning); }
+
+/* Assignee picker rows (commit dialog) */
+.ix-pick { display: grid; gap: 2px; }
+.ix-pick label { display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: var(--r-1, 6px); font-size: 13px; cursor: pointer; }
+.ix-pick label:hover { background: var(--hover-subtle); }
+.ix-pick input { accent-color: var(--brand); }
+
+/* Aside sections */
+.ix-aside-section { display: grid; gap: 6px; justify-items: start; padding-bottom: 12px; border-bottom: 1px solid var(--border); }
+.ix-aside-section:last-child { border-bottom: 0; padding-bottom: 0; }
+.ix-aside-row { display: inline-flex; align-items: center; gap: 6px; color: var(--text); font-size: 12px; }
+.ix-aside-muted { color: var(--text-muted); font-size: 12px; }
+
+/* Chat issue cards sit left, bubble width */
+.ix-chat-card { justify-self: start; width: min(100%, 560px); }
+.ix-mini { display: flex; align-items: center; gap: 8px; min-width: 0; padding: 4px 0; font-size: 13px; }
+.ix-mini > a { min-width: 0; color: var(--text); text-decoration: none; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ix-mini > a:hover { color: var(--brand); }
+
+/* Roles table */
+.ix-roles td, .ix-roles th { text-align: center; }
+.ix-roles td:first-child, .ix-roles th:first-child { text-align: left; }
+.ix-yes { color: var(--brand); font-weight: 650; }
+.ix-no { color: var(--text-faint); }
+
+@media (max-width: 640px) {
+  .d-bar { gap: 6px; }
+}
+
+.ix-surface { position: fixed; inset: var(--vl-header-height, 56px) 0 0; overflow: auto; z-index: 10; background: var(--bg); }
+.ix-error { padding: 12px 14px; display: grid; gap: 10px; justify-items: start; }
+.ix-dialog:not([open]) { display: none; }
+.ix-dialog[open] { position: fixed; inset: 0; margin: auto; }
+.ix-dialog::backdrop { background: var(--dialog-overlay, #0009); }
+.vl-nav button.vl-nav-link { background: transparent; border: 0; cursor: pointer; }
+/* Keep navigation and the account menu inside a phone viewport. */
+@media (max-width: 600px) {
+  .vl-nav { min-width: 0; }
+  .vl-nav > * { flex-shrink: 0; }
+}
+
+.vl-nav-issue-icon { display:none; }
+@media (max-width:600px) {
+  .vl-nav-issue-label { display:none; }
+  .vl-nav-issue-icon { display:block; width:16px; height:16px; }
+}
+
+/* Scroll destinations independently; the account menu stays outside the clipping region. */
+.vl-nav-links { display:flex; align-items:center; gap:inherit; min-width:0; }
+@media (max-width:600px) {
+  .vl-nav > .vl-nav-links { flex:1 1 auto; min-width:0; overflow-x:auto; scrollbar-width:none; }
+  .vl-nav-links > * { flex-shrink:0; }
 }

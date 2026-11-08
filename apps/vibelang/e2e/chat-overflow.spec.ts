@@ -100,7 +100,7 @@ test("maximized docs leave the phone header links visible and clickable", async 
 })
 
 test("the live signed-out header keeps Sign in and every link inside a 390-pixel page", async ({ page }) => {
-  const port = process.env.E2E_PORT ?? process.env.E2E_4505 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173
+  const port = process.env.E2E_PORT ?? 4173
   // The injected Factory reports Live; rendering and all transport data still use the real app and offline service.
   await page.goto(`http://127.0.0.1:${port}/e2e/runtime/index.html?fault=live-header`)
   await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible()

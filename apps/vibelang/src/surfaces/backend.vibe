@@ -1,8 +1,9 @@
+import { Factory } from "../core/Factory.vibe"
 import { liveHealth, prefersMock } from "../core/protocolDecision.vibe"
 
-import { FetchHttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
-import { mockFactoryFor, MockFactory } from "../core/MockFactory.vibe"
+import { mockFactoryFor } from "../core/MockFactory.vibe"
 import { LiveMythical } from "../history/LiveMythical.vibe"
 import { MockMythical } from "../history/MockMythical.vibe"
 import type { Principal } from "../history/roles.vibe"
@@ -29,17 +30,37 @@ export function unreachable(origin: string): string {
   return `The live Factory at ${origin} can't be reached. Use --mock or VIBELANG_FACTORY=mock.`
 }
 
+/** Carries an explicitly supplied app session only to its exact origin. It never contains a GitHub token. */
+export effect function personClient(origin: string, session?: Redacted.Redacted<string>) {
+  const client = try HttpClient.HttpClient
+  if (session === undefined) return client
+  const parsed = try Effect.try({ try: () => JSON.parse(Redacted.value(session)) as unknown, catch: () => new LiveBackendNotDeployed({ message: "Invalid VIBELANG_SESSION." }) })
+  const decoded = Schema.decodeUnknownOption(Schema.Struct({ origin: Schema.String, cookie: Schema.String }))(parsed)
+  if (Option.isNone(decoded) || decoded.value.origin !== origin || !/^__Host-vibelang-session=[A-Za-z0-9_.:-]{1,4096}$/.test(decoded.value.cookie)) throw new LiveBackendNotDeployed({ message: "Invalid VIBELANG_SESSION." })
+  const credential = decoded.value
+  return client.pipe(HttpClient.mapRequest((request) => request.url.startsWith(origin + "/")
+    ? request.pipe(HttpClientRequest.setHeader("cookie", credential.cookie), HttpClientRequest.setHeader("origin", origin)) : request))
+}
+
 /** The live Factory, once its origin's health says it runs the live agent. */
 const live = Layer.unwrap(effect {
   const origin = (try factoryUrl).replace(/\/+$/, "")
-  const answer = health(origin) catch effect () => {
+  const configured = try Config.option(Config.Redacted("VIBELANG_SESSION"))
+  const client = try personClient(origin, Option.getOrUndefined(configured))
+  const answer = health(origin).pipe(Effect.provideService(HttpClient.HttpClient, client)) catch effect () => {
     throw new LiveBackendNotDeployed({ message: unreachable(origin) })
   }
   if (!liveHealth(answer.agent)) throw new LiveBackendNotDeployed({ message: notDeployed(origin) })
-  return Layer.merge(LiveFactory(origin), LiveMythical(origin))
-}).pipe(Layer.provide(FetchHttpClient.layer))
+  return Layer.merge(LiveFactory(origin), LiveMythical(origin)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
+}).pipe(Layer.provide(FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "error" })))))
 
-const mock = Layer.merge(mockFactoryFor(SURFACE_PRINCIPAL.role), MockMythical(SURFACE_PRINCIPAL))
+const surfaceMock = Layer.effect(Factory, effect {
+  const context = try Layer.build(mockFactoryFor(SURFACE_PRINCIPAL.role))
+  const factory = Context.get(context, Factory)
+  if (factory.accounts !== undefined) try Effect.orDie(factory.accounts.choose("maintainer"))
+  return factory
+})
+const mock = Layer.merge(surfaceMock, MockMythical(SURFACE_PRINCIPAL))
 
 /** Backend choice belongs to the host: `--mock` or `VIBELANG_FACTORY=mock` for the mock, else the live Factory. */
 export function backend(useMock: boolean, environment: string | undefined) {

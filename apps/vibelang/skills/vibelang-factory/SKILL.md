@@ -1,73 +1,73 @@
 ---
 name: vibelang-factory
-description: Talk to the VibeLang factory agent and read conversations through its Factory CLI.
+description: Use the VibeLang Factory CLI or MCP for chat, mythical history, issues, VIPs and sandboxes.
 ---
 
-Use `vibelang-factory` to work with vibelang.smithers.sh's Factory service. Run
-`vibelang-factory --llms` first for the current command names and exact input/output schemas.
-Use `--help` or `ask --help` for CLI syntax. From this app checkout, `pnpm cli ...`
-builds and runs the CLI; the package bin points to its emitted executable.
+Run `vibelang-factory --llms` for the exact command schemas; `--help` for syntax.
+From this checkout, `pnpm cli ...` builds and runs it; `pnpm mcp --mock` starts MCP
+with the same tools. Use `--json` for data.
 
-Commands use the live Factory at `VIBELANG_FACTORY_URL` (default
-https://vibelang.smithers.sh): a real agent answers, and everyone in a conversation
-sees its posts. If that deployment runs only the mock agent or can't be reached,
-commands fail with `LiveBackendNotDeployed`. Pass `--mock` or set
-`VIBELANG_FACTORY=mock` for the mock: the real conversation state machine and
-scripted replies, with no server or model. Mock data lasts for one process:
-separate CLI calls start empty. To share a mock conversation
-across calls, use the MCP server (`pnpm mcp --mock`); its tools have the same schemas.
+Live commands use `VIBELANG_FACTORY_URL` (default https://vibelang.smithers.sh).
+An unavailable or mock-only deployment fails with `LiveBackendNotDeployed`.
+`--mock` or `VIBELANG_FACTORY=mock` uses the real state machines and durable
+flows with fixture data, scripted replies, no server and no model. CLI fixture data lasts for one process; MCP retains it across calls.
 
-Post a message and wait for its entire reply:
+Live writes require `VIBELANG_SESSION`: redacted JSON with `origin` and the
+signed app session `cookie`, bound to `VIBELANG_FACTORY_URL`. Connect GitHub as
+that person before issue writes. Never put a GitHub token in arguments.
 
 ```sh
-vibelang-factory --mock ask "How do I install it?"
-vibelang-factory --mock --json ask "How do services work?" --conversation docs
+vibelang-factory --mock ask "How do services work?" --conversation docs
+vibelang-factory --mock --json read --conversation docs --after 0
 ```
 
-`ask` returns `conversation`, completed reply `text`, and the numbered `events` for
-that post and reply. Overlapping asks are matched to their replies in post order.
+`ask` waits for its completed reply and returns conversation, text and events.
+Overlapping asks match their replies in post order. Everyone in a live
+conversation sees its posts. `read` returns entries touched after its cursor;
+merge by entry ID, then advance `seq`. An empty read returns immediately.
+Read from 0 for the whole conversation; default conversation is `home`.
+Cursors must be nonnegative integers.
 
-Read a finite snapshot:
-
-```sh
-vibelang-factory --mock --json read --after 0
-vibelang-factory --mock read --conversation docs --after 12
-```
-
-`read` returns `conversation`, the current event cursor `seq`, and current copies of
-`entries` touched by events strictly after `after`. A streaming reply can appear again
-with updated text; merge entries by `id`, then advance the cursor. An empty result
-returns immediately. Read from 0 to obtain the whole conversation. Conversations
-default to `home`; `after` defaults to 0 and must be a nonnegative integer.
-
-Work on VibeLang runs through its mythical history: epics of small commits, each with
-notes on what was tried and what proves it. Read it, plan your task onto it, start it in
-your lane, and note what you tried:
+Work is planned onto mythical history: epics of small commits with notes.
 
 ```sh
-vibelang-factory --json history                          # epics and work not landed
-vibelang-factory --json history --commit m4              # one commit's notes and real commits
-vibelang-factory --json history --epic e4 --from 50      # an epic's commits, 50 at a time
-vibelang-factory --json history --search "computed-key"  # commits by title
+vibelang-factory history --json
+vibelang-factory history --commit m4
+vibelang-factory history --epic e4 --from 50
+vibelang-factory history --search "computed-key"
 vibelang-factory plan "fix(compiler): ..." --epic e4 --task "issue 412"
-vibelang-factory plan "docs: ..." --before m12           # insert; --amend m12 reopens a landed one
+vibelang-factory plan "docs: ..." --before m12
 vibelang-factory start m5704 --lane my-lane
 vibelang-factory note m5704 --section tried "A cache; it went stale."
 ```
 
-Put `Mythical: <id>` in the commit message you enqueue, so the fold maps it back. You
-never approve or fold: a person approves, and main folds in.
+`plan --amend m12` reopens a landed commit. Notes accept tried, evidence or
+superseded. Include `Mythical: <id>` in the enqueued commit message. People
+approve; main folds in. Agents never approve or fold.
 
-Use `--json` when consuming results as data. Successful commands exit 0; invalid
-arguments, refused messages and unavailable backends exit nonzero with a plain error
-on stderr. Do not interpret an unavailable live backend as a successful post. A
-failed reply's reason (no model, a spent daily budget) is the agent's, not yours.
+`issues --json` reads GitHub's issues, committed tasks and VIPs. `issue` runs
+the same least-role flows as the UI:
 
+```sh
+vibelang-factory --mock issue new --title "Tuple narrowing" --text "Nested tuples"
+vibelang-factory --mock issue split --number 42 --title "Narrow elements"
+vibelang-factory --mock issue commit --number 42 --assignee "VibeLang agent"
+vibelang-factory --mock issue draft --title "One feature"
+vibelang-factory --mock issue propose --title "One feature" --text "Summary" --example "const pair = [1, 2]" --prior "Rust"
+```
 
-Sandbox commands share the person's allowance flows. `sandboxes` reads status, minutes and generation;
-`sandbox-start --operation-id <stable-id>` starts it. Pass the read generation to
-`sandbox-run --generation <n> --operation-id <stable-id> <command>` or `sandbox-stop --generation <n>`.
-Reuse the operation id only when retrying the same operation. A stale generation is refused. Mock mode supports
-`pwd`, `ls`, `echo`, redirection and `cat`; it reports unsupported commands honestly. Live compute requires
-Contributor, the authenticated 0019 policy, and the deployment's Container binding. Never put a credential in a
-command or environment. Do not claim a requested or failed operation succeeded.
+Keep `--key` for an identical write; `--recovery <new-id>` explicitly retries a
+settled failure. Proposals create a person-owned review change under
+`docs/design/vips/` and a tracking issue. People review, submit and merge.
+
+`sandboxes` reads status, remaining minutes and generation. `sandbox-start
+--operation-id <stable-id>` starts one. Pass the observed generation to
+`sandbox-run --generation <n> --operation-id <stable-id> <command>` or
+`sandbox-stop --generation <n>`. Reuse an operation ID only for its identical
+operation; stale generations are refused. Mock commands support pwd, ls, echo,
+redirection and cat; unsupported commands fail honestly. Live compute requires
+Contributor, authenticated 0019 policy and the deployment's Container binding.
+Never put credentials in commands or environment.
+
+Success exits 0; invalid input, refusals and unavailable backends exit nonzero
+with an error on stderr. A requested or failed operation is not successful.

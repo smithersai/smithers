@@ -1,6 +1,6 @@
 import { collectAnswer, answerOutcome, commandError, type AskProgress } from "./commandDecision.vibe"
 import { commandConversation } from "../core/protocolDecision.vibe"
-
+import { IssueRequest, IssuesState } from "../core/issueSchemas.vibe"
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
@@ -260,4 +260,65 @@ export const RunSandbox = define("sandbox-run", "Run a terminal command in a san
   const id = input.operationId || (try IdGenerator.defaultIdGenerator.generateId())
   return { output: try (try Factory).sandboxCommand(input.conversation, id, input.command, input.generation) }
 }, (s) => s.output)
-export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox] as const
+
+export schema IssueBrief {
+  readonly number: number
+  readonly title: string
+  readonly state: "open" | "closed"
+  readonly parent: number
+  readonly task: "" | "Queued" | "Running" | "Done"
+  readonly vip: "" | "In review" | "Accepted" | "Declined"
+  readonly assignee: string
+}
+export schema IssuesOutput { readonly seq: number; readonly items: ReadonlyArray<IssueBrief> }
+export const Issues = define("issues", "List GitHub issues, tasks and VIPs.", Tool.EmptyParams, IssuesOutput, {}, effect () => {
+  const api = (try Factory).issues
+  if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
+  const state = api.read() catch effect () => { throw new CommandError({ message: "Issues unavailable." }) }
+  return { seq: state.seq, items: state.items.map((i) => ({ number: i.number, title: i.title, state: i.state, parent: i.parent, task: i.task, vip: i.vip, assignee: i.assignee })) }
+}, (output) => output.items.map((i) => `#${i.number} ${i.title}${i.task === "" ? "" : ` · Task · ${i.task}`}${i.vip === "" ? "" : ` · VIP · ${i.vip}`}`).join("\n"))
+
+const defaultText = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("")))
+const defaultNumber = Schema.Number.pipe(Schema.withDecodingDefaultKey(succeed(0)))
+const AgentIssueOperation = Schema.Literals(["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose"])
+export schema IssueInput {
+  readonly resumeRecovery: defaultText
+  readonly resumeOp: defaultText
+  readonly resumeKey: defaultText
+  readonly recovery: defaultText
+  readonly op: AgentIssueOperation
+  readonly number: defaultNumber
+  readonly parent: defaultNumber
+  readonly title: defaultText
+  readonly text: defaultText
+  readonly assignee: defaultText
+  readonly example: defaultText
+  readonly prior: defaultText
+  readonly key: defaultText
+}
+const IssueOutput = Schema.Struct({ seq: Schema.Number, items: Schema.Array(IssueBrief), detail: Schema.String, draft: IssuesState.fields.draft })
+export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutput, {
+  resumeRecovery: Flag.String("resume-recovery").pipe(Flag.withDefault("")),
+  resumeOp: Flag.String("resume-op").pipe(Flag.withDefault("")),
+  resumeKey: Flag.String("resume-key").pipe(Flag.withDefault("")),
+  recovery: Flag.String("recovery").pipe(Flag.withDefault("")),
+  op: Argument.Literals("op", ["read", "new", "comment", "link", "split", "commit", "uncommit", "draft", "propose"]),
+  number: Flag.Int("number").pipe(Flag.withDefault(0)),
+  parent: Flag.Int("parent").pipe(Flag.withDefault(0)),
+  title: Flag.String("title").pipe(Flag.withDefault("")),
+  text: Flag.String("text").pipe(Flag.withDefault("")),
+  assignee: Flag.String("assignee").pipe(Flag.withDefault("")),
+  example: Flag.String("example").pipe(Flag.withDefault("")),
+  prior: Flag.String("prior").pipe(Flag.withDefault("")),
+  key: Flag.String("key").pipe(Flag.withDefault("")),
+}, effect (input) => {
+  const api = (try Factory).issues
+  if (api === undefined) throw new CommandError({ message: "Issues unavailable." })
+  const key = input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-")
+  const { recovery, resumeOp, resumeKey, resumeRecovery, ...payload } = input
+  const result = api.act({ ...payload, key, ...(resumeOp === "" || resumeKey === "" ? {} : { resumeOp, resumeKey, ...(resumeRecovery === "" ? {} : { resumeRecovery }) }), ...(recovery === "" ? {} : { recovery }) }) catch effect (error) => { throw new CommandError({ message: error.reason === "forbidden" ? "Not allowed." : "Issue change failed." }) }
+  const selected = result.selected ?? input.number
+  return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(result.saved ?? result.items.find(i => i.number === selected) ?? null) }
+}, (output) => JSON.stringify(output))
+
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue] as const

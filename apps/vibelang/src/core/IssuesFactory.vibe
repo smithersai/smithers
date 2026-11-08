@@ -4,7 +4,7 @@ import { FlowEngine } from "@smthrs/engine"
 import { FlowRuntime } from "@smthrs/flow"
 import { applyIssues, canLinkIssues, emptyIssues, issuePermission, setCommitment, setVipReview, type IssueRecord, type Role } from "./conversation.vibe"
 import { IssueHost, issueFlows, issueRegistration, authorizeIssue, issueExecutionId } from "./issueFlows.vibe"
-import { IssueFailure, type IssueRequest, type IssuesApi, vipDocument } from "./issueSchemas.vibe"
+import { IssueFailure, type IssueRequest, type IssuesApi, vipIssueBody } from "./issueSchemas.vibe"
 
 function item(number: number, title: string, extra: Partial<IssueRecord> = {}): IssueRecord {
   return { number, githubId: number + 1000, title, body: "Case branches on tuples should narrow each element without a cast.\n\n```vibe\nmatch (pair) {\n  when [let name, let count]: name\n}\n```", author: "jun", age: "2d", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [], ...extra }
@@ -12,15 +12,15 @@ function item(number: number, title: string, extra: Partial<IssueRecord> = {}): 
 export const fixtureIssues: ReadonlyArray<IssueRecord> = [
   item(48, "Formatter can't resolve its shipped binary on Linux", { labels: ["bug", "cli"], task: "Queued", assignee: "VibeLang agent", comments: 4 }),
   item(46, "is stops matching a subclass of an error after --fix", { author: "maya", age: "3d", labels: ["bug", "compiler"], task: "Running", assignee: "VibeLang agent", comments: 6 }),
-  item(45, "Pattern matching in case", { body: "Let case match on shapes, not just values: tuples, records and literals, with bindings inside the pattern.\n\n```vibe\ncase pair {\n  (0, rest) -> rest\n  (n, _)    -> n\n}\n```\n\nRust — match ergonomics\nScala — pattern matching\nTC39 — proposal-pattern-matching", notes: [{ author: "jun", text: "proposed this VIP", event: true }], vip: "In review", comments: 3, review: "https://github.com/smithersai/vibelang/pull/45", path: "docs/design/vips/0045-pattern-matching.md" }),
-  item(44, "for-await over streams", { body: "Streams should work in `for await`: `for await (const chunk of stream)` reads to the end, typed errors included.", author: "maya", age: "5d", vip: "Accepted", comments: 8, notes: [{ author: "maya", text: "proposed this VIP", event: true }, { author: "will", text: "accepted this VIP", event: true }, { author: "will", text: "committed #47 as a task and assigned Will", event: true }], review: "https://github.com/smithersai/vibelang/pull/44", path: "docs/design/vips/0044-for-await.md" }),
+  item(45, "Pattern matching in case", { body: "Let case match on shapes, not just values: tuples, records and literals, with bindings inside the pattern.\n\n```vibe\ncase pair {\n  (0, rest) -> rest\n  (n, _)    -> n\n}\n```\n\nRust — match ergonomics\nScala — pattern matching\nTC39 — proposal-pattern-matching", notes: [{ age: "2d", author: "jun", text: "proposed this VIP", event: true }], vip: "In review", comments: 3, review: "https://github.com/smithersai/vibelang/pull/45", path: "docs/design/vips/0045-pattern-matching.md" }),
+  item(44, "for-await over streams", { body: "Streams should work in `for await`: `for await (const chunk of stream)` reads to the end, typed errors included.", author: "maya", age: "5d", vip: "Accepted", comments: 8, notes: [{ age: "5d", author: "maya", text: "proposed this VIP", event: true }, { age: "1d", author: "will", text: "accepted this VIP", event: true }, { age: "1d", author: "will", text: "committed #47 as a task and assigned Will", event: true }], review: "https://github.com/smithersai/vibelang/pull/44", path: "docs/design/vips/0044-for-await.md" }),
   item(47, "Stream for-await in the compiler", { parent: 44, task: "Done", state: "closed", assignee: "Will", author: "will" }),
-  item(42, "Case branches on tuples", { labels: ["compiler"], parent: 38, age: "3d", comments: 6, notes: [{ author: "will", text: "added the compiler label", event: true }, { author: "will", text: "linked this under #38", event: true }, { author: "VibeLang agent", text: "Related: #40 Cycle errors read like English.", event: false }] }),
+  item(42, "Case branches on tuples", { body: "case on a pair should match the shape: `(0, rest)` binds `rest`, `(n, _)` binds `n`. Today only literal values match.", labels: ["compiler"], parent: 38, age: "3d", comments: 6, notes: [{ age: "3d", author: "maya", text: "added the compiler label", event: true }, { age: "2d", author: "will", text: "linked this under #38", event: true }, { age: "2d", author: "maya", text: "Rust lets the binding sit inside the pattern. Worth copying.", event: false }, { age: "1d", author: "VibeLang agent", text: "Related: #46 — is stops matching a subclass after --fix.", event: false }] }),
   item(40, "Cycle errors read like English", { author: "noor", age: "4d", parent: 38, comments: 1 }),
   item(39, "Elide type-only imports", { author: "will", age: "4d", parent: 38, task: "Running", labels: ["compiler"], assignee: "VibeLang agent", comments: 5 }),
   item(38, "Effect-native modules", { author: "will", age: "1w", labels: ["language"], comments: 12 }),
   item(36, "Sandbox minutes show in the prompt footer", { author: "noor", age: "1w" }),
-  item(49, "Narrow tuple elements", { parent: 42 }), item(50, "Tuple exhaustiveness", { parent: 42, task: "Queued", assignee: "VibeLang agent" }),
+  item(49, "Parse tuple patterns", { parent: 42 }), item(50, "Type tuple branches", { parent: 42, task: "Queued", assignee: "VibeLang agent" }),
   item(43, "Labeled errors in A!E!R", { state: "closed", vip: "Declined", author: "noor", age: "1w", comments: 9, path: "docs/design/vips/0043-labeled-errors.md", review: "https://github.com/smithersai/vibelang/pull/43" }),
   item(41, "Package exports map", { state: "closed", task: "Done", assignee: "Will", author: "will", age: "6d", comments: 2, parent: 38 }),
   item(37, "Playground share links", { state: "closed", task: "Done", assignee: "VibeLang agent", author: "maya", age: "1w", comments: 3 }),
@@ -38,8 +38,13 @@ effect function personOf(identity: FixtureIdentity): FixturePerson!! {
 }
 
 /** Local fixture mode's identity is selected by its host. Live requests never accept this argument. */
-export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<import("./conversation.vibe").IssuesState>) {
-  const lock = try Semaphore.make(1)
+export interface FixtureStore { readonly state: Ref.Ref<import("./conversation.vibe").IssuesState>; readonly lock: Semaphore.Semaphore }
+export effect function makeIssueStore(): FixtureStore!! {
+  return { state: try Ref.make({ ...emptyIssues, items: fixtureIssues }), lock: try Semaphore.make(1) }
+}
+
+export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<import("./conversation.vibe").IssuesState>, gate?: Semaphore.Semaphore) {
+  const lock = gate ?? (try Semaphore.make(1))
   const host: IssueHost.Shape = {
     perform: (request) => lock.withPermit(effect {
       const person = try personOf(identity)
@@ -66,13 +71,13 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<imp
         const number = Math.max(...items.map((i) => i.number)) + 1
         selected = number
         const vip = request.op === "propose"
-        items = [item(number, request.title.trim(), { body: vip ? vipDocument(request) : request.text, author: actor, age: "just now", parent: request.op === "split" ? request.number : 0, vip: vip ? "In review" : "", path: vip ? `docs/design/vips/${number}.md` : "", review: vip ? `https://github.com/smithersai/vibelang/pull/${number}` : "" }), ...items]
+        items = [item(number, request.title.trim(), { body: vip ? vipIssueBody(request) : request.text, author: actor, age: "just now", parent: request.op === "split" ? request.number : 0, vip: vip ? "In review" : "", path: vip ? `docs/design/vips/${number}.md` : "", review: vip ? `https://github.com/smithersai/vibelang/pull/${number}` : "" }), ...items]
       } else {
         items = items.map((i) => {
           if (i.number !== request.number) return i
-          const event = (text: string, change: Partial<IssueRecord>): IssueRecord => ({ ...i, ...change, notes: [...i.notes, { author: actor, text, event: true }] })
+          const event = (text: string, change: Partial<IssueRecord>): IssueRecord => ({ ...i, ...change, notes: [...i.notes, { age: "just now", author: actor, text, event: true }] })
           switch (request.op) {
-            case "comment": return { ...i, comments: i.comments + 1, notes: [...i.notes, { author: actor, text: request.text.trim(), event: false }] }
+            case "comment": return { ...i, comments: i.comments + 1, notes: [...i.notes, { age: "just now", author: actor, text: request.text.trim(), event: false }] }
             case "commit": return event(`committed this as a task and assigned ${request.assignee}`, setCommitment(i, request.assignee, true))
             case "uncommit": return event("uncommitted this task", setCommitment(i, "", false))
             case "link": return event(`linked this under #${request.parent}`, { parent: request.parent })
@@ -90,9 +95,9 @@ export effect function fixtureHost(identity: FixtureIdentity, state: Ref.Ref<imp
   return host
 }
 
-export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer", participated?: (id: string) => void!!): IssuesApi!!Scope.Scope {
-  const state = try Ref.make({ ...emptyIssues, items: fixtureIssues })
-  const host = try fixtureHost(identity, state)
+export effect function makeIssueFactory(identity: FixtureIdentity = "maintainer", participated?: (id: string) => void!!, shared?: FixtureStore): IssuesApi!!Scope.Scope {
+  const store = shared ?? (try makeIssueStore())
+  const host = try fixtureHost(identity, store.state, store.lock)
   const context = try Layer.build(issueRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(IssueHost, host)), Layer.provide(WebCrypto.layer)))
   const engine = Context.get(context, FlowRuntime.FlowRuntime)
   const act = effect (request: IssueRequest) => {
