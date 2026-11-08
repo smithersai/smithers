@@ -1,0 +1,21 @@
+// Node exercises the unsupported-runtime boundary; the real Bun/CEF success path runs in the desktop E2E.
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import { bunRuntime } from "./native/config.ts"
+import { BunDesktop, BunServer } from "../src/index.ts"
+
+it.effect.skipIf(bunRuntime)("refuses native FFI on Node with the public safe failure", () => effect {
+  const result = try exit(scoped(Layer.build(BunDesktop.layer)))
+  try Effect.try(() => {
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) expect(Cause.squash(result.cause)).toBeInstanceOf(BunDesktop.DesktopUnavailable)
+  })
+})
+
+it.effect("Bun's scoped server requires Bun and releases its listener", () => (effect {
+  const versions = try (try Experimental.Process.Process).versions
+  for (const layer of [BunServer.layer(), BunServer.layer(0)]) {
+    const result = try exit(scoped(Layer.build(layer)))
+    try Effect.try(() => expect(Exit.isSuccess(result)).toBe(versions.bun !== undefined))
+  }
+}).pipe(Effect.provide(ExperimentalNodeServices.layer)))

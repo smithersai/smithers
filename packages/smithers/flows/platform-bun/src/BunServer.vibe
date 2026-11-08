@@ -1,0 +1,8 @@
+// Bun's HTTP server is a host capability; consumers never reach Bun.serve or native sockets.
+/** Provides an Effect HTTP server on loopback. Zero chooses a free port. Only the host loads Bun's adapter. */
+export function layer(port = 0) {
+  return Layer.unwrap(effect {
+    const server = try promise(() => import("@effect/platform-bun/BunHttpServer"))
+    return server.layer({ hostname: "127.0.0.1", port })
+  })
+}

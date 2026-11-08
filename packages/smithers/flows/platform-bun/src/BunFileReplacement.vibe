@@ -1,0 +1,38 @@
+// Crash-safe replacement over the host's real filesystem, including its confined descriptor-relative view.
+import { SecureRandom } from "effect/crypto"
+
+/** The file changed since the caller read it. Its contents never enter the error. */
+export schema error FileChanged {}
+
+/**
+ * Write to a private sibling, sync it through the host, then rename atomically.
+ * Refuse a changed original before rename and accept an already completed replay.
+ * This is optimistic conflict detection, not a lock against an uncooperative external writer.
+ * The supplied filesystem must implement same-directory atomic rename (the Bun host does).
+ */
+effect function replace(fs: FileSystem.FileSystem, name: string, before: string, after: string) {
+  const current = try fs.readFileString(name)
+  if (current === after) return
+  if (current !== before) throw new FileChanged()
+  const stat = try fs.stat(name)
+  const random = try SecureRandom.SecureRandom
+  const path = try Path.Path
+  const temporary = path.join(path.dirname(name), `.smithers-${try random.uuidV4()}.tmp`)
+  try ensuring(effect {
+    try fs.writeFileString(temporary, after, { flag: "wx", mode: stat.mode & 0o777 })
+    try fs.chmod(temporary, stat.mode & 0o777)
+    if ((try fs.readFileString(name)) !== before) throw new FileChanged()
+    try fs.rename(temporary, name)
+  }, fs.remove(temporary, { force: true }).pipe(Effect.orDie))
+}
+
+/** Atomically replace a file without exposing a partial write. @since 1.0.0-rc.16 */
+export function replaceFileString(fs: FileSystem.FileSystem, name: string, before: string, after: string) {
+  return withSpan(effect {
+    const result = try exit(replace(fs, name, before, after))
+    const outcome = Exit.isSuccess(result) ? "done" : "failed"
+    try Effect.logInfo("filesystem.replace").pipe(Effect.annotateLogs({ outcome }))
+    try Metric.update(Metric.withAttributes(Metric.counter("filesystem_replacements", { incremental: true }), { outcome }), 1)
+    return try result
+  }, "filesystem.replace")
+}

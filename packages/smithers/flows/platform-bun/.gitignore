@@ -1,0 +1,5 @@
+/test/native/build/
+/test/native/artifacts/
+/test/native/dist-host/
+
+test/native/artifacts-last.log
