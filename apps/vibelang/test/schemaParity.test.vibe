@@ -10,9 +10,23 @@ it("uses the same entry codec for client state and snapshots", () => {
   expect(Schema.is(Entry)(entry)).toBe(true)
 })
 
-import { Commit } from "../src/history/schemas.vibe"
+import { Commit, Head, EpicCount, EpicPage } from "../src/history/schemas.vibe"
 it("keeps mythical ranks finite nonnegative integers on the JSON wire", () => {
   const commit = { id: "m1", epic: "e1", rank: 0, title: "Fuzz", state: "planned", task: "", lane: "", notes: [] }
   expect(Schema.is(Commit)(commit)).toBe(true)
   for (const rank of [-Infinity, Infinity, NaN, -1, 0.5]) expect(Schema.is(Commit)({ ...commit, rank })).toBe(false)
+})
+
+it("refuses impossible history page counts and ranks before JSON loses their values", () => {
+  const cases: ReadonlyArray<readonly [Schema.Constraint, Readonly<Record<string, unknown>>, ReadonlyArray<string>]> = [
+    [Head, { id: "m1", epic: "e1", rank: 0, title: "Change", state: "planned", task: "", lane: "", notes: 0, folds: 0 }, ["rank", "notes", "folds"]],
+    [EpicCount, { id: "e1", title: "Epic", commits: 0, folds: 0 }, ["commits", "folds"]],
+    [EpicPage, { seq: 0, epic: "e1", from: 0, total: 0, commits: [] }, ["from", "total"]],
+  ]
+  for (const [schema, valid, fields] of cases) {
+    expect(Schema.is(schema)(valid)).toBe(true)
+    for (const field of fields) {
+      for (const number of [-Infinity, Infinity, NaN, -1, 0.5]) expect(Schema.is(schema)({ ...valid, [field]: number })).toBe(false)
+    }
+  }
 })

@@ -133,3 +133,19 @@ describe("the mock chat's agent", () => {
     }
   }, 30_000)
 })
+
+it.effect("the product mock records a replayed agent plan and note only once", () => reading({ role: "maintainer", name: "Ada", agent: true }, effect (history) => {
+  const request = { how: "append" as const, epic: "e1", newEpic: "", target: "", title: "One planned change", task: "" }
+  const planned = try plan(history, request, "same-plan")
+  const before = try history.outline()
+  const replayed = try plan(history, request, "same-plan")
+  const after = try history.outline()
+  try note(history, planned.id, "tried", "One attempt.", "same-note")
+  try note(history, planned.id, "tried", "One attempt.", "same-note")
+  const page = try history.commit(planned.id)
+  try Effect.try(() => {
+    expect(replayed).toEqual(planned)
+    expect(after.seq).toBe(before.seq)
+    expect(page.commit?.notes.filter((entry) => entry.text === "One attempt.")).toHaveLength(1)
+  })
+}))

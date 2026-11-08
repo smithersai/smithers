@@ -361,7 +361,7 @@ export type Intent =
   | { readonly type: "OpenPane"; readonly id: string; readonly url: string }
 
 /** Why the sequencer refused an intent. */
-export type Refusal = "empty" | "too-long" | "duplicate" | "busy" | "not-replying" | "forbidden"
+export type Refusal = "empty" | "too-long" | "duplicate" | "busy" | "not-replying" | "forbidden" | "full"
 
 /** The sequencer's answer: the next event, or why there is none. */
 export type Decision =
@@ -386,7 +386,7 @@ function refused(refusal: Refusal): Decision {
  * applying it changes the conversation the way its type says.
  */
 //@ verify
-//@ requires 0 <= conversation.seq && conversation.seq < 9007199254740991
+//@ requires 0 <= conversation.seq && conversation.seq <= 9007199254740991
 //@ ensures \result.ok && intent.type == "GrantRole" ==> intent.id != "" && intent.role != "viewer"
 //@ ensures \result.ok && intent.type == "GrantRole" && intent.mode == "person" && intent.by != intent.id ==> intent.by != "" && exists(i, 0 <= i && i < conversation.roles.length && conversation.roles[i].id == intent.by && conversation.roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> conversation.roles[j].id != intent.by))
 //@ ensures \result.ok && intent.type == "Authorize" && (intent.action == "merge" || intent.action == "settings" || intent.action == "roles") ==> intent.by != "" && exists(i, 0 <= i && i < conversation.roles.length && conversation.roles[i].id == intent.by && conversation.roles[i].role == "maintainer" && forall(j, 0 <= j && j < i ==> conversation.roles[j].id != intent.by))
@@ -403,17 +403,20 @@ function refused(refusal: Refusal): Decision {
 //@ ensures intent.type == "StartTour" && \result.ok ==> \result.event.type == "TourStarted" && \result.event.id == intent.id
 //@ ensures \result.ok && \result.event.type == "TourEnded" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == \result.event.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "")
 //@ ensures \result.ok && \result.event.type == "PaneOpened" ==> conversation.agent == "working" && conversation.replying == \result.event.id && \result.event.id != "" && \result.event.url != ""
-//@ ensures intent.type == "Post" && intent.text.trim() != "" && intent.text.trim().length <= MAX_TEXT && intent.id != "" && intent.clientId != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != intent.id && conversation.entries[i].clientId != intent.clientId) ==> \result.ok && \result.event.type == "Posted" && \result.event.text == intent.text.trim() && \result.event.id == intent.id && \result.event.name == intent.name && \result.event.clientId == intent.clientId
-//@ ensures intent.type == "StartReply" && conversation.agent != "working" && intent.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != intent.id) && intent.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == intent.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != intent.inReplyTo) ==> \result.ok && \result.event.type == "ReplyStarted" && \result.event.id == intent.id
-//@ ensures intent.type == "StartTour" && conversation.agent != "working" && intent.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != intent.id) ==> \result.ok
-//@ ensures (intent.type == "AppendReply" || intent.type == "RestartReply" || intent.type == "FinishReply" || intent.type == "FailReply") ==> (\result.ok == (conversation.agent == "working" && conversation.replying == intent.id && intent.id != ""))
+//@ ensures conversation.seq < 9007199254740991 ==> (intent.type == "Post" && intent.text.trim() != "" && intent.text.trim().length <= MAX_TEXT && intent.id != "" && intent.clientId != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != intent.id && conversation.entries[i].clientId != intent.clientId) ==> \result.ok && \result.event.type == "Posted" && \result.event.text == intent.text.trim() && \result.event.id == intent.id && \result.event.name == intent.name && \result.event.clientId == intent.clientId)
+//@ ensures conversation.seq < 9007199254740991 ==> (intent.type == "StartReply" && conversation.agent != "working" && intent.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != intent.id) && intent.inReplyTo != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "person" && conversation.entries[i].id == intent.inReplyTo) && forall(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].author == "agent" ==> conversation.entries[i].inReplyTo != intent.inReplyTo) ==> \result.ok && \result.event.type == "ReplyStarted" && \result.event.id == intent.id)
+//@ ensures conversation.seq < 9007199254740991 ==> (intent.type == "StartTour" && conversation.agent != "working" && intent.id != "" && forall(i, 0 <= i && i < conversation.entries.length ==> conversation.entries[i].id != intent.id) ==> \result.ok)
+//@ ensures conversation.seq < 9007199254740991 ==> ((intent.type == "AppendReply" || intent.type == "RestartReply" || intent.type == "FinishReply" || intent.type == "FailReply") ==> (\result.ok == (conversation.agent == "working" && conversation.replying == intent.id && intent.id != "")))
 //@ ensures intent.type == "AppendReply" && \result.ok ==> \result.event.type == "ReplyDelta" && \result.event.id == intent.id && \result.event.text == intent.text
 //@ ensures intent.type == "RestartReply" && \result.ok ==> \result.event.type == "ReplyRestarted" && \result.event.id == intent.id
 //@ ensures intent.type == "FinishReply" && \result.ok ==> \result.event.type == "ReplyFinished" && \result.event.id == intent.id
 //@ ensures intent.type == "FailReply" && \result.ok ==> \result.event.type == "ReplyFailed" && \result.event.id == intent.id && \result.event.reason == intent.reason
-//@ ensures intent.type == "EndTour" && conversation.agent == "working" && conversation.replying == intent.id && intent.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == intent.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") ==> \result.ok && \result.event.id == intent.id
-//@ ensures intent.type == "OpenPane" && conversation.agent == "working" && conversation.replying == intent.id && intent.id != "" && intent.url != "" ==> \result.ok && \result.event.id == intent.id && \result.event.type == "PaneOpened" && \result.event.url == intent.url
+//@ ensures conversation.seq < 9007199254740991 ==> (intent.type == "EndTour" && conversation.agent == "working" && conversation.replying == intent.id && intent.id != "" && exists(i, 0 <= i && i < conversation.entries.length && conversation.entries[i].id == intent.id && conversation.entries[i].author == "agent" && conversation.entries[i].inReplyTo == "") ==> \result.ok && \result.event.id == intent.id)
+//@ ensures conversation.seq < 9007199254740991 ==> (intent.type == "OpenPane" && conversation.agent == "working" && conversation.replying == intent.id && intent.id != "" && intent.url != "" ==> \result.ok && \result.event.id == intent.id && \result.event.type == "PaneOpened" && \result.event.url == intent.url)
+//@ ensures conversation.seq == 9007199254740991 ==> !\result.ok && \result.refusal == "full"
+//@ ensures \result.ok ==> conversation.seq < 9007199254740991 && \result.event.seq == conversation.seq + 1 && \result.event.seq <= 9007199254740991
 export function decide(conversation: Conversation, intent: Intent): Decision {
+  if (conversation.seq >= 9007199254740991) return refused("full")
   const seq = conversation.seq + 1
   switch (intent.type) {
     case "GrantRole":

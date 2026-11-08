@@ -7,7 +7,7 @@ import { nonnegativeCursor } from "./protocolDecision.vibe"
 export const Seq = Schema.Int.check(Schema.makeFilter(nonnegativeCursor, Schema.isGreaterThanOrEqualTo(0).annotations))
 
 /** Why the sequencer refused an intent (`Refusal` in conversation.vibe). */
-export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden"])
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden", "full"])
 
 export schema Entry {
   readonly id: string

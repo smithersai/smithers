@@ -35,7 +35,7 @@ export schema PostBody {
 }
 
 /** Why the sequencer refused a post, with HTTP 409. */
-export schema Refusal { readonly refusal: "empty" | "too-long" | "duplicate" | "busy" | "not-replying" }
+export schema Refusal { readonly refusal: "empty" | "too-long" | "duplicate" | "busy" | "not-replying" | "full" }
 
 /** The largest post body the API reads: the longest text, its client id and name, as UTF-8, with room for JSON. */
 export const MAX_POST_BYTES = MAX_TEXT * 4 + 4096

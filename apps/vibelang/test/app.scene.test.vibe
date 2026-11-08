@@ -239,7 +239,7 @@ describe("product language and authors", () => {
       Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 2, id: "m2", clientId: "other-1", name: "Guest", text: "theirs" } })),
       expect(text("You")).toExist(), expect(text("Guest")).toExist())
   })
-  for (const [reason, label] of [["empty", "Empty message"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["Factory closed", "Send failed"]]) {
+  for (const [reason, label] of [["empty", "Empty message"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["full", "Conversation full"], ["Factory closed", "Send failed"]]) {
     it(`a refused post uses product words for ${reason}`, () => {
       scene({ update, view }, given({ ...home, surface: "chat", client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: reason! }] } }),
         expect(text(label!)).toExist(), expect(role("button", { name: "Retry" })).toExist())

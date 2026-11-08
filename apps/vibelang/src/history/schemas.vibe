@@ -97,15 +97,15 @@ export function decodeStoredHistory(json: string) {
 export schema Head {
   readonly id: string
   readonly epic: string
-  readonly rank: number
+  readonly rank: Seq
   readonly title: string
   readonly state: "planned" | "working" | "approved" | "landed"
   readonly task: string
   readonly lane: string
-  readonly notes: number
-  readonly folds: number
+  readonly notes: Seq
+  readonly folds: Seq
 }
-export schema EpicCount { readonly id: string; readonly title: string; readonly commits: number; readonly folds: number }
+export schema EpicCount { readonly id: string; readonly title: string; readonly commits: Seq; readonly folds: Seq }
 export schema Outline {
   readonly seq: Seq
   readonly main: string
@@ -115,8 +115,8 @@ export schema Outline {
 export schema EpicPage {
   readonly seq: Seq
   readonly epic: string
-  readonly from: number
-  readonly total: number
+  readonly from: Seq
+  readonly total: Seq
   readonly commits: ReadonlyArray<Head>
 }
 export schema CommitPage { readonly seq: Seq; readonly commit: Commit | null; readonly real: ReadonlyArray<Real> }

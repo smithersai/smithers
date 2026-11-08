@@ -1,3 +1,4 @@
+import { postFailure } from "./screenDecision.vibe"
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
 // way it does on smithers.sh; the splash and the frame are this app's (`vl-*`, styles.css).
 import { Option } from "effect"
@@ -221,16 +222,6 @@ function ownPost(clientId: string, session: string): boolean {
   return clientId.startsWith(prefix) && /^[1-9]\d*$/.test(clientId.slice(prefix.length))
 }
 
-function postFailure(reason: string): string {
-  switch (reason) {
-    case "empty": return "Empty message"
-    case "too-long": return "Message too long"
-    case "duplicate": return "Already sent"
-    case "busy": return "Agent busy"
-    case "not-replying": return "Answer unavailable"
-    default: return "Send failed"
-  }
-}
 
 function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): Html {
   return h.textarea([

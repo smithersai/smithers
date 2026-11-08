@@ -65,7 +65,8 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
     )
     const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
 
-    effect function executionId(prefix: string) {
+    effect function executionId(prefix: string, operation?: string) {
+      if (operation !== undefined) return `${prefix}/operation/${try digest.digestHex(Digest.sha256, new TextEncoder().encode(JSON.stringify([prefix, operation])))}`
       return `${prefix}/${try Ref.updateAndGet(executions, (value) => value + 1)}`
     }
 
@@ -85,14 +86,14 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
       commit: (id) => paged((history) => commitPageOf(history, id)),
       search: (query) => paged((history) => matchesOf(history, query)),
       events: (after) => sequencer.follow(after),
-      plan: effect (request) => {
-        return try settled(try Effect.orDie(engine.execute(Plan, { executionId: try executionId("plan"), payload: request })))
+      plan: effect (request, operation?: string) => {
+        return try settled(try Effect.orDie(engine.execute(Plan, { executionId: try executionId("plan", operation), payload: request })))
       },
-      start: effect (id, lane) => {
-        try settled(try Effect.orDie(engine.execute(Start, { executionId: try executionId("start"), payload: { id, lane } })))
+      start: effect (id, lane, operation?: string) => {
+        try settled(try Effect.orDie(engine.execute(Start, { executionId: try executionId("start", operation), payload: { id, lane } })))
       },
-      note: effect (id, section, text) => {
-        try settled(try Effect.orDie(engine.execute(Note, { executionId: try executionId("note"), payload: { id, section, text } })))
+      note: effect (id, section, text, operation?: string) => {
+        try settled(try Effect.orDie(engine.execute(Note, { executionId: try executionId("note", operation), payload: { id, section, text } })))
       },
       approve: effect (id) => {
         try settled(try Effect.orDie(engine.execute(Approve, { executionId: try executionId("approve"), payload: { id } })))

@@ -24,7 +24,9 @@ export function LiveMythical(origin: string) {
     const client = try HttpClient.HttpClient
 
     /** Posts `body` to the write `write`: what it wrote, or its refusal as `Refused`. */
-    effect function write(name: string, body: object) {
+    effect function write(name: string, body: object, operation?: string) {
+      // Trusted agent replay uses HistoryObject.readerOver; public HTTP does not accept its private identity.
+      if (operation !== undefined) throw new Unavailable({ reason: "history replay unavailable" })
       const request = HttpClientRequest.post(`${origin}${HISTORY_PATH}/${name}`).pipe(HttpClientRequest.bodyJsonUnsafe(body))
       const response: HttpClientResponse.HttpClientResponse = try Effect.mapError(client.execute(request), unavailable(`${name} unreachable`))
       const json = try Effect.mapError(response.json, unavailable(`${name} is not JSON`))
@@ -68,12 +70,12 @@ export function LiveMythical(origin: string) {
             Stream.mapError(unavailable("history events interrupted")),
           )
         }),
-      plan: effect (request) => (try write("plan", request)).id,
-      start: effect (id, lane) => {
-        try write("start", { id, lane })
+      plan: effect (request, operation?: string) => (try write("plan", request, operation)).id,
+      start: effect (id, lane, operation?: string) => {
+        try write("start", { id, lane }, operation)
       },
-      note: effect (id, section, text) => {
-        try write("note", { id, section, text })
+      note: effect (id, section, text, operation?: string) => {
+        try write("note", { id, section, text }, operation)
       },
       approve: effect (id) => {
         try write("approve", { id })

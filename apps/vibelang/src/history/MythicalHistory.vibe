@@ -22,10 +22,10 @@ export service Mythical {
   commit(id: string): CommitPage!Unavailable
   search(query: string): Matches!Unavailable
   events(after: number): Stream.Stream<Event, Unavailable>
-  /** Plans a task onto the stack; answers the mythical commit's id. */
-  plan(request: PlanRequest): string!(Unavailable | Refused)
-  start(id: string, lane: string): void!(Unavailable | Refused)
-  note(id: string, section: Section, text: string): void!(Unavailable | Refused)
+  /** Plans a task onto the stack; answers its id. Optional agent identities replay in mock mode; the public HTTP client refuses them. */
+  plan(request: PlanRequest, operation?: string): string!(Unavailable | Refused)
+  start(id: string, lane: string, operation?: string): void!(Unavailable | Refused)
+  note(id: string, section: Section, text: string, operation?: string): void!(Unavailable | Refused)
   approve(id: string): void!(Unavailable | Refused)
   /** Folds main's new commits; answers how many. */
   fold(): number!(Unavailable | Refused)

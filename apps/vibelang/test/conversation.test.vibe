@@ -361,3 +361,14 @@ describe("a client", () => {
     expect(resume(newClient)).toBe(newClient)
   })
 })
+
+it("records the last safe event and refuses further intents without unsafe numbering", () => {
+  const last = { ...empty, seq: Number.MAX_SAFE_INTEGER - 1 }
+  const posted = decide(last, { type: "Post", id: "last", clientId: "last", name: "Guest", text: "hello" })
+  expect(posted.ok).toBe(true)
+  if (!posted.ok) return
+  expect(posted.event.seq).toBe(Number.MAX_SAFE_INTEGER)
+  const exhausted = apply(last, posted.event)
+  expect(decide(exhausted, { type: "Post", id: "next", clientId: "next", name: "Guest", text: "hello" })).toEqual({ ok: false, refusal: "full" })
+  expect(decide(exhausted, { type: "StartTour", id: "tour" })).toEqual({ ok: false, refusal: "full" })
+})

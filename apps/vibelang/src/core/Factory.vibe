@@ -26,7 +26,7 @@ export schema SandboxSnapshot {
 /** vibelang.smithers.sh couldn't be reached, or answered with something that isn't the protocol. */
 export schema error Unavailable { reason: string }
 
-/** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy` or `not-replying`. */
+/** The sequencer refused a post: `empty`, `too-long`, `duplicate`, `busy`, `not-replying` or `full`. */
 export schema error Refused { refusal: string }
 
 /**

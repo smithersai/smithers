@@ -69,3 +69,23 @@ an unexecuted source return. Browser line/statement results are diagnostic, and 
 establish the requested coverage until that defect is fixed. No compiler output or source maps were changed as a
 workaround. Workerd's inspector also refuses precise V8 profiling; real workerd request evidence is separate from
 Node coverage of the same shared Worker functions. Real-model happy paths still need an authorized model binding.
+
+### Further generated boundary regressions
+
+Page schemas now use the shared finite nonnegative safe-integer `Seq` for head ranks, note/fold counts, epic
+counts and page offsets/totals. Schema-generated NaN and Infinity previously encoded as JSON null and failed
+round-trip. The targets keep their broad original input schemas, replay those exact values and require typed
+refusal before accepting valid round trips.
+
+At `Number.MAX_SAFE_INTEGER`, `decide` previously accepted an event with an unsafe cursor. It now refuses
+`full`, including tour commands; the last safe post still succeeds. The existing safety contracts remain,
+acceptance contracts retain their domain below the limit, and new contracts cover the terminal cursor. The
+web labels the refusal “Conversation full”. The latest isolated-assertion Dafny check verified 5,812 conversation and 22 screen obligations; a
+negative control removing the boundary guard failed two obligations. The negative control used the preceding non-isolated verifier configuration; its two failed obligations
+are a rejection receipt, not a comparable verification count.
+
+A repeated agent tool call in product mock mode previously created a second history event. The mock now
+uses the durable engine's execution identity derived from the operation key; human writes retain distinct
+identities. The public HTTP client refuses this private agent capability before transport. The trusted
+Worker adapter continues to supply its existing private replay identity. Plan/note replay has a failing-first
+regression; fuzzing also exercises start and the typed public-boundary refusal.
