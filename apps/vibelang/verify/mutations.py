@@ -13,6 +13,11 @@ root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
+('wiki-edits-stale','applyWikiEdits','if (event.seq !== state.seq + 1) return state','if (event.seq === state.seq + 1) return state','a stale wiki observation changes nothing'),
+('wiki-edits-pages','applyWikiEdits','return { seq: event.seq, pages: event.pages }','return { seq: event.seq, pages: state.pages }','a fresh wiki observation replaces the projected pages'),
+('wiki-least-role','leastRole','case "action": case "sandbox": case "triage": case "wiki": return "contributor"','case "action": case "sandbox": case "triage": case "wiki": return "viewer"','wiki editing names contributor as its least role'),
+('wiki-editor-stale','currentWikiEditor','request === activeRequest','request !== activeRequest','a stale editor response cannot close the current edit'),
+('wiki-policy-save','wikiPolicyAction','if (op === "save") return "merge"','if (op === "save") return "wiki"','only a maintainer uses Save'),
 ('wiki-person-decide','decide','if (intent.id !== "" && !isReplying(conversation, intent.id)) return refused("not-replying")','if (!isReplying(conversation, intent.id)) return refused("not-replying")','a person can open a wiki page while the agent is idle'),
 ('wiki-person-apply','apply','if ((event.id !== "" && !isReplying(conversation, event.id)) || event.url === "") return next','if (!isReplying(conversation, event.id) || event.url === "") return next','a person opening is projected by every client'),
 ('wiki-person-url','decide','return accepted({ type: "PaneOpened", seq, id: intent.id, url: intent.url })','return accepted({ type: "PaneOpened", seq, id: intent.id, url: "wrong" })','the accepted pane event preserves the requested page'),
@@ -123,6 +128,18 @@ cases.extend([("src/core/conversation.vibe", *case) for case in [
 ('issues-decline','declineVip','state: "closed"','state: issue.state','a declined VIP is closed'),
 ('issues-review-task','approveVip','...issue, vip:','...issue, task: "Queued", vip:','accepting a VIP does not silently commit work'),
 ]])
+cases += [
+('src/core/conversation.vibe','wiki-editor-page','currentWikiEditor','page === activePage','page !== activePage','an editor response must name its current page'),
+('src/core/conversation.vibe','wiki-editor-empty','currentWikiEditor','page !== ""','true','an empty page never identifies an editor'),
+('src/core/conversation.vibe','wiki-policy-read','wikiPolicyAction','if (op === "read") return "read"','if (op === "read") return "wiki"','wiki reads remain public'),
+('src/core/conversation.vibe','wiki-policy-propose','wikiPolicyAction','return "wiki"','return "merge"','contributors can propose and draft'),
+('src/core/conversation.vibe','wiki-role-gate','wikiPermission','return may(role, wikiPolicyAction(op))','return may(role, "read")','wiki writes retain the exact least role'),
+('src/core/conversation.vibe','wiki-edits-seq','applyWikiEdits','seq: event.seq, pages: event.pages','seq: state.seq, pages: event.pages','the next wiki observation advances its cursor'),
+('src/core/wikiDecision.vibe','wiki-person-only','wikiSubmissionAllowed','kind === "person"','true','an agent can never submit a wiki review'),
+('src/core/wikiDecision.vibe','wiki-agent-draft','wikiSubmissionAllowed','operation === "draft"','false','an agent can draft for review'),
+('src/core/wikiDecision.vibe','wiki-agent-read','wikiSubmissionAllowed','operation === "read"','false','an agent can read'),
+('src/core/protocolDecision.vibe','wiki-account-route','accountRoute','path === "/api/wiki" || ','','wiki uses the account credential boundary'),
+]
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...]')
 out=pathlib.Path(sys.argv[1]).resolve()
 selected=set(sys.argv[2:])

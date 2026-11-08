@@ -1,0 +1,44 @@
+// Fault injection at the draft agent and budget services, with the product wiki flow on the real durable engine.
+import { expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { WebCrypto } from "@smthrs/crypto"
+import { ChatModel, Spend } from "../worker/Reply.vibe"
+import { WikiDraftAgent, wikiAgentLayer, wikiWriter } from "../worker/WikiDraft.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { WikiWriter } from "../src/core/WikiWriter.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
+import { WikiHost, wikiEditFlows, wikiEditRegistration } from "../src/core/wikiFlows.vibe"
+import { pages } from "../src/core/wiki.vibe"
+
+const source = pages.find(page => page.id === "roadmap")!.source
+const inaccessible: Spend.Shape = {
+  admit: () => Effect.fail(new Unreachable({ what: "budget" })),
+  spend: () => Effect.die("A refused draft must not settle a charge"),
+}
+
+/** The fixture source adapter calls the production writer from an actual vibelang/wiki/draft execution. */
+effect function attempt(writer: WikiWriter.Shape) {
+  const host: WikiHost.Shape = { perform: effect (request) => ({ seq: 0, pages: [], draft: try writer.draft({ page: request.page, source, ask: request.text }) }) }
+  const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, host)), Layer.provide(WebCrypto.layer)))
+  return try Effect.result(Context.get(context, FlowRuntime.FlowRuntime).execute(wikiEditFlows.find(flow => flow._tag === "vibelang/wiki/draft")!, { executionId: "wiki/person/draft/writer-fault", payload: { op: "draft", page: "roadmap", base: "", text: "private-draft-ask", key: "writer-fault" } }))
+}
+
+it.live("an absent model fails before budget admission or any agent execution", () => scoped(effect {
+  const context = try Layer.build(wikiWriter.pipe(Layer.provide(wikiAgentLayer.pipe(Layer.provide(Layer.succeed(ChatModel, { model: undefined, unusable: "unconfigured" })))), Layer.provide(Layer.succeed(Spend, inaccessible))))
+  const result = try attempt(Context.get(context, WikiWriter))
+  try Effect.try(() => expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "no-model" } }))
+}))
+
+it.live("a faulty budget prevents the draft agent and returns a content-free budget refusal", () => scoped(effect {
+  const calls = try Ref.make(0)
+  const faulty: WikiDraftAgent.Shape = { available: true, run: effect () => { try Ref.update(calls, count => count + 1); throw new WikiFailure({ reason: "draft" }) } }
+  const context = try Layer.build(wikiWriter.pipe(Layer.provide(Layer.succeed(WikiDraftAgent, faulty)), Layer.provide(Layer.succeed(Spend, inaccessible))))
+  const result = try attempt(Context.get(context, WikiWriter))
+  const ran = try Ref.get(calls)
+  try Effect.try(() => {
+    expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "budget" } })
+    expect(ran).toBe(0)
+    expect(JSON.stringify(result)).not.toContain("private-draft-ask")
+  })
+}))

@@ -45,6 +45,8 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
     for (const [file, content] of Object.entries(input)) try fs.writeFileString(path.join(wiki, file), content)
     const executable = try node()
     const script = path.join(root, "scripts/wiki.js")
+    // A clean wiki build must not depend on its own generated output.
+    try fs.remove(path.join(root, "src/assets/wiki.generated.js"), { force: true })
     const built = try run(executable, [script])
     const source = try fs.readFileString(target)
     const pages = try Effect.try(() => JSON.parse(/^export const pages = (.+)$/m.exec(source)![1]!) as Array<Page>)
@@ -65,7 +67,7 @@ it.live("builds the wiki command's links, metadata and suite receipts determinis
       expect(pages.map(page => page.id)).toEqual(Object.keys(input).filter(file => file.endsWith(".md")).concat("decisions.md").sort().map(file => file.slice(0, -3)))
       const home = pages.find(page => page.id === "index")!
       expect(home).toMatchObject({ title: "Factory", label: "Home", decision: false, date: "", rulings: [] })
-      for (const link of ["/wiki/roadmap#next", "/wiki/designs/index", "/wiki/decisions", "https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/../AGENTS#rules", "https://example.test/docs", "#factory", "/wiki/rulings"]) expect(home.html).toContain(`href="${link}"`)
+      for (const link of ["/wiki/roadmap#next", "/wiki/designs/index", "/wiki/decisions", "https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/../AGENTS.md#rules", "https://example.test/docs", "#factory", "/wiki/rulings"]) expect(home.html).toContain(`href="${link}"`)
       expect(pages.find(page => page.id === "designs/detail")!.html).toContain('href="/wiki/rulings"')
       expect(pages.find(page => page.id === "designs/index")!.label).toBe("Designs")
       expect(pages.find(page => page.id === "decisions/0000-no-header")).toMatchObject({ title: "decisions/0000-no-header", label: "0000 no-header", rulings: ["VL-2", "VL-7"], status: "Accepted", date: "" })

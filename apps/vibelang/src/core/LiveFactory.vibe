@@ -2,6 +2,7 @@ import { responseKind } from "./protocolDecision.vibe"
 import * as LiveAccounts from "./LiveAccounts.vibe"
 
 import { liveIssues } from "./LiveIssues.vibe"
+import { liveWiki } from "./LiveWiki.vibe"
 // The live factory: `Factory` over the API Worker's HTTP protocol (wire.vibe, wiki/decisions/0010-live-agent.md),
 // through Effect's `HttpClient`, so the browser, the CLI and the MCP server share it. The sequencer is the
 // conversation's Durable Object; this layer only carries intents to it and its numbered events back.
@@ -62,6 +63,7 @@ export function LiveFactory(origin: string) {
       mode,
       accounts: try LiveAccounts.make(origin),
       issues,
+      wiki: try liveWiki(origin),
       post: effect (conversation: string, clientId: string, name: string, text: string) => {
         const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + "/posts").pipe(
           HttpClientRequest.bodyJsonUnsafe({ clientId, name, text }),

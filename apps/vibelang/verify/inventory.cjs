@@ -57,6 +57,7 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Post/StartTour/EndTour record-before-follow-up-once, Reply start/composition/settlement and Tour active/ready/one-speaker/terminal ordering models, exact closed invariants and at-most-one stage bounds; dispatch admission, append order, tour terminal events, reading time, first undispatched source index, exact private visit/hold identities and scalar walk control choices; proved.',
 };
 const functionBoundaries = {
+  "src/core/wikiDecision.vibe:wikiSubmissionAllowed": "Proved exact person-only submission guard; reads and drafts remain agent-invocable. Principal authentication and actual external writes are host boundaries.",
   "src/history/roles.vibe:atLeast": "Calls the shared proved role threshold; validated roles use the existing authoritative standing order.",
   "src/history/wire.vibe:statusOf": "Calls proved exact forbidden/unavailable/other refusal HTTP status mapping; no codec decision here.",
   "src/history/flows.vibe:signature": "Calls proved exact name/agent signature projection.",

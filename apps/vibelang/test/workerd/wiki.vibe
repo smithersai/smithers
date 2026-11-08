@@ -1,0 +1,63 @@
+// The wiki fixture repository on workerd's real persistent flow engine (VL-13); there is no HTTP interception.
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { fixtureWikiHost, makeWikiStore } from "../../src/core/WikiFactory.vibe"
+import { WikiHost } from "../../src/core/wikiFlows.vibe"
+import { serveWiki, WikiAuthority } from "../../worker/Wiki.vibe"
+import type { Principal } from "../../worker/Issues.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+
+type FixtureRole = Principal["role"]
+const people: Record<string, Principal> = {
+  maintainer: { id: "fixture-maintainer", login: "will", role: "maintainer", token: Redacted.make("fixture-only") },
+  contributor: { id: "fixture-contributor", login: "jun", role: "contributor", token: Redacted.make("fixture-only") },
+  community: { id: "fixture-community", login: "noor", role: "community", token: Redacted.make("fixture-only") },
+  viewer: { id: "", login: "Guest", role: "viewer", token: Redacted.make("") },
+}
+
+const StoredPages = Schema.Struct({ pages: Schema.Array(Schema.Struct({ id: Schema.String, source: Schema.String, revision: Schema.String })), seq: Schema.Number })
+const StoredDrafts = Schema.Array(Schema.Struct({ person: Schema.String, page: Schema.String, text: Schema.String }))
+const StoredProposals = Schema.Array(Schema.Struct({ person: Schema.String, op: Schema.Literals(["save", "propose"]), key: Schema.String, base: Schema.String, text: Schema.String, page: Schema.String, review: Schema.String }))
+
+/** The fixture repository's durable state: pages, proposals and drafts ride the object's SQLite between requests. */
+export class WikiObject {
+  constructor(readonly state: { readonly storage: Storage; readonly id: { toString(): string } }) {}
+  async fetch(request: Request): Promise<Response> {
+    const state = this.state
+    const storage = state.storage
+    if (new URL(request.url).pathname === "/runs") {
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY run_id").toArray()))
+    }
+    const role = (request.headers.get("x-fixture-role") ?? "maintainer") as FixtureRole
+    const person = people[role] ?? people.maintainer!
+    const result = await runPromise(scoped(effect {
+      const store = try makeWikiStore()
+      const pages = try promise(() => storage.get("fixture/pages"))
+      const drafts = try promise(() => storage.get("fixture/drafts"))
+      const proposals = try promise(() => storage.get("fixture/proposals"))
+      if (Option.isSome(Schema.decodeUnknownOption(StoredPages)(pages))) {
+        const stored = Schema.decodeUnknownSync(StoredPages)(pages)
+        try Ref.set(store.state, { seq: stored.seq, pages: stored.pages })
+      }
+      if (Option.isSome(Schema.decodeUnknownOption(StoredDrafts)(drafts))) try Ref.set(store.drafts, Schema.decodeUnknownSync(StoredDrafts)(drafts))
+      if (Option.isSome(Schema.decodeUnknownOption(StoredProposals)(proposals))) try Ref.set(store.proposals, Schema.decodeUnknownSync(StoredProposals)(proposals))
+      const host = try fixtureWikiHost(effect () => person, store)
+      const authority: WikiAuthority.Shape = { current: () => Effect.succeed(person) }
+      const response = try serveWiki(state.id.toString(), storage).pipe(
+        Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
+        Effect.provideService(WikiAuthority, authority),
+        Effect.provideService(WikiHost, host),
+        Effect.provide(FetchHttpClient.layer),
+      )
+      const finalPages = try Ref.get(store.state)
+      const finalDrafts = try Ref.get(store.drafts)
+      const finalProposals = try Ref.get(store.proposals)
+      try promise(() => storage.put("fixture/pages", { seq: finalPages.seq, pages: finalPages.pages }))
+      try promise(() => storage.put("fixture/drafts", finalDrafts))
+      try promise(() => storage.put("fixture/proposals", finalProposals))
+      return response
+    }))
+    return HttpServerResponse.toWeb(result)
+  }
+}
+interface Namespace { idFromName(name: string): unknown; get(id: unknown): { fetch(request: Request): Promise<Response> } }
+export default { fetch(request: Request, env: { readonly WIKI: Namespace }) { return env.WIKI.get(env.WIKI.idFromName("wiki")).fetch(request) } }

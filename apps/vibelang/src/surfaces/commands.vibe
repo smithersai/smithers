@@ -1,6 +1,7 @@
 import { collectAnswer, answerOutcome, commandError, type AskProgress } from "./commandDecision.vibe"
 import { commandConversation } from "../core/protocolDecision.vibe"
 import { IssueRequest, IssuesState, SpecificationReviewer } from "../core/issueSchemas.vibe"
+import { WikiState } from "../core/wikiSchemas.vibe"
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
@@ -353,4 +354,27 @@ export const CancelRun = define("cancel", "Cancel a run through its durable engi
 export const Rerun = define("rerun", "Request another run with the original input and current permissions.", RunId, RunId, { id: Argument.String("id") },
   effect ({ id }) => ({ id: try (try Actions).rerun(id) }), output => `Requested ${output.id}.`)
 
-export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue, ListActions, RunWorkflow, ReadRun, CancelRun, Rerun] as const
+const WikiOperationInput = Schema.Literals(["read", "save", "propose", "draft"])
+export schema WikiInput {
+  readonly op: WikiOperationInput
+  readonly page: defaultText
+  readonly base: defaultText
+  readonly text: defaultText
+  readonly key: defaultText
+  readonly recovery: defaultText
+}
+export const Wiki = define("wiki", "Read, draft, save or propose a project wiki page.", WikiInput, WikiState, {
+  op: Argument.Literals("op", ["read", "save", "propose", "draft"]),
+  page: Flag.String("page").pipe(Flag.withDefault("")),
+  base: Flag.String("base").pipe(Flag.withDefault("")),
+  text: Flag.String("text").pipe(Flag.withDefault("")),
+  key: Flag.String("key").pipe(Flag.withDefault("")),
+  recovery: Flag.String("recovery").pipe(Flag.withDefault("")),
+}, effect (input) => {
+  const api = (try Factory).wiki
+  if (api === undefined) throw new CommandError({ message: "Wiki unavailable." })
+  const result = (input.op === "read" ? api.read(input.page || "index") : api.act({ op: input.op, page: input.page, base: input.base, text: input.text, ...(input.recovery === "" ? {} : { recovery: input.recovery }), key: input.key || (try IdGenerator.defaultIdGenerator.generateId()).replace(/[^a-z0-9-]/gi, "-") })) catch effect (error) => { throw new CommandError({ message: error.reason === "forbidden" ? "Not allowed." : "Wiki change failed." }) }
+  return result
+}, (output) => JSON.stringify({ seq: output.seq, pages: output.pages.map((page) => page.id), ...(output.review === undefined ? {} : { review: output.review }), ...(output.draft === undefined ? {} : { draft: output.draft.page }) }))
+
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue, ListActions, RunWorkflow, ReadRun, CancelRun, Rerun, Wiki] as const

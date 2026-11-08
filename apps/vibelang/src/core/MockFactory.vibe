@@ -4,6 +4,8 @@ import { firstUndispatched } from "./flowDecision.vibe"
 import * as MockAccounts from "./MockAccounts.vibe"
 import type { IssuesApi } from "./issueSchemas.vibe"
 import { makeIssueFactory, makeIssueStore } from "./IssuesFactory.vibe"
+import { makeWikiFactory, makeWikiStore } from "./WikiFactory.vibe"
+import type { WikiApi } from "./wikiSchemas.vibe"
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
 // (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
 // conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
@@ -19,7 +21,7 @@ import {
   PauseTour, ResumeTour, SeekTour, OpenWiki, openWiki, wikiRegistration, EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
   Tours, unanswered, walk,
 } from "./flows.vibe"
-import { requestedWiki } from "./wiki.vibe"
+import { pages, requestedWiki } from "./wiki.vibe"
 import { ActionFailure } from "../actions/Actions.vibe"
 import { AgentActions } from "../actions/agent.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
@@ -68,6 +70,7 @@ effect function scripted(
   record: (intent: Intent) => Decision!!,
   post: string,
   issues: IssuesApi,
+  wiki: WikiApi,
   history: HistoryPages!!,
   conversation: string,
   sandboxTools: Pick<Factory.Shape, "startSandbox">,
@@ -138,6 +141,10 @@ effect function scripted(
       completed += 1
     }
     answer = completed === 3 ? "Split #38 into three children, linked under it.\n\n[Open #38](#issue-38)" : `Filed ${completed} children.\n\n[Open #38](#issue-38)`
+  }
+  if (page !== undefined && /\bdraft\b/i.test(prompt)) {
+    const result = try Effect.result(wiki.act({ op: "draft", page, base: "", text: prompt, key: `${conversation}-${post}-wiki-draft` }))
+    answer = result._tag === "Failure" ? result.failure.reason === "forbidden" ? "Only contributors can draft wiki edits." : "Couldn't draft that edit." : `Drafted an edit to ${pages.find(entry => entry.id === page)?.label ?? page}. [Review it](#wiki-draft-${page})`
   }
   const pieces = chunks(answer)
   for (let index = 0; index < pieces.length; index++) {
@@ -327,7 +334,11 @@ return Layer.effect(Factory, effect {
               read: effect () => try (try issuesForPerson(person)).read(),
               act: effect (request) => try (try issuesForPerson(person)).act(request),
             }
-            return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, history, conversation, {
+            const wikiForPoster: WikiApi = {
+              read: effect (page) => try (try wikiForPerson(person)).read(page),
+              act: effect (request) => try (try wikiForPerson(person)).act(request),
+            }
+            return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, wikiForPoster, history, conversation, {
               startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
             }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
           }
@@ -366,12 +377,29 @@ return Layer.effect(Factory, effect {
     read: effect () => try (try issuesForPerson(try Effect.orDie(accounts.current()))).read(),
     act: effect (request) => try (try issuesForPerson(try Effect.orDie(accounts.current()))).act(request),
   }
+  // One shared fixture repository; each actor's own journal and fresh policy, exactly like issues.
+  const wikiStore = try cached(makeWikiStore())
+  const wikiActors = new Map<string, WikiApi>()
+  const wikiLock = try Semaphore.make(1)
+  const wikiForPerson = (person: { readonly id: string; readonly login: string }) => Semaphore.withPermits(wikiLock, 1)(effect {
+    let api = wikiActors.get(person.id)
+    if (api === undefined) {
+      api = try Effect.provideService(makeWikiFactory(effect () => ({ ...person, role: try accounts.role(person.id) }), try wikiStore), Scope.Scope, scope)
+      wikiActors.set(person.id, api)
+    }
+    return api
+  })
+  const wiki: WikiApi = {
+    read: effect (page) => try (try wikiForPerson(try Effect.orDie(accounts.current()))).read(page),
+    act: effect (request) => try (try wikiForPerson(try Effect.orDie(accounts.current()))).act(request),
+  }
   const mode: Mode = "mock"
   return {
     mode,
     accounts,
     issues,
     policy: accounts.policy,
+    wiki,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
       const identity = try Effect.orDie(accounts.current())
       const room = try openRoom(conversation)

@@ -34,7 +34,7 @@ describe("built MCP stdio server through McpClient", () => {
         name: section.split("\n")[0], ...JSON.parse(section.split("```json\n")[1]!.split("\n```")[0]!),
       })))
       try Effect.try(() => {
-        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun"])
+        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun", "wiki"])
         expect(discovered).toEqual(tools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema })))
         // Compact discovery: about 1,000 characters per command on average.
         expect(markdown.length).toBeLessThan(1000 * tools.length)
@@ -121,3 +121,21 @@ describe("built MCP stdio server through McpClient", () => {
     }
   }, LIMIT)
 })
+
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+it.live("wiki read, draft and person submission share one MCP factory without changing the source", () => effect {
+  provide clientLayer {
+    const client = try McpClient.McpClient
+    const wiki = (try client.listTools()).find(tool => tool.name === "wiki")!
+    const read = try client.callTool({ tool: wiki, schema: WikiState, arguments: { op: "read", page: "roadmap" } })
+    const base = read.pages.find(page => page.id === "roadmap")!.source
+    const draft = try client.callTool({ tool: wiki, schema: WikiState, arguments: { op: "draft", page: "roadmap", text: "MCP reviewed change", key: "mcp-wiki-draft" } })
+    const review = try client.callTool({ tool: wiki, schema: WikiState, arguments: { op: "save", page: "roadmap", base, text: draft.draft!.text, key: "mcp-wiki-save" } })
+    const after = try client.callTool({ tool: wiki, schema: WikiState, arguments: { op: "read", page: "roadmap" } })
+    try Effect.try(() => {
+      expect(draft.draft?.text).toContain("MCP reviewed change")
+      expect(review.review).toMatch(/\/pull\/[0-9]+$/)
+      expect(after.pages.find(page => page.id === "roadmap")?.source).toBe(base)
+    })
+  }
+}, LIMIT)

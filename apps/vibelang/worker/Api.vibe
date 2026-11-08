@@ -1,7 +1,11 @@
+import { WikiDrafting } from "../src/core/WikiWriter.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { liveSpecificationReviewers, specificationModels } from "./SpecificationReviewers.vibe"
 import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { publicIssues } from "./Issues.vibe"
+import { publicWiki } from "./Wiki.vibe"
 import { writerLayer } from "./VipDraft.vibe"
+import { wikiWriterLayer } from "./WikiDraft.vibe"
 import { ChatModel, Spend as IssueSpend } from "./Reply.vibe"
 import type { Run, Role } from "../src/actions/Actions.vibe"
 import type { RunRequest } from "../src/actions/wire.vibe"
@@ -77,6 +81,7 @@ export class History extends Cloudflare.DurableObject<History, HistoryShape>()("
 export const REPOSITORY = "vibelang"
 
 export interface AccountsShape {
+  readonly draftWiki: (owner: string, page: string, ask: string, key: string) => (string | null)!!RuntimeContext
   readonly role: (owner: string) => import("../src/core/conversation.vibe").Role!!RuntimeContext
   readonly allowed: (actor: string, action: import("../src/core/conversation.vibe").Action) => boolean!!RuntimeContext
   readonly current: (cookie: string | undefined) => Identity!!RuntimeContext
@@ -93,20 +98,27 @@ const AccountsLive = ProjectAccounts.make(effect {
   return effect {
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     if (setup === undefined) return {
+      draftWiki: () => succeed("forbidden"),
       current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void,
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
         if (new URL(request.url, "https://api.invalid").pathname === "/api/issues") return try publicIssues(hostId, state.raw.storage)
+        if (new URL(request.url, "https://api.invalid").pathname === "/api/wiki") return try publicWiki(hostId, state.raw.storage)
         return try Accounts.disabled()
       },
     }
     const accounts = try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup).pipe(Effect.provide(FetchHttpClient.layer)))
     return {
       ...accounts,
+      draftWiki: (owner: string, page: string, ask: string, key: string) => effect {
+        const runtime = try RuntimeContext
+        const spend = spendOf(runtime, budgets, hostId)
+        return try Effect.orDie(accounts.draftWiki(owner, page, ask, key).pipe(Effect.provide(wikiWriterLayer.pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend))))))
+      },
       fetch: effect {
         const runtime = try RuntimeContext
         const spend = spendOf(runtime, budgets, hostId)
-        return try accounts.fetch.pipe(Effect.provide(Layer.merge(writerLayer, liveSpecificationReviewers).pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
+        return try accounts.fetch.pipe(Effect.provide(Layer.mergeAll(writerLayer, liveSpecificationReviewers, wikiWriterLayer).pipe(Layer.provide(Layer.succeed(ChatModel, model)), Layer.provide(Layer.succeed(IssueSpend, spend)))))
       },
     }
   }
@@ -254,7 +266,13 @@ const ConversationLive = Conversation.make(effect {
           },
           principal,
         )
-        try Effect.provideService(actionRuns.alarm(spend, model, history), AgentActions, tools).pipe(Effect.provideService(ActionDevice, Context.get(actionContext, importFactory)))
+        const wikiDrafting: WikiDrafting.Shape = { draft: effect (page, ask, key) => {
+          if (owner === "") throw new WikiFailure({ reason: "forbidden" })
+          const account = try objectOf(accounts, "project", "accounts").pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+          const refusal = try reached(runtime, "accounts", account.draftWiki(owner, page, ask, key)).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+          if (refusal !== null) throw new WikiFailure({ reason: refusal })
+        } }
+        try Effect.provideService(Effect.provideService(actionRuns.alarm(spend, model, history), WikiDrafting, wikiDrafting), AgentActions, tools).pipe(Effect.provideService(ActionDevice, Context.get(actionContext, importFactory)))
       }),
     }
   }

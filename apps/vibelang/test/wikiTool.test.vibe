@@ -69,3 +69,25 @@ it.live("the reply's docs tool stays beside wiki and uses the same captured acto
     expect(events.filter(event => event.type === "PaneOpened")).toEqual([{ type: "PaneOpened", seq: 3, id: "r1", url: "https://vibelang.sh/setup" }])
   })
 }))
+
+import { makeWikiFactory } from "../src/core/WikiFactory.vibe"
+it.live("the actual draft binding stores a contributor draft and opens its pane without submitting", () => scoped(effect {
+  const w = try world()
+  try w.sequencer.post("person", "jun", "Draft an edit")
+  try w.sequencer.start("m1")
+  const wiki = try makeWikiFactory("contributor")
+  const [, , draft] = try wikiTools("r1", toursOf(w.sequencer), { draft: effect (page, ask, key) => {
+    try wiki.act({ op: "draft", page, text: ask, key, base: "" })
+  } }).bindings()
+  const result = try draft!.run(new Cell.Call({ ...call(""), flowName: "vibelang/wiki/draft", input: { page: "roadmap", ask: "Add one reviewed brick." } }))
+  const stored = try wiki.read("roadmap")
+  const events = try Ref.get(w.events)
+  try Effect.try(() => {
+    expect(result.outcome).toBe("success")
+    expect(result.value).toEqual({ page: "roadmap", review: "#wiki-draft-roadmap" })
+    expect(stored.draft?.text).toContain("Add one reviewed brick.")
+    expect(stored.review).toBeUndefined()
+    expect(stored.pages.find(page => page.id === "roadmap")?.source).not.toContain("Add one reviewed brick.")
+    expect(events.at(-1)).toEqual({ type: "PaneOpened", seq: 3, id: "r1", url: "/wiki/roadmap" })
+  })
+}))

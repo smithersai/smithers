@@ -1,5 +1,7 @@
 import * as IssueCredentials from "./IssueCredentials.vibe"
 import { IssueAuthority, serveIssues, repository } from "./Issues.vibe"
+import { WikiAuthority, serveWiki, executeWiki, wikiFilePath } from "./Wiki.vibe"
+import { WikiFailure } from "../src/core/wikiSchemas.vibe"
 import { IssueFailure } from "../src/core/issueSchemas.vibe"
 import { HttpClient } from "effect/http"
 import { Core, GitHub } from "@smthrs/integrations"
@@ -8,7 +10,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
-import { leastRole, roleOf, issuePolicyAction, type Action as PolicyAction } from "../src/core/conversation.vibe"
+import { leastRole, roleOf, issuePolicyAction, wikiPolicyAction, type Action as PolicyAction } from "../src/core/conversation.vibe"
 import { Identity, viewer, Denied, type Policy } from "../src/core/roles.vibe"
 import { type Storage, postExecutionId } from "./Objects.vibe"
 import * as Sequencer from "./Sequencer.vibe"
@@ -96,7 +98,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   const redirect = (url: string) => HttpServerResponse.empty({ status: 302, headers: { ...noStore, location: url } })
 
   schema StoredSession { readonly id: string; readonly login: string; readonly expires: number }
-  schema SignIn { readonly expires: number; readonly session?: string; readonly person?: string; readonly resumeRecovery?: string; readonly resumeOp?: string; readonly resumeKey?: string; readonly verifier: { readonly nonce: string; readonly ciphertext: string } }
+  schema SignIn { readonly expires: number; readonly session?: string; readonly person?: string; readonly wikiPage?: string; readonly resumeRecovery?: string; readonly resumeOp?: string; readonly resumeKey?: string; readonly verifier: { readonly nonce: string; readonly ciphertext: string } }
   const sessionDecoder = Schema.decodeUnknownEffect(StoredSession)
   const signInDecoder = Schema.decodeUnknownEffect(SignIn)
   const decodeGrant = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
@@ -160,6 +162,8 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       const connecting = path === "/api/auth/github"
       const live = connecting ? try session(request.cookies[SESSION]) : undefined
       if (connecting && live === undefined) return json({ error: "sign-in" }, 401)
+      const wikiPage = url.searchParams.get("wiki-page")
+      if (wikiPage !== null && wikiFilePath(wikiPage) === undefined) return json({ error: "request" }, 400)
       const resumeOp = url.searchParams.get("resume-op")
       const resumeKey = url.searchParams.get("resume-key")
       const resumeRecovery = url.searchParams.get("resume-recovery")
@@ -168,7 +172,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
       const id = try keys.token
       const pair = try Effect.orDie(Core.Pkce.createPkcePair())
       const verifier = try Effect.orDie(cipher.seal(Redacted.make(pair.codeVerifier), contextOf(id, "pkce")))
-      try put("sign-in/" + id, { expires: (try Clock.currentTimeMillis) + 600_000, verifier, ...(live === undefined ? {} : { session: live.key, person: live.value.id }), ...(connecting && resumeOp !== null && resumeKey !== null ? { resumeOp, resumeKey, ...(resumeRecovery === null ? {} : { resumeRecovery }) } : {}) })
+      try put("sign-in/" + id, { expires: (try Clock.currentTimeMillis) + 600_000, verifier, ...(live === undefined ? {} : { session: live.key, person: live.value.id }), ...(connecting && wikiPage !== null ? { wikiPage } : {}), ...(connecting && resumeOp !== null && resumeKey !== null ? { resumeOp, resumeKey, ...(resumeRecovery === null ? {} : { resumeRecovery }) } : {}) })
       return cookie(redirect(setup.github.authorizeUrl({ state: id, codeChallenge: pair.codeChallenge, redirectUri: setup.origin + CALLBACK })), STATE, try keys.sign("sign_in", id), 600_000)
     })
     if (path === CALLBACK && request.method === "GET") return try mutation("callback", effect {
@@ -192,7 +196,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         const live = try session(request.cookies[SESSION])
         if (live === undefined || live.key !== pending.session || live.value.id !== pending.person || id !== pending.person) return json({ error: "identity" }, 403)
         try connections.remember(live.key, id, tokens.accessToken, Math.min(tokens.expiresAt ?? live.value.expires, live.value.expires))
-        return cookie(redirect(setup.origin + "/?issues=1" + (pending.resumeOp === undefined || pending.resumeKey === undefined ? "" : `&resume-op=${pending.resumeOp}&resume-key=${pending.resumeKey}` + (pending.resumeRecovery === undefined ? "" : `&resume-recovery=${pending.resumeRecovery}`))), STATE, "", 0)
+        return cookie(redirect(setup.origin + (pending.wikiPage !== undefined && wikiFilePath(pending.wikiPage) !== undefined ? `/wiki/${pending.wikiPage}` : "/?issues=1" + (pending.resumeOp === undefined || pending.resumeKey === undefined ? "" : `&resume-op=${pending.resumeOp}&resume-key=${pending.resumeKey}` + (pending.resumeRecovery === undefined ? "" : `&resume-recovery=${pending.resumeRecovery}`)))), STATE, "", 0)
       }
       const sessionId = try keys.token
       try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
@@ -245,6 +249,15 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
   return {
     current,
     role: (owner: string) => sequencer.role(owner),
+    // Server-only RPC: the conversation host captured this owner from the accepted post, never model input.
+    draftWiki: effect (owner: string, page: string, ask: string, key: string) => {
+      const authority: WikiAuthority.Shape = {
+        current: effect () => ({ id: owner, login: "", role: try sequencer.role(owner), token: Redacted.make("") }),
+        authorize: (op) => policy.authorize(owner, wikiPolicyAction(op)).pipe(Effect.mapError(() => new WikiFailure({ reason: "forbidden" }))),
+      }
+      const result = try Effect.result(Semaphore.withPermits(issueLock, 1)(executeWiki(hostId, storage, { op: "draft", page, base: "", text: ask, key }).pipe(Effect.provideService(WikiAuthority, authority), Effect.provideService(HttpClient.HttpClient, http))))
+      return result._tag === "Failure" ? result.failure._tag === "WikiFailure" ? result.failure.reason : "unavailable" : null
+    },
     allowed: (actor: string, action: PolicyAction) => policy.authorize(actor, action).pipe(Effect.as(true), Effect.catch(() => succeed(false))),
     fetch: effect {
       const request = try HttpServerRequest.HttpServerRequest
@@ -263,6 +276,19 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         }
         const agent = try Config.option(Config.String("VIBELANG_AGENT_ASSIGNEE"))
         return try Semaphore.withPermits(issueLock, 1)(serveIssues(hostId, storage, { ...repository, agent: Option.getOrElse(agent, () => "") }, (person) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect { try sequencer.grant(person.id, person.id, "community", "participation") })))).pipe(Effect.provideService(IssueAuthority, authority), Effect.provideService(HttpClient.HttpClient, http)))
+      }
+      if (url.pathname === "/api/wiki") {
+        if (url.origin !== setup.origin || (request.method !== "GET" && request.headers.origin !== setup.origin)) return json({ error: "origin" }, 403)
+        const wikiAuthority: WikiAuthority.Shape = {
+          current: () => connections.current(request.cookies[SESSION]).pipe(Effect.mapError((error) => new WikiFailure({ reason: error.reason }))),
+          authorize: effect (op) => {
+            if (op === "read") return
+            const actor = try connections.current(request.cookies[SESSION]).pipe(Effect.mapError((error) => new WikiFailure({ reason: error.reason })))
+            if (actor === undefined) throw new WikiFailure({ reason: "sign-in" })
+            try policy.authorize(actor.id, wikiPolicyAction(op)).pipe(Effect.mapError(() => new WikiFailure({ reason: "forbidden" })))
+          },
+        }
+        return try Semaphore.withPermits(issueLock, 1)(serveWiki(hostId, storage).pipe(Effect.provideService(WikiAuthority, wikiAuthority), Effect.provideService(HttpClient.HttpClient, http)))
       }
       if (url.pathname === "/api/roles" && request.method === "POST") {
         if (url.origin !== setup.origin || request.headers.origin !== setup.origin) return json({ error: "origin" }, 403)

@@ -75,7 +75,7 @@ export function prefersMock(flag: boolean, environment: string | undefined): boo
 
 /** The account host owns sign-in, roles and person-authenticated issue operations. */
 //@ verify
-//@ ensures \result == (path == "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles"))
+//@ ensures \result == (path == "/api/wiki" || path == "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles"))
 export function accountRoute(path: string): boolean {
-  return path === "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles")
+  return path === "/api/wiki" || path === "/api/issues" || path.startsWith("/api/auth/") || path.startsWith("/api/roles")
 }

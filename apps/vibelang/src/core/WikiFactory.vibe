@@ -1,0 +1,105 @@
+// Product mock mode (VL-13): the real wiki edit flows and projection over a fixture repository; no backend or model.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { applyWikiEdits, emptyWikiEdits, wikiPermission, type Role, type WikiEdits, type WikiPageState } from "./conversation.vibe"
+import { WikiHost, wikiEditFlows, wikiEditRegistration, authorizeWiki, wikiExecutionId } from "./wikiFlows.vibe"
+import { WikiFailure, WikiRequest, type WikiApi } from "./wikiSchemas.vibe"
+import { pages } from "./wiki.vibe"
+import type { FixtureIdentity, FixturePerson } from "./IssuesFactory.vibe"
+
+effect function personOf(identity: FixtureIdentity): FixturePerson!! {
+  if (typeof identity === "string") return { id: "fixture-" + identity, login: identity === "maintainer" ? "will" : "jun", role: identity }
+  return try identity()
+}
+
+/** The fixture repository's wiki: the build's current pages plus the edits the fixture accepted. */
+export interface WikiFixtureProposal { readonly person: string; readonly op: "save" | "propose"; readonly key: string; readonly base: string; readonly text: string; readonly page: string; readonly review: string }
+export interface WikiFixtureStore { readonly state: Ref.Ref<WikiEdits>; readonly proposals: Ref.Ref<ReadonlyArray<WikiFixtureProposal>>; readonly drafts: Ref.Ref<ReadonlyArray<{ person: string; page: string; text: string }>>; readonly lock: Semaphore.Semaphore }
+export effect function makeWikiStore(): WikiFixtureStore!! {
+  return { state: try Ref.make(emptyWikiEdits), proposals: try Ref.make<ReadonlyArray<WikiFixtureProposal>>([]), drafts: try Ref.make<ReadonlyArray<{ person: string; page: string; text: string }>>([]), lock: try Semaphore.make(1) }
+}
+
+/** The embedded source of a fixture page, or undefined when the repository has no such page. */
+function fixtureSource(id: string): string | undefined {
+  return pages.find((page) => page.id === id)?.source
+}
+
+/** The fixture host: the same gates and validation as the GitHub host, over the in-memory fixture repository. */
+export effect function fixtureWikiHost(identity: FixtureIdentity, store: WikiFixtureStore) {
+  const host: WikiHost.Shape = {
+    perform: (request) => store.lock.withPermit(effect {
+      const person = try personOf(identity)
+      const instance = try FlowRuntime.FlowInstance
+      if (!instance.executionId.startsWith(`wiki/${person.id || "public"}/`) || !wikiPermission(person.role, request.op)) throw new WikiFailure({ reason: "forbidden" })
+      const before = try Ref.get(store.state)
+      const known = request.page !== "decisions" && fixtureSource(request.page) !== undefined
+      if (request.op === "read") {
+        if (!known) throw new WikiFailure({ reason: "missing" })
+        const draft = (try Ref.get(store.drafts)).filter((entry) => entry.person === person.id && entry.page === request.page).at(-1)
+        const withDraft = (state: WikiEdits) => draft === undefined ? state : { ...state, draft: { page: draft.page, text: draft.text } }
+        if (before.pages.some((page) => page.id === request.page)) return withDraft(before)
+        const observed = applyWikiEdits(before, { type: "WikiEditsObserved", seq: before.seq + 1, pages: [...before.pages, { id: request.page, source: fixtureSource(request.page)!, revision: "fixture" }] })
+        try Ref.set(store.state, observed)
+        return withDraft(observed)
+      }
+      if (request.key === "") throw new WikiFailure({ reason: "invalid", unwritten: true })
+      if (!known) throw new WikiFailure({ reason: "missing", unwritten: true })
+      const current = before.pages.find((page) => page.id === request.page)?.source ?? fixtureSource(request.page)!
+      if (request.text.trim() === "") throw new WikiFailure({ reason: "empty", unwritten: true })
+      if (request.op === "draft") {
+        const note = request.text.trim()
+        const drafted = { person: person.id, page: request.page, text: current.trimEnd() + "\n\n" + note + "\n" }
+        try Ref.set(store.drafts, [...(try Ref.get(store.drafts)).filter((entry) => !(entry.person === person.id && entry.page === request.page)), drafted])
+        return { ...before, draft: { page: drafted.page, text: drafted.text } }
+      }
+      if (request.base !== current) throw new WikiFailure({ reason: "conflict", unwritten: true })
+      if (request.text === current) throw new WikiFailure({ reason: "empty", unwritten: true })
+      if (request.op === "propose" || request.op === "save") {
+        const proposals = try Ref.get(store.proposals)
+        const existing = proposals.find(proposal => proposal.person === person.id && proposal.op === request.op && proposal.key === request.key)
+        if (existing !== undefined) {
+          if (existing.page !== request.page || existing.base !== request.base || existing.text !== request.text) throw new WikiFailure({ reason: "conflict", unwritten: true })
+          return { ...before, review: existing.review }
+        }
+        const number = 1000 + proposals.length + 1
+        const review = `https://github.com/smithersai/vibelang/pull/${number}`
+        try Ref.set(store.proposals, [...proposals, { person: person.id, op: request.op, key: request.key, base: request.base, text: request.text, page: request.page, review }])
+        try Ref.update(store.drafts, drafts => drafts.filter(entry => !(entry.person === person.id && entry.page === request.page && entry.text === request.text)))
+        return { ...before, review }
+      }
+      throw new WikiFailure({ reason: "invalid", unwritten: true })
+    }),
+  }
+  return host
+}
+
+/** The fixture WikiApi: the real flows on the memory engine, per-person identity over one shared fixture repository. */
+export effect function makeWikiFactory(identity: FixtureIdentity = "maintainer", shared?: WikiFixtureStore): WikiApi!!Scope.Scope {
+  const store = shared ?? (try makeWikiStore())
+  const host = try fixtureWikiHost(identity, store)
+  const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, host)), Layer.provide(WebCrypto.layer)))
+  const engine = Context.get(context, FlowRuntime.FlowRuntime)
+  const act = effect (input: WikiRequest) => {
+    const request = try Schema.decodeUnknownEffect(WikiRequest)(input).pipe(Effect.mapError(() => new WikiFailure({ reason: "invalid", unwritten: true })))
+    const person = try personOf(identity)
+    const flow = wikiEditFlows.find((f) => f._tag === `vibelang/wiki/${request.op}`)
+    if (flow === undefined) throw new WikiFailure({ reason: "invalid", unwritten: true })
+    try authorizeWiki(person.role, request.op)
+    const { recovery: _recovery, ...payload } = request
+    const executionId = try wikiExecutionId(person.id || "public", request.op, request.key)
+    const result = try engine.execute(flow, { executionId, payload }).pipe(
+      Effect.catchCause((cause): Effect.Effect<never, WikiFailure | FlowRuntime.ExecutionIdentityConflict | FlowRuntime.FlowCycleDetected> => {
+        const reason = cause.reasons.length === 1 ? cause.reasons.find(Cause.isDieReason) : undefined
+        return reason?.defect instanceof FlowRuntime.ExecutionIdentityConflict ? Effect.fail(reason.defect) : Effect.failCause(cause)
+      }),
+      Effect.mapError((error) => error._tag === "WikiFailure" ? error : new WikiFailure({ reason: error._tag.endsWith("ExecutionIdentityConflict") ? "conflict" : "failed", unwritten: true })),
+    )
+    return { ...result, role: person.role }
+  }
+  let reads = 0
+  return {
+    read: (page) => act({ op: "read", page, base: "", text: "", key: `read-${reads += 1}` }),
+    act,
+  }
+}

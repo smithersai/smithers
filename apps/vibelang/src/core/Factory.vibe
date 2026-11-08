@@ -3,6 +3,7 @@
 // one that talks to vibelang.smithers.sh. The browser wrapper selects one after rendering.
 import type { Accounts, Policy } from "./roles.vibe"
 import type { IssuesApi } from "./issueSchemas.vibe"
+import type { WikiApi } from "./wikiSchemas.vibe"
 import type { Event } from "./conversation.vibe"
 import { Seq, ReadSnapshot } from "./schemas.vibe"
 export { Entry as EntrySchema, EventSchema, ReadSnapshot } from "./schemas.vibe"
@@ -37,6 +38,7 @@ export schema error Refused { refusal: string }
  */
 export service Factory {
   readonly issues?: IssuesApi
+  readonly wiki?: WikiApi
 
   /** The browser resolves its backend after rendering; operations wait while mode is pending. */
   readonly mode: Mode | "pending"

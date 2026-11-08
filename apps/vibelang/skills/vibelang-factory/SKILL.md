@@ -1,32 +1,30 @@
 ---
 name: vibelang-factory
-description: Use the VibeLang Factory CLI or MCP for chat, mythical history, issues, VIPs and sandboxes.
+description: Use the VibeLang Factory CLI or MCP for chat, mythical history, wiki drafts, issues, VIPs and sandboxes.
 ---
 
-Run `vibelang-factory --llms` for the exact command schemas; `--help` for syntax.
-From this checkout, `pnpm cli ...` builds and runs it; `pnpm mcp --mock` starts MCP
-with the same tools. Use `--json` for data.
+`vibelang-factory --llms` gives exact schemas; `--help`, syntax.
+`pnpm cli ...` builds/runs; `pnpm mcp --mock` starts the same tools.
+Use `--json` for data.
 
-Live commands use `VIBELANG_FACTORY_URL` (default https://vibelang.smithers.sh).
-An unavailable or mock-only deployment fails with `LiveBackendNotDeployed`.
-`--mock` or `VIBELANG_FACTORY=mock` uses the real state machines and durable
-flows with fixture data, scripted replies, no server and no model. CLI fixture data lasts for one process; MCP retains it across calls.
+Live: `VIBELANG_FACTORY_URL` (default https://vibelang.smithers.sh); unavailable/mock-only
+origins fail with `LiveBackendNotDeployed`. `--mock` or `VIBELANG_FACTORY=mock` runs
+real machines/flows with fixtures and scripted replies, without server/model.
+CLI fixtures last one process; MCP retains them across calls.
 
 Live writes require `VIBELANG_SESSION`: redacted JSON with `origin` and the
 signed app session `cookie`, bound to `VIBELANG_FACTORY_URL`. Connect GitHub as
-that person before issue writes. Never put a GitHub token in arguments.
+that person before issue or wiki writes. Never put a GitHub token in arguments.
 
 ```sh
 vibelang-factory --mock ask "How do services work?" --conversation docs
 vibelang-factory --mock --json read --conversation docs --after 0
 ```
 
-`ask` waits for its completed reply and returns conversation, text and events.
-Overlapping asks match their replies in post order. Everyone in a live
-conversation sees its posts. `read` returns entries touched after its cursor;
-merge by entry ID, then advance `seq`. An empty read returns immediately.
-Read from 0 for the whole conversation; default conversation is `home`.
-Cursors must be nonnegative integers.
+`ask` returns conversation, text and events after its reply completes; overlapping
+asks match replies in post order. Live posts reach everyone. `read` immediately
+returns entries touched after its cursor: merge by entry ID, advance `seq`.
+Cursor 0 reads everything; default conversation: `home`. Cursors are nonnegative integers.
 
 Work is planned onto mythical history: epics of small commits with notes.
 
@@ -82,3 +80,9 @@ a revision clears all answers. Request
 `issue spec-review --revision <current> --reviewer astra|sol|fable|opus --key <stable>`.
 The reviewer supplies its verdict; callers cannot. Acceptance requires four
 current LGTM/A answers. VIP Accept/Decline are human-only.
+
+Wiki: `wiki read|draft --page <id>` uses the shared flow.
+Link `[Review it](#wiki-draft-PAGE)` for the person to review the retained draft.
+Only Contributors/Maintainers edit; the person chooses Propose/Save. Agents never
+submit or merge. Person submissions retain `--key`, `--base` and `--text`;
+`--recovery <new-id>` retries a settled failure.

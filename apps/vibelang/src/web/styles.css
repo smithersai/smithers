@@ -332,6 +332,17 @@ html { overflow-anchor: none; }
 .vl-wiki-content { overflow-y: auto; padding: 16px 20px 24px; }
 .vl-wiki-meta { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 2px 0 10px; }
 .vl-wiki-meta time { color: var(--text-muted); font-size: 12px; }
+.vl-wiki-editing { color: var(--text-faint); }
+.vl-wiki-edit { padding: 0; border: 0; background: none; color: var(--text-muted); font: inherit; cursor: pointer; flex: 0 0 auto; }
+.vl-wiki-edit:hover { color: var(--text); text-decoration: underline; }
+.vl-wiki-note { display: flex; align-items: center; gap: 6px; padding: 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-wiki-note a { color: var(--brand); text-decoration: none; }
+.vl-wiki-note a:hover { text-decoration: underline; }
+.vl-wiki-edit-body { display: flex; flex-direction: column; min-height: 0; height: min(56vh, 540px); }
+.vl-wiki-edit-body .sui-textarea { flex: 1; min-height: 0; resize: none; border: 0; border-radius: 0; background: transparent; }
+.vl-wiki-edit-error { padding: 6px 16px 0; color: var(--danger, #e5484d); font-size: 12px; }
+.vl-wiki-edit-footer { display: flex; justify-content: flex-end; gap: 8px; padding: 8px 12px; border-top: 1px solid var(--border); }
+.vl-wiki[data-maximized="true"] .vl-wiki-edit-body { flex: 1; height: auto; }
 /* maximized over the chat, as the docs pane does */
 .vl-wiki[data-maximized="true"] { position: fixed; inset: 60px 0 0; z-index: 45; border-radius: 0; border-width: 1px 0 0; }
 .vl-wiki[data-maximized="true"] .vl-wiki-body { flex: 1; height: auto; }

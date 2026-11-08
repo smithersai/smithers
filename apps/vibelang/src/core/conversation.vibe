@@ -772,7 +772,7 @@ export function resume(client: Client): Client {
 export type Role = "viewer" | "new" | "community" | "contributor" | "maintainer"
 export type SignedRole = Exclude<Role, "viewer">
 export type GrantMode = "person" | "participation" | "bootstrap"
-export type Action = "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles"
+export type Action = "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" | "wiki"
 export interface RoleGrant {
   readonly id: string
   readonly role: Role
@@ -800,19 +800,20 @@ export function rank(role: Role): number {
 //@ ensures (action == "people" || action == "issue" || action == "comment") ==> \result == "new"
 //@ ensures action == "vip" ==> \result == "community"
 //@ ensures (action == "action" || action == "sandbox" || action == "triage") ==> \result == "contributor"
+//@ ensures action == "wiki" ==> \result == "contributor"
 //@ ensures (action == "merge" || action == "settings" || action == "roles") ==> \result == "maintainer"
 export function leastRole(action: Action): Role {
   switch (action) {
     case "read": case "ask": case "tour": return "viewer"
     case "people": case "issue": case "comment": return "new"
     case "vip": return "community"
-    case "action": case "sandbox": case "triage": return "contributor"
+    case "action": case "sandbox": case "triage": case "wiki": return "contributor"
     case "merge": case "settings": case "roles": return "maintainer"
   }
 }
 
 //@ verify
-//@ ensures \result == ((action == "read" || action == "ask" || action == "tour") || ((action == "people" || action == "issue" || action == "comment") && role != "viewer") || (action == "vip" && (role == "community" || role == "contributor" || role == "maintainer")) || ((action == "action" || action == "sandbox" || action == "triage") && (role == "contributor" || role == "maintainer")) || ((action == "merge" || action == "settings" || action == "roles") && role == "maintainer"))
+//@ ensures \result == ((action == "read" || action == "ask" || action == "tour") || ((action == "people" || action == "issue" || action == "comment") && role != "viewer") || (action == "vip" && (role == "community" || role == "contributor" || role == "maintainer")) || ((action == "action" || action == "sandbox" || action == "triage" || action == "wiki") && (role == "contributor" || role == "maintainer")) || ((action == "merge" || action == "settings" || action == "roles") && role == "maintainer"))
 export function may(role: Role, action: Action): boolean {
   return rank(role) >= rank(leastRole(action))
 }
@@ -1268,4 +1269,70 @@ export function controlledWalkthrough(showing: Walkthrough, paused: boolean, rev
 //@ ensures \result.revision == revision && \result.at == at && \result.remaining == showing.remaining
 export function soughtWalkthrough(showing: Walkthrough, step: number, revision: number, at: number): Walkthrough {
   return { ...showing, step, target: "", paused: false, revision, at }
+}
+
+// ── Wiki editing (0021): the repository's Markdown is the wiki; the app holds its ordered observations. ───────────
+
+/** One wiki operation. Reading is public; a draft or proposal is at least a contributor's; Save is a maintainer's review change. */
+export type WikiOperation = "read" | "save" | "propose" | "draft"
+
+/** The repository-observed source of one wiki page; `revision` names the observed commit. */
+export interface WikiPageState {
+  readonly id: string
+  readonly source: string
+  readonly revision: string
+}
+
+/** Ordered observations of the repository's wiki pages, never an independent wiki (0022's shape for issues). */
+export interface WikiEdits {
+  readonly seq: number
+  readonly pages: ReadonlyArray<WikiPageState>
+}
+
+/** The host observed the repository's wiki pages at observation `seq`. */
+export interface WikiEditsEvent {
+  readonly type: "WikiEditsObserved"
+  readonly seq: number
+  readonly pages: ReadonlyArray<WikiPageState>
+}
+
+/** No page observed yet. */
+export const emptyWikiEdits: WikiEdits = { seq: 0, pages: [] }
+
+/** Ordered observations; a stale response cannot replace a newer projection. */
+//@ verify
+//@ requires 0 <= state.seq && state.seq < 9007199254740991
+//@ ensures event.seq != state.seq + 1 ==> \result == state
+//@ ensures event.seq == state.seq + 1 ==> \result.seq == event.seq && \result.pages == event.pages
+//@ ensures \result.seq == state.seq || \result.seq == state.seq + 1
+export function applyWikiEdits(state: WikiEdits, event: WikiEditsEvent): WikiEdits {
+  if (event.seq !== state.seq + 1) return state
+  return { seq: event.seq, pages: event.pages }
+}
+
+/** Every wiki gate delegates to 0019: reading is public, proposals are a contributor's, Save a maintainer's. */
+//@ verify
+//@ ensures op == "read" ==> \result
+//@ ensures op == "save" ==> (\result == (role == "maintainer"))
+//@ ensures (op == "propose" || op == "draft") ==> (\result == (role == "contributor" || role == "maintainer"))
+export function wikiPermission(role: Role, op: WikiOperation): boolean {
+  return may(role, wikiPolicyAction(op))
+}
+
+/** One policy name for UI affordances, live authorization and delegated flows. */
+//@ verify
+//@ ensures op == "read" ==> \result == "read"
+//@ ensures op == "save" ==> \result == "merge"
+//@ ensures (op == "propose" || op == "draft") ==> \result == "wiki"
+export function wikiPolicyAction(op: WikiOperation): Action {
+  if (op === "read") return "read"
+  if (op === "save") return "merge"
+  return "wiki"
+}
+
+/** An editor response belongs only to its still-open request. */
+//@ verify
+//@ ensures \result == (page != "" && page == activePage && request == activeRequest)
+export function currentWikiEditor(page: string, request: number, activePage: string, activeRequest: number): boolean {
+  return page !== "" && page === activePage && request === activeRequest
 }

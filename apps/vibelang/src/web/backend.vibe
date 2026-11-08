@@ -8,6 +8,7 @@ import { Refused, Factory, type Mode } from "../core/Factory.vibe"
 import { AgentActions, deferredActions } from "../actions/agent.vibe"
 import { Actions } from "../actions/Actions.vibe"
 import { LiveActions } from "../actions/LiveActions.vibe"
+import { WikiFailure } from "../core/wikiSchemas.vibe"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
 
 /** The chosen mode becomes a Foldkit message, independently of any post or event subscription. */
@@ -60,6 +61,18 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
           const { factory } = try ready
           if (factory.issues === undefined) throw new IssueFailure({ reason: "unavailable" })
           return try factory.issues.act(request)
+        },
+      },
+      wiki: {
+        read: effect (page) => {
+          const { factory } = try ready
+          if (factory.wiki === undefined) throw new WikiFailure({ reason: "unavailable" })
+          return try factory.wiki.read(page)
+        },
+        act: effect (request) => {
+          const { factory } = try ready
+          if (factory.wiki === undefined) throw new WikiFailure({ reason: "unavailable" })
+          return try factory.wiki.act(request)
         },
       },
       post: effect (conversation, clientId, name, text) => {

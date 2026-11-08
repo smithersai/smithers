@@ -1,0 +1,27 @@
+// Wiki requests run against the real fixture repository and memory engine, independently of unit-suite evidence.
+import { it } from "@effect/vitest"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { WikiState } from "../src/core/wikiSchemas.vibe"
+import { run, Text, same } from "./run.vibe"
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+
+it.live("wiki/roles-draft-submit-replay", () => run("wiki/roles-draft-submit-replay", Schema.Struct({ role: Role, text: Text, save: Schema.Boolean }), ({ role, text, save }) => effect {
+  const store = try makeWikiStore()
+  const wiki = try makeWikiFactory(role, store)
+  const before = try wiki.read("roadmap")
+  const base = before.pages.find(page => page.id === "roadmap")!.source
+  const op = save ? "save" as const : "propose" as const
+  const request = { op, page: "roadmap", base, text: base + "\nReviewed " + text + "\n", key: "wiki-fuzz" }
+  const drafted = try Effect.result(wiki.act({ op: "draft", page: "roadmap", base: "", text: "Draft " + text, key: "wiki-fuzz-draft" }))
+  const result = try Effect.result(wiki.act(request))
+  const after = try wiki.read("roadmap")
+  const wellFormed = try Effect.try(() => new TextDecoder().decode(new TextEncoder().encode(text)) === text)
+  const permitted = wellFormed && (role === "maintainer" || (!save && role === "contributor"))
+  if (!Schema.is(WikiState)(after) || !same(before.pages, after.pages)) return false
+  if (drafted._tag === "Success" !== (wellFormed && (role === "maintainer" || role === "contributor"))) return false
+  if (result._tag === "Success" !== permitted) return false
+  if (result._tag === "Failure") return result.failure.reason === (wellFormed ? "forbidden" : "invalid") && (try Ref.get(store.proposals)).length === 0
+  const replay = try wiki.act(request)
+  const changed = try Effect.result(wiki.act({ ...request, text: request.text + "other" }))
+  return same(result.success, replay) && changed._tag === "Failure" && changed.failure.reason === "conflict" && (try Ref.get(store.proposals)).length === 1
+}))

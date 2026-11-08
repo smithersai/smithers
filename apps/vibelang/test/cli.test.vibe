@@ -112,3 +112,19 @@ layer(platform)("built CLI process", (it) => {
     })
   })
 })
+
+layer(platform)("wiki CLI", (it) => {
+  it.effect("reads real fixture Markdown and drafts without writing it", () => effect {
+    const read = try cli(["--mock", "--json", "wiki", "read", "--page", "roadmap"])
+    const draft = try cli(["--mock", "--json", "wiki", "draft", "--page", "roadmap", "--text", "CLI reviewed wiki edit", "--key", "cli-wiki-draft"])
+    const page = try json(read.stdout)
+    const drafted = try json(draft.stdout)
+    try Effect.try(() => {
+      expect(read.status).toBe(0)
+      expect(draft.status).toBe(0)
+      expect(page.pages.find((entry: { id: string }) => entry.id === "roadmap").source).toContain("# Roadmap")
+      expect(drafted.draft.text).toContain("CLI reviewed wiki edit")
+      expect(drafted.review).toBeUndefined()
+    })
+  }, LIMIT)
+})

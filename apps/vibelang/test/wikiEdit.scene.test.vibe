@@ -1,0 +1,161 @@
+// The wiki Edit/Propose screens (designs/wiki: edit-maintainer, propose-contributor), failing first.
+import { change, click, Command, expect, given, label, role, scene, Subscription, type } from "foldkit/scene"
+import { describe, expect as assert, it } from "@effect/vitest"
+import { FocusWikiEditor, init, Message, OpenWikiCommand, OpenWikiEditor, SubmitWikiEdit, signedOut, update, WikiLocation } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+import { pages } from "../src/core/wiki.vibe"
+
+const home = init({ session: "wikiedit", mode: "mock", name: "Guest" }).model
+type Level = "viewer" | "new" | "community" | "contributor" | "maintainer"
+const signed = (level: Level) => ({ ...home, account: { ...signedOut, identity: { id: "1", login: "will", role: level } } })
+const openAt = (model: typeof home, page = "roadmap") => update({ ...model, surface: "chat" as const }, Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: `/wiki/${page}` } })).model
+const roadmap = pages.find((page) => page.id === "roadmap")!
+const edited = roadmap.source.trimEnd() + "\n\n2 wiki editing landed\n"
+
+describe("wiki editing by role", () => {
+  it("a maintainer opens the editor, saves, and the pane links their review change", () => {
+    scene({ update, view }, given(openAt(signed("maintainer"))),
+      expect(role("button", { name: "Edit" })).toExist(),
+      click(role("button", { name: "Edit" })),
+      Command.expectExact(OpenWikiEditor({ page: "roadmap", request: 1 })),
+      Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, draft: "" })),
+      Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+      expect(role("textbox", { name: "Edit Roadmap" })).toExist(),
+      expect(role("button", { name: "Save" })).toExist(),
+      expect(role("button", { name: "Propose" })).not.toExist(),
+      type(label("Edit Roadmap"), edited),
+      click(role("button", { name: "Save" })),
+      Command.expectExact(SubmitWikiEdit({ serial: 1, request: { op: "save", page: "roadmap", base: roadmap.source, text: edited, key: "wikiedit-wiki-1" } })),
+      expect(role("button", { name: "Save" })).toBeDisabled(),
+      Command.resolve(SubmitWikiEdit, Message.CompletedWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, revision: "fixture", review: "https://github.com/smithersai/vibelang/pull/1001" })),
+      expect(role("textbox", { name: "Edit Roadmap" })).not.toExist(),
+      expect(role("button", { name: "Edit" })).toExist())
+    const clicked = update(openAt(signed("maintainer")), Message.ClickedEditWiki({})).model
+    const submitted = update({ ...clicked, wikiEdit: { page: "roadmap", base: roadmap.source, text: edited, busy: false, error: "" } }, Message.SubmittedWikiEdit({})).model
+    const completed = update(submitted, Message.CompletedWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, revision: "fixture", review: "https://github.com/smithersai/vibelang/pull/1001" })).model
+    assert(completed.wikiPages?.find((page) => page.id === "roadmap")?.source).toBe(roadmap.source)
+    assert(completed.wikiEdit).toBeUndefined()
+  })
+  it("a contributor's save reads Propose, opens a review change and never edits the page", () => {
+    scene({ update, view }, given(openAt(signed("contributor"))),
+      click(role("button", { name: "Edit" })),
+      Command.expectExact(OpenWikiEditor({ page: "roadmap", request: 1 })),
+      Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, draft: "" })),
+      Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+      expect(role("button", { name: "Save" })).not.toExist(),
+      expect(role("button", { name: "Propose" })).toExist(),
+      type(label("Edit Roadmap"), edited),
+      click(role("button", { name: "Propose" })),
+      Command.expectExact(SubmitWikiEdit({ serial: 1, request: { op: "propose", page: "roadmap", base: roadmap.source, text: edited, key: "wikiedit-wiki-1" } })),
+      Command.resolve(SubmitWikiEdit, Message.CompletedWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, revision: "fixture", review: "https://github.com/smithersai/vibelang/pull/1001" })),
+      expect(role("textbox", { name: "Edit Roadmap" })).not.toExist(),
+      expect(role("link", { name: "Review" })).toExist(),
+      expect(role("region", { name: "Wiki" })).not.toContainText("wiki editing landed"))
+  })
+  it("viewer, new and community never see Edit", () => {
+    for (const level of ["viewer", "new", "community"] as const) {
+      scene({ update, view }, given(openAt(signed(level))), expect(role("button", { name: "Edit" })).not.toExist())
+    }
+  })
+  it("Cancel and Escape leave without saving; the pane stays open", () => {
+    scene({ update, view }, given(openAt(signed("maintainer"))),
+      click(role("button", { name: "Edit" })),
+      Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, draft: "" })),
+      Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+      type(label("Edit Roadmap"), edited),
+      click(role("button", { name: "Cancel" })),
+      expect(role("textbox", { name: "Edit Roadmap" })).not.toExist(),
+      expect(role("region", { name: "Wiki" })).toExist(),
+      click(role("button", { name: "Edit" })),
+      Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 2, page: "roadmap", source: roadmap.source, draft: "" })),
+      Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+      Subscription.emit(Message.PressedEscape()),
+      expect(role("textbox", { name: "Edit Roadmap" })).not.toExist(),
+      expect(role("region", { name: "Wiki" })).toExist())
+  })
+  it("a refused save keeps the text and says why", () => {
+    scene({ update, view }, given(openAt(signed("maintainer"))),
+      click(role("button", { name: "Edit" })),
+      Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, draft: "" })),
+      Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+      type(label("Edit Roadmap"), edited),
+      click(role("button", { name: "Save" })),
+      Command.resolve(SubmitWikiEdit, Message.FailedWikiEdit({ request: 1, reason: "conflict", unwritten: true })),
+      expect(role("textbox", { name: "Edit Roadmap" })).toHaveValue(edited),
+      expect(role("alert")).toContainText("changed"),
+      expect(role("button", { name: "Save" })).toBeEnabled())
+  })
+})
+
+describe("an agent-drafted edit (FLOW-3)", () => {
+  it("the chat's review link opens the editor with the draft; the person submits it", () => {
+    const draft = roadmap.source.trimEnd() + "\n\nDrafted by the agent.\n"
+    scene({ update, view }, given(signed("contributor")),
+      Subscription.emit(Message.ClickedWikiDraft({ page: "roadmap" })),
+      Command.expectExact(OpenWikiCommand({ conversation: "home", page: "roadmap", request: 1 }), OpenWikiEditor({ page: "roadmap", request: 1 })),
+      Command.resolve(OpenWikiCommand, Message.SucceededWiki()),
+      Command.resolve(OpenWikiEditor, Message.BeganWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, draft })),
+      Command.resolve(FocusWikiEditor, Message.FocusedPrompt()),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 1, id: "", url: "/wiki/roadmap" } })),
+      Command.resolve(WikiLocation, Message.FocusedPrompt()),
+      expect(role("textbox", { name: "Edit Roadmap" })).toHaveValue(draft),
+      click(role("button", { name: "Propose" })),
+      Command.expectExact(SubmitWikiEdit({ serial: 1, request: { op: "propose", page: "roadmap", base: roadmap.source, text: draft, key: "wikiedit-wiki-1" } })),
+      Command.resolve(SubmitWikiEdit, Message.CompletedWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, revision: "fixture", review: "https://github.com/smithersai/vibelang/pull/1001" })))
+  })
+  it("a viewer's draft review link does nothing", () => {
+    const before = update(signed("viewer"), Message.ClickedWikiDraft({ page: "roadmap" }))
+    assert(before.model.wikiEdit).toBeUndefined()
+    assert(before.commands ?? []).toEqual([])
+  })
+})
+
+describe("wiki editor response ordering", () => {
+  it("a completed old save cannot close a newer editor", () => {
+    const editing = update(openAt(signed("maintainer")), Message.ClickedEditWiki({})).model
+    const other = { ...editing, wikiEdit: { page: "rulings", base: "base", text: "other", busy: false, error: "" } }
+    const late = update(other, Message.CompletedWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, revision: "fixture", review: "https://github.com/smithersai/vibelang/pull/1001" }))
+    assert(late.model.wikiEdit).toEqual(other.wikiEdit)
+    assert(late.model.wikiReview).toBeUndefined()
+  })
+  it("changing identity closes the editor and discards a late response", () => {
+    const editing = update(openAt(signed("maintainer")), Message.ClickedEditWiki({})).model
+    const changed = update(editing, Message.AccountLoaded({ identity: { id: "2", login: "jun", role: "contributor" } })).model
+    assert(changed.wikiEdit).toBeUndefined()
+    const late = update(changed, Message.CompletedWikiEdit({ request: 1, page: "roadmap", source: roadmap.source, revision: "fixture", review: "https://github.com/smithersai/vibelang/pull/1001" })).model
+    assert(late.wikiReview).toBeUndefined()
+  })
+})
+
+describe("wiki submission recovery", () => {
+  it("an uncertain result retains its original payload and key for explicit retry", () => {
+    const opened = update(openAt(signed("maintainer")), Message.ClickedEditWiki({})).model
+    const editing = update(opened, Message.UpdatedWikiEdit({ value: edited })).model
+    const sent = update(editing, Message.SubmittedWikiEdit({}))
+    const original = sent.commands![0]!
+    const failed = update(sent.model, Message.FailedWikiEdit({ request: 1, reason: "unknown" })).model
+    const changed = update(failed, Message.UpdatedWikiEdit({ value: "another edit" })).model
+    assert(changed.wikiEdit?.text).toBe(edited)
+    const retry = update(changed, Message.SubmittedWikiEdit({}))
+    const command = retry.commands![0] as typeof original
+    assert(command).toMatchObject({ args: { request: { key: "wikiedit-wiki-1", base: roadmap.source, text: edited, recovery: "wikiedit-wiki-retry-2" } } })
+  })
+  it("a failure known to precede writes releases the draft for correction", () => {
+    const opened = update(openAt(signed("maintainer")), Message.ClickedEditWiki({})).model
+    const editing = update(opened, Message.UpdatedWikiEdit({ value: edited })).model
+    const sent = update(editing, Message.SubmittedWikiEdit({}))
+    const failed = update(sent.model, Message.FailedWikiEdit({ request: 1, reason: "conflict", unwritten: true })).model
+    const changed = update(failed, Message.UpdatedWikiEdit({ value: "corrected" })).model
+    assert(changed.wikiEdit?.text).toBe("corrected")
+  })
+})
+
+it("Escape and Cancel cannot abandon a submitted write or let navigation start another one", () => {
+  const opened = update(openAt(signed("maintainer")), Message.ClickedEditWiki({})).model
+  const typed = update(opened, Message.UpdatedWikiEdit({ value: edited })).model
+  const submitted = update(typed, Message.SubmittedWikiEdit({})).model
+  assert(update(submitted, Message.PressedEscape()).model.wikiEdit).toEqual(submitted.wikiEdit)
+  assert(update(submitted, Message.CanceledWikiEdit({})).model.wikiEdit).toEqual(submitted.wikiEdit)
+  const navigated = update(submitted, Message.ClickedWiki({ page: "rulings" })).model
+  assert(navigated.wikiEdit).toEqual(submitted.wikiEdit)
+})

@@ -33,6 +33,8 @@ bootstrap/participation mode. A person is addressed by numeric GitHub ID; mutabl
 | Propose a VIP | Community | Future brick 3 |
 | Triage issues | Contributor | Future brick 3 |
 | Run a registered action | Contributor | Future brick 4; each action may require more |
+| Draft or propose a wiki edit | Contributor | 0021; person-owned review change |
+| Save a wiki edit | Maintainer | 0021; person-owned review change, no merge |
 | Start a sandbox | Contributor | Brick 6 landed alongside this lane; a separate allowance must also admit it |
 | Merge or accept a VIP | Maintainer | Future; a person triggers the configured workflow |
 | Project settings | Maintainer | Future |

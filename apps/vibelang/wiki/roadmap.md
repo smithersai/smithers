@@ -88,3 +88,5 @@ brick                                   state         proof
 
 - **vl-learnmore (0014, VL-31):** ten-step theatre tutorial, exact subtitles and optional sound, numbered app drives,
   durable pause/seek and private Mock reload recovery; designer source preserved in `designs/onboarding/`.
+
+- **Wiki editing (0021, vl-wikiedit):** designed Edit/Propose pane, person-owned fork/commit/review through shared integrations; agent drafts for explicit person submission; fixture, HTTP, SQLite, CLI/MCP and browser checks. People merge; lead deploys.

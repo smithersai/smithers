@@ -160,6 +160,20 @@ export effect function room(name: string) {
   }
 }
 
+/** The wiki fixture repository on the persistent engine in real workerd SQLite. */
+export effect function serveWikiHost() {
+  provide NodeServices.layer {
+    const bundled = try bundle("../workerd/wiki.vibe")
+    const modules = try modulesOf(bundled)
+    return try listen({
+      name: "wiki", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
+      manifest: { mainModule: "worker.js", modules },
+      env: { WIKI: { type: "durable-object", worker: "wiki", exportName: "WikiObject" } },
+      exports: { WikiObject: { type: "durable-object", storage: "sqlite" } },
+    }, bundled.bundleMap)
+  }
+}
+
 /** The issue fixture mode on the persistent engine in real workerd SQLite. */
 export effect function serveIssuesHost() {
   provide NodeServices.layer {

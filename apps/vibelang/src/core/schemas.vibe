@@ -70,7 +70,7 @@ export schema TourEnded { readonly type: "TourEnded"; readonly seq: Seq; readonl
 export schema PaneOpened { readonly type: "PaneOpened"; readonly seq: Seq; readonly id: string; readonly url: string }
 
 export schema RoleGranted { readonly type: "RoleGranted"; readonly seq: Seq; readonly id: string; readonly by: string; readonly role: "viewer" | "new" | "community" | "contributor" | "maintainer"; readonly mode: "person" | "participation" | "bootstrap" }
-export schema ActionAuthorized { readonly type: "ActionAuthorized"; readonly seq: Seq; readonly id: string; readonly by: string; readonly action: "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" }
+export schema ActionAuthorized { readonly type: "ActionAuthorized"; readonly seq: Seq; readonly id: string; readonly by: string; readonly action: "read" | "ask" | "tour" | "people" | "issue" | "comment" | "vip" | "action" | "sandbox" | "triage" | "merge" | "settings" | "roles" | "wiki" }
 
 export schema ActionRequested { readonly type: "ActionRequested"; readonly seq: Seq; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: Seq }
 export schema ActionStep { readonly type: "ActionStep"; readonly seq: Seq; readonly id: string; readonly key: string; readonly name: string; readonly attempt: Seq; readonly state: string; readonly at: Seq }

@@ -12,6 +12,11 @@ export function wikiPath(page: string): string | undefined {
 export function wikiPage(url: string) {
   return pages.find(page => `/wiki/${page.id}` === url.split("#")[0])
 }
+export { wikiLink } from "./wikiLinks.vibe"
+/** The repository holds this page's Markdown (the decisions index is generated at build time and read-only). */
+export function wikiEditable(id: string): boolean {
+  return id !== "decisions" && pages.some(page => page.id === id)
+}
 /** Scripted product agent's wiki request. Live replies discover the same pages through their tool catalog. */
 export function requestedWiki(text: string): string | undefined {
   if (!/wiki/i.test(text)) return undefined

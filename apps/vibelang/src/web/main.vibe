@@ -22,6 +22,8 @@ import { Client } from "../core/schemas.vibe"
 import { escapeAction, canMinimize, hasContent, scrollFollow, follows, paletteChange, completedEvent, answerAnnouncement, screenKey, showSplash, setScreenPalette, minimizeScreen, failScreenTour, failedScreenEnd, completeScreenTour, latestScreen, toggleScreenDocs } from "./screenDecision.vibe"
 import { MediaSources, observeMedia } from "./media.vibe"
 import { Identity, viewer } from "../core/roles.vibe"
+import { WikiFailure, WikiRequest } from "../core/wikiSchemas.vibe"
+import { pages, wikiEditable, wikiPage } from "../core/wiki.vibe"
 import { Navigation } from "foldkit"
 import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
 import { ActionView, actionsOf, completions, mergeRuns, initial as initialActions } from "./actionModel.vibe"
@@ -135,6 +137,14 @@ export schema Model {
   readonly wikiStatus?: "loading" | "ready" | "error"
   readonly wikiAfter?: string
   readonly wikiRequest?: number
+  /** The pane's editor: the page, the repository source it started from, and the person's text. */
+  readonly wikiEdit?: { readonly page: string; readonly base: string; readonly text: string; readonly busy: boolean; readonly error: string; readonly submission?: WikiRequest | undefined } | undefined
+  /** The repository-observed sources overlaying the build's embedded pages. */
+  readonly wikiPages?: ReadonlyArray<{ readonly id: string; readonly source: string; readonly revision: string }>
+  /** The person's open review change for a page, linked until they navigate away. */
+  readonly wikiReview?: { readonly page: string; readonly url: string } | undefined
+  readonly wikiSerial?: number
+  readonly wikiEditRequest?: number
   readonly actions?: ActionView
 }
 
@@ -244,6 +254,14 @@ export const Message = defineMessageUnion({
   WikiLocationChanged: { page: Schema.String },
   FailedWiki: { request: Schema.Number },
   SucceededWiki: {},
+  ClickedEditWiki: {},
+  ClickedWikiDraft: { page: Schema.String },
+  UpdatedWikiEdit: { value: Schema.String },
+  CanceledWikiEdit: {},
+  SubmittedWikiEdit: {},
+  BeganWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, draft: Schema.String },
+  CompletedWikiEdit: { request: Schema.Number, page: Schema.String, source: Schema.String, revision: Schema.String, review: Schema.String },
+  FailedWikiEdit: { request: Schema.Number, reason: Schema.String, unwritten: Schema.optionalKey(Schema.Boolean) },
 })
 export type Message = typeof Message.Type
 
@@ -308,7 +326,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const nextActions = changedAccount ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
       const commands = [...(accountOf(model).target !== "" ? [CloseRoleDialog({})] : []), ...(changedAccount ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
       return {
-        model: { ...(changedAccount ? withoutSandbox : model), actions: nextActions, ...(changedAccount ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
+        model: { ...(changedAccount ? withoutSandbox : model), actions: nextActions, ...(changedAccount ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: (model.wikiEditRequest ?? 0) + 1, sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
           ...accountOf(model), identity: person, pending: false,
           error: person.id === "" ? accountOf(model).error : "", menu: false, target: "",
           people: person.id === "" ? "closed" : accountOf(model).people,
@@ -351,7 +369,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const close = ModelDecision.roleDialogCloses(identity.role, account.target)
       const nextActions = changedRole ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
       const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : []), ...(changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
-      return { model: { ...(changedRole ? withoutSandbox : model), actions: nextActions, ...(changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
+      return { model: { ...(changedRole ? withoutSandbox : model), actions: nextActions, ...(changedRole ? { wikiEdit: undefined, wikiReview: undefined, wikiEditRequest: (model.wikiEditRequest ?? 0) + 1, sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
     },
     FailedRoles: () => ({ model: { ...model, account: { ...accountOf(model), error: "Connection lost.", retry: "roles", pending: false } } }),
     RetriedAccount: () => ModelDecision.accountRetryPlan(accountOf(model).retry) === "resume" ? ({
@@ -410,6 +428,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       if (account.menu) return { model: { ...model, account: { ...account, menu: false } }, commands: [FocusAccountMenu({ open: false })] }
       if (model.issues?.open) return { model: { ...model, issues: { ...model.issues, open: false } } }
       if (actionsOf(model).maximized) return { model: { ...model, actions: { ...actionsOf(model), maximized: false } } }
+      if (model.wikiEdit !== undefined) return model.wikiEdit.submission !== undefined ? { model } : { model: { ...model, wikiEdit: undefined } }
       if (model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
       switch (action) {
         case "docs": return { model: { ...model, docs: "pane" }, ...(model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }
@@ -453,6 +472,29 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       return { model: { ...model, sandbox: snapshot, sandboxPane: ModelDecision.sandboxPaneOpens(snapshot.status, model.sandbox?.status ?? null) ? "pane" : model.sandboxPane ?? "closed", sandboxBusy: false, sandboxOperation: "", sandboxError: "", minuteNotice: zero ? `Out of minutes — ${snapshot.id} stopped` : low ? `${snapshot.remaining} minutes left` : model.sandbox?.resetAt !== snapshot.resetAt ? "" : model.minuteNotice ?? "", warnedMonth: low ? snapshot.resetAt : model.warnedMonth ?? 0 } }
     },
     FailedSandbox: ({ conversation, request, reason }) => !currentSandbox(conversation, model.conversation, request, model.sandboxRequest ?? 0) ? { model } : ({ model: { ...model, sandboxBusy: false, sandboxError: reason } }),
+    ClickedEditWiki: () => beginWikiEdit(model),
+    ClickedWikiDraft: ({ page }) => beginWikiEdit(model, page),
+    UpdatedWikiEdit: ({ value }) => model.wikiEdit === undefined || model.wikiEdit.busy || model.wikiEdit.submission !== undefined ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, text: value, error: "" } } },
+    CanceledWikiEdit: () => model.wikiEdit === undefined || model.wikiEdit.submission !== undefined ? { model } : { model: { ...model, wikiEdit: undefined } },
+    SubmittedWikiEdit: () => {
+      const editing = model.wikiEdit
+      if (editing === undefined || editing.busy) return { model }
+      if (editing.text === editing.base) return { model: { ...model, wikiEdit: { ...editing, error: "No changes." } } }
+      const role = accountOf(model).identity.role
+      const op = Machine.wikiPermission(role, "save") ? "save" as const : "propose" as const
+      if (!Machine.wikiPermission(role, op)) return { model }
+      const serial = (model.wikiSerial ?? 0) + 1
+      const request: WikiRequest = editing.submission === undefined ? { op, page: editing.page, base: editing.base, text: editing.text, key: `${model.session}-wiki-${serial}` } : { ...editing.submission, recovery: `${model.session}-wiki-retry-${serial}` }
+      return { model: { ...model, wikiSerial: serial, wikiEdit: { ...editing, submission: request, busy: true, error: "" } }, commands: [SubmitWikiEdit({ request, serial: model.wikiEditRequest ?? 0 })] }
+    },
+    BeganWikiEdit: ({ request, page, source, draft }) => {
+      const editing = model.wikiEdit
+      if (editing === undefined || editing.busy || !Machine.currentWikiEditor(page, request, editing.page, model.wikiEditRequest ?? 0)) return { model }
+      const typed = editing.text !== editing.base
+      return { model: { ...model, wikiEdit: { ...editing, base: source, text: typed ? editing.text : draft === "" ? source : draft } }, commands: [FocusWikiEditor({})] }
+    },
+    CompletedWikiEdit: ({ request, page, source, revision, review }) => model.wikiEdit === undefined || !Machine.currentWikiEditor(page, request, model.wikiEdit.page, model.wikiEditRequest ?? 0) ? { model } : ({ model: { ...model, wikiEdit: undefined, wikiPages: [...(model.wikiPages ?? []).filter((observed) => observed.id !== page), { id: page, source, revision }], ...(review === "" ? {} : { wikiReview: { page, url: review } }) } }),
+    FailedWikiEdit: ({ request, reason, unwritten }) => model.wikiEdit === undefined || request !== model.wikiEditRequest ? { model } : { model: { ...model, wikiEdit: { ...model.wikiEdit, ...(unwritten === true ? { submission: undefined } : {}), busy: false, error: wikiEditError(reason) } } },
     ClickedWiki: ({ page }) => visitWiki(model, page),
     WikiLocationChanged: ({ page }) => page === "/" ? { model: { ...model, surface: "splash", docs: "pane", ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } } : visitWiki(model, page),
     FilteredWiki: ({ value }) => ({ model: { ...model, wikiQuery: value } }),
@@ -522,6 +564,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") ? {
             following: false, wikiStatus: "ready" as const, wikiAfter: event.id !== "" ? event.id : client.conversation.entries.some(entry => entry.id === model.wikiAfter) ? model.wikiAfter ?? "" : "",
           } : {}),
+          ...(advanced && event.type === "PaneOpened" && model.wikiEdit !== undefined && model.wikiEdit.submission === undefined && event.url !== `/wiki/${model.wikiEdit.page}` ? { wikiEdit: undefined } : {}),
           ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") && accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}),
         },
         commands: [
@@ -558,9 +601,10 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
 function visitWiki(model: Model, page: string): Update.Return<Model, Message, Factory> {
   const opening = model.stream !== "open"
   const request = (model.wikiRequest ?? 0) + 1
-  return { model: { ...model, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
+  return { model: { ...model, wikiEdit: model.wikiEdit?.submission === undefined ? undefined : model.wikiEdit, wikiRequest: request, sandboxPane: model.sandboxPane === "max" ? "pane" : model.sandboxPane ?? "closed", ...(accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}), surface: "chat", palette: false, wikiQuery: "", wikiRequested: page, wikiStatus: "loading", following: false,
     stream: "open", epoch: opening ? model.epoch + 1 : model.epoch, from: opening ? model.client.conversation.seq : model.from,
   }, commands: [OpenWikiCommand({ conversation: model.conversation, page, request })] }
+
 }
 
 /**
@@ -807,6 +851,71 @@ export const EndTourCommand = Command.define("EndTour", {
   },
 })
 
+/** The editor's starting source: the repository-observed overlay, else the build's embedded copy. */
+function knownWikiSource(model: Model, page: string): string | undefined {
+  return model.wikiPages?.find((observed) => observed.id === page)?.source ?? pages.find((entry) => entry.id === page)?.source
+}
+
+/** Minimal failure text; the request and its flow carry the detail. */
+function wikiEditError(reason: string): string {
+  return reason === "forbidden" ? "Not allowed." : reason === "conflict" ? "The page changed. Reload the editor." : reason === "connect" || reason === "sign-in" ? "Connect GitHub." : "Couldn't save. Retry."
+}
+
+/** Edit by role (0019, 0021): the editor opens on the shown page; a chat draft review opens its page first. */
+function beginWikiEdit(model: Model, draft?: string): Update.Return<Model, Message, Factory> {
+  if (model.wikiEdit?.submission !== undefined) return visitWiki(model, model.wikiEdit.page)
+  const role = accountOf(model).identity.role
+  const page = draft ?? wikiPage(model.client.conversation.pane)?.id
+  if (page === undefined) return { model }
+  if (draft === undefined ? !Machine.wikiPermission(role, "save") && !Machine.wikiPermission(role, "propose") : !Machine.wikiPermission(role, "draft")) return { model }
+  if (!wikiEditable(page)) return { model }
+  const source = knownWikiSource(model, page)
+  if (source === undefined) return { model }
+  const request = (model.wikiEditRequest ?? 0) + 1
+  const editing = { page, base: source, text: source, busy: false, error: "" }
+  if (draft === undefined) return { model: { ...model, wikiEdit: editing, wikiEditRequest: request }, commands: [OpenWikiEditor({ page, request })] }
+  const visit = visitWiki(model, page)
+  return { model: { ...visit.model, wikiEdit: editing, wikiEditRequest: request }, commands: [...(visit.commands ?? []), OpenWikiEditor({ page, request })] }
+}
+
+/** The editor's fresh read: the repository's current source for the page and the person's stored draft. */
+export const OpenWikiEditor = Command.define("OpenWikiEditor", {
+  args: { page: Schema.String, request: Schema.Number },
+  messages: [Message.BeganWikiEdit, Message.FailedWikiEdit],
+  execute: effect ({ page, request }) => {
+    const factory = try Factory
+    const result = try Effect.result(factory.wiki === undefined ? Effect.fail(new WikiFailure({ reason: "unavailable" })) : factory.wiki.read(page))
+    return try message(() => {
+      if (result._tag === "Failure") return Message.FailedWikiEdit({ request, reason: result.failure.reason })
+      const observed = result.success.pages.find((entry) => entry.id === page)
+      const draft = result.success.draft !== undefined && result.success.draft.page === page ? result.success.draft.text : ""
+      return observed === undefined ? Message.FailedWikiEdit({ request, reason: "missing" }) : Message.BeganWikiEdit({ request, page, source: observed.source, draft })
+    })
+  },
+})
+
+/** The person's own write: a maintainer's save or a contributor's proposal, through the durable flow. */
+export const SubmitWikiEdit = Command.define("SubmitWikiEdit", {
+  args: { request: WikiRequest, serial: Schema.Number }, messages: [Message.CompletedWikiEdit, Message.FailedWikiEdit],
+  execute: effect ({ request, serial }) => {
+    const factory = try Factory
+    const result = try Effect.result(factory.wiki === undefined ? Effect.fail(new WikiFailure({ reason: "unavailable" })) : factory.wiki.act(request))
+    return try message(() => result._tag === "Success"
+      ? Message.CompletedWikiEdit({ request: serial, page: request.page, source: request.base, revision: result.success.pages.find((entry) => entry.id === request.page)?.revision ?? "", review: result.success.review ?? "" })
+      : Message.FailedWikiEdit({ request: serial, reason: result.failure.reason, ...(result.failure.unwritten === undefined ? {} : { unwritten: result.failure.unwritten }) }))
+  },
+})
+
+/** The freshly opened editor takes focus. */
+export const FocusWikiEditor = Command.define("FocusWikiEditor", {
+  args: {}, messages: [Message.FocusedPrompt],
+  execute: effect () => {
+    try Render.afterCommit
+    Dom.focus("#vl-wiki-editor", { preventScroll: true }) catch () => undefined
+    return try message(() => Message.FocusedPrompt())
+  },
+})
+
 export const LoadActions = Command.define("LoadActions", {
   args: { flow: Schema.String, epoch: Schema.optionalKey(Schema.Number) }, messages: [Message.LoadedActions, Message.FailedActions],
   execute: effect ({ flow, epoch }) => {
@@ -939,6 +1048,17 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         const link = element?.closest?.(".vl-wiki-content a")
         const href = link?.getAttribute("href")
         return href?.startsWith("/wiki/") ? Option.some(Message.ClickedWiki({ page: href })) : Option.none()
+      },
+    })),
+    wikiDraftLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({
+      target: keys, type: "click",
+      filterMapEvent: (event: Event) => {
+        const mouse = event as MouseEvent
+        if (mouse.button !== 0 || mouse.metaKey || mouse.ctrlKey || mouse.shiftKey || mouse.altKey) return Option.none()
+        const link = (event.target as Element | null)?.closest?.(".sui-chat-bubble a")
+        const href = link?.getAttribute("href")
+        const page = href?.startsWith("#wiki-draft-") ? href.slice("#wiki-draft-".length) : undefined
+        return page !== undefined && wikiPage(`/wiki/${page}`) !== undefined ? Option.some(Message.ClickedWikiDraft({ page })) : Option.none()
       },
     })),
     wikiHistory: Subscription.persistentEntry(Dom.streamFromEventFilterMap({

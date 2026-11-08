@@ -1,0 +1,303 @@
+// Wiki editing by role (0021): the pure policy, projection and flow behavior, failing first.
+import { describe, expect, it } from "@effect/vitest"
+import {
+  apply, applyWikiEdits, empty, emptyWikiEdits, issuePermission, leastRole, may, wikiPermission, wikiPolicyAction, type Role, type WikiOperation,
+} from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { makeWikiFactory, makeWikiStore } from "../src/core/WikiFactory.vibe"
+import { WikiHost, wikiEditFlows, wikiEditRegistration } from "../src/core/wikiFlows.vibe"
+import { WikiFailure, type WikiRequest } from "../src/core/wikiSchemas.vibe"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { WebCrypto } from "@smthrs/crypto"
+
+const roles: ReadonlyArray<Role> = ["viewer", "new", "community", "contributor", "maintainer"]
+const operations: ReadonlyArray<WikiOperation> = ["read", "save", "propose", "draft"]
+
+describe("wiki policy (0019's least roles)", () => {
+  it("reading is public; drafting and proposing are a contributor's; saving is a maintainer's", () => {
+    expect(leastRole("wiki")).toBe("contributor")
+    expect(wikiPolicyAction("read")).toBe("read")
+    expect(wikiPolicyAction("draft")).toBe("wiki")
+    expect(wikiPolicyAction("propose")).toBe("wiki")
+    expect(wikiPolicyAction("save")).toBe("merge")
+    for (const role of roles) {
+      expect(wikiPermission(role, "read")).toBe(true)
+      expect(wikiPermission(role, "save")).toBe(role === "maintainer")
+      expect(wikiPermission(role, "propose")).toBe(role === "contributor" || role === "maintainer")
+      expect(wikiPermission(role, "draft")).toBe(role === "contributor" || role === "maintainer")
+    }
+    expect(may("community", "wiki")).toBe(false)
+    expect(may("contributor", "wiki")).toBe(true)
+    expect(may("maintainer", "wiki")).toBe(true)
+  })
+  it("every wiki operation is permitted exactly at its least role and above", () => {
+    for (const op of operations) {
+      for (const role of roles) {
+        expect(wikiPermission(role, op)).toBe(op === "read" || role === "maintainer" || (role === "contributor" && op !== "save"))
+      }
+    }
+    expect(operations.map((op) => wikiPermission("viewer", op))).toEqual([true, false, false, false])
+    expect(operations.map((op) => wikiPermission("new", op))).toEqual([true, false, false, false])
+    expect(operations.map((op) => wikiPermission("community", op))).toEqual([true, false, false, false])
+    expect(operations.map((op) => wikiPermission("contributor", op))).toEqual([true, false, true, true])
+    expect(operations.map((op) => wikiPermission("maintainer", op))).toEqual([true, true, true, true])
+  })
+  it("the wiki action never changes issue or tour permissions", () => {
+    expect(issuePermission("community", "propose")).toBe(true)
+    expect(issuePermission("community", "link")).toBe(false)
+    expect(may("viewer", "read")).toBe(true)
+    expect(may("new", "comment")).toBe(true)
+    expect(may("community", "vip")).toBe(true)
+    expect(may("contributor", "triage")).toBe(true)
+    expect(may("maintainer", "roles")).toBe(true)
+  })
+})
+
+describe("wiki page projection", () => {
+  const page = { id: "roadmap", source: "# Roadmap\n", revision: "r1" }
+  it("ignores a stale observation and applies the next one exactly once", () => {
+    const first = applyWikiEdits(emptyWikiEdits, { type: "WikiEditsObserved", seq: 1, pages: [page] })
+    expect(first).toEqual({ seq: 1, pages: [page] })
+    expect(applyWikiEdits(first, { type: "WikiEditsObserved", seq: 1, pages: [page] })).toEqual(first)
+    expect(applyWikiEdits(first, { type: "WikiEditsObserved", seq: 3, pages: [page] })).toEqual(first)
+    const edited = { id: "roadmap", source: "# Roadmap\n\nEdited.\n", revision: "r2" }
+    const second = applyWikiEdits(first, { type: "WikiEditsObserved", seq: 2, pages: [edited] })
+    expect(second).toEqual({ seq: 2, pages: [edited] })
+  })
+  it("accumulates every observed page", () => {
+    const first = applyWikiEdits(emptyWikiEdits, { type: "WikiEditsObserved", seq: 1, pages: [page] })
+    const second = applyWikiEdits(first, { type: "WikiEditsObserved", seq: 2, pages: [page, { id: "rulings", source: "# Rulings\n", revision: "r1" }] })
+    expect(second.pages.map((p) => p.id)).toEqual(["roadmap", "rulings"])
+  })
+})
+
+const edit = (op: WikiRequest["op"], extra: Partial<WikiRequest> = {}): WikiRequest => ({
+  op, page: "roadmap", base: "", text: "", key: `t-${op}-1`, ...extra,
+})
+
+describe("wiki edit flows over the fixture repository (VL-13)", () => {
+  it.effect("a maintainer's Save opens their review change and preserves the source", () => scoped(effect {
+    const wiki = try makeWikiFactory("maintainer")
+    const before = try wiki.read("roadmap")
+    const source = before.pages.find((p) => p.id === "roadmap")!.source
+    const edited = source.trimEnd() + "\n\n2 wiki editing landed\n"
+    const saved = try wiki.act(edit("save", { base: source, text: edited }))
+    const page = saved.pages.find((p) => p.id === "roadmap")!
+    const reread = try wiki.read("roadmap")
+    try Effect.try(() => {
+      expect(page.source).toBe(source)
+      expect(page.revision).toBe("fixture")
+      expect(reread.pages.find((p) => p.id === "roadmap")?.source).toBe(source)
+      expect(saved.review).toMatch(/\/pull\/[0-9]+$/)
+    })
+  }))
+  it.effect("a contributor's proposal opens a review change and never edits the page", () => scoped(effect {
+    const wiki = try makeWikiFactory("contributor")
+    const before = try wiki.read("roadmap")
+    const source = before.pages.find((p) => p.id === "roadmap")!.source
+    const proposed = try wiki.act(edit("propose", { base: source, text: source + "\nProposed line.\n" }))
+    const after = try wiki.read("roadmap")
+    try Effect.try(() => {
+      expect(proposed.review).toMatch(/^https:\/\/github\.com\/smithersai\/vibelang\/pull\/[0-9]+$/)
+      expect(after.pages.find((p) => p.id === "roadmap")?.source).toBe(source)
+    })
+  }))
+  it.effect("the draft flow returns a reviewable edit and writes nothing", () => scoped(effect {
+    const wiki = try makeWikiFactory("contributor")
+    const before = try wiki.read("roadmap")
+    const source = before.pages.find((p) => p.id === "roadmap")!.source
+    const drafted = try wiki.act(edit("draft", { text: "Add the wiki-edit brick." }))
+    const after = try wiki.read("roadmap")
+    try Effect.try(() => {
+      expect(drafted.draft?.page).toBe("roadmap")
+      expect(drafted.draft?.text).toContain("Add the wiki-edit brick.")
+      expect(drafted.draft?.text.startsWith(source.trimEnd())).toBe(true)
+      expect(after.pages.find((p) => p.id === "roadmap")?.source).toBe(source)
+    })
+  }))
+  it.effect("a stale base conflicts and writes nothing; an unchanged edit is empty; an unknown page is missing", () => scoped(effect {
+    const wiki = try makeWikiFactory("maintainer")
+    const before = try wiki.read("roadmap")
+    const source = before.pages.find((p) => p.id === "roadmap")!.source
+    const stale = try Effect.result(wiki.act(edit("save", { base: "# old\n", text: source + "x\n" })))
+    const same = try Effect.result(wiki.act(edit("save", { base: source, text: source, key: "t-same" })))
+    const blank = try Effect.result(wiki.act(edit("save", { base: source, text: "  ", key: "t-blank" })))
+    const missing = try Effect.result(wiki.act(edit("save", { page: "decisions/9999-nope", base: "", text: "x", key: "t-missing" })))
+    const after = try wiki.read("roadmap")
+    try Effect.try(() => {
+      expect(stale).toMatchObject({ _tag: "Failure", failure: { reason: "conflict" } })
+      expect(same).toMatchObject({ _tag: "Failure", failure: { reason: "empty" } })
+      expect(blank).toMatchObject({ _tag: "Failure", failure: { reason: "empty" } })
+      expect(missing).toMatchObject({ _tag: "Failure", failure: { reason: "missing" } })
+      expect(after.pages.find((p) => p.id === "roadmap")?.source).toBe(source)
+    })
+  }))
+  it.effect("role gates reach the flow: a viewer reads only, a contributor never saves", () => scoped(effect {
+    const viewer = try makeWikiFactory("viewer")
+    const community = try makeWikiFactory("community")
+    const contributor = try makeWikiFactory("contributor")
+    const source = (try contributor.read("roadmap")).pages.find((p) => p.id === "roadmap")!.source
+    const vRead = try Effect.result(viewer.read("roadmap"))
+    const vSave = try Effect.result(viewer.act(edit("save", { base: source, text: source + "x", key: "t-v-save" })))
+    const cPropose = try Effect.result(community.act(edit("propose", { base: source, text: source + "x", key: "t-c-prop" })))
+    const cDraft = try Effect.result(community.act(edit("draft", { text: "x", key: "t-c-draft" })))
+    const kSave = try Effect.result(contributor.act(edit("save", { base: source, text: source + "x", key: "t-k-save" })))
+    try Effect.try(() => {
+      expect(vRead._tag).toBe("Success")
+      for (const denied of [vSave, cPropose, cDraft, kSave]) expect(denied).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+    })
+  }))
+  it.effect("a reused write key for a changed request conflicts, and the fixture keeps the first write", () => scoped(effect {
+    const wiki = try makeWikiFactory("maintainer")
+    const before = try wiki.read("roadmap")
+    const source = before.pages.find((p) => p.id === "roadmap")!.source
+    const first = try wiki.act(edit("save", { base: source, text: source + "\nfirst\n", key: "t-reuse" }))
+    const second = try Effect.result(wiki.act(edit("save", { base: source, text: source + "\nother\n", key: "t-reuse" })))
+    try Effect.try(() => {
+      expect(first.review).toMatch(/\/pull\/[0-9]+$/)
+      expect(second).toMatchObject({ _tag: "Failure", failure: { reason: "conflict" } })
+    })
+  }))
+})
+
+describe("wiki flows against a faulty host (no mocks: an injected faulty service)", () => {
+  const faulty: WikiHost.Shape = { perform: () => Effect.fail(new WikiFailure({ reason: "unavailable" })) }
+  it.effect("the host's typed failure reaches the caller unchanged", () => scoped(effect {
+    const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, faulty)), Layer.provide(WebCrypto.layer)))
+    const engine = Context.get(context, FlowRuntime.FlowRuntime)
+    const flow = wikiEditFlows.find((f) => f._tag === "vibelang/wiki/save")!
+    const result = try Effect.result(engine.execute(flow, { executionId: "wiki/fixture-maintainer/save/faulty-1", payload: edit("save", { base: "b", text: "t" }) }))
+    try Effect.try(() => expect(result).toMatchObject({ _tag: "Failure", failure: { reason: "unavailable" } }))
+  }))
+})
+
+describe("wiki edits through the product mock and its role picker", () => {
+  it.effect("a chosen role sees its own gates; saving as maintainer opens a review and a viewer still reads the base", () => scoped(effect {
+    provide MockFactory {
+      const factory = try Factory
+      const accounts = factory.accounts!
+      const wiki = factory.wiki!
+      const denied = try Effect.result(wiki.act(edit("propose", { base: "x", text: "y" })))
+      try Effect.try(() => expect(denied).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } }))
+      try accounts.choose("maintainer")
+      const before = try wiki.read("roadmap")
+      const source = before.pages.find((p) => p.id === "roadmap")!.source
+      const saved = try wiki.act(edit("save", { base: source, text: source + "\nSaved by the maintainer.\n", key: "t-mock-save" }))
+      try Effect.try(() => expect(saved.review).toMatch(/\/pull\/[0-9]+$/))
+      try accounts.choose("viewer")
+      const observed = try wiki.read("roadmap")
+      const stillDenied = try Effect.result(wiki.act(edit("propose", { base: source, text: "y", key: "t-mock-viewer" })))
+      try Effect.try(() => {
+        expect(observed.pages.find((p) => p.id === "roadmap")?.source).toBe(source)
+        expect(stillDenied).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+      })
+    }
+  }))
+})
+
+describe("the agent drafts a wiki edit from the chat (FLOW-3)", () => {
+  it.live("a contributor's ask becomes a stored draft linked from the reply; the person reviews and submits it", () => scoped(effect {
+    provide MockFactory {
+      const factory = try Factory
+      const accounts = factory.accounts!
+      const wiki = factory.wiki!
+      try accounts.choose("contributor")
+      try factory.post("wiki-draft", "c1", "will", "Draft a wiki edit for the roadmap: add the wiki-edit brick")
+      const events = Array.from(try Stream.runCollect(factory.events("wiki-draft", 0) |> Stream.takeUntil(%, event => event.type === "ReplyFinished")))
+      const state = events.reduce(apply, empty)
+      const reply = state.entries.at(-1)!
+      const stored = try wiki.read("roadmap")
+      try Effect.try(() => {
+        expect(reply.text).toContain("Drafted an edit to Roadmap.")
+        expect(reply.text).toContain("[Review it](#wiki-draft-roadmap)")
+        expect(state.pane).toBe("/wiki/roadmap")
+        expect(stored.draft?.page).toBe("roadmap")
+        expect(stored.draft?.text).toContain("add the wiki-edit brick")
+        expect(stored.pages.find((p) => p.id === "roadmap")?.source).not.toContain("add the wiki-edit brick")
+      })
+      const source = stored.pages.find((p) => p.id === "roadmap")!.source
+      const proposed = try wiki.act({ op: "propose", page: "roadmap", base: source, text: stored.draft!.text, key: "t-chat-submit" })
+      const reopened = try wiki.read("roadmap")
+      try Effect.try(() => { expect(proposed.review).toMatch(/\/pull\/[0-9]+$/); expect(reopened.draft).toBeUndefined() })
+    }
+  }))
+  it.live("a viewer's ask is refused by the same flow's role gate", () => scoped(effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.post("wiki-draft-viewer", "c1", "Guest", "Draft a wiki edit for the roadmap: add the wiki-edit brick")
+      const events = Array.from(try Stream.runCollect(factory.events("wiki-draft-viewer", 0) |> Stream.takeUntil(%, event => event.type === "ReplyFinished")))
+      const reply = events.reduce(apply, empty).entries.at(-1)!
+      try Effect.try(() => expect(reply.text).toBe("Only contributors can draft wiki edits."))
+    }
+  }))
+})
+
+it.live("logs and counts wiki submissions without a page, body, prompt or request key", () => scoped(effect {
+  const { References } = try promise(() => import("effect"))
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const capture = Logger.layer([Logger.make(options => {
+    runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  provide capture {
+    const wiki = try makeWikiFactory("contributor")
+    const source = (try wiki.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+    const counter = Metric.withAttributes(Metric.counter("vibelang_wiki_edit_steps", { incremental: true }), { op: "propose", outcome: "accepted" })
+    const before = try Metric.value(counter)
+    try wiki.act({ op: "propose", page: "roadmap", base: source, text: source + "\nprivate-wiki-body", key: "private-wiki-key" })
+    const after = try Metric.value(counter)
+    const output = try Ref.get(lines)
+    const records = output.filter(line => line.includes("vibelang.wiki"))
+    try Effect.try(() => {
+      expect(Number(after.count)).toBe(Number(before.count) + 1)
+      expect(records.some(line => line.includes('"op":"propose"') && line.includes('"outcome":"accepted"'))).toBe(true)
+      for (const line of output) expect(line).not.toMatch(/private-wiki|roadmap|# Roadmap/)
+    })
+  }
+}))
+
+it.effect("an accepted edit is still forbidden after that person's role is demoted", () => scoped(effect {
+  const identity = try Ref.make({ id: "one-person", login: "jun", role: "contributor" as Role })
+  const store = try makeWikiStore()
+  const wiki = try makeWikiFactory(() => Ref.get(identity), store)
+  const base = (try wiki.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+  const request = { op: "propose" as const, page: "roadmap", base, text: base + "\nA reviewed edit.\n", key: "demoted-replay" }
+  try wiki.act(request)
+  try Ref.update(identity, person => ({ ...person, role: "community" as const }))
+  const replay = try Effect.result(wiki.act(request))
+  try Effect.try(() => {
+    expect(replay).toMatchObject({ _tag: "Failure", failure: { reason: "forbidden" } })
+    expect(runSync(Ref.get(store.proposals))).toHaveLength(1)
+  })
+}))
+
+it.effect("malformed Unicode is a typed request refusal, never an engine defect or a partial write", () => scoped(effect {
+  const store = try makeWikiStore()
+  const wiki = try makeWikiFactory("maintainer", store)
+  const base = (try wiki.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+  for (const text of ["bad\ud800", "bad\udfff"]) {
+    const result = try Effect.exit(wiki.act({ op: "save", page: "roadmap", base, text, key: "malformed" }))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        expect(Cause.hasDies(result.cause)).toBe(false)
+        expect(Cause.findError(result.cause)).toMatchObject({ _tag: "Success", success: { reason: "invalid", unwritten: true } })
+      }
+    })
+  }
+  const proposals = try Ref.get(store.proposals)
+  try Effect.try(() => expect(proposals).toEqual([]))
+}))
+
+it.effect("a fresh engine adopts the fixture repository's original keyed review after a lost result", () => scoped(effect {
+  const store = try makeWikiStore()
+  const first = try makeWikiFactory("maintainer", store)
+  const base = (try first.read("roadmap")).pages.find(page => page.id === "roadmap")!.source
+  const request = { op: "save" as const, page: "roadmap", base, text: base + "\nOne review.\n", key: "lost-receipt" }
+  const submitted = try first.act(request)
+  const restarted = try makeWikiFactory("maintainer", store)
+  const recovered = try restarted.act(request)
+  const proposals = try Ref.get(store.proposals)
+  try Effect.try(() => { expect(recovered.review).toBe(submitted.review); expect(proposals).toHaveLength(1) })
+}))

@@ -1,3 +1,4 @@
+import { WikiDrafting } from "../src/core/WikiWriter.vibe"
 import { beginReply, recordReplyStart, canComposeReply, beginReplyComposition, finishReplyComposition, canSettleReply, recordReplySettlement } from "../src/core/flowDecision.vibe"
 import { initialProgress, advanceProgress, completion, type ProgressState } from "./replyProgressDecision.vibe"
 import { promptWindow } from "../src/core/sequenceDecision.vibe"
@@ -264,9 +265,10 @@ effect function run(reply: string, model: HostModel["Service"], sink: EventSink.
   const tours = try Tours
   const { history } = try HistoryTools
   const sandbox = Option.getOrElse(try Effect.serviceOption(SandboxAgent), () => closed)
+  const drafting = Option.getOrUndefined(try Effect.serviceOption(WikiDrafting))
   const tools = try AgentActions
   const actions = tools.actions === undefined ? [] : [actionTools(tools.actions, tools.announce)]
-  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours), ...actions], REPLY_CALLS), EventSink.EventSink = sink {
+  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours, drafting), ...actions], REPLY_CALLS), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }

@@ -1,0 +1,27 @@
+import { DurableText } from "./wire.vibe"
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { WikiFailure, WikiState, type WikiApi, type WikiRequest } from "./wikiSchemas.vibe"
+const reasons = ["forbidden", "connect", "sign-in", "missing", "unknown", "conflict", "empty", "invalid", "unavailable", "rate-limited", "no-model", "draft", "budget", "partial", "failed"] as const
+export effect function liveWiki(origin: string): WikiApi!!HttpClient.HttpClient {
+  const client = try HttpClient.HttpClient
+  const answer = effect (response: import("effect/http").HttpClientResponse.HttpClientResponse) => {
+    if (response.status !== 200) {
+      const body = response.json catch () => undefined
+      const failure = Schema.decodeUnknownOption(Schema.Struct({ unwritten: Schema.optionalKey(Schema.Boolean), reason: Schema.Literals(reasons) }))(body)
+      throw new WikiFailure(Option.isSome(failure) ? failure.value : { reason: "unavailable" })
+    }
+    const body = try response.json.pipe(Effect.mapError(() => new WikiFailure({ reason: "protocol" })))
+    return try Schema.decodeUnknownEffect(WikiState)(body).pipe(Effect.mapError(() => new WikiFailure({ reason: "protocol" })))
+  }
+  return {
+    read: effect (page) => {
+      try Schema.decodeUnknownEffect(DurableText)(page).pipe(Effect.mapError(() => new WikiFailure({ reason: "invalid", unwritten: true })))
+      const response = try client.execute(HttpClientRequest.get(origin + "/api/wiki?page=" + encodeURIComponent(page))).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+      return try answer(response)
+    },
+    act: effect (request: WikiRequest) => {
+      const response = try client.execute(HttpClientRequest.post(origin + "/api/wiki").pipe(HttpClientRequest.bodyJsonUnsafe(request))).pipe(Effect.mapError(() => new WikiFailure({ reason: "unavailable" })))
+      return try answer(response)
+    },
+  }
+}

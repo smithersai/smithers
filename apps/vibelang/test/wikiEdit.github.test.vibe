@@ -1,0 +1,93 @@
+// Opt-in real GitHub test, confined to the authorized test repository and disposable branches. Nothing merges.
+import { describe, expect, it } from "@effect/vitest"
+import { Base64 } from "effect/encoding"
+import { SecureRandom } from "effect/crypto"
+import { FetchHttpClient } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { githubWikiHost, WikiAuthority, wikiWriteKey, wikiFailureOf } from "../worker/Wiki.vibe"
+import { WikiHost, wikiEditFlows, wikiEditRegistration } from "../src/core/wikiFlows.vibe"
+import type { WikiRequest } from "../src/core/wikiSchemas.vibe"
+const token = runSync(Config.option(Config.Redacted("GITHUB_TEST_TOKEN")))
+
+describe("wiki edits on real GitHub: roninjin10/smithers-github-tests", () => {
+  it.live.skipIf(Option.isNone(token))(Option.isNone(token) ? "SKIP: GITHUB_TEST_TOKEN is absent; real GitHub writes were not run" : "both roles open the person's fenced review change, replay once, and leave the base untouched", () => scoped(effect {
+    if (Option.isNone(token)) return
+    provide FetchHttpClient.layer, WebCrypto.layer {
+      const client = try GitHub.GitHubClient.make({ token: Redacted.value(token.value) }, {})
+      const who = try client.request("GET", "/user", undefined, { schema: Schema.Struct({ id: Schema.Number, login: Schema.String }) })
+      const upstream = try client.request("GET", "/repos/roninjin10/smithers-github-tests", undefined, { schema: Schema.Struct({ default_branch: Schema.String }) })
+      const branch = `vibelang/wiki-fixture-${try (try SecureRandom.SecureRandom).uuidV4()}`
+      const repo = { owner: "roninjin10", name: "smithers-github-tests", api: "https://api.github.com", agent: "", root: "wiki", branch }
+      const principal = try Ref.make({ id: String(who.id), login: who.login, role: "contributor" as "contributor" | "maintainer", token: token.value })
+      const authority = Layer.succeed(WikiAuthority, { current: () => Ref.get(principal) })
+      const host = try Effect.provide(githubWikiHost(repo), authority)
+      const context = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, host))))
+      const engine = Context.get(context, FlowRuntime.FlowRuntime)
+      const reviews: number[] = []
+      const personalBranches: Array<{ owner: string; name: string }> = []
+      const source = "# Wiki fixture\n\nA real repository page.\n"
+      const act = (request: WikiRequest) => engine.execute(wikiEditFlows.find(flow => flow._tag === `vibelang/wiki/${request.op}`)!, { executionId: `wiki/${who.id}/${request.op}/${request.key}`, payload: request })
+      const work = effect {
+        const head = try GitHub.Refs.getBranch(repo.owner, repo.name, upstream.default_branch)
+        if (Option.isNone(head)) return try Effect.die("The test repository has no default branch")
+        try GitHub.Refs.createBranch(repo.owner, repo.name, { name: branch, sha: head.value.sha })
+        try GitHub.Commits.createOnBranch(repo.owner, repo.name, { branch, expectedHeadOid: head.value.sha, headline: "Wiki test fixture", additions: [{ path: "wiki/index.md", contents: try Effect.try(() => Base64.encode(source)) }], deletions: [] })
+        for (const op of ["propose", "save"] as const) {
+          try Ref.update(principal, person => ({ ...person, role: op === "save" ? "maintainer" as const : "contributor" as const }))
+          const request: WikiRequest = { op, page: "index", base: source, text: source + `\nReviewed ${op}.\n`, key: `${branch.replaceAll("/", "-")}-${op}` }
+          const marker = try wikiWriteKey(repo, String(who.id), request, "branch")
+          personalBranches.push({ owner: who.login, name: try Effect.try(() => GitHub.Once.branchName("vibelang/wiki-", "index", marker)) })
+          const first = try act(request)
+          const replay = try act(request)
+          const number = Number(first.review!.split("/").at(-1))
+          reviews.push(number)
+          const pull = try client.request("GET", `/repos/${repo.owner}/${repo.name}/pulls/${number}`, undefined, { schema: Schema.Struct({ merged: Schema.Boolean, user: Schema.Struct({ id: Schema.Number }), base: Schema.Struct({ ref: Schema.String }), head: Schema.Struct({ ref: Schema.String, repo: Schema.Struct({ owner: Schema.Struct({ login: Schema.String }) }) }) }) })
+          const observed = try GitHub.Proposals.documentReview(repo.owner, repo.name, number)
+          const changed = try GitHub.Contents.getText(pull.head.repo.owner.login, repo.name, "wiki/index.md", { ref: pull.head.ref })
+          const base = try GitHub.Contents.getText(repo.owner, repo.name, "wiki/index.md", { ref: branch })
+          const commit = try client.request("GET", `/repos/${pull.head.repo.owner.login}/${repo.name}/commits/${encodeURIComponent(pull.head.ref)}`, undefined, { schema: Schema.Struct({ commit: Schema.Struct({ message: Schema.String }) }) })
+          try Effect.try(() => {
+            expect(replay).toEqual(first)
+            expect(pull.user.id).toBe(who.id)
+            expect(pull.head.repo.owner.login).toBe(who.login)
+            expect(pull.base.ref).toBe(branch)
+            expect(pull.merged).toBe(false)
+            expect(observed).toMatchObject({ _tag: "Some", value: { author: who.id, files: [{ filename: "wiki/index.md", status: "modified" }] } })
+            expect(changed).toMatchObject({ _tag: "Some", value: { text: request.text } })
+            expect(base).toMatchObject({ _tag: "Some", value: { text: source } })
+            expect(commit.commit.message).toContain("Smithers-Write:")
+          })
+        }
+        // Fault the authority seam with a real concurrent repository edit after the initial source read.
+        let checks = 0
+        const concurrent = source + "\nConcurrent edit.\n"
+        const raceCurrent = effect () => {
+          checks += 1
+          if (checks === 3) {
+            const now = try GitHub.Refs.getBranch(repo.owner, repo.name, branch).pipe(Effect.provideService(GitHub.GitHubClient.GitHubClient, client))
+            if (Option.isNone(now)) return try Effect.die("The fixture base disappeared")
+            try GitHub.Commits.createOnBranch(repo.owner, repo.name, { branch, expectedHeadOid: now.value.sha, headline: "Concurrent wiki fixture edit", additions: [{ path: "wiki/index.md", contents: try Effect.try(() => Base64.encode(concurrent)) }], deletions: [] }).pipe(Effect.provideService(GitHub.GitHubClient.GitHubClient, client), Effect.orDie)
+          }
+          return try Ref.get(principal)
+        }
+        const racing: WikiAuthority.Shape = { current: () => raceCurrent().pipe(Effect.mapError(wikiFailureOf)) }
+        const racingHost = try Effect.provideService(githubWikiHost(repo), WikiAuthority, racing)
+        const racingContext = try Layer.build(wikiEditRegistration.pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(WikiHost, racingHost))))
+        const refused = try Effect.result(Context.get(racingContext, FlowRuntime.FlowRuntime).execute(wikiEditFlows.find(flow => flow._tag === "vibelang/wiki/save")!, { executionId: `wiki/${who.id}/save/pinned-race`, payload: { op: "save", page: "index", base: source, text: source + "\nMy older edit.\n", key: "pinned-race" } }))
+        const preserved = try GitHub.Contents.getText(repo.owner, repo.name, "wiki/index.md", { ref: branch })
+        try Effect.try(() => {
+          expect(refused).toMatchObject({ _tag: "Failure", failure: { reason: "conflict" } })
+          expect(preserved).toMatchObject({ _tag: "Some", value: { text: concurrent } })
+        })
+      }
+      try ensuring(work, effect {
+        for (const number of reviews) try client.request("PATCH", `/repos/${repo.owner}/${repo.name}/pulls/${number}`, { state: "closed" }).pipe(Effect.ignore)
+        for (const personal of personalBranches) try client.request("DELETE", `/repos/${personal.owner}/${repo.name}/git/refs/heads/${personal.name}`).pipe(Effect.ignore)
+        try client.request("DELETE", `/repos/${repo.owner}/${repo.name}/git/refs/heads/${branch}`).pipe(Effect.ignore)
+      }).pipe(Effect.provideService(GitHub.GitHubClient.GitHubClient, client))
+    }
+  }), 120_000)
+})

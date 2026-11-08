@@ -1,8 +1,10 @@
-// Read-only until decision 0019 supplies authorized editing; no local role imitation.
-// The designer's wiki pane: chrome and navigation stay in Foldkit; Markdown is compiled at build time.
+// The designer's wiki pane (wiki/designs/wiki), including its edit-maintainer and propose-contributor screens:
+// chrome and navigation stay in Foldkit; Markdown is compiled at build time, edits render through the same renderer.
 import type { Html, HtmlBuilder } from "foldkit/html"
-import { pages, wikiPage } from "../core/wiki.vibe"
-import { Message, type Model } from "./main.vibe"
+import { pages, wikiEditable, wikiLink, wikiPage } from "../core/wiki.vibe"
+import { wikiPermission } from "../core/conversation.vibe"
+import { toHtml } from "./markdown.vibe"
+import { accountOf, Message, type Model } from "./main.vibe"
 type H = HtmlBuilder<Message>
 const max = "M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"
 const min = "M4 14h6v6M20 10h-6V4M14 10l7-7M3 21l7-7"
@@ -10,6 +12,10 @@ export function wikiPane(model: Model, h: H): Html {
   const page = wikiPage(model.client.conversation.pane)
   const loading = model.wikiStatus === "loading"
   const error = model.wikiStatus === "error"
+  const editing = model.wikiEdit !== undefined && page !== undefined && model.wikiEdit.page === page.id ? model.wikiEdit : undefined
+  const role = accountOf(model).identity.role
+  const canEdit = page !== undefined && wikiEditable(page.id) && (wikiPermission(role, "save") || wikiPermission(role, "propose"))
+  const review = model.wikiReview !== undefined && page !== undefined && model.wikiReview.page === page.id ? model.wikiReview : undefined
   const query = model.wikiQuery ?? ""
   const filtered = pages.filter(page => `${page.label} ${page.title}`.toLowerCase().includes(query.toLowerCase()))
   const order = ["index", "rulings", "roadmap", "decisions", "designs/index"]
@@ -30,12 +36,27 @@ export function wikiPane(model: Model, h: H): Html {
       h.div([h.Class("vl-wiki-crumb")], [
         ...((page === undefined || page.id === "index") ? [h.b([], ["Wiki"])] : [crumb("index", "Wiki"), "/"]),
         ...(page?.decision ? [crumb("decisions", "Decisions"), "/", h.b([], [page.id.slice(10, 14)])] : page && page.id !== "index" ? [h.b([], [page.label])] : []),
+        ...(editing === undefined ? [] : [h.span([h.Class("vl-wiki-editing")], ["· editing"])]),
       ]),
+      ...(model.tour || editing !== undefined || !canEdit || loading || error ? [] : [h.button([h.Class("vl-wiki-edit"), h.Type("button"), h.OnClick(Message.ClickedEditWiki())], ["Edit"])]),
       ...(model.tour ? [] : [h.button([h.Class("vl-wiki-toggle"), h.Type("button"), h.Disabled(loading), h.AriaLabel(maximized ? "Minimize the wiki" : "Maximize the wiki"), h.OnClick(Message.ClickedDocs())], [
         h.svg([h.Class("vl-icon"), h.ViewBox("0 0 24 24"), h.AriaHidden(true)], [h.path([h.D(maximized ? min : max)], [])]),
       ])]),
     ]),
-    h.div([h.Class("vl-wiki-body")], [
+    ...(review === undefined ? [] : [h.div([h.Class("vl-wiki-note")], [
+      h.span([], ["Proposed"]),
+      h.a([h.Href(review.url), h.Target("_blank"), h.Rel("noreferrer")], ["Review", h.span([h.AriaHidden(true)], [" ↗"])]),
+    ])]),
+    ...(editing !== undefined ? [
+      h.div([h.Class("vl-wiki-edit-body")], [
+        h.textarea([h.Class("sui-textarea"), h.DataAttribute("code", "true"), h.Id("vl-wiki-editor"), h.AriaLabel(`Edit ${page!.label}`), h.Value(editing.text), h.Disabled(editing.busy || editing.submission !== undefined), h.OnInput(value => Message.UpdatedWikiEdit({ value }))]),
+        ...(editing.error === "" ? [] : [h.div([h.Role("alert"), h.Class("vl-wiki-edit-error")], [editing.error, ...(editing.error === "Connect GitHub." ? [h.a([h.Class("sui-button"), h.Href(`/api/auth/github?wiki-page=${editing.page}`)], ["Connect GitHub"])] : [])])]),
+        h.div([h.Class("vl-wiki-edit-footer")], [
+          h.button([h.Class("sui-button"), h.Type("button"), h.Disabled(editing.busy || editing.submission !== undefined), h.OnClick(Message.CanceledWikiEdit())], ["Cancel"]),
+          h.button([h.Class("sui-button sui-button-solid"), h.Type("button"), h.Disabled(editing.busy), h.OnClick(Message.SubmittedWikiEdit())], [editing.submission !== undefined && !editing.busy ? "Retry" : wikiPermission(role, "save") ? "Save" : "Propose"]),
+        ]),
+      ]),
+    ] : [h.div([h.Class("vl-wiki-body")], [
       h.nav([h.Class("vl-wiki-pages"), h.DataAttribute("scroll-surface", "true"), h.AriaLabel("Wiki pages")], [
         h.input([h.Class("sui-input vl-wiki-find"), h.Placeholder("Find a page"), h.AriaLabel("Find a page"), h.Value(query), h.OnInput(value => Message.FilteredWiki({ value }))]),
         ...(loading ? [h.div([h.Class("sui-skeleton")], [])] : [
@@ -52,8 +73,15 @@ export function wikiPane(model: Model, h: H): Html {
           h.time([], [page.date]),
           ...page.rulings.map(ruling => h.button([h.Class("sui-badge sui-badge-outline"), h.Type("button"), h.OnClick(Message.ClickedWiki({ page: `rulings#${ruling.toLowerCase()}` }))], [ruling])),
         ])] : []),
-        h.div([h.Class("sui-md"), h.InnerHTML(page.html)], []),
+        h.div([h.Class("sui-md"), h.InnerHTML(observedHtml(model, page.id))], []),
       ] : []),
-    ]),
+    ])]),
   ])
+}
+
+/** The page as observed in the repository, else the build's embedded rendering. */
+function observedHtml(model: Model, id: string): string {
+  const observed = model.wikiPages?.find(entry => entry.id === id)
+  const page = pages.find(entry => entry.id === id)!
+  return observed === undefined || observed.source === page.source ? page.html : toHtml(observed.source, href => wikiLink(id, href, pages.map(entry => entry.id)))
 }
