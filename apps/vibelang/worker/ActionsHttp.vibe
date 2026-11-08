@@ -1,0 +1,65 @@
+import { ByteSize } from "effect"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { type Registered, type Run, type Role } from "../src/actions/Actions.vibe"
+import { bundled, allowed, registration } from "../src/actions/catalog.vibe"
+import { ACTIONS_PATH, type RunRequest, RerunBody, StartBody } from "../src/actions/wire.vibe"
+import { ActionIdentity } from "./ActionIdentity.vibe"
+import type { Unreachable } from "./Unreachable.vibe"
+
+export interface ActionsApi {
+  list(flow: string): ReadonlyArray<Run>!Unreachable
+  start(request: RunRequest, role: Role): (string | null)!Unreachable
+  rerun(id: string, next: string, role: Role, owner: string): (string | null)!Unreachable
+  cancel(id: string, role: Role, owner: string): (string | null)!Unreachable
+  read(id: string): ReadonlyArray<Run>!Unreachable
+  events(id: string): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
+}
+const json = (body: unknown, status = 200) => HttpServerResponse.jsonUnsafe(body, { status, headers: { "cache-control": "no-store" } })
+const decodeStart = Schema.decodeUnknownEffect(Schema.fromJsonString(StartBody))
+const MAX_BYTES = 32000
+export effect function boundedBody() {
+  const request = try HttpServerRequest.HttpServerRequest
+  const declared = request.headers["content-length"]
+  if (declared !== undefined && (!/^[0-9]+$/.test(declared) || Number(declared) > MAX_BYTES)) return { status: 413, text: "" }
+  const read = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(MAX_BYTES)), Effect.timeoutOption("3 seconds")) catch () => undefined
+  return read === undefined ? { status: 413, text: "" } : Option.isNone(read) ? { status: 408, text: "" } : { status: 200, text: read.value }
+}
+export effect function handle(api: ActionsApi, url: URL) {
+  const request = try HttpServerRequest.HttpServerRequest
+  const principal = try (try ActionIdentity).request()
+  if (request.method !== "GET" && request.headers.origin !== undefined && request.headers.origin !== new URL(request.originalUrl, url).origin) return json({ code: "forbidden" }, 403)
+  if (url.pathname === ACTIONS_PATH && request.method === "GET") return json((try (try Effect.orDie(bundled)).list()).map((flow) => registration(flow._tag)))
+  if (url.pathname === `${ACTIONS_PATH}/commands` && request.method === "GET") return json((try (try Effect.orDie(bundled)).list()).map((flow) => registration(flow._tag)).filter((entry) => entry.command !== "" && allowed(principal.role, entry)))
+  if (url.pathname === `${ACTIONS_PATH}/runs` && request.method === "GET") return json(try api.list(url.searchParams.get("flow") ?? ""))
+  if (url.pathname === `${ACTIONS_PATH}/runs` && request.method === "POST") {
+    const raw = try boundedBody()
+    if (raw.status !== 200) return json({ code: "input" }, raw.status)
+    const body = decodeStart(raw.text) catch () => undefined
+    if (body === undefined || !/^a[a-zA-Z0-9-]{1,64}$/.test(body.id)) return json({ code: "input" }, 400)
+    const entry = registration(body.flow)
+    if (!allowed(principal.role, entry)) return json({ code: "forbidden" }, 403)
+    const refusal = try api.start({ ...body, owner: principal.owner, name: principal.name ?? "Guest", actor: body.door === "agent" ? "agent" : "person" }, principal.role)
+    return refusal === null ? json({ id: body.id }, 202) : json({ code: refusal }, refusal === "forbidden" ? 403 : 409)
+  }
+  const parts = url.pathname.slice(`${ACTIONS_PATH}/runs/`.length).split("/")
+  const id = parts[0] ?? ""
+  if (!/^a[a-zA-Z0-9-]{1,64}$/.test(id)) return json({ code: "not-found" }, 404)
+  if (request.method === "POST" && parts.length === 2 && parts[1] === "rerun") {
+    const raw = try boundedBody()
+    if (raw.status !== 200) return json({ code: "input" }, raw.status)
+    const body = Schema.decodeUnknownEffect(Schema.fromJsonString(RerunBody))(raw.text) catch () => undefined
+    if (body === undefined || !/^a[a-zA-Z0-9-]{1,64}$/.test(body.id)) return json({ code: "input" }, 400)
+    const refusal = try api.rerun(id, body.id, principal.role, principal.owner)
+    return refusal === null ? json({ id: body.id }, 202) : json({ code: refusal }, refusal === "forbidden" ? 403 : 404)
+  }
+  if (request.method === "GET" && parts.length === 2 && parts[1] === "events") return try api.events(id)
+  if (request.method === "GET" && parts.length === 1) {
+    const found = (try api.read(id)).find((run) => run.id === id)
+    return found === undefined ? json({ code: "not-found" }, 404) : json(found)
+  }
+  if (request.method === "DELETE" && parts.length === 1) {
+    const refusal = try api.cancel(id, principal.role, principal.owner)
+    return refusal === null ? json({}) : json({ code: refusal }, refusal === "forbidden" ? 403 : 404)
+  }
+  return json({ code: "not-found" }, 404)
+}

@@ -3,6 +3,10 @@ cases = [
 ('src/core/sandboxDecision.vibe', 'clock-highwater', 'elapsedMilliseconds', 'earlier < later ? later - earlier : 0', 'later - earlier', 'rollback never subtracts previously metered usage'),
 ('src/core/sandboxDecision.vibe', 'usage-overdraw', 'remainingMilliseconds', 'spent < allowance ? allowance - spent : 0', 'allowance - spent', 'remaining allowance is never negative after overuse'),
 ('src/core/sandboxDecision.vibe', 'parallel-undercount', 'runningCount', 'if (sandboxes[i]!.running) count++', 'if (sandboxes[i]!.running) count += 0', 'all running containers contribute their concurrent count'),
+ ('src/core/conversation.vibe', 'action-cancel-step', 'cancelStep', 'state: "cancelled"', 'state: "passed"', 'cancellation marks only unfinished steps cancelled'),
+ ('src/core/conversation.vibe', 'action-snapshot-terminal', 'acceptSnapshot', '(state === "queued" || state === "running") && ', '', 'terminal snapshots stay terminal'),
+ ('src/core/conversation.vibe', 'action-step-order', 'acceptStep', 'nextAt >= at', 'true', 'older step telemetry cannot roll back progress'),
+ ('src/core/conversation.vibe', 'action-time-max', 'latestAt', 'oldAt > nextAt ? oldAt : nextAt', 'oldAt < nextAt ? oldAt : nextAt', 'run time never goes backwards'),
  ('src/core/flowDecision.vibe', 'tour-read-floor', 'readingHold', 'millis < 4000 ? 4000 : millis', 'millis < 4000 ? 0 : millis', 'short paragraphs retain a four-second floor'),
  ('src/core/flowDecision.vibe', 'tour-read-rate', 'readingHold', 'wordCount * 300 + 1000', 'wordCount * 299 + 1000', 'reading time allows 200 words per minute'),
  ('src/core/flowDecision.vibe', 'tour-read-orient', 'readingHold', 'wordCount * 300 + 1000', 'wordCount * 300', 'each stop includes one second to orient'),
@@ -689,6 +693,13 @@ cases = [
   '(run.phase === "recorded" && run.action === "fold")',
   '(run.phase === "recorded")',
   'only a fold records more than once')]
+cases += [
+('src/core/conversation.vibe', 'action-terminal-mutation', 'settleRun', 'if (!runOpen(run.state) ||', 'if (false ||', 'a late settlement cannot change a terminal run'),
+('src/core/conversation.vibe', 'action-result-mutation', 'settleRun', 'result: resultText', 'result: "wrong"', 'settlement keeps the actual result'),
+('src/core/conversation.vibe', 'action-step-terminal', 'stepRun', 'if (!runOpen(run.state) || key === "")', 'if (key === "")', 'a late step cannot change a terminal run'),
+('src/core/conversation.vibe', 'action-role-mutation', 'mayRun', 'role === "contributor"', 'role === "community"', 'registered actions require at least Contributor'),
+('src/core/conversation.vibe', 'action-internal-mutation', 'mayRun', '!internal && ', '', 'host-only registered flows cannot be started by a caller'),
+]
 
 
 cases += [('src/history/mythical.vibe',

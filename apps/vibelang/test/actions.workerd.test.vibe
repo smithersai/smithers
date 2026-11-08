@@ -1,0 +1,139 @@
+import { afterAll, beforeAll, describe } from "vitest"
+import { expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientRequest, FetchHttpClient } from "effect/http"
+import { Actions } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { serveApi, type Served } from "./support/workerd.vibe"
+
+function live(origin: string) { return LiveActions(origin).pipe(Layer.provide(FetchHttpClient.layer)) }
+effect function settled(id: string) {
+  return try Stream.runLast((try Actions).follow(id).pipe(Stream.takeUntil((run) => run.state !== "queued" && run.state !== "running")))
+}
+describe("registered actions on real workerd SQLite and alarms", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi({ ACTION_FAULT: "fail" })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+  it.live("lists real declarations and filters viewer commands through the live API", () => effect {
+    provide live(api!.origin) {
+      const actions = try Actions
+      const entries = try actions.list()
+      const commands = try actions.commands()
+      const denied = actions.start("vibelang/Post", { text: "denied" }, "button") catch (e) => e.code
+      try Effect.try(() => {
+        expect(entries.map((entry) => entry.name)).toEqual(expect.arrayContaining(["vibelang/Post", "vibelang/Reply", "vibelang/Tour", "vibelang/docs/open"]))
+        expect(commands.map((entry) => entry.command)).toEqual(["/tour"])
+        expect(denied).toBe("forbidden")
+      })
+    }
+  })
+  it.live("returns before work settles; follows actual steps, failure and the durable runs list", () => effect {
+    provide live(api!.origin) {
+      const actions = try Actions
+      const id = try actions.command("/tour")
+      const result = try timeout(settled(id), "10 seconds")
+      const rows = try actions.runs("vibelang/Tour")
+      const read = try actions.read(id)
+      try Effect.try(() => {
+        expect(Option.isSome(result)).toBe(true)
+        expect(read.state).toBe("failed")
+        expect(read.steps.length).toBeGreaterThan(0)
+        expect(read.steps.some((step) => step.state === "failed")).toBe(true)
+        expect(rows.some((row) => row.id === id && row.state === "failed")).toBe(true)
+        expect(read.door).toBe("slash")
+        expect(read.result).not.toBe("")
+      })
+    }
+  })
+})
+
+describe("actions use signed sessions and current grants at durable boundaries", () => {
+  let api: Served
+  beforeAll(async () => { api = await runPromise(serveApi({
+    ACTION_FAULT: "hold", VIBELANG_ORIGIN: "https://factory.example", VIBELANG_INITIAL_MAINTAINER_ID: "1",
+    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+    SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  })) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+  async function request(url: string, options: { readonly method?: "GET" | "POST" | "DELETE"; readonly headers?: Record<string, string>; readonly body?: string } = {}) {
+    return await runPromise(Effect.provide(effect {
+      const client = try HttpClient.HttpClient
+      const base = HttpClientRequest.make(options.method ?? "GET")(url).pipe(HttpClientRequest.setHeaders(options.headers ?? {}))
+      const response = try client.execute(options.body === undefined ? base : HttpClientRequest.bodyText(base, options.body))
+      const body = response.json catch () => null
+      return { status: response.status, json: async () => body }
+    }, FetchHttpClient.layer))
+  }
+  async function issue(id: string, login: string) {
+    const response = await request(`${api.origin}/__fixture/issue?id=${id}&login=${login}`)
+    return (await response.json() as { readonly cookie: string }).cookie
+  }
+  async function write(path: string, cookie: string, body: unknown, method: "POST" | "DELETE" = "POST") {
+    return await request(api.origin + path, { method, headers: { cookie, "content-type": "application/json" }, ...(method === "DELETE" ? {} : { body: JSON.stringify(body) }) })
+  }
+  async function grant(cookie: string, id: string, role: string) {
+    const response = await request(api.origin + "/api/roles", { method: "POST", headers: { cookie, origin: "https://factory.example", "content-type": "application/json" }, body: JSON.stringify({ id, role }) })
+    expect(response.status).toBe(200)
+  }
+  async function until(id: string, state: (runs: ReadonlyArray<import("../src/actions/Actions.vibe").Run>) => boolean) {
+    for (let count = 0; count < 100; count++) {
+      const runs = await (await request(`${api.origin}/api/actions/runs`)).json() as ReadonlyArray<import("../src/actions/Actions.vibe").Run>
+      if (state(runs)) return runs
+      await runPromise(Effect.sleep(20))
+    }
+    throw new Error(`Run ${id} did not reach its expected boundary`)
+  }
+  it("discovers Contributor commands from a real session and refuses forged roles", async () => {
+    const maintainer = await issue("1", "will")
+    const person = await issue("17", "ada")
+    const before = await (await request(api.origin + "/api/actions/commands", { headers: { cookie: person, "x-vibelang-role": "maintainer" } })).json() as ReadonlyArray<{ readonly command: string }>
+    expect(before.map(entry => entry.command)).toEqual(["/tour"])
+    await grant(maintainer, "17", "contributor")
+    const after = await (await request(api.origin + "/api/actions/commands", { headers: { cookie: person } })).json() as ReadonlyArray<{ readonly command: string }>
+    expect(after.map(entry => entry.command)).toContain("/post")
+    const forged = await write("/api/actions/runs", "", { id: "aforged", flow: "vibelang/Post", input: { text: "denied" }, door: "agent", owner: "1", role: "maintainer" })
+    expect(forged.status).toBe(403)
+  })
+  it("cancels the actual Reply child of a Post, ending its held engine execution", async () => {
+    const maintainer = await issue("1", "will")
+    const person = await issue("18", "rira")
+    await grant(maintainer, "18", "contributor")
+    const started = await write("/api/actions/runs", person, { id: "achild", flow: "vibelang/Post", input: { text: "Hello" }, door: "button" })
+    expect(started.status).toBe(202)
+    await until("achild-reply", runs => runs.some(run => run.id === "achild-reply" && run.state === "running"))
+    const stopped = await write("/api/actions/runs/achild-reply", person, {}, "DELETE")
+    expect(stopped.status).toBe(200)
+    const runs = await until("achild-reply", runs => runs.some(run => run.id === "achild-reply" && run.state === "cancelled"))
+    expect(runs.find(run => run.id === "achild")?.state).toBe("passed")
+    const chat = await (await request(api.origin + "/api/conversations/action-achild")).json() as { readonly entries: ReadonlyArray<{ readonly author: string; readonly done: boolean; readonly error: string }> }
+    expect(chat.entries.find(entry => entry.author === "agent")).toMatchObject({ done: true, error: "Cancelled" })
+  }, 20_000)
+  it("rejects reused ids with different inputs and checks demotion before replayed receipts", async () => {
+    const maintainer = await issue("1", "will")
+    const person = await issue("19", "joss")
+    await grant(maintainer, "19", "contributor")
+    const body = { id: "areplay", flow: "vibelang/Post", input: { text: "original" }, door: "button" }
+    const first = await write("/api/actions/runs", person, body)
+    const replay = await write("/api/actions/runs", person, body)
+    const changed = await write("/api/actions/runs", person, { ...body, input: { text: "different" } })
+    expect([first.status, replay.status, changed.status]).toEqual([202, 202, 409])
+    await grant(maintainer, "19", "new")
+    const stale = await write("/api/actions/runs", person, body)
+    const rerun = await write("/api/actions/runs/areplay/rerun", person, { id: "astale" })
+    const cancel = await write("/api/actions/runs/areplay", person, {}, "DELETE")
+    expect([stale.status, rerun.status, cancel.status]).toEqual([403, 403, 403])
+  }, 20_000)
+  it("rearms a queued history request after the host failed before engine admission", async () => {
+    const maintainer = await issue("1", "will")
+    const person = await issue("20", "mina")
+    await grant(maintainer, "20", "contributor")
+    const body = { id: "arecover", flow: "vibelang/history/show", input: { what: "outline" }, door: "button" }
+    const crash = await request(api.origin + "/action-crash/arecover", { method: "POST", body: JSON.stringify({ request: { ...body, owner: "20", name: "mina", actor: "person" }, role: "contributor" }) })
+    expect(await crash.json()).toEqual({ interrupted: true })
+    const queued = await (await request(api.origin + "/api/actions/runs/arecover")).json() as { readonly state: string }
+    expect(queued.state).toBe("queued")
+    const retry = await write("/api/actions/runs", person, body)
+    expect(retry.status).toBe(202)
+    await until("arecover", runs => runs.some(run => run.id === "arecover" && run.state === "passed"))
+  }, 20_000)
+
+})

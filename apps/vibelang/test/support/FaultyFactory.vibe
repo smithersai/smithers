@@ -29,6 +29,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
     return {
       mode: fault === "live-header" ? "live" : base.mode,
       ...(base.accounts === undefined ? {} : { accounts: base.accounts }),
+      ...(base.policy === undefined ? {} : { policy: base.policy }),
       ...(base.issues === undefined ? {} : { issues: {
         read: effect () => {
           if (fault === "issues" && !observation.faulted) { observation.faulted = true; throw new IssueFailure({ reason: "unavailable" }) }

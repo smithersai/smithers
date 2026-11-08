@@ -86,6 +86,12 @@ function hasEffect(before: Conversation, event: Event, after: Conversation): boo
   switch (event.type) {
     case "RoleGranted": return after.roles[0]?.id === event.id && after.roles[0]?.role === event.role
     case "ActionAuthorized": return after.roles === before.roles
+    case "ActionRequested":
+      return after.runs?.some((run) => run.id === event.id && run.flow === event.flow && run.state === "queued") ?? false
+    case "ActionStep":
+      return after.entries === before.entries && (after.runs?.some((run) => run.id === event.id && run.steps.some((step) => step.key === event.key && step.state === event.state)) ?? false)
+    case "ActionSettled":
+      return after.entries === before.entries && (after.runs?.some((run) => run.id === event.id && run.state === event.state) ?? false)
     case "Posted":
       return grew && after.entries[after.entries.length - 1]!.clientId === event.clientId
     case "ReplyStarted":

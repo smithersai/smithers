@@ -2,6 +2,12 @@ import { accountRoute } from "../src/core/protocolDecision.vibe"
 import { publicIssues } from "./Issues.vibe"
 import { writerLayer } from "./VipDraft.vibe"
 import { ChatModel, Spend as IssueSpend } from "./Reply.vibe"
+import type { Run, Role } from "../src/actions/Actions.vibe"
+import type { RunRequest } from "../src/actions/wire.vibe"
+import type { ActionsApi } from "./ActionsHttp.vibe"
+import { ActionIdentity, fromAccounts, trustedOf } from "./ActionIdentity.vibe"
+import * as ActionRuns from "./ActionRuns.vibe"
+import * as ActionDirectory from "./ActionDirectory.vibe"
 // The API Worker (wiki/decisions/0006-hosting.md, 0010-live-agent.md): an Effect-native Alchemy Worker that answers
 // /api/* for the site Worker and hosts the two Durable Object classes Objects.vibe describes, one per conversation
 // and one per UTC day. Alchemy runs every handler; nothing here runs an Effect itself.
@@ -26,8 +32,19 @@ import type { Spend } from "./Reply.vibe"
 import { SandboxGateway, SandboxIdentity, gatewayWithIdentity } from "./SandboxAccounts.vibe"
 import { Unreachable } from "./Unreachable.vibe"
 
+import { Actions } from "../src/actions/Actions.vibe"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { ActionDevice } from "../src/actions/execution.vibe"
+import { Factory as importFactory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+
 export interface ConversationShape {
-  readonly post: (clientId: string, name: string, text: string) => (string | null)!!RuntimeContext
+  readonly startAction: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
+  readonly actionRequest: () => (RunRequest | undefined)!!RuntimeContext
+  readonly actionRuns: () => ReadonlyArray<Run>!!RuntimeContext
+  readonly cancelAction: (id: string, role: Role, owner: string) => (string | null)!!RuntimeContext
+  readonly post: (clientId: string, name: string, text: string, owner?: string) => (string | null)!!RuntimeContext
   readonly read: (after: number) => ReadSnapshot!!RuntimeContext
   readonly openWiki: (page: string) => (string | null)!!RuntimeContext
   readonly tour: () => (string | null)!!RuntimeContext
@@ -92,6 +109,14 @@ const AccountsLive = ProjectAccounts.make(effect {
   }
 })
 
+export interface ActionDirectoryShape {
+  readonly list: (flow: string) => ReadonlyArray<Run>!!RuntimeContext
+  readonly start: (request: RunRequest, role: Role) => (string | null)!!RuntimeContext
+  readonly rerun: (id: string, next: string, role: Role, owner: string) => (string | null)!!RuntimeContext
+  readonly cancel: (id: string, role: Role, owner: string) => (string | null)!!RuntimeContext
+}
+export class ActionIndex extends Cloudflare.DurableObject<ActionIndex, ActionDirectoryShape>()("ActionIndex") {}
+
 type Namespace<Shape> = Cloudflare.DurableObject<Shape>
 
 /** The stub of `name`'s object; a call that fails to reach it is `Unreachable`. */
@@ -153,19 +178,37 @@ const HistoryLive = History.make(effect {
   }
 })
 
+/** Session/grant RPCs capture the host runtime; no credential enters a run request or journal. */
+function actionIdentity(namespace: Namespace<AccountsShape>, runtime: RuntimeContext["Service"], trusted?: { readonly owner: string; readonly name?: string }) {
+  const account = effect () => try objectOf(namespace, "project", "accounts")
+  return fromAccounts({
+    current: effect (signed) => try reached(runtime, "accounts", (try account()).current(signed)),
+    role: effect (owner) => try reached(runtime, "accounts", (try account()).role(owner)),
+    allowed: effect (owner, operation) => try reached(runtime, "accounts", (try account()).allowed(owner, operation)),
+  }, trusted)
+}
+
 const ConversationLive = Conversation.make(effect {
   const state = try Cloudflare.DurableObjectState
   const budgets = (try Budget) as Namespace<BudgetShape>
   const histories = (try History) as Namespace<HistoryShape>
+  const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
   // Read when the Worker deploys and when an object starts, so the deployment's model and key are bound.
   const model = try Effect.orDie(chatModel())
   return effect {
     // The object's id, the same for every incarnation: the engine's host id (it has none when Alchemy plans).
     const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
     const sequencer = try Objects.conversation(state.raw.storage)
+    const identity = actionIdentity(accounts, try RuntimeContext)
+    const actionRuns = ActionRuns.make(hostId, state.raw.storage, sequencer, identity)
+
     return {
-      post: (clientId: string, name: string, text: string) =>
-        Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text),
+      startAction: (request: RunRequest, role: Role) => Effect.orDie(actionRuns.start(request, role)),
+      actionRequest: () => promise(() => state.raw.storage.get<RunRequest>("action/request")),
+      actionRuns: () => ActionRuns.read(sequencer),
+      cancelAction: (id: string, role: Role, owner: string) => Effect.orDie(actionRuns.cancel(id, role, owner)),
+      post: (clientId: string, name: string, text: string, owner?: string) =>
+        Objects.post(hostId, state.raw.storage, sequencer, clientId, name, text, owner),
       read: sequencer.read,
       openWiki: (page: string) => Objects.openWiki(hostId, state.raw.storage, sequencer, page),
       tour: () => Objects.tour(hostId, state.raw.storage, sequencer),
@@ -176,9 +219,24 @@ const ConversationLive = Conversation.make(effect {
         try sequencer.ensureDispatched()
         return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://conversation.invalid")) ?? 0))
       },
-      alarm: () => effect {
+      alarm: () => scoped(effect {
         const runtime = try RuntimeContext
         const spend = spendOf(runtime, budgets, hostId)
+        const request = try promise(() => state.raw.storage.get<RunRequest>("action/request"))
+        const snapshot = try sequencer.read(0)
+        const post = snapshot.entries.find(entry => entry.author === "person" && !snapshot.entries.some(reply => reply.inReplyTo === entry.id && reply.done))
+        const owner = request?.owner ?? (post === undefined ? "" : (try promise(() => state.raw.storage.get<string>(`post-owner/${post.id}`))) ?? "")
+        const name = request?.name ?? post?.name ?? "Guest"
+        const principal: Principal = { role: try Effect.orDie(identity.role(owner)), name, agent: request === undefined || request.actor === "agent" }
+        const entrypoint = state.exports.default
+        if (entrypoint === undefined) return try Effect.die(new Error("The action host has no default entrypoint"))
+        const self = try Effect.orDie(entrypoint({ props: { actionOwner: owner, actionName: name } }))
+        const transport = Layer.succeed(HttpClient.HttpClient, try Effect.orDie(Effect.try(() => Cloudflare.toHttpClient(self))))
+        const actionContext = try Layer.buildWithScope(Layer.merge(LiveActions("https://actions.internal"), LiveFactory("https://actions.internal")).pipe(Layer.provide(transport)), try Scope.Scope)
+        const tools = {
+          actions: Context.get(actionContext, Actions),
+          announce: effect (run: Run) => { try sequencer.action({ type: "RequestAction", id: run.id, flow: run.flow, door: "agent", actor: "agent", at: run.started }) },
+        }
         // The agent's history tools reach VibeLang's History object, as the API's routes do.
         const history = HistoryObject.readerOver(
           (request) => effect {
@@ -187,11 +245,49 @@ const ConversationLive = Conversation.make(effect {
           },
           (name, body, principal, operation) => effect {
             const object = try objectOf(histories, REPOSITORY, "history")
-            return try reached(runtime, "history", object.act(name, body, principal, operation))
+            const fresh: Principal = { ...principal, role: try Effect.orDie(identity.role(owner)) }
+            return try reached(runtime, "history", object.act(name, body, fresh, operation))
           },
+          principal,
         )
-        try Objects.alarm(hostId, state.raw.storage, sequencer, spend, model, history)
+        try Effect.provideService(actionRuns.alarm(spend, model, history), AgentActions, tools).pipe(Effect.provideService(ActionDevice, Context.get(actionContext, importFactory)))
+      }),
+    }
+  }
+})
+
+const ActionIndexLive = ActionIndex.make(effect {
+  const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
+  const state = try Cloudflare.DurableObjectState
+  const conversations = (try Conversation) as Namespace<ConversationShape>
+  return effect {
+    const runtime = try RuntimeContext
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
+    const runs: ActionDirectory.Runs = {
+      request: effect (id) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try reached(runtime, "action", object.actionRequest())
       },
+      start: effect (request, role) => {
+        const object = try objectOf(conversations, `action-${request.id}`, "action")
+        return try Effect.orDie(reached(runtime, "action", object.startAction(request, role)))
+      },
+      read: effect (id) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try Effect.orDie(reached(runtime, "action", object.actionRuns()))
+      },
+      cancel: effect (id, role, owner) => {
+        const object = try objectOf(conversations, `action-${root(id)}`, "action")
+        return try Effect.orDie(reached(runtime, "action", object.cancelAction(id, role, owner)))
+      },
+    }
+    const directory = ActionDirectory.directory(hostId, state.raw.storage, runs, actionIdentity(accounts, runtime))
+    return {
+      list: directory.list,
+      start: (request: RunRequest, role: Role) => Effect.orDie(directory.start(request, role)),
+      rerun: (id: string, next: string, role: Role, owner: string) => Effect.orDie(directory.rerun(id, next, role, owner)),
+      cancel: (id: string, role: Role, owner: string) => Effect.orDie(directory.cancel(id, role, owner)),
     }
   }
 })
@@ -214,6 +310,13 @@ const SandboxIdentityLive = Layer.effect(SandboxIdentity, effect {
   return {
     request: effect () => {
       const runtime = try RuntimeContext
+      const trusted = trustedOf(try (try Cloudflare.WorkerExecutionContext).props)
+      if (trusted !== undefined) {
+        const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
+        const admitted = try Effect.orDie(reached(runtime, "accounts", account.allowed(trusted.owner, "sandbox")))
+        const role = admitted ? try Effect.orDie(reached(runtime, "accounts", account.role(trusted.owner))) : "viewer" as const
+        return { owner: trusted.owner, role }
+      }
       const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
       return try Accounts.sandboxPrincipal(
         signed => Effect.orDie(reached(runtime, "accounts", account.current(signed))),
@@ -234,6 +337,7 @@ const program = effect {
   const conversations = (try Conversation) as Namespace<ConversationShape>
   const { gateway } = try SandboxGateway
   const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
+  const actions = (try ActionIndex) as Namespace<ActionDirectoryShape>
   const histories = (try History) as Namespace<HistoryShape>
   // Bound when the Worker deploys, as its objects read them.
   try Effect.orDie(chatModel())
@@ -253,7 +357,7 @@ const program = effect {
           const account = try objectOf(accounts, "project", "accounts")
           const identity = try reached(runtime, "accounts", account.current(request.cookies[Accounts.SESSION]))
           if (identity.id !== "" && !Accounts.sameOrigin(request)) return "forbidden"
-          const refusal = try reached(runtime, "conversation", object.post(body.clientId, identity.login || "Guest", body.text))
+          const refusal = try reached(runtime, "conversation", object.post(body.clientId, identity.login || "Guest", body.text, identity.id))
           if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(request.cookies[Accounts.SESSION]))
           return refusal
         },
@@ -294,7 +398,35 @@ const program = effect {
           return try reached(runtime, "history", object.fetch(request))
         },
       }
-      return try handle(api, history, gateway)
+      const root = (id: string) => id.endsWith("-reply") ? id.slice(0, -6) : id
+      const actionApi: ActionsApi = {
+        rerun: effect (id, next, role, owner) => {
+          const object = try objectOf(actions, "vibelang", "actions")
+          return try reached(runtime, "actions", object.rerun(id, next, role, owner))
+        },
+        list: effect (flow) => {
+          const object = try objectOf(actions, "vibelang", "actions")
+          return try reached(runtime, "actions", object.list(flow))
+        },
+        start: effect (request, role) => {
+          const object = try objectOf(actions, "vibelang", "actions")
+          return try reached(runtime, "actions", object.start(request, role))
+        },
+        cancel: effect (id, role, owner) => {
+          const object = try objectOf(actions, "vibelang", "actions")
+          return try reached(runtime, "actions", object.cancel(id, role, owner))
+        },
+        read: effect (id) => {
+          const object = try objectOf(conversations, `action-${root(id)}`, "action")
+          return try reached(runtime, "action", object.actionRuns())
+        },
+        events: effect (id) => {
+          const request = try HttpServerRequest.HttpServerRequest
+          const object = try objectOf(conversations, `action-${root(id)}`, "action")
+          return try reached(runtime, "action", object.fetch(request))
+        },
+      }
+      return try handle(api, history, gateway, actionApi).pipe(Effect.provideService(ActionIdentity, actionIdentity(accounts, runtime, trustedOf(try (try Cloudflare.WorkerExecutionContext).props))))
     },
   }
 }
@@ -302,6 +434,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ConversationLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive)),
+  program.pipe(Effect.provide(ActionIndexLive), Effect.provide(ConversationLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive)),
 ) {}
 

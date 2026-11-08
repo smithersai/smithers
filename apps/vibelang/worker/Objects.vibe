@@ -181,7 +181,7 @@ effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Seq
  * posts it (0011): it answers once the post is recorded and its reply dispatched, never after the model. `null` once
  * recorded, else the sequencer's refusal.
  */
-export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string) {
+export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string, owner?: string) {
   // HTTP decodes PostBody first; malformed direct host calls leave storage untouched.
   if (!Schema.is(PostBody)({ clientId, name, text })) return "invalid"
   const executionId = try postExecutionId()
@@ -190,13 +190,13 @@ export effect function post(hostId: string, storage: Storage, sequencer: Sequenc
     Layer.provide(Layer.succeed(Posts, postsOf(sequencer))),
   )
   // The engine's store failing to open is a defect, as the log failing to write is: the post was not answered.
-  return try Effect.orDie(execute(runtime, executionId, { clientId, name, text }))
+  return try Effect.orDie(execute(runtime, executionId, { clientId, name, text, ...(owner === undefined ? {} : { owner }) }))
 }
 
 effect function execute<E>(
   runtime: Layer.Layer<FlowRuntime.FlowRuntime, E>,
   executionId: string,
-  payload: { readonly clientId: string; readonly name: string; readonly text: string },
+  payload: { readonly clientId: string; readonly name: string; readonly text: string; readonly owner?: string },
 ) {
   provide runtime {
     const engine = try FlowRuntime.FlowRuntime
@@ -237,25 +237,48 @@ export effect function alarm(
   model: ChatModel.Shape,
   history: HistoryReader,
 ) {
-  const services = Layer.mergeAll(
-    Layer.succeed(HistoryTools, { history }),
-    Layer.succeed(Replies, repliesOf(sequencer)),
-    Layer.succeed(Tours, toursOf(sequencer)),
-    Layer.succeed(Spend, spend),
-    Layer.succeed(ChatModel, model),
-  )
   const outcome = try ExecutionObject.alarm(executionStorage(storage), {
     flows: [Reply, Tour],
-    runtime: (intent) =>
-      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
-        Layer.provide(ObjectDatabase.layer(storage)),
-        Layer.provide(services),
-      ),
+    runtime: (intent) => executionLayer(hostId, storage, sequencer, intent, { spend, model, history }),
     router: unrouted,
     settledRetentionMs: SETTLED_RETENTION_MS,
   })
   try sequencer.ensureDispatched()
   return outcome
+}
+
+interface ExecutionServices { readonly spend: Spend.Shape; readonly model: ChatModel.Shape; readonly history: HistoryReader }
+export service ActiveExecution { readonly services: ExecutionServices }
+function executionLayer(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, intent: ExecutionObject.Intent, active: ExecutionServices) {
+  const services = Layer.mergeAll(
+    Layer.succeed(HistoryTools, { history: active.history }),
+    Layer.succeed(Replies, repliesOf(sequencer)),
+    Layer.succeed(Tours, toursOf(sequencer)),
+    Layer.succeed(Spend, active.spend), Layer.succeed(ChatModel, active.model),
+  )
+  return CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(services),
+  )
+}
+
+/** One SDK host per action-object incarnation: cancellation interrupts the active drive and survives reload. */
+export function executionHost(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, admit: () => boolean!! = () => succeed(true)) {
+  return ExecutionObject.make(executionStorage(storage), {
+    flows: [Reply, Tour], router: unrouted, settledRetentionMs: SETTLED_RETENTION_MS,
+    runtime: (intent) => Layer.unwrap(effect { return executionLayer(hostId, storage, sequencer, intent, (try ActiveExecution).services) }),
+    canStart: admit,
+    afterAlarm: sequencer.ensureDispatched(),
+  })
+}
+
+/** Read the existing SDK journal result; alarm settlement also includes failed and cancelled executions. */
+export effect function executionResult(hostId: string, storage: Storage, intent: ExecutionObject.Intent) {
+  const runtime = CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  return try Effect.orDie(Effect.provide(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    if (intent.flow === Reply._tag) return try engine.poll(Reply, intent.executionId)
+    return try engine.poll(Tour, intent.executionId)
+  }, runtime))
 }
 
 

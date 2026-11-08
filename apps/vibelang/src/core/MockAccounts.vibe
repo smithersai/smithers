@@ -74,7 +74,8 @@ export effect function make() {
       if (!result.ok) throw new Denied({ action, least: leastRole(action) })
     },
   }
-  const accounts: Accounts.Shape & { readonly role: (id: string) => Role!! } = {
+  const accounts: Accounts.Shape & { readonly policy: Policy.Shape; readonly role: (id: string) => Role!! } = {
+    policy,
     role: (id) => Ref.get(state).pipe(Effect.map(ledger => roleOf(ledger.roles, id))),
     current,
     members: effect () => {

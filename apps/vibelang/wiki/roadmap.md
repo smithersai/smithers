@@ -24,8 +24,8 @@ brick                                   state         proof
                                                       source writes require 0019's explicit credential connection; lead deploys
 2   sign-in and roles                   done (local)  0019: shared GitHub auth, five mock identities, numbered grants; live callback setup/deploy remain (VL-21)
 3   issues as a tree, tasks, VIPs       in progress   0022: browser/CLI/MCP, GitHub sub-issues, commitments and repository VIP reviews; live chat held by issues-nested-effect
-4   actions and slash commands          held          0023: registry catalog and engine step telemetry landed; app held at
-                                                      actions-service-spread (VibeLang inference); compiler-policy approval pending
+4   actions and slash commands          done (local)   0023: registered actions, memory/workerd hosts, real traces, slash and agent calls;
+                                                      published 0.0.12; signed sessions/current grants, recovery/cancel regression checks; lead deploy remains
 5   mythical history                    done (local)  0020: the History machine proved (linearity, no loss, exactly one), the
                                                       bootstrap of 6,737 real commits, the flows, the live object and /history;
                                                       read by page (lane vl-mythical2); live writes wait for 0019's policy
@@ -61,7 +61,9 @@ brick                                   state         proof
 
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
 
-- **vl-actions (0023):** SDK foundation and Effect Json patch are landed. The second-run app delta, real-engine/browser/workerd receipts and remaining policy/integration checks are preserved in the lane report; service-spread inference awaits compiler approval.
+- **vl-actions (0023):** third-run actions implementation targets published 0.0.12. The service-spread compiler bug is
+  authorized and fixed upstream with strict negative controls; publication needs Will. Actions do not need to wait
+  for that release. The report retains exact browser/workerd/flow/scene/proof/fuzz/benchmark checks and live-auth boundaries.
 
 - **Source coverage (0016, lane vl-coverage): in progress.** Per-file tables now record independent unit, Chromium
   and Node-client workerd snapshots. Startup has 57 boundary cases at all-four 100%; native/HTTP history recovery and

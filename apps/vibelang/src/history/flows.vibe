@@ -77,8 +77,11 @@ export function signature(principal: Principal): string {
 
 /** The flow's run once the caller asked to take `action`: a journaled step, so a refusal is on the record as an acceptance is. */
 effect function authorized(action: Action) {
-  const { principal } = try Caller
-  const run: Run = try Step.make({ name: `vibelang/history/${action}/authorize`, success: RunSchema, execute: Effect.succeed(authorize(begin(action, principal))) })
+  const caller = try Caller
+  const run: Run = try Step.make({ name: `vibelang/history/${action}/authorize`, success: RunSchema, execute: effect {
+    const principal = caller.current === undefined ? caller.principal : try caller.current()
+    return authorize(begin(action, principal))
+  } })
   return run
 }
 

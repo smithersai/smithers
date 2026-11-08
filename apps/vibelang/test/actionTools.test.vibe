@@ -1,0 +1,24 @@
+import { expect, it } from "@effect/vitest"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { actionTools } from "../src/actions/tools.vibe"
+it.live("the agent's bindings use the same real catalog, admission, run and cancellation", () => effect {
+  provide MockActions({ role: "viewer", actor: "agent" }).pipe(Layer.provide(MockFactory)) {
+    const actions = try Actions
+    const source = actionTools(actions)
+    const catalog = try FlowBinding.catalog([source])
+    const start = catalog.bindings.get("vibelang/actions/Start")!
+    const call = try Effect.try(() => new Cell.Call({
+      flowName: "vibelang/actions/Start", input: { flow: "vibelang/Tour", input: {} }, capabilities: [],
+      effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" }, placement: Option.none(),
+      identity: new Cell.CallIdentity({ session: "actions", frame: 0, cell: "cell", ordinal: 0, declaration: Cell.declarationDigest(start.descriptor), layers: [] }),
+    }))
+    const result = try start.run(call)
+    try Effect.try(() => {
+      expect(catalog.descriptors.map(entry => entry.name)).toContain("vibelang/actions/List")
+      expect(result.outcome).toBe("success")
+    })
+  }
+})

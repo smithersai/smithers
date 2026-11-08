@@ -1,0 +1,33 @@
+// Bundled declarations, never a parallel graph or a menu of speculative workflows (LEAD-NOTES.md).
+import { Flow } from "@smthrs/flow"
+import { issueFlows } from "../core/issueFlows.vibe"
+import * as CoreFlows from "../core/flows.vibe"
+import * as HistoryFlows from "../history/flows.vibe"
+import * as HistoryTools from "../history/tools.vibe"
+import { Bundled } from "@smthrs/registry"
+import { EndTour, Post, Reply, StartTour, Tour, SandboxStart, SandboxStop, SandboxCommand } from "../core/flows.vibe"
+import { Approve, Bootstrap, Fold, Note, Plan, Start } from "../history/flows.vibe"
+import { mayRun } from "../core/conversation.vibe"
+import type { Registered, Role } from "./Actions.vibe"
+
+const declarations: ReadonlyArray<unknown> = [...Object.values(CoreFlows), ...Object.values(HistoryFlows), ...Object.values(HistoryTools), ...issueFlows]
+export const flows = declarations.filter(Flow.isFlow)
+export const bundled = Bundled.make(flows)
+
+/** Presentation and policy attach to a declaration's tag; adding a lane's flows extends this table. */
+export function registration(name: string): Registered {
+  const title = name === "vibelang/docs/open" ? "Docs" : name.split("/").at(-1) ?? name
+  const command = name === Post._tag ? "/post" : name === Tour._tag ? "/tour" : name === HistoryTools.Show._tag ? "/history" : name === Plan._tag ? "/plan" : name === Start._tag ? "/start" : name === Note._tag ? "/note" : name === SandboxStart._tag ? "/sandbox" : name === SandboxStop._tag ? "/sandbox-stop" : name === SandboxCommand._tag ? "/sandbox-run" : ""
+  const runnable = command !== ""
+  return {
+    name, title, command, runnable,
+    detail: name === Tour._tag ? "Explore VibeLang" : name === Post._tag ? "Ask the agent" : name === EndTour._tag ? "End the tour" : title,
+    least: name === Tour._tag || name === EndTour._tag ? "viewer" : name === Approve._tag || name === Fold._tag ? "maintainer" : "contributor",
+    input: name === Post._tag ? "text" : name === Tour._tag ? "none" : "json",
+  }
+}
+
+/** One role decision serves list controls, slash filtering and the dispatch boundary. */
+export function allowed(role: Role, entry: Registered): boolean {
+  return mayRun(role, entry.least === "viewer", entry.least === "maintainer", !entry.runnable)
+}

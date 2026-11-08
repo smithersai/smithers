@@ -20,6 +20,8 @@ import { escapeAction, canMinimize, hasContent, scrollFollow, follows, paletteCh
 import { MediaSources, observeMedia } from "./media.vibe"
 import { Identity, viewer } from "../core/roles.vibe"
 import { Navigation } from "foldkit"
+import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
+import { ActionView, actionsOf, completions, mergeRuns, initial as initialActions } from "./actionModel.vibe"
 import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
@@ -118,6 +120,7 @@ export schema Model {
   readonly wikiStatus?: "loading" | "ready" | "error"
   readonly wikiAfter?: string
   readonly wikiRequest?: number
+  readonly actions?: ActionView
 }
 
 /** The conversation every visitor of the home page joins until conversations have their own pages. */
@@ -195,6 +198,22 @@ export const Message = defineMessageUnion({
   SubmittedTerminal: {},
   LoadedSandbox: { conversation: Schema.String, request: Schema.Number, snapshot: SandboxSnapshot },
   FailedSandbox: { conversation: Schema.String, request: Schema.Number, reason: Schema.String },
+  ClickedActions: {},
+  MaximizedActions: {},
+  SelectedAction: { name: Schema.String },
+  SelectedActionStep: { key: Schema.String },
+  SelectedRun: { id: Schema.String },
+  LoadedActions: { epoch: Schema.optionalKey(Schema.Number), entries: Schema.Array(Registered), commands: Schema.Array(Registered), runs: Schema.Array(Run) },
+  FailedActions: { code: Schema.String, epoch: Schema.optionalKey(Schema.Number) },
+  UpdatedActionInput: { value: Schema.String },
+  ClickedRunAction: {},
+  StartedAction: { run: Run, epoch: Schema.optionalKey(Schema.Number) },
+  ChangedAction: { run: Run },
+  ClickedCancelAction: {},
+  TickedActions: { at: Schema.Number },
+  RetriedActions: {},
+  MovedSlash: { delta: Schema.Number },
+  PickedSlash: { name: Schema.String },
   ClickedWiki: { page: Schema.String },
   FilteredWiki: { value: Schema.String },
   WikiLocationChanged: { page: Schema.String },
@@ -205,8 +224,8 @@ export type Message = typeof Message.Type
 
 // INIT
 
-export function init(flags: Flags): Update.Return<Model, Message, Factory> {
-  const initialized: Update.Return<Model, Message, Factory> = {
+export function init(flags: Flags): Update.Return<Model, Message, Factory | Actions> {
+  const initialized: Update.Return<Model, Message, Factory | Actions> = {
     model: {
       account: flags.signInFailed ? { ...signedOut, error: "Sign-in failed. GitHub didn’t answer." } : signedOut,
       surface: "splash",
@@ -233,6 +252,7 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       tourError: "",
       docs: "pane",
       ...(flags.openIssues ? { issues: initialIssues } : {}),
+      actions: initialActions,
     },
     ...(flags.openIssues ? { commands: [LoadIssues({ ...(flags.resumeRecovery === undefined ? {} : { resumeRecovery: flags.resumeRecovery }), ...(flags.resumeOp === undefined ? {} : { resumeOp: flags.resumeOp }), ...(flags.resumeKey === undefined ? {} : { resumeKey: flags.resumeKey }) })] } : {}),
   }
@@ -241,8 +261,8 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
 
 // UPDATE
 
-export function update(model: Model, message: Message): Update.Return<Model, Message, Factory> {
-  const next = Message.match<Update.Return<Model, Message, Factory>>(message, {
+export function update(model: Model, message: Message): Update.Return<Model, Message, Factory | Actions> {
+  const next = Message.match<Update.Return<Model, Message, Factory | Actions>>(message, {
     ObservedMedia: () => ({ model }),
     LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
     FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
@@ -254,15 +274,17 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
       const changedPerson = person.id !== accountOf(model).identity.id
       const changedRole = person.role !== accountOf(model).identity.role
+      const nextActions = changedPerson || changedRole ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(accountOf(model).target !== "" ? [CloseRoleDialog({})] : []), ...(changedPerson || changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
       return {
-        model: { ...(changedPerson || changedRole ? withoutSandbox : model), ...(changedPerson || changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
+        model: { ...(changedPerson || changedRole ? withoutSandbox : model), actions: nextActions, ...(changedPerson || changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
           ...accountOf(model), identity: person, pending: false,
           error: person.id === "" ? accountOf(model).error : "", menu: false, target: "",
           people: person.id === "" ? "closed" : accountOf(model).people,
           ledger, epoch: accountOf(model).epoch + 1, from: ledger.conversation.seq,
           notice: person.id === "" ? "" : "Signed in as " + person.login + ".",
         } },
-        ...(accountOf(model).target !== "" ? { commands: [CloseRoleDialog({})] } : {}),
+        ...(commands.length > 0 ? { commands } : {}),
       }
     },
     AccountFailed: () => ({ model: { ...model, account: { ...accountOf(model), pending: false, error: accountOf(model).retry === "grant" ? "Role change failed." : accountOf(model).retry === "people" ? "People couldn’t load." : accountOf(model).retry === "sign-out" ? "Sign out failed." : "Sign-in failed. GitHub didn’t answer." } } }),
@@ -296,8 +318,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
         ? event.mode === "participation" ? "You're now Community." : "You're now " + roleLabel(event.role) + "."
         : changed && event.mode === "person" && account.people !== "closed" ? name + " is now " + roleLabel(event.role) + "." : account.notice
       const close = identity.role !== "maintainer" && account.target !== ""
-      const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : [])]
-      return { model: { ...(changedRole ? withoutSandbox : model), ...(changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
+      const nextActions = changedRole ? { ...actionsOf(model), epoch: (actionsOf(model).epoch ?? 0) + 1, commands: [], slash: false, starting: false } : actionsOf(model)
+      const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : []), ...(changedRole ? [LoadActions({ flow: nextActions.selected, epoch: nextActions.epoch ?? 0 })] : [])]
+      return { model: { ...(changedRole ? withoutSandbox : model), actions: nextActions, ...(changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
     },
     FailedRoles: () => ({ model: { ...model, account: { ...accountOf(model), error: "Connection lost.", retry: "roles", pending: false } } }),
     RetriedAccount: () => accountOf(model).retry === "roles" ? ({
@@ -351,9 +374,11 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const account = accountOf(model)
       if (account.target !== "") return { model: { ...model, account: { ...account, target: "", error: "" } }, commands: [CloseRoleDialog({})] }
       if (model.issues?.open && model.issues.dialog !== "") return { model: { ...model, issues: { ...model.issues, dialog: "" } }, commands: [CloseIssueDialog({})] }
+      if (actionsOf(model).slash) return { model: { ...model, actions: { ...actionsOf(model), slash: false } } }
       if (action === "palette") return openPalette(model, false)
       if (account.menu) return { model: { ...model, account: { ...account, menu: false } }, commands: [FocusAccountMenu({ open: false })] }
       if (model.issues?.open) return { model: { ...model, issues: { ...model.issues, open: false } } }
+      if (actionsOf(model).maximized) return { model: { ...model, actions: { ...actionsOf(model), maximized: false } } }
       if (model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
       switch (action) {
         case "docs": return { model: { ...model, docs: "pane" }, ...(model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }
@@ -389,7 +414,34 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ClickedDocs: () => ({ model: { ...model, ...toggleScreenDocs(model) }, ...(model.docs === "max" && model.client.conversation.pane.startsWith("/wiki/") ? { commands: [RevealWiki({})] } : {}) }),
     ClickedSplash: () => ({ model: { ...model, ...showSplash(model), ...(model.issues === undefined ? {} : { issues: { ...model.issues, open: false } }) } }),
     ClickedChat: () => minimizeSplash(model),
-    UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
+    UpdatedDraft: ({ value }) => ({
+      model: { ...model, draft: value, actions: { ...actionsOf(model), slash: value.startsWith("/"), highlight: 0 } },
+      ...(value.startsWith("/") && actionsOf(model).entries.length === 0 ? { commands: [LoadActions({ flow: "", ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] } : {}),
+    }),
+    ClickedActions: () => {
+      const actions = actionsOf(model)
+      return actions.open
+        ? { model: { ...model, actions: { ...actions, open: false, maximized: false } }, commands: [FocusComposer({})] }
+        : { model: { ...model, actions: { ...actions, open: true, loading: actions.entries.length === 0 } }, commands: [LoadActions({ flow: actions.selected, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }) })] }
+    },
+    MaximizedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), maximized: !actionsOf(model).maximized } } }),
+    SelectedAction: ({ name }) => ({ model: { ...model, actions: { ...actionsOf(model), selected: name, run: "", loading: true, error: "" } }, commands: [LoadActions({ flow: name, ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] }),
+    SelectedActionStep: ({ key }) => ({ model: { ...model, actions: { ...actionsOf(model), step: key } } }),
+    SelectedRun: ({ id }) => ({ model: { ...model, actions: { ...actionsOf(model), step: "", run: id, selected: actionsOf(model).runs.find((run) => run.id === id)?.flow ?? actionsOf(model).selected, open: true, maximized: true } } }),
+    LoadedActions: ({ entries, commands, runs, epoch }) => (epoch ?? 0) !== (actionsOf(model).epoch ?? 0) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), entries, commands, runs: mergeRuns(actionsOf(model).runs, runs), loading: false, error: "" } } }),
+    FailedActions: ({ code, epoch }) => epoch !== undefined && epoch !== (actionsOf(model).epoch ?? 0) ? { model } : ({ model: { ...model, actions: { ...actionsOf(model), loading: false, starting: false, error: code } } }),
+    UpdatedActionInput: ({ value }) => ({ model: { ...model, actions: { ...actionsOf(model), input: value } } }),
+    ClickedRunAction: () => launchAction(model, actionsOf(model).selected, "button"),
+    StartedAction: ({ run, epoch }) => (epoch ?? 0) !== (actionsOf(model).epoch ?? 0) ? { model } : ({ model: { ...model, surface: "chat", stream: "open", palette: false, actions: { ...actionsOf(model), ...(actionsOf(model).run === "" ? {} : { step: "", run: run.id, selected: run.flow }), starting: false, runs: mergeRuns(actionsOf(model).runs, [run]), error: "" } }, commands: [ClosePalette({ dock: true })] }),
+    ChangedAction: ({ run }) => ({ model: { ...model, actions: { ...actionsOf(model), runs: mergeRuns(actionsOf(model).runs, [run]) } } }),
+    TickedActions: ({ at }) => ({ model: { ...model, actions: { ...actionsOf(model), now: Math.max(actionsOf(model).now ?? 0, at) } } }),
+    ClickedCancelAction: () => ({ model, commands: [CancelAction({ id: actionsOf(model).run })] }),
+    RetriedActions: () => ({ model: { ...model, actions: { ...actionsOf(model), loading: true, error: "" } }, commands: [LoadActions({ flow: actionsOf(model).selected, ...(actionsOf(model).epoch === undefined ? {} : { epoch: actionsOf(model).epoch }) })] }),
+    MovedSlash: ({ delta }) => {
+      const menu = completions(model)
+      return { model: { ...model, actions: { ...actionsOf(model), highlight: menu.length === 0 ? 0 : (actionsOf(model).highlight + delta + menu.length) % menu.length } } }
+    },
+    PickedSlash: ({ name }) => launchAction(model, name, "slash"),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
     ClickedRetry: ({ clientId }) => {
@@ -425,8 +477,11 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           } : {}),
           ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") && accountOf(model).people === "max" ? { account: { ...accountOf(model), people: "pane" as const } } : {}),
         },
-        ...(completed && /\]\(#issue-[1-9][0-9]*\)/.test(answer?.text ?? "") ? { commands: [RefreshIssueProjection({})] } : {}),
-        ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") ? { commands: [WikiLocation({ url: event.url })] } : {}),
+        commands: [
+          ...(completed && /\]\(#issue-[1-9][0-9]*\)/.test(answer?.text ?? "") ? [RefreshIssueProjection({})] : []),
+          ...(advanced && event.type === "PaneOpened" && event.url.startsWith("/wiki/") ? [WikiLocation({ url: event.url })] : []),
+          ...(event.type === "ActionRequested" && client.conversation.seq > model.client.conversation.seq ? [ReadAction({ id: event.id })] : []),
+        ],
       }
     },
     FailedEvents: () => ({ model: { ...model, stream: "failed", connection: "Disconnected" } }),
@@ -462,7 +517,7 @@ function visitWiki(model: Model, page: string): Update.Return<Model, Message, Fa
  * Learn more: the page becomes this tab's tour conversation and the agent takes control. A second Learn more while the
  * tour runs does nothing new.
  */
-function learnMore(model: Model): Update.Return<Model, Message, Factory> {
+function learnMore(model: Model): Update.Return<Model, Message, Factory | Actions> {
   if (model.tour) return { model }
   const conversation = tourConversation(model.session)
   const fresh = model.conversation !== conversation
@@ -491,17 +546,17 @@ function touringHere(model: Model): boolean {
 }
 
 /** Escape or Esc: the agent stops at once; the person keeps the conversation and the docs pane. */
-function endTour(model: Model): Update.Return<Model, Message, Factory> {
+function endTour(model: Model): Update.Return<Model, Message, Factory | Actions> {
   return { model: { ...model, ...endScreenTour(model) }, commands: [EndTourCommand({ conversation: model.conversation }), FocusComposer({})] }
 }
 
-function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
+function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory | Actions> {
   const next = paletteChange(open)
   return { model: { ...model, ...setScreenPalette(model, next.palette) }, commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
 }
 
 /** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
-function minimizeSplash(model: Model): Update.Return<Model, Message, Factory> {
+function minimizeSplash(model: Model): Update.Return<Model, Message, Factory | Actions> {
   if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)) return { model }
   return { model: { ...model, ...minimizeScreen(model, model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane) }, commands: [FocusComposer({})] }
 }
@@ -511,13 +566,18 @@ export function hasConversation(model: Model): boolean {
   return hasContent(model.client.conversation.entries.length, model.client.pending.length, model.client.conversation.pane)
 }
 
-function submit(model: Model): Update.Return<Model, Message, Factory> {
+function submit(model: Model): Update.Return<Model, Message, Factory | Actions> {
   const text = model.draft.trim()
-  if (text === "") return { model }
   if (text === "/sandbox") {
     const next = sandboxAction({ ...model, surface: "chat", palette: false, draft: "", sandboxPane: "pane" }, "start")
     return { ...next, commands: [...(next.commands ?? []), ClosePalette({ dock: true })] }
   }
+  const slash = completions(model)
+  if (text.startsWith("/")) {
+    const selected = slash[actionsOf(model).highlight]
+    return selected === undefined ? { model } : launchAction(model, selected.name, "slash")
+  }
+  if (text === "") return { model }
   const clientId = `${model.session}-${model.sent + 1}`
   return {
     model: {
@@ -532,6 +592,17 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
       following: true,
     },
     commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true })],
+  }
+}
+
+/** Dispatch never awaits the job. Follow subscriptions settle the shared run card and trace. */
+function launchAction(model: Model, name: string, door: "button" | "slash"): Update.Return<Model, Message, Factory | Actions> {
+  const actions = actionsOf(model)
+  if (actions.starting || !actions.commands.some((entry) => entry.name === name)) return { model }
+  const text = door === "slash" ? model.draft.trim().split(/\s+/).slice(1).join(" ") : actions.input
+  return {
+    model: { ...model, draft: "", actions: { ...actions, slash: false, starting: true, error: "" } },
+    commands: [RunAction({ name, text, door, ...(actions.epoch === undefined ? {} : { epoch: actions.epoch }), format: actions.commands.find((entry) => entry.name === name)!.input, ...(door === "button" && actions.run !== "" ? { retry: actions.run } : {}) })],
   }
 }
 
@@ -637,6 +708,49 @@ export const EndTourCommand = Command.define("EndTour", {
   },
 })
 
+export const LoadActions = Command.define("LoadActions", {
+  args: { flow: Schema.String, epoch: Schema.optionalKey(Schema.Number) }, messages: [Message.LoadedActions, Message.FailedActions],
+  execute: effect ({ flow, epoch }) => {
+    const actions = try Actions
+    return (effect {
+      const entries = try actions.list()
+      const commands = try actions.commands()
+      const runs = try actions.runs(flow)
+      return try message(() => Message.LoadedActions({ entries, commands, runs, ...(epoch === undefined ? {} : { epoch }) }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, ...(epoch === undefined ? {} : { epoch }) }))
+  },
+})
+export const RunAction = Command.define("RunAction", {
+  args: { name: Schema.String, text: Schema.String, epoch: Schema.optionalKey(Schema.Number), door: Schema.Literals(["button", "slash"]), retry: Schema.optionalKey(Schema.String), format: Schema.optionalKey(Schema.Literals(["none", "text", "path", "json"])) }, messages: [Message.StartedAction, Message.FailedActions],
+  execute: effect ({ name, text, door, retry, format, epoch }) => {
+    const actions = try Actions
+    return (effect {
+      const input = format === "json" ? (text.trim() === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(text), () => new ActionFailure({ code: "input" }))) : { text }
+      const id = try (retry === undefined ? actions.start(name, input, door) : actions.rerun(retry))
+      const run = try actions.read(id)
+      return try message(() => Message.StartedAction({ run, ...(epoch === undefined ? {} : { epoch }) }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code, ...(epoch === undefined ? {} : { epoch }) }))
+  },
+})
+export const ReadAction = Command.define("ReadAction", {
+  args: { id: Schema.String }, messages: [Message.ChangedAction, Message.FailedActions],
+  execute: effect ({ id }) => {
+    const actions = try Actions
+    return (effect { const run = try actions.read(id); return try message(() => Message.ChangedAction({ run })) }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code }))
+  },
+})
+export const CancelAction = Command.define("CancelAction", {
+  args: { id: Schema.String }, messages: [Message.ChangedAction, Message.FailedActions],
+  execute: effect ({ id }) => {
+    const actions = try Actions
+    return (effect {
+      try actions.cancel(id)
+      const run = try actions.read(id)
+      return try message(() => Message.ChangedAction({ run }))
+    }) catch effect (error) => try message(() => Message.FailedActions({ code: error.code }))
+  },
+})
+
 export const OpenWikiCommand = Command.define("OpenWiki", {
   args: { conversation: Schema.String, page: Schema.String, request: Schema.Number },
   messages: [Message.SucceededWiki, Message.FailedWiki],
@@ -705,7 +819,18 @@ export function subscriptions(keys: EventTarget, page?: Document) {
   const viewport = transcriptViewport(page)
   const scrolled = (value: { bottom: boolean; intent: number } | undefined) =>
     value ? Option.some(Message.ScrolledTranscript(value)) : Option.none()
-  return Subscription.make<Model, Message, Factory>()((entry) => ({
+  return Subscription.make<Model, Message, Factory | Actions>()((entry) => ({
+    actionTime: entry({ active: Schema.Boolean }, {
+      modelToDependencies: (model: Model) => ({ active: actionsOf(model).runs.some((run) => run.state === "queued" || run.state === "running") }),
+      dependenciesToStream: ({ active }) => active ? Stream.tick("1 second").pipe(Stream.mapEffect(effect () => { const at = try Clock.currentTimeMillis; return try message(() => Message.TickedActions({ at })) })) : Stream.empty,
+    }),
+    actionRuns: entry({ ids: Schema.Array(Schema.String) }, {
+      modelToDependencies: (model: Model) => ({ ids: actionsOf(model).runs.filter((run) => run.state === "queued" || run.state === "running").map((run) => run.id) }),
+      dependenciesToStream: ({ ids }) => ids.length === 0 ? Stream.empty : Stream.unwrap(effect {
+        const actions = try Actions
+        return Stream.mergeAll(ids.map((id) => actions.follow(id).pipe(Stream.map((run) => Message.ChangedAction({ run })), Stream.catch(() => Stream.empty))), { concurrency: "unbounded" })
+      }),
+    }),
     wikiLinks: Subscription.persistentEntry(Dom.streamFromEventFilterMapPreventDefault({
       target: keys, type: "click",
       filterMapEvent: (event: Event) => {

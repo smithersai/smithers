@@ -13,7 +13,7 @@ export default defineConfig(({ mode }) => ({
   resolve: { dedupe: ["vitest"] },
   build: {
     target: "es2022", sourcemap: true,
-    ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html"] } } : {}),
+    ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html", "e2e/actions-runtime/index.html"] } } : {}),
   },
   server: { port: 5178 },
   test: {

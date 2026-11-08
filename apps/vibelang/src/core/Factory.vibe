@@ -1,7 +1,7 @@
 // The factory's API: one Effect service every surface calls, the web app, the CLI, the MCP server and the skill
 // (wiki/decisions/0002-core-is-an-effect-api.md). Its backends are `MockFactory` (no backend, no model) and the live
 // one that talks to vibelang.smithers.sh. The browser wrapper selects one after rendering.
-import type { Accounts } from "./roles.vibe"
+import type { Accounts, Policy } from "./roles.vibe"
 import type { IssuesApi } from "./issueSchemas.vibe"
 import type { Event } from "./conversation.vibe"
 import { Seq, ReadSnapshot } from "./schemas.vibe"
@@ -41,6 +41,8 @@ export service Factory {
   /** The browser resolves its backend after rendering; operations wait while mode is pending. */
   readonly mode: Mode | "pending"
   readonly accounts?: Accounts.Shape
+  /** The product mock exposes its actual policy; live authorization stays on the host. */
+  readonly policy?: Policy.Shape
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
   read(conversation: string, after: number): ReadSnapshot!Unavailable
   events(conversation: string, after: number): Stream.Stream<Event, Unavailable>

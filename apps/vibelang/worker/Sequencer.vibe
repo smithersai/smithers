@@ -16,7 +16,7 @@ import { EventSchema, type ReadSnapshot } from "../src/core/schemas.vibe"
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
 export interface Log {
   read(): ReadonlyArray<Event>!!
-  write(event: Event): void!!
+  write(event: Event, owner?: string): void!!
 }
 
 /**
@@ -66,11 +66,11 @@ export effect function make(log: Log, dispatch: Dispatch) {
   }
 
   /** Decides `intent` against the current state; an accepted event is written, applied and published. */
-  effect function record(intent: Intent) {
+  effect function record(intent: Intent, owner?: string) {
     const current = try state()
     const decision = decide(current.conversation, intent)
     if (!decision.ok) return decision
-    try log.write(decision.event)
+    try log.write(decision.event, owner)
     try Ref.set(loaded, { conversation: apply(current.conversation, decision.event), log: [...current.log, decision.event] })
     try PubSub.publish(published, decision.event)
     return decision
@@ -133,15 +133,18 @@ export effect function make(log: Log, dispatch: Dispatch) {
       return decision.ok ? null : decision.refusal
     }),
 
+    /** Registered action projections use the same numbered, durable event log as the conversation. */
+    action: (intent: Extract<Intent, { readonly type: "RequestAction" | "TraceAction" | "SettleAction" }>) => accepted(intent),
+    actions: effect () => (try locked(state())).conversation.runs ?? [],
 
     /**
      * Records a person's post: `null` once its event is stored, else the sequencer's refusal. The `vibelang/Post`
      * flow's record step (src/core/flows.vibe); its next step dispatches the reply.
      */
-    post: effect (clientId: string, name: string, text: string) => {
+    post: effect (clientId: string, name: string, text: string, owner?: string) => {
       const decision = try locked(effect {
         const seq = (try state()).conversation.seq + 1
-        return try record({ type: "Post", id: `m${seq}`, clientId, name, text })
+        return try record({ type: "Post", id: `m${seq}`, clientId, name, text }, owner)
       })
       const answer: Refusal | null = decision.ok ? null : decision.refusal
       return answer

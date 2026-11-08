@@ -1,0 +1,63 @@
+// The SDK execution host owns admission, alarms, replay and cancellation for a registered history run.
+import { FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { ActionDevice, deviceRegistration, historyRegistration, prepare, type Invocation } from "../src/actions/execution.vibe"
+import { SandboxStart, SandboxStop, SandboxCommand } from "../src/core/flows.vibe"
+import type { RunRequest } from "../src/actions/wire.vibe"
+import { Note, Plan, Start } from "../src/history/flows.vibe"
+import { type HistoryReader, Show } from "../src/history/tools.vibe"
+import type { Storage } from "./Objects.vibe"
+import { executionStorage, unrouted } from "./Objects.vibe"
+
+service HistoryAccess { readonly history: HistoryReader }
+const flows = [Show, Plan, Start, Note, SandboxStart, SandboxStop, SandboxCommand]
+const executionId = (request: RunRequest) => `action/${request.id}`
+
+effect function intentOf(invocation: Invocation, id: string) {
+  switch (invocation.kind) {
+    case "show": return try ExecutionObject.intent(Show, { executionId: id, payload: invocation.payload })
+    case "plan": return try ExecutionObject.intent(Plan, { executionId: id, payload: invocation.payload })
+    case "start": return try ExecutionObject.intent(Start, { executionId: id, payload: invocation.payload })
+    case "note": return try ExecutionObject.intent(Note, { executionId: id, payload: invocation.payload })
+    case "sandbox-start": return try ExecutionObject.intent(SandboxStart, { executionId: id, payload: invocation.payload })
+    case "sandbox-stop": return try ExecutionObject.intent(SandboxStop, { executionId: id, payload: invocation.payload })
+    case "sandbox-command": return try ExecutionObject.intent(SandboxCommand, { executionId: id, payload: invocation.payload })
+    default: return undefined
+  }
+}
+effect function poll(invocation: Invocation, id: string) {
+  const engine = try FlowRuntime.FlowRuntime
+  switch (invocation.kind) {
+    case "show": return try engine.poll(Show, id)
+    case "plan": return try engine.poll(Plan, id)
+    case "start": return try engine.poll(Start, id)
+    case "note": return try engine.poll(Note, id)
+    case "sandbox-start": return try engine.poll(SandboxStart, id)
+    case "sandbox-stop": return try engine.poll(SandboxStop, id)
+    case "sandbox-command": return try engine.poll(SandboxCommand, id)
+    default: return Option.none()
+  }
+}
+
+/** One instance per object incarnation, so cancellation also interrupts its active SDK drive. */
+export function make(hostId: string, storage: Storage, admit: () => boolean!! = () => succeed(true)) {
+  const runtime = (intent: ExecutionObject.Intent) => CloudflareRuntime.layer(
+    { hostId, executionId: intent.executionId, flow: intent.flow },
+    Layer.merge(historyRegistration(map(HistoryAccess, (access) => access.history)), deviceRegistration),
+  ).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  const host = ExecutionObject.make(executionStorage(storage), { flows, runtime, router: unrouted, canStart: admit, settledRetentionMs: 0 })
+  return {
+    start: effect (request: RunRequest) => {
+      const intent = try intentOf(try prepare(request.flow, request.input, request.id), executionId(request))
+      if (intent === undefined) return "input"
+      return host.start(intent).pipe(Effect.as(null)) catch () => "busy"
+    },
+    alarm: (history: HistoryReader) => Effect.provideService(host.alarm(), HistoryAccess, { history }),
+    cancel: host.cancel,
+    receipt: effect (request: RunRequest) => {
+      const invocation = try prepare(request.flow, request.input, request.id)
+      const engine = CloudflareRuntime.layer({ hostId, executionId: executionId(request), flow: request.flow }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+      return try Effect.orDie(Effect.provide(poll(invocation, executionId(request)), engine))
+    },
+  }
+}

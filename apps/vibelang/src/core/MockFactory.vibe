@@ -18,6 +18,8 @@ import {
   Tours, unanswered, walk,
 } from "./flows.vibe"
 import { requestedWiki } from "./wiki.vibe"
+import { ActionFailure } from "../actions/Actions.vibe"
+import { AgentActions } from "../actions/agent.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { Principal } from "../history/roles.vibe"
 import { type HistoryPages, show } from "../history/tools.vibe"
@@ -67,6 +69,7 @@ effect function scripted(
   history: HistoryPages!!,
   conversation: string,
   sandboxTools: Pick<Factory.Shape, "startSandbox">,
+  ownsReply: () => boolean!!,
 ) {
   const id = replyIdOf(post)
   const started = try Action.make({
@@ -93,7 +96,8 @@ effect function scripted(
   const page = requestedWiki(prompt)
   if (page !== undefined) try Action.make({ name: "vibelang/wiki/record", success: Schema.Boolean, execute: openWiki(id, page) })
   // An explicit wiki request wins over action words inside its page title.
-  const text = page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
+  // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
+  let text = page !== undefined ? `Opened ${page}.` : prompt.startsWith("File an issue:") || prompt === "Split #38 into three children, linked under it." ? "" : /\b(start|run|use|spin up)\b.*\bsandbox\b/i.test(prompt) ? (effect {
     const snapshot = try sandboxTools.startSandbox(conversation, `agent-${id}`)
     return `Started ${snapshot.id}.`
   } catch () => "Couldn't start a sandbox") : matches(prompt.toLowerCase(), HISTORY_WORDS)
@@ -106,6 +110,17 @@ effect function scripted(
       },
     })
     : mockReply(prompt)
+  const { actions } = try AgentActions
+  const requested = /^run\s+(\/[a-z]+(?:\s+[\s\S]*)?)$/i.exec(prompt.trim())?.[1]
+  if (actions !== undefined && requested !== undefined) {
+    text = (effect {
+      if (!(try ownsReply())) throw new ActionFailure({ code: "forbidden" })
+      const runId = try Action.make({ name: "vibelang/actions/request", success: Schema.String, error: ActionFailure, execute: actions.command(requested, "agent") })
+      const run = try actions.read(runId)
+      try record({ type: "RequestAction", id: run.id, flow: run.flow, door: "agent", actor: "agent", at: run.started })
+      return `${run.flow.split("/").at(-1) ?? run.flow} requested.`
+    }) catch () => "Action unavailable."
+  }
   let answer = text
   const request = { number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "" }
   if (prompt.startsWith("File an issue:")) {
@@ -294,7 +309,7 @@ return Layer.effect(Factory, effect {
             }
             return try Effect.orDie(withSpan(scripted(engine, state, record, payload.post, forPoster, history, conversation, {
               startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
-            }), "vibelang.reply"))
+            }, effect () => (try Effect.orDie(accounts.current())).id === (postOwners.get(payload.post) ?? "")), "vibelang.reply"))
           }
           try engine.register(Reply, reply)
           try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
@@ -335,6 +350,7 @@ return Layer.effect(Factory, effect {
     mode,
     accounts,
     issues,
+    policy: accounts.policy,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
       const identity = try Effect.orDie(accounts.current())
       const room = try openRoom(conversation)

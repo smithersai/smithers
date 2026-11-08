@@ -58,6 +58,9 @@ export type Event =
   | { readonly type: "TourStarted"; readonly seq: number; readonly id: string }
   | { readonly type: "TourEnded"; readonly seq: number; readonly id: string }
   | { readonly type: "PaneOpened"; readonly seq: number; readonly id: string; readonly url: string }
+  | { readonly type: "ActionRequested"; readonly seq: number; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: number }
+  | { readonly type: "ActionStep"; readonly seq: number; readonly id: string; readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly at: number }
+  | { readonly type: "ActionSettled"; readonly seq: number; readonly id: string; readonly state: string; readonly result: string; readonly at: number }
 
 /**
  * A conversation as of event `seq`. `replying` is the id of the reply that streams, `""` when none does. A tour is an
@@ -71,6 +74,7 @@ export interface Conversation {
   readonly replying: string
   readonly pane: string
   readonly roles: ReadonlyArray<RoleGrant>
+  readonly runs?: ReadonlyArray<ActionRun>
 }
 
 /** A conversation before its first event. */
@@ -150,6 +154,13 @@ export function apply(conversation: Conversation, event: Event): Conversation {
       return { ...next, roles: [{ id: event.id, role: event.role, blocked: event.mode === "person" }, ...conversation.roles] }
     case "ActionAuthorized":
       return next
+    case "ActionRequested":
+      if (event.id === "" || (conversation.runs ?? []).some((run) => run.id === event.id)) return next
+      return { ...next, runs: [...(conversation.runs ?? []), { id: event.id, flow: event.flow, door: event.door, actor: event.actor, state: "queued", started: event.at, at: event.at, result: "", steps: [] }] }
+    case "ActionStep":
+      return { ...next, runs: (conversation.runs ?? []).map((run) => run.id === event.id ? stepRun(run, event.key, event.name, event.attempt, event.state, event.at) : run) }
+    case "ActionSettled":
+      return { ...next, runs: (conversation.runs ?? []).map((run) => run.id === event.id ? settleRun(run, event.state, event.result, event.at) : run) }
     case "Posted": {
       if (event.text === "" || event.clientId === "" || hasClientId(conversation.entries, event.clientId) || hasEntryId(conversation.entries, event.id)) return next
       const entry: Entry = {
@@ -347,9 +358,102 @@ export function canReplyTo(entries: ReadonlyArray<Entry>, id: string): boolean {
  * restarts it when its model call retries, discarding what streamed so far. A person starts a tour, which the agent
  * narrates as it would a reply and in which it opens pages in the docs pane, and ends it to take control back.
  */
+export interface RunStep {
+  readonly key: string
+  readonly name: string
+  readonly attempt: number
+  readonly state: string
+  readonly started: number
+  readonly at: number
+}
+export interface ActionRun {
+  readonly id: string
+  readonly flow: string
+  readonly door: string
+  readonly actor: string
+  readonly state: string
+  readonly started: number
+  readonly at: number
+  readonly result: string
+  readonly steps: ReadonlyArray<RunStep>
+}
+
+// Ordering decisions shared by the sequencer's action projection and the web's snapshots.
+//@ verify
+//@ ensures \result == ((state == "queued" || state == "running") && nextAt >= at)
+export function acceptSnapshot(state: string, at: number, nextAt: number): boolean {
+  return (state === "queued" || state === "running") && nextAt >= at
+}
+
+//@ verify
+//@ ensures \result == (state != "passed" && state != "failed" && state != "cancelled" && nextAt >= at)
+export function acceptStep(state: string, at: number, nextAt: number): boolean {
+  return state !== "passed" && state !== "failed" && state !== "cancelled" && nextAt >= at
+}
+
+//@ verify
+//@ ensures \result >= oldAt && \result >= nextAt
+//@ ensures \result == oldAt || \result == nextAt
+export function latestAt(oldAt: number, nextAt: number): number {
+  return oldAt > nextAt ? oldAt : nextAt
+}
+
+//@ verify
+//@ ensures \result == (state == "queued" || state == "running")
+export function runOpen(state: string): boolean {
+  return state === "queued" || state === "running"
+}
+
+/** A terminal run cannot be changed by a late step or a competing settlement. */
+//@ verify
+//@ ensures \result.id == run.id && \result.flow == run.flow && \result.started == run.started
+//@ ensures !runOpen(run.state) ==> \result == run
+//@ ensures runOpen(run.state) && (state == "passed" || state == "failed" || state == "cancelled") ==> \result.state == state && \result.result == resultText && \result.at == at
+//@ ensures \result.steps.length == run.steps.length
+//@ ensures !runOpen(run.state) || state != "cancelled" ==> \result.steps == run.steps
+export function settleRun(run: ActionRun, state: string, resultText: string, at: number): ActionRun {
+  if (!runOpen(run.state) || (state !== "passed" && state !== "failed" && state !== "cancelled")) return run
+  const steps = state === "cancelled" ? run.steps.map((step) => cancelStep(step, at)) : run.steps
+  return { ...run, state, result: resultText, at, steps }
+}
+
+/** The engine acknowledged cancellation; completed steps remain their actual outcome. */
+//@ verify
+//@ ensures \result.key == step.key && \result.name == step.name && \result.attempt == step.attempt && \result.started == step.started
+//@ ensures step.state != "running" && step.state != "waiting" ==> \result == step
+//@ ensures step.state == "running" || step.state == "waiting" ==> \result.state == "cancelled" && \result.at == at
+export function cancelStep(step: RunStep, at: number): RunStep {
+  return step.state === "running" || step.state === "waiting" ? { ...step, state: "cancelled", at } : step
+}
+
+/** Engine keys and attempts upsert a step; replay never appends a duplicate step. */
+//@ verify
+//@ ensures \result.id == run.id && \result.flow == run.flow && \result.started == run.started
+//@ ensures !runOpen(run.state) ==> \result == run
+export function stepRun(run: ActionRun, key: string, name: string, attempt: number, state: string, at: number): ActionRun {
+  if (!runOpen(run.state) || key === "") return run
+  const prior = run.steps.find((step) => step.key === key && step.attempt === attempt)
+  if (prior !== undefined && !acceptStep(prior.state, prior.at, at)) return run
+  const present = prior !== undefined
+  const steps = present
+    ? run.steps.map((step) => step.key === key && step.attempt === attempt ? { ...step, state, at } : step)
+    : [...run.steps, { key, name, attempt, state, started: at, at }]
+  return { ...run, state: "running", steps, at: latestAt(run.at, at) }
+}
+
+/** The role gate is shared by buttons, slash commands and agent dispatch. Tour is the public exception (0019). */
+//@ verify
+//@ ensures \result == (!internal && (tour || (role == "maintainer" || role == "contributor") && (!maintainer || role == "maintainer")))
+export function mayRun(role: string, tour: boolean, maintainer: boolean, internal: boolean): boolean {
+  return !internal && (tour || (role === "maintainer" || role === "contributor") && (!maintainer || role === "maintainer"))
+}
+
 export type Intent =
   | { readonly type: "GrantRole"; readonly id: string; readonly by: string; readonly role: Role; readonly mode: GrantMode }
   | { readonly type: "Authorize"; readonly id: string; readonly by: string; readonly action: Action }
+  | { readonly type: "RequestAction"; readonly id: string; readonly flow: string; readonly door: string; readonly actor: string; readonly at: number }
+  | { readonly type: "TraceAction"; readonly id: string; readonly key: string; readonly name: string; readonly attempt: number; readonly state: string; readonly at: number }
+  | { readonly type: "SettleAction"; readonly id: string; readonly state: string; readonly result: string; readonly at: number }
   | { readonly type: "Post"; readonly id: string; readonly clientId: string; readonly name: string; readonly text: string }
   | { readonly type: "StartReply"; readonly id: string; readonly inReplyTo: string }
   | { readonly type: "AppendReply"; readonly id: string; readonly text: string }
@@ -426,6 +530,16 @@ export function decide(conversation: Conversation, intent: Intent): Decision {
     case "Authorize":
       if (!may(roleOf(conversation.roles, intent.by), intent.action)) return refused("forbidden")
       return accepted({ type: "ActionAuthorized", seq, id: intent.id, by: intent.by, action: intent.action })
+    case "RequestAction":
+      if (intent.id === "" || intent.flow === "") return refused("empty")
+      if ((conversation.runs ?? []).some((run) => run.id === intent.id)) return refused("duplicate")
+      return accepted({ type: "ActionRequested", seq, id: intent.id, flow: intent.flow, door: intent.door, actor: intent.actor, at: intent.at })
+    case "TraceAction":
+      if (!(conversation.runs ?? []).some((run) => run.id === intent.id && runOpen(run.state))) return refused("not-replying")
+      return accepted({ type: "ActionStep", seq, id: intent.id, key: intent.key, name: intent.name, attempt: intent.attempt, state: intent.state, at: intent.at })
+    case "SettleAction":
+      if (!(conversation.runs ?? []).some((run) => run.id === intent.id && runOpen(run.state))) return refused("not-replying")
+      return accepted({ type: "ActionSettled", seq, id: intent.id, state: intent.state, result: intent.result, at: intent.at })
     case "Post": {
       const text = intent.text.trim()
       if (text === "") return refused("empty")

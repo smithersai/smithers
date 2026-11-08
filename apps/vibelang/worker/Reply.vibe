@@ -17,6 +17,8 @@ import { Registry } from "@smthrs/registry"
 import { patient, Reply, replyIdOf, Tours } from "../src/core/flows.vibe"
 import { wikiTools, WIKI_INSTRUCTION } from "./WikiTools.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
+import { AgentActions } from "../src/actions/agent.vibe"
+import { actionTools } from "../src/actions/tools.vibe"
 import { HISTORY_INSTRUCTION, historyTools, HistoryTools, REPLY_CALLS } from "./HistoryTools.vibe"
 import { closed, SandboxAgent, sandboxTools, SANDBOX_INSTRUCTION } from "./SandboxTools.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
@@ -120,7 +122,7 @@ export const Respond = AgentAction.make("vibelang/reply/agent", {
   payload: { turns: Schema.Array(Turn) },
   output: Schema.String,
   seat: AGENT_SEAT,
-  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION, SANDBOX_INSTRUCTION, WIKI_INSTRUCTION],
+  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION, SANDBOX_INSTRUCTION, WIKI_INSTRUCTION, "Use vibelang/actions/List to discover registered actions. Start them with vibelang/actions/Start, then Read their run ids for progress or Cancel when asked. A request is not completion; report the actual result."],
   profile: "conversation",
   prompt: promptOf,
   maxFrames: MAX_FRAMES,
@@ -255,7 +257,9 @@ effect function run(reply: string, model: HostModel["Service"], sink: EventSink.
   const tours = try Tours
   const { history } = try HistoryTools
   const sandbox = Option.getOrElse(try Effect.serviceOption(SandboxAgent), () => closed)
-  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours)], REPLY_CALLS), EventSink.EventSink = sink {
+  const tools = try AgentActions
+  const actions = tools.actions === undefined ? [] : [actionTools(tools.actions, tools.announce)]
+  provide agentOf(Respond.layer, model, sink, [historyTools(history), sandboxTools(sandbox.factory, sandbox.conversation), wikiTools(reply, tours), ...actions], REPLY_CALLS), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }

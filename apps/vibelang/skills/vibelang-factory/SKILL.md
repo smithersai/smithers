@@ -69,5 +69,9 @@ redirection and cat; unsupported commands fail honestly. Live compute requires
 Contributor, authenticated 0019 policy and the deployment's Container binding.
 Never put credentials in commands or environment.
 
+Registered actions: `actions` lists; `run <flow> --input '<json>' [--wait]` starts;
+`trace <id>` reads; `cancel <id>` stops; `rerun <id>` retains input with a new id.
+Roles come from the host. Internal flows cannot run.
+
 Success exits 0; invalid input, refusals and unavailable backends exit nonzero
 with an error on stderr. A requested or failed operation is not successful.

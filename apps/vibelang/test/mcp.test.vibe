@@ -4,7 +4,8 @@ import { McpClient, McpProtocol } from "effect/ai"
 import { ChildProcess } from "effect/process"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
-import { AskOutput, ReadOutput } from "../src/surfaces/commands.vibe"
+import { ActionList, AskOutput, ReadOutput, RunId } from "../src/surfaces/commands.vibe"
+import { Registered, Run } from "../src/actions/Actions.vibe"
 import { mockReply } from "../src/core/mockReplies.vibe"
 import { node } from "./support/processes.vibe"
 import { cliManifest, serverPath } from "./surface-host.vibe"
@@ -33,7 +34,7 @@ describe("built MCP stdio server through McpClient", () => {
         name: section.split("\n")[0], ...JSON.parse(section.split("```json\n")[1]!.split("\n```")[0]!),
       })))
       try Effect.try(() => {
-        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue"])
+        expect(tools.map((tool) => tool.name)).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun"])
         expect(discovered).toEqual(tools.map((tool) => ({ name: tool.name, inputSchema: tool.inputSchema, outputSchema: tool.outputSchema })))
         // Compact discovery: about 1,000 characters per command on average.
         expect(markdown.length).toBeLessThan(1000 * tools.length)
@@ -62,6 +63,27 @@ describe("built MCP stdio server through McpClient", () => {
       })
     }
   }, LIMIT)
+
+  it.live("starts actions and reads their real results across MCP tool calls", () => effect {
+    provide clientLayer {
+      const client = try McpClient.McpClient
+      const tools = try client.listTools()
+      const list = tools.find(tool => tool.name === "actions")!
+      const run = tools.find(tool => tool.name === "run")!
+      const trace = tools.find(tool => tool.name === "trace")!
+      const rerun = tools.find(tool => tool.name === "rerun")!
+      const entries = try client.callTool({ tool: list, schema: ActionList, arguments: {} })
+      const first = try client.callTool({ tool: run, schema: RunId, arguments: { flow: "vibelang/Post", input: '{"text":"What is Effect?"}', wait: true } })
+      const result = try client.callTool({ tool: trace, schema: Run, arguments: first })
+      const next = try client.callTool({ tool: rerun, schema: RunId, arguments: first })
+      try Effect.try(() => {
+        expect(entries.actions.some(entry => entry.name === "vibelang/Tour")).toBe(true)
+        expect(result.state).toBe("passed")
+        expect(result.steps.some(step => step.state === "passed")).toBe(true)
+        expect(next.id).not.toBe(first.id)
+      })
+    }
+  })
 
   it.live("returns declared refusals and rejects malformed input through the protocol", () => effect {
     provide clientLayer {

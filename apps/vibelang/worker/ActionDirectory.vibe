@@ -1,0 +1,74 @@
+// Public run index: requests are durable steps; each registered workflow runs in its own Conversation object.
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { type Role, type Run } from "../src/actions/Actions.vibe"
+import { allowed, registration } from "../src/actions/catalog.vibe"
+import { RunRequest } from "../src/actions/wire.vibe"
+import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+import type { Storage } from "./Objects.vibe"
+
+export interface Runs {
+  start(request: RunRequest, role: Role): (string | null)!Unreachable
+  request(id: string): (RunRequest | undefined)!Unreachable
+  read(id: string): ReadonlyArray<Run>!Unreachable
+  cancel(id: string, role: Role, owner: string): (string | null)!Unreachable
+}
+
+export const RequestAction = Flow.make("vibelang/actions/Request", {
+  description: "Records a registered action request and dispatches its durable run.",
+  modelInvocable: false,
+  error: Unreachable, payload: { request: RunRequest }, success: Schema.NullOr(Schema.String), body: () => Node.succeed(null),
+})
+export const CancelAction = Flow.make("vibelang/actions/Cancel", {
+  description: "Cancels a registered action through its run's durable engine.",
+  modelInvocable: false,
+  error: Unreachable, payload: { id: Schema.String }, success: Schema.NullOr(Schema.String), body: () => Node.succeed(null),
+})
+
+export function directory(hostId: string, storage: Storage, runs: Runs, authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
+  effect function list(flow: string) {
+    const stored = try promise(() => storage.list({ prefix: "action-index/" }))
+    const ids = [...stored.values()] as ReadonlyArray<string>
+    const rows = try Effect.orDie(all(ids.map((id) => runs.read(id)), { concurrency: 4 }))
+    return rows.flat().filter((run) => flow === "" || run.flow === flow).sort((a, b) => b.started - a.started)
+  }
+  effect function start(request: RunRequest, role: Role) {
+    const currentRole = try authority.role(request.owner ?? "")
+    if (!allowed(currentRole, registration(request.flow))) return "forbidden"
+    const original = try runs.request(request.id)
+    if (original !== undefined && JSON.stringify(original) !== JSON.stringify(request)) return "conflict"
+    const runtime = CloudflareRuntime.layer({ hostId, executionId: `request/${request.id}`, flow: RequestAction._tag }, Layer.effectDiscard(effect {
+      const engine = try FlowRuntime.FlowRuntime
+      try engine.register(RequestAction, effect () => {
+        try Action.make({ name: "vibelang/actions/index", execute: promise(() => storage.put(`action-index/${request.id}`, request.id)) })
+        return try Action.make({ name: "vibelang/actions/start", error: Unreachable, success: Schema.NullOr(Schema.String), execute: runs.start(request, currentRole) })
+      })
+    })).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    return try Effect.orDie(Effect.provide(effect {
+      return try (try FlowRuntime.FlowRuntime).execute(RequestAction, { executionId: `request/${request.id}`, payload: { request } })
+    }, runtime))
+  }
+  effect function cancel(id: string, role: Role, owner = "") {
+    const currentRole = try authority.role(owner)
+    const run = (try runs.read(id)).find(run => run.id === id)
+    if (run === undefined) return "not-found"
+    const request = try runs.request(id)
+    const parent = run.flow === "vibelang/Reply" && request?.flow === "vibelang/Post" && id === `${request.id}-reply` ? request.flow : run.flow
+    if (!allowed(currentRole, registration(parent))) return "forbidden"
+    const runtime = CloudflareRuntime.layer({ hostId, executionId: `cancel/${id}`, flow: CancelAction._tag }, Layer.effectDiscard(effect {
+      const engine = try FlowRuntime.FlowRuntime
+      try engine.register(CancelAction, () => Action.make({ name: "vibelang/actions/cancel", error: Unreachable, success: Schema.NullOr(Schema.String), execute: runs.cancel(id, currentRole, owner) }))
+    })).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    return try Effect.orDie(Effect.provide(effect {
+      return try (try FlowRuntime.FlowRuntime).execute(CancelAction, { executionId: `cancel/${id}`, payload: { id } })
+    }, runtime))
+  }
+  effect function rerun(id: string, next: string, role: Role, owner = "") {
+    const original = try Effect.orDie(runs.request(id))
+    if (original === undefined) return "not-found"
+    return try start({ ...original, owner, id: next, door: "button", actor: "person" }, role)
+  }
+  return { list, start, cancel, rerun }
+}

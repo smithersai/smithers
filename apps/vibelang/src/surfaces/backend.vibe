@@ -3,7 +3,11 @@ import { liveHealth, prefersMock } from "../core/protocolDecision.vibe"
 
 import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
-import { mockFactoryFor } from "../core/MockFactory.vibe"
+import { mockFactoryFor, MockFactory } from "../core/MockFactory.vibe"
+import { LiveActions } from "../actions/LiveActions.vibe"
+import { MockActions } from "../actions/MockActions.vibe"
+import { AgentActions } from "../actions/agent.vibe"
+import { Actions } from "../actions/Actions.vibe"
 import { LiveMythical } from "../history/LiveMythical.vibe"
 import { MockMythical } from "../history/MockMythical.vibe"
 import type { Principal } from "../history/roles.vibe"
@@ -51,16 +55,16 @@ const live = Layer.unwrap(effect {
     throw new LiveBackendNotDeployed({ message: unreachable(origin) })
   }
   if (!liveHealth(answer.agent)) throw new LiveBackendNotDeployed({ message: notDeployed(origin) })
-  return Layer.merge(LiveFactory(origin), LiveMythical(origin)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
+  return Layer.mergeAll(LiveFactory(origin), LiveMythical(origin), LiveActions(origin)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
 }).pipe(Layer.provide(FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "error" })))))
 
-const surfaceMock = Layer.effect(Factory, effect {
-  const context = try Layer.build(mockFactoryFor(SURFACE_PRINCIPAL.role))
-  const factory = Context.get(context, Factory)
+const mockFactory = mockFactoryFor(SURFACE_PRINCIPAL.role)
+const chooseMaintainer = Layer.effectDiscard(effect {
+  const factory = try Factory
   if (factory.accounts !== undefined) try Effect.orDie(factory.accounts.choose("maintainer"))
-  return factory
-})
-const mock = Layer.merge(surfaceMock, MockMythical(SURFACE_PRINCIPAL))
+}).pipe(Layer.provide(mockFactory))
+const mockBase = Layer.mergeAll(mockFactory, MockMythical(SURFACE_PRINCIPAL), MockActions({ role: SURFACE_PRINCIPAL.role, actor: "agent" }).pipe(Layer.provide(mockFactory)), chooseMaintainer)
+const mock = Layer.effect(AgentActions, effect { return { actions: try Actions } }).pipe(Layer.provideMerge(mockBase))
 
 /** Backend choice belongs to the host: `--mock` or `VIBELANG_FACTORY=mock` for the mock, else the live Factory. */
 export function backend(useMock: boolean, environment: string | undefined) {

@@ -9,6 +9,8 @@ import type { Entry, Pending } from "../core/conversation.vibe"
 import { CONTRIBUTE_URL, hasConversation, issueStateOf, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { accountNotice, accountOverlays, identityNav, peoplePane } from "./roleView.vibe"
 import { wikiPane } from "./wikiView.vibe"
+import { actionsPane, actionCards, slashMenu } from "./actionView.vibe"
+import { actionsOf, completions } from "./actionModel.vibe"
 import { render } from "./markdown.vibe"
 import { STOPS, type StopMedia } from "../core/tourStops.vibe"
 import { sandboxPane } from "./sandboxView.vibe"
@@ -31,6 +33,7 @@ export function view(model: Model, h: H): Document {
         top(model, h),
         model.issues?.open ? issuesView(issueStateOf(model), h, (action, value = "") => Message.IssueUi({ action, value })) : model.surface === "splash" ? splash(model, h) : chat(model, h),
         ...(model.surface === "chat" && (model.client.conversation.pane !== "" || showsWiki(model)) && (model.tour || model.docs === "max") ? [paneView(model, h)] : []),
+        ...(model.surface === "chat" && actionsOf(model).open && actionsOf(model).maximized ? [actionsPane(model, h)] : []),
         palette(model, h),
         ...accountOverlays(model, h),
         ...(model.tour ? control(h) : []),
@@ -175,7 +178,7 @@ function docsPane(model: Model, h: H): Html {
 
 function chat(model: Model, h: H): Html {
   const { conversation, pending } = model.client
-  return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max")], [
+  return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max" || actionsOf(model).maximized)], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
       sandboxPane(model, h),
@@ -187,6 +190,8 @@ function chat(model: Model, h: H): Html {
       ...(conversation.entries.length === 0 && pending.length === 0 && !showsWiki(model) ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
         src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",
       }))] : []),
+      ...(actionsOf(model).maximized ? [] : [actionsPane(model, h)]),
+      ...actionCards(model, h),
       ...conversation.entries.flatMap(entry => [
         ...(showsWiki(model) && model.wikiAfter === entry.id && !model.tour && model.docs !== "max" ? [wikiPane(model, h)] : []),
         entryView(entry, model, h),
@@ -257,6 +262,8 @@ function promptInput(model: Model, h: H, placeholder: string, id = PROMPT_ID): H
     h.Value(model.draft),
     h.OnInput((value) => Message.UpdatedDraft({ value })),
     h.OnKeyDownPreventDefault((key, modifiers) =>
+      key === "ArrowDown" && completions(model).length > 0 ? Option.some(Message.MovedSlash({ delta: 1 })) :
+      key === "ArrowUp" && completions(model).length > 0 ? Option.some(Message.MovedSlash({ delta: -1 })) :
       sendKey(key, modifiers.shiftKey) ? Option.some(Message.SubmittedDraft()) : Option.none()
     ),
   ])
@@ -266,6 +273,7 @@ function composer(model: Model, h: H): Html {
   return h.form(
     [h.Class("sui-chat-composer"), h.DataAttribute("docked", "true"), h.Style({ viewTransitionName: model.palette ? "none" : "prompt" }), h.OnSubmit(Message.SubmittedDraft())],
     [
+      ...slashMenu(model, h),
       promptInput(model, h, "Ask about VibeLang"),
       h.div([h.Class("sui-chat-composer-toolbar")], [
         h.span([h.Class("sui-chat-composer-status")], [statusText(model)]),
@@ -293,6 +301,7 @@ function palette(model: Model, h: H): Html {
         h.OnSubmit(Message.SubmittedDraft()),
       ],
       [
+        ...slashMenu(model, h),
         promptInput(model, h, "Ask about VibeLang, or describe what to change", PALETTE_PROMPT_ID),
         h.div([h.Class("sui-chat-composer-toolbar")], [
           h.span([h.Class("sui-chat-composer-status")], [h.kbd([h.Class("vl-kbd")], ["⏎"]), " to send · ", h.kbd([h.Class("vl-kbd")], ["esc"]), " to close"]),

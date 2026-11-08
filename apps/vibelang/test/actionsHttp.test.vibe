@@ -1,0 +1,58 @@
+// @vitest-environment node
+// Real HTTP, real product-memory actions; malformed and delayed inputs enter through the public boundary.
+import { expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientRequest, HttpServer, HttpServerRequest } from "effect/http"
+import { Actions } from "../src/actions/Actions.vibe"
+import { MockActions } from "../src/actions/MockActions.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { TestClock } from "effect/testing"
+import { boundedBody, handle, type ActionsApi } from "../worker/ActionsHttp.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+
+const product = MockActions({ role: "viewer", actor: "person" }).pipe(Layer.provide(MockFactory))
+effect function serve() {
+  const actions = try Actions
+  const api: ActionsApi = {
+    list: (flow) => orDie(actions.runs(flow)),
+    read: effect (id) => { const run = actions.read(id) catch () => undefined; return run === undefined ? [] : [run] },
+    start: effect (request) => { try orDie(actions.start(request.flow, request.input, request.door)); return null },
+    cancel: effect (id) => { try orDie(actions.cancel(id)); return null },
+    rerun: effect (id) => { try orDie(actions.rerun(id)); return null },
+    events: () => fail(new Unreachable({ what: "unused-stream" })),
+  }
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    return try handle(api, new URL(request.url, "http://local"))
+  })
+}
+const encoded = (text: string) => new TextEncoder().encode(text)
+const valid = JSON.stringify({ id: "achunked", flow: "vibelang/Tour", input: {}, door: "button" })
+it.live("accepts a bounded chunked body, rejects overflow and foreign origins on start and rerun", () => scoped(effect {
+  provide NodeHttpServer.layerTest, product {
+    try serve()
+    const http = try HttpClient.HttpClient
+    const accepted = try http.execute(HttpClientRequest.post("/api/actions/runs").pipe(HttpClientRequest.bodyStream(Stream.make(encoded(valid)))))
+    const overflow = try http.execute(HttpClientRequest.post("/api/actions/runs").pipe(HttpClientRequest.bodyStream(Stream.make(encoded("x".repeat(32001))))))
+    const rerun = try http.execute(HttpClientRequest.post("/api/actions/runs/achunked/rerun").pipe(HttpClientRequest.bodyStream(Stream.make(encoded("x".repeat(32001))))))
+    const origin = try http.execute(HttpClientRequest.post("/api/actions/runs").pipe(HttpClientRequest.bodyText(valid), HttpClientRequest.setHeader("origin", "https://foreign.invalid")))
+    try Effect.try(() => {
+      expect(accepted.status).toBe(202)
+      expect(overflow.status).toBe(413)
+      expect(rerun.status).toBe(413)
+      expect(origin.status).toBe(403)
+    })
+  }
+}))
+it.effect("bounds an unresolved Effect request body at exactly three seconds", () => effect {
+  const request = HttpServerRequest.fromClientRequest(HttpClientRequest.post("/api/actions/runs").pipe(HttpClientRequest.bodyStream(Stream.never)))
+  const read = try forkChild(Effect.provideService(boundedBody(), HttpServerRequest.HttpServerRequest, request))
+  try TestClock.adjust("2999 millis")
+  const before = try sync(() => read.pollUnsafe())
+  try TestClock.adjust("1 millis")
+  const after = try Fiber.join(read)
+  try Effect.try(() => {
+    expect(before).toBeUndefined()
+    expect(after.status).toBe(408)
+  })
+})

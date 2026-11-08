@@ -1,6 +1,7 @@
 import { sandboxRequest, signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
 import { validBodyLength } from "../src/core/protocolDecision.vibe"
 
+import * as ActionsHttp from "./ActionsHttp.vibe"
 // The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
 // the event stream and the tour (0014), each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
@@ -138,10 +139,17 @@ effect function answerHistory(route: HistoryRoute, url: URL, histories: Historie
 }
 
 /** Answers the current request; health answers itself, history routes reach `histories`, the rest `conversations`. */
-export effect function handle<R = never>(conversations: Conversations, histories: Histories, sandboxes: Gateway<R> = signedOutGateway) {
+export effect function handle<R = never>(conversations: Conversations, histories: Histories, sandboxes: Gateway<R> = signedOutGateway, actions?: ActionsHttp.ActionsApi) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "http://api.invalid")
   if (url.pathname.startsWith("/api/sandboxes/")) return try sandboxRequest(sandboxes)
+  if (url.pathname === "/api/actions" || url.pathname.startsWith("/api/actions/")) {
+    if (actions === undefined) return json({ code: "unavailable" }, 503)
+    const answered = try withSpan(effect { return ActionsHttp.handle(actions, url) catch () => json({ code: "unavailable" }, 503) }, "vibelang.api.actions")
+    try Metric.update(Metric.withAttributes(requests, { route: "actions", status: String(answered.status) }), 1)
+    try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: "actions", status: answered.status }))
+    return answered
+  }
   if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
   const history = historyRouteOf(request.method, url.pathname, url.searchParams)
   if (history !== undefined) {

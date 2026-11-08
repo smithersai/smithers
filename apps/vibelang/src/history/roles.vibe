@@ -36,6 +36,7 @@ export function atLeast(role: Role, least: Role): boolean {
 /** The one place a flow learns who runs it. */
 export service Caller {
   readonly principal: Principal
+  readonly current?: () => Principal!!
 }
 
 /** Someone who may only read. */

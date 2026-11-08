@@ -6,6 +6,7 @@ import { Argument, Flag, type Command } from "effect/cli"
 import { IdGenerator, Tool } from "effect/ai"
 import { Factory, SandboxSnapshot } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
+import { Actions, ActionFailure, Registered, Run } from "../actions/Actions.vibe"
 import { Mythical } from "../history/MythicalHistory.vibe"
 import type { CommitPage, Head, Outline } from "../history/pages.vibe"
 
@@ -52,13 +53,13 @@ effect function read(input: ReadInput) {
   return { conversation: input.conversation, ...snapshot }
 }
 
-function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical>(
+function define<const Name extends string, I extends Schema.ConstraintCodec<unknown>, O extends Schema.ConstraintCodec<unknown>, P extends Command.Command.Config, R extends Factory | Mythical | Actions>(
   name: Name,
   description: string,
   input: I,
   output: O,
   parameters: P,
-  handler: (input: I["Type"]) => O["Type"]!(CommandError | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!R,
+  handler: (input: I["Type"]) => O["Type"]!(CommandError | ActionFailure | import("../core/Factory.vibe").Unavailable | import("../core/Factory.vibe").Refused)!R,
   format: (output: O["Type"]) => string,
   refused = "The message was refused",
 ) {
@@ -70,7 +71,7 @@ function define<const Name extends string, I extends Schema.ConstraintCodec<unkn
   const run = effect (value: unknown) => {
     return invoke(value) catch effect (error) => {
       if (error._tag === "CommandError") throw error
-      const message = commandError(error._tag, error._tag === "Unavailable" ? error.reason : "",
+      const message = error._tag === "ActionFailure" ? `Action: ${error.code}` : commandError(error._tag, error._tag === "Unavailable" ? error.reason : "",
         refused, error._tag === "Refused" ? error.refusal : "", error._tag === "Unavailable" || error._tag === "Refused" ? "" : error.message)
       throw new CommandError({ message })
     }
@@ -321,4 +322,30 @@ export const Issue = define("issue", "Run an issue flow.", IssueInput, IssueOutp
   return { seq: result.seq, items: result.items, ...(result.draft === undefined ? {} : { draft: result.draft }), detail: JSON.stringify(result.saved ?? result.items.find(i => i.number === selected) ?? null) }
 }, (output) => JSON.stringify(output))
 
-export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue] as const
+const ActionJson = Schema.String.pipe(Schema.withDecodingDefaultKey(succeed("{}")))
+const Wait = Schema.Boolean.pipe(Schema.withDecodingDefaultKey(succeed(false)))
+export schema ActionInput { readonly flow: string; readonly input: ActionJson; readonly wait: Wait }
+export schema RunId { readonly id: string }
+export schema ActionList { readonly actions: ReadonlyArray<Registered> }
+export const ListActions = define("actions", "List registered workflows and their declared commands.", Tool.EmptyParams, ActionList, {},
+  effect () => ({ actions: try (try Actions).list() }), result => result.actions.map(entry => `${entry.name}  ${entry.command}`).join("\n"))
+export const RunWorkflow = define("run", "Request a registered workflow; --input is JSON. --wait follows its actual settlement.", ActionInput, RunId, {
+  flow: Argument.String("flow"), input: Flag.String("input").pipe(Flag.withDefault("{}")), wait: Flag.Boolean("wait").pipe(Flag.withDefault(false)),
+}, effect (input) => {
+  const actions = try Actions
+  const value = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(input.input) catch effect () => { throw new CommandError({ message: "Invalid action input." }) }
+  const id = try actions.start(input.flow, value, "agent")
+  if (input.wait) {
+    const final = try Stream.runLast(actions.follow(id).pipe(Stream.takeUntil(run => run.state !== "queued" && run.state !== "running")))
+    if (Option.isNone(final) || final.value.state !== "passed") throw new CommandError({ message: "Action failed." })
+  }
+  return { id }
+}, output => `Requested ${output.id}.`)
+export const ReadRun = define("trace", "Read a run's current steps, status and result.", RunId, Run, { id: Argument.String("id") },
+  effect ({ id }) => try (try Actions).read(id), run => [run.state, ...run.steps.map(step => `${step.name}  ${step.state}`), run.result].join("\n"))
+export const CancelRun = define("cancel", "Cancel a run through its durable engine.", RunId, RunId, { id: Argument.String("id") },
+  effect ({ id }) => { try (try Actions).cancel(id); return { id } }, output => `Cancellation requested ${output.id}.`)
+export const Rerun = define("rerun", "Request another run with the original input and current permissions.", RunId, RunId, { id: Argument.String("id") },
+  effect ({ id }) => ({ id: try (try Actions).rerun(id) }), output => `Requested ${output.id}.`)
+
+export const commands = [Ask, Read, ShowHistory, PlanWork, StartWork, AddNote, Sandboxes, StartSandbox, StopSandbox, RunSandbox, Issues, Issue, ListActions, RunWorkflow, ReadRun, CancelRun, Rerun] as const

@@ -49,7 +49,7 @@ effect function digestOf() {
 }
 
 /** The mock history for `principal`, bootstrapped from `seed` (the real one by default). */
-export function MockMythical(principal: Principal, seed: () => History!! = seeded) {
+export function MockMythical(principal: Principal, seed: () => History!! = seeded, current?: () => Principal!!) {
   return Layer.effect(Mythical, effect {
     const sequencer = try make(try memoryStore())
     const digest = try digestOf()
@@ -59,7 +59,7 @@ export function MockMythical(principal: Principal, seed: () => History!! = seede
       Layer.provide(Layer.mergeAll(
         Layer.succeed(Stack, stackOf(sequencer, seed)),
         Layer.succeed(MainLog, mockMain(sequencer)),
-        Layer.succeed(Caller, { principal }),
+        Layer.succeed(Caller, { principal, ...(current === undefined ? {} : { current }) }),
       )),
       Layer.provide(Layer.succeed(Digest.Digest, digest)),
     )

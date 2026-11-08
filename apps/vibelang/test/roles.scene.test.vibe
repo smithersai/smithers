@@ -1,6 +1,6 @@
 import { Command, click, expect, given, role, scene, Subscription, text } from "foldkit/scene"
 import { describe, expect as assert, it } from "@effect/vitest"
-import { EndTourCommand, FocusComposer, ChooseIdentity, CloseRoleDialog, FocusAccountMenu, GrantRole, init, LoadPeople, Message, ShowRoleDialog, signedOut, update } from "../src/web/main.vibe"
+import { EndTourCommand, FocusComposer, ChooseIdentity, CloseRoleDialog, FocusAccountMenu, GrantRole, init, LoadActions, LoadPeople, Message, ShowRoleDialog, signedOut, update } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 
 const home = init({ session: "roles", mode: "mock", name: "Guest" }).model
@@ -49,6 +49,7 @@ describe("each role's designed view", () => {
         Subscription.emit(Message.ChoseIdentity({ role: value })),
         Command.expectExact(ChooseIdentity({ role: value })),
         Command.resolve(ChooseIdentity, Message.AccountLoaded({ identity })),
+        ...(value === "viewer" ? [] : [Command.resolve(LoadActions, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 1 }))]),
         expect(role("button", { name: value === "viewer" ? "Sign in" : "Account" })).toExist(),
         expect(role("button", { name: "Learn more" })).toExist(),
         expect(role("button", { name: "Ask the agent" })).toExist(),
@@ -90,6 +91,7 @@ describe("each role's designed view", () => {
     scene({ update, view }, given({ ...home, surface: "chat", account: { ...signedOut, identity: { id: "2", login: "joss", role: "new" } } }),
       Subscription.emit(Message.ReceivedRole({ event })),
       expect(text("You're now Community.")).toExist(),
+      Command.resolve(LoadActions, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 1 })),
       Subscription.emit(Message.ReceivedRole({ event })),
       expect(text("You're now Community.")).toExist(),
     )
@@ -117,9 +119,10 @@ it("a demotion closes a pending promotion and removes its controls immediately",
     account: { ...signedOut, identity: people[0]!, members: people, people: "pane", target: "4", targetRole: "maintainer" },
   }),
     Subscription.emit(Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "1", by: "5", role: "community", mode: "person" } })),
-    Command.expectExact(CloseRoleDialog({}), LoadPeople({})),
+    Command.expectExact(CloseRoleDialog({}), LoadPeople({}), LoadActions({ flow: "", epoch: 1 })),
     Command.resolve(CloseRoleDialog, Message.FocusedPrompt()),
     Command.resolve(LoadPeople, Message.LoadedPeople({ members: people.map(person => person.id === "1" ? { ...person, role: "community" as const } : person) })),
+    Command.resolve(LoadActions, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 1 })),
     expect(role("combobox", { name: "Role for rira" })).toBeAbsent(),
   )
 })

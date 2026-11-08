@@ -382,3 +382,55 @@ html { overflow-anchor: none; }
 @media (max-width: 720px) {
   .vl-top .vl-nav .vl-nav-link { font-size: 13px; padding-inline: 4px; gap: 4px; }
 }
+
+/* Decision 0023: designer actions frame. Shared components are @smthrs/ui-css. */
+.vl-act-body { display: grid; align-content: start; gap: 8px; padding: 12px; overflow-y: auto; max-height: min(56vh, 540px); min-height: 0; }
+.vl-docs[data-maximized="true"] .vl-act-body { max-height: none; flex: 1; }
+.vl-act-grid { display: grid; grid-template-columns: 240px minmax(0,1fr); gap: 14px; align-content: start; }
+.vl-act-side { display: grid; align-content: start; gap: 6px; }
+.vl-act-main { display: grid; align-content: start; gap: 8px; min-width: 0; }
+.vl-act-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 2px 2px 6px; }
+.vl-act-title { color: var(--text); font-size: 13px; font-weight: 650; }
+.vl-wf { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.vl-wf-name { min-width: 0; color: var(--text); font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-wf-meta { color: var(--text-muted); font-size: 12px; white-space: nowrap; }
+.vl-dot { width: 8px; height: 8px; border-radius: var(--r-full); background: var(--text-muted); }
+.vl-dot-ok { background: var(--success); }
+.vl-dot-bad { background: var(--danger); }
+.vl-dot-run { background: var(--brand); animation: vl-pulse 1.2s ease-in-out infinite; }
+.vl-dot-warn { background: var(--warning); }
+.vl-run { display: grid; grid-template-columns: 10px minmax(0,1fr) auto; align-items: center; gap: 10px; }
+.vl-run-main { min-width: 0; display: grid; gap: 1px; }
+.vl-run-title { min-width: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-run-meta { min-width: 0; color: var(--text-muted); font-size: 12px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-run-meta code { font-family: var(--font-mono); font-size: 11px; }
+.vl-run-dur { color: var(--text-muted); font-size: 12px; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.vl-trace { display: grid; grid-template-columns: 250px minmax(0,1fr); gap: 14px; align-content: start; min-height: 0; }
+.vl-trace-steps { border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); padding: 4px 12px; align-self: start; }
+.vl-term { border: 1px solid var(--border); border-radius: var(--r-2); background: var(--code-bg); overflow: hidden; min-width: 0; }
+.vl-term-bar { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 6px 12px; border-bottom: 1px solid var(--border); color: color-mix(in srgb, var(--code-text) 70%, transparent); font-family: var(--font-mono); font-size: 11px; }
+.vl-term-body { margin: 0; padding: 10px 12px; color: var(--code-text); font-family: var(--font-mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap; overflow-wrap: anywhere; min-height: 120px; }
+.vl-term-p { color: var(--brand); }
+.vl-term-ok { color: var(--success); }
+.vl-term-bad { color: var(--danger); }
+.vl-term-dim { color: var(--text-muted); }
+.vl-runcard { display: grid; gap: 8px; width: min(100%, 520px); padding: 10px 12px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); cursor: pointer; transition: border-color .15s; }
+.vl-runcard:hover { border-color: var(--border-strong); }
+.vl-runcard:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring); }
+.vl-runcard-top { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.vl-runcard-name { color: var(--text); font-family: var(--font-mono); font-size: 12px; font-weight: 650; }
+.vl-runcard-meta { color: var(--text-muted); font-size: 11px; font-variant-numeric: tabular-nums; }
+.vl-runcard-meta code { font-family: var(--font-mono); }
+@media (max-width: 700px) {
+  .vl-act-grid, .vl-trace { grid-template-columns: 1fr; }
+  .vl-act-side { grid-auto-flow: column; grid-auto-columns: max-content; overflow-x: auto; }
+  .vl-act-side .sui-row-button { width: auto; }
+  .vl-act-side .vl-wf { grid-template-columns: 10px auto auto; }
+  .vl-run { grid-template-columns: 10px minmax(0,1fr); }
+  .vl-run-dur { display: none; }
+}
+
+
+.vl-actions-pane .vl-docs-page { display: flex; align-items: center; gap: 8px; min-width: 0; }
+.vl-actions-pane .vl-docs-actions { display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+.vl-actions-pane { min-width: 0; }

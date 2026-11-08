@@ -28,6 +28,18 @@ export class ProjectAccounts {
     const service = await this.service
     const url = new URL(request.url)
     const incoming = HttpServerRequest.fromWeb(request).modify({ url: (setup?.origin ?? url.origin) + url.pathname + url.search })
+    if (url.pathname === "/__fixture/current") {
+      const body = await request.json() as { readonly cookie?: string }
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(service === undefined ? { id: "", login: "", role: "viewer" } : await runPromise(service.current(body.cookie))))
+    }
+    if (url.pathname === "/__fixture/role") {
+      const body = await request.json() as { readonly owner: string }
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(service === undefined ? "viewer" : await runPromise(service.role(body.owner))))
+    }
+    if (url.pathname === "/__fixture/allowed") {
+      const body = await request.json() as { readonly owner: string; readonly action: import("../../src/core/conversation.vibe").Action }
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(service === undefined ? false : await runPromise(service.allowed(body.owner, body.action))))
+    }
     if (service === undefined || setup === undefined) return HttpServerResponse.toWeb(await runPromise(
       (url.pathname === "/api/issues" ? publicIssues(this.state.id.toString(), this.state.storage) : Accounts.disabled()).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)),
     ))

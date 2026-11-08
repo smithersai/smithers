@@ -121,6 +121,7 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
         ACCOUNTS: { type: "durable-object", worker: "api", exportName: "ProjectAccounts" },
         HISTORY: { type: "durable-object", worker: "api", exportName: "History" },
         SANDBOX_LEDGER: { type: "durable-object", worker: "api", exportName: "SandboxLedger" },
+        ACTION_INDEX: { type: "durable-object", worker: "api", exportName: "ActionIndex" },
       },
       exports: {
         Conversation: { type: "durable-object", storage: "sqlite" },
@@ -128,6 +129,7 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
         ProjectAccounts: { type: "durable-object", storage: "sqlite" },
         History: { type: "durable-object", storage: "sqlite" },
         SandboxLedger: { type: "durable-object", storage: "sqlite" },
+        ActionIndex: { type: "durable-object", storage: "sqlite" },
       },
     }, apiBundle.bundleMap)
   }

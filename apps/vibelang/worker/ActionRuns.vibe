@@ -1,0 +1,170 @@
+// One action run uses its own Conversation object and that object's existing flow engine, sequencer and alarms.
+// Trace observations are queued out of the engine's write, then persisted as conversation machine events.
+import { StepTrace } from "@smthrs/engine"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { Flow, RunMetrics } from "@smthrs/flow"
+import { Run, type Role } from "../src/actions/Actions.vibe"
+import { allowed, registration } from "../src/actions/catalog.vibe"
+import { type RunRequest } from "../src/actions/wire.vibe"
+import { prepare } from "../src/actions/execution.vibe"
+import { signedOut, type ActionIdentity } from "./ActionIdentity.vibe"
+import * as HistoryActions from "./HistoryActions.vibe"
+import { Post, Tour, Reply } from "../src/core/flows.vibe"
+import type { ChatModel, Spend } from "./Reply.vibe"
+import * as Objects from "./Objects.vibe"
+import type { Sequencer } from "./Sequencer.vibe"
+
+export effect function read(sequencer: Sequencer) {
+  return try Effect.orDie(Schema.decodeUnknownEffect(Schema.Array(Run))(try sequencer.actions()))
+}
+
+/** Queue telemetry so its consumer never re-enters an engine transaction. */
+export effect function traced<A, E, R>(sequencer: Sequencer, request: RunRequest, program: A!E!R) {
+  return try scoped(effect {
+    const queue = try Queue.unbounded<StepTrace.Event | null>()
+    const consumer = try forkChild(effect {
+      while (true) {
+        const event = try Queue.take(queue)
+        if (event === null) return
+        const child = event.flow === Reply._tag && request.flow === Post._tag
+        const id = child ? `${request.id}-reply` : request.id
+        if (child) try sequencer.action({ type: "RequestAction", id, flow: Reply._tag, door: "agent", actor: "agent", at: event.at })
+        try sequencer.action({ type: "TraceAction", id, key: event.key, name: event.name, attempt: event.attempt, state: event.state, at: event.at })
+      }
+    })
+    const observer: StepTrace.Sink.Shape = { emit: (event) => Effect.asVoid(Queue.offer(queue, event)) }
+    return try ensuring(Effect.provideService(program, StepTrace.Sink, observer), effect {
+      try Queue.offer(queue, null)
+      try Fiber.join(consumer)
+      try Queue.shutdown(queue)
+    })
+  })
+}
+
+export effect function start(hostId: string, storage: Objects.Storage, sequencer: Sequencer, request: RunRequest, role: Role, historyHost = HistoryActions.make(hostId, storage), authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
+  if (!allowed(try authority.role(request.owner ?? ""), registration(request.flow))) return "forbidden"
+  const valid = prepare(request.flow, request.input, request.id) catch () => undefined
+  if (valid === undefined) return "input"
+  const before = try read(sequencer)
+  const previous = try promise(() => storage.get<RunRequest>("action/request"))
+  if (previous !== undefined && JSON.stringify(previous) !== JSON.stringify(request)) return "conflict"
+  const existing = before.find(run => run.id === request.id)
+  if (existing !== undefined && existing.state !== "queued") return null
+  if (existing !== undefined && (request.flow === Tour._tag || request.flow === Post._tag)) {
+    const snapshot = try sequencer.read(0)
+    const accepted = request.flow === Tour._tag ? snapshot.entries.some(entry => entry.author === "agent" && !entry.done && entry.inReplyTo === "") : snapshot.entries.some(entry => entry.clientId === request.id)
+    if (accepted) {
+      try sequencer.ensureDispatched()
+      try promise(() => storage.setAlarm(Date.now()))
+      if (request.flow === Post._tag) try sequencer.action({ type: "SettleAction", id: request.id, state: "passed", result: "null", at: try Clock.currentTimeMillis })
+      return null
+    }
+  }
+  try promise(() => storage.put("action/request", request))
+  try sequencer.action({ type: "RequestAction", id: request.id, flow: request.flow, door: request.door, actor: request.actor, at: try Clock.currentTimeMillis })
+  const raw: Readonly<Record<string, Schema.Json>> = request.input !== null && typeof request.input === "object" && !Array.isArray(request.input) ? request.input as Readonly<Record<string, Schema.Json>> : {}
+  if (request.flow !== Tour._tag && request.flow !== Post._tag) {
+    const refusal = historyHost.start(request) catch () => "input"
+    if (refusal !== null) try sequencer.action({ type: "SettleAction", id: request.id, state: "failed", result: "Action failed", at: try Clock.currentTimeMillis })
+    return refusal
+  }
+  const operation = request.flow === Tour._tag ? Objects.tour(hostId, storage, sequencer)
+    : request.flow === Post._tag && typeof raw.text === "string" ? Objects.post(hostId, storage, sequencer, request.id, request.name ?? "Guest", raw.text, request.owner)
+    : Effect.succeed("input")
+  const origin = try Effect.orDie(Effect.try(() => RunMetrics.withOrigin({ door: request.door, actor: request.actor })))
+  const answer = try exit(traced(sequencer, request, origin(operation)))
+  const refusal = Exit.isSuccess(answer) ? answer.value : "failed"
+  if (refusal !== null || request.flow === Post._tag) {
+    try sequencer.action({ type: "SettleAction", id: request.id, state: refusal === null ? "passed" : "failed", result: refusal === null ? "null" : "Action failed", at: try Clock.currentTimeMillis })
+  }
+  return refusal
+}
+
+export effect function alarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, spend: Spend.Shape, model: ChatModel.Shape, history: import("../src/history/tools.vibe").HistoryReader, historyHost = HistoryActions.make(hostId, storage), replyHost = Objects.executionHost(hostId, storage, sequencer)) {
+  const request = (try promise(() => storage.get("action/request"))) as RunRequest | undefined
+  if (request === undefined) return try Objects.alarm(hostId, storage, sequencer, spend, model, history)
+  if (request.flow !== Tour._tag && request.flow !== Post._tag) {
+    const outcome = try traced(sequencer, request, historyHost.alarm(history))
+    if (outcome._tag === "Settled") {
+      const receipt: Option.Option<Flow.Result<unknown, unknown>> = try Effect.orDie(historyHost.receipt(request))
+      if (Option.isSome(receipt) && receipt.value._tag === "Complete") {
+        const result = receipt.value.exit
+        const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : "Action failed"
+        try sequencer.action({ type: "SettleAction", id: request.id, state: Exit.isSuccess(result) ? "passed" : "failed", result: output, at: try Clock.currentTimeMillis })
+      }
+    }
+    return outcome
+  }
+  const rawIntent = try promise(() => storage.get<string>(ExecutionObject.intentKey))
+  const intent = rawIntent === undefined ? undefined : try Effect.orDie(Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(rawIntent))
+  const origin = try Effect.orDie(Effect.try(() => RunMetrics.withOrigin({ door: request.door, actor: request.actor })))
+  const result = try exit(traced(sequencer, request, origin(Effect.provideService(replyHost.alarm(), Objects.ActiveExecution, { services: { spend, model, history } }))))
+  const receipt = intent === undefined ? Option.none() : try Objects.executionResult(hostId, storage, intent)
+  const engineFailed = Option.isSome(receipt) && receipt.value._tag === "Complete" && Exit.isFailure(receipt.value.exit)
+  if (engineFailed && intent !== undefined) {
+    const current = try sequencer.read(0)
+    const active = current.entries.find((entry) => entry.author === "agent" && !entry.done)
+    if (active !== undefined) try sequencer.fail(active.id, "Action failed")
+  }
+  const snapshot = try sequencer.read(0)
+  const reply = snapshot.entries.find((entry) => entry.author === "agent")
+  const done = reply !== undefined && reply.done
+  const failed = engineFailed || Exit.isFailure(result) || (reply !== undefined && reply.error !== "")
+  if (request.flow === Tour._tag && (done || failed)) {
+    try sequencer.action({ type: "SettleAction", id: request.id, state: failed ? "failed" : "passed", result: failed ? "Action failed" : "null", at: try Clock.currentTimeMillis })
+  }
+  // The reply the post dispatched is itself a registered, agent-started action.
+  if (request.flow === Post._tag && done) {
+    for (const run of try read(sequencer)) {
+      if (run.actor === "agent") try sequencer.action({ type: "SettleAction", id: run.id, state: reply.error === "" ? "passed" : "failed", result: reply.error === "" ? "null" : "Action failed", at: try Clock.currentTimeMillis })
+    }
+  }
+  if (Exit.isFailure(result)) return try Effect.failCause(result.cause)
+  return result.value
+}
+
+export effect function cancel(hostId: string, storage: Objects.Storage, sequencer: Sequencer, id: string, role: Role, historyHost = HistoryActions.make(hostId, storage), authority: Pick<ActionIdentity.Shape, "role"> = signedOut, owner = "", replyHost = Objects.executionHost(hostId, storage, sequencer)) {
+  const run = (try read(sequencer)).find((run) => run.id === id)
+  if (run === undefined) return "not-found"
+  const request = try promise(() => storage.get<RunRequest>("action/request"))
+  const child = run.flow === Reply._tag && request?.flow === Post._tag && id === `${request.id}-reply`
+  if (!allowed(try authority.role(owner), registration(child ? Post._tag : run.flow))) return "forbidden"
+  if (run.state !== "queued" && run.state !== "running") return null
+  if (child) {
+    try replyHost.cancel()
+    const snapshot = try sequencer.read(0)
+    const active = snapshot.entries.find(entry => entry.author === "agent" && !entry.done)
+    if (active !== undefined) try sequencer.fail(active.id, "Cancelled")
+  } else if (run.flow === Tour._tag) {
+    try replyHost.cancel()
+    try Objects.endTour(hostId, storage, sequencer)
+  } else {
+    const refusal = historyHost.cancel().pipe(Effect.as(null)) catch () => "cancel-failed"
+    if (refusal !== null) return refusal
+  }
+  try sequencer.action({ type: "SettleAction", id, state: "cancelled", result: "Cancelled", at: try Clock.currentTimeMillis })
+  return null
+}
+
+/** The object keeps this host for its entire incarnation. */
+export function make(hostId: string, storage: Objects.Storage, sequencer: Sequencer, authority: Pick<ActionIdentity.Shape, "role"> = signedOut) {
+  const admit = effect () => {
+    const request = try promise(() => storage.get<RunRequest>("action/request"))
+    if (request === undefined) return false
+    const permitted = allowed(try Effect.orDie(authority.role(request.owner ?? "")), registration(request.flow))
+    if (!permitted) {
+      const snapshot = try sequencer.read(0)
+      const active = snapshot.entries.find(entry => entry.author === "agent" && !entry.done)
+      if (active !== undefined) try sequencer.fail(active.id, "Permission changed")
+      try sequencer.action({ type: "SettleAction", id: request.id, state: "failed", result: "Permission changed", at: try Clock.currentTimeMillis })
+    }
+    return permitted
+  }
+  const history = HistoryActions.make(hostId, storage, admit)
+  const reply = Objects.executionHost(hostId, storage, sequencer, admit)
+  return {
+    start: (request: RunRequest, role: Role) => start(hostId, storage, sequencer, request, role, history, authority),
+    cancel: (id: string, role: Role, owner = "") => cancel(hostId, storage, sequencer, id, role, history, authority, owner, reply),
+    alarm: (spend: Spend.Shape, model: ChatModel.Shape, reader: import("../src/history/tools.vibe").HistoryReader) => alarm(hostId, storage, sequencer, spend, model, reader, history, reply),
+  }
+}

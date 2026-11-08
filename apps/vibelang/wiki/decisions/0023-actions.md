@@ -1,9 +1,9 @@
 # 0023. Registered actions and slash commands
 
-Status: SDK foundation and Effect annotation correction landed; app candidate held at service-spread inference, 2026-11-08.
+Status: implemented against published VibeLang 0.0.12, 2026-11-08. Exact receipts are in the lane report.
 Rulings: VL-4, VL-7 to VL-14, VL-17, VL-18, VL-21, VL-23, VL-24, VL-29.
 Design: [actions](../designs/actions/index.html), including [lead notes](../designs/actions/LEAD-NOTES.md).
-The app feature is not claimed done or deployed. The lane report holds its preview and remaining work.
+The lead deploys. The lane report records exact local checks and the remaining host and coverage boundaries.
 
 ## Foundation
 
@@ -24,16 +24,14 @@ is copied from apps/mvp.
 
 ## App contract
 
-The planned Factory-core Actions Effect service is shared by buttons, slash commands and agent callers.
+The Factory-core Actions Effect service is shared by buttons, slash commands and agent callers.
 Starting returns a run id before work finishes. Cards, lists and the trace share one run record. ActionRequested,
 ActionStep and ActionSettled go through conversation.vibe's existing numbered decide/apply machine. Terminal
 runs ignore late telemetry and competing settlements; step keys and attempts identify replayed steps.
 
-The second-run candidate has real memory-engine and workerd hosts, scene/browser tests, durable run results,
-agent tools and shared CLI/MCP commands. Its conversation machine passed 45 Dafny obligations and rejected nine executable mutations in a frozen reconstruction. Fifteen action
-browser checks and two SQLite/alarm workerd checks passed before the latest sandbox rebase. These receipts
-describe that candidate, not a claim that the feature is verified or shipped. Current account policy integration,
-other lanes' flow execution, full regression/coverage/fuzz/benchmark checks and final browser integration remain.
+The third run replays the preserved candidate against its recorded base and rebases it with jj. Memory and
+SQLite/alarm hosts exercise real registrations; scene, browser, flow, HTTP, CLI and MCP cases exercise the same
+service. The report distinguishes current checks from historical receipts and records measured coverage.
 
 ## Design precedence and departures
 
@@ -60,24 +58,60 @@ The lead resolved `actions-schema-json-field` as an Effect 4.1.1 type annotation
 
 The app compiler regression failed first with EK2109 on unpatched Effect. Positive cases cover required readonly JSON, aliases, annotation/check/rebuild, nested fields, schema errors, fixed tuples and records. Negative cases retain optionalKey/mutableKey and widened-key refusal, tuple/record strict checks, and required-input rejection. This preserves VIP-15 rather than weakening it. Every production workspace package importing Schema is inventoried and typechecked in 67 successful package commands; the coding child is checked by its parent, while root design examples and maintainer historical fixtures are explicitly excluded. Receipts, exits and source paths are in the lane report. Patch removal conditions are in `patches/README.md`: upgrade to a release carrying equivalent precise metadata and pass both regression classes without the patch.
 
-## Service-spread hold (second run)
+## Third-run compiler decision and published compatibility
 
-The first-run archive was reconstructed against its recorded base and rebased with jj, retaining later tour,
-history, proof and sandbox work. The second-run archive is `~/vl/vl-actions.pending2/`: 48 changed files,
-a unified delta, exact base files and SHA-256 manifest. Its base is `2347bf8638e1354032cf27b4bbdae41c8884c384`.
-It is unfinished source; reconstruct and rebase the delta instead of overlaying files.
+The lead's 2026-11-08 03:00 PST decision classifies the service-spread inference defect as a bug fix: a valid
+program was wrongly rejected. One upstream correction covers both `actions-service-spread` and
+`service-method-spread`. Compiler acceptance/runtime cases cover retrieved implementations and explicit `.Shape`
+annotations; missing methods, incompatible results and ordinary class-prototype spreads remain rejected.
+The release note and service guide are updated in VibeLang's unreleased section; the fix enters its merge queue.
+Publishing the next npm version remains Will's action.
 
-After the sandbox lane extended Factory, the faulty-service wrappers exposed a separate VibeLang0.0.12 issue.
-Retrieving a two-method service in an effect and returning `{ ...base, first: replacement }` loses `second` from
-the inferred shape. VibeLang exits2; equivalent native Effect/TypeScript and an ordinary-interface spread exit0.
-Controls still reject a missing method and a wrongly typed result. The emitted JavaScript retains the spread.
-Reproduction, exact command and diagnostics: `~/vl/vibelang-bugs/actions-service-spread/README.md`.
+The original 48-file candidate was hash-checked, replayed on exact base
+`2347bf8638e1354032cf27b4bbdae41c8884c384`, and rebased with jj. No archived file was overlaid on main.
+The three test-only spread wrappers are unnecessary: the existing faulty Factory transport fails a Tour start,
+which is the operation a person requests. The cancellation test uses the real Tour's durable wait. Both seams
+compile on 0.0.12, preserve all sandbox methods, and retain real engines, state, events and services.
+No cast, method-copy decorator or compiler workaround was added. No production action code needs to wait for release.
 
-The candidate app's current typecheck exits2 in three fault-injection wrappers. No cast, compiler change or
-method-by-method bypass was introduced. Will's standing instruction requires approval before a change to
-existing compilation behavior; the earlier lead decision authorizes only the Effect Json annotation correction.
-The compiler correction therefore awaits Will before the lane resumes integration. The lane report records
-remaining replay, cancellation, policy, trace-selection and validation work without claiming completion.
+The local compiler package was linked and tested. Its focused spread cases pass; the full local-head app check
+also reports five unrelated EK0401 errors at existing tagged-union/SDK constructors, and TS7023 at an existing recursive sandbox effect.
+These diagnostics are retained separately in `~/vl/vibelang-bugs/actions-local-head-throws/` and
+`~/vl/vibelang-bugs/actions-local-head-recursion/`; they are not hidden
+or counted as a green local-head app check. Main's landing gate uses published 0.0.12.
+
+## Implemented surfaces and boundaries
+
+Buttons, slash commands, scripted agent requests, harness flow bindings, CLI and MCP use the same Actions service.
+The catalog contains real core, history and issue declarations. Internal/bootstrap/approval flows remain
+inspectable without becoming arbitrary commands. History writes carry their stable execution identity to the
+owning history API. Sandbox commands reach the owning Factory's generation and allowance checks.
+The new action MCP list wraps its array in an object so MCP's object-root structured output and the CLI manifest
+have identical schemas.
+
+The trace opens a failed step first, otherwise its current/parked step, then its last completed step. Step buttons
+select that step's actual lifecycle record; the result stays separate. Re-run retains input and changes the selected
+run id. Terminal cards reject late snapshots, steps and settlements. Cancelling preserves completed step results.
+The action subscription starts only when runs exist, preserving Factory-only embedded clients.
+
+The HTTP boundary bounds both start and rerun bodies to 32,000 bytes, including chunked bodies, and reads for at
+most three seconds. Foreign browser Origins are refused. The protocol never accepts a client role. Decision
+0019's actual session and grant host now supplies `ActionIdentity`: command discovery, start, rerun and cancel
+recheck current policy before cached receipts. Alarm admission checks the stored initiating owner again.
+Mock Actions uses the same Factory accounts and Policy service; role events immediately clear stale controls,
+and an epoch prevents an old discovery response from restoring them.
+
+A Post's owner is committed atomically with its accepted event. Live agent calls carry that owner through
+Cloudflare's server-only entrypoint props, with fresh grant checks; no cookie or secret enters execution storage.
+The mock agent refuses to borrow a subsequently selected identity. History callbacks refresh current grants;
+sandbox actions forward to the existing account gateway. Reply children can be cancelled under the parent Post
+permission without making the internal Reply declaration directly runnable. Repeated ids must have the same
+request, and a queued request interrupted before engine admission rearms on retry.
+
+Conversation action contracts are proved with fresh Dafny generation and executable mutations. Behavioral scene,
+API, flow, MCP, browser and workerd tests supplement those contracts. Feedback fuzzing exercises real role-gated
+requests, traces, reruns and cancellation; the benchmark checks 50 real memory-engine request/trace/cancel cycles.
+These are measured feature cases, not whole-app 100% coverage or proof of HTTP, SQL, the DOM or Cloudflare.
 
 ## Dependencies and evidence
 

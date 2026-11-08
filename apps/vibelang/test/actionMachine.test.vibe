@@ -1,0 +1,48 @@
+import { expect, it } from "@effect/vitest"
+import { Arbitrary } from "effect"
+import { apply, decide, empty, mayRun, type Intent, settleRun, stepRun } from "../src/core/conversation.vibe"
+const request: Intent = { type: "RequestAction", id: "a1", flow: "vibelang/Tour", door: "button", actor: "person", at: 0 }
+function begun() {
+  const decision = decide(empty, request)
+  return decision.ok ? apply(empty, decision.event) : empty
+}
+it("records once, numbers every action event, and rejects late telemetry after cancellation", () => {
+  const first = begun()
+  expect(decide(first, request)).toMatchObject({ ok: false, refusal: "duplicate" })
+  const step = decide(first, { type: "TraceAction", id: "a1", key: "k", name: "tour/start", state: "running", attempt: 1, at: 2 })
+  expect(step.ok).toBe(true)
+  const running = step.ok ? apply(first, step.event) : first
+  const cancel = decide(running, { type: "SettleAction", id: "a1", state: "cancelled", result: "Cancelled", at: 3 })
+  const final = cancel.ok ? apply(running, cancel.event) : running
+  expect(final.seq).toBe(3)
+  expect(final.runs?.[0]).toMatchObject({ state: "cancelled", at: 3 })
+  expect(decide(final, { type: "TraceAction", id: "a1", key: "k", name: "tour/start", state: "passed", attempt: 1, at: 4 })).toMatchObject({ ok: false })
+  expect(apply(final, { type: "ActionSettled", seq: 4, id: "a1", state: "passed", result: "Done", at: 4 }).runs).toEqual(final.runs)
+})
+it.effect("upserts arbitrary engine identities, keeps all earlier steps and makes terminal state immutable", () => effect {
+  const arbitrary = Arbitrary.schema(Schema.Array(Schema.Struct({ key: Schema.String, attempt: Schema.Int })))
+  const result = try Arbitrary.checkEffect(arbitrary, (events) => {
+    let run = begun().runs![0]!
+    for (const event of events) {
+      const before = run.steps.length
+      const exists = run.steps.some((step) => step.key === event.key && step.attempt === event.attempt)
+      run = stepRun(run, event.key, "step", event.attempt, "running", 1)
+      if (run.steps.length !== before + (event.key === "" || exists ? 0 : 1)) return false
+      run = stepRun(run, event.key, "step", event.attempt, "passed", 2)
+    }
+    const terminal = settleRun(run, "passed", "Done", 3)
+    return settleRun(terminal, "failed", "wrong", 4) === terminal && stepRun(terminal, "new", "step", 1, "running", 4) === terminal
+  }, { runs: 400 })
+  try Effect.try(() => expect(Arbitrary.formatCheckFailure(result)).toBeUndefined())
+})
+it("enforces the role gate for every combination, with only the public tour exception", () => {
+  for (const role of ["viewer", "new", "community", "contributor", "maintainer"]) {
+    for (const tour of [false, true]) for (const maintainer of [false, true]) for (const internal of [false, true]) {
+      const permitted = mayRun(role, tour, maintainer, internal)
+      if (internal) expect(permitted).toBe(false)
+      else if (tour) expect(permitted).toBe(true)
+      else if (maintainer) expect(permitted).toBe(role === "maintainer")
+      else expect(permitted).toBe(["contributor", "maintainer"].includes(role))
+    }
+  }
+})

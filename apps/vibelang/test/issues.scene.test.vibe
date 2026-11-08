@@ -1,6 +1,6 @@
 import { Command, click, expect, given, role, scene, type, within, Subscription, text } from "foldkit/scene"
 import { describe, it } from "@effect/vitest"
-import { init, Message, update, ShowIssueDialog, ActOnIssue, CloseIssueDialog, LoadIssueDetails, signedOut } from "../src/web/main.vibe"
+import { init, Message, update, ShowIssueDialog, ActOnIssue, CloseIssueDialog, LoadIssueDetails, LoadActions, signedOut } from "../src/web/main.vibe"
 import { view } from "../src/web/view.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 import { initialIssues } from "../src/web/issues.vibe"
@@ -75,8 +75,9 @@ it("loads GitHub comments for the selected live issue and ignores a late reply f
 it("an incoming demotion closes an open commitment dialog immediately", () => {
   scene({ update, view }, given({ ...base, issues: { ...base.issues, screen: "detail", selected: 42, dialog: "commit" } }),
     Subscription.emit(Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "1", by: "5", role: "new", mode: "person" } })),
-    Command.expectExact(CloseIssueDialog({})),
+    Command.expectExact(CloseIssueDialog({}), LoadActions({ flow: "", epoch: 1 })),
     Command.resolve(CloseIssueDialog, Message.IssueDialogFocused()),
+    Command.resolve(LoadActions, Message.LoadedActions({ entries: [], commands: [], runs: [], epoch: 1 })),
     expect(role("button", { name: "Commit" })).toBeAbsent(),
     expect(role("dialog", { name: "Commit #42 as a task" })).toBeAbsent(),
   )

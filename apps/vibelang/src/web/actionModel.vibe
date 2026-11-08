@@ -1,0 +1,46 @@
+import { acceptSnapshot } from "../core/conversation.vibe"
+import { Registered, Run } from "../actions/Actions.vibe"
+export schema ActionView {
+  readonly epoch?: number
+  readonly step?: string
+  readonly now?: number
+  readonly open: boolean
+  readonly maximized: boolean
+  readonly selected: string
+  readonly run: string
+  readonly loading: boolean
+  readonly starting: boolean
+  readonly error: string
+  readonly input: string
+  readonly highlight: number
+  readonly slash: boolean
+  readonly entries: ReadonlyArray<Registered>
+  readonly commands: ReadonlyArray<Registered>
+  readonly runs: ReadonlyArray<Run>
+}
+export const initial: ActionView = { open: false, maximized: false, selected: "", run: "", loading: false, starting: false, error: "", input: "", highlight: 0, slash: false, entries: [], commands: [], runs: [] }
+export function actionsOf(model: { readonly actions?: ActionView }): ActionView { return model.actions ?? initial }
+export function completions(model: { readonly actions?: ActionView; readonly draft: string }) {
+  const actions = actionsOf(model)
+  const query = model.draft.trim().split(/\s+/)[0] ?? ""
+  return actions.slash && query.startsWith("/") ? actions.commands.filter((entry) => entry.command.startsWith(query)) : []
+}
+
+/** A slower list/read response cannot roll back a live card or a terminal receipt. */
+export function mergeRuns(current: ReadonlyArray<Run>, incoming: ReadonlyArray<Run>): ReadonlyArray<Run> {
+  const result = [...current]
+  for (const next of incoming) {
+    const index = result.findIndex((old) => old.id === next.id)
+    if (index < 0) result.push(next)
+    else if (acceptSnapshot(result[index]!.state, result[index]!.at, next.at)) result[index] = next
+  }
+  return result.sort((a, b) => b.started - a.started)
+}
+
+/** A failed step opens first; a running or parked step follows, then the last completed one. */
+export function selectedStep(run: Run, chosen = "") {
+  return run.steps.find(step => `${step.key}/${step.attempt}` === chosen)
+    ?? run.steps.find(step => step.state === "failed")
+    ?? run.steps.find(step => step.state === "running" || step.state === "waiting")
+    ?? run.steps.at(-1)
+}

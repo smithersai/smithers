@@ -1,0 +1,25 @@
+// Agent bindings use the same API as buttons and slash commands, over actual registered flow declarations.
+import { Flow } from "@smthrs/flow"
+import { FlowBinding } from "@smthrs/harness"
+import { Node } from "@smthrs/plan"
+import { Actions, ActionFailure, Registered, Run } from "./Actions.vibe"
+
+export const List = Flow.make("vibelang/actions/List", { description: "Lists registered actions and their commands.", modelInvocable: true, error: ActionFailure, payload: {}, success: Schema.Array(Registered), body: () => Node.succeed([]) })
+export const Start = Flow.make("vibelang/actions/Start", { description: "Requests a registered action. Returns its run id immediately; read it to follow progress.", modelInvocable: true, error: ActionFailure, payload: { flow: Schema.String, input: Schema.Json }, success: Schema.Struct({ id: Schema.String }), body: () => Node.succeed({ id: "" }) })
+export const Read = Flow.make("vibelang/actions/Read", { description: "Reads a run's steps, status and result.", modelInvocable: true, error: Schema.Struct({ code: Schema.String }), payload: { id: Schema.String }, success: Run, body: () => Node.fail({ code: "not-found" }) })
+export const Cancel = Flow.make("vibelang/actions/Cancel", { description: "Cancels a run through its durable engine.", modelInvocable: true, error: ActionFailure, payload: { id: Schema.String }, success: Schema.Struct({ id: Schema.String }), body: () => Node.succeed({ id: "" }) })
+function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly payloadSchema: I; readonly successSchema: O }) {
+  return { name: flow._tag, description: flow.description ?? flow._tag, input: flow.payloadSchema, output: flow.successSchema, capabilities: [], effects: undefined, modelInvocable: true }
+}
+export function actionTools(actions: Actions.Shape, announce: (run: Run) => void!! = () => Effect.void): FlowBinding.Source {
+  return FlowBinding.source("vibelang-actions", [
+    FlowBinding.make({ flow: declared(List), handler: () => actions.list() }),
+    FlowBinding.make({ flow: declared(Start), handler: effect (input: typeof Start.payloadSchema.Type) => {
+      const id = try actions.start(input.flow, input.input, "agent")
+      try announce(try actions.read(id))
+      return { id }
+    } }),
+    FlowBinding.make({ flow: declared(Read), handler: (input: typeof Read.payloadSchema.Type) => actions.read(input.id) }),
+    FlowBinding.make({ flow: declared(Cancel), handler: effect (input: typeof Cancel.payloadSchema.Type) => { try actions.cancel(input.id); return { id: input.id } } }),
+  ])
+}

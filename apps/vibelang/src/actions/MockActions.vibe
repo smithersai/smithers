@@ -1,0 +1,177 @@
+// Registered actions over the real in-memory engine. Backend operations go through the Factory Effect API.
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine, StepTrace } from "@smthrs/engine"
+import { Action, FlowRuntime, RunMetrics } from "@smthrs/flow"
+import { apply, decide, empty, type Conversation, type Intent } from "../core/conversation.vibe"
+import type { Identity } from "../core/roles.vibe"
+import { Factory } from "../core/Factory.vibe"
+import { EndTour, Post, Tour } from "../core/flows.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
+import type { HistoryReader } from "../history/tools.vibe"
+import { ActionDevice, deviceRegistration, execute, historyRegistration, prepare } from "./execution.vibe"
+import { Actions, ActionFailure, type Actor, type Door, Run, type Role } from "./Actions.vibe"
+import { allowed, bundled, registration } from "./catalog.vibe"
+
+export interface Principal { readonly role?: Role; readonly actor: Actor; readonly conversation?: string }
+const decodeRun = Schema.decodeUnknownEffect(Run)
+
+/** Each build is an isolated product world, scoped with its engine, runs and followers. */
+export function MockActions(principal: Principal) {
+  return Layer.effect(Actions, effect {
+    const factory = try Factory
+    if (principal.role !== undefined && factory.accounts !== undefined) try Effect.orDie(factory.accounts.choose(principal.role))
+    effect function current(): Identity!ActionFailure {
+      if (factory.accounts === undefined) return { id: "", login: "Guest", role: principal.role ?? "viewer" }
+      return try Effect.mapError(factory.accounts.current(), () => new ActionFailure({ code: "unavailable" }))
+    }
+    effect function authorize(name: string) {
+      const person = try current()
+      const entry = registration(name)
+      if (!allowed(person.role, entry)) throw new ActionFailure({ code: "forbidden" })
+      if (factory.policy !== undefined) try Effect.mapError(factory.policy.authorize(person.id, entry.least === "viewer" ? "tour" : "action"), () => new ActionFailure({ code: "forbidden" }))
+      return person
+    }
+    const scope = try Effect.scope
+    const catalog = try orDie(bundled)
+    const state = try Ref.make<Conversation>(empty)
+    const ids = try Ref.make(0)
+    const gate = try Semaphore.make(1)
+    const published = try acquireRelease(PubSub.unbounded<Run>(), PubSub.shutdown)
+    const invocations = new Map<string, { readonly flow: string; readonly conversation: string; readonly input: Schema.Json; readonly owner: string }>()
+
+    effect function read(id: string) {
+      const run = (try Ref.get(state)).runs?.find((run) => run.id === id)
+      if (run === undefined) throw new ActionFailure({ code: "not-found" })
+      return try Effect.mapError(decodeRun(run), () => new ActionFailure({ code: "invalid-run" }))
+    }
+    effect function record(intent: Intent) {
+      return try Semaphore.withPermits(gate, 1)(Effect.uninterruptible(effect {
+        const current = try Ref.get(state)
+        const decision = decide(current, intent)
+        if (!decision.ok) return
+        try Ref.set(state, apply(current, decision.event))
+        const run = try orDie(read(intent.id))
+        try PubSub.publish(published, run)
+      }))
+    }
+    const observer: StepTrace.Sink.Shape = {
+      emit: (event) => record({ type: "TraceAction", id: event.run, key: event.key, name: event.name, attempt: event.attempt, state: event.state, at: event.at }),
+    }
+    const history = try Effect.cached(effect {
+      const { MockMythical } = try promise(() => import("../history/MockMythical.vibe"))
+      const reader: HistoryReader = Context.get(try Layer.buildWithScope(MockMythical({ role: "viewer", name: "Guest", agent: principal.actor === "agent" }, undefined, effect () => {
+        const person = try Effect.orDie(current())
+        return { role: person.role, name: person.login || "Guest", agent: principal.actor === "agent" }
+      }), scope), Mythical)
+      return reader
+    })
+    const baseRegistration = Layer.effectDiscard(effect {
+      const engine = try FlowRuntime.FlowRuntime
+      try engine.register(Post, effect (payload, id) => {
+        try Action.make({ name: "vibelang/post/record", execute: orDie(factory.post((principal.conversation ?? `action-${id}`), id, "Guest", payload.text)) })
+        return null
+      })
+      try engine.register(Tour, effect (_payload, id) => {
+        const conversation = (principal.conversation ?? `action-${id}`)
+        const after = try Action.make({ name: "vibelang/tour/start", success: Schema.Number, execute: orDie(effect {
+          const before = try factory.read(conversation, 0)
+          try factory.tour(conversation)
+          return before.seq
+        }) })
+        const end = Stream.runLast(factory.events(conversation, after).pipe(Stream.takeUntil((event) =>
+          event.type === "ReplyFinished" || event.type === "ReplyFailed" || event.type === "TourEnded"
+        )))
+        const last = try Action.make({ name: "vibelang/tour/guide", execute: map(orDie(end), (event) => Option.isSome(event) && event.value.type !== "ReplyFailed"), success: Schema.Boolean })
+        if (!last) return try Effect.die(new ActionFailure({ code: "failed" }))
+        return null
+      })
+      try engine.register(EndTour, effect (_payload, id) => {
+        try Action.make({ name: "vibelang/tour/end", execute: orDie(factory.endTour((principal.conversation ?? `action-${id}`))) })
+        return null
+      })
+    })
+    const registrationLayer = Layer.mergeAll(baseRegistration, historyRegistration(history), deviceRegistration).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(WebCrypto.layer))
+    const engine = Context.get(try Layer.buildWithScope(registrationLayer, scope), FlowRuntime.FlowRuntime)
+
+    effect function run(id: string, name: string, payload: object, door: Door) {
+      const before = try orDie(read(id))
+      if (before.state === "cancelled") return
+      const flow = try orDie(catalog.get(name))
+      const program = effect {
+        const person = try authorize(name)
+        const owner = invocations.get(id)?.owner ?? ""
+        if (registration(name).least !== "viewer" && owner !== person.id) throw new ActionFailure({ code: "forbidden" })
+        return try execute(engine, try prepare(name, payload as Schema.Json, id), id)
+      }
+      const origin = try orDie(Effect.try(() => RunMetrics.withOrigin({ door, actor: principal.actor })))
+      const result = try exit(program.pipe(Effect.provideService(StepTrace.Sink, observer), Effect.provideService(ActionDevice, factory), origin))
+      const status = Exit.isSuccess(result) ? "passed" : Cause.hasInterruptsOnly(result.cause) ? "cancelled" : "failed"
+      const output = Exit.isSuccess(result) ? try Effect.orDie(Schema.encodeUnknownEffect(Schema.fromJsonString(Schema.Json))(result.value)) : status === "failed" ? "Action failed" : "Cancelled"
+      try record({ type: "SettleAction", id, state: status, result: output, at: try Clock.currentTimeMillis })
+    }
+    effect function start(name: string, input: Schema.Json, door: Door) {
+      const found = catalog.get(name) catch () => undefined
+      if (found === undefined) throw new ActionFailure({ code: "not-found" })
+      const person = try authorize(name)
+      if (scope.state._tag === "Closed") throw new ActionFailure({ code: "closed" })
+      const next = try Ref.updateAndGet(ids, (id) => id + 1)
+      const id = `a${next}`
+      try prepare(name, input, id)
+      const payload = input !== null && typeof input === "object" && !Array.isArray(input) ? input : {}
+      invocations.set(id, { input, flow: name, owner: person.id, conversation: (principal.conversation ?? `action-${id}`) })
+      try record({ type: "RequestAction", id, flow: name, door, actor: door === "agent" ? "agent" : principal.actor, at: try Clock.currentTimeMillis })
+      try forkIn(run(id, name, payload, door), scope)
+      return id
+    }
+    return {
+      list: effect () => (try catalog.list()).map((flow) => registration(flow._tag)),
+      commands: effect () => {
+        const visible = []
+        for (const flow of try catalog.list()) {
+          const entry = registration(flow._tag)
+          if (entry.command === "") continue
+          const admitted = authorize(entry.name) catch () => undefined
+          if (admitted !== undefined) visible.push(entry)
+        }
+        return visible
+      },
+      runs: effect (flow: string) => {
+        const runs = (try Ref.get(state)).runs ?? []
+        return try Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(Run))([...runs].reverse().filter((run) => flow === "" || run.flow === flow)), () => new ActionFailure({ code: "invalid-run" }))
+      },
+      read,
+      start,
+      rerun: effect (id: string) => {
+        const previous = invocations.get(id)
+        if (previous === undefined) throw new ActionFailure({ code: "not-found" })
+        return try start(previous.flow, previous.input, "button")
+      },
+      command: effect (text: string, door: Door = "slash") => {
+        const [command, ...words] = text.trim().split(/\s+/)
+        const visible = []
+        for (const flow of try catalog.list()) { const entry = registration(flow._tag); if (entry.command === command && (authorize(entry.name) catch () => undefined) !== undefined) visible.push(entry) }
+        const entry = visible[0]
+        if (entry === undefined) throw new ActionFailure({ code: "unknown-command" })
+        const rest = words.join(" ")
+        const input = entry.input === "json" && rest !== "" ? try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" })) : entry.input === "text" ? { text: rest } : {}
+        return try start(entry.name, input, door)
+      },
+      follow: (id: string) => Stream.unwrap(effect {
+        const live = try PubSub.subscribe(published)
+        const current = try read(id)
+        return Stream.concat(Stream.make(current), Stream.fromSubscription(live).pipe(Stream.filter((run) => run.id === id)))
+      }),
+      cancel: effect (id: string) => {
+        const current = try read(id)
+        try authorize(current.flow)
+        if (current.state !== "queued" && current.state !== "running") return
+        const invocation = invocations.get(id)
+        if (invocation === undefined) throw new ActionFailure({ code: "not-found" })
+        const flow = try orDie(catalog.get(invocation.flow))
+        try Effect.mapError(engine.interrupt(flow, id), () => new ActionFailure({ code: "cancel-failed" }))
+        if (invocation.flow === Tour._tag) factory.endTour(invocation.conversation) catch () => undefined
+        try record({ type: "SettleAction", id, state: "cancelled", result: "Cancelled", at: try Clock.currentTimeMillis })
+      },
+    }
+  })
+}

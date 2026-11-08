@@ -1,0 +1,31 @@
+// E2E-only host: the real app and memory engine, with a selected identity and optional faulty Effect service.
+import { Runtime } from "foldkit"
+import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
+import { mockFactoryFor } from "../../src/core/MockFactory.vibe"
+import { MockActions } from "../../src/actions/MockActions.vibe"
+import type { Role } from "../../src/actions/Actions.vibe"
+import { application } from "../../test/support/application.vibe"
+import { stylesheet } from "../../src/web/styles.vibe"
+
+const page = Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)
+const program = await runPromise(effect {
+  provide page {
+    const window = try (try Experimental.Window.Window).current
+    const document = try (try Experimental.Document.Document).current
+    const params = new URLSearchParams(window.location.search)
+    const requested = params.get("role")
+    const role: Role = requested === "maintainer" || requested === "contributor" || requested === "community" || requested === "new" ? requested : "viewer"
+    const fault = params.get("fault")
+    const css = try stylesheet()
+    const root = try Effect.try(() => {
+      const style = document.createElement("style")
+      style.textContent = css
+      document.head.append(style)
+      return document.getElementById("root")!
+    })
+    const factory = fault === "fail" ? faultyFactory("tour-unavailable", trace()) : mockFactoryFor(role)
+    return application(root, factory, () => {}, undefined, MockActions({ role, actor: "person" }))
+  }
+})
+Runtime.run(program, { flags: succeed({ session: "actions-e2e", mode: "mock" as const, name: "Guest" }) })
