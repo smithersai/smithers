@@ -128,6 +128,24 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   nothing blocking that and that allows me to verify we are at least building the correct thing earlier." The top bar's
   Live/Mock switch and ⌘K's `/mock` and `/live` do it; see decision 0004.
 
+- **VL-31. Learn more is a live tutorial in a theatre mode: the agent drives the real app, and it works with the sound
+  off.** Will, 2026-11-08 about 11:35 PST (relayed): "The learn more is not very good it should work with sound off. We
+  have old specs maybe in ~/smithers/.specs or maybe they are gone but it switched to like a theatre mode and worked
+  really well as a like a live tutorial of how to use vibelang. This should be exactly that. A live tutorial of an agent
+  controlling the app (which it has because we treat all state transitions as "smithers workflows" and smithers
+  workflows attatched to ui elements can also be triggered by the agent itself". Then: don't look for the old spec; a
+  designer's onboarding design (subtitles, optional sound, the agent driving the app through its real flows) comes
+  first. Replaces VL-28's narrated tour where they differ.
+- **VL-32. Both acceptance gates of the coding factory are built here (PROC-28).** A proposal (a VIP) is accepted only
+  when a maintainer, a person, approves it; an agent review never accepts one. The specification written from accepted
+  proposals is accepted only when Codex Astra, Codex Sol, Claude Fable and Claude Opus all answer LGTM with an A grade;
+  after that it stays self-consistent while it is built optimistically and fuzz tested. Will, 2026-11-08 11:20 PST: "I
+  believe acceptance involved writing a spec and a review of 4 agents astra sol fable and opus all saying lgtm A grade";
+  11:22: "Not for the VIP for the spec we reached acceptance in past. The VIP are personally approved by me and then the
+  spec needs to be self consistent and optimistically built fuzz tested etc."; about 11:23: "This is important because
+  this is the general core of hwo our coding factory works btw". Relayed the same day: it gets built in
+  vibelang.smithers.sh.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the
