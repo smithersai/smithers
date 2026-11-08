@@ -138,7 +138,7 @@ export * as CredentialCipher from "./CredentialCipher.vibe"
  * @category services
  * @since 0.1.0
  */
-export * as CredentialStore from "./CredentialStore.vibe"
+export * as CredentialStore from "./CredentialStore.ts"
 
 /**
  * @category layers

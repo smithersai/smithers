@@ -7,7 +7,7 @@ import { describe, expect, it } from "vitest"
 import { Unauthorized } from "../src/ControlError.vibe"
 import * as Credential from "../src/Credential.vibe"
 import * as CredentialCipher from "../src/CredentialCipher.vibe"
-import * as CredentialStore from "../src/CredentialStore.vibe"
+import * as CredentialStore from "../src/CredentialStore.ts"
 import * as WebCryptoCipher from "../src/WebCryptoCipher.ts"
 
 /** 32 raw bytes, base64 — the shape a host key takes. */

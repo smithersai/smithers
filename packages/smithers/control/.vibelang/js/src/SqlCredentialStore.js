@@ -88,7 +88,7 @@ export const make = Effect_1.gen(function* make() {
       `;
     })), (cause) => cause instanceof CredentialConflict ? cause : unavailable("write")());
     const remove = (id) => Effect.mapError(Effect.asVoid(sql `DELETE FROM control_credentials WHERE id = ${id}`), unavailable("remove"));
-    return CredentialStore.make({ list, read, write, remove });
+    return yield* Effect.sync(() => CredentialStore.make({ list, read, write, remove }));
 });
 /**
  * Provides durable credential persistence over the ambient database.

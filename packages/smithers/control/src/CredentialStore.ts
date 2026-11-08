@@ -14,6 +14,7 @@
  * @since 0.1.0
  */
 
+import { Context, Effect, Layer, Option } from "effect"
 import { CredentialConflict, Unavailable } from "./ControlError.vibe"
 
 /**
@@ -41,11 +42,11 @@ export interface SealedRecord {
  * @since 0.1.0
  */
 export interface Service {
-  readonly list: () => ReadonlyArray<SealedRecord>!Unavailable
-  readonly read: (id: string) => Option.Option<SealedRecord>!Unavailable
+  readonly list: () => Effect.Effect<ReadonlyArray<SealedRecord>, Unavailable>
+  readonly read: (id: string) => Effect.Effect<Option.Option<SealedRecord>, Unavailable>
   /** Commits `record` only if the stored version is `record.version - 1`. */
-  readonly write: (record: SealedRecord) => void!(Unavailable | CredentialConflict)
-  readonly remove: (id: string) => void!Unavailable
+  readonly write: (record: SealedRecord) => Effect.Effect<void, Unavailable | CredentialConflict>
+  readonly remove: (id: string) => Effect.Effect<void, Unavailable>
 }
 
 /**
@@ -54,7 +55,9 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export service CredentialStore: Service { static readonly key = "/control/CredentialStore";}
+export class CredentialStore extends Context.Service<CredentialStore, Service>()(
+  "/control/CredentialStore"
+) {}
 
 /**
  * Constructs a store from an implementation record.
@@ -111,8 +114,10 @@ export const makeMemory = (): Service => {
   // durable store would have isolated.
   const copy = (record: SealedRecord): SealedRecord => structuredClone(record)
   return make({
-    list: Effect.fn("CredentialStore.list")(effect () => Array.from(records.values(), copy)),
-    read: Effect.fn("CredentialStore.read")(effect (id) => Option.map(Option.fromNullishOr(records.get(id)), copy)),
+    list: Effect.fn("CredentialStore.list")(() => Effect.sync(() => Array.from(records.values(), copy))),
+    read: Effect.fn("CredentialStore.read")((id) =>
+      Effect.sync(() => Option.map(Option.fromNullishOr(records.get(id)), copy))
+    ),
     write: Effect.fn("CredentialStore.write")((record) =>
       Effect.suspend(() => {
         const current = records.get(record.id)
@@ -130,9 +135,11 @@ export const makeMemory = (): Service => {
         return Effect.void
       })
     ),
-    remove: Effect.fn("CredentialStore.remove")(effect (id) => {
-      records.delete(id)
-    })
+    remove: Effect.fn("CredentialStore.remove")((id) =>
+      Effect.sync(() => {
+        records.delete(id)
+      })
+    )
   })
 }
 

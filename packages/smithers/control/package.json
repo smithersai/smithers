@@ -108,11 +108,7 @@
       "vibelang-source": "./src/CredentialCipher.vibe",
       "default": "./.vibelang/js/src/CredentialCipher.js"
     },
-    "./CredentialStore": {
-      "types": "./.vibe/declarations/src/CredentialStore.d.vibe.ts",
-      "vibelang-source": "./src/CredentialStore.vibe",
-      "default": "./.vibelang/js/src/CredentialStore.js"
-    },
+    "./CredentialStore": "./src/CredentialStore.ts",
     "./DispatchReader": {
       "types": "./.vibe/declarations/src/DispatchReader.d.vibe.ts",
       "vibelang-source": "./src/DispatchReader.vibe",

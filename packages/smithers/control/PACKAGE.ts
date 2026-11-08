@@ -184,7 +184,7 @@ const securityReview = Smithers.SecurityReview({
         "src/Credential.vibe",
         "src/CredentialCipher.vibe",
         "src/WebCryptoCipher.ts",
-        "src/CredentialStore.vibe",
+        "src/CredentialStore.ts",
         "src/SqlCredentialStore.vibe"
       ]
     },
