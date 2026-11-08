@@ -8,6 +8,8 @@ export default mergeConfig(config, defineConfig({ test: {
     // Generated bundler bootstrap has no production source; reason recorded in decision 0017.
     exclude: ["dist/assets/rolldown-runtime-*.js"],
     reporter: ["text", "json", "json-summary", "html", "lcov"], reportsDirectory: "coverage/bench",
-    reportOnFailure: true, thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 },
+    // The 100% per-file gate is the merged check in bench/merge-coverage.ts (0017): workerd execution evidence
+    // exists only after this process exits, so this collection stage enforces nothing.
+    reportOnFailure: true,
   },
 } }))

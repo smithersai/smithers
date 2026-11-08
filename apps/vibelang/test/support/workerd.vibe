@@ -6,6 +6,7 @@ import { SecureRandom } from "effect/crypto"
 import { build } from "esbuild"
 import { Miniflare } from "miniflare"
 import vibelang from "vibelang-unplugin/esbuild"
+import { dumpWorkerdCoverage, instrumentBundle } from "./workerdCoverage.ts"
 
 /** esbuild or Miniflare failed to bundle or start a Worker. */
 error WorkerdFailed { cause: unknown }
@@ -17,6 +18,8 @@ export const modelKey = Option.getOrUndefined(runSync(Config.option(Config.Strin
 interface Bundle {
   readonly module: string
   readonly wasm: ReadonlyArray<{ readonly name: string; readonly path: string }>
+  /** The bundler's source map when built for the coverage command; undefined otherwise (0017). */
+  readonly bundleMap: Record<string, unknown> | undefined
 }
 
 /**
@@ -38,15 +41,24 @@ effect function bundle(relative: string) {
       })
     },
   }
+  const coverage = try Config.withDefault(Config.Boolean("BENCH_COVERAGE"), false)
   const result = try tryPromise({
     try: () => build({
       entryPoints: [path], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022",
       conditions: ["workerd", "worker", "browser"], external: ["node:*", "cloudflare:*"], logLevel: "silent",
       plugins: [vibelang(), wasmModules as never],
+      ...(coverage ? { sourcemap: true, outfile: "worker.js" } : {}),
     }),
     catch: (cause) => new WorkerdFailed({ cause }),
   })
-  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm }
+  if (coverage) {
+    const js = result.outputFiles.find((file) => !file.path.endsWith(".map"))!
+    const map = result.outputFiles.find((file) => file.path.endsWith(".map"))!
+    const instrumented = try Effect.try(() => instrumentBundle(js.text))
+    const instrumentedBundle: Bundle = { module: instrumented, wasm, bundleMap: try Effect.try(() => JSON.parse(map.text)) }
+    return instrumentedBundle
+  }
+  const bundled: Bundle = { module: result.outputFiles[0]!.text, wasm, bundleMap: undefined }
   return bundled
 }
 
@@ -67,12 +79,19 @@ export interface Served {
   readonly fetch: (request: Request) => Promise<Response>
 }
 
-effect function listen(config: Record<string, unknown>) {
+effect function listen(config: Record<string, unknown>, bundleMap: Record<string, unknown> | undefined) {
   const options = { host: "127.0.0.1", port: 0, workers: [{ config }] } as ConstructorParameters<typeof Miniflare>[0]
+  if (bundleMap !== undefined) options.inspectorPort = 0
   const worker = try Effect.try({ try: () => new Miniflare(options), catch: (cause) => new WorkerdFailed({ cause }) })
   const url = try tryPromise({ try: () => worker.ready, catch: (cause) => new WorkerdFailed({ cause }) })
+  const name = String(config.name)
   const served: Served = {
-    origin: url.origin, dispose: () => worker.dispose(),
+    origin: url.origin,
+    dispose: async () => {
+      // Coverage mode: the worker's accumulated counters are execution evidence; dump before the isolate is gone.
+      if (bundleMap !== undefined) await dumpWorkerdCoverage(worker, name, bundleMap, "coverage/bench/workerd-raw")
+      await worker.dispose()
+    },
     fetch: async (request) => {
       const response = await worker.dispatchFetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: await request.text() }) })
       // Miniflare and the browser expose the same Fetch response with distinct platform declarations.
@@ -110,14 +129,15 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
         History: { type: "durable-object", storage: "sqlite" },
         SandboxLedger: { type: "durable-object", storage: "sqlite" },
       },
-    })
+    }, apiBundle.bundleMap)
   }
 }
 
 /** The site Worker with no API Worker bound: the mock deployment. */
 export effect function serveSite(withAssets = false) {
   provide NodeServices.layer {
-    const modules = try modulesOf(try bundle("../../worker/index.vibe"))
+    const bundled = try bundle("../../worker/index.vibe")
+    const modules = try modulesOf(bundled)
     return try listen({
       name: "site",
       compatibilityDate: "2026-10-01",
@@ -126,7 +146,7 @@ export effect function serveSite(withAssets = false) {
         env: { ASSETS: { type: "assets" } },
       } : {}),
       manifest: { mainModule: "worker.js", modules },
-    })
+    }, bundled.bundleMap)
   }
 }
 
@@ -141,12 +161,13 @@ export effect function room(name: string) {
 /** The issue fixture mode on the persistent engine in real workerd SQLite. */
 export effect function serveIssuesHost() {
   provide NodeServices.layer {
-    const modules = try modulesOf(try bundle("../workerd/issues.vibe"))
+    const bundled = try bundle("../workerd/issues.vibe")
+    const modules = try modulesOf(bundled)
     return try listen({
       name: "issues", compatibilityDate: "2026-10-01", compatibilityFlags: ["nodejs_compat"],
       manifest: { mainModule: "worker.js", modules },
       env: { ISSUES: { type: "durable-object", worker: "issues", exportName: "IssuesObject" } },
       exports: { IssuesObject: { type: "durable-object", storage: "sqlite" } },
-    })
+    }, bundled.bundleMap)
   }
 }

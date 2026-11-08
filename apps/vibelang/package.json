@@ -23,7 +23,7 @@
     "verify:broken": "bash verify/broken.sh",
     "build:scripts": "vibelang -p tsconfig.scripts.json && vibelang -p tsconfig.script-tests.json && ln -sfn ../node_modules dist-script-tests/node_modules",
     "bench": "pnpm build:surfaces && pnpm build:scripts && BENCH_COVERAGE=0 vitest bench --run --config bench/config.ts",
-    "bench:coverage": "pnpm build:surfaces && pnpm build:scripts && BENCH_COVERAGE=1 vitest run --config bench/coverage.config.ts --coverage",
+    "bench:coverage": "pnpm build:surfaces && pnpm build:scripts && BENCH_COVERAGE=1 vitest run --config bench/coverage.config.ts --coverage && node bench/merge-coverage.ts",
     "bench:live": "BENCH_LIVE=1 playwright test --config bench/playwright.config.ts",
     "bench:browser": "BENCH_LIVE=0 playwright test --config bench/playwright.config.ts",
     "fuzz": "pnpm --workspace-root exec node --import=vibelang/register .smithers/flows/vibelang-fuzz/main.vibe",
@@ -73,7 +73,9 @@
     "@smthrs/testing": "workspace:*",
     "ast-v8-to-istanbul": "1.0.5",
     "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-instrument": "^6.0.3",
     "istanbul-lib-report": "^3.0.1",
+    "istanbul-lib-source-maps": "^5.0.6",
     "istanbul-reports": "^3.2.0",
     "@smthrs/platform-node": "workspace:*"
   },

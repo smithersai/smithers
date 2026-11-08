@@ -45,11 +45,25 @@ sample records UTC and the artifact records local time of day. No content or cre
 
 **Coverage.** `pnpm bench:coverage` runs only the same benchmark workloads, once each, under V8; it does not publish
 instrumented timing claims. Vitest excludes its timing project from coverage, so the small `workload` adapter chooses
-single execution for this command and the built-in runner for timing. Strict per-file 100% lines, branches,
-functions and statements remain enabled. Reuse `vl-coverage`'s monorepo `@vitest/coverage-v8` 5.0.0 (including the
-repository's native-loader patch) and matching Vitest 5.0.0. This existing test tool is awaiting Will's VL-5 approval
-in 0008. Emitted surface builds retain source maps and V8's subprocess collection is enabled. Workerd is another
-V8 isolate and needs separately collected execution evidence; parent Node coverage does not count it.
+single execution for this command and the built-in runner for timing. It reuses `vl-coverage`'s monorepo
+`@vitest/coverage-v8` 5.0.0 (including the repository's native-loader patch) and matching Vitest 5.0.0. Emitted
+surface and script builds retain source maps and V8's subprocess collection is enabled. Workerd is another V8
+isolate whose installed inspector build rejects the Profiler domain (`Profiler is not enabled` on every target,
+probed 2026-11-08), so parent Node coverage cannot count worker execution. In this command the workerd bundles carry
+Istanbul counters (`test/support/workerdCoverage.ts`): esbuild's bundle map chains through the compiler maps, the
+instrumented bundle runs the real Durable Object flows, and each dispose reads `globalThis.__coverage__` from the
+user isolate over the inspector before it exits, writing the dump with both maps under `coverage/bench-workerd/`.
+
+**The merged gate.** Vitest's own threshold check is off in this command, because workerd evidence exists only after
+the process exits. `bench/merge-coverage.ts` then remaps each dump (instrumented to bundle to source), unions it
+with the Vitest map and enforces 100% lines, branches, functions and statements per file across `src/`, `worker/`,
+`infra/` and `scripts/`. A file with no Node-side execution is gated on its workerd-remapped structure. A file
+executed in both is gated on its Vitest structure with line coverage as the union of both: the two compilers emit
+different branch/function shapes for one source, and arm-level union across them is not meaningful (limitation).
+A line no benchmark should run is excluded only with its reason recorded in `merge-coverage.ts` and here:
+`scripts/mythical-seed.vibe` line 103 (`Refused` guard) is unreachable from real input because `intentsOf`
+guarantees by construction that `decide` accepts every seeded intent and `decideWithinCapacity` refuses only at
+2^53 events.
 
 The denominator includes `src/`, `worker/`, `infra/` and `scripts/`, matching the coverage lane’s source scope and adding the browser bundle solely to collect source-mapped evidence. No production line is excluded by this decision. The 100% benchmark-only coverage requirement remains open until
 its executed per-file report meets it; a configured threshold is not a coverage receipt. See `wiki/benchmarks.md`.

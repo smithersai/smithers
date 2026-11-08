@@ -147,6 +147,9 @@ sequencer ordering, history pages and lifecycle, cancellation, exact backend dea
 configuration and the Alchemy resource graph. The prototype uses the monorepo's V8 provider 5.0.0 and Chromium's
 built-in API. Strict 100% gates remain below target and are not installed on main. Proposed app test-tool declarations
 `@vitest/coverage-v8` 5.0.0 and `ast-v8-to-istanbul` 1.0.5 await Will's VL-5 approval; see [0016](0016-coverage.md).
+The benchmark coverage gate adds the monorepo's `istanbul-lib-instrument` 6.0.3, `istanbul-lib-coverage` 3.2.2 and
+`istanbul-lib-source-maps` 5.0.6 as test-only tools for workerd execution evidence (0017); likewise awaiting Will's
+VL-5 approval. No runtime dependency is added.
 Node cases use the workspace's finite 30-second budget: MCP discovery starts the real stdio server and CLI, whose
 combined cold startup exceeded the implicit five seconds after engine observation landed. The MCP protocol's own
 10-second limit and browser assertions are unchanged; whole-history replay under coverage measured 23.5 seconds.
