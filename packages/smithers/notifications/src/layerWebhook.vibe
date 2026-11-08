@@ -19,7 +19,7 @@ import { AlertError, Sink } from "./AlertSink.vibe"
  * @category constants
  * @since 1.0.0
  */
-export const defaultWebhookTimeout: Duration = Duration.seconds(10)
+export const defaultWebhookTimeout: Duration.Duration = Duration.seconds(10)
 
 /**
  * The one check the webhook endpoint gets before an alert is ever built on
@@ -108,7 +108,7 @@ const redirectHeaderNames: ReadonlyArray<string> = ["location", "content-locatio
  * the span ends with the outcome alone: nothing on success, the refusing
  * status, or that the endpoint could not be reached.
  */
-const withoutRequest = (tracer: Tracer): Tracer =>
+const withoutRequest = (tracer: Tracer.Tracer): Tracer.Tracer =>
   Tracer.make({
     ...tracer,
     span(options) {
@@ -173,9 +173,9 @@ export const layerWebhook = (
   options: {
     readonly url: string
     readonly headers?: Readonly<Record<string, string>> | undefined
-    readonly timeout?: Duration | undefined
+    readonly timeout?: Duration.Duration | undefined
   }
-): Layer<Sink> =>
+): Layer.Layer<Sink> =>
   Layer.effect(
     Sink,
     effect {

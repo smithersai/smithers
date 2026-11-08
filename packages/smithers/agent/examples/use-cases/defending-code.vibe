@@ -33,12 +33,12 @@ export const targetSource = "targets/card-parser/src/card_parser.c"
 const Count = Schema.Int
 
 /** The ASAN build of the run's working copy. */
-export const Build = Schema.Struct({
-  ok: Schema.Boolean,
-  binaryPath: Schema.String,
-  sourcePath: Schema.String,
-  log: Schema.String
-})
+export schema Build {
+  readonly ok: boolean
+  readonly binaryPath: string
+  readonly sourcePath: string
+  readonly log: string
+}
 
 /** A broken build. 0.x threw so the run failed loudly instead of reporting zeros. */
 export class BuildFailed extends Schema.TaggedError<BuildFailed>()("examples/DefendingCode/BuildFailed", {
@@ -53,7 +53,7 @@ export const Subsystem = Schema.Struct({
 })
 
 /** The recon agent's answer. */
-export const Recon = Schema.Struct({ subsystems: Schema.Array(Subsystem), notes: Schema.String })
+export schema Recon { readonly subsystems: ReadonlyArray<Subsystem>; readonly notes: string }
 
 /** One finder's result. */
 export const Find = Schema.Struct({
@@ -89,11 +89,11 @@ export const UniqueBug = Schema.Struct({
 })
 
 /** The judge's clustering. */
-export const Dedupe = Schema.Struct({
-  uniqueBugs: Schema.Array(UniqueBug),
-  totalVerified: Count,
-  totalUnique: Count
-})
+export schema Dedupe {
+  readonly uniqueBugs: ReadonlyArray<UniqueBug>
+  readonly totalVerified: Count
+  readonly totalUnique: Count
+}
 
 /** One exploitability writeup. */
 export const Report = Schema.Struct({

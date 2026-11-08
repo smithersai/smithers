@@ -111,9 +111,7 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class QuotaClassifier extends Context.Service<QuotaClassifier, Service>()(
-  "@smthrs/agent/QuotaPolicy/QuotaClassifier"
-) {}
+export service QuotaClassifier: Service { static readonly key = "@smthrs/agent/QuotaPolicy/QuotaClassifier";}
 
 /**
  * How long a refusal that names no deadline parks for.

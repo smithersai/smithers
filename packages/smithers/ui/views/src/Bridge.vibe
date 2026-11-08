@@ -130,12 +130,12 @@ const Id = Schema.Union([Schema.String.check(Schema.isMaxLength(64)), Schema.Int
  * @category schemas
  * @since 0.1.0
  */
-export const Initialize = Schema.Struct({
-  jsonrpc: Schema.Literal("2.0"),
-  id: Id,
-  method: Schema.Literal("ui/initialize"),
-  params: Schema.Struct({ nonce: Nonce })
-})
+export schema Initialize {
+  readonly jsonrpc: "2.0"
+  readonly id: Id
+  readonly method: "ui/initialize"
+  readonly params: { readonly nonce: Nonce }
+}
 
 /**
  * `ui/initialize`.
@@ -152,11 +152,11 @@ export type Initialize = typeof Initialize.Type
  * @category schemas
  * @since 0.1.0
  */
-export const HostContext = Schema.Struct({
-  html: Schema.String,
-  theme: Theme,
-  size: Size
-})
+export schema HostContext {
+  readonly html: string
+  readonly theme: Theme
+  readonly size: Size
+}
 
 /**
  * What the frame needs to show the view.
@@ -172,11 +172,11 @@ export type HostContext = typeof HostContext.Type
  * @category schemas
  * @since 0.1.0
  */
-export const InitializeResult = Schema.Struct({
-  jsonrpc: Schema.Literal("2.0"),
-  id: Id,
-  result: HostContext
-})
+export schema InitializeResult {
+  readonly jsonrpc: "2.0"
+  readonly id: Id
+  readonly result: HostContext
+}
 
 /**
  * The page's answer to `ui/initialize`.

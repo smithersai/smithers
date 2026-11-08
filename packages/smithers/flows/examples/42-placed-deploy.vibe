@@ -18,16 +18,9 @@ import * as Secret from "@smthrs/targets/Secret"
 import * as SecretProxy from "@smthrs/targets/SecretProxy"
 import * as Effect from "effect/Effect"
 import {
-  FetchHttpClient,
-  HttpClient,
-  HttpClientRequest,
-  HttpRouter,
-  type HttpServer,
-  HttpServerRequest,
-  HttpServerResponse
+  type HttpServer
 } from "effect/http"
 import * as Layer from "effect/Layer"
-import { RpcClient, RpcSerialization, RpcServer } from "effect/rpc"
 import * as Schema from "effect/Schema"
 
 /** A safe, serializable deployment failure; never contains request credentials. */

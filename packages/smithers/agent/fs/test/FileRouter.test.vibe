@@ -157,7 +157,7 @@ export default ({ input: Schema.Void, output: Schema.Unknown, description: ${JSO
     const result = try FileRouter.scan({ root: flows })
 
     expect(result.routes.map((route) => route.name)).toEqual(["inside", "linkedui"])
-    expect(result.routes.find((route) => route.name === "linkedui")!.ui.isNone()).toBe(true)
+    expect(Option.isNone(result.routes.find((route) => route.name === "linkedui")!.ui)).toBe(true)
     expect(result.warnings).toEqual(expect.arrayContaining([
       expect.objectContaining({ code: "outside_root", path: path.join(flows, "dir") }),
       expect.objectContaining({ code: "outside_root", path: path.join(flows, "file", "flow.ts") })

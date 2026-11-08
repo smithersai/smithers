@@ -28,7 +28,7 @@ import {
   type SleepOutcome,
   type ToolOutcome
 } from "#vibelang/emitted/worker/branch/Machines"
-import * as RegistryEgress from "./branch/RegistryEgress.ts"
+import * as RegistryEgress from "#vibelang/emitted/worker/branch/RegistryEgress"
 import {
   type Attachment,
   checkoutDetails,

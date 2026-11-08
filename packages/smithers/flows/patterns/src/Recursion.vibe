@@ -72,7 +72,7 @@ export interface Branch {
 const valid = (value: number): boolean => Number.isSafeInteger(value) && value >= 1
 
 const boundError = (message: string): never => {
-  throw new PatternError({ code: "recursion_bound", message })
+  $raise(new PatternError({ code: "recursion_bound", message }))
 }
 
 /**
@@ -174,3 +174,8 @@ export const recurse = <R = never>(options: RecurseOptions<R>): RecursionFlow<R>
     body: Node.capture({ depth: envelope.depth, fanout: envelope.fanout, fuel: envelope.fuel }, body)
   })
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

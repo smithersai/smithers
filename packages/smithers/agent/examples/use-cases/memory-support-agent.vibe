@@ -20,19 +20,19 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** One durable fact about a customer. */
-export const MemoryEntry = Schema.Struct({
-  key: Schema.String,
-  value: Schema.String,
-  updatedAt: Schema.String
-})
+export schema MemoryEntry {
+  readonly key: string
+  readonly value: string
+  readonly updatedAt: string
+}
 
 /** What the recall agent loaded for one customer. */
-export const Recall = Schema.Struct({
-  customerId: Schema.String,
-  facts: Schema.Array(MemoryEntry),
-  recentTickets: Schema.Array(Schema.String),
-  sentiment: Schema.Literals(["positive", "neutral", "frustrated", "angry"])
-})
+export schema Recall {
+  readonly customerId: string
+  readonly facts: ReadonlyArray<MemoryEntry>
+  readonly recentTickets: ReadonlyArray<string>
+  readonly sentiment: "positive" | "neutral" | "frustrated" | "angry"
+}
 
 /** The support agent's reply. `confidenceScore` runs from 0 to 100. */
 export const Response = Schema.Struct({
@@ -44,21 +44,21 @@ export const Response = Schema.Struct({
 })
 
 /** How the persistence agent changed the customer's memory. */
-export const Persist = Schema.Struct({
-  customerId: Schema.String,
-  newFacts: Schema.Array(MemoryEntry),
-  removedKeys: Schema.Array(Schema.String),
-  summary: Schema.String
-})
+export schema Persist {
+  readonly customerId: string
+  readonly newFacts: ReadonlyArray<MemoryEntry>
+  readonly removedKeys: ReadonlyArray<string>
+  readonly summary: string
+}
 
 /** Where the escalation agent sent the interaction. */
-export const Escalation = Schema.Struct({
-  escalated: Schema.Boolean,
-  tier: Schema.Literals(["t1", "t2", "t3", "engineering"]),
-  reason: Schema.String,
-  context: Schema.String,
-  summary: Schema.String
-})
+export schema Escalation {
+  readonly escalated: boolean
+  readonly tier: "t1" | "t2" | "t3" | "engineering"
+  readonly reason: string
+  readonly context: string
+  readonly summary: string
+}
 
 /** What the flow settles with: every step's output, and `null` when nothing was escalated. */
 export const Output = Schema.Struct({

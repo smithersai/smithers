@@ -21,14 +21,14 @@ import * as Layer from "effect/Layer"
 import * as Schema from "effect/Schema"
 
 /** What the setup step reports. */
-export const SetupResult = Schema.Struct({
-  environment: Schema.String,
-  ready: Schema.Boolean,
-  details: Schema.String
-})
+export schema SetupResult {
+  readonly environment: string
+  readonly ready: boolean
+  readonly details: string
+}
 
 /** One smoke check to run. */
-export const SmokeCheck = Schema.Struct({ name: Schema.String, cmd: Schema.String })
+export schema SmokeCheck { readonly name: string; readonly cmd: string }
 
 /** One check's outcome. */
 export const CheckResult = Schema.Struct({

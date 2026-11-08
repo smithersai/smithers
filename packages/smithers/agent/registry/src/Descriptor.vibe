@@ -92,13 +92,13 @@ export type SandboxSelection = typeof SandboxSelection.Type
  * @category models
  * @since 0.1.0
  */
-export const EffectDeclaration = Schema.Struct({
-  reads: Schema.Array(Schema.String),
-  writes: Schema.Array(Schema.String),
-  mode: Schema.Literals(["hermetic", "expected"]),
-  onConflict: Schema.Literals(["serialize", "lane", "fail"]),
-  tier: EffectTier
-})
+export schema EffectDeclaration {
+  readonly reads: ReadonlyArray<string>
+  readonly writes: ReadonlyArray<string>
+  readonly mode: "hermetic" | "expected"
+  readonly onConflict: "serialize" | "lane" | "fail"
+  readonly tier: EffectTier
+}
 
 /**
  * The canonical effect declaration shared with `/core`.
@@ -382,11 +382,11 @@ export type FlowBody = typeof FlowBody.Type
  * @category models
  * @since 0.1.0
  */
-export const PackRef = Schema.Struct({
-  name: Schema.NonEmptyString,
-  version: Schema.NonEmptyString,
-  origin: Schema.Literals(["local", "installed"])
-})
+export schema PackRef {
+  readonly name: Schema.NonEmptyString
+  readonly version: Schema.NonEmptyString
+  readonly origin: "local" | "installed"
+}
 
 /**
  * The pack a descriptor was discovered in.
@@ -638,10 +638,10 @@ export const deadlineMillis = (value: unknown): number | undefined => {
     : typeof value === "string" && /^\s*\d+(\.\d+)?\s*$/.test(value)
     ? Number(value)
     : typeof value === "string"
-    ? Option.match(Duration.fromInput(value.trim() as Duration.Input), {
+    ? do { const $optionSubject = Duration.fromInput(value.trim() as Duration.Input); const $optionHandlers: { onNone: () => number; onSome: (self: import("effect/Duration").Input) => number; } = {
       onNone: () => Number.NaN,
       onSome: Duration.toMillis
-    })
+    }; const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers; match ($optionSubject) { when Option.Some(let $optionValue): $optionSome($optionValue); default: $optionNone(); }; }
     : Number.NaN
   return Number.isSafeInteger(milliseconds) && milliseconds > 0 ? milliseconds : undefined
 }
@@ -690,23 +690,11 @@ export type FlowActivity = typeof FlowActivity.Type
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export const CallPresentation = Schema.Struct({
-  verb: Schema.Struct({ pending: Schema.String, success: Schema.String, failure: Schema.String }),
-  subject: Schema.Literals(["path", "command", "patch", "selection", "pattern", "none"]),
-  result: Schema.Literals([
-    "text",
-    "read",
-    "write",
-    "edit",
-    "patch",
-    "tests",
-    "command",
-    "matches",
-    "paths",
-    "entries",
-    "none"
-  ])
-})
+export schema CallPresentation {
+  readonly verb: { readonly pending: string; readonly success: string; readonly failure: string }
+  readonly subject: "path" | "command" | "patch" | "selection" | "pattern" | "none"
+  readonly result: "text" | "read" | "write" | "edit" | "patch" | "tests" | "command" | "matches" | "paths" | "entries" | "none"
+}
 
 /**
  * Serializable call presentation.
@@ -824,14 +812,14 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
     descriptor
   )
   const local = (value: string) => underRoot(executable.provenance.root, value)
-  const digest = Digest.digest(Digest.canonical({
+  const digest = $invoke(Digest,() => (Digest.canonical({
     ...executable,
     path: local(executable.path),
     body: relocated(executable.body, local),
     input: relocated(executable.input, local),
     output: relocated(executable.output, local),
     provenance: { ...executable.provenance, root: "." }
-  }))
+  })))
   executionDigests.set(descriptor, digest)
   return digest
 }
@@ -869,7 +857,7 @@ export const executionDigest = (descriptor: FlowDescriptor): string | undefined 
  * @since 1.0.0-rc.0
  */
 export const declarationDigest = (descriptor: FlowDescriptor): string =>
-  Digest.digest(Digest.canonical({
+  $invoke(Digest,() => (Digest.canonical({
     body: { ...descriptor.body },
     budget: descriptor.budget ?? null,
     capabilities: [...descriptor.capabilities].sort(),
@@ -889,7 +877,7 @@ export const declarationDigest = (descriptor: FlowDescriptor): string =>
     // Spread only when present: hashing an absent selection as `null` would
     // move the identity of every declaration that selects none.
     ...(descriptor.sandbox === undefined ? {} : { sandbox: descriptor.sandbox })
-  }))
+  })))
 
 /**
  * The budget one descriptor declared, or {@link budgetUnbounded}.
@@ -914,3 +902,8 @@ export class SourceScan extends Schema.Class<SourceScan>("flows/registry/SourceS
   entries: Schema.Array(FlowDescriptor),
   warnings: Schema.Array(DiscoveryWarning)
 }) {}
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

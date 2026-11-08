@@ -63,7 +63,7 @@ export const IssueUser = Schema.NullOr(Schema.Struct({ id: Schema.Number, login:
  * @category schemas
  * @since 1.0.0
  */
-export const IssueLabel = Schema.Struct({ name: Schema.String })
+export schema IssueLabel { readonly name: string }
 
 /**
  * A decoded {@link IssueLabel}.
@@ -178,7 +178,7 @@ const invalidWriteId = (writeId: unknown): IntegrationError =>
  * @since 1.0.0
  */
 export const writeMarker = (writeId: string): string => {
-  if (typeof writeId !== "string" || !WRITE_ID_PATTERN.test(writeId)) throw invalidWriteId(writeId)
+  if (typeof writeId !== "string" || !WRITE_ID_PATTERN.test(writeId)) $raise(invalidWriteId(writeId))
   return `<!-- smithers:write=${writeId} -->`
 }
 
@@ -440,19 +440,15 @@ export const listAllIssuesPage = (
   owner: string,
   repo: string,
   options?: { readonly cursor?: string | null | undefined }
-): Effect.Effect<
-  { readonly items: ReadonlyArray<unknown>; readonly next: string | null },
-  IntegrationError,
-  GitHubClient
-> =>
-  Effect.gen(function*() {
-    const client = yield* GitHubClient
-    const repository = yield* requireRepositoryPath(owner, repo)
+): { readonly items: ReadonlyArray<unknown>; readonly next: string | null }!IntegrationError!GitHubClient =>
+  effect {
+    const client = try GitHubClient
+    const repository = try requireRepositoryPath(owner, repo)
     const query = options?.cursor ?? "state=all&sort=created&direction=asc"
-    const page = yield* client.paginate(`/repos/${repository}/issues?${query}`, { maxPages: 1, withNext: true })
+    const page = try client.paginate(`/repos/${repository}/issues?${query}`, { maxPages: 1, withNext: true })
     const next = page.next ?? null
     return { items: page.items, next: next === null ? null : new URL(next).search.slice(1) }
-  }).pipe(Effect.withSpan("GitHub.Issues.listAllIssuesPage"))
+  } |> withSpan(%, "GitHub.Issues.listAllIssuesPage")
 
 /**
  * Issue `number`'s sub-issues, as GitHub sent them: `GET /repos/{owner}/{repo}/issues/{number}/sub_issues`. GitHub allows
@@ -465,14 +461,14 @@ export const listSubIssues = (
   owner: string,
   repo: string,
   number: number
-): Effect.Effect<ReadonlyArray<unknown>, IntegrationError, GitHubClient> =>
+): ReadonlyArray<unknown>!IntegrationError!GitHubClient =>
   Effect.gen(function*() {
     const client = yield* GitHubClient
     const repository = yield* requireRepositoryPath(owner, repo)
     const issue = yield* requireIssueNumber(number)
     const page = yield* client.paginate(`/repos/${repository}/issues/${issue}/sub_issues`, { maxPages: 1 })
     return page.items
-  }).pipe(Effect.withSpan("GitHub.Issues.listSubIssues", { attributes: spanAttributes(owner, repo, number) }))
+  }).pipe(withSpan("GitHub.Issues.listSubIssues", { attributes: spanAttributes(owner, repo, number) }))
 
 /**
  * Opens an issue: `POST /repos/{owner}/{repo}/issues`. Mark `body` with
@@ -541,7 +537,7 @@ export const findIssueByWrite = (
   owner: string,
   repo: string,
   options: { readonly writeId: string; readonly since: string; readonly author?: string | undefined }
-): Option<Issue>!IntegrationError!GitHubClient =>
+): Option.Option<Issue>!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
     const repository = try requireRepositoryPath(owner, repo)
@@ -577,7 +573,7 @@ export const findCommentByWrite = (
   repo: string,
   number: number,
   options: { readonly writeId: string; readonly since?: string | undefined; readonly author?: string | undefined }
-): Option<IssueComment>!IntegrationError!GitHubClient =>
+): Option.Option<IssueComment>!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
     const repository = try requireRepositoryPath(owner, repo)
@@ -678,3 +674,8 @@ export const createLabel = (
       |> Effect.as(%, true)
       |> Effect.catchIf(%, hasStatus(422), () => Effect.succeed(false)))
   }) |> withSpan(%, "GitHub.Issues.createLabel", { attributes: spanAttributes(owner, repo) })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

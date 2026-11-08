@@ -33,19 +33,19 @@ export const Detection = Schema.Struct({
 })
 
 /** What containment did. */
-export const Containment = Schema.Struct({
-  hostId: Schema.String,
-  networkIsolated: Schema.Boolean,
-  evidenceSnapshotUrl: Schema.String,
-  notifiedChannels: Schema.Array(Schema.String)
-})
+export schema Containment {
+  readonly hostId: string
+  readonly networkIsolated: boolean
+  readonly evidenceSnapshotUrl: string
+  readonly notifiedChannels: ReadonlyArray<string>
+}
 
 /** The operator's decision. */
-export const Approval = Schema.Struct({
-  approved: Schema.Boolean,
-  approvedBy: Schema.String,
-  note: Schema.String
-})
+export schema Approval {
+  readonly approved: boolean
+  readonly approvedBy: string
+  readonly note: string
+}
 
 /** The incident report the flow settles with. */
 export const Report = Schema.Struct({

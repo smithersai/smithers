@@ -215,13 +215,13 @@ export const make = effect (
 ): CacheStore.Service!CacheStore.CacheStoreError!HttpClient.HttpClient => {
   const configured = try Effect.try({
     try: () => {
-      if (typeof options !== "object" || options === null) throw new TypeError("options")
+      if (typeof options !== "object" || options === null) $raise(new TypeError("options"))
       const allowed = new Set(["endpoint", "headers", "requestTimeout", "maxResponseBytes"])
       for (const key of Reflect.ownKeys(options)) {
-        if (typeof key !== "string" || !allowed.has(key)) throw new TypeError("option")
+        if (typeof key !== "string" || !allowed.has(key)) $raise(new TypeError("option"))
         const descriptor = Object.getOwnPropertyDescriptor(options, key)
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-          throw new TypeError("option")
+          $raise(new TypeError("option"))
         }
       }
       const data = (key: keyof Options): unknown => Object.getOwnPropertyDescriptor(options, key)?.value
@@ -230,16 +230,16 @@ export const make = effect (
         typeof endpoint !== "string" || endpoint.length > 16 * 1024 ||
         endpoint.trim() !== endpoint || !isWellFormedText(endpoint) ||
         hasControlText(endpoint)
-      ) throw new TypeError("endpoint")
+      ) $raise(new TypeError("endpoint"))
       const rawHeaders = data("headers")
       let headers: Readonly<Record<string, string>> | undefined
       if (rawHeaders !== undefined) {
-        if (typeof rawHeaders !== "object" || rawHeaders === null) throw new TypeError("headers")
+        if (typeof rawHeaders !== "object" || rawHeaders === null) $raise(new TypeError("headers"))
         const prototype = Object.getPrototypeOf(rawHeaders)
-        if (prototype !== Object.prototype && prototype !== null) throw new TypeError("headers")
+        if (prototype !== Object.prototype && prototype !== null) $raise(new TypeError("headers"))
         const snapshot = Object.create(null) as Record<string, string>
         for (const key of Reflect.ownKeys(rawHeaders)) {
-          if (typeof key !== "string") throw new TypeError("headers")
+          if (typeof key !== "string") $raise(new TypeError("headers"))
           const descriptor = Object.getOwnPropertyDescriptor(rawHeaders, key)
           if (
             descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable ||
@@ -247,7 +247,7 @@ export const make = effect (
             !/^[!#$%&'*+.^_`|~0-9A-Za-z-]+$/.test(key) ||
             descriptor.value.length > 16 * 1024 || !isWellFormedText(descriptor.value) ||
             hasControlText(descriptor.value)
-          ) throw new TypeError("headers")
+          ) $raise(new TypeError("headers"))
           Object.defineProperty(snapshot, key, {
             value: descriptor.value,
             enumerable: true,
@@ -307,13 +307,13 @@ export const make = effect (
   const client = try HttpClient.HttpClient
   const headers = configured.headers
   const credentialNames = Object.keys(headers ?? {}).map((name) => name.toLowerCase())
-  const authorize = (request: HttpClientRequest): HttpClientRequest =>
+  const authorize = (request: HttpClientRequest.HttpClientRequest): HttpClientRequest.HttpClientRequest =>
     headers === undefined ? request : HttpClientRequest.setHeaders(request, headers)
   const acUrl = (keyDigest: string) => {
     const target = new URL(base)
     target.pathname = `${acPrefix}${keyDigest}`
     /* v8 ignore next -- KeyDigest excludes every path separator and dot segment */
-    if (!target.pathname.startsWith(acPrefix)) throw new Error("cache-key path escaped its namespace")
+    if (!target.pathname.startsWith(acPrefix)) $raise(new Error("cache-key path escaped its namespace"))
     return target.toString()
   }
   // One budget for the whole operation, not one per phase. `client.execute`
@@ -322,18 +322,20 @@ export const make = effect (
   // configured value twice, and a caller budgeting 60 s waited 120 s.
   // The scope also aborts unread bodies on early status/length returns.
   const withDeadline = <A>(
-    effect: A!CacheStore.CacheStoreError!Scope
+    effect: A!CacheStore.CacheStoreError!Scope.Scope
   ): A!CacheStore.CacheStoreError =>
-    effect
+    do { const catchProgram = (effect
     |> Effect.scoped(%)
-    |> Effect.timeout(%, requestDeadline)
-    |> Effect.catchTag(%, "TimeoutError", () => Effect.fail(timedOut()))
+    |> Effect.timeout(%, requestDeadline)); effect { return catchProgram catch effect (e) => match (e) {
+      when { _tag: "TimeoutError" }: throw timedOut();
+      default: throw e;
+    } } }
   // Redirects are never followed. A tier that answers 3xx to another origin
   // would otherwise receive the credential headers there: fetch strips only
   // `authorization` on a cross-origin hop, never a custom header such as
   // `x-api-key`. A fetch-backed client keeps the caller's other options and
   // hands back the 3xx, which every operation reports as `persistence_failed`.
-  const send = (operation: string, request: HttpClientRequest) =>
+  const send = (operation: string, request: HttpClientRequest.HttpClientRequest) =>
     Effect.flatMap(
       Effect.serviceOption(FetchHttpClient.RequestInit),
       (init) =>
@@ -345,7 +347,7 @@ export const make = effect (
         |> Effect.updateService(%, Headers.CurrentRedactedNames, (names) => [...names, ...credentialNames])
         |> Effect.mapError(%, (cause) => transportFailure(operation, cause))
     )
-  const readBounded = effect (response: HttpClientResponse) => {
+  const readBounded = effect (response: HttpClientResponse.HttpClientResponse) => {
     const declared = response.headers["content-length"]
     if (declared !== undefined) {
       const declaredBytes = Number(declared)
@@ -451,9 +453,8 @@ export const make = effect (
       const body = try CacheAdmission.encodeEntryCanonical(entry)
       const response = try send(
         "a publication",
-        HttpClientRequest.put(acUrl(entry.keyDigest)).pipe(
-          HttpClientRequest.bodyText(body, "application/json")
-        )
+        HttpClientRequest.put(acUrl(entry.keyDigest))
+          |> HttpClientRequest.bodyText(%, body, "application/json")
       )
       if (response.status === 409) return { _tag: "Conflict" } as const
       if (!isOk(response.status)) throw unexpectedStatus("a publication", response.status)
@@ -515,3 +516,8 @@ export const layer = (
   options: Options
 ): Layer.Layer<CacheStore.CacheStore, CacheStore.CacheStoreError, HttpClient.HttpClient> =>
   Layer.effect(CacheStore.CacheStore)(make(options))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

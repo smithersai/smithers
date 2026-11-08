@@ -276,13 +276,13 @@ const escapeAt = (program: string, start: number): Escape => {
 }
 
 /** A cut-off prefix, less a high surrogate whose pair has not arrived. */
-const prefix = (decoded: string): Option<string> => {
+const prefix = (decoded: string): Option.Option<string> => {
   const final = decoded.charCodeAt(decoded.length - 1)
   return Option.some(final >= 0xd800 && final <= 0xdbff ? decoded.slice(0, -1) : decoded)
 }
 
 /** The decoded prefix of the literal that opens at `start`, after any whitespace. */
-const literalAt = (program: string, start: number): Option<string> => {
+const literalAt = (program: string, start: number): Option.Option<string> => {
   let index = start
   while (index < program.length && isWhitespace(program[index]!)) index++
   const quote = program[index]
@@ -347,7 +347,7 @@ const literalAt = (program: string, start: number): Option<string> => {
  * @category projections
  * @since 1.0.0-rc.16
  */
-export const project = (reply: string): Option<string> => {
+export const project = (reply: string): Option.Option<string> => {
   const program = cellBlocks(reply).map((block) => block.body).join("\n")
   const start = lastDoneArgument(program)
   return start === undefined ? Option.none() : literalAt(program, start)

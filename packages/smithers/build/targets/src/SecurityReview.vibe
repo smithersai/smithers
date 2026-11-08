@@ -130,7 +130,7 @@ export const securityPrompt = [
 const checkId = /^[a-z][a-z0-9]*(?:-[a-z0-9]+)*$/
 const oneLine = (value: unknown, what: string): string => {
   if (typeof value !== "string" || value.trim() === "" || /[\r\n]/.test(value)) {
-    throw new TypeError(`${what} must be one nonempty line`)
+    $raise(new TypeError(`${what} must be one nonempty line`))
   }
   return value.trim()
 }
@@ -140,11 +140,11 @@ const withGeneral = (cwd: string, checks: ReadonlyArray<Check>): ReadonlyArray<C
   const output: Array<Check> = []
   for (const check of checks) {
     const id = oneLine(check.id, "security check id")
-    if (!checkId.test(id)) throw new TypeError(`security check id must be kebab-case: ${JSON.stringify(id)}`)
-    if (id === generalCheck.id) throw new TypeError("security check id \"general\" is reserved for the built-in check")
-    if (seen.has(id)) throw new TypeError(`security check id is declared twice: ${id}`)
+    if (!checkId.test(id)) $raise(new TypeError(`security check id must be kebab-case: ${JSON.stringify(id)}`))
+    if (id === generalCheck.id) $raise(new TypeError("security check id \"general\" is reserved for the built-in check"))
+    if (seen.has(id)) $raise(new TypeError(`security check id is declared twice: ${id}`))
     seen.add(id)
-    if (check.lookFor.length === 0) throw new TypeError(`security check ${id} must list at least one lookFor item`)
+    if (check.lookFor.length === 0) $raise(new TypeError(`security check ${id} must list at least one lookFor item`))
     output.push({
       id,
       title: oneLine(check.title, `security check ${id} title`),
@@ -266,7 +266,7 @@ const boundaryStages = [
 ] as const
 const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | undefined, root: string | undefined) => {
   if (boundaries !== undefined && boundaries.length === 0) {
-    throw new TypeError("security boundaries must contain at least one boundary")
+    $raise(new TypeError("security boundaries must contain at least one boundary"))
   }
   const ids = new Set<string>()
   const paths = new Map<string, Input.Glob>()
@@ -274,12 +274,12 @@ const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | u
   const rubric: Array<string> = []
   for (const boundary of boundaries ?? []) {
     const id = oneLine(boundary.id, "security boundary id")
-    if (!checkId.test(id)) throw new TypeError(`security boundary id must be kebab-case: ${id}`)
-    if (ids.has(id)) throw new TypeError(`security boundary id is declared twice: ${id}`)
+    if (!checkId.test(id)) $raise(new TypeError(`security boundary id must be kebab-case: ${id}`))
+    if (ids.has(id)) $raise(new TypeError(`security boundary id is declared twice: ${id}`))
     ids.add(id)
     const lines = (values: ReadonlyArray<string>, field: string) => {
       if (!Array.isArray(values) || values.length === 0) {
-        throw new TypeError(`security boundary ${id} ${field} must contain at least one item`)
+        $raise(new TypeError(`security boundary ${id} ${field} must contain at least one item`))
       }
       return values.map((value) => oneLine(value, `security boundary ${id} ${field}`))
     }
@@ -294,7 +294,7 @@ const assembleBoundaries = (cwd: string, boundaries: ReadonlyArray<Boundary> | u
       for (const glob of stage) {
         const path = glob.pattern.slice(2)
         if (root !== undefined && !probe(root, matcherOf(glob), () => true).matched) {
-          throw new TypeError(`security boundary ${id} (${cwd}) ${field} path ${JSON.stringify(path)} matches no file`)
+          $raise(new TypeError(`security boundary ${id} (${cwd}) ${field} path ${JSON.stringify(path)} matches no file`))
         }
         paths.set(glob.pattern, glob)
         boundaryPaths.push(glob.pattern)
@@ -353,10 +353,10 @@ const validatePaths = (
   for (const glob of context) {
     const matcher = matcherOf(glob)
     if (!probe(root, matcher, () => true).matched) {
-      throw new TypeError(
+      $raise(new TypeError(
         `security review context ${JSON.stringify(matcher.pattern)} matches no file; context entries are file ` +
           "globs, so put descriptions in the check text"
-      )
+      ))
     }
   }
   const reviewed = [...include, ...context].map(matcherOf)
@@ -365,13 +365,13 @@ const validatePaths = (
       const matcher = matcherOf(Input.Glob.make({ pattern: `//${path}`, exclude: [] }))
       const found = probe(root, matcher, (file) => reviewed.some((entry) => entry.matches(file)))
       if (!found.matched) {
-        throw new TypeError(`security check ${check.id} path ${JSON.stringify(path)} matches no file`)
+        $raise(new TypeError(`security check ${check.id} path ${JSON.stringify(path)} matches no file`))
       }
       if (!found.accepted) {
-        throw new TypeError(
+        $raise(new TypeError(
           `security check ${check.id} path ${JSON.stringify(path)} matches no file the review reads; ` +
             "add it to include or context, or drop the path"
-        )
+        ))
       }
     }
   }
@@ -477,6 +477,11 @@ export const confirmFinding = (
 ): Finding => {
   const decoded = Schema.decodeUnknownSync(Finding)(finding)
   const reproduction = Schema.decodeUnknownSync(Reproduction)(receipt)
-  if (decoded.security === undefined) throw new TypeError("confirmation requires a security finding")
+  if (decoded.security === undefined) $raise(new TypeError("confirmation requires a security finding"))
   return { ...decoded, security: { ...decoded.security, verification: "confirmed", reproduction } }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

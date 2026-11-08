@@ -139,20 +139,20 @@ const placeholder = (reference: Reference): unknown => {
     get: (_target, key) => {
       if (key === TypeId) return reference
       const refusal = refusals.get(key)
-      if (refusal !== undefined) throw refuse(reference, refusal)
+      if (refusal !== undefined) $raise(refuse(reference, refusal))
       // Not a thenable: a body that returns a planned value inside a promise
       // must resolve to the placeholder, not hang awaiting a proxy.
       if (key === "then") return undefined
       return placeholder({ node: reference.node, path: [...reference.path, String(key)] })
     },
     apply: () => {
-      throw refuse(reference, "function application")
+      $raise(refuse(reference, "function application"))
     },
     has: () => {
-      throw refuse(reference, "property existence (`in`)")
+      $raise(refuse(reference, "property existence (`in`)"))
     },
     ownKeys: () => {
-      throw refuse(reference, "property enumeration")
+      $raise(refuse(reference, "property enumeration"))
     }
   })
 }
@@ -206,3 +206,8 @@ export const reference = (value: unknown): Reference | undefined => {
  * @slop
  */
 export const isPlanned = (value: unknown): value is Planned<unknown> => reference(value) !== undefined
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

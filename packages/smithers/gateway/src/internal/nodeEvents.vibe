@@ -63,7 +63,7 @@ const envelopeOf = (event: NodeObservation): Record<string, unknown> | undefined
 const nodeRecord = <A>(
   event: NodeObservation,
   eventType: string,
-  decode: (payload: unknown) => Option<A>
+  decode: (payload: unknown) => Option.Option<A>
 ): NodeRecord<A> | undefined => {
   const envelope = envelopeOf(event)
   if (envelope === undefined || envelope.eventType !== eventType) return undefined

@@ -359,7 +359,7 @@ const environmentText = (environment: Environment, profile: Profile): string | u
     : `Harness-computed facts about the checkout and container, not the task.\n${lines.join("\n")}`
 }
 
-const digest = (id: Section["id"], text: string): string => Digest.digest(CanonicalJson.stringify({ id, text }))
+const digest = (id: Section["id"], text: string): string => $invoke(Digest,() => (CanonicalJson.stringify({ id, text })))
 
 type CatalogProjection = Cell.FlowProjection & Partial<Pick<Descriptor.FlowDescriptor, "provenance" | "path">>
 
@@ -441,3 +441,8 @@ export const make = (
     { id: "cell-catalog", text: catalog, digest: digest("cell-catalog", catalog) }
   ]
 }
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

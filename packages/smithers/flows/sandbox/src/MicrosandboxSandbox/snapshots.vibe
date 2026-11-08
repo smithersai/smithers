@@ -383,17 +383,15 @@ export const captureSnapshot = (options: CaptureOptions): string!ProviderError =
  * @since 1.0.0
  */
 export const hasSnapshot = (sdk: Sdk, name: string): boolean!ProviderError =>
-  Effect.tryPromise({
+  do { const catchProgram = (Effect.tryPromise({
     try: () => sdk.Snapshot.get(name),
     catch: (cause) => cause
   })
-  |> Effect.as(%, true)
-  |> Effect.catch(%, (cause) =>
-    isMissingSnapshot(cause)
+  |> Effect.as(%, true)); effect { return catchProgram catch effect (cause) => try (isMissingSnapshot(cause)
       ? Effect.succeed(false)
       : Effect.fail(
         new ProviderError({ code: "unavailable", message: `microsandbox: snapshot ${name} could not be read`, cause })
-      ))
+      )) } }
 
 /**
  * Removes `family`'s snapshots (those {@link snapshotFamily} places in it,
@@ -438,9 +436,7 @@ export const pruneSnapshots = (
  * @since 1.0.0
  */
 export const removeSnapshot = (sdk: Sdk, name: string): void!ProviderError =>
-  Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause })
-  |> Effect.catch(%, (cause) =>
-    isMissingSnapshot(cause)
+  do { const catchProgram = Effect.tryPromise({ try: () => sdk.Snapshot.remove(name, { force: true }), catch: (cause) => cause }); effect { return catchProgram catch effect (cause) => try (isMissingSnapshot(cause)
       ? Effect.void
       : Effect.fail(
         new ProviderError({
@@ -448,4 +444,4 @@ export const removeSnapshot = (sdk: Sdk, name: string): void!ProviderError =>
           message: `microsandbox: snapshot ${name} could not be removed`,
           cause
         })
-      ))
+      )) } }

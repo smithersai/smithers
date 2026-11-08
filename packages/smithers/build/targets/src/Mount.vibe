@@ -129,11 +129,11 @@ export interface Options {
 export const Mount = (options: Options): Declaration => {
   const ref = options.ref
   if (!commit.test(ref)) {
-    throw new TypeError(`S.Mount ref must be a full commit id, not ${JSON.stringify(ref)}; pin a commit, not a branch`)
+    $raise(new TypeError(`S.Mount ref must be a full commit id, not ${JSON.stringify(ref)}; pin a commit, not a branch`))
   }
   const drift = options.drift ?? "warn"
   if (drift !== "warn" && options.track === undefined) {
-    throw new TypeError(`S.Mount drift ${JSON.stringify(drift)} needs a track: the branch drift is measured against`)
+    $raise(new TypeError(`S.Mount drift ${JSON.stringify(drift)} needs a track: the branch drift is measured against`))
   }
   return Object.freeze(
     Schema.decodeUnknownSync(Declaration)({
@@ -180,12 +180,12 @@ const mountName = /^[a-z0-9][a-z0-9-]*$/
  */
 export const Mounts = (mounts: Readonly<Record<string, Declaration>>): Mounts => {
   const entries = Object.entries(mounts)
-  if (entries.length === 0) throw new TypeError("S.Mounts needs at least one mount")
+  if (entries.length === 0) $raise(new TypeError("S.Mounts needs at least one mount"))
   for (const [name, mount] of entries) {
     if (!mountName.test(name)) {
-      throw new TypeError(`S.Mounts mount name ${JSON.stringify(name)} must be lowercase letters, digits, and dashes`)
+      $raise(new TypeError(`S.Mounts mount name ${JSON.stringify(name)} must be lowercase letters, digits, and dashes`))
     }
-    if (!Schema.is(Declaration)(mount)) throw new TypeError(`S.Mounts entry ${name} must be an S.Mount declaration`)
+    if (!Schema.is(Declaration)(mount)) $raise(new TypeError(`S.Mounts entry ${name} must be an S.Mount declaration`))
   }
   const declaration: Mounts = { [TypeId]: TypeId, mounts: Object.freeze({ ...mounts }) }
   return Object.freeze(declaration)
@@ -199,3 +199,8 @@ export const Mounts = (mounts: Readonly<Record<string, Declaration>>): Mounts =>
  */
 export const isMounts = (value: unknown): value is Mounts =>
   typeof value === "object" && value !== null && (value as { readonly [TypeId]?: unknown })[TypeId] === TypeId
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

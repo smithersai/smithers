@@ -88,7 +88,7 @@ const poisonedService = <A>(capability: string): A =>
     {
       get: (_target, property) => {
         if (typeof property === "symbol" || probes.has(property)) return undefined
-        throw denied(capability, property)
+        $raise(denied(capability, property))
       }
     }
   ) as A
@@ -97,17 +97,17 @@ const poisonedModel = ModelLike.of({
   stream: () => Stream.die(new CapabilityContractError({ capability: "model", operation: "stream" }))
 })
 
-const poisonedClock: Clock = {
+const poisonedClock: Clock.Clock = {
   currentTimeMillisUnsafe: () => {
-    throw denied("clock", "currentTimeMillisUnsafe")
+    $raise(denied("clock", "currentTimeMillisUnsafe"))
   },
   currentTimeMillis: Effect.die(denied("clock", "currentTimeMillis")),
   currentTimeNanosUnsafe: () => {
-    throw denied("clock", "currentTimeNanosUnsafe")
+    $raise(denied("clock", "currentTimeNanosUnsafe"))
   },
   currentTimeNanos: Effect.die(denied("clock", "currentTimeNanos")),
   monotonicTimeNanosUnsafe: () => {
-    throw denied("clock", "monotonicTimeNanosUnsafe")
+    $raise(denied("clock", "monotonicTimeNanosUnsafe"))
   },
   monotonicTimeNanos: Effect.die(denied("clock", "monotonicTimeNanos")),
   sleep: () => Effect.die(denied("clock", "sleep"))
@@ -115,10 +115,10 @@ const poisonedClock: Clock = {
 
 const poisonedRandom: typeof Random.Random.Service = {
   nextIntUnsafe: () => {
-    throw denied("random", "nextIntUnsafe")
+    $raise(denied("random", "nextIntUnsafe"))
   },
   nextDoubleUnsafe: () => {
-    throw denied("random", "nextDoubleUnsafe")
+    $raise(denied("random", "nextDoubleUnsafe"))
   }
 }
 
@@ -148,12 +148,17 @@ export const poisonedClockAndRandom: Layer.Layer<never> = Layer.mergeAll(
  */
 export const poisoned: Layer.Layer<Kernel.HostServices.HostService | ModelLike> = Layer.mergeAll(
   Layer.succeed(FileSystem.FileSystem)(poisonedService<FileSystem.FileSystem>("filesystem")),
-  Layer.succeed(Path.Path)(poisonedService<Path>("path")),
+  Layer.succeed(Path.Path)(poisonedService<Path.Path>("path")),
   Layer.succeed(ChildProcessSpawner.ChildProcessSpawner)(
-    poisonedService<ChildProcessSpawner["Service"]>("shell")
+    poisonedService<ChildProcessSpawner.ChildProcessSpawner["Service"]>("shell")
   ),
   Layer.succeed(Kernel.Jj.Jj)(poisonedService<Kernel.Jj.Jj>("jj")),
-  Layer.succeed(HttpClient.HttpClient)(poisonedService<HttpClient>("httpTransport")),
+  Layer.succeed(HttpClient.HttpClient)(poisonedService<HttpClient.HttpClient>("httpTransport")),
   Layer.succeed(ModelLike)(poisonedModel),
   poisonedClockAndRandom
 )
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

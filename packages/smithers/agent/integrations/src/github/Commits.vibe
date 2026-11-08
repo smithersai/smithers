@@ -44,12 +44,12 @@ export interface FileAddition {
  * @category schemas
  * @since 1.0.0
  */
-export const GitCommit = Schema.Struct({
-  sha: Schema.String,
-  message: Schema.String,
-  tree: Schema.Struct({ sha: Schema.String }),
-  parents: Schema.Array(Schema.Struct({ sha: Schema.String }))
-})
+export schema GitCommit {
+  readonly sha: string
+  readonly message: string
+  readonly tree: { readonly sha: string }
+  readonly parents: ReadonlyArray<{ readonly sha: string }>
+}
 
 /**
  * A decoded {@link GitCommit}.

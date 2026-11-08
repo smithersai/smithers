@@ -33,9 +33,7 @@ import type { WaitingAnnotation } from "./WaitingAnnotation.vibe"
  * @category services
  * @since 0.1.0
  */
-export class FlowInstance extends Context.Service<
-  FlowInstance,
-  {
+export service FlowInstance: {
     /**
      * The flow execution ID.
      */
@@ -129,5 +127,4 @@ export class FlowInstance extends Context.Service<
        */
       readonly keylessInFlight: Set<string>
     }
-  }
->()("@smthrs/flow/FlowRuntime/FlowInstance") {}
+  } { static readonly key = "@smthrs/flow/FlowRuntime/FlowInstance" }

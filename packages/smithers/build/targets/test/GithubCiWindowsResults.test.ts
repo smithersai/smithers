@@ -10,7 +10,7 @@ import * as CiToolchain from "../src/CiToolchain.ts"
 import * as GithubCiGen from "../src/GithubCiGen.ts"
 import * as PackageManager from "../src/PackageManager.ts"
 import * as Runtime from "../src/Runtime.ts"
-import * as Verb from "../src/Verb.ts"
+import * as Verb from "../src/Verb.vibe"
 
 it("runs generated Windows matrix gates and retains distinct passing and failing receipts", async () => {
   const runtime = Runtime.Node({ version: ">=26.4.0" })

@@ -142,7 +142,7 @@ export interface Options {
 // Typed as the events it streams: unannotated, TypeScript 7 gives `make`'s
 // generator a union of this literal-typed Stream and the fallback's, which
 // Stream.unwrap rejects (TS2379).
-const answer = (text: string, usage: NonNullable<Options["usage"]>): Stream<ModelEvent> =>
+const answer = (text: string, usage: NonNullable<Options["usage"]>): Stream.Stream<ModelEvent> =>
   Stream.fromIterable([
     { type: "text-start" as const, id: "scripted" },
     { type: "text-delta" as const, id: "scripted", text },

@@ -162,7 +162,7 @@ const codeOfValue = (value: unknown): string | undefined => {
   return asCode(record.code) ?? asCode(record._tag) ?? (record.name === "Error" ? undefined : asCode(record.name))
 }
 
-const codeOfCause = (cause: Cause<unknown>): string | undefined => {
+const codeOfCause = (cause: Cause.Cause<unknown>): string | undefined => {
   for (const reason of cause.reasons) {
     const code = Cause.isFailReason(reason)
       ? codeOfValue(reason.error)

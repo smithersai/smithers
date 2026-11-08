@@ -42,20 +42,20 @@ export const Score = Schema.Struct({
 })
 
 /** A person's decision on a borderline route. */
-export const Approval = Schema.Struct({
-  approved: Schema.Boolean,
-  reviewer: Schema.String,
-  note: Schema.String
-})
+export schema Approval {
+  readonly approved: boolean
+  readonly reviewer: string
+  readonly note: string
+}
 
 /** What the CRM step recorded. */
-export const Sink = Schema.Struct({
-  crmRecordId: Schema.String,
-  assignedTo: Schema.String,
-  nextAction: Schema.String,
-  status: Schema.Literals(["routed", "queued-for-review", "discarded"]),
-  summary: Schema.String
-})
+export schema Sink {
+  readonly crmRecordId: string
+  readonly assignedTo: string
+  readonly nextAction: string
+  readonly status: "routed" | "queued-for-review" | "discarded"
+  readonly summary: string
+}
 
 /** A person denied the proposed route. */
 export const RouteDenied = Schema.TaggedStruct("examples/LeadRouterWithApproval/RouteDenied", {

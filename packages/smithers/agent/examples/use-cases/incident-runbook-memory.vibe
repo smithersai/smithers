@@ -33,20 +33,20 @@ export const namespace = { kind: "user", id: "ops-team" } as const
 export const distillThreshold = 3
 
 /** What the team already knows. */
-export const Recall = Schema.Struct({
-  rules: Schema.Array(Schema.String),
-  lessons: Schema.Array(Schema.String),
-  lessonIds: Schema.Array(Schema.String),
-  onCall: Schema.String,
-  lessonCount: Schema.Number
-})
+export schema Recall {
+  readonly rules: ReadonlyArray<string>
+  readonly lessons: ReadonlyArray<string>
+  readonly lessonIds: ReadonlyArray<string>
+  readonly onCall: string
+  readonly lessonCount: number
+}
 
 /** The triage agent's diagnosis. */
-export const Triage = Schema.Struct({
-  diagnosis: Schema.String,
-  actions: Schema.Array(Schema.String),
-  groundedInPriorKnowledge: Schema.Boolean
-})
+export schema Triage {
+  readonly diagnosis: string
+  readonly actions: ReadonlyArray<string>
+  readonly groundedInPriorKnowledge: boolean
+}
 
 /** The banker's new lessons, before they are saved. */
 export const Lessons = Schema.Struct({
@@ -57,7 +57,7 @@ export const Lessons = Schema.Struct({
 })
 
 /** The lessons as saved. */
-export const Bank = Schema.Struct({ lessonIds: Schema.Array(Schema.String), summary: Schema.String })
+export schema Bank { readonly lessonIds: ReadonlyArray<string>; readonly summary: string }
 
 /** The distiller's rule, before it is saved. */
 export const Distilled = Schema.Struct({
@@ -66,10 +66,10 @@ export const Distilled = Schema.Struct({
 })
 
 /** The pending rule as saved. */
-export const Proposal = Schema.Struct({ ruleNoteId: Schema.String, rationale: Schema.String })
+export schema Proposal { readonly ruleNoteId: string; readonly rationale: string }
 
 /** The ratified rule. */
-export const Ratification = Schema.Struct({ ratifiedNoteId: Schema.String, supersededCount: Schema.Number })
+export schema Ratification { readonly ratifiedNoteId: string; readonly supersededCount: number }
 
 /** What the flow settles with: each step's result, `null` where a step did not run. */
 export const Output = Schema.Struct({

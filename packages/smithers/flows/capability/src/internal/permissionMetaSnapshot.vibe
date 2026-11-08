@@ -20,7 +20,7 @@ const metadataStringBytes = (value: string, path: string): number => {
   // Check before escaping/encoding so a single huge string cannot allocate an
   // unbounded temporary serialization. JSON's UTF-8 size is at least this long.
   if (value.length > maximumMetadataBytes) {
-    throw invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`)
+    $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`))
   }
   return metadataEncoder.encode(JSON.stringify(value)).byteLength
 }
@@ -62,7 +62,7 @@ const metadataKeys = function*(value: Record<string, unknown> | Array<unknown>):
 export const permissionMetaSnapshot = (
   meta: Readonly<Record<string, unknown>>
 ): Readonly<Record<string, Schema.Json>> => {
-  if (!isPlainObject(meta)) throw invalidMetadata("meta", "metadata must be a plain record")
+  if (!isPlainObject(meta)) $raise(invalidMetadata("meta", "metadata must be a plain record"))
   const snapshots = new WeakMap<object, MetadataSnapshot>()
   const active = new WeakSet<object>()
   const stack: Array<MetadataFrame> = []
@@ -89,15 +89,15 @@ export const permissionMetaSnapshot = (
     frame.members += 1 + child.members
     frame.height = Math.max(frame.height, 1 + child.height)
     if (frame.depth + frame.height > maximumMetadataDepth) {
-      throw invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`)
+      $raise(invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`))
     }
     if (frame.members > maximumMetadataMembers) {
-      throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`)
+      $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`))
     }
     frame.bytes += child.bytes + (frame.entries.length === 0 ? 0 : 1) +
       (frame.array ? 0 : metadataStringBytes(key, path) + 1)
     if (frame.bytes > maximumMetadataBytes) {
-      throw invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`)
+      $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataBytes} bytes`))
     }
     frame.entries.push([key, child.value])
   }
@@ -127,26 +127,26 @@ export const permissionMetaSnapshot = (
     metadataStringBytes(key, frame.path)
     const path = `${frame.path}[${JSON.stringify(key)}]`
     if (++visitedMembers > maximumMetadataMembers) {
-      throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`)
+      $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`))
     }
     const value = (frame.input as Record<string, unknown>)[key]
     if (value === undefined && !frame.array) {
       if (++frame.members > maximumMetadataMembers) {
-        throw invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`)
+        $raise(invalidMetadata(path, `metadata exceeds ${maximumMetadataMembers} members`))
       }
       continue
     }
     const depth = frame.depth + 1
-    if (depth > maximumMetadataDepth) throw invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`)
+    if (depth > maximumMetadataDepth) $raise(invalidMetadata(path, `metadata exceeds depth ${maximumMetadataDepth}`))
     if (value !== null && typeof value === "object") {
-      if (active.has(value)) throw invalidMetadata(path, "metadata must not contain cycles")
+      if (active.has(value)) $raise(invalidMetadata(path, "metadata must not contain cycles"))
       const existing = snapshots.get(value)
       if (existing !== undefined) {
         append(frame, key, existing, path)
       } else if (Array.isArray(value) || isPlainObject(value)) {
         push(value, path, depth, key)
       } else {
-        throw invalidMetadata(path, "metadata objects must be plain records")
+        $raise(invalidMetadata(path, "metadata objects must be plain records"))
       }
       continue
     }
@@ -155,9 +155,14 @@ export const permissionMetaSnapshot = (
     else if (value === null || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value))) {
       bytes = JSON.stringify(value).length
     } else {
-      throw invalidMetadata(path, "metadata must be JSON data")
+      $raise(invalidMetadata(path, "metadata must be JSON data"))
     }
     append(frame, key, { value, bytes, members: 0, height: 0 }, path)
   }
   return snapshots.get(meta)!.value as Readonly<Record<string, Schema.Json>>
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

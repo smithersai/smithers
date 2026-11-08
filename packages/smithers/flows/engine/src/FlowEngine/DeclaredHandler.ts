@@ -9,7 +9,7 @@ import * as Context from "effect/Context"
 import * as Effect from "effect/Effect"
 import { renderDiagnostic } from "../internal/Diagnostic.ts"
 import { resetActionContext } from "./Dispatch.ts"
-import type { Encoded } from "./Encoded.ts"
+import type { Encoded } from "./Encoded.vibe"
 import { CurrentRegistrations } from "./RegistrationGate.ts"
 
 type Handler = Parameters<Encoded["register"]>[1]

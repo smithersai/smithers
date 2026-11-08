@@ -190,7 +190,7 @@ schema PermissionRequest {
 }
 const decodePermission = Schema.decodeUnknownOption(PermissionRequest)
 
-type Pending = Deferred<unknown, AcpError>
+type Pending = Deferred.Deferred<unknown, AcpError>
 
 /** The option a permission request is answered with, by policy: the first of the policy's kinds, in order. */
 const chosen = (request: unknown, permission: Permission): Option.Option<string> =>

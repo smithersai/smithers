@@ -227,9 +227,9 @@ export type Declaration = typeof Declaration.Type
  * @category schemas
  * @since 1.0.0
  */
-export const Document = Schema.Struct({
-  blocks: Schema.Array(Block)
-})
+export schema Document {
+  readonly blocks: ReadonlyArray<Block>
+}
 /**
  * The document `.smithers/home.json` holds.
  *
@@ -268,7 +268,7 @@ export const decode = <S extends Schema.Decoder<unknown, never>>(
   value: unknown
 ): S["Type"] => {
   const result = Schema.decodeUnknownResult(schema)(value)
-  if (Result.isFailure(result)) throw new TypeError(`${name}: ${formatIssue(result.failure.issue)}`)
+  if (Result.isFailure(result)) $raise(new TypeError(`${name}: ${formatIssue(result.failure.issue)}`))
   return result.success
 }
 /**
@@ -487,14 +487,14 @@ export const View = (options: ViewOptions): typeof ViewBlock.Type =>
 export const Home = (options: HomeOptions): Declaration => {
   const plain = plainOptions("Factory.Home", options, new Set(["blocks"]))
   const blocks = plain["blocks"]
-  if (!Array.isArray(blocks)) throw new TypeError("Factory.Home blocks must be an array of declared blocks")
+  if (!Array.isArray(blocks)) $raise(new TypeError("Factory.Home blocks must be an array of declared blocks"))
   blocks.forEach((block, index) => {
     if (typeof block !== "object" || block === null) {
-      throw new TypeError(
+      $raise(new TypeError(
         `Factory.Home block ${index} must be a declared block (Smithers.Home.Text, Links, Flows, Prompt, Markdown, Stack, App, View), not ${
           typeof block === "string" ? "a string" : typeof block
         }`
-      )
+      ))
     }
   })
   return freezeDeep(decode("Factory.Home", Declaration, { _tag: "HomeDeclaration", blocks }))
@@ -526,3 +526,8 @@ export const parse = (text: string): Document | string => {
     ? `the homepage does not have the .smithers/home.json shape: ${formatIssue(result.failure.issue)}`
     : result.success
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

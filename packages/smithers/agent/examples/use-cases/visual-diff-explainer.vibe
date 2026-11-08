@@ -21,17 +21,17 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** The failed visual tests the runner found. */
-export const FailedTests = Schema.Struct({
-  tests: Schema.Array(Schema.Struct({
-    name: Schema.String,
-    suite: Schema.String,
-    baselinePath: Schema.String,
-    currentPath: Schema.String,
-    diffPercentage: Schema.Number
-  })),
-  totalFailed: Schema.Number,
-  runner: Schema.String
-})
+export schema FailedTests {
+  readonly tests: ReadonlyArray<{
+    readonly name: string
+    readonly suite: string
+    readonly baselinePath: string
+    readonly currentPath: string
+    readonly diffPercentage: number
+  }>
+  readonly totalFailed: number
+  readonly runner: string
+}
 
 /** Each failure's screenshots, encoded. */
 export const ImagePairs = Schema.Struct({

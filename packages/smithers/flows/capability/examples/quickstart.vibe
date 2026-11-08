@@ -19,7 +19,7 @@ import { Capability, Permission } from "@smthrs/capability"
 export const ruleFor = (effect: Permission.RuleEffect, declared: string): Permission.Rule => {
   const pattern = Capability.parsePattern(declared)
   if (Option.isNone(pattern)) {
-    throw new Error(`Not a capability pattern: ${declared}`)
+    $raise(new Error(`Not a capability pattern: ${declared}`))
   }
   return new Permission.Rule({ effect, pattern: pattern.value })
 }
@@ -80,3 +80,8 @@ export const decideWithSession = (
   request: Capability.Capability
 ): Permission.RuleEffect =>
   Permission.evaluate([[...policy, ruleFor("deny", "fs:write:/workspace/.git/**")], session], request)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

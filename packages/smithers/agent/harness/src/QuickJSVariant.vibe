@@ -58,9 +58,7 @@ export interface VariantService {
  * @category services
  * @since 0.1.0
  */
-export class Variant extends Context.Service<Variant, VariantService>()(
-  "@smthrs/harness/QuickJSSandbox/Variant"
-) {}
+export service Variant: VariantService { static readonly key = "@smthrs/harness/QuickJSSandbox/Variant";}
 
 /**
  * Provides a build the host names.
@@ -72,7 +70,7 @@ export class Variant extends Context.Service<Variant, VariantService>()(
  * @category layers
  * @since 0.1.0
  */
-export const layerVariant = (variant: QuickJSSyncVariant): Layer<Variant> => Layer.succeed(Variant)({ variant })
+export const layerVariant = (variant: QuickJSSyncVariant): Layer.Layer<Variant> => Layer.succeed(Variant)({ variant })
 
 /**
  * Loads a QuickJS module through the sandbox's typed failure boundary.

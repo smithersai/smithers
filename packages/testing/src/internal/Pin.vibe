@@ -78,13 +78,12 @@ export const pollUntil = <A>(
   probe: () => A | undefined,
   message: string
 ): A!ConformanceViolation =>
-  Effect.suspend(() => {
+  do { const catchProgram = (Effect.suspend(() => {
     const value = probe()
     return value === undefined ? Effect.fail(undefined) : Effect.succeed(value)
   })
   |> Effect.retry(%, { schedule: Schedule.spaced("10 millis"), times: 99 })
-  |> TestClock.withLive(%)
-  |> Effect.catch(%, () => fail(pin, message, "settlement within one second of live time", "still pending"))
+  |> TestClock.withLive(%)); effect { return catchProgram catch effect () => try fail(pin, message, "settlement within one second of live time", "still pending") } }
 
 /**
  * Polls `predicate` on the bounded live-clock schedule {@link pollUntil} uses,

@@ -1,8 +1,6 @@
 // The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads
 // and the event stream, each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
-import * as Sse from "effect/encoding/Sse"
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"

@@ -23,42 +23,42 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Risk = Schema.Literals(["low", "medium", "high", "critical"])
 
 /** One changed config file. */
-export const ConfigFile = Schema.Struct({
-  path: Schema.String,
-  kind: Schema.Literals(["helm", "terraform", "k8s", "env", "other"]),
-  diff: Schema.String,
-  service: Schema.String
-})
+export schema ConfigFile {
+  readonly path: string
+  readonly kind: "helm" | "terraform" | "k8s" | "env" | "other"
+  readonly diff: string
+  readonly service: string
+}
 
 /** The collected diffs. */
-export const FetchedDiff = Schema.Struct({
-  files: Schema.Array(ConfigFile),
-  totalChanges: Schema.Number,
-  summary: Schema.String
-})
+export schema FetchedDiff {
+  readonly files: ReadonlyArray<ConfigFile>
+  readonly totalChanges: number
+  readonly summary: string
+}
 
 /** The blast-radius analysis. */
-export const Explanation = Schema.Struct({
-  blastRadius: Schema.Array(Schema.Struct({
-    system: Schema.String,
-    impact: Schema.String,
-    severity: Risk
-  })),
-  riskLevel: Risk,
-  affectedSystems: Schema.Array(Schema.String),
-  rollbackNotes: Schema.String,
-  summary: Schema.String
-})
+export schema Explanation {
+  readonly blastRadius: ReadonlyArray<{
+    readonly system: string
+    readonly impact: string
+    readonly severity: Risk
+  }>
+  readonly riskLevel: Risk
+  readonly affectedSystems: ReadonlyArray<string>
+  readonly rollbackNotes: string
+  readonly summary: string
+}
 
 /** The review verdict. */
-export const Review = Schema.Struct({
-  action: Schema.Literals(["approve", "request-changes", "comment"]),
-  comment: Schema.String,
-  summary: Schema.String
-})
+export schema Review {
+  readonly action: "approve" | "request-changes" | "comment"
+  readonly comment: string
+  readonly summary: string
+}
 
 /** What the flow settles with: the analysis and the verdict on it. */
-export const Output = Schema.Struct({ explanation: Explanation, review: Review })
+export schema Output { readonly explanation: Explanation; readonly review: Review }
 
 /** Collects and classifies the config diffs. */
 export const FetchDiffs = AgentAction.make("examples/ConfigDiffExplainer/FetchDiffs", {

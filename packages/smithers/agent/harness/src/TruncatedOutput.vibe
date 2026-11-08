@@ -157,7 +157,7 @@ const captureField = (
       flow,
       field,
       droppedBytes: droppedBytes(node, field),
-      digest: Digest.digest(text)
+      digest: $invoke(Digest,() => (text))
     })
   )
 }
@@ -204,7 +204,7 @@ const search = (
 ): Reuse | undefined => {
   if (typeof value === "string") {
     if (byteLength(value) < minimumBytes) return undefined
-    const capture = known.get(Digest.digest(value))
+    const capture = known.get($invoke(Digest,() => (value)))
     return capture === undefined ? undefined : { path: path === "" ? "input" : path, capture }
   }
   if (Array.isArray(value)) {
@@ -294,3 +294,8 @@ export const Ledger = Schema.Array(Capture).pipe(
   Schema.withConstructorDefault(Effect.succeed<ReadonlyArray<Capture>>([])),
   Schema.withDecodingDefaultKey(Effect.succeed<ReadonlyArray<Capture>>([]))
 )
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

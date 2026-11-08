@@ -110,7 +110,7 @@ export const getText = (
   repo: string,
   path: string,
   options?: { readonly ref?: string | undefined }
-): Option<TextFile>!IntegrationError!GitHubClient =>
+): Option.Option<TextFile>!IntegrationError!GitHubClient =>
   (effect {
     const client = try GitHubClient
     const repository = try requireRepositoryPath(owner, repo)

@@ -72,10 +72,10 @@ export const MAX_RETRIEVE_LIMIT = 500
  * @category schemas
  * @since 1.0.0
  */
-export const Grant = Schema.Struct({
-  connectionId: Schema.NonEmptyString,
-  containers: Schema.Array(Schema.NonEmptyString)
-})
+export schema Grant {
+  readonly connectionId: Schema.NonEmptyString
+  readonly containers: ReadonlyArray<Schema.NonEmptyString>
+}
 
 /**
  * What a caller may read of one connection.

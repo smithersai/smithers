@@ -14,7 +14,7 @@ import * as Metric from "effect/Metric"
 const outcomeValue = (tag: string): string => tag.replace(/(?<=[a-z0-9])(?=[A-Z])/g, "_").toLowerCase()
 
 /** Classifies a non-success exit for the span `outcome` attribute. */
-const causeOutcome = <E>(cause: Cause<E>): "failure" | "interrupt" =>
+const causeOutcome = <E>(cause: Cause.Cause<E>): "failure" | "interrupt" =>
   Cause.hasInterruptsOnly(cause) ? "interrupt" : "failure"
 
 /**

@@ -235,24 +235,24 @@ export const make = <R = never>(options: MakeOptions<R>): KanbanFlow<R> => {
   const concurrency = options.concurrency
   const onComplete = options.onComplete
   if (columns.length === 0) {
-    throw new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one column" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one column" }))
   }
   if (items.length === 0) {
-    throw new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one item" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Kanban requires at least one item" }))
   }
   if (!bound(concurrency)) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: "Kanban concurrency must be a positive safe integer"
-    })
+    }))
   }
   const ids = items.map((item) => item.id)
   if (new Set(ids).size !== ids.length) {
-    throw new PatternError({ code: "invalid_decorator", message: "Kanban item ids must be unique" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Kanban item ids must be unique" }))
   }
   const names = columns.map((column) => column.name)
   if (new Set(names).size !== names.length) {
-    throw new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Kanban column names must be unique" }))
   }
   const captures = { columns: names, items: ids, concurrency }
   // What one column hands the next: each live card's latest output, and every
@@ -512,3 +512,8 @@ export const run = <It extends Item, Out, E = never, R = never, E2 = never, R2 =
     }
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

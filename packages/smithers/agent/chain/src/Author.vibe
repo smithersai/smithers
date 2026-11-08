@@ -93,7 +93,7 @@ export interface Service {
  * @since 0.1.0
  * @slop
  */
-export class Author extends Context.Service<Author, Service>()("/chain/Author") {}
+export service Author: Service { static readonly key = "/chain/Author";}
 
 /**
  * Builds a seat from an implementation.
@@ -127,7 +127,7 @@ export const makeNoop = (overrides: Partial<Service> = {}): Service =>
  * @since 0.1.0
  * @slop
  */
-export const layerNoop = (overrides: Partial<Service> = {}): Layer<Author> => Layer.succeed(Author)(makeNoop(overrides))
+export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Author> => Layer.succeed(Author)(makeNoop(overrides))
 
 /**
  * A reactive mock: the test supplies the function from input to raw model
@@ -137,7 +137,7 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer<Author> => La
  * @since 0.1.0
  * @slop
  */
-export const layerFn = (f: (input: Input) => string): Layer<Author> =>
+export const layerFn = (f: (input: Input) => string): Layer.Layer<Author> =>
   Layer.succeed(Author)(
     make({
       author: Effect.fn("Author.author")(effect (input) => f(input))
@@ -154,7 +154,7 @@ export const layerFn = (f: (input: Input) => string): Layer<Author> =>
  * @since 0.1.0
  * @slop
  */
-export const layerMock = (outputs: ReadonlyArray<string>): Layer<Author> => {
+export const layerMock = (outputs: ReadonlyArray<string>): Layer.Layer<Author> => {
   // Snapshot now, not when the lazy layer is later built: a caller may
   // mutate its array after constructing the layer but before providing it.
   const snapshot = [...outputs]

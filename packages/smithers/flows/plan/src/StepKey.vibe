@@ -205,7 +205,7 @@ export interface DigestMemo {
  * @category constructors
  */
 export const makeDigestMemo = (): DigestMemo => {
-  const entries = new Map<string, Deferred<StepKey, Schema.SchemaError>>()
+  const entries = new Map<string, Deferred.Deferred<StepKey, Schema.SchemaError>>()
   // Registering the entry and installing its exit handler run uninterruptibly,
   // so an interrupt can never land between them and strand a Deferred that no
   // fiber will complete. The wait and the computation stay interruptible.
@@ -317,7 +317,7 @@ const decodeEnvironment = (environment: EnvironmentIdentity) =>
   Effect.try({
     try: () => {
       const invalid = validateEnvironment(environment)
-      if (invalid !== undefined) throw invalid
+      if (invalid !== undefined) $raise(invalid)
       return Schema.decodeUnknownSync(EnvironmentIdentity)(environment, { onExcessProperty: "error" })
     },
     catch: (cause) =>
@@ -724,3 +724,8 @@ export const dispatchIdentity = effect (options: {
     hermetic: options.hermetic
   })
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

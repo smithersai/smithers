@@ -165,21 +165,21 @@ const ownData = (
   fields: { readonly plugin?: string; readonly hook?: string } = {}
 ): Readonly<Record<string, unknown>> => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw invalidPlugin(path, "must be an ordinary record", fields)
+    $raise(invalidPlugin(path, "must be an ordinary record", fields))
   }
   const prototype = Object.getPrototypeOf(input)
   if (prototype !== Object.prototype && prototype !== null) {
-    throw invalidPlugin(path, "must be an ordinary record", fields)
+    $raise(invalidPlugin(path, "must be an ordinary record", fields))
   }
   const output: Record<string, unknown> = {}
   for (const key of Reflect.ownKeys(input)) {
-    if (typeof key !== "string") throw invalidPlugin(path, "must not contain symbol keys", fields)
+    if (typeof key !== "string") $raise(invalidPlugin(path, "must not contain symbol keys", fields))
     if (allowed !== undefined && !allowed.has(key)) {
-      throw invalidPlugin(childPath(path, key), "contains an unknown property", fields)
+      $raise(invalidPlugin(childPath(path, key), "contains an unknown property", fields))
     }
     const descriptor = Object.getOwnPropertyDescriptor(input, key)
     if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-      throw invalidPlugin(childPath(path, key), "must be an enumerable data property", fields)
+      $raise(invalidPlugin(childPath(path, key), "must be an enumerable data property", fields))
     }
     Object.defineProperty(output, key, { value: descriptor.value, enumerable: true })
   }
@@ -207,36 +207,36 @@ const validName = (value: unknown): value is string =>
 
 const snapshotCatalog = (input: unknown): Readonly<Record<string, HookKind>> => {
   if (typeof input !== "object" || input === null || Array.isArray(input)) {
-    throw invalidPlugin("$options.hooks", "must be an ordinary hook catalog")
+    $raise(invalidPlugin("$options.hooks", "must be an ordinary hook catalog"))
   }
   const prototype = Object.getPrototypeOf(input)
   if (prototype !== Object.prototype && prototype !== null) {
-    throw invalidPlugin("$options.hooks", "must be an ordinary hook catalog")
+    $raise(invalidPlugin("$options.hooks", "must be an ordinary hook catalog"))
   }
   const output: Record<string, HookKind> = {}
   for (const key of Reflect.ownKeys(input)) {
     if (typeof key !== "string" || !validName(key)) {
-      throw invalidPlugin("$options.hooks", "contains an invalid hook name")
+      $raise(invalidPlugin("$options.hooks", "contains an invalid hook name"))
     }
     const descriptor = Object.getOwnPropertyDescriptor(input, key)
     if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-      throw invalidPlugin(childPath("$options.hooks", key), "must be an enumerable data property")
+      $raise(invalidPlugin(childPath("$options.hooks", key), "must be an enumerable data property"))
     }
     if (!(["sequential", "parallel", "first", "waterfall"] as ReadonlyArray<unknown>).includes(descriptor.value)) {
-      throw invalidPlugin(childPath("$options.hooks", key), "contains an invalid hook kind")
+      $raise(invalidPlugin(childPath("$options.hooks", key), "contains an invalid hook kind"))
     }
     Object.defineProperty(output, key, { value: descriptor.value, enumerable: true })
   }
   for (const hook of Object.keys(engineHooks) as ReadonlyArray<keyof typeof engineHooks>) {
     if (Object.hasOwn(output, hook) && output[hook] !== engineHooks[hook]) {
-      throw failure(
+      $raise(failure(
         "hook_kind_mismatch",
         `hook catalog declares shared hook ${JSON.stringify(hook)} as ${
           JSON.stringify(output[hook])
         }, the kernel dispatches it as ${JSON.stringify(engineHooks[hook])}`,
         childPath("$options.hooks", hook),
         { hook }
-      )
+      ))
     }
   }
   return Object.freeze(output)
@@ -250,14 +250,14 @@ const snapshotHook = (
 ): ((...args: Array<any>) => unknown) | HookObject<(...args: Array<any>) => unknown> => {
   if (typeof entry === "function") return entry as (...args: Array<any>) => unknown
   if (entry === undefined) {
-    throw invalidPlugin(path, "must be a function or a hook object", { plugin, hook })
+    $raise(invalidPlugin(path, "must be a function or a hook object", { plugin, hook }))
   }
   const values = ownData(entry, path, new Set(["order", "handler"]), { plugin, hook })
   if (typeof values.handler !== "function") {
-    throw invalidPlugin(`${path}.handler`, "must be a function", { plugin, hook })
+    $raise(invalidPlugin(`${path}.handler`, "must be a function", { plugin, hook }))
   }
   if (values.order !== undefined && values.order !== "pre" && values.order !== "post") {
-    throw invalidPlugin(`${path}.order`, "must be pre or post", { plugin, hook })
+    $raise(invalidPlugin(`${path}.order`, "must be pre or post", { plugin, hook }))
   }
   return Object.freeze({
     ...(values.order === undefined ? {} : { order: values.order }),
@@ -270,20 +270,20 @@ const snapshotPlugin = <H>(
   path: string
 ): FlowsPlugin<H> => {
   const values = ownData(input, path, new Set(["name", "version", "enforce", "apply", "layer", "hooks"]))
-  if (!validName(values.name)) throw invalidPlugin(`${path}.name`, "requires a bounded non-empty name")
+  if (!validName(values.name)) $raise(invalidPlugin(`${path}.name`, "requires a bounded non-empty name"))
   const name = values.name
   if (values.version !== undefined && !validName(values.version)) {
-    throw invalidPlugin(`${path}.version`, "requires a bounded non-empty version", { plugin: name })
+    $raise(invalidPlugin(`${path}.version`, "requires a bounded non-empty version", { plugin: name }))
   }
   if (values.enforce !== undefined && values.enforce !== "pre" && values.enforce !== "post") {
-    throw invalidPlugin(`${path}.enforce`, "must be pre or post", { plugin: name })
+    $raise(invalidPlugin(`${path}.enforce`, "must be pre or post", { plugin: name }))
   }
   if (
     values.apply !== undefined && values.apply !== "engine" && values.apply !== "harness" &&
     typeof values.apply !== "function"
-  ) throw invalidPlugin(`${path}.apply`, "must be engine, harness, or a predicate", { plugin: name })
+  ) $raise(invalidPlugin(`${path}.apply`, "must be engine, harness, or a predicate", { plugin: name }))
   if (values.layer !== undefined && !Layer.isLayer(values.layer)) {
-    throw invalidPlugin(`${path}.layer`, "must be an Effect Layer", { plugin: name })
+    $raise(invalidPlugin(`${path}.layer`, "must be an Effect Layer", { plugin: name }))
   }
 
   let hooks: Readonly<Record<string, unknown>> | undefined
@@ -292,7 +292,7 @@ const snapshotPlugin = <H>(
     const snapshot: Record<string, unknown> = Object.create(null)
     for (const [index, hook] of Object.keys(rawHooks).entries()) {
       if (!validName(hook)) {
-        throw invalidPlugin(`${path}.hooks[${index}]`, "contains an invalid hook name", { plugin: name })
+        $raise(invalidPlugin(`${path}.hooks[${index}]`, "contains an invalid hook name", { plugin: name }))
       }
       const entry = rawHooks[hook]
       Object.defineProperty(snapshot, hook, {
@@ -331,24 +331,24 @@ const flatten = <H>(input: unknown): ReadonlyArray<AdmittedPlugin<H>> => {
     if (current.value === false || current.value === null || current.value === undefined) continue
     if (Array.isArray(current.value)) {
       if (current.depth >= maximumPluginDepth) {
-        throw failure("resource_limit", `plugin input exceeds the depth limit of ${maximumPluginDepth}`, current.path)
+        $raise(failure("resource_limit", `plugin input exceeds the depth limit of ${maximumPluginDepth}`, current.path))
       }
-      if (arrays.has(current.value)) throw invalidPlugin(current.path, "contains a cycle or repeated preset array")
+      if (arrays.has(current.value)) $raise(invalidPlugin(current.path, "contains a cycle or repeated preset array"))
       arrays.add(current.value)
       const length = current.value.length
       // Every queued frame and array element costs a node, including omitted
       // entries. Refuse before enumerating keys, descriptors, or child frames.
       if (length > maximumPluginInputNodes - nodes - stack.length) {
-        throw failure("resource_limit", `plugin input exceeds the ${maximumPluginInputNodes}-node limit`, current.path)
+        $raise(failure("resource_limit", `plugin input exceeds the ${maximumPluginInputNodes}-node limit`, current.path))
       }
       const keys = Reflect.ownKeys(current.value)
       if (keys.length !== length + 1 || !keys.includes("length")) {
-        throw invalidPlugin(current.path, "must be a dense preset array with no extra properties")
+        $raise(invalidPlugin(current.path, "must be a dense preset array with no extra properties"))
       }
       for (let index = length - 1; index >= 0; index--) {
         const descriptor = Object.getOwnPropertyDescriptor(current.value, String(index))
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-          throw invalidPlugin(`${current.path}[${index}]`, "must be an enumerable data property")
+          $raise(invalidPlugin(`${current.path}[${index}]`, "must be an enumerable data property"))
         }
         stack.push({ value: descriptor.value, path: `${current.path}[${index}]`, depth: current.depth + 1 })
       }
@@ -356,7 +356,7 @@ const flatten = <H>(input: unknown): ReadonlyArray<AdmittedPlugin<H>> => {
     }
     output.push(Object.freeze({ plugin: snapshotPlugin<H>(current.value, current.path), path: current.path }))
     if (output.length > maximumPlugins) {
-      throw failure("resource_limit", `plugin input exceeds the ${maximumPlugins}-plugin limit`, current.path)
+      $raise(failure("resource_limit", `plugin input exceeds the ${maximumPlugins}-plugin limit`, current.path))
     }
   }
   return output
@@ -535,3 +535,8 @@ export const resolve = <H = FlowsHooks>(
  */
 export const layer = <H>(resolved: Resolved<H>): Layer.Layer<any, PluginError, any> =>
   mergePluginLayers(resolved.plugins, resolved.cacheEnvironment)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

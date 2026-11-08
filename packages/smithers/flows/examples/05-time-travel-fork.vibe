@@ -81,11 +81,11 @@ export const main = (filename: string): Summary!! =>
   effect {
     let dispatches = 0
 
-    const measured = Measure.toLayer(() =>
-      Effect.sync(() => {
+    const measured = Measure.toLayer(effect () =>
+      {
         dispatches += 1
         return "42"
-      }), { implementationVersion: "measure/v1" })
+      }, { implementationVersion: "measure/v1" })
 
     /** The implementation and the body that names it, over one table. */
     const analyseLayer = Layer.mergeAll(measured, Interpreter.layer(Analyse)).pipe(

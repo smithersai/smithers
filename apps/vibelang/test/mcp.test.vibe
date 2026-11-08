@@ -1,7 +1,5 @@
 // @vitest-environment node
 import { describe, expect, it } from "@effect/vitest"
-import { McpClient, McpProtocol } from "effect/ai"
-import { ChildProcess } from "effect/process"
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { AskOutput, ReadOutput } from "../src/surfaces/commands.vibe"

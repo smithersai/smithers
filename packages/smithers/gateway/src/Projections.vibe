@@ -842,15 +842,15 @@ const makeService = (control: ControlService, heartbeatMillis: number, now: () =
             }
             return appendEvent(buffer, event, message, run)
           })
-      ) |> Effect.tap(%, (buffer) =>
-        Effect.sync(() => {
+      ) |> Effect.tap(%, effect (buffer) =>
+        {
           const current = journalBuffers.get(key)
           if (current === undefined || comparePosition(buffer.lastPosition, current.lastPosition) >= 0) {
             journalBuffers.delete(key)
             journalBuffers.set(key, { ...buffer, events: [...buffer.events] })
             if (journalBuffers.size > 32) journalBuffers.delete(journalBuffers.keys().next().value!)
           }
-        }))
+        })
     })
 
   /**

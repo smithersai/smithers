@@ -14,7 +14,7 @@ import { Capability } from "@smthrs/capability"
  * @returns The grant pattern, or `Option.none()` for a resource with `*` or `?`.
  * @since 1.0.0
  */
-export const exactGrant = (request: Capability.Capability): Option<Capability.CapabilityPattern> =>
+export const exactGrant = (request: Capability.Capability): Option.Option<Capability.CapabilityPattern> =>
   Capability.patternFromCapability(request)
 
 /**
@@ -25,7 +25,7 @@ export const exactGrant = (request: Capability.Capability): Option<Capability.Ca
  * @returns `fs:write` on `<directory>/**`, or `Option.none()`.
  * @since 1.0.0
  */
-export const subtreeGrant = (directory: string): Option<Capability.CapabilityPattern> =>
+export const subtreeGrant = (directory: string): Option.Option<Capability.CapabilityPattern> =>
   Option.map(
     exactGrant(Capability.make("fs:write", directory)),
     (exact) => new Capability.CapabilityPattern({ action: exact.action, resource: `${exact.resource}/**` })

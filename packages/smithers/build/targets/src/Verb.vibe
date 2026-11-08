@@ -36,7 +36,7 @@ import type * as Target from "./Target.ts"
  * @category schemas
  * @since 0.1.0
  */
-export const BuildVerb = Schema.Struct({ name: Schema.Literal("build") })
+export schema BuildVerb { readonly name: "build" }
 
 /**
  * The `build` verb.
@@ -52,7 +52,7 @@ export type BuildVerb = typeof BuildVerb.Type
  * @category schemas
  * @since 0.1.0
  */
-export const TestVerb = Schema.Struct({ name: Schema.Literal("test") })
+export schema TestVerb { readonly name: "test" }
 
 /**
  * The `test` verb.
@@ -68,7 +68,7 @@ export type TestVerb = typeof TestVerb.Type
  * @category schemas
  * @since 0.1.0
  */
-export const LintVerb = Schema.Struct({ name: Schema.Literal("lint") })
+export schema LintVerb { readonly name: "lint" }
 
 /**
  * The `lint` verb.
@@ -84,7 +84,7 @@ export type LintVerb = typeof LintVerb.Type
  * @category schemas
  * @since 0.1.0
  */
-export const DocsVerb = Schema.Struct({ name: Schema.Literal("docs") })
+export schema DocsVerb { readonly name: "docs" }
 
 /**
  * The `docs` verb.
@@ -100,7 +100,7 @@ export type DocsVerb = typeof DocsVerb.Type
  * @category schemas
  * @since 0.1.0
  */
-export const ReviewVerb = Schema.Struct({ name: Schema.Literal("review") })
+export schema ReviewVerb { readonly name: "review" }
 
 /**
  * The `review` verb.
@@ -121,7 +121,7 @@ export type ReviewVerb = typeof ReviewVerb.Type
  * @category schemas
  * @since 0.1.0
  */
-export const CiVerb = Schema.Struct({ name: Schema.Literal("ci") })
+export schema CiVerb { readonly name: "ci" }
 
 /**
  * The aggregate `ci` verb.

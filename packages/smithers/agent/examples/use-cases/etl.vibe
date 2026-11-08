@@ -22,39 +22,39 @@ const seat = "anthropic:claude-sonnet-5-5"
 export const previewSize = 5
 
 /** One record as the source holds it. */
-export const RawRecord = Schema.Struct({
-  id: Schema.String,
-  raw: Schema.String,
-  source: Schema.String
-})
+export schema RawRecord {
+  readonly id: string
+  readonly raw: string
+  readonly source: string
+}
 
 /** What the extractor read. */
-export const Extracted = Schema.Struct({
-  records: Schema.Array(RawRecord),
-  totalExtracted: Schema.Number
-})
+export schema Extracted {
+  readonly records: ReadonlyArray<RawRecord>
+  readonly totalExtracted: number
+}
 
 /** One record after the transformation rules. */
-export const TransformedRecord = Schema.Struct({
-  id: Schema.String,
-  transformed: Schema.String,
-  metadata: Schema.Record(Schema.String, Schema.String)
-})
+export schema TransformedRecord {
+  readonly id: string
+  readonly transformed: string
+  readonly metadata: Readonly<Record<string, string>>
+}
 
 /** What the transformer produced, and the records it could not process. */
-export const Transformed = Schema.Struct({
-  records: Schema.Array(TransformedRecord),
-  totalTransformed: Schema.Number,
-  errors: Schema.Array(Schema.String)
-})
+export schema Transformed {
+  readonly records: ReadonlyArray<TransformedRecord>
+  readonly totalTransformed: number
+  readonly errors: ReadonlyArray<string>
+}
 
 /** The loader's report, and what the flow settles with. */
-export const Loaded = Schema.Struct({
-  totalLoaded: Schema.Number,
-  destination: Schema.String,
-  errors: Schema.Array(Schema.String),
-  summary: Schema.String
-})
+export schema Loaded {
+  readonly totalLoaded: number
+  readonly destination: string
+  readonly errors: ReadonlyArray<string>
+  readonly summary: string
+}
 
 /** Reads the source into records. */
 export const Extract = AgentAction.make("examples/Etl/Extract", {

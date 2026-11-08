@@ -64,10 +64,12 @@ export type ReleaseError = PatternError.PatternError | Rejected
 export const protectRelease = <R, R2>(
   body: unknown!ReleaseError!R,
   release: unknown!never!R2
-): string!PatternError.PatternError!R | R2 =>
-  body
-  |> Effect.as(%, "released")
-  |> Effect.catchTag(%, "examples/Rejected", () => Effect.succeed("compensated"))
+): string!PatternError.PatternError!(R | R2) =>
+  (do { const catchProgram = (body
+  |> Effect.as(%, "released")); effect { return catchProgram catch effect (e) => match (e) {
+    when { _tag: "examples/Rejected" }: "compensated";
+    default: throw e;
+  } } })
   |> Effect.ensuring(%, release)
 
 export effect function main(): Summary!ReleaseError {

@@ -38,7 +38,7 @@ const decodeIssueComment = Schema.decodeUnknownOption(GitHub.Payload.IssueCommen
  *   payload.
  * @since 1.0.0
  */
-export const readIssueComment = (delivery: Delivery, secret: string): IssueComment | undefined!! =>
+export const readIssueComment = (delivery: Delivery, secret: string): (IssueComment | undefined)!! =>
   Core.Signature.verifySignature({
     payload: delivery.body,
     secret,
@@ -47,7 +47,7 @@ export const readIssueComment = (delivery: Delivery, secret: string): IssueComme
   })
   |> Effect.map(%, (verified) => {
     if (!verified) return undefined
-    const event = decodeIssueComment(JSON.parse(delivery.body))
+    const event = decodeIssueComment($invoke(JSON,() => (delivery.body)))
     if (Option.isNone(event)) return undefined
     return {
       repository: event.value.repository.full_name,
@@ -56,3 +56,8 @@ export const readIssueComment = (delivery: Delivery, secret: string): IssueComme
       body: event.value.comment.body ?? ""
     }
   })
+
+module $call$ts {
+export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

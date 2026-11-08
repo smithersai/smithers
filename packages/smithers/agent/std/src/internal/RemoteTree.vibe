@@ -64,7 +64,7 @@ export const parse = (bytes: Uint8Array, root: string, path: Path.Path): Tree | 
   for (;;) {
     const end = bytes.indexOf(0, offset)
     if (end === -1) return undefined
-    const record = decoder.decode(bytes.subarray(offset, end))
+    const record = $invoke(decoder,() => (bytes.subarray(offset, end)))
     offset = end + 1
     if (record === "E") break
     const kind = record.slice(0, 1)
@@ -81,7 +81,7 @@ export const parse = (bytes: Uint8Array, root: string, path: Path.Path): Tree | 
   return ignores === undefined ? undefined : { kinds: listed, children, contents: absolute(ignores) }
 }
 
-const refusal = (tag: PlatformError.SystemErrorTag, method: string, path: string): PlatformError =>
+const refusal = (tag: PlatformError.SystemErrorTag, method: string, path: string): PlatformError.PlatformError =>
   PlatformError.systemError({ _tag: tag, module: "FileSystem", method, pathOrDescriptor: path })
 
 /** What `stat` says each kind is: links resolved, a dangling one absent. */
@@ -97,7 +97,7 @@ const types: Readonly<Record<Kind, FileSystem.File.Type | undefined>> = {
 
 const info = (type: FileSystem.File.Type, size: number): FileSystem.File.Info => ({
   type,
-  size: ByteSize.bytes(BigInt(size)),
+  size: ByteSize.bytes($invoke2(BigInt,size)),
   mtime: Option.none(),
   atime: Option.none(),
   birthtime: Option.none(),
@@ -152,7 +152,17 @@ export const fileSystem = (tree: Tree, path: Path.Path): FileSystem.FileSystem =
         : throw refusal(kind === undefined ? "NotFound" : "BadResource", "readLink", value)
     },
     readFile,
-    readFileString: (value) => Effect.map(readFile(value), (bytes) => new TextDecoder().decode(bytes)),
+    readFileString: (value) => Effect.map(readFile(value), (bytes) => $invoke(new TextDecoder(),() => (bytes))),
     stream: (value) => Stream.fromEffect(readFile(value))
   })
 }
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts
+
+module $call$ts2 {
+export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
+}
+import { invoke as $invoke2 } from $call$ts2

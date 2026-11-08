@@ -887,11 +887,11 @@ export const factoryReexports = (
  * @category scanners
  * @since 1.0.0-rc.0
  */
-export const scan = (
+export const scan = effect (
   detection: Detect.Detection,
   parse: typeof Ts.parse = Ts.parse
 ): ReadonlyArray<InventoryEntry>!MigrateError!FileSystem.FileSystem =>
-  Effect.sync(() => {
+  {
     const factories = factoryNames(detection.sources, parse)
     const reexports = factoryReexports(detection.sources, factories, parse)
     const files = [
@@ -922,4 +922,4 @@ export const scan = (
     return hits.sort((left, right) =>
       Sort.byText(left.file, right.file) || left.line - right.line || left.column - right.column
     )
-  })
+  }

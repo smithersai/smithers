@@ -182,15 +182,13 @@ export const make = (config: Config): Channel => {
         // boundary, so a decoder bug fails loudly on the delivery that
         // triggered it rather than as a malformed signal three hops later.
         |> Effect.flatMap(%, (event) =>
-          decodeExternalEvent(event)
-          |> Effect.catch(%, () =>
-            Effect.logWarning(`${config.name} webhook decoder produced a malformed event`)
+          do { const catchProgram = decodeExternalEvent(event); effect { return catchProgram catch effect () => try (Effect.logWarning(`${config.name} webhook decoder produced a malformed event`)
             |> Effect.andThen(
               %,
               Effect.fail(
                 new InvalidInput({ issue: `${config.name} webhook decoder produced a malformed event.` })
               )
-            )))),
+            )) } })),
     map,
     project: json.project
   }

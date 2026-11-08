@@ -67,7 +67,7 @@ export const withRoute = <A>(
       let access: { accessToken: string; accountId: string }
       try {
         access = JSON.parse(Secret.value(apiKey))
-        if (!access.accessToken || !access.accountId) throw new Error("missing access")
+        if (!access.accessToken || !access.accountId) $raise(new Error("missing access"))
       } catch {
         return Result.fail(
           new ModelError.ModelError({ code: "authentication", message: "ChatGPT sign-in unavailable" })
@@ -195,3 +195,8 @@ export const toEvaluatorLayer = (
   timeoutMs: number
 ): Layer.Layer<Evaluator.Evaluator, never, KernelHttpClient.HttpClient> =>
   Evaluator.layerVercelGateway({ apiKey, model: plan.modelId, timeoutMs, baseUrl: plan.url })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

@@ -9,7 +9,7 @@ import { digestSync } from "@smthrs/crypto"
 import { Action, RetryPolicy } from "@smthrs/flow"
 import { CanonicalJson, type Model, ModelError, ModelEvent, type ModelRequest } from "@smthrs/model"
 import { Effect, Exit, Queue, Schema, Stream } from "effect"
-import type { ModelSource } from "./FastModelFallback.ts"
+import type { ModelSource } from "./FastModelFallback.vibe"
 import { StreamingCredentialCutter } from "./StreamingCredentialCutter.ts"
 
 const Recorded = Schema.Struct({

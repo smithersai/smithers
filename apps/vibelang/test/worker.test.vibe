@@ -1,7 +1,6 @@
 // The site Worker (worker/index.vibe) over a stand-in asset service, with and without the API Worker bound.
 // Typechecked with the Worker project (worker/tsconfig.json), which has Cloudflare's types.
 import { expect, it } from "@effect/vitest"
-import { HttpClientRequest, HttpServerResponse } from "effect/http"
 import worker from "../worker/index.vibe"
 
 /** The asset service: the dark logo, and the splash for any other path, as its SPA fallback answers. */

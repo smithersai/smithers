@@ -28,7 +28,7 @@ export const DEFAULT_API_BASE_URL = "https://api.github.com"
  * @category constants
  * @since 1.0.0
  */
-export const DEFAULT_REQUEST_TIMEOUT: Duration = Duration.seconds(30)
+export const DEFAULT_REQUEST_TIMEOUT: Duration.Duration = Duration.seconds(30)
 
 /**
  * An App's OAuth client: its client id and client secret.

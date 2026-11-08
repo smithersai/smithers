@@ -4,7 +4,6 @@
 // here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
 // Its own answers are Effect's HTTP responses, converted to the platform's here.
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
 import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
 import { afterOf, eventStream, handle, type Conversations } from "../../worker/Http.vibe"
@@ -128,7 +127,7 @@ export default {
           })),
     }
     const response = await Effect.runPromise(
-      handle(conversations).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))),
+      handle(conversations) |> Effect.provideService(%, HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request)),
     )
     return HttpServerResponse.toWeb(response)
   },

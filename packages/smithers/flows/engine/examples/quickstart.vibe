@@ -47,11 +47,11 @@ export const runQuickstart = (): Promise<{
   let compiles = 0
 
   const BuildLayer = Layer.mergeAll(
-    Compile.toLayer(({ target }) =>
-      Effect.sync(() => {
+    Compile.toLayer(effect ({ target }) =>
+      {
         compiles = compiles + 1
         return `${target}.js`
-      })
+      }
     ),
     Interpreter.layer(Build)
   ).pipe(

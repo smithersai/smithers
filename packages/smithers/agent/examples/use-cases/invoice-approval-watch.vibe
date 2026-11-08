@@ -41,7 +41,7 @@ export const Invoice = Schema.Struct({
 })
 
 /** The extractor's answer. */
-export const InvoiceData = Schema.Struct({ invoices: Schema.Array(Invoice) })
+export schema InvoiceData { readonly invoices: ReadonlyArray<Invoice> }
 
 /** One invoice's rule check. */
 export const ValidationResult = Schema.Struct({
@@ -65,28 +65,28 @@ export const ValidationResult = Schema.Struct({
 })
 
 /** The rule checker's answer. */
-export const Validation = Schema.Struct({ results: Schema.Array(ValidationResult) })
+export schema Validation { readonly results: ReadonlyArray<ValidationResult> }
 
 /** The approval queue the flow settles with. */
-export const ApprovalQueue = Schema.Struct({
-  totalProcessed: Schema.Number,
-  autoApproved: Schema.Number,
-  queuedForApproval: Schema.Number,
-  rejected: Schema.Number,
-  queue: Schema.Array(Schema.Struct({
-    invoiceId: Schema.String,
-    invoiceNumber: Schema.String,
-    vendorName: Schema.String,
-    amount: Schema.Number,
-    flags: Schema.Array(Schema.String),
-    riskScore: Schema.Number,
-    assignedApprover: Schema.String,
-    priority: Schema.Literals(["urgent", "standard", "low"]),
-    recommendedAction: Schema.Literals(["approve", "review", "reject"]),
-    reasoning: Schema.String
-  })),
-  summary: Schema.String
-})
+export schema ApprovalQueue {
+  readonly totalProcessed: number
+  readonly autoApproved: number
+  readonly queuedForApproval: number
+  readonly rejected: number
+  readonly queue: ReadonlyArray<{
+    readonly invoiceId: string
+    readonly invoiceNumber: string
+    readonly vendorName: string
+    readonly amount: number
+    readonly flags: ReadonlyArray<string>
+    readonly riskScore: number
+    readonly assignedApprover: string
+    readonly priority: "urgent" | "standard" | "low"
+    readonly recommendedAction: "approve" | "review" | "reject"
+    readonly reasoning: string
+  }>
+  readonly summary: string
+}
 
 /** Parses the source into invoices. */
 export const Extract = AgentAction.make("examples/InvoiceApprovalWatch/Extract", {

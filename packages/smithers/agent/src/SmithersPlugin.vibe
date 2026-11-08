@@ -196,7 +196,7 @@ class PortError extends Schema.TaggedError<PortError>()("@smthrs/agent/SmithersP
 Fault.register("@smthrs/agent/SmithersPlugin/PortError", "bug")
 
 /** The host's value as plain JSON; `undefined` fields drop and a missing value is null. */
-const json = (value: unknown): Schema.Json => JSON.parse(JSON.stringify(value) ?? "null") as Schema.Json
+const json = (value: unknown): Schema.Json => $invoke(JSON,() => (JSON.stringify(value) ?? "null")) as Schema.Json
 
 const port = <A>(call: () => A) =>
   Effect.tryPromise({
@@ -303,3 +303,8 @@ export const make = (ports?: Ports | undefined): FlowsPlugin<FlowsHooks> => {
     }
   })
 }
+
+module $call$ts {
+export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

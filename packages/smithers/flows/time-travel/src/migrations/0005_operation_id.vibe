@@ -19,7 +19,7 @@ import { step } from "../internal/MigrationStep.vibe"
 export const operationId = effect {
   const sql = try SqlClient.SqlClient
   // Idempotent like 0004, so a schema adopted from unrecorded rungs converges.
-  const columns = try Effect.suspend(() => Dialect.columns(sql, "flows_time_travel_snapshots"))
+  const columns = try Dialect.columns(sql, "flows_time_travel_snapshots")
   if (columns.some((column) => column.name === "operation_id")) return
   try step(
     "the flows_time_travel_snapshots operation_id column",

@@ -18,7 +18,7 @@ import { step } from "../internal/MigrationStep.vibe"
 export const planDigest = effect {
   const sql = try SqlClient.SqlClient
   // Older store builds added this column outside the migration ledger.
-  const columns = try Effect.suspend(() => Dialect.columns(sql, "flows_time_travel_snapshots"))
+  const columns = try Dialect.columns(sql, "flows_time_travel_snapshots")
   if (columns.some((column) => column.name === "plan_digest")) return
   try step(
     "the flows_time_travel_snapshots plan_digest column",

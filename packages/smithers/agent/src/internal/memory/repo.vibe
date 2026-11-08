@@ -65,7 +65,7 @@ const decoder = new TextDecoder()
 export const headOf = (text: string, limit: number): string => {
   const bytes = encoder.encode(text)
   if (bytes.byteLength <= limit) return text
-  return decoder.decode(bytes.slice(0, limit)).replace(/�$/, "")
+  return $invoke(decoder,() => (bytes.slice(0, limit))).replace(/�$/, "")
 }
 
 /**
@@ -95,7 +95,7 @@ export const size = (text: string): number => encoder.encode(text).byteLength
  * @private
  */
 export const run = (command: string, args: ReadonlyArray<string>, cwd: string) =>
-  Effect.scoped(effect {
+  do { const catchProgram = Effect.scoped(effect {
     const spawner = try ChildProcessSpawner
     const handle = try spawner.spawn(ChildProcess.make(command, args, { cwd }))
     const [stdout, , code] = try Effect.all(
@@ -103,13 +103,13 @@ export const run = (command: string, args: ReadonlyArray<string>, cwd: string) =
       { concurrency: 3 }
     )
     return code === 0 ? stdout : undefined
-  }) |> Effect.catch(%, () => Effect.succeed(undefined))
+  }); effect { return catchProgram catch () => undefined } }
 
-const collect = <E>(stream: Stream<Uint8Array, E>) =>
+const collect = <E>(stream: Stream.Stream<Uint8Array, E>) =>
   Effect.suspend(() => {
     const decoder = new TextDecoder()
-    return Stream.runFold(stream, () => "", (text, chunk) => text + decoder.decode(chunk, { stream: true }))
-      |> Effect.map(%, (text) => text + decoder.decode())
+    return Stream.runFold(stream, () => "", (text, chunk) => text + $invoke2(decoder,() => (chunk), () => ({ stream: true })))
+      |> Effect.map(%, (text) => text + $invoke3(decoder))
   })
 
 /**
@@ -281,3 +281,18 @@ export const head = (
     const text = try (fs.readFileString(real) |> Effect.catch(%, skip(undefined)))
     return text === undefined || text.includes("\u0000") ? undefined : headOf(text, limit)
   }
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts
+
+module $call$ts2 {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0],arg1:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[1]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0(),arg1()) }
+}
+import { invoke as $invoke2 } from $call$ts2
+
+module $call$ts3 {
+export function invoke<T extends {"decode":Function}>(target:T):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"]() }
+}
+import { invoke as $invoke3 } from $call$ts3

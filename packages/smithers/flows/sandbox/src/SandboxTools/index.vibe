@@ -97,7 +97,7 @@ export const Run = Schema.Struct({
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Read = Schema.Struct({ tool: Schema.Literal("read"), path: GuestPath })
+export schema Read { readonly tool: "read"; readonly path: GuestPath }
 
 /**
  * Write `content` to the file at `path`, making its directories; it replaces
@@ -192,16 +192,16 @@ export const mutates = (tool: Tool): boolean => tool === "run" || tool === "writ
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const RunResult = Schema.Struct({
-  tool: Schema.Literal("run"),
-  exitCode: Schema.Int,
-  timedOut: Schema.Boolean,
-  stdout: Schema.String,
-  stderr: Schema.String,
-  stdoutBytes: Schema.Int,
-  stderrBytes: Schema.Int,
-  truncated: Schema.Boolean
-})
+export schema RunResult {
+  readonly tool: "run"
+  readonly exitCode: Schema.Int
+  readonly timedOut: boolean
+  readonly stdout: string
+  readonly stderr: string
+  readonly stdoutBytes: Schema.Int
+  readonly stderrBytes: Schema.Int
+  readonly truncated: boolean
+}
 
 /**
  * A file's text: its first `limits.fileBytes` bytes as UTF-8, its size, and
@@ -210,13 +210,13 @@ export const RunResult = Schema.Struct({
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const ReadResult = Schema.Struct({
-  tool: Schema.Literal("read"),
-  path: Schema.String,
-  content: Schema.String,
-  bytes: Schema.Int,
-  truncated: Schema.Boolean
-})
+export schema ReadResult {
+  readonly tool: "read"
+  readonly path: string
+  readonly content: string
+  readonly bytes: Schema.Int
+  readonly truncated: boolean
+}
 
 /**
  * A written file: its path relative to the workdir, and its size.
@@ -224,7 +224,7 @@ export const ReadResult = Schema.Struct({
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const WriteResult = Schema.Struct({ tool: Schema.Literal("write"), path: Schema.String, bytes: Schema.Int })
+export schema WriteResult { readonly tool: "write"; readonly path: string; readonly bytes: Schema.Int }
 
 /**
  * One directory entry: its name, its kind, and a file's size.
@@ -232,11 +232,11 @@ export const WriteResult = Schema.Struct({ tool: Schema.Literal("write"), path: 
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Entry = Schema.Struct({
-  name: Schema.String,
-  kind: Schema.Literals(["file", "directory", "symlink", "other"]),
-  bytes: Schema.Int
-})
+export schema Entry {
+  readonly name: string
+  readonly kind: "file" | "directory" | "symlink" | "other"
+  readonly bytes: Schema.Int
+}
 
 /**
  * One directory entry.
@@ -252,12 +252,12 @@ export type Entry = typeof Entry.Type
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const ListResult = Schema.Struct({
-  tool: Schema.Literal("list"),
-  path: Schema.String,
-  entries: Schema.Array(Entry),
-  truncated: Schema.Boolean
-})
+export schema ListResult {
+  readonly tool: "list"
+  readonly path: string
+  readonly entries: ReadonlyArray<Entry>
+  readonly truncated: boolean
+}
 
 /**
  * One changed path in git's short form: `index` and `worktree` are the two
@@ -301,12 +301,12 @@ export const StatusResult = Schema.Struct({
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const DiffResult = Schema.Struct({
-  tool: Schema.Literal("diff"),
-  diff: Schema.String,
-  bytes: Schema.Int,
-  truncated: Schema.Boolean
-})
+export schema DiffResult {
+  readonly tool: "diff"
+  readonly diff: string
+  readonly bytes: Schema.Int
+  readonly truncated: boolean
+}
 
 /**
  * One tool's output, tagged by `tool` as its call is.
@@ -451,10 +451,10 @@ const script = (body: string, args: ReadonlyArray<string>): string =>
   [`sh -c ${quote(body)} sandbox-tool`, ...args.map(quote)].join(" ")
 
 const decoder = new TextDecoder()
-const text = (bytes: Uint8Array): string => decoder.decode(bytes)
+const text = (bytes: Uint8Array): string => $invoke(decoder,() => (bytes))
 
 /** The bytes a stream sent, keeping at most `max`. */
-const kept = (stream: Stream<Uint8Array, ProviderError>, max: number) =>
+const kept = (stream: Stream.Stream<Uint8Array, ProviderError>, max: number) =>
   Effect.map(
     Stream.runFold(stream, () => ({ chunks: [] as Array<Uint8Array>, size: 0 }), (acc, chunk) => {
       const room = max - acc.size
@@ -852,7 +852,7 @@ export interface CommandOptions {
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Started = Schema.Struct({ pid: Schema.Int, startedAt: Schema.Int })
+export schema Started { readonly pid: Schema.Int; readonly startedAt: Schema.Int }
 
 /**
  * A started command's handle.
@@ -1402,3 +1402,8 @@ export const rebased = (
 export const rebasePaths = (read: typeof ReadResult.Type): ReadonlyArray<string> => [
   ...new Set(read.content.split("\0").filter((path) => path !== ""))
 ]
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

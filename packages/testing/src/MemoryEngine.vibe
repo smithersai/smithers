@@ -439,10 +439,10 @@ const executeStep = (
             ) |> Effect.asVoid(%))
             : Effect.void
           return record
-            |> Effect.tap(%, () =>
-              Effect.sync(() => {
+            |> Effect.tap(%, effect () =>
+              {
                 active.activeStep = undefined
-              }))
+              })
             |> Effect.as(%, { status: "completed" as const, value: exit.value })
         }
         if (Cause.hasInterruptsOnly(exit.cause)) {
@@ -451,10 +451,10 @@ const executeStep = (
             executionId,
             active.activeStep
           )
-            |> Effect.tap(%, () =>
-              Effect.sync(() => {
+            |> Effect.tap(%, effect () =>
+              {
                 active.activeStep = undefined
-              }))
+              })
             |> Effect.map(%, (result) => ({
               status: "suspended" as const,
               value: result.value
@@ -469,10 +469,10 @@ const executeStep = (
           "failed",
           value
         )
-          |> Effect.tap(%, () =>
-            Effect.sync(() => {
+          |> Effect.tap(%, effect () =>
+            {
               active.activeStep = undefined
-            }))
+            })
           |> Effect.as(%, { status: "failed" as const, value })
       })
   })
@@ -653,9 +653,9 @@ export const make = effect (
         |> Effect.orDie(%))
       |> Effect.ensuring(
         %,
-        Effect.sync(() => {
+        effect {
           active.delete(executionId)
-        })
+        }
       )
       |> Effect.tap(%, (result) => Deferred.succeed(deferred, result))
       |> Effect.orDie(%)
@@ -680,12 +680,12 @@ export const make = effect (
       try Deferred.succeed(activeExecution.fiber, fiber)
       return activeExecution
     }
-      |> Effect.onError(%, () =>
-        Effect.sync(() => {
+      |> Effect.onError(%, effect () =>
+        {
           // Only this claimant can publish here. Arming failed before a
           // worker was forked; concurrent callers only join this entry.
           active.delete(executionId)
-        }))
+        })
       |> Effect.uninterruptible(%))
 
     // Only arming is protected. A caller may stop waiting without stopping
@@ -702,15 +702,16 @@ export const make = effect (
     },
     result: (executionId) => getExecution(store, executionId) |> Effect.map(%, storedResult),
     interrupt: (executionId) =>
-      effect {
+      do { const catchProgram = (effect {
         const running = active.get(executionId)
         const result = try abort(store, executionId, running?.activeStep)
         if (running !== undefined) {
           try Deferred.succeed(running.deferred, result)
           try (Deferred.await(running.fiber) |> Effect.flatMap(%, Fiber.interrupt))
         }
-      }
-      |> Effect.catchTag(%, "EngineUnavailableError", () => Effect.void),
+      }); effect { return catchProgram catch effect (e) => match (e) {
+        when { _tag: "EngineUnavailableError" }: (undefined as void);
+      } } },
     resume: start,
     journal: (executionId) =>
       getExecution(store, executionId)

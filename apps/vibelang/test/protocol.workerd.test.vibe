@@ -2,7 +2,6 @@
 // client that isn't LiveFactory sees, and the emitted CLI choosing the live Factory from VIBELANG_FACTORY_URL.
 import * as NodeServices from "@effect/platform-node/NodeServices"
 import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
-import { FetchHttpClient, HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
 import { notDeployed } from "../src/surfaces/backend.vibe"
 import { REASONS } from "../worker/Reply.vibe"
@@ -23,7 +22,7 @@ effect function at(origin: string, path: string, body?: string) {
   const client = try HttpClient.HttpClient
   return try client.execute(body === undefined
     ? HttpClientRequest.get(origin + path)
-    : HttpClientRequest.post(origin + path).pipe(HttpClientRequest.bodyText(body)))
+    : (HttpClientRequest.post(origin + path) |> HttpClientRequest.bodyText(%, body)))
 }
 
 /** The JSON body of `response`. */

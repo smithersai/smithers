@@ -42,20 +42,20 @@ export const SchemaMap = Schema.Struct({
 })
 
 /** How the question will be answered. */
-export const QueryPlan = Schema.Struct({
-  question: Schema.String,
-  requiredTables: Schema.Array(Schema.String),
-  metrics: Schema.Array(Schema.String),
-  filters: Schema.Array(Schema.String),
-  risks: Schema.Array(Schema.String)
-})
+export schema QueryPlan {
+  readonly question: string
+  readonly requiredTables: ReadonlyArray<string>
+  readonly metrics: ReadonlyArray<string>
+  readonly filters: ReadonlyArray<string>
+  readonly risks: ReadonlyArray<string>
+}
 
 /** One SQL draft. */
-export const SqlDraft = Schema.Struct({
-  sql: Schema.String,
-  rowLimit: Schema.Number,
-  explanation: Schema.String
-})
+export schema SqlDraft {
+  readonly sql: string
+  readonly rowLimit: number
+  readonly explanation: string
+}
 
 /** The checker's verdict on a draft. */
 export const SqlCheck = Schema.Struct({

@@ -41,7 +41,7 @@ import * as Ref from "effect/Ref"
 import * as Migrator from "effect/sql/Migrator"
 import * as SqlClient from "effect/sql/SqlClient"
 import type { SqlError } from "effect/sql/SqlError"
-import * as Dialect from "./Dialect.ts"
+import * as Dialect from "./Dialect.vibe"
 import * as WriteRetry from "./internal/WriteRetry.vibe"
 
 /**

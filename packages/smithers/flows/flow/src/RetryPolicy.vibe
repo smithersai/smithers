@@ -151,7 +151,7 @@ export const make = (options: {
   readonly retryable?: ReadonlyArray<{ readonly tag: string; readonly code?: string | undefined }> | undefined
 }): RetryPolicy => {
   const issue = validationIssue(options)
-  if (issue !== undefined) throw new RangeError(`RetryPolicy.make: ${issue}`)
+  if (issue !== undefined) $raise(new RangeError(`RetryPolicy.make: ${issue}`))
   return Object.freeze({
     initialMs: options.initialMs,
     factor: options.factor,
@@ -636,6 +636,11 @@ export const schedule = <E>(policy: RetryPolicy): Schedule.Schedule<number, E> =
       (decision) =>
         decision._tag === "GiveUp"
           ? Cause.done(meta.attempt)
-          : Effect.succeed([meta.attempt, Duration.millis(decision.delayMs)] as [number, Duration])
+          : Effect.succeed([meta.attempt, Duration.millis(decision.delayMs)] as [number, Duration.Duration])
     )
   ))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

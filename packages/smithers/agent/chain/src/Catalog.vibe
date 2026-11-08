@@ -9,7 +9,7 @@
  */
 
 import * as Digest from "@smthrs/core/Digest"
-import { Clock, Context, type Effect, Layer, Random, Schema } from "effect"
+import { type Effect } from "effect"
 import type * as CallKey from "./CallKey.vibe"
 
 /**
@@ -99,7 +99,7 @@ export interface Service {
  * @since 0.1.0
  * @slop
  */
-export class Catalog extends Context.Service<Catalog, Service>()("/chain/Catalog") {}
+export service Catalog: Service { static readonly key = "/chain/Catalog";}
 
 /**
  * The declaration digest that pins an entry's identity into every call key
@@ -116,11 +116,11 @@ export const entryDigest = (entry: Entry): string =>
   // settled under it.
   entry.digest !== undefined && entry.digest !== ""
     ? entry.digest
-    : Digest.digest(Digest.canonical({
+    : $invoke(Digest,() => (Digest.canonical({
       capabilities: entry.capabilities ?? null,
       description: entry.description,
       name: entry.name
-    }))
+    })))
 
 /**
  * One entry copied out of the caller's object.
@@ -233,3 +233,8 @@ export const layer = (entries: ReadonlyArray<Entry>): Layer.Layer<Catalog> => La
  * @slop
  */
 export const layerNoop: Layer.Layer<Catalog> = Layer.succeed(Catalog)(makeNoop())
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

@@ -43,51 +43,51 @@ export const Instance = Schema.Struct({
 })
 
 /** The checkout the agents edit. */
-export const Prepared = Schema.Struct({
-  workdir: Schema.String,
-  baseCommit: Schema.String,
-  headLine: Schema.String
-})
+export schema Prepared {
+  readonly workdir: string
+  readonly baseCommit: string
+  readonly headLine: string
+}
 
 /** What an agent step reports about its edits. */
-export const EditSummary = Schema.Struct({
-  summary: Schema.String,
-  filesChanged: Schema.Array(Schema.String)
-})
+export schema EditSummary {
+  readonly summary: string
+  readonly filesChanged: ReadonlyArray<string>
+}
 
 /** The combined edits as one unified patch. */
-export const Diff = Schema.Struct({
-  patch: Schema.String,
-  changedFiles: Schema.Number,
-  insertions: Schema.Number,
-  deletions: Schema.Number
-})
+export schema Diff {
+  readonly patch: string
+  readonly changedFiles: number
+  readonly insertions: number
+  readonly deletions: number
+}
 
 /**
  * The scored instance. Resolved and the fix rate's components are integers,
  * a quirk 0.x kept because its output columns were integers.
  */
-export const Score = Schema.Struct({
-  instance_id: Schema.String,
-  repo: Schema.String,
-  image: Schema.String,
-  log_parser: Schema.String,
-  test_cmds: Schema.String,
-  resolved: Schema.Number,
-  fix_rate_pct: Schema.Number,
-  f2p_total: Schema.Number,
-  f2p_passed: Schema.Number,
-  p2p_total: Schema.Number,
-  p2p_passed: Schema.Number,
-  all_p2p_pass: Schema.Boolean,
-  candidate_applied: Schema.Boolean,
-  testpatch_applied: Schema.Boolean,
-  timed_out: Schema.Boolean,
-  duration_s: Schema.Number,
-  parsed_test_count: Schema.Number,
-  f2p_status: Schema.Record(Schema.String, Schema.String),
-  p2p_failures: Schema.Record(Schema.String, Schema.String)
-})
+export schema Score {
+  readonly instance_id: string
+  readonly repo: string
+  readonly image: string
+  readonly log_parser: string
+  readonly test_cmds: string
+  readonly resolved: number
+  readonly fix_rate_pct: number
+  readonly f2p_total: number
+  readonly f2p_passed: number
+  readonly p2p_total: number
+  readonly p2p_passed: number
+  readonly all_p2p_pass: boolean
+  readonly candidate_applied: boolean
+  readonly testpatch_applied: boolean
+  readonly timed_out: boolean
+  readonly duration_s: number
+  readonly parsed_test_count: number
+  readonly f2p_status: Readonly<Record<string, string>>
+  readonly p2p_failures: Readonly<Record<string, string>>
+}
 
 /** Copies the repository at `baseCommit` out of the instance image. */
 export const PrepareRepo = Action.make("examples/SweEvo/Prepare", {

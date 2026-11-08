@@ -7,15 +7,15 @@ import * as Schema from "effect/Schema"
  * @since 1.0.0
  * @category schemas
  */
-export const NativeReviewFile = Schema.Struct({
-  id: Schema.String,
-  path: Schema.String,
-  status: Schema.String,
-  insertions: Schema.Number,
-  deletions: Schema.Number,
-  diff: Schema.String,
-  prompt: Schema.String
-})
+export schema NativeReviewFile {
+  readonly id: string
+  readonly path: string
+  readonly status: string
+  readonly insertions: number
+  readonly deletions: number
+  readonly diff: string
+  readonly prompt: string
+}
 
 /**
  * A decoded reviewable file.

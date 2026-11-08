@@ -26,50 +26,50 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Severity = Schema.Literals(["breaking", "notable", "minor"])
 
 /** One public surface that changed between the base and the branch. */
-export const SurfaceChange = Schema.Struct({
-  kind: Schema.Literals(["api", "cli", "sdk", "config"]),
-  name: Schema.String,
-  before: Schema.String,
-  after: Schema.String,
-  file: Schema.String
-})
+export schema SurfaceChange {
+  readonly kind: "api" | "cli" | "sdk" | "config"
+  readonly name: string
+  readonly before: string
+  readonly after: string
+  readonly file: string
+}
 
 /** One doc that still shows an old surface. */
-export const AffectedDoc = Schema.Struct({
-  path: Schema.String,
-  reason: Schema.String,
-  staleSnippets: Schema.Array(Schema.String)
-})
+export schema AffectedDoc {
+  readonly path: string
+  readonly reason: string
+  readonly staleSnippets: ReadonlyArray<string>
+}
 
 /** The drift agent's answer. */
-export const Drift = Schema.Struct({
-  changes: Schema.Array(SurfaceChange),
-  affectedDocs: Schema.Array(AffectedDoc),
-  severity: Severity,
-  summary: Schema.String
-})
+export schema Drift {
+  readonly changes: ReadonlyArray<SurfaceChange>
+  readonly affectedDocs: ReadonlyArray<AffectedDoc>
+  readonly severity: Severity
+  readonly summary: string
+}
 
 /** The patch agent's answer: each doc's rewritten hunks. */
-export const Patch = Schema.Struct({
-  patches: Schema.Array(Schema.Struct({
-    docPath: Schema.String,
-    hunks: Schema.Array(Schema.Struct({ before: Schema.String, after: Schema.String }))
-  })),
-  filesChanged: Schema.Array(Schema.String),
-  summary: Schema.String
-})
+export schema Patch {
+  readonly patches: ReadonlyArray<{
+    readonly docPath: string
+    readonly hunks: ReadonlyArray<{ readonly before: string; readonly after: string }>
+  }>
+  readonly filesChanged: ReadonlyArray<string>
+  readonly summary: string
+}
 
 /** The verifier's verdict on the patch. */
-export const Verification = Schema.Struct({
-  allValid: Schema.Boolean,
-  results: Schema.Array(Schema.Struct({
-    docPath: Schema.String,
-    valid: Schema.Boolean,
-    issues: Schema.Array(Schema.String)
-  })),
-  brokenLinks: Schema.Array(Schema.String),
-  staleReferences: Schema.Array(Schema.String)
-})
+export schema Verification {
+  readonly allValid: boolean
+  readonly results: ReadonlyArray<{
+    readonly docPath: string
+    readonly valid: boolean
+    readonly issues: ReadonlyArray<string>
+  }>
+  readonly brokenLinks: ReadonlyArray<string>
+  readonly staleReferences: ReadonlyArray<string>
+}
 
 /** The follow-up pull request a host is asked to open, with 0.x's PR props. */
 export const PullRequestRequest = Schema.Struct({
@@ -92,12 +92,12 @@ export const PullRequest = Schema.Struct({
 })
 
 /** What the flow settles with: every 0.x output. */
-export const Output = Schema.Struct({
-  drift: Drift,
-  patch: Patch,
-  verification: Verification,
-  pullRequest: PullRequest
-})
+export schema Output {
+  readonly drift: Drift
+  readonly patch: Patch
+  readonly verification: Verification
+  readonly pullRequest: PullRequest
+}
 
 /** Finds public surface changes and the docs they make stale. */
 export const DetectDrift = AgentAction.make("examples/DocsPatcher/DetectDrift", {

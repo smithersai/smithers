@@ -43,11 +43,11 @@ export interface Summary {
 export const main = (filename: string): Summary!! =>
   effect {
     const checks: Array<number> = []
-    const status = Status.toLayer(({ attempt }) =>
-      Effect.sync(() => {
+    const status = Status.toLayer(effect ({ attempt }) =>
+      {
         checks.push(attempt)
         return { satisfied: attempt >= 3, output: `live:${attempt}` }
-      })
+      }
     )
     const engine = (hostId: string) =>
       // `Sleep.layer` is not optional here: the wait between attempts is an

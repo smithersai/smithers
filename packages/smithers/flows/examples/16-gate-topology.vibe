@@ -81,7 +81,7 @@ export const batches = (
   concurrency: number
 ): ReadonlyArray<ReadonlyArray<string>> => {
   if (!Number.isSafeInteger(concurrency) || concurrency < 1) {
-    throw new Error(`batch concurrency must be a positive integer: ${concurrency}`)
+    $raise(new Error(`batch concurrency must be a positive integer: ${concurrency}`))
   }
   const order = checks
     .map((spec, index) => ({ spec, index }))
@@ -142,3 +142,8 @@ export const gateBody = (target: string): Node.Node<string, never, GateRequireme
   }
   return stage(0, null, {})
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

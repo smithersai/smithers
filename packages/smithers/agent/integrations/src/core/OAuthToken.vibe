@@ -52,9 +52,8 @@
  */
 
 import type { Credential, CredentialRef } from "@smthrs/control/Credential"
-import { Clock, Duration, Effect, Option, Redacted, Ref, Schema, Semaphore } from "effect"
+import { Duration, Effect, Redacted } from "effect"
 import * as HttpClient from "effect/http/HttpClient"
-import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import type { AccessTokenSource } from "./AccessToken.vibe"
 import { forCredentials, retryAfterHeader, transportCause, webHeaders } from "./CredentialHttp.ts"
 import { IntegrationError, isIntegrationError } from "./IntegrationError.ts"
@@ -164,9 +163,11 @@ export const credentialStore = (credential: Credential, reference: CredentialRef
   return {
     load,
     replace: (previous, next) =>
-      credential.rotate(reference, next, { expected: previous })
-      |> Effect.as(%, true)
-      |> Effect.catchTag(%, "/control/CredentialConflict", () => Effect.succeed(false))
+      (do { const catchProgram = (credential.rotate(reference, next, { expected: previous })
+      |> Effect.as(%, true)); effect { return catchProgram catch effect (e) => match (e) {
+        when { _tag: "/control/CredentialConflict" }: false;
+        default: throw e;
+      } } })
       |> Effect.mapError(%, credentialFailure(reference))
   }
 }
@@ -299,24 +300,24 @@ const invalidConfig = (message: string, details: Record<string, unknown>): Integ
 const resolveEndpoint = (endpoint: Endpoint): Resolved => {
   const provider = endpoint.provider ?? "OAuth"
   if (typeof endpoint.tokenUrl !== "string" || !URL.canParse(endpoint.tokenUrl)) {
-    throw invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider })
+    $raise(invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider }))
   }
   const url = new URL(endpoint.tokenUrl)
   if (url.protocol !== "http:" && url.protocol !== "https:") {
-    throw invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider })
+    $raise(invalidConfig(`${provider} tokenUrl must be an absolute HTTP or HTTPS URL.`, { provider }))
   }
   if (typeof endpoint.clientId !== "string" || endpoint.clientId.trim().length === 0) {
-    throw new IntegrationError("credentials-missing", `${provider} OAuth client id is not configured.`, {
+    $raise(new IntegrationError("credentials-missing", `${provider} OAuth client id is not configured.`, {
       provider,
       retryable: false
-    })
+    }))
   }
   const timeout = Option.getOrUndefined(Duration.fromInput(endpoint.requestTimeout ?? DEFAULT_REQUEST_TIMEOUT))
   if (timeout === undefined || !Duration.isFinite(timeout) || Duration.toMillis(timeout) <= 0) {
-    throw invalidConfig(`${provider} requestTimeout must be a finite, positive duration.`, {
+    $raise(invalidConfig(`${provider} requestTimeout must be a finite, positive duration.`, {
       provider,
       requestTimeout: String(endpoint.requestTimeout)
-    })
+    }))
   }
   return {
     url,
@@ -580,10 +581,10 @@ const build = (options: Options, http: HttpClient.HttpClient): AccessTokenSource
   const endpoint = resolveEndpoint(options)
   const skew = Option.getOrUndefined(Duration.fromInput(options.skew ?? DEFAULT_SKEW))
   if (skew === undefined || !Duration.isFinite(skew) || Duration.toMillis(skew) < 0) {
-    throw invalidConfig(`${endpoint.provider} skew must be a finite, non-negative duration.`, {
+    $raise(invalidConfig(`${endpoint.provider} skew must be a finite, non-negative duration.`, {
       provider: endpoint.provider,
       skew: String(options.skew)
-    })
+    }))
   }
   const skewMs = Duration.toMillis(skew)
   const scope = options.scopes === undefined || options.scopes.length === 0 ? undefined : options.scopes.join(" ")
@@ -705,3 +706,8 @@ export const make = (options: Options): AccessTokenSource!IntegrationError!HttpC
         throw error
       }
     }))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

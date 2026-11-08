@@ -49,17 +49,17 @@ export const PolicyDecision = Schema.Struct({
 })
 
 /** The escalation agent's assessment. */
-export const Escalation = Schema.Struct({
-  severity: Schema.Literals(["low", "medium", "high", "critical"]),
-  recommendation: Schema.Literals(["retry-with-approval", "skip-step", "abort-workflow", "fallback-route"]),
-  summary: Schema.String,
-  budgetAnalysis: Schema.String,
-  failureBreakdown: Schema.Array(Schema.Struct({
-    failureClass: FailureClass,
-    count: Schema.Number,
-    percentage: Schema.Number
-  }))
-})
+export schema Escalation {
+  readonly severity: "low" | "medium" | "high" | "critical"
+  readonly recommendation: "retry-with-approval" | "skip-step" | "abort-workflow" | "fallback-route"
+  readonly summary: string
+  readonly budgetAnalysis: string
+  readonly failureBreakdown: ReadonlyArray<{
+    readonly failureClass: FailureClass
+    readonly count: number
+    readonly percentage: number
+  }>
+}
 
 /** The report the flow settles with. */
 export const Report = Schema.Struct({

@@ -264,17 +264,15 @@ export const layerJournalForwarding = (
             // reported and counted instead of vanishing. Warning annotations
             // use fixed codes so ambient sinks never receive raw failures.
             const forward = Effect.fn("JournalLogger.forward")((input: JournalEvent.Input) =>
-              journal.emitLossy(input)
-              |> Effect.tap(%, (receipt) => receipt._tag === "Dropped" ? dropped : Effect.void)
-              |> Effect.catch(%, () =>
-                dropped
+              do { const catchProgram = (journal.emitLossy(input)
+              |> Effect.tap(%, (receipt) => receipt._tag === "Dropped" ? dropped : Effect.void)); effect { return catchProgram catch effect () => try (dropped
                 |> Effect.andThen(
                   %,
                   Effect.annotateLogs(Effect.logWarning("A telemetry log record could not be forwarded"), {
                     runId: configured.runId,
                     code: "journal_forwarding_failed"
                   })
-                ))
+                )) } }
             )
             try (Effect.forever(
               Queue.take(queue)

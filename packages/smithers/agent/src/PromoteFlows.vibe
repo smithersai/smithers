@@ -241,7 +241,7 @@ export const source = (
           // are already saved, so a rescan that failed makes the flow appear
           // one refresh later rather than making the save a lie.
           const registry = try Effect.serviceOption(Registry.Registry)
-          const warning = try Option.match(registry, {
+          const warning = do { const $optionSubject = registry; const $optionHandlers: { onNone: () => import("effect/Effect").Effect<undefined, never, never>; onSome: (found: Registry.Registry) => import("effect/Effect").Effect<string | undefined, never, never>; } = {
             onNone: () => Effect.succeed(undefined),
             onSome: (found) =>
               found.refresh()
@@ -252,7 +252,7 @@ export const source = (
                   |> Effect.annotateLogs({ code: error.code })(%))
                 return `Flow saved; registry refresh failed (${error.code}).`
               })
-          })
+          }; const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers; match ($optionSubject) { when Option.Some(let $optionValue): try $optionSome($optionValue); default: try $optionNone(); }; }
           return warning === undefined ? { files: written.files } : { files: written.files, warning }
         }
       }),

@@ -1,6 +1,6 @@
 // One command registry; CLI parameters, MCP tools and discovery all derive from it (decision 0009).
 import { Argument, Flag, type Command } from "effect/cli"
-import { IdGenerator, Tool } from "effect/ai"
+import { Tool } from "effect/ai"
 import { Factory } from "../core/Factory.vibe"
 import { Entry, Seq } from "../core/schemas.vibe"
 

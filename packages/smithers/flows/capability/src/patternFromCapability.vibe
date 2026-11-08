@@ -24,7 +24,7 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * @category constructors
  * @slop
  */
-export const patternFromCapability = (capability: Capability): Option<CapabilityPattern> =>
+export const patternFromCapability = (capability: Capability): Option.Option<CapabilityPattern> =>
   capability.resource.length > maxResourceLength || !isLiteralResource(capability.resource)
     ? Option.none()
     : Option.some(new CapabilityPattern({ action: capability.action, resource: capability.resource }))

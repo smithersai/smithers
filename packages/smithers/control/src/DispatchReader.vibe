@@ -59,9 +59,7 @@ export interface Service {
  * @category services
  * @since 1.0.0
  */
-export class DispatchReader extends Context.Service<DispatchReader, Service>()(
-  "/control/DispatchReader"
-) {}
+export service DispatchReader: Service { static readonly key = "/control/DispatchReader";}
 
 /**
  * The refusal a host without a trigger store answers both variants with.
@@ -108,7 +106,7 @@ export const makeNone = (): Service =>
  * @category layers
  * @since 1.0.0
  */
-export const layer = (implementation: Service): Layer<DispatchReader> =>
+export const layer = (implementation: Service): Layer.Layer<DispatchReader> =>
   Layer.succeed(DispatchReader)(make(implementation))
 
 /**
@@ -118,4 +116,4 @@ export const layer = (implementation: Service): Layer<DispatchReader> =>
  * @category layers
  * @since 1.0.0
  */
-export const layerNone: Layer<DispatchReader> = Layer.succeed(DispatchReader)(makeNone())
+export const layerNone: Layer.Layer<DispatchReader> = Layer.succeed(DispatchReader)(makeNone())

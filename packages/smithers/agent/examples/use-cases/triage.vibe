@@ -30,7 +30,7 @@ export const Item = Schema.Struct({
 })
 
 /** The classifier's answer. */
-export const Classification = Schema.Struct({ items: Schema.Array(Item) })
+export schema Classification { readonly items: ReadonlyArray<Item> }
 
 /** What one handler did with its item. */
 export const HandlerResult = Schema.Struct({
@@ -41,14 +41,14 @@ export const HandlerResult = Schema.Struct({
 })
 
 /** The report the flow settles with. `byCategory` counts items per route. */
-export const TriageReport = Schema.Struct({
-  totalItems: Schema.Number,
-  handled: Schema.Number,
-  escalated: Schema.Number,
-  deferred: Schema.Number,
-  byCategory: Schema.Record(Schema.String, Schema.Number),
-  summary: Schema.String
-})
+export schema TriageReport {
+  readonly totalItems: number
+  readonly handled: number
+  readonly escalated: number
+  readonly deferred: number
+  readonly byCategory: Readonly<Record<string, number>>
+  readonly summary: string
+}
 
 type Item = typeof Item.Type
 type HandlerResult = typeof HandlerResult.Type

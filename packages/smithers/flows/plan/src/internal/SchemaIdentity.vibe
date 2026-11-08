@@ -304,10 +304,10 @@ const uuidPattern = (version: number | null): string =>
 const field = <A>(id: string, payload: unknown, name: string, is: (value: unknown) => value is A): A => {
   const value = isObject(payload) ? payload[name] : undefined
   if (!is(value)) {
-    throw new SchemaIdentityError({
+    $raise(new SchemaIdentityError({
       message: `Cannot derive a schema identity: check ${id} carries no usable "${name}" in its payload. ` +
         "The installed effect release describes this check differently from the releases @smthrs/plan supports."
-    })
+    }))
   }
   return value
 }
@@ -639,7 +639,7 @@ const partPattern = (part: Representation): string => {
     case "Union":
       return `(?:${part.types.map(partPattern).join("|")})`
     default:
-      throw invalid("Invalid schema representation document", [])
+      $raise(invalid("Invalid schema representation document", []))
   }
 }
 
@@ -653,7 +653,7 @@ const neverSchema: Fragment = { not: {} }
  * @private
  */
 const unsupported = (representation: never, path: Path): never => {
-  throw invalid(`Unsupported schema representation ${(representation as { readonly _tag: string })._tag}`, path)
+  $raise(invalid(`Unsupported schema representation ${(representation as { readonly _tag: string })._tag}`, path))
 }
 
 /**
@@ -679,7 +679,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
     const compiled = definitionStates.get(key)
     if (compiled !== undefined) return typeof compiled === "string" ? compiled : key
     const representation = Object.hasOwn(references, key) ? references[key] : undefined
-    if (representation === undefined) throw invalid(`Invalid reference ${key}`, [...path, "$ref"])
+    if (representation === undefined) $raise(invalid(`Invalid reference ${key}`, [...path, "$ref"]))
 
     definitionStates.set(key, null)
     const schema = recur(representation, ["references", key])
@@ -705,7 +705,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
       const pointer = decodeUriFragment(reference)
       if (pointer === undefined) {
         if (/^#(?:\/|%2f)/i.test(reference)) {
-          throw new SchemaIdentityError({ message: `Invalid JSON Pointer URI fragment ${JSON.stringify(reference)}` })
+          $raise(new SchemaIdentityError({ message: `Invalid JSON Pointer URI fragment ${JSON.stringify(reference)}` }))
         }
         return reference
       }
@@ -826,7 +826,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
       case "Enum": {
         const types = representation.enums.map(([title, literal], index) => {
           if (typeof literal === "number" && !Number.isFinite(literal)) {
-            throw invalid(`Invalid numeric enum value ${String(literal)}`, [...path, "enums", index, 1])
+            $raise(invalid(`Invalid numeric enum value ${String(literal)}`, [...path, "enums", index, 1]))
           }
           return { type: typeof literal, enum: [literal], title }
         })
@@ -837,7 +837,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
       case "Arrays": {
         const rest = representation.rest[0]
         if (representation.rest.length > 1) {
-          throw invalid("Invalid schema representation document", [...path, "rest"])
+          $raise(invalid("Invalid schema representation document", [...path, "rest"]))
         }
         const out: Fragment = { type: "array" }
         let minItems = representation.elements.length
@@ -870,7 +870,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
         representation.propertySignatures.forEach((property, index) => {
           const name = property.name
           if (typeof name !== "string") {
-            throw invalid("Invalid schema representation document", [...path, "propertySignatures", index, "name"])
+            $raise(invalid("Invalid schema representation document", [...path, "propertySignatures", index, "name"]))
           }
           assignProperty(
             properties,
@@ -966,7 +966,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
     switch (parameter._tag) {
       case "Reference": {
         const target = Object.hasOwn(references, parameter.$ref) ? references[parameter.$ref] : undefined
-        if (target === undefined) throw invalid(`Invalid reference ${parameter.$ref}`, [...path, "$ref"])
+        if (target === undefined) $raise(invalid(`Invalid reference ${parameter.$ref}`, [...path, "$ref"]))
         compileDefinition(parameter.$ref, path)
         if (seenReferences.has(parameter.$ref)) return undefined
         return parameterPatterns(target, ["references", parameter.$ref], new Set(seenReferences).add(parameter.$ref))
@@ -1000,7 +1000,7 @@ export const fromRepresentation = (document: SchemaRepresentation.Document, opti
         return patterns
       }
       default:
-        throw invalid("Invalid schema representation document", path)
+        $raise(invalid("Invalid schema representation document", path))
     }
   }
 
@@ -1481,3 +1481,8 @@ export const representationIdentity = (
     withRc115CheckIds(SchemaRepresentation.toJson(version === 1 ? withRc115Brands(schema, document) : document))
   )
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

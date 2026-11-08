@@ -59,7 +59,7 @@ const named = (timeZone: string): Offset => (instant) => {
 // Read on every call, so a host whose `TZ` changes is followed.
 const host: Offset = (instant) => -new Date(instant).getTimezoneOffset() * 60_000
 
-const offsetOf = (zone: Option<DateTime.TimeZone>): Offset => {
+const offsetOf = (zone: Option.Option<DateTime.TimeZone>): Offset => {
   if (Option.isNone(zone)) return host
   const value = zone.value
   if (DateTime.isTimeZoneOffset(value)) return () => value.offset

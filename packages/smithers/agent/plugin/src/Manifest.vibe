@@ -449,11 +449,11 @@ export const Tap = Schema.Union([
  * @category schemas
  * @since 1.1.0
  */
-export const ModelRole = Schema.Struct({
-  role: Qualified,
-  title: Title,
-  default: Schema.Literals(["agent", "judge", "renderer"])
-})
+export schema ModelRole {
+  readonly role: Qualified
+  readonly title: Title
+  readonly default: "agent" | "judge" | "renderer"
+}
 
 /**
  * Small JSON records only the plugin's flows write.

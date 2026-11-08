@@ -1,4 +1,3 @@
-import { McpProtocol, McpServer, Toolkit } from "effect/ai"
 import { Factory } from "../core/Factory.vibe"
 import { commands, type CommandError } from "./commands.vibe"
 import { backend } from "./backend.vibe"

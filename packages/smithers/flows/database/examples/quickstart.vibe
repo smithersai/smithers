@@ -14,7 +14,7 @@ import * as DurableWriter from "@smthrs/database/DurableWriter"
 import * as Migrations from "@smthrs/database/Migrations"
 import * as NodeDatabase from "@smthrs/database/node/NodeDatabase"
 
-const createNotes: void!unknown!SqlClient = effect {
+const createNotes: void!unknown!SqlClient.SqlClient = effect {
   const sql = try SqlClient.SqlClient
   try sql`CREATE TABLE notes (id TEXT PRIMARY KEY, body TEXT NOT NULL)`
 }

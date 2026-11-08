@@ -108,7 +108,7 @@ export const makeNoop = (): Container => make({ exec: (request) => Effect.fail(u
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer<Container> = Layer.succeed(Container, makeNoop())
+export const layerNoop: Layer.Layer<Container> = Layer.succeed(Container, makeNoop())
 
 /** The names a forwarded environment variable may take: a POSIX shell name. */
 const environmentName = /^[A-Za-z_][A-Za-z0-9_]*$/
@@ -207,5 +207,5 @@ export const makeCommand = (options?: { readonly program?: string | undefined })
  * @category layers
  * @since 1.0.0
  */
-export const layerCommand = (options?: { readonly program?: string | undefined }): Layer<Container> =>
+export const layerCommand = (options?: { readonly program?: string | undefined }): Layer.Layer<Container> =>
   Layer.succeed(Container, makeCommand(options))

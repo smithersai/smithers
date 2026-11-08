@@ -4,7 +4,7 @@ import { FetchHttpClient, HttpEffect, HttpServerRequest, HttpServerResponse } fr
 import { SqlClient } from "effect/sql"
 import { beforeEach, expect, test } from "vitest"
 import { ACCEPTS_HEADER, ACCEPTS_CREDENTIAL_STALE } from "../src/features/auth/contract.ts"
-import { Sessions } from "./Actor.ts"
+import { Sessions } from "#vibelang/emitted/worker/Actor"
 import * as Keys from "./SessionKeys.ts"
 import * as Store from "./SessionStore.ts"
 import * as Rotation from "./SessionSigningKeys.ts"

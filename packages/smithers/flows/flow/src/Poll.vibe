@@ -311,10 +311,10 @@ export const make = <
   type Round = Flow.Flow<Tag, PayloadSchema<Input>, Result, typeof Failure, R>
   type RoundPayload = PayloadSchema<Input>["Type"]
   if (Object.prototype.hasOwnProperty.call(options.input, "attempt")) {
-    throw new TypeError(
+    $raise(new TypeError(
       `Poll.make: "${tag}" input cannot declare the reserved "attempt" field. ` +
         "Poll owns that counter across durable rounds."
-    )
+    ))
   }
   const input = Object.freeze({ ...options.input }) as Input
   const result = options.result
@@ -322,17 +322,17 @@ export const make = <
   const intervalMs = options.intervalMs
   const maxAttempts = options.maxAttempts
   if (!Number.isFinite(intervalMs) || intervalMs < 0) {
-    throw new RangeError(
+    $raise(new RangeError(
       `Poll.make: "${tag}" intervalMs must be a finite number of milliseconds that is not negative, ` +
         `and was ${intervalMs}. The interval is the length of a durable wait, and a wait of ` +
         "that length never ends."
-    )
+    ))
   }
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1) {
-    throw new RangeError(
+    $raise(new RangeError(
       `Poll.make: "${tag}" maxAttempts must be a whole number of attempts of at least one, and was ` +
         `${maxAttempts}. A poll checks at least once.`
-    )
+    ))
   }
   const backoff = options.backoff ?? "fixed"
   // The wait a poll arms is not `intervalMs`. {@link delayMillis} multiplies it
@@ -348,12 +348,12 @@ export const make = <
   // A durable timer records its deadline as a safe integer of milliseconds,
   // so `Sleep` refuses a longer wait on the round that reaches it.
   if (!Number.isFinite(longestWaitMs) || longestWaitMs > Number.MAX_SAFE_INTEGER) {
-    throw new RangeError(
+    $raise(new RangeError(
       `Poll.make: "${tag}" asks for a wait of ${longestWaitMs} ms before its last attempt. An ` +
         `intervalMs of ${intervalMs} under the "${backoff}" backoff reaches a length no clock ` +
         `can be armed with by attempt ${maxAttempts - 1} of ${maxAttempts}. Lower ` +
         "maxAttempts, shorten the interval, or slow the backoff."
-    )
+    ))
   }
   const onTimeout = options.onTimeout ?? "fail"
   const captures = { tag, intervalMs, backoff, maxAttempts, onTimeout, check: Node.functionIdentity(check) }
@@ -419,3 +419,8 @@ export const layer: Layer.Layer<never, never, (EffectDigest.Digest | SecureRando
         })
       )
   )
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

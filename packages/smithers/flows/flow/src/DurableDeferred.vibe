@@ -223,7 +223,7 @@ export const into: {
     | Error["DecodingServices"]
     | Error["EncodingServices"]) =>
     Effect.contextWith(
-      (context: Context<FlowRuntime | FlowInstance>) => {
+      (context: Context.Context<FlowRuntime | FlowInstance>) => {
         const engine = Context.get(context, FlowRuntime)
         const instance = Context.get(context, FlowInstance)
         // Keep the original instance: action regions identify their ancestors

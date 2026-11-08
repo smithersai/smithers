@@ -87,10 +87,10 @@ const text = (root: string, file: string, limit: number | null = pageBytes) =>
     return try ((limit === null ? fs.readFileString(real) : (Stream.runFold(
       fs.stream(real, { bytesToRead: limit, chunkSize: limit }),
       () => "",
-      (value, chunk) => value + decoder.decode(chunk, { stream: true })
+      (value, chunk) => value + $invoke(decoder,() => (chunk), () => ({ stream: true }))
     )
       // Drop a code point cut by the page budget, flush a complete file.
-      |> Effect.map(%, (value) => headOf(value + (info.size <= limit ? decoder.decode() : ""), limit))))
+      |> Effect.map(%, (value) => headOf(value + (info.size <= limit ? $invoke2(decoder) : ""), limit))))
       |> Effect.catch(%, unreadable(undefined)))
   }
 
@@ -178,3 +178,13 @@ export const catalog = effect (root: string) => {
   ])
   return [...listed.found, ...groups.flat()] satisfies ReadonlyArray<Page>
 }
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0],arg1:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[1]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0(),arg1()) }
+}
+import { invoke as $invoke } from $call$ts
+
+module $call$ts2 {
+export function invoke<T extends {"decode":Function}>(target:T):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"]() }
+}
+import { invoke as $invoke2 } from $call$ts2

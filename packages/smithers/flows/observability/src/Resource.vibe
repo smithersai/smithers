@@ -258,7 +258,7 @@ export const decodeSync = (configuration: unknown): Configuration => {
   try {
     return Schema.decodeUnknownSync(Configuration)(configuration)
   } catch (cause) {
-    throw invalid(cause)
+    $raise(invalid(cause))
   }
 }
 
@@ -322,3 +322,8 @@ export const layer = (
  * @since 1.0.0-rc.0
  */
 export const Resource = OtelResource.Resource
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

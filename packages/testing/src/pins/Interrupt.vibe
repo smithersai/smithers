@@ -25,7 +25,7 @@ const invoke = <A, E>(operation: string, evaluate: () => A!E): A!E => Pin.invoke
 
 const waitUntil = (predicate: () => boolean, message: string) => Pin.waitUntil(interruptPin, predicate, message)
 
-const awaitFiber = <A, E>(fiber: Fiber<A, E>, message: string) => Pin.awaitFiber(interruptPin, fiber, message)
+const awaitFiber = <A, E>(fiber: Fiber.Fiber<A, E>, message: string) => Pin.awaitFiber(interruptPin, fiber, message)
 
 const isWellFormedEntry = (value: unknown): value is JournalEntryLike =>
   isRecord(value) &&

@@ -45,7 +45,7 @@ export const nonceAttribute = "data-smithers-nonce"
  * @since 0.1.0
  */
 export const hash = (script: string): string => {
-  const hex = digestSync(script)
+  const hex = $invoke(digestSync,script)
   const bytes = new Uint8Array(32)
   for (let index = 0; index < 32; index++) bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16)
   return `'sha256-${Base64.encode(bytes)}'`
@@ -126,3 +126,8 @@ export const frameDocument = (options: FrameDocumentOptions): string => {
     inert(options.styles, "style")
   }</style></head><body><script>${runtime}</script></body></html>`
 }
+
+module $call$ts {
+export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
+}
+import { invoke as $invoke } from $call$ts

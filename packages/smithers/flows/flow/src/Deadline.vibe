@@ -88,10 +88,10 @@ export const start = effect (options: {
   let lineage = instance.lineageDeadline
   if (lineage === undefined) {
     if (options.deadline === undefined) return undefined
-    const deadlineMs = Option.match(Duration.fromInput(options.deadline), {
+    const deadlineMs = do { const $optionSubject = Duration.fromInput(options.deadline); const $optionHandlers: { onNone: () => number; onSome: (self: Duration.Input) => number; } = {
       onNone: () => Number.NaN,
       onSome: Duration.toMillis
-    })
+    }; const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers; match ($optionSubject) { when Option.Some(let $optionValue): $optionSome($optionValue); default: $optionNone(); }; }
     if (!Number.isFinite(deadlineMs) || deadlineMs <= 0) {
       return try Effect.die(
         new RangeError(`Deadline.start: "${options.flowName}" deadline must be a positive finite duration`)

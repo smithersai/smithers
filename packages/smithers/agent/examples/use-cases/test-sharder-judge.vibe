@@ -26,11 +26,11 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Risk = Schema.Literals(["low", "medium", "high"])
 
 /** The change analyzer's answer. */
-export const Analysis = Schema.Struct({
-  changedFiles: Schema.Array(Schema.String),
-  affectedModules: Schema.Array(Schema.String),
-  riskLevel: Risk
-})
+export schema Analysis {
+  readonly changedFiles: ReadonlyArray<string>
+  readonly affectedModules: ReadonlyArray<string>
+  readonly riskLevel: Risk
+}
 
 /** One test the selector wants run first. */
 export const PriorityTest = Schema.Struct({
@@ -55,13 +55,13 @@ export const RunResult = Schema.Struct({
 })
 
 /** The verdict the flow settles with. */
-export const Adjudication = Schema.Struct({
-  verdict: Schema.Literals(["green", "yellow", "red"]),
-  failedTests: Schema.Array(Schema.String),
-  deferredTests: Schema.Array(Schema.String),
-  shouldExpandRun: Schema.Boolean,
-  summary: Schema.String
-})
+export schema Adjudication {
+  readonly verdict: "green" | "yellow" | "red"
+  readonly failedTests: ReadonlyArray<string>
+  readonly deferredTests: ReadonlyArray<string>
+  readonly shouldExpandRun: boolean
+  readonly summary: string
+}
 
 type RunResult = typeof RunResult.Type
 

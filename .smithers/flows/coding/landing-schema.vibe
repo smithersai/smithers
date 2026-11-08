@@ -86,7 +86,7 @@ export const GitHubPull = Schema.Struct({
 })
 export type GitHubPull = typeof GitHubPull.Type
 /** The repository's mythical stack as `coding/vibe` needs it: only whether it is active. */
-export const StackState = Schema.Struct({ state: Schema.Literals(["absent", "bootstrapping", "active", "frozen"]) })
+export schema StackState { readonly state: "absent" | "bootstrapping" | "active" | "frozen" }
 /** A lane result handed to the stack service (PUT /mythical/lanes). */
 export const LaneSubmission = Schema.Struct({
   workspaceId: Schema.String,
@@ -177,7 +177,7 @@ export const GreenPrefixOutcome = Schema.Union([
 ])
 export type GreenPrefixOutcome = typeof GreenPrefixOutcome.Type
 /** One Change of a published stack: its jj change id and the commit it is now. */
-const StackChange = Schema.Struct({ changeId: ChangeId, commitId: CommitId })
+schema StackChange { readonly changeId: ChangeId; readonly commitId: CommitId }
 /**
  * Publish a rewritten stack to a branch: `tip` replaces the branch's head only
  * while the remote still holds `expected` (`null`: no branch yet). `changes`

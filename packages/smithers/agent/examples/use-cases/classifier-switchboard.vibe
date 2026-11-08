@@ -37,7 +37,7 @@ export const IntakeItem = Schema.Struct({
 })
 
 /** What intake produced. */
-export const Intake = Schema.Struct({ items: Schema.Array(IntakeItem) })
+export schema Intake { readonly items: ReadonlyArray<IntakeItem> }
 
 /** One item's domain. */
 export const Classified = Schema.Struct({
@@ -49,7 +49,7 @@ export const Classified = Schema.Struct({
 })
 
 /** The classifier's answer. */
-export const Classification = Schema.Struct({ classifications: Schema.Array(Classified) })
+export schema Classification { readonly classifications: ReadonlyArray<Classified> }
 
 /** What one domain handler did with its item. */
 export const HandlerResult = Schema.Struct({
@@ -61,17 +61,17 @@ export const HandlerResult = Schema.Struct({
 })
 
 /** The summary the flow settles with. */
-export const Summary = Schema.Struct({
-  totalProcessed: Schema.Number,
-  byDomain: Schema.Record(Schema.String, Schema.Number),
-  byStatus: Schema.Record(Schema.String, Schema.Number),
-  escalations: Schema.Array(Schema.Struct({
-    itemId: Schema.String,
-    domain: Schema.String,
-    reason: Schema.String
-  })),
-  summary: Schema.String
-})
+export schema Summary {
+  readonly totalProcessed: number
+  readonly byDomain: Readonly<Record<string, number>>
+  readonly byStatus: Readonly<Record<string, number>>
+  readonly escalations: ReadonlyArray<{
+    readonly itemId: string
+    readonly domain: string
+    readonly reason: string
+  }>
+  readonly summary: string
+}
 
 type IntakeItem = typeof IntakeItem.Type
 type Classified = typeof Classified.Type

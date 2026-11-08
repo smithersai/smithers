@@ -127,7 +127,7 @@ export const Plan = AgentAction.make("examples/BranchDoctor/Plan", {
 })
 
 /** One command that ran. */
-export const Executed = Schema.Struct({ command: Schema.String, exitCode: Schema.Number, output: Schema.String })
+export schema Executed { readonly command: string; readonly exitCode: number; readonly output: string }
 
 /**
  * Runs `commands` in order in the repository and reports each one's exit code

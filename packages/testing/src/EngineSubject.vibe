@@ -134,7 +134,7 @@ export const make = (implementation: EngineSubject): EngineSubject => EngineSubj
  * @category layers
  * @since 0.0.0
  */
-export const layer = (implementation: EngineSubject): Layer<EngineSubject> =>
+export const layer = (implementation: EngineSubject): Layer.Layer<EngineSubject> =>
   Layer.succeed(EngineSubject)(make(implementation))
 
 const unavailable = (operation: string): EngineUnavailableError =>
@@ -164,5 +164,5 @@ export const makeNoop = (overrides: Partial<EngineSubject> = {}): EngineSubject 
  * @category layers
  * @since 0.0.0
  */
-export const layerNoop = (overrides: Partial<EngineSubject> = {}): Layer<EngineSubject> =>
+export const layerNoop = (overrides: Partial<EngineSubject> = {}): Layer.Layer<EngineSubject> =>
   Layer.succeed(EngineSubject)(makeNoop(overrides))

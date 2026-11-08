@@ -5,7 +5,6 @@
 // configuration has no model, so every reply fails saying so, and a spent budget refuses before any model call. The
 // opt-in case asks the real model when `CEREBRAS_API_KEY` is set. Run with `pnpm test:workerd`.
 import { describe, expect, it } from "@effect/vitest"
-import { FetchHttpClient, HttpClient, HttpClientResponse } from "effect/http"
 import { afterAll, beforeAll } from "vitest"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"

@@ -136,11 +136,11 @@ export class AttemptStoreError extends Schema.TaggedError<AttemptStoreError>()(
  * @category models
  * @since 0.1.0
  */
-export const AttemptId = Schema.Struct({
-  runId: durableIdentifier,
-  stepKeyDigest: durableIdentifier,
-  attempt: NonNegativeSafeInt
-})
+export schema AttemptId {
+  readonly runId: durableIdentifier
+  readonly stepKeyDigest: durableIdentifier
+  readonly attempt: NonNegativeSafeInt
+}
 
 /**
  * Identifies one execution of a content-addressed step within a run.
@@ -364,7 +364,7 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class AttemptStore extends Context.Service<AttemptStore, Service>()("@smthrs/run-store/AttemptStore") {}
+export service AttemptStore: Service { static readonly key = "@smthrs/run-store/AttemptStore";}
 
 const AttemptRow = Schema.Struct({
   run_id: durableIdentifier,
@@ -471,25 +471,25 @@ const inspectRecord = (
   optional: ReadonlyArray<string>,
   field: string
 ): Readonly<Record<string, unknown>> => {
-  if (typeof input !== "object" || input === null) throw new TypeError(field)
+  if (typeof input !== "object" || input === null) $raise(new TypeError(field))
   const prototype = Object.getPrototypeOf(input)
-  if (prototype !== Object.prototype && prototype !== null) throw new TypeError(field)
+  if (prototype !== Object.prototype && prototype !== null) $raise(new TypeError(field))
   const allowed = new Set([...required, ...optional])
   const output = Object.create(null) as Record<string, unknown>
   for (const name of required) {
     const descriptor = Object.getOwnPropertyDescriptor(input, name)
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw new TypeError(field)
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) $raise(new TypeError(field))
     output[name] = descriptor.value
   }
   for (const name of optional) {
     const descriptor = Object.getOwnPropertyDescriptor(input, name)
     if (descriptor === undefined) continue
-    if (!("value" in descriptor) || !descriptor.enumerable) throw new TypeError(field)
+    if (!("value" in descriptor) || !descriptor.enumerable) $raise(new TypeError(field))
     if (descriptor.value !== undefined) output[name] = descriptor.value
   }
   for (const key of Reflect.ownKeys(input)) {
     if (typeof key !== "string" || !allowed.has(key)) {
-      if (Object.getOwnPropertyDescriptor(input, key)?.enumerable) throw new TypeError(field)
+      if (Object.getOwnPropertyDescriptor(input, key)?.enumerable) $raise(new TypeError(field))
     }
   }
   return output
@@ -536,17 +536,17 @@ const snapshotJson = (
  * enumerable accessor, or a missing or inherited required field is refused.
  */
 const inspectIdRecord = (input: unknown, field: string): Readonly<Record<string, unknown>> => {
-  if (typeof input !== "object" || input === null) throw new TypeError(field)
+  if (typeof input !== "object" || input === null) $raise(new TypeError(field))
   const prototype = Object.getPrototypeOf(input)
-  if (prototype !== Object.prototype && prototype !== null) throw new TypeError(field)
+  if (prototype !== Object.prototype && prototype !== null) $raise(new TypeError(field))
   for (const key of Reflect.ownKeys(input)) {
     const descriptor = Object.getOwnPropertyDescriptor(input, key)
-    if (descriptor !== undefined && descriptor.enumerable && !("value" in descriptor)) throw new TypeError(field)
+    if (descriptor !== undefined && descriptor.enumerable && !("value" in descriptor)) $raise(new TypeError(field))
   }
   const output = Object.create(null) as Record<string, unknown>
   for (const name of ["runId", "stepKeyDigest", "attempt"]) {
     const descriptor = Object.getOwnPropertyDescriptor(input, name)
-    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) throw new TypeError(field)
+    if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) $raise(new TypeError(field))
     output[name] = descriptor.value
   }
   return output
@@ -1218,3 +1218,8 @@ export const layerWith = (
   options: Options
 ): Layer.Layer<AttemptStore, AttemptStoreError, DurableWriter | SqlClient.SqlClient> =>
   Layer.effect(AttemptStore)(makeWith(options))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

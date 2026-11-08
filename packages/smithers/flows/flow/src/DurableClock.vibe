@@ -47,11 +47,11 @@ export interface DurableClock {
 const durationFromInput = (input: Duration.Input, field: string): Duration.Duration => {
   const parsed = Duration.fromInput(input)
   if (Option.isNone(parsed)) {
-    throw new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`)
+    $raise(new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`))
   }
   const millis = Duration.toMillis(parsed.value)
   if (!Duration.isFinite(parsed.value) || !Number.isFinite(millis) || millis < 0) {
-    throw new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`)
+    $raise(new RangeError(`DurableClock: "${field}" must be a valid finite duration that is not negative.`))
   }
   return parsed.value
 }
@@ -73,7 +73,7 @@ const latestDueAtMs = Number.MAX_SAFE_INTEGER
 const clockDuration = (input: Duration.Input): Duration.Duration => {
   const duration = durationFromInput(input, "duration")
   if (Duration.toMillis(duration) > latestDueAtMs) {
-    throw new RangeError(`DurableClock: "duration" must be at most ${latestDueAtMs} milliseconds.`)
+    $raise(new RangeError(`DurableClock: "duration" must be at most ${latestDueAtMs} milliseconds.`))
   }
   return duration
 }
@@ -169,3 +169,8 @@ export const sleep = (
 }
 
 const defaultInMemoryThreshold = Duration.seconds(60)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

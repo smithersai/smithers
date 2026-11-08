@@ -29,7 +29,7 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * @category parsing
  * @slop
  */
-export const parsePattern = (input: string): Option<CapabilityPattern> => {
+export const parsePattern = (input: string): Option.Option<CapabilityPattern> => {
   const components = input.split(":")
   if (components[0] === "*") {
     if (components.length < 2) {

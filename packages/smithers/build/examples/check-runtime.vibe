@@ -23,10 +23,11 @@ export const compareVersions = () => ({
  */
 export const verifyHost = (version: string) =>
   Effect.runPromise(
-    (effect {
+    (do { const catchProgram = (effect {
       const runtime = try Runtime.Runtime
       return try runtime.verify
-    })
-      |> Effect.catchTag(%, "smithers-build/RuntimeError", (error) => Effect.succeed(error.code))
+    }); effect { return catchProgram catch (error) => match (error) {
+      when { _tag: "smithers-build/RuntimeError" }: error.code;
+    } } })
       |> Effect.provide(%, Runtime.layerNoop("node", { requirement: ">=26.4.0", platform, version }))
   )

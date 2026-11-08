@@ -68,7 +68,7 @@ export const Result = Schema.Struct({
  * @category schemas
  * @since 1.0.0
  */
-export const Output = Schema.Struct({ results: Schema.Array(Result) })
+export schema Output { readonly results: ReadonlyArray<Result> }
 /**
  * Decoded output returned by the `websearch` flow.
  *
@@ -149,7 +149,7 @@ export const makeNoop = (): WebSearch =>
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer<WebSearch> = Layer.succeed(WebSearch, makeNoop())
+export const layerNoop: Layer.Layer<WebSearch> = Layer.succeed(WebSearch, makeNoop())
 /**
  * Runs the `websearch` flow: searches the web through the configured provider.
  *

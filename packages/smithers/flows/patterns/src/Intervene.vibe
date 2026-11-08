@@ -131,7 +131,7 @@ export const make = <R = never>(options: MakeOptions<R>): InterveneFlow<R> => {
   const reason = options.reason ?? DEFAULT_REASON
   const apply = options.apply
   if (options.approval !== undefined && reason.trim().length === 0) {
-    throw new PatternError({ code: "invalid_decorator", message: "Approval reason must not be empty" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Approval reason must not be empty" }))
   }
   const approval = options.approval === undefined
     ? undefined
@@ -217,3 +217,8 @@ export const run = <I, Context, Proposal, Applied, Report, E, R, E2, R2, E3, R3,
     return try report({ phase: "report", input, proposal, applied, dryRun: false })
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

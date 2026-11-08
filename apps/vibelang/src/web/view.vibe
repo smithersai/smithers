@@ -1,6 +1,5 @@
 // The web app's view. Chat parts use @smthrs/ui's classes (`sui-chat-*`, `sui-cmd-*`), so the conversation looks the
 // way it does on smithers.sh; the splash and the frame are this app's (`vl-*`, styles.css).
-import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
 import { hasConversation, type Message as AppMessage, Message, type Model, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"

@@ -17,7 +17,7 @@ import { ControlPrincipal, ControlRpcs, RunVisibility } from "./ControlRpcs.vibe
  * @category logging
  * @since 1.0.0
  */
-export const logDefect = (cause: Cause<unknown>): void!! =>
+export const logDefect = (cause: Cause.Cause<unknown>): void!! =>
   Cause.hasDies(cause) ? Effect.logError("A control RPC handler died") : Effect.void
 
 /**
@@ -129,7 +129,7 @@ export const layer = ControlRpcs.toLayer(
  * behalf (cross-site WebSocket hijacking of the `Watch` stream).
  */
 const sameOrigin = (
-  request: HttpServerRequest,
+  request: HttpServerRequest.HttpServerRequest,
   scheme: "http:" | "https:" | undefined
 ): boolean => {
   const headers = request.headers

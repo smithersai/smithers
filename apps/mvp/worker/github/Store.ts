@@ -19,7 +19,7 @@ import { isRepository, repoId as repoIdOf } from "../../src/features/repo/contra
 import { UPDATE_METHODS } from "../../src/features/branch/contract.ts"
 import { MERGE_METHODS, type MergeFlow } from "../../src/features/pulls/contract.ts"
 import { Sealed, sessionLive } from "../SessionStore.ts"
-import * as Metrics from "./Metrics.ts"
+import * as Metrics from "#vibelang/emitted/worker/github/Metrics"
 
 // The git loop's rows in Postgres (docs/features/issues.md#postgres, migration 0016_github_issues). GitHub is the truth:
 // only the server's GitHub flows write `items` and `comments`, and only under the newer-than guard, so a duplicate or

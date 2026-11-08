@@ -52,7 +52,7 @@ export type Kind = typeof Kind.Type
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export const Item = Schema.Struct({ kind: Kind, id: Schema.String, text: Schema.String })
+export schema Item { readonly kind: Kind; readonly id: string; readonly text: string }
 
 /**
  * The decoded form of {@link Item}.
@@ -263,7 +263,7 @@ export const flowItem = (descriptor: Descriptor.FlowDescriptor): Item => {
  * @category schemas
  * @since 1.0.0-rc.0
  */
-export const Document = Schema.Struct({ path: Schema.String, text: Schema.String })
+export schema Document { readonly path: string; readonly text: string }
 
 /**
  * The decoded form of {@link Document}.

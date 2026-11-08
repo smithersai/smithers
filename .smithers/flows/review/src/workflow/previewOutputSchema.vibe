@@ -8,14 +8,14 @@ import { PreviewEntry } from "./previewEntrySchema.ts"
  * @since 1.0.0
  * @category schemas
  */
-export const PreviewOutput = Schema.Struct({
-  entries: Schema.mutable(Schema.Array(PreviewEntry)),
-  totalInsertions: Schema.Number,
-  totalDeletions: Schema.Number,
-  totalFiles: Schema.Number,
-  reviewableCount: Schema.Number,
-  excludedCount: Schema.Number
-})
+export schema PreviewOutput {
+  readonly entries: Array<PreviewEntry>
+  readonly totalInsertions: number
+  readonly totalDeletions: number
+  readonly totalFiles: number
+  readonly reviewableCount: number
+  readonly excludedCount: number
+}
 
 /**
  * A decoded preview.

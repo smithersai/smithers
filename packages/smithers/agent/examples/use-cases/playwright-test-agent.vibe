@@ -24,17 +24,17 @@ import * as Schema from "effect/Schema"
 const seat = "anthropic:claude-sonnet-5-5"
 
 /** The planner's user flows. */
-export const TestPlan = Schema.Struct({
-  appUrl: Schema.String,
-  flows: Schema.Array(Schema.Struct({
-    name: Schema.String,
-    goal: Schema.String,
-    steps: Schema.Array(Schema.String),
-    assertions: Schema.Array(Schema.String),
-    risk: Schema.Literals(["low", "medium", "high"])
-  })),
-  assumptions: Schema.Array(Schema.String)
-})
+export schema TestPlan {
+  readonly appUrl: string
+  readonly flows: ReadonlyArray<{
+    readonly name: string
+    readonly goal: string
+    readonly steps: ReadonlyArray<string>
+    readonly assertions: ReadonlyArray<string>
+    readonly risk: "low" | "medium" | "high"
+  }>
+  readonly assumptions: ReadonlyArray<string>
+}
 
 /** The specs a generator or healer wrote. */
 export const GeneratedTests = Schema.Struct({
@@ -63,20 +63,20 @@ export const TestRun = Schema.Struct({
 })
 
 /** The reporter's summary, which the flow settles with. */
-export const FinalReport = Schema.Struct({
-  status: Schema.Literals(["passed", "needs-human-review", "failed"]),
-  coverageSummary: Schema.String,
-  iterations: Schema.Number,
-  artifacts: Schema.Array(Schema.String),
-  nextActions: Schema.Array(Schema.String)
-})
+export schema FinalReport {
+  readonly status: "passed" | "needs-human-review" | "failed"
+  readonly coverageSummary: string
+  readonly iterations: number
+  readonly artifacts: ReadonlyArray<string>
+  readonly nextActions: ReadonlyArray<string>
+}
 
 /** What the host's runner is asked to run. */
-export const RunRequest = Schema.Struct({
-  generatedTests: GeneratedTests,
-  command: Schema.String,
-  appUrl: Schema.String
-})
+export schema RunRequest {
+  readonly generatedTests: GeneratedTests
+  readonly command: string
+  readonly appUrl: string
+}
 
 type GeneratedTests = typeof GeneratedTests.Type
 type TestRun = typeof TestRun.Type

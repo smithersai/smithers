@@ -132,11 +132,11 @@ const invalid = (path: string, complaint: string): PluginError =>
 const snapshotRecord = (input: unknown, reuse = true): Readonly<Record<string, ConfigValue>> => {
   if (reuse && typeof input === "object" && input !== null && admittedConfigs.has(input)) return input as ResolvedConfig
   const admitted = Boundary.record(input)
-  if (!admitted.ok) throw invalid(admitted.path, admitted.complaint)
+  if (!admitted.ok) $raise(invalid(admitted.path, admitted.complaint))
   const record = admitted.value as Readonly<Record<string, ConfigValue>>
   for (const key of Object.keys(record)) {
     if (reservedRootKeys.has(key)) {
-      throw invalid(`$.${key}`, "uses a runtime-policy key that the plugin kernel does not own")
+      $raise(invalid(`$.${key}`, "uses a runtime-policy key that the plugin kernel does not own"))
     }
   }
   admittedConfigs.add(record)
@@ -169,7 +169,7 @@ export const merge = (base: FlowsConfig, patch: unknown): FlowsConfig => {
   // Even a known patch is copied so its tree cannot alias the retained base.
   const safePatch = snapshotRecord(patch, false)
   const merged = Boundary.mergeRecords(safeBase, safePatch)
-  if (!merged.ok) throw invalid(merged.path, merged.complaint)
+  if (!merged.ok) $raise(invalid(merged.path, merged.complaint))
   const record = merged.value as ResolvedConfig
   admittedConfigs.add(record)
   return record
@@ -183,7 +183,7 @@ export const merge = (base: FlowsConfig, patch: unknown): FlowsConfig => {
  */
 export const deepFreeze = <A extends ConfigValue>(value: A): A => {
   const admitted = Boundary.admit(value)
-  if (!admitted.ok) throw invalid(admitted.path, admitted.complaint)
+  if (!admitted.ok) $raise(invalid(admitted.path, admitted.complaint))
   return admitted.value as A
 }
 
@@ -203,3 +203,8 @@ export const snapshot = (config: unknown): FlowsConfig!PluginError =>
  * @since 1.0.0-rc.0
  */
 export const resolve = (config: unknown): ResolvedConfig!PluginError => snapshot(config)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

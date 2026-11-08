@@ -305,7 +305,7 @@ export effect function answer(post: string) {
   const outcome = try Effect.catchCause(compose(post, reply), (cause) => {
     if (Cause.hasInterrupts(cause)) return Effect.failCause(cause)
     return Effect.as(
-      Effect.logError("vibelang.reply").pipe(Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })),
+      Effect.logError("vibelang.reply") |> Effect.annotateLogs({ outcome: "failed", error: tagOf(Cause.squash(cause)) })(%),
       Outcome.Failed({ reason: REASONS.failed }),
     )
   })

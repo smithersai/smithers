@@ -274,7 +274,7 @@ export interface ChannelsService {
  * @category services
  * @since 1.0.0
  */
-export class Channels extends Context.Service<Channels, ChannelsService>()("@smthrs/notifications/Channels") {}
+export service Channels: ChannelsService { static readonly key = "@smthrs/notifications/Channels";}
 
 /**
  * Resend's API origin.
@@ -298,7 +298,7 @@ export const defaultTelegramUrl = "https://api.telegram.org"
  * @category constants
  * @since 1.0.0
  */
-export const defaultTimeout: Duration = Duration.seconds(10)
+export const defaultTimeout: Duration.Duration = Duration.seconds(10)
 
 /**
  * The email provider: a Resend API key, the sender (`Name <address>` or an
@@ -309,7 +309,7 @@ export const defaultTimeout: Duration = Duration.seconds(10)
  * @since 1.0.0
  */
 export interface EmailProvider {
-  readonly apiKey: Redacted<string>
+  readonly apiKey: Redacted.Redacted<string>
   readonly from: string
   readonly url?: string | undefined
 }
@@ -322,7 +322,7 @@ export interface EmailProvider {
  * @since 1.0.0
  */
 export interface TelegramProvider {
-  readonly token: Redacted<string>
+  readonly token: Redacted.Redacted<string>
   readonly url?: string | undefined
 }
 
@@ -335,7 +335,7 @@ export interface TelegramProvider {
 export interface Options {
   readonly email?: EmailProvider | undefined
   readonly telegram?: TelegramProvider | undefined
-  readonly timeout?: Duration | undefined
+  readonly timeout?: Duration.Duration | undefined
 }
 
 /** An origin a provider is reached at: absolute `http:` or `https:`, without a trailing slash. */
@@ -348,14 +348,14 @@ const originOf = (raw: string, channel: Channel): string => {
   }
   if (parsed === undefined || (parsed.protocol !== "http:" && parsed.protocol !== "https:")) {
     // The message names no url: a misconfigured one may hold a credential.
-    throw new Error(`The ${channel} provider's url must be an absolute http: or https: URL`)
+    $raise(new Error(`The ${channel} provider's url must be an absolute http: or https: URL`))
   }
   return raw.replace(/\/+$/u, "")
 }
 
 /** One provider's request for a message to `D`, and how to read its answer. */
 interface Provider<D extends Destination = Destination> {
-  readonly request: (destination: D, message: Message) => HttpClientRequest
+  readonly request: (destination: D, message: Message) => HttpClientRequest.HttpClientRequest
   readonly providerId: (body: unknown) => string | null
   readonly reason: (body: unknown) => string | undefined
   readonly retryAfterSeconds: (body: unknown) => unknown
@@ -493,7 +493,7 @@ const decodeMessage = Schema.decodeUnknownOption(Message)
  * @category layers
  * @since 1.0.0
  */
-export const layer = (options: Options): Layer<Channels> =>
+export const layer = (options: Options): Layer.Layer<Channels> =>
   Layer.effect(
     Channels,
     effect {
@@ -520,7 +520,7 @@ export const layer = (options: Options): Layer<Channels> =>
           : { provider: providers.telegram, request: providers.telegram.request(destination, message) }
       }
 
-      const execute = (channel: Channel, provider: Provider<never>, request: HttpClientRequest) =>
+      const execute = (channel: Channel, provider: Provider<never>, request: HttpClientRequest.HttpClientRequest) =>
         client.execute(request)
         |> Effect.mapError(%, () => new DeliveryFailed({ channel, code: "unreachable" }))
         |> Effect.flatMap(%, (response) =>
@@ -565,3 +565,8 @@ export const layer = (options: Options): Layer<Channels> =>
       return Channels.of({ available, send })
     }
   ).pipe(Layer.provide(FetchHttpClient.layer))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

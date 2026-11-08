@@ -107,7 +107,7 @@ export const makeNoop = (): TestRunner =>
  * @category layers
  * @since 1.0.0
  */
-export const layer = (runner: Runner): Layer<TestRunner> => Layer.succeed(TestRunner, make(runner))
+export const layer = (runner: Runner): Layer.Layer<TestRunner> => Layer.succeed(TestRunner, make(runner))
 
 /**
  * Provides {@link makeNoop}.
@@ -115,4 +115,4 @@ export const layer = (runner: Runner): Layer<TestRunner> => Layer.succeed(TestRu
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer<TestRunner> = Layer.succeed(TestRunner, makeNoop())
+export const layerNoop: Layer.Layer<TestRunner> = Layer.succeed(TestRunner, makeNoop())

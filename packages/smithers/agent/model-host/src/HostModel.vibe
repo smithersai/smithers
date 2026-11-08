@@ -119,7 +119,7 @@ export class HostModel extends Context.Service<HostModel, {
     record: HostModelRecord,
     options: HostModelOptions = {}
   ): HostModel["Service"]!HostModelUnusable =>
-    (effect {
+    do { const catchProgram = (effect {
       const keyName = try Effect.orDie(
         Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error })
       )
@@ -143,8 +143,10 @@ export class HostModel extends Context.Service<HostModel, {
       const key = Option.getOrThrow(apiKey)
       const { model, route } = try Effect.orDie(toModel(planned.plan, key, { fetch: options.fetch }))
       return HostModel.of({ modelId: planned.plan.modelId, model, route })
-    })
-    |> Effect.catchTag(%, "ConfigError", () => Effect.fail(new HostModelUnusable({ reason: "config" })))
+    }); effect { return catchProgram catch effect (e) => match (e) {
+      when { _tag: "ConfigError" }: throw new HostModelUnusable({ reason: "config" });
+      default: throw e;
+    } } }
 
   /**
    * Provides the model a configured-model record names. The record is JSON

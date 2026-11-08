@@ -62,9 +62,7 @@ export interface Routed {
  * @category services
  * @since 1.0.0-rc.0
  */
-export class SeatResolver extends Context.Service<SeatResolver, Service>()(
-  "@smthrs/agent/SeatResolver"
-) {}
+export service SeatResolver: Service { static readonly key = "@smthrs/agent/SeatResolver";}
 
 /**
  * Builds a {@link Service} from an implementation of its one method.

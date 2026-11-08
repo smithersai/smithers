@@ -104,7 +104,7 @@ const validate = (round: Round): InvalidRound | undefined => {
  */
 export const initial = <Id extends string>(executionId: Id extends JournalLineageId ? never : Id): Round => {
   const id: string = executionId
-  if (!validRoot(id)) throw invalid(rootRefusal)
+  if (!validRoot(id)) $raise(invalid(rootRefusal))
   return { rootExecutionId: id as RootExecutionId, ordinal: 0 }
 }
 
@@ -180,3 +180,8 @@ export const next = effect (round: Round, options: {
   }
   return { round: advanced, executionId: try executionId(advanced) }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

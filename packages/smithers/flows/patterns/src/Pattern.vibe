@@ -79,10 +79,10 @@ export const slot = <I extends Schema.Top, O extends Schema.Top>(
     ? undefined
     : Decorate.schemasCompatible(options.input, options.output, options.default)
   if (issue !== undefined) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: schemaRefusalMessage("The slot default", issue)
-    })
+    }))
   }
   // A frozen copy: `bind` reads the slot again later, and a caller's edit to
   // the options object in between must not turn a defaulted slot required or
@@ -105,17 +105,17 @@ export const bind = <I extends Schema.Top, O extends Schema.Top>(
 ): Flow.Any => {
   const flow = supplied ?? declaration.default
   if (flow === undefined) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "missing_slot",
       message: "A required flow slot was not bound and has no default"
-    })
+    }))
   }
   const issue = Decorate.schemasCompatible(declaration.input, declaration.output, flow)
   if (issue !== undefined) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: schemaRefusalMessage("The bound flow", issue)
-    })
+    }))
   }
   return flow
 }
@@ -183,17 +183,17 @@ export const decorate: {
 } = dual(2, (self: Flow.Any, decorator: Decorator): Flow.Any => {
   const supplied = decorator(self)
   if (!Flow.isFlow(supplied)) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: "A flow decorator must return a Flow"
-    })
+    }))
   }
   const issue = Decorate.schemasCompatible(self.payloadSchema, self.successSchema, supplied, self.errorSchema)
   if (issue !== undefined) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: schemaRefusalMessage("The flow decorator result", issue)
-    })
+    }))
   }
   const innerName = Decorate.displayName(self)
   const suppliedName = supplied._tag
@@ -214,3 +214,8 @@ export const decorateAll = (
   flow: Flow.Any,
   decorators: ReadonlyArray<Decorator>
 ): Flow.Any => decorators.reduce((inner, decorator) => decorate(inner, decorator), flow)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

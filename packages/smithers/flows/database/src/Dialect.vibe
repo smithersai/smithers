@@ -202,7 +202,7 @@ export const setTriggerMode = (
   sql: SqlClient,
   triggers: ReadonlyArray<DeferredTrigger>,
   mode: "IMMEDIATE" | "DEFERRED"
-): Effect.Effect<void, SqlError> =>
+): void!SqlError =>
   !isPostgres(sql) || triggers.length === 0 ? Effect.void : Effect.asVoid(sql.unsafe(modeStatement(triggers, [mode])))
 /**
  * Fires the events `triggers` have queued in the current transaction now, in
@@ -219,7 +219,7 @@ export const setTriggerMode = (
 export const flushDeferredTriggers = (
   sql: SqlClient,
   triggers: ReadonlyArray<DeferredTrigger>
-): Effect.Effect<void, SqlError> =>
+): void!SqlError =>
   !isPostgres(sql) || triggers.length === 0 ?
     Effect.void :
     Effect.asVoid(sql.unsafe(modeStatement(triggers, ["IMMEDIATE", "DEFERRED"])))
@@ -282,7 +282,7 @@ export const query = <A extends object = Record<string, unknown>>(
  */
 export const registerReadTransaction = (
   sql: SqlClient,
-  open: <A, E, R>(effect: Effect.Effect<A, E, R>) => Effect.Effect<A, E | SqlError, R>
+  open: <A, E, R>(effect: A!E!R) => A!(E | SqlError)!R
 ): void => ReadTransaction.register(sql, open)
 /**
  * Runs `effect` as one read transaction: every statement in it reads one

@@ -15,7 +15,7 @@ import * as ChildProcessSpawner from "effect/process/ChildProcessSpawner"
  * "absent" would go on to create the file, and a guarded kernel path must
  * fail closed.
  */
-const fileSystemRefusal = (method: string): PlatformError =>
+const fileSystemRefusal = (method: string): PlatformError.PlatformError =>
   PlatformError.systemError({
     _tag: "PermissionDenied",
     module: "FileSystem",

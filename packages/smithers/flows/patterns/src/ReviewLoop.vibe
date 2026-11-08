@@ -163,13 +163,13 @@ export const make = <R = never>(options: MakeOptions<R>): ReviewLoopFlow<R> => {
   const stages = { produce: options.produce, review: options.review, revise: options.revise }
   const maxRounds = options.maxRounds
   if (!Number.isSafeInteger(maxRounds) || maxRounds < 1) {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: "ReviewLoop maxRounds must be a positive safe integer"
-    })
+    }))
   }
   const stall = Stalling.resolve("ReviewLoop", options.stall)
-  if (stall instanceof PatternError) throw stall
+  if (stall instanceof PatternError) $raise(stall)
   const { name, description } = Compose.label("reviewLoop", { maxRounds, stall: Stalling.labelOf(stall) }, options)
   const captured = stall === undefined ? { maxRounds } : { maxRounds, stall }
   const body = ({ input }: { readonly input: unknown }): Node.Node<unknown, unknown, R> => {
@@ -287,3 +287,8 @@ export const run = <I, A, Review, E, R, E2, R2, E3, R3>(
     }
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

@@ -65,7 +65,7 @@ export type Origin = typeof Origin.Type
  * @category models
  * @since 0.1.0
  */
-export const Requires = Schema.Struct({ smithers: Schema.String })
+export schema Requires { readonly smithers: string }
 
 /**
  * The runtime range a pack declares it needs.
@@ -92,7 +92,7 @@ const PackRelativePath = Schema.NonEmptyString.check(
 
 const normalizePackRelativePath = (value: string): string => {
   if (!isPackRelativePath(value)) {
-    throw new TypeError(`Pack path ${JSON.stringify(value)} is not a safe pack-relative path`)
+    $raise(new TypeError(`Pack path ${JSON.stringify(value)} is not a safe pack-relative path`))
   }
   return value
 }
@@ -266,15 +266,15 @@ export const digest = (manifest: Manifest, files: ReadonlyArray<File>): string =
         ? 1
         : 0
     })
-  return Digest.digest(
-    Digest.canonical({
+  return $invoke(Digest,
+    () => (Digest.canonical({
       name: manifest.name,
       version: manifest.version,
       flows: [...manifest.flows],
       skills: manifest.skills === undefined ? [] : [...manifest.skills],
       requires: manifest.requires === undefined ? null : { smithers: manifest.requires.smithers },
       files: measured
-    })
+    }))
   )
 }
 
@@ -641,3 +641,13 @@ export const checkCompatible = (
       })
     )
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

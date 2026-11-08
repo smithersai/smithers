@@ -25,7 +25,7 @@ const native = NativeGateway.makeLayer((options) =>
     // Shared listenOptions has already supplied and admitted the bind host.
     hostname: options.host!,
     port: options.port ?? 7331
-  }).pipe(Layer.catchCause((cause): Layer<HttpServer, ServeError | GatewayError> => {
+  }).pipe(Layer.catchCause((cause): Layer.Layer<HttpServer, ServeError | GatewayError> => {
     const failure = Cause.squash(cause)
     const code = typeof failure === "object" && failure !== null && "code" in failure ? failure.code : undefined
     if (Cause.hasInterruptsOnly(cause) || !["EADDRINUSE", "EACCES", "EADDRNOTAVAIL"].includes(String(code))) {

@@ -17,7 +17,7 @@ import { JsonObject, type StopReason } from "./ModelRequest.ts"
 export interface OpenToolCall {
   readonly callId: string
   readonly name: string
-  readonly fragments: Chunk<string>
+  readonly fragments: Chunk.Chunk<string>
 }
 
 /**

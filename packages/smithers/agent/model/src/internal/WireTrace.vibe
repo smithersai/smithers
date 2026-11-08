@@ -56,7 +56,7 @@ export const line = (
   history: Map<string, ReadonlyArray<string>> = previous
 ): Record<string, unknown> => {
   // Every built-in protocol body is a JSON object; `bodyText` is its bytes.
-  const body = JSON.parse(prepared.bodyText) as Body
+  const body = $invoke(JSON,() => (prepared.bodyText)) as Body
   const list = body.input ?? body.messages
   const input: ReadonlyArray<Item> = Array.isArray(list) ? list : []
   const items = input.map((item) => CanonicalJson.shortHash(JSON.stringify(item)))
@@ -205,3 +205,8 @@ export const recordResponse = effect (
   answered: () => Answered,
   at: number
 ): void!! => try (call === undefined ? Effect.void : append(call.sink, responseLine(call.id, answered(), at)))
+
+module $call$ts {
+export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

@@ -28,8 +28,8 @@ import type { Violation } from "./Violation.ts"
 const inSession = <A>(
   provider: Provider,
   deadline: Duration.Input,
-  effect: A!unknown!ChildProcessSpawner
-): Exit<A, unknown>!! => boundedCheck(Effect.provide(effect, layer(provider)), deadline)
+  effect: A!unknown!ChildProcessSpawner.ChildProcessSpawner
+): Exit.Exit<A, unknown>!! => boundedCheck(Effect.provide(effect, layer(provider)), deadline)
 
 const writesItsOutput = (
   provider: Provider,

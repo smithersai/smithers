@@ -297,7 +297,7 @@ export const Fixture = Schema.Struct({ calls: Schema.Array(recordedCallSchema) }
 export const decode = (input: unknown): Fixture!Schema.SchemaError => Schema.decodeUnknownEffect(Fixture)(input)
 
 const invalid = (path: string, reason: FixtureEncodingError["reason"]): never => {
-  throw new FixtureEncodingError({ path, reason })
+  $raise(new FixtureEncodingError({ path, reason }))
 }
 
 /**
@@ -536,9 +536,14 @@ const canonicalize = (value: unknown, path = "$", ancestors = new Set<object>(),
     }
     return result
   } catch (error) {
-    if (error instanceof FixtureEncodingError) throw error
+    if (error instanceof FixtureEncodingError) $raise(error)
     return invalid(path, "unsupported-type")
   } finally {
     ancestors.delete(value)
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

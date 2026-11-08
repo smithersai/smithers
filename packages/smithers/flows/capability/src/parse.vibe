@@ -17,7 +17,7 @@ import { maxResourceLength } from "./maxResourceLength.ts"
  * @category parsing
  * @slop
  */
-export const parse = (input: string): Option<Capability> => {
+export const parse = (input: string): Option.Option<Capability> => {
   const components = input.split(":")
   const namespace = components[0]
   const operation = components[1]

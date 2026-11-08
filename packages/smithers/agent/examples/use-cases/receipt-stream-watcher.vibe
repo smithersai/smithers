@@ -56,15 +56,15 @@ export const ConsumeResult = Schema.Struct({
 })
 
 /** Where the receipt goes. */
-export const RoutingDecision = Schema.Struct({
-  destination: Schema.Literals(["expense-report", "reimbursement", "audit-review", "manual-review"]),
-  merchant: Schema.String,
-  total: Schema.Number,
-  currency: Schema.String,
-  date: Schema.String,
-  reasoning: Schema.String,
-  summary: Schema.String
-})
+export schema RoutingDecision {
+  readonly destination: "expense-report" | "reimbursement" | "audit-review" | "manual-review"
+  readonly merchant: string
+  readonly total: number
+  readonly currency: string
+  readonly date: string
+  readonly reasoning: string
+  readonly summary: string
+}
 
 /** What the flow settles with. `routing` is null when the receipt was not ready. */
 export const Output = Schema.Struct({ consumed: ConsumeResult, routing: Schema.NullOr(RoutingDecision) })

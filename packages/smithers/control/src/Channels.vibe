@@ -182,7 +182,7 @@ class InboundBoundaryError extends TypeError {
 }
 
 const boundary = (issue: string): never => {
-  throw new InboundBoundaryError(issue)
+  $raise(new InboundBoundaryError(issue))
 }
 
 const plainRecord = (input: unknown, path: string): Record<PropertyKey, unknown> => {
@@ -289,10 +289,10 @@ const fingerprint = (
   names: ReadonlyArray<string>
 ): string => {
   const document = JSON.stringify([
-    Sha256.digestSync(body),
+    $invoke(Sha256,() => (body)),
     names.map((name) => [name, headers[name] ?? null])
   ])
-  return `channel-ingress:v2:${Sha256.digestSync(new TextEncoder().encode(document))}`
+  return `channel-ingress:v2:${$invoke(Sha256,() => (new TextEncoder().encode(document)))}`
 }
 
 const externalReceipt = (receipt: Receipt, key: IdempotencyKey): Receipt => {
@@ -507,4 +507,14 @@ export const layer = Layer.effect(Channels, make)
  * @category layers
  * @since 1.0.0
  */
-export const layerMemory: Layer<Channels, never, Control> = Layer.effect(Channels, makeMemory)
+export const layerMemory: Layer.Layer<Channels, never, Control> = Layer.effect(Channels, makeMemory)
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts
+
+module $call$ts {
+export function invoke<T extends {"digestSync":Function}>(target:T,arg0:()=>Parameters<Extract<T["digestSync"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digestSync"],(...args:any[])=>any>> { return target["digestSync"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

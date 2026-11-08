@@ -184,7 +184,7 @@ export const statusObservedEventType = "control.status.observed"
  * @since 1.0.0
  */
 export const runIncarnation = (run: RunSummary): string =>
-  Sha256.digestSync(JSON.stringify([
+  $invoke(Sha256,() => (JSON.stringify([
     run.runId,
     run.createdAt,
     run.updatedAt,
@@ -192,7 +192,7 @@ export const runIncarnation = (run: RunSummary): string =>
     run.parkedBy ?? null,
     run.status,
     run.waitingReason ?? null
-  ]))
+  ])))
 
 /** Read-only evidence, deliberately excluding mutation ports and terminal text by default.
  * Checkers are trusted host TypeScript, not a sandbox: captured ambient authority remains their author's responsibility.
@@ -335,7 +335,7 @@ const hostCheckers = (evaluator: Evaluator.Evaluator | undefined): ReadonlyArray
 export const registeredCheckers: ReadonlyArray<HealthChecker<any>> = hostCheckers(undefined)
 const bounded = (value: number, min: number, max: number) => Number.isSafeInteger(value) && value >= min && value <= max
 const invalid = (reason: HealthConfigurationError["reason"]): never => {
-  throw new HealthConfigurationError({ reason })
+  $raise(new HealthConfigurationError({ reason }))
 }
 /** Admit a host registry and all configured bindings. Unknown checker ids use the lifecycle default.
  * @category constructors
@@ -588,3 +588,13 @@ export const rollup = (input: RollupInput): StatusRollup => {
     updatedAt: Math.max(input.updatedAt, reading?.observedAt ?? 0)
   }
 }
+
+module $call$ts {
+export function invoke<T extends {"digestSync":Function}>(target:T,arg0:()=>Parameters<Extract<T["digestSync"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digestSync"],(...args:any[])=>any>> { return target["digestSync"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

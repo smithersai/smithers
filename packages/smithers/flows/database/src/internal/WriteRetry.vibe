@@ -271,7 +271,7 @@ const isIoFailure = (error: unknown): boolean => {
 }
 
 interface ClassifiedCause<E> {
-  readonly cause: Cause<E>
+  readonly cause: Cause.Cause<E>
   readonly retryable: boolean
 }
 
@@ -292,7 +292,7 @@ interface ClassifiedCause<E> {
  * step failed with. It is not a licence to replay an application defect whose
  * message happens to quote database text.
  */
-const classifyCause = <E>(cause: Cause<E>): ClassifiedCause<E> => {
+const classifyCause = <E>(cause: Cause.Cause<E>): ClassifiedCause<E> => {
   for (const reason of cause.reasons) {
     if (
       (Cause.isFailReason(reason) && isIoFailure(reason.error)) ||
@@ -341,6 +341,5 @@ export const withWriteRetry = <A, E, R>(
     Schedule.tap(() => Metric.update(DatabaseMetrics.writeRetries, 1))
   )
   const retryableEffect = Effect.catchCause(effect, (cause) => Effect.fail(classifyCause(cause)))
-  return Effect.retry(retryableEffect, { schedule, while: (classified) => classified.retryable })
-    |> Effect.catch(%, (classified) => Effect.failCause(classified.cause))
+  return do { const catchProgram = Effect.retry(retryableEffect, { schedule, while: (classified) => classified.retryable }); effect { return catchProgram catch effect (classified) => try Effect.failCause(classified.cause) } }
 }

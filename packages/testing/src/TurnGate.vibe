@@ -16,7 +16,7 @@
 
 import * as Model from "@smthrs/model/Model"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
-import { Deferred, Effect, Ref, Stream } from "effect"
+import { Effect } from "effect"
 
 /**
  * The hold-and-release controller a test drives.

@@ -16,7 +16,7 @@
 import * as Model from "@smthrs/model/Model"
 import { ModelError } from "@smthrs/model/ModelError"
 import type * as ModelEvent from "@smthrs/model/ModelEvent"
-import { Effect, type Layer, Option, Stream } from "effect"
+import { type Layer } from "effect"
 import { canonicalRequestDigest, type Fixture, index, type RecordedCall, recordedRequest } from "./Fixture.vibe"
 import type { FixtureStore } from "./FixtureStore.ts"
 import type { ModelErrorLike, ModelRequestLike, RecordedRequestLike } from "./ModelLike.vibe"
@@ -114,13 +114,10 @@ export const make = (options: Options): Model.Model => {
       Stream.unwrap(
         options.fixture.load()
           |> Effect.map(%, (loaded) =>
-            Option.match(
-              Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request)))),
-              {
+            do { const $optionSubject = Option.flatMap(loaded, (fixture) => hit(fixture, normalize(recordedRequest(request)))); const $optionHandlers: { onNone: () => Stream.Stream<{ readonly type: "text-start"; readonly id: string; } | { readonly type: "text-delta"; readonly id: string; readonly text: string; } | { readonly type: "text-end"; readonly id: string; } | { readonly type: "thinking-delta"; readonly id: string; readonly text: string; } | { readonly type: "thinking-end"; readonly id: string; } | { readonly type: "tool-call-start"; readonly id: string; readonly name: string; } | { readonly type: "tool-call-delta"; readonly id: string; readonly arguments: string; } | { readonly type: "thinking-start"; readonly id: string; readonly signature?: string; } | { readonly type: "tool-call-end"; readonly id: string; readonly arguments?: string; } | { readonly type: "tool-result"; readonly id: string; readonly output: string; readonly isError?: boolean; } | { readonly type: "usage"; readonly inputTokens?: number; readonly outputTokens?: number; readonly reasoningTokens?: number; readonly cachedInputTokens?: number; readonly cacheWriteTokens?: number; readonly totalTokens?: number; readonly costUsd?: number; } | { readonly type: "retry"; readonly attempt: number; readonly code: string; readonly delayMillis: number; readonly elapsedMs?: number | undefined; readonly httpStatus?: number | undefined; } | { readonly type: "settle"; readonly stopReason: "aborted" | "content-filter" | "error" | "length" | "stop" | "tool-calls" | "unknown"; readonly responseId?: string | undefined; readonly servedTier?: string | undefined; readonly timing?: { readonly startedAt?: number | undefined; readonly attempts?: number | undefined; readonly requestBytes?: number | undefined; readonly preparedMs?: number | undefined; readonly signedMs?: number | undefined; readonly sentMs?: number | undefined; readonly headersMs?: number | undefined; readonly firstEventMs?: number | undefined; readonly firstThinkingMs?: number | undefined; readonly firstOutputMs?: number | undefined; readonly lastOutputMs?: number | undefined; readonly completedMs?: number | undefined; readonly closedMs?: number | undefined; readonly failedTries?: readonly { readonly sentMs?: number | undefined; readonly failedMs: number; readonly code: string; readonly httpStatus?: number | undefined; }[] | undefined; } | undefined; readonly sessionId?: string | undefined; readonly itemIds?: readonly string[] | undefined; }, Model.ModelFailure, never>; onSome: (call: RecordedCall) => Stream.Stream<ModelEvent.ModelEvent, Model.ModelFailure>; } = {
                 onNone: () => miss(request),
                 onSome: replay
-              }
-            ))
+              }; const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers; match ($optionSubject) { when Option.Some(let $optionValue): $optionSome($optionValue); default: $optionNone(); }; })
       )
   })
 }

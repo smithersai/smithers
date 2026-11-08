@@ -71,11 +71,11 @@ export type Classification = typeof Classification.Type
  * @since 0.1.0
  * @category models
  */
-export const Assessment = Schema.Struct({
-  classification: Classification,
-  reason: Schema.String,
-  residue: Schema.String
-})
+export schema Assessment {
+  readonly classification: Classification
+  readonly reason: string
+  readonly residue: string
+}
 /**
  * The value form of {@link Assessment}.
  *
@@ -140,9 +140,7 @@ export interface Handler {
  * @since 0.1.0
  * @category services
  */
-export class CompensationHandlers extends Context.Service<CompensationHandlers, ReadonlyArray<Handler>>()(
-  "@smthrs/time-travel/CompensationHandlers"
-) {}
+export service CompensationHandlers: ReadonlyArray<Handler> { static readonly key = "@smthrs/time-travel/CompensationHandlers";}
 
 /**
  * Provides a set of handlers.

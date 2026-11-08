@@ -154,7 +154,7 @@ const widthRefusal = (concurrency: number | "unbounded"): PatternError | undefin
 
 const nonEmpty = (names: ReadonlyArray<string>): void => {
   const refusal = nonEmptyRefusal(names)
-  if (refusal !== undefined) throw refusal
+  if (refusal !== undefined) $raise(refusal)
 }
 
 /**
@@ -303,3 +303,8 @@ export const settle = <A, E>(
     Object.fromEntries(names.map((member) => [member, (result[member] as Succeeded<A>).value]))
   )
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

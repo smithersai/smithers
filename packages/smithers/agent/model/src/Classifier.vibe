@@ -515,7 +515,7 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
   // The encoded questions, not the questions: a class instance is not JSON,
   // and hashing the wire form is what keeps a digest — and every durable call
   // key and sealed-key preimage that folds it in — where it already is.
-  const digest = Digest.digest(CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) }))
+  const digest = $invoke(Digest,() => (CanonicalJson.stringify({ id, questions: Evaluator.encodeQuestions(questions) })))
   const encodeState = Schema.encodeEffect(state)
 
   const read = SpanFailure.fn(
@@ -553,3 +553,8 @@ export const make = <const Id extends string, State extends Schema.Codec<any, an
 
   return { id, description, state, questions, digest, evaluate, read, evaluateAll }
 }
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

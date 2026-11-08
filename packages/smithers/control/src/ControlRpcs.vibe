@@ -49,9 +49,7 @@ import {
  * @category services
  * @since 0.1.0
  */
-export class ControlPrincipal extends Context.Service<ControlPrincipal, typeof Principal.Type>()(
-  "/control/ControlPrincipal"
-) {}
+export service ControlPrincipal: typeof Principal.Type { static readonly key = "/control/ControlPrincipal";}
 
 /**
  * Middleware boundary that authenticates control RPC requests.

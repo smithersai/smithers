@@ -186,8 +186,8 @@ const insertBySeq = <Item extends { readonly seq: JournalEvent.Seq }>(
 // Cache by the immutable command array so cursor-only updates share the index.
 // Persistent sets let independent continuations share history without changing
 // an older state's deduplication. Restored states build their index on first use.
-const commandIds = new WeakMap<ReadonlyArray<AppliedCommand>, HashSet<CommandId>>()
-const indexCommands = (commands: ReadonlyArray<AppliedCommand>): HashSet<CommandId> => {
+const commandIds = new WeakMap<ReadonlyArray<AppliedCommand>, HashSet.HashSet<CommandId>>()
+const indexCommands = (commands: ReadonlyArray<AppliedCommand>): HashSet.HashSet<CommandId> => {
   const cached = commandIds.get(commands)
   if (cached !== undefined) return cached
   const index = HashSet.fromIterable(commands.map((command) => command.commandId))

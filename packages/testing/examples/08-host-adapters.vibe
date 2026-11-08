@@ -48,7 +48,7 @@ const program = effect (fixture: Fixture) => {
   const spawner = try ChildProcessSpawner.ChildProcessSpawner
   const bytes = try fs.readFile(fixture.path)
   const executed = try spawner.string(fixture.command)
-  return { read: new TextDecoder().decode(bytes), executed: executed.trim() }
+  return { read: try ((foreignTypeErrorClass: typeof TypeError) => Effect.catch(Effect.try({ try: () => new TextDecoder().decode(bytes), catch: (error) => error }), (error) => error instanceof foreignTypeErrorClass ? Effect.fail(error) : Effect.die(error)))(TypeError), executed: executed.trim() }
 }
 
 export const main: Summary!! = effect {

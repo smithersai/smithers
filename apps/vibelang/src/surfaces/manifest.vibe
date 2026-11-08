@@ -1,6 +1,5 @@
 import { commands } from "./commands.vibe"
 
-import { Tool } from "effect/ai"
 
 // These nonrecursive struct schemas have inline roots, as MCP requires.
 const jsonSchema = Tool.getJsonSchemaFromSchema

@@ -33,11 +33,11 @@ export const FieldEntry = Schema.Struct({
 })
 
 /** A field the sources did not fill. */
-export const MissingField = Schema.Struct({
-  name: Schema.String,
-  description: Schema.String,
-  required: Schema.Boolean
-})
+export schema MissingField {
+  readonly name: string
+  readonly description: string
+  readonly required: boolean
+}
 
 /** The extractor's answer. */
 export const Extraction = Schema.Struct({

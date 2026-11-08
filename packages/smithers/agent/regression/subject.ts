@@ -48,7 +48,7 @@ import { FlowBinding } from "../harness/src/index.ts"
 import { Model, ModelEvent, type ModelRequest, type Route } from "../model/src/index.ts"
 import { Registry } from "../registry/src/index.ts"
 import { Agent, AgentAction, Budget, type FlowEngineLike, QuotaPolicy, Seat, SeatResolver } from "../src/index.ts"
-import * as ScriptedJudge from "../src/ScriptedJudge.ts"
+import * as ScriptedJudge from "../src/ScriptedJudge.vibe"
 
 const hostCrypto = Layer.succeed(
   EffectDigest.Digest,

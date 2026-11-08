@@ -32,7 +32,7 @@ import wasmfile from "@jitl/quickjs-wasmfile-release-sync"
 import { Effect, Layer } from "effect"
 import type { QuickJSSyncVariant } from "quickjs-emscripten-core"
 import { newVariant } from "quickjs-emscripten-core"
-import * as QuickJSVariant from "./QuickJSVariant.ts"
+import * as QuickJSVariant from "./QuickJSVariant.vibe"
 import * as Sandbox from "./Sandbox.ts"
 
 /**

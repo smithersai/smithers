@@ -189,7 +189,7 @@ export interface Service {
  * @category services
  * @since 0.1.0
  */
-export class CacheStore extends Context.Service<CacheStore, Service>()("@smthrs/step-cache/CacheStore") {}
+export service CacheStore: Service { static readonly key = "@smthrs/step-cache/CacheStore";}
 
 /**
  * Creates a cache store whose every operation fails as unavailable, with

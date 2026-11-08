@@ -38,7 +38,7 @@ export const WireTrace: Context.Service<WireTrace, WireTrace> = Context.Service<
  * @category layers
  * @since 1.0.0
  */
-export const layerFileSystem = (path: string): Layer<WireTrace, never, FileSystem.FileSystem> =>
+export const layerFileSystem = (path: string): Layer.Layer<WireTrace, never, FileSystem.FileSystem> =>
   Layer.effect(
     WireTrace,
     effect {

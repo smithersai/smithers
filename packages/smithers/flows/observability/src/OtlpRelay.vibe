@@ -399,7 +399,7 @@ const nestedTooDeep = (text: string): boolean => {
 const route = /\/v1\/(logs|traces|metrics)$/
 
 /** Reads the body as text, failing with 413 as soon as it passes `limit` bytes. */
-const readText = (stream: Stream<Uint8Array, unknown>, limit: number): string!number =>
+const readText = (stream: Stream.Stream<Uint8Array, unknown>, limit: number): string!number =>
   Effect.suspend(() => {
     const decoder = new TextDecoder()
     let bytes = 0
@@ -412,7 +412,7 @@ const readText = (stream: Stream<Uint8Array, unknown>, limit: number): string!nu
         text += decoder.decode(chunk, { stream: true })
         return Effect.void
       })
-      |> Effect.map(%, () => text + decoder.decode())
+      |> Effect.map(%, () => text + $invoke(decoder))
   })
 
 const answer = (status: number): HttpServerResponse.HttpServerResponse =>
@@ -474,7 +474,7 @@ export const serve = (
     records: new Set(options.allow.records),
     fields: new Set(options.allow.fields)
   }
-  return (effect {
+  return do { const catchProgram = (effect {
     const request = try HttpServerRequest.HttpServerRequest
     const signal = route.exec(request.url.split("?")[0]!)?.[1] as Signal | undefined
     if (signal === undefined) throw 404
@@ -513,5 +513,10 @@ export const serve = (
         partialSuccess: { [relay.rejected]: notAllowed + overLimit, errorMessage: reasons.join("; ") }
       }
     )
-  }) |> Effect.catch(%, (status) => Effect.succeed(answer(status)))
+  }); effect { return catchProgram catch (status) => answer(status) } }
 }
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"]() }
+}
+import { invoke as $invoke } from $call$ts

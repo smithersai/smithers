@@ -147,7 +147,7 @@ export interface Mutation {
 
 // This serializes one host's preparation, ledger and diagnostic ordering only.
 // It is NOT the guest's outside-writer exclusion or its atomic commit boundary.
-const hostLocks = new WeakMap<object, Semaphore>()
+const hostLocks = new WeakMap<object, Semaphore.Semaphore>()
 
 // The on-disk lock protocol owns this hash; dependency upgrades must not
 // change the name and let two versions acquire different locks for one file.
@@ -196,12 +196,10 @@ export const acquire = effect (
   }
   const locks = new Map<string, string>()
   for (const path of paths) {
-    const destination = try (fileSystem.realPath(path)
-      |> Effect.catch(%, (error) =>
-        error.reason._tag === "NotFound" && creationPaths !== undefined
+    const destination = try ((do { const catchProgram = fileSystem.realPath(path); effect { return catchProgram catch effect (error) => try (error.reason._tag === "NotFound" && creationPaths !== undefined
           ? (fileSystem.realPath(creationPaths.dirname(path))
             |> Effect.map(%, (directory) => creationPaths.join(directory, creationPaths.basename(path))))
-          : Effect.fail(error))
+          : Effect.fail(error)) } })
       |> Effect.mapError(%, FsFailure.reading(path, `File not found: ${path}`)))
     const lock = `${parent(destination)}.smithers-${lockHash(destination)}.lock`
     locks.set(lock, path)

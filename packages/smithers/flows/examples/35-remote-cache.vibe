@@ -86,10 +86,10 @@ export const Compile = (onExecute: () => void) =>
     tier: "sealed",
     idempotencyKey: "examples/remote-compile/v1",
     metadata: { readSet: [], writeSet: [], boundaryMode: "hard" },
-    execute: Effect.sync(() => {
+    execute: effect {
       onExecute()
       return "dist/server.js"
-    })
+    }
   })
 /**
  * One durable engine whose step cache reads through, and publishes to, the

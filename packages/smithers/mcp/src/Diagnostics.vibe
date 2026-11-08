@@ -43,4 +43,4 @@ export service Diagnostics {
  * @category layers
  * @since 1.0.0-rc.0
  */
-export const layer = (report: (event: Event) => void): Layer<Diagnostics> => Layer.succeed(Diagnostics)({ report })
+export const layer = (report: (event: Event) => void): Layer.Layer<Diagnostics> => Layer.succeed(Diagnostics)({ report })

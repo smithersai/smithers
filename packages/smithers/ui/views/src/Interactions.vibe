@@ -71,7 +71,7 @@ export type Name = typeof Name.Type
  * @category schemas
  * @since 0.1.0
  */
-export const StateInteraction = Schema.Struct({ kind: Schema.Literal("state") })
+export schema StateInteraction { readonly kind: "state" }
 
 /**
  * An event that becomes a question from the person. `label` is the question's

@@ -208,14 +208,14 @@ export const make: {
   }
 ): any => {
   if (typeof tag !== "string" || tag.trim().length === 0) {
-    throw new TypeError("Flow.make: tag must be a non-empty string")
+    $raise(new TypeError("Flow.make: tag must be a non-empty string"))
   }
   if (
     (options.body === undefined && typeof options.prompt !== "function") ||
     (options.prompt === undefined && typeof options.body !== "function") ||
     (options.body !== undefined && options.prompt !== undefined)
   ) {
-    throw new TypeError(`Flow.make: "${tag}" must declare exactly one function: body or prompt`)
+    $raise(new TypeError(`Flow.make: "${tag}" must declare exactly one function: body or prompt`))
   }
   // Invalid static configuration is a programmer error thrown at construction,
   // the same contract as effect's own `ExecutionPlan.make` (which throws on
@@ -224,7 +224,7 @@ export const make: {
     options.maxRounds !== undefined &&
     (!Number.isSafeInteger(options.maxRounds) || options.maxRounds < 1)
   ) {
-    throw new RangeError(`Flow.make: "${tag}" maxRounds must be a positive safe integer`)
+    $raise(new RangeError(`Flow.make: "${tag}" maxRounds must be a positive safe integer`))
   }
   const deadline = options.deadline === undefined
     ? undefined
@@ -233,12 +233,12 @@ export const make: {
     options.deadline !== undefined &&
     (deadline === undefined || !Duration.isFinite(deadline) || Duration.toMillis(deadline) <= 0)
   ) {
-    throw new RangeError(`Flow.make: "${tag}" deadline must be a positive finite duration`)
+    $raise(new RangeError(`Flow.make: "${tag}" deadline must be a positive finite duration`))
   }
   // The durable clock that enforces a deadline is due at its start plus the
   // deadline, and a store records that due time as a safe integer.
   if (deadline !== undefined && Duration.toMillis(deadline) > Number.MAX_SAFE_INTEGER) {
-    throw new RangeError(`Flow.make: "${tag}" deadline must be at most ${Number.MAX_SAFE_INTEGER} ms`)
+    $raise(new RangeError(`Flow.make: "${tag}" deadline must be at most ${Number.MAX_SAFE_INTEGER} ms`))
   }
   // Captured here, where the stack still names the author's file, and carried
   // as a non-enumerable property so no digest can see it
@@ -295,3 +295,8 @@ export const make: {
     site
   )
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

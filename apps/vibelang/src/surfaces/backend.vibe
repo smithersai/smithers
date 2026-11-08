@@ -1,4 +1,3 @@
-import { FetchHttpClient } from "effect/http"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"
 import { MockFactory } from "../core/MockFactory.vibe"
 

@@ -224,7 +224,7 @@ export const encodeJson = (
     try: () => {
       const encoded = JSON.stringify(value)
       if (encoded === undefined) {
-        throw new TypeError(`${field} is not JSON-serializable`)
+        $raise(new TypeError(`${field} is not JSON-serializable`))
       }
       return encoded
     },
@@ -393,3 +393,8 @@ export const validateRecords = effect (records: SearchRowsInput["records"], oper
     try validateNonEmpty(record.id, "record id", ["records", "id"])
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

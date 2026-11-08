@@ -4,7 +4,7 @@
  * @since 0.1.0
  */
 
-import { Effect, type Redacted, Schema, Stream } from "effect"
+import { type Redacted } from "effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { type Channel, Channels, type InboundResult, type RawInbound } from "./Channels.vibe"
 import { InvalidInput, type Unauthorized } from "./ControlError.vibe"

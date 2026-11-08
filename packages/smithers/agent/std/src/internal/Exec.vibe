@@ -186,10 +186,10 @@ const keepTail = (state: Tail, chunk: Uint8Array, maxBytes: number): void => {
  */
 const decodeTail = (state: Tail): Capture => {
   const bytes = join(state.chunks, state.bytes)
-  if (state.dropped === 0) return { text: decoder.decode(bytes), droppedBytes: 0 }
+  if (state.dropped === 0) return { text: $invoke(decoder,() => (bytes)), droppedBytes: 0 }
   let start = 0
   while (start < bytes.byteLength && start < 3 && isContinuation(bytes[start]!)) start++
-  return { text: decoder.decode(bytes.subarray(start)), droppedBytes: state.dropped + start }
+  return { text: $invoke(decoder,() => (bytes.subarray(start))), droppedBytes: state.dropped + start }
 }
 
 /**
@@ -218,17 +218,17 @@ const wholeLength = (bytes: Uint8Array): number => {
 const decodeEnds = (state: Ends): Capture => {
   if (state.tail.dropped === 0) {
     const whole = join([...state.head, ...state.tail.chunks], state.headBytes + state.tail.bytes)
-    return { text: decoder.decode(whole), droppedBytes: 0 }
+    return { text: $invoke(decoder,() => (whole)), droppedBytes: 0 }
   }
   const head = join(state.head, state.headBytes)
   const kept = wholeLength(head)
   const tail = decodeTail(state.tail)
   const droppedBytes = head.byteLength - kept + tail.droppedBytes
-  return { text: elideMiddle(decoder.decode(head.subarray(0, kept)), droppedBytes, tail.text), droppedBytes }
+  return { text: elideMiddle($invoke(decoder,() => (head.subarray(0, kept))), droppedBytes, tail.text), droppedBytes }
 }
 
 const boundedTail = <E>(
-  stream: Stream<Uint8Array, E>,
+  stream: Stream.Stream<Uint8Array, E>,
   maxBytes: number,
   overflow: Overflow | undefined
 ): Capture!E =>
@@ -245,7 +245,7 @@ const boundedTail = <E>(
  * and every byte after it passes through the tail, which drops from its front:
  * what falls out of the tail is the middle.
  */
-const boundedEnds = <E>(stream: Stream<Uint8Array, E>, maxBytes: number): Capture!E => {
+const boundedEnds = <E>(stream: Stream.Stream<Uint8Array, E>, maxBytes: number): Capture!E => {
   const headBytes = Math.floor(maxBytes / 2)
   return Stream.runFold(stream, (): Ends => ({ head: [], headBytes: 0, tail: emptyTail() }), (state, chunk) => {
     const taken = Math.min(headBytes - state.headBytes, chunk.byteLength)
@@ -259,7 +259,7 @@ const boundedEnds = <E>(stream: Stream<Uint8Array, E>, maxBytes: number): Captur
 }
 
 const capture = <E>(
-  stream: Stream<Uint8Array, E>,
+  stream: Stream.Stream<Uint8Array, E>,
   maxBytes: number | undefined,
   overflow: Overflow | undefined
 ): Capture!E =>
@@ -422,3 +422,8 @@ export const toStdError = (command: string, error: ExecError): StdError.StdError
       : `Command failed to start: ${error.message}`,
     ...(error.limitMillis === undefined ? {} : { limitMillis: error.limitMillis })
   })
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

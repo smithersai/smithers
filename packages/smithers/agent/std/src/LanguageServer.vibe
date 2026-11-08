@@ -106,4 +106,4 @@ export const makeNoop = (): LanguageServer =>
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer<LanguageServer> = Layer.succeed(LanguageServer, makeNoop())
+export const layerNoop: Layer.Layer<LanguageServer> = Layer.succeed(LanguageServer, makeNoop())

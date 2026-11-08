@@ -131,7 +131,7 @@ export const make = (fixture: Fixture, options: Options = {}): Replay!! =>
     }
     const model = ModelLike.of({
       stream: (request) => {
-        const selection = claim(request) |> Effect.map(%, (selected): Stream<ModelEventLike, ModelLikeError> => {
+        const selection = claim(request) |> Effect.map(%, (selected): Stream.Stream<ModelEventLike, ModelLikeError> => {
           if (selected._tag === "Unscripted") return noCall(request)
           if (selected._tag === "Mismatch") {
             return Stream.die(
@@ -167,7 +167,7 @@ export const make = (fixture: Fixture, options: Options = {}): Replay!! =>
  * @category layers
  * @since 0.0.0
  */
-export const layer = (fixture: Fixture, options: Options = {}): Layer<ModelLikeService | RecordedModel> =>
+export const layer = (fixture: Fixture, options: Options = {}): Layer.Layer<ModelLikeService | RecordedModel> =>
   Layer.effectContext(
     make(fixture, options)
       |> Effect.map(

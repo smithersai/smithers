@@ -94,7 +94,7 @@ export const TypedCalls = Schema.Struct({
 })
 
 /** What the flow settles with. */
-export const Output = Schema.Struct({ interfaces: Interfaces, typedCalls: TypedCalls })
+export schema Output { readonly interfaces: Interfaces; readonly typedCalls: TypedCalls }
 
 /** Normalizes the raw spec. */
 export const ParseContract = AgentAction.make("examples/OpenApiContractAgent/ParseContract", {

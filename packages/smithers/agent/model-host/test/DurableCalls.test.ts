@@ -10,8 +10,8 @@ import { ConfigProvider, Effect, Exit, Layer, Option, Schedule, Schema } from "e
 import { createServer } from "node:http"
 import type { AddressInfo } from "node:net"
 import { expect, test } from "vitest"
-import { HostModel } from "../src/HostModel.ts"
-import { providerRequest, runModelTurn } from "../src/ModelTurnHost.ts"
+import { HostModel } from "../src/HostModel.vibe"
+import { providerRequest, runModelTurn } from "../src/ModelTurnHost.vibe"
 
 const turn: NativeAgent.StartAgentTurnRequest = {
   runId: "durable-host-call",

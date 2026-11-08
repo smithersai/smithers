@@ -4,7 +4,6 @@
 // reply is a `vibelang/Reply` execution, the scripted agent's (mockReplies.vibe), started oldest post first.
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Digest } from "effect/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"

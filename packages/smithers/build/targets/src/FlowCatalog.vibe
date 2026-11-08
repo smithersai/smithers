@@ -145,7 +145,7 @@ export const rows = (
   const byId = new Map<string, DiscoveredFlow>()
   for (const flow of discovered) {
     if (byId.has(flow.id)) {
-      throw new FlowCatalogError({ message: `discovery reported the flow ${JSON.stringify(flow.id)} twice` })
+      $raise(new FlowCatalogError({ message: `discovery reported the flow ${JSON.stringify(flow.id)} twice` }))
     }
     byId.set(flow.id, flow)
   }
@@ -153,19 +153,19 @@ export const rows = (
   const unknown: Array<string> = []
   for (const declaration of declarations) {
     if (declared.has(declaration.flow)) {
-      throw new FlowCatalogError({
+      $raise(new FlowCatalogError({
         message: `FACTORY.ts declares the flow ${JSON.stringify(declaration.flow)} twice`
-      })
+      }))
     }
     declared.set(declaration.flow, declaration)
     if (!byId.has(declaration.flow)) unknown.push(declaration.flow)
   }
   if (unknown.length > 0) {
-    throw new FlowCatalogError({
+    $raise(new FlowCatalogError({
       message: `FACTORY.ts declares ${unknown.length === 1 ? "a flow" : "flows"} discovery did not find: ${
         unknown.map((id) => JSON.stringify(id)).join(", ")
       }`
-    })
+    }))
   }
   const row = (flow: DiscoveredFlow, declaration: Flow.Declaration | undefined): Row => ({
     id: flow.id,
@@ -201,3 +201,8 @@ export const rows = (
     .map((flow) => row(flow, undefined))
   return [...featured, ...declaredOnly, ...rest]
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

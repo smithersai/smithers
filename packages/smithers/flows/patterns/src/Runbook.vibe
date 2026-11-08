@@ -207,20 +207,20 @@ export const make = <R = never>(options: MakeOptions): RunbookFlow<R> => {
   // these copies and never the caller's step records again.
   const steps: ReadonlyArray<Step> = options.steps.map((step) => ({ id: step.id, flow: step.flow, risk: step.risk }))
   if (steps.length === 0) {
-    throw new PatternError({ code: "invalid_decorator", message: "Runbook requires at least one step" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Runbook requires at least one step" }))
   }
   const ids = steps.map((step) => step.id)
   if (!identities(ids)) {
-    throw new PatternError({ code: "invalid_decorator", message: "Runbook step ids must be unique" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Runbook step ids must be unique" }))
   }
   if (options.onDeny === "skip") {
-    throw new PatternError({
+    $raise(new PatternError({
       code: "invalid_decorator",
       message: "Runbook.make does not support onDeny: \"skip\". A declared plan has no branch that drops a " +
         "denied step, and the gated node carries the step's own failures beside the denial, so the arm that " +
         "would skip also declares that the runbook continues past a failed step. Declare the runbook with " +
         "onDeny: \"fail\", and call Runbook.run with onDeny: \"skip\" to skip a denied step at run time."
-    })
+    }))
   }
   const reason = options.reason ?? DEFAULT_REASON
   const captures = { steps: ids, risks: steps.map((step) => step.risk), onDeny: options.onDeny, reason }
@@ -352,3 +352,8 @@ export const run = <I, Out, E = never, R = never, E2 = never, R2 = never>(
     return { outputs: Object.fromEntries(outputs), ran, skipped }
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

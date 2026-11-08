@@ -40,7 +40,7 @@ import * as Names from "./internal/Names.vibe"
  * @category schemas
  * @since 0.1.0
  */
-export const Input = Schema.Struct({ args: Schema.String })
+export schema Input { readonly args: string }
 
 /**
  * The decoded input accepted by every markdown flow.
@@ -187,7 +187,7 @@ export const fromMarkdown = (options: FromMarkdownOptions): FromMarkdownResult =
         body: new BodyRefMarkdown({
           path: options.path,
           baseDirectory: options.baseDirectory,
-          contentDigest: options.contentDigest ?? Digest.digest(options.text)
+          contentDigest: options.contentDigest ?? $invoke(Digest,() => (options.text))
         }),
         input: new SchemaRefMarkdownArgs({}),
         output: new SchemaRefMarkdownOutput({}),
@@ -827,3 +827,8 @@ const warnUnknownFields = (fields: Record<string, unknown>, path: string, warnin
     }
   }
 }
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

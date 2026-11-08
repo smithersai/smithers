@@ -72,10 +72,10 @@ export const onTruncate = effect (forget: (runIds: ReadonlyArray<string>) => voi
     effect {
       return registered.add(forget)
     },
-    () =>
-      Effect.sync(() => {
+    effect () =>
+      {
         registered.delete(forget)
-      })
+      }
   )
 }
 
@@ -89,7 +89,7 @@ export const onTruncate = effect (forget: (runIds: ReadonlyArray<string>) => voi
  */
 export const forget = effect (runIds: ReadonlyArray<string>) => {
   const sql = try SqlClient.SqlClient
-  try Effect.sync(() => {
+  try effect {
     for (const invalidate of journals.get(sql) ?? []) invalidate(runIds)
-  })
+  }
 }

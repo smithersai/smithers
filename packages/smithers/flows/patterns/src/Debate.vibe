@@ -102,10 +102,10 @@ export type DebateFlow<R = never> = Flow.Flow<
 >
 
 const invalidRounds = (rounds: number): never => {
-  throw new PatternError({
+  $raise(new PatternError({
     code: "invalid_decorator",
     message: `Debate rounds must be a positive safe integer, received ${rounds}`
-  })
+  }))
 }
 
 /**
@@ -191,3 +191,8 @@ export const run = <I, Proponent, Opponent, Judge, E, R, E2, R2, E3, R3>(
     return try participants.judge({ input, transcript: snapshot() })
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

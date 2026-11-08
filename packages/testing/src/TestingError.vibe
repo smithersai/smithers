@@ -161,6 +161,7 @@ export class ConformanceViolation extends Schema.TaggedError<ConformanceViolatio
   actual: Schema.optional(Schema.Unknown)
 }) {}
 
+const UnscriptedModelErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"unscripted_model">> = constantCode("unscripted_model")
 /**
  * A recorded model received a request with no matching fixture.
  *
@@ -174,13 +175,14 @@ export class ConformanceViolation extends Schema.TaggedError<ConformanceViolatio
  * @since 0.0.0
  * @category errors
  */
-export class UnscriptedModelError extends Schema.TaggedError<UnscriptedModelError>()("UnscriptedModelError", {
-  code: constantCode("unscripted_model"),
-  modelId: Schema.String,
-  messageCount: Schema.Number,
-  toolNames: Schema.Array(Schema.String)
-}) {}
+export schema error UnscriptedModelError {
+  code: UnscriptedModelErrorCodeField
+  readonly modelId: string
+  readonly messageCount: number
+  readonly toolNames: ReadonlyArray<string>
+}
 
+const FixtureEncodingErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"fixture_not_encodable">> = constantCode("fixture_not_encodable")
 /**
  * A value a fixture must store is not representable as canonical JSON.
  *
@@ -191,51 +193,41 @@ export class UnscriptedModelError extends Schema.TaggedError<UnscriptedModelErro
  * @since 0.0.0
  * @category errors
  */
-export class FixtureEncodingError extends Schema.TaggedError<FixtureEncodingError>()("FixtureEncodingError", {
-  code: constantCode("fixture_not_encodable"),
-  path: Schema.String,
-  reason: Schema.Literals([
-    "cycle",
-    "non-plain-object",
-    "non-finite-number",
-    "symbol-key",
-    "unsupported-type",
-    "too-deep"
-  ])
-}) {}
+export schema error FixtureEncodingError {
+  code: FixtureEncodingErrorCodeField
+  readonly path: string
+  readonly reason: "cycle" | "non-plain-object" | "non-finite-number" | "symbol-key" | "unsupported-type" | "too-deep"
+}
 
+const ReplayHarnessMismatchErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"replay_harness_mismatch">> = constantCode("replay_harness_mismatch")
 /**
  * A replay harness produced output different from its recorded expectation.
  *
  * @since 0.0.0
  * @category errors
  */
-export class ReplayHarnessMismatchError extends Schema.TaggedError<ReplayHarnessMismatchError>()(
-  "ReplayHarnessMismatchError",
-  {
-    code: constantCode("replay_harness_mismatch"),
-    expected: Schema.String,
-    actual: Schema.String
-  }
-) {}
+export schema error ReplayHarnessMismatchError {
+  code: ReplayHarnessMismatchErrorCodeField
+  readonly expected: string
+  readonly actual: string
+}
 
+const FixtureDivergenceErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"fixture_divergence">> = constantCode("fixture_divergence")
 /**
  * The first divergent field in a fixture sequence.
  *
  * @since 0.0.0
  * @category errors
  */
-export class FixtureDivergenceError extends Schema.TaggedError<FixtureDivergenceError>()(
-  "FixtureDivergenceError",
-  {
-    code: constantCode("fixture_divergence"),
-    index: Schema.Number,
-    field: Schema.String,
-    expected: Schema.Unknown,
-    actual: Schema.Unknown
-  }
-) {}
+export schema error FixtureDivergenceError {
+  code: FixtureDivergenceErrorCodeField
+  readonly index: number
+  readonly field: string
+  readonly expected: Schema.Unknown
+  readonly actual: Schema.Unknown
+}
 
+const ExactlyOnceUnsupportedErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"exactly_once_unsupported">> = constantCode("exactly_once_unsupported")
 /**
  * Exactly-once assertions are unsupported because the assertion vocabulary must
  * not be able to lie: the engine does not provide exactly-once execution.
@@ -243,13 +235,10 @@ export class FixtureDivergenceError extends Schema.TaggedError<FixtureDivergence
  * @since 0.0.0
  * @category errors
  */
-export class ExactlyOnceUnsupportedError extends Schema.TaggedError<ExactlyOnceUnsupportedError>()(
-  "ExactlyOnceUnsupportedError",
-  {
-    code: constantCode("exactly_once_unsupported"),
-    message: Schema.String
-  }
-) {}
+export schema error ExactlyOnceUnsupportedError {
+  code: ExactlyOnceUnsupportedErrorCodeField
+  readonly message: string
+}
 
 /**
  * An operation violated its declared capability contract.
@@ -272,6 +261,7 @@ export class CapabilityContractError extends Schema.TaggedError<CapabilityContra
   }
 ) {}
 
+const ConformanceSkippedCodeField: Schema.withConstructorDefault<Schema.Literal<"conformance_skipped">> = constantCode("conformance_skipped")
 /**
  * A conformance pin could not run because its subject does not implement the
  * capability named by the pin.
@@ -284,24 +274,26 @@ export class CapabilityContractError extends Schema.TaggedError<CapabilityContra
  * @since 0.0.0
  * @category errors
  */
-export class ConformanceSkipped extends Schema.TaggedError<ConformanceSkipped>()("ConformanceSkipped", {
-  code: constantCode("conformance_skipped"),
-  pin: Schema.String,
-  capability: Schema.String,
-  reason: Schema.String
-}) {}
+export schema error ConformanceSkipped {
+  code: ConformanceSkippedCodeField
+  readonly pin: string
+  readonly capability: string
+  readonly reason: string
+}
 
+const EngineUnavailableErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"engine_unavailable">> = constantCode("engine_unavailable")
 /**
  * The requested engine subject is unavailable for a test or conformance pin.
  *
  * @since 0.0.0
  * @category errors
  */
-export class EngineUnavailableError extends Schema.TaggedError<EngineUnavailableError>()("EngineUnavailableError", {
-  code: constantCode("engine_unavailable"),
-  message: Schema.String
-}) {}
+export schema error EngineUnavailableError {
+  code: EngineUnavailableErrorCodeField
+  readonly message: string
+}
 
+const ExecutionConflictErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"execution_conflict">> = constantCode("execution_conflict")
 /**
  * A `run` named an execution id that already exists, with a different flow or a
  * different payload.
@@ -314,13 +306,13 @@ export class EngineUnavailableError extends Schema.TaggedError<EngineUnavailable
  * @since 0.0.0
  * @category errors
  */
-export class ExecutionConflictError extends Schema.TaggedError<ExecutionConflictError>()("ExecutionConflictError", {
-  code: constantCode("execution_conflict"),
-  executionId: Schema.String,
-  field: Schema.Literals(["flow", "payload"]),
-  expected: Schema.String,
-  actual: Schema.String
-}) {}
+export schema error ExecutionConflictError {
+  code: ExecutionConflictErrorCodeField
+  readonly executionId: string
+  readonly field: "flow" | "payload"
+  readonly expected: string
+  readonly actual: string
+}
 
 /**
  * Transaction commit-failure injection boundaries.
@@ -363,45 +355,47 @@ export const RewindBoundary = Schema.Literals([
  */
 export type RewindBoundary = typeof RewindBoundary.Type
 
+const CapabilityOperationErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"capability_operation_failed">> = constantCode("capability_operation_failed")
 /**
  * A requested capability operation has no valid subject.
  *
  * @since 0.0.0
  * @category errors
  */
-export class CapabilityOperationError
-  extends Schema.TaggedError<CapabilityOperationError>()("CapabilityOperationError", {
-    code: constantCode("capability_operation_failed"),
-    capability: Schema.String,
-    operation: Schema.String,
-    message: Schema.String
-  })
-{}
+export schema error CapabilityOperationError {
+  code: CapabilityOperationErrorCodeField
+  readonly capability: string
+  readonly operation: string
+  readonly message: string
+}
 
+const TransactionCommitErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"transaction_commit_failed">> = constantCode("transaction_commit_failed")
 /**
  * A failure raised at an injected transactional commit boundary.
  *
  * @since 0.0.0
  * @category errors
  */
-export class TransactionCommitError extends Schema.TaggedError<TransactionCommitError>()("TransactionCommitError", {
-  code: constantCode("transaction_commit_failed"),
-  boundary: TransactionBoundary
-}) {}
+export schema error TransactionCommitError {
+  code: TransactionCommitErrorCodeField
+  readonly boundary: TransactionBoundary
+}
 
+const RewindFailureErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"rewind_failed">> = constantCode("rewind_failed")
 /**
  * A failure raised at an injected frame-rewind boundary.
  *
  * @since 0.0.0
  * @category errors
  */
-export class RewindFailureError extends Schema.TaggedError<RewindFailureError>()("RewindFailureError", {
-  code: constantCode("rewind_failed"),
-  executionId: Schema.String,
-  frame: Schema.Number,
-  boundary: RewindBoundary
-}) {}
+export schema error RewindFailureError {
+  code: RewindFailureErrorCodeField
+  readonly executionId: string
+  readonly frame: number
+  readonly boundary: RewindBoundary
+}
 
+const FlowHashMismatchErrorCodeField: Schema.withConstructorDefault<Schema.Literal<"flow_hash_mismatch">> = constantCode("flow_hash_mismatch")
 /**
  * Resume was rejected because the current flow or import graph differs
  * from the stamp recorded for the execution.
@@ -409,14 +403,14 @@ export class RewindFailureError extends Schema.TaggedError<RewindFailureError>()
  * @since 0.0.0
  * @category errors
  */
-export class FlowHashMismatchError extends Schema.TaggedError<FlowHashMismatchError>()("FlowHashMismatchError", {
-  code: constantCode("flow_hash_mismatch"),
-  executionId: Schema.String,
-  expectedFlowHash: Schema.String,
-  actualFlowHash: Schema.String,
-  expectedImportHash: Schema.String,
-  actualImportHash: Schema.String
-}) {}
+export schema error FlowHashMismatchError {
+  code: FlowHashMismatchErrorCodeField
+  readonly executionId: string
+  readonly expectedFlowHash: string
+  readonly actualFlowHash: string
+  readonly expectedImportHash: string
+  readonly actualImportHash: string
+}
 
 /**
  * Every typed failure an engine subject (or one of its optional capabilities)

@@ -23,20 +23,20 @@ const seat = "anthropic:claude-sonnet-5-5"
 const Severity = Schema.Literals(["low", "medium", "high", "critical"])
 
 /** One indicator of compromise. */
-export const Indicator = Schema.Struct({
-  type: Schema.Literals(["ip", "domain", "hash", "email", "url", "other"]),
-  value: Schema.String
-})
+export schema Indicator {
+  readonly type: "ip" | "domain" | "hash" | "email" | "url" | "other"
+  readonly value: string
+}
 
 /** The alert, normalized. */
-export const IngestedAlert = Schema.Struct({
-  alertId: Schema.String,
-  source: Schema.String,
-  indicators: Schema.Array(Indicator),
-  rawDescription: Schema.String,
-  timestamp: Schema.String,
-  summary: Schema.String
-})
+export schema IngestedAlert {
+  readonly alertId: string
+  readonly source: string
+  readonly indicators: ReadonlyArray<Indicator>
+  readonly rawDescription: string
+  readonly timestamp: string
+  readonly summary: string
+}
 
 /** What threat feeds and CVE databases say about the indicators. */
 export const ExternalEnrichment = Schema.Struct({
@@ -56,21 +56,21 @@ export const ExternalEnrichment = Schema.Struct({
 })
 
 /** What the CMDB, logs and incident history say about the indicators. */
-export const InternalEnrichment = Schema.Struct({
-  affectedAssets: Schema.Array(Schema.Struct({
-    hostname: Schema.String,
-    service: Schema.String,
-    environment: Schema.Literals(["production", "staging", "development"]),
-    owner: Schema.String
-  })),
-  recentActivity: Schema.Array(Schema.Struct({
-    timestamp: Schema.String,
-    event: Schema.String,
-    relevance: Schema.Literals(["low", "medium", "high"])
-  })),
-  priorIncidents: Schema.Array(Schema.String),
-  summary: Schema.String
-})
+export schema InternalEnrichment {
+  readonly affectedAssets: ReadonlyArray<{
+    readonly hostname: string
+    readonly service: string
+    readonly environment: "production" | "staging" | "development"
+    readonly owner: string
+  }>
+  readonly recentActivity: ReadonlyArray<{
+    readonly timestamp: string
+    readonly event: string
+    readonly relevance: "low" | "medium" | "high"
+  }>
+  readonly priorIncidents: ReadonlyArray<string>
+  readonly summary: string
+}
 
 /** The analyst's verdict. */
 export const AnalystVerdict = Schema.Struct({
@@ -84,16 +84,16 @@ export const AnalystVerdict = Schema.Struct({
 })
 
 /** The case the flow settles with. */
-export const CaseRecord = Schema.Struct({
-  caseId: Schema.String,
-  severity: Severity,
-  title: Schema.String,
-  assignee: Schema.String,
-  firstActions: Schema.Array(Schema.String),
-  enrichmentSummary: Schema.String,
-  status: Schema.Literals(["open", "triaged", "investigating", "resolved"]),
-  summary: Schema.String
-})
+export schema CaseRecord {
+  readonly caseId: string
+  readonly severity: Severity
+  readonly title: string
+  readonly assignee: string
+  readonly firstActions: ReadonlyArray<string>
+  readonly enrichmentSummary: string
+  readonly status: "open" | "triaged" | "investigating" | "resolved"
+  readonly summary: string
+}
 
 /** Normalizes the raw alert. */
 export const Ingest = AgentAction.make("examples/ThreatIntelEnricher/Ingest", {

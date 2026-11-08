@@ -211,19 +211,19 @@ export const validateAge = (
 export const snapshotEntry = (input: CacheEntry): CacheEntry!CacheStoreError =>
   Effect.suspend(() => {
     try {
-      if (typeof input !== "object" || input === null) throw new TypeError("entry")
+      if (typeof input !== "object" || input === null) $raise(new TypeError("entry"))
       const names = ["keyDigest", "result", "meta", "createdAtMs", "recordedRunId", "recordedEventSeq"] as const
       const values = Object.create(null) as Record<(typeof names)[number], unknown>
       for (const name of names) {
         const descriptor = Object.getOwnPropertyDescriptor(input, name)
         if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) {
-          throw new TypeError("entry")
+          $raise(new TypeError("entry"))
         }
         values[name] = descriptor.value
       }
       for (const key of Reflect.ownKeys(input)) {
         if (typeof key !== "string" || !(names as ReadonlyArray<string>).includes(key)) {
-          if (Object.getOwnPropertyDescriptor(input, key)?.enumerable) throw new TypeError("entry")
+          if (Object.getOwnPropertyDescriptor(input, key)?.enumerable) $raise(new TypeError("entry"))
         }
       }
       const result = BoundedJson.admit(values.result, jsonLimits)
@@ -249,3 +249,8 @@ export const snapshotEntry = (input: CacheEntry): CacheEntry!CacheStoreError =>
       return Effect.fail(error("invalid_cache", "cache entry cannot be inspected as inert data"))
     }
   })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

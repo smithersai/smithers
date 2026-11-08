@@ -90,11 +90,11 @@ export const Repo = Schema.String.check(
 export const IssueNumber = Schema.Int.check(Schema.isGreaterThanOrEqualTo(1))
 
 const refuse = (field: string, value: unknown): never => {
-  throw new IntegrationError(
+  $raise(new IntegrationError(
     "invalid-config",
     `GitHub ${field} is not a valid name, so it cannot be part of a request path.`,
     { field, retryable: false, [field]: typeof value === "string" ? value.slice(0, 64) : typeof value }
-  )
+  ))
 }
 
 /**
@@ -143,3 +143,8 @@ export const requireFullNamePath = (fullName: string): string!IntegrationError =
  */
 export const requireRepositoryPath = (owner: string, repo: string): string!IntegrationError =>
   Effect.try({ try: () => repositoryPath(owner, repo), catch: (cause) => cause as IntegrationError })
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

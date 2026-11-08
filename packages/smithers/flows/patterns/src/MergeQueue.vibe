@@ -183,7 +183,7 @@ export const ordered = <M extends { readonly id: string; readonly priority?: num
   priority: number
 ): ReadonlyArray<Position<M>> => {
   const refusal = priorityRefusal(members, priority)
-  if (refusal !== undefined) throw refusal
+  if (refusal !== undefined) $raise(refusal)
   return members
     .map((member, index) => ({
       id: member.id,
@@ -295,7 +295,7 @@ export const make = <R = never>(options: MakeOptions<R>): MergeQueueFlow<R> => {
   const priority = options.priority ?? DefaultPriority
   const failurePolicy = options.failurePolicy
   const invalid = validate(snapshot, concurrency, priority, failurePolicy)
-  if (invalid !== undefined) throw invalid
+  if (invalid !== undefined) $raise(invalid)
   const queue = ordered(snapshot, priority)
   // Priority is deliberately absent: it reaches the plan as an annotation, and
   // an annotation never enters key material. What it changes, the order and
@@ -474,3 +474,8 @@ export const run = <I, Out, E = never, R = never>(
     })
   )
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

@@ -31,11 +31,11 @@ export const Target = Schema.Struct({
 })
 
 /** The analyzer's answer. */
-export const Analysis = Schema.Struct({
-  targets: Schema.Array(Target),
-  totalOccurrences: Schema.Number,
-  estimatedImpact: Schema.String
-})
+export schema Analysis {
+  readonly targets: ReadonlyArray<Target>
+  readonly totalOccurrences: number
+  readonly estimatedImpact: string
+}
 
 /** What the refactorer did to one file. */
 export const Change = Schema.Struct({
@@ -46,26 +46,26 @@ export const Change = Schema.Struct({
 })
 
 /** The verifier's answer. */
-export const Verification = Schema.Struct({
-  typecheck: Schema.Boolean,
-  tests: Schema.Boolean,
-  lint: Schema.Boolean,
-  errors: Schema.Array(Schema.String),
-  passed: Schema.Boolean
-})
+export schema Verification {
+  readonly typecheck: boolean
+  readonly tests: boolean
+  readonly lint: boolean
+  readonly errors: ReadonlyArray<string>
+  readonly passed: boolean
+}
 
 /** The summary the flow settles with. */
-export const Summary = Schema.Struct({
-  totalTargets: Schema.Number,
-  refactored: Schema.Number,
-  skipped: Schema.Number,
-  failed: Schema.Number,
-  verified: Schema.Boolean,
-  summary: Schema.String
-})
+export schema Summary {
+  readonly totalTargets: number
+  readonly refactored: number
+  readonly skipped: number
+  readonly failed: number
+  readonly verified: boolean
+  readonly summary: string
+}
 
 /** A before-and-after pair showing the refactoring. */
-export const Example = Schema.Struct({ before: Schema.String, after: Schema.String })
+export schema Example { readonly before: string; readonly after: string }
 
 type Target = typeof Target.Type
 type Change = typeof Change.Type

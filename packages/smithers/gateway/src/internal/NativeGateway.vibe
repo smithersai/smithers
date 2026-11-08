@@ -167,15 +167,12 @@ export const layerAuth = (options: ServerOptions): Layer.Layer<ControlRpcs.Contr
         if (token === undefined || token === "") {
           return Effect.succeed({ id: "loopback", kind: "anonymous", stampedAt: 0 })
         }
-        return ControlRpcs.bearerAuthenticator({
+        return do { const catchProgram = ControlRpcs.bearerAuthenticator({
           token,
           principal: { id: "local", kind: "operator" }
-        }).authenticate(headers)
-          |> Effect.catchTag(
-            %,
-            "/control/Unauthorized",
-            () => Effect.succeed({ id: "loopback", kind: "anonymous", stampedAt: 0 })
-          )
+        }).authenticate(headers); effect { return catchProgram catch (e) => match (e) {
+          when { _tag: "/control/Unauthorized" }: ({ id: "loopback", kind: "anonymous", stampedAt: 0 });
+        } } }
       }
     }, gatewayRunVisibility)
     : ControlRpcs.layerAuth(credentialAuthenticator(options.credential), gatewayRunVisibility)

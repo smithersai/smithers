@@ -20,7 +20,7 @@ import type { PermissionErrorPayload } from "./PermissionErrorPayload.ts"
  * @since 0.1.0
  * @slop
  */
-export const fromPlatformError = (error: PlatformError): Option<PermissionErrorPayload> =>
+export const fromPlatformError = (error: PlatformError): Option.Option<PermissionErrorPayload> =>
   error.reason._tag === "PermissionDenied" && isPermissionError(error.reason.cause)
     ? Option.some(error.reason.cause)
     : Option.none()

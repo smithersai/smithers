@@ -89,7 +89,7 @@ export interface SinkService {
  * @category services
  * @since 0.1.0
  */
-export class Sink extends Context.Service<Sink, SinkService>()("/notifications/AlertSink") {}
+export service Sink: SinkService { static readonly key = "/notifications/AlertSink";}
 
 /**
  * A sink that accepts every alert and sends it nowhere.
@@ -101,4 +101,4 @@ export class Sink extends Context.Service<Sink, SinkService>()("/notifications/A
  * @category layers
  * @since 0.1.0
  */
-export const layerNoop: Layer<Sink> = Layer.succeed(Sink)({ deliver: () => Effect.void })
+export const layerNoop: Layer.Layer<Sink> = Layer.succeed(Sink)({ deliver: () => Effect.void })

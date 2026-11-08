@@ -90,14 +90,14 @@ export const SinkResult = Schema.Struct({
 })
 
 /** The counts the flow settles with. */
-export const Output = Schema.Struct({
-  totalReceived: Schema.Number,
-  suppressed: Schema.Number,
-  escalated: Schema.Number,
-  ticketed: Schema.Number,
-  observed: Schema.Number,
-  summary: Schema.String
-})
+export schema Output {
+  readonly totalReceived: number
+  readonly suppressed: number
+  readonly escalated: number
+  readonly ticketed: number
+  readonly observed: number
+  readonly summary: string
+}
 
 type Alert = typeof Alert.Type
 type DedupeResult = typeof DedupeResult.Type

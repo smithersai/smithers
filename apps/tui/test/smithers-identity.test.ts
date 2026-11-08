@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect"
 import { mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as Panels from "../src/panels.ts"
+import * as Panels from "#vibelang/emitted/src/panels"
 import * as Smithers from "../src/smithers.ts"
 
 const connection = (

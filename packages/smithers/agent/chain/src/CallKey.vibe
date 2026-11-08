@@ -64,12 +64,12 @@ export const harnessDigest = ""
  * @since 0.1.0
  * @slop
  */
-export const CallKey = Schema.Struct({
-  link: LinkId,
-  scriptDigest: Schema.String,
-  ordinal: Ordinal,
-  entryDigest: Schema.String
-})
+export schema CallKey {
+  readonly link: LinkId
+  readonly scriptDigest: string
+  readonly ordinal: Ordinal
+  readonly entryDigest: string
+}
 
 /**
  * The decoded form of {@link CallKey}.

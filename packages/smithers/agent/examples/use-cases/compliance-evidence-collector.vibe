@@ -27,21 +27,21 @@ const Method = Schema.Literals(["api", "mcp", "browser"])
 const Positive = Schema.Int.check(Schema.isGreaterThan(0))
 
 /** One control in scope and the sources that evidence it. */
-export const PlannedControl = Schema.Struct({
-  controlId: Schema.String,
-  description: Schema.String,
-  sources: Schema.Array(Schema.Struct({
-    sourceId: Schema.String,
-    endpoint: Schema.String,
-    preferredMethod: Method
-  }))
-})
+export schema PlannedControl {
+  readonly controlId: string
+  readonly description: string
+  readonly sources: ReadonlyArray<{
+    readonly sourceId: string
+    readonly endpoint: string
+    readonly preferredMethod: Method
+  }>
+}
 
 /** The collection plan. */
-export const Plan = Schema.Struct({
-  controls: Schema.Array(PlannedControl),
-  totalSources: Schema.Number
-})
+export schema Plan {
+  readonly controls: ReadonlyArray<PlannedControl>
+  readonly totalSources: number
+}
 
 /** Raw evidence from one source for one control. */
 export const EvidenceItem = Schema.Struct({

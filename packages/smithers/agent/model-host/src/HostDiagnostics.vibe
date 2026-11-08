@@ -82,7 +82,7 @@ export interface HostDiagnosticOptions {
    */
   readonly write?: ((line: string) => void) | undefined
   /** Host Effect clock and lifetime. Required when a sink is supplied. */
-  readonly runtime?: { readonly clock: Clock; readonly scope: Scope }
+  readonly runtime?: { readonly clock: Clock.Clock; readonly scope: Scope.Scope }
   /** Monotonic milliseconds. */
   readonly clock?: () => number
   /** How often an unfinished operation repeats. */
@@ -253,7 +253,7 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
   const write = options.write
   if (write === undefined) return inert
   const runtime = options.runtime
-  if (runtime === undefined) throw new Error("Host diagnostics require an Effect clock and scope")
+  if (runtime === undefined) $raise(new Error("Host diagnostics require an Effect clock and scope"))
   const clock = options.clock ?? (() => Number(runtime.clock.monotonicTimeNanosUnsafe()) / 1_000_000)
   const pendingMillis = options.pendingMillis ?? 15_000
   const detailLimit = options.detailLimit ?? 8
@@ -336,8 +336,13 @@ export const createHostDiagnostics = (options: HostDiagnosticOptions = {}): Host
  */
 export const makeHostDiagnostics = (
   options: Omit<HostDiagnosticOptions, "runtime"> = {}
-): HostDiagnostics!never!Scope =>
+): HostDiagnostics!never!Scope.Scope =>
   effect {
     if (options.write === undefined) return inert
     return createHostDiagnostics({ ...options, runtime: { clock: try Clock.Clock, scope: try Scope.Scope } })
   }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

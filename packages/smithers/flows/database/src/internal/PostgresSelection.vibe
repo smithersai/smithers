@@ -28,7 +28,7 @@ export const location = (filename: string): { readonly url: string; readonly sch
  * @since 1.0.0
  * @private
  */
-export const layer = (filename: string, readOnly = false): Layer<SqlClient> | undefined => {
+export const layer = (filename: string, readOnly = false): Layer.Layer<SqlClient> | undefined => {
   const selected = location(filename)
   if (selected === undefined) return undefined
   return Layer.unwrap(

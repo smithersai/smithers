@@ -163,11 +163,11 @@ export const make = (options: Options): SyncAdapter => {
   const path = repositoryPath(options.owner, options.repo)
   const perPage = options.perPage ?? MAX_PER_PAGE
   if (!Number.isSafeInteger(perPage) || perPage < 1 || perPage > MAX_PER_PAGE) {
-    throw new IntegrationError(
+    $raise(new IntegrationError(
       "invalid-config",
       `GitHub sync perPage must be an integer between 1 and ${MAX_PER_PAGE}.`,
       { perPage, retryable: false }
-    )
+    ))
   }
   const stream = options.stream ?? `${options.owner}/${options.repo}`
   const { client, connectionId } = options
@@ -315,3 +315,8 @@ export const make = (options: Options): SyncAdapter => {
 
   return { provider: PROVIDER, connectionId, stream, changes }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

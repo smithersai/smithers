@@ -179,4 +179,4 @@ export const makeNoop = (): Search => {
  * @category layers
  * @since 1.0.0
  */
-export const layerNoop: Layer<Search> = Layer.succeed(Search, makeNoop())
+export const layerNoop: Layer.Layer<Search> = Layer.succeed(Search, makeNoop())

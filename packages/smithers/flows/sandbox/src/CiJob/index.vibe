@@ -224,7 +224,7 @@ export type StepResult = typeof StepResult.Type
  * @category schemas
  * @since 1.0.0-rc.17
  */
-export const Result = Schema.Struct({ outcome: Outcome, steps: Schema.Array(StepResult) })
+export schema Result { readonly outcome: Outcome; readonly steps: ReadonlyArray<StepResult> }
 
 /**
  * How a job ended.

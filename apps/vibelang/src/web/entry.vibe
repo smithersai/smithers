@@ -5,8 +5,6 @@
 // The page's window, document and media queries come from VibeLang's browser services, its randomness from Web
 // Crypto through Effect's SecureRandom. The mock loads only when chosen: it carries the flow engine (0011), which a
 // live page never runs.
-import { SecureRandom } from "effect/crypto"
-import { FetchHttpClient } from "effect/http"
 import { Runtime } from "foldkit"
 import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { health, LiveFactory } from "../core/LiveFactory.vibe"

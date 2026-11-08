@@ -3,10 +3,7 @@ import { EventTypes } from "@smthrs/engine-store"
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { RunStore } from "@smthrs/run-store"
 import * as Effect from "effect/Effect"
-import * as Fiber from "effect/Fiber"
 import * as Layer from "effect/Layer"
-import * as Schema from "effect/Schema"
-import * as Stream from "effect/Stream"
 
 const suspended = Schema.is(Schema.Struct({
   decision: Schema.Literal("transitioned"),

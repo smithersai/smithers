@@ -74,19 +74,19 @@ export const Explanations = Schema.Struct({
 })
 
 /** What the updater wrote, and the remediation table the flow settles with. */
-export const KbUpdate = Schema.Struct({
-  entriesWritten: Schema.Number,
-  ticketsCreated: Schema.Array(Schema.String),
-  kbPath: Schema.String,
-  remediationTable: Schema.Array(Schema.Struct({
-    fingerprint: Schema.String,
-    rootCause: Schema.String,
-    remediation: Schema.String,
-    severity: Schema.String,
-    occurrences: Schema.Number
-  })),
-  summary: Schema.String
-})
+export schema KbUpdate {
+  readonly entriesWritten: number
+  readonly ticketsCreated: ReadonlyArray<string>
+  readonly kbPath: string
+  readonly remediationTable: ReadonlyArray<{
+    readonly fingerprint: string
+    readonly rootCause: string
+    readonly remediation: string
+    readonly severity: string
+    readonly occurrences: number
+  }>
+  readonly summary: string
+}
 
 /** Reads and fingerprints the errors. */
 export const Ingest = AgentAction.make("examples/ErrorClusterer/Ingest", {

@@ -1,4 +1,3 @@
-import { Command, Flag, GlobalFlag } from "effect/cli"
 import { commands } from "./commands.vibe"
 import { backend } from "./backend.vibe"
 import { manifest } from "./manifest.vibe"

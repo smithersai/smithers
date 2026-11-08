@@ -69,12 +69,12 @@ const nonEmptyRefusal = (names: ReadonlyArray<string>): PatternError | undefined
 
 const width = (concurrency: number): void => {
   const refusal = widthRefusal(concurrency)
-  if (refusal !== undefined) throw refusal
+  if (refusal !== undefined) $raise(refusal)
 }
 
 const nonEmpty = (names: ReadonlyArray<string>): void => {
   const refusal = nonEmptyRefusal(names)
-  if (refusal !== undefined) throw refusal
+  if (refusal !== undefined) $raise(refusal)
 }
 
 const declaredPriority = (node: Node.Any): number | undefined => Node.declaredPriority(node.ast)
@@ -115,7 +115,7 @@ export const all = <const Nodes extends Readonly<Record<string, Node.Any>>>(
   for (const name of names) {
     const value = declaredPriority(members[name]!) ?? options.priority ?? 0
     const refusal = Compose.safeIntegerPriorityRefusal("Bounded", name, value)
-    if (refusal !== undefined) throw refusal
+    if (refusal !== undefined) $raise(refusal)
     priorities.set(name, value)
   }
   const order = ranked(members, (name) => priorities.get(name)!)
@@ -227,3 +227,8 @@ export const run = <A, E, R>(
     )
   })
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

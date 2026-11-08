@@ -13,8 +13,8 @@
 export interface Accumulator {
   transactions: number
   schemaWide: number
-  lockWait: Duration
-  maxLockWait: Duration
+  lockWait: Duration.Duration
+  maxLockWait: Duration.Duration
 }
 
 /**
@@ -47,7 +47,7 @@ export const Current = Context.Reference<ReadonlyArray<Accumulator>>("@smthrs/da
  * @category internal
  * @since 1.0.0
  */
-export const record = effect (waited: Duration, wait: Wait): void!! => {
+export const record = effect (waited: Duration.Duration, wait: Wait): void!! => {
   for (const accumulator of try Current) {
     if (wait === "schema" || wait === "partition") accumulator.transactions += 1
     if (wait === "schema" || wait === "widen") accumulator.schemaWide += 1

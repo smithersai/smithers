@@ -32,12 +32,12 @@ export const FeedbackItem = Schema.Struct({
 })
 
 /** The normalized batch. */
-export const Intake = Schema.Struct({
-  items: Schema.Array(FeedbackItem),
-  totalCount: Schema.Number,
-  dateRange: Schema.Struct({ from: Schema.String, to: Schema.String }),
-  summary: Schema.String
-})
+export schema Intake {
+  readonly items: ReadonlyArray<FeedbackItem>
+  readonly totalCount: number
+  readonly dateRange: { readonly from: string; readonly to: string }
+  readonly summary: string
+}
 
 schema SentimentBreakdown { positive: number; neutral: number; negative: number }
 
@@ -56,13 +56,13 @@ schema PainPoint {
 }
 
 /** What the analyst extracted. */
-export const Extraction = Schema.Struct({
-  sentimentBreakdown: SentimentBreakdown,
-  themes: Schema.Array(Theme),
-  painPoints: Schema.Array(PainPoint),
-  notableInsights: Schema.Array(Schema.String),
-  summary: Schema.String
-})
+export schema Extraction {
+  readonly sentimentBreakdown: SentimentBreakdown
+  readonly themes: ReadonlyArray<Theme>
+  readonly painPoints: ReadonlyArray<PainPoint>
+  readonly notableInsights: ReadonlyArray<string>
+  readonly summary: string
+}
 
 /** The drafted alerts, tickets and digest the flow settles with. */
 export const Notification = Schema.Struct({

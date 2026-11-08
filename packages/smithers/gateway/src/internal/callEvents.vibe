@@ -41,7 +41,7 @@ export const nativeCallEvent = <Event extends CallObservation>(event: Event): Ev
   return {
     ...event,
     kind: fact.value.phase === "invoked" ? "control.agent.cell-call-started" : "control.agent.cell-call-settled",
-    payload: JSON.parse(JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs }))
+    payload: $invoke(JSON,() => (JSON.stringify({ ...fact.value, callFactVersion: 1, at: envelope.emittedAtMs })))
   }
 }
 
@@ -254,3 +254,8 @@ export const callEventFilter = <Event extends CallObservation>(): CallEventFilte
     }
   }
 }
+
+module $call$ts {
+export function invoke<T extends {"parse":Function}>(target:T,arg0:()=>Parameters<Extract<T["parse"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["parse"],(...args:any[])=>any>> { return target["parse"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

@@ -256,13 +256,13 @@ export const lowerMarkdown = (
     budget !== undefined && budget.tokens === undefined && budget.milliseconds === undefined &&
     budget.usd === undefined
   ) {
-    throw new RangeError(`lowerMarkdown: "${frontmatter.name}" budget must declare at least one ceiling`)
+    $raise(new RangeError(`lowerMarkdown: "${frontmatter.name}" budget must declare at least one ceiling`))
   }
   const sandbox = decodeLimit(frontmatter.name, "sandbox", SandboxSelection, frontmatter.sandbox)
   if (sandbox !== undefined && frontmatter.placement !== undefined && frontmatter.placement !== "sandbox") {
-    throw new RangeError(
+    $raise(new RangeError(
       `lowerMarkdown: "${frontmatter.name}" selects a sandbox but is placed ${frontmatter.placement}`
-    )
+    ))
   }
   const flow = build({
     error: Schema.Never,
@@ -319,7 +319,7 @@ const decodeLimit = <A>(
   if (value === undefined) return undefined
   const decoded = Schema.decodeUnknownResult(schema)(value)
   if (Result.isFailure(decoded)) {
-    throw new RangeError(`lowerMarkdown: "${name}" ${field} is invalid: ${decoded.failure.message}`)
+    $raise(new RangeError(`lowerMarkdown: "${name}" ${field} is invalid: ${decoded.failure.message}`))
   }
   return decoded.success
 }
@@ -485,3 +485,8 @@ export const lowerSkill = (
       description: skill.description,
       flows: skill.allowedTools
     }, skill.body))
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

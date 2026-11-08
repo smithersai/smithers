@@ -1,6 +1,5 @@
 // Child processes for the process-boundary suites, through Effect's ChildProcessSpawner (NodeServices.layer), and
 // this Node.js executable, from VibeLang's Process service (ExperimentalNodeServices.layer).
-import { ChildProcess } from "effect/process"
 
 /** How a finished process exited and what it wrote. */
 export interface Finished {

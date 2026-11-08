@@ -81,19 +81,19 @@ export type Decided = typeof Decided.Type
  * @category schemas
  * @since 1.0.0
  */
-export const Thresholds = Schema.Struct({
-  version: Schema.Int,
-  model: Schema.String,
-  decisions: Schema.Struct({
-    page: Decided,
-    skill: Decided,
-    dep: Decided,
-    descend: Decided,
-    file: Decided,
-    commit: Decided,
-    fact: Decided
-  })
-})
+export schema Thresholds {
+  readonly version: Schema.Int
+  readonly model: string
+  readonly decisions: {
+    readonly page: Decided
+    readonly skill: Decided
+    readonly dep: Decided
+    readonly descend: Decided
+    readonly file: Decided
+    readonly commit: Decided
+    readonly fact: Decided
+  }
+}
 
 /**
  * The decoded form of {@link Thresholds}.
@@ -295,7 +295,7 @@ export const refit = (current: Decided, labels: ReadonlyArray<Label>): Refit => 
  * @category math
  * @since 1.0.0
  */
-export const digest = (thresholds: Thresholds): string => Digest.digest(Digest.canonical(thresholds))
+export const digest = (thresholds: Thresholds): string => $invoke(Digest,() => (Digest.canonical(thresholds)))
 
 const declared = (miss: number, extra: number): Decided => ({
   costs: { miss, extra },
@@ -346,3 +346,8 @@ export const initial: Thresholds = {
 export const Current = Context.Reference<Thresholds>("@smthrs/agent/MemoryCalibration/Current", {
   defaultValue: () => initial
 })
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

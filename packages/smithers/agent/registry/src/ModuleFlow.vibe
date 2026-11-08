@@ -134,7 +134,7 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
         description: metadata.description,
         body: new BodyRefModule({
           path: options.path,
-          contentDigest: options.contentDigest ?? Digest.digest(options.text),
+          contentDigest: options.contentDigest ?? $invoke(Digest,() => (options.text)),
           ...(metadata.prompt === true ? { prompt: true } : {}),
           // Absent, not empty, when the entry loads nothing beside itself: such
           // a module keeps the identity it had before a closure was recorded.
@@ -167,3 +167,8 @@ export const fromModule = (options: FromModuleOptions): FromModuleResult => {
     warnings
   }
 }
+
+module $call$ts {
+export function invoke<T extends {"digest":Function}>(target:T,arg0:()=>Parameters<Extract<T["digest"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digest"],(...args:any[])=>any>> { return target["digest"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts

@@ -202,7 +202,7 @@ export type EscalationFlow<R = never> = Flow.Flow<
  */
 export const make = <R = never>(options: MakeOptions<R>): EscalationFlow<R> => {
   if (options.rungs.length === 0) {
-    throw new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" })
+    $raise(new PatternError({ code: "invalid_decorator", message: "Escalation requires at least one rung" }))
   }
   // The body runs when the graph builds, later than this call, so it reads
   // these snapshots and never the caller's options again.
@@ -331,3 +331,8 @@ export const run = <I, A, E, R, E2 = never, R2 = never, F = A, E3 = never, R3 = 
     return spent
   }
 }
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

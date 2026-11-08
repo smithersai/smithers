@@ -61,7 +61,7 @@ export const makeMemory: CursorStore!! = effect {
  * @category layers
  * @since 1.0.0
  */
-export const layerMemory: Layer<CursorStore> = Layer.effect(CursorStore, makeMemory)
+export const layerMemory: Layer.Layer<CursorStore> = Layer.effect(CursorStore, makeMemory)
 
 interface Row {
   readonly cursor: string | null
@@ -110,4 +110,4 @@ export const makeSql: CursorStore!never!SqlClient.SqlClient = effect {
  * @category layers
  * @since 1.0.0
  */
-export const layerSql: Layer<CursorStore, never, SqlClient.SqlClient> = Layer.effect(CursorStore, makeSql)
+export const layerSql: Layer.Layer<CursorStore, never, SqlClient.SqlClient> = Layer.effect(CursorStore, makeSql)

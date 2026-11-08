@@ -47,7 +47,7 @@ export interface Service {
  * @since 0.1.0
  * @slop
  */
-export class Journal extends Context.Service<Journal, Service>()("/chain/Journal") {}
+export service Journal: Service { static readonly key = "/chain/Journal";}
 
 /**
  * Builds a journal from an implementation.

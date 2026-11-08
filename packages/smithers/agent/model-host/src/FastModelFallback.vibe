@@ -6,7 +6,7 @@
 
 import type { ModelStep } from "@smthrs/agent"
 import { type Model, ModelError, type ModelEvent, ModelRequest } from "@smthrs/model"
-import { Effect, Metric, Stream } from "effect"
+import { Effect, Stream } from "effect"
 import type { HostModelRoute } from "./ConfiguredModelRoute.vibe"
 import { durableModelStream } from "./DurableModelCall.ts"
 

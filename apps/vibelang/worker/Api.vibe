@@ -130,6 +130,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive)),
+  program |> Effect.provide(%, ConversationLive) |> Effect.provide(%, BudgetLive),
 ) {}
 

@@ -97,8 +97,8 @@ export const assertNoDivergence = (
   actual: ReadonlyArray<JournalEntryLike>
 ): void!FixtureDivergenceError => {
   const divergence = firstDivergence(expected, actual)
-  return Option.match(divergence, {
+  return do { const $optionSubject = divergence; const $optionHandlers: { onNone: () => void!never!never; onSome: (difference: Divergence) => never!FixtureDivergenceError!never; } = {
     onNone: () => Effect.void,
     onSome: (difference) => Effect.fail(new FixtureDivergenceError(difference))
-  })
+  }; const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers; match ($optionSubject) { when Option.Some(let $optionValue): $optionSome($optionValue); default: $optionNone(); }; }
 }

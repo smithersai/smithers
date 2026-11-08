@@ -115,9 +115,9 @@ export const replyError = (
 export const lines = <E>(
   server: string,
   maxLineBytes: number,
-  stream: Stream<Uint8Array, E>,
+  stream: Stream.Stream<Uint8Array, E>,
   options: { readonly crTerminates?: boolean } = {}
-): Stream<string, E | McpError> => {
+): Stream.Stream<string, E | McpError> => {
   type PartialLine = { pieces: Array<Uint8Array>; bytes: number; skipLf: boolean }
   const crTerminates = options.crTerminates === true
   const decoder = new TextDecoder()
@@ -129,7 +129,7 @@ export const lines = <E>(
       offset += piece.byteLength
     }
     const end = joined[partial.bytes - 1] === 0x0d ? partial.bytes - 1 : partial.bytes
-    return decoder.decode(joined.subarray(0, end))
+    return $invoke(decoder,() => (joined.subarray(0, end)))
   }
   const terminator = (chunk: Uint8Array, from: number): number => {
     if (!crTerminates) return chunk.indexOf(0x0a, from)
@@ -175,3 +175,8 @@ export const lines = <E>(
     )
   )
 }
+
+module $call$ts {
+export function invoke<T extends {"decode":Function}>(target:T,arg0:()=>Parameters<Extract<T["decode"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["decode"],(...args:any[])=>any>> { return target["decode"](arg0()) }
+}
+import { invoke as $invoke } from $call$ts
