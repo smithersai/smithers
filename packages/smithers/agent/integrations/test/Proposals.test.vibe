@@ -1,0 +1,20 @@
+import { expect, it } from "@effect/vitest"
+import { HttpClient } from "effect/http"
+import { faultingTransport } from "./Http.ts"
+import { GitHub } from "../src/index.ts"
+
+it.effect("refuses a same-named unrelated repository instead of writing a proposal into it", () => effect {
+  // A faulty provider reports an unrelated repository at the person's expected fork name.
+  const fault = try Effect.try(() => faultingTransport(({ path }) => ({ status: 200, body: path === "/repos/project/language"
+    ? { name: "language", owner: { login: "project" }, default_branch: "main" }
+    : { name: "language", owner: { login: "person" }, default_branch: "personal", fork: true, parent: { full_name: "unrelated/language" } },
+  })))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const result = try Effect.result(GitHub.Proposals.ensureFork("project", "language", "person").pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com")))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") expect(result.failure.reason).toBe("invalid-config")
+    })
+  }
+  try Effect.try(() => { expect(fault.handled).toHaveLength(2); expect(fault.handled.every(request => request.method === "GET")).toBe(true) })
+})

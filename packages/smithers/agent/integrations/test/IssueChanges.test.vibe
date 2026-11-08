@@ -42,3 +42,17 @@ describe("issue changes through the shared GitHub client", () => {
     try Effect.try(() => { expect(calls).toBe(1); expect(headers).toEqual([true]) })
   })
 })
+
+it.effect("never presents a truncated native issue timeline as complete", () => effect {
+  const faulty: GitHub.GitHubClient.GitHubClient = {
+    request: () => Effect.die("Unexpected request"), count: () => Effect.die("Unexpected count"),
+    paginate: () => Effect.succeed({ items: [], truncated: true }),
+  }
+  provide GitHub.GitHubClient.GitHubClient = faulty {
+    const result = try Effect.result(GitHub.IssueChanges.timeline("owner", "repo", 42))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") expect(result.failure.details?.incomplete).toBe(true)
+    })
+  }
+})

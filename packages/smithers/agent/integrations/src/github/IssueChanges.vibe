@@ -41,3 +41,17 @@ export effect function assignees(owner: string, repo: string) {
   if (listed.truncated) throw new IntegrationError("poll-failed", "Assignable accounts listing is incomplete.", { incomplete: true, retryable: false })
   return try Schema.decodeUnknownEffect(Schema.Array(Schema.Struct({ id: Schema.Number, login: Schema.String })))(listed.items).pipe(Effect.mapError(() => new IntegrationError("decode-failed", "Assignable accounts were not the protocol.", { retryable: false })))
 }
+
+/** A native issue timeline event, including its actual actor. Unknown event kinds remain readable. */
+export const TimelineEvent = Schema.Struct({
+  event: Schema.String, actor: Schema.optionalKey(IssueUser),
+  label: Schema.optionalKey(Schema.NullOr(Schema.Struct({ name: Schema.String }))),
+  assignee: Schema.optionalKey(IssueUser),
+})
+export effect function timeline(owner: string, repo: string, number: number) {
+  const client = try GitHubClient
+  const path = try issuePath(owner, repo, number)
+  const page = try client.paginate(`${path}/timeline`, { maxPages: 20 })
+  if (page.truncated) throw new IntegrationError("poll-failed", "Issue timeline is incomplete.", { incomplete: true, retryable: false })
+  return try Schema.decodeUnknownEffect(Schema.Array(TimelineEvent))(page.items).pipe(Effect.mapError(() => new IntegrationError("decode-failed", "Issue timeline was not the protocol.", { retryable: false })))
+}
