@@ -1,0 +1,188 @@
+// @vitest-environment node
+// Real loopback HTTP over the product handler and sequencer; transport faults are injected Effect services.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Factory, type Refused, type Unavailable } from "../src/core/Factory.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { MAX_NAME, MAX_POST_BYTES } from "../src/core/wire.vibe"
+import { afterOf, eventStream, handle, type Conversations, type Histories } from "../worker/Http.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+
+function fault(error: { readonly _tag: string; readonly reason?: string }) {
+  return { _tag: error._tag, reason: error.reason }
+}
+
+// These conversation-only cases deliberately supply an unavailable History object, never invented data.
+const unavailableHistory: Histories = {
+  page: () => fail(new Unreachable({ what: "history" })),
+  write: () => fail(new Unreachable({ what: "history" })),
+  events: () => fail(new Unreachable({ what: "history" })),
+}
+
+/** The public product refusal, translated by the HTTP host without inventing events or disabling dispatch. */
+effect function accepted(work: void!(Refused | Unavailable)) {
+  return Effect.as(work, null) catch effect (error) => {
+    if (error._tag === "Refused") return error.refusal
+    throw new Unreachable({ what: "conversation" })
+  }
+}
+
+effect function served() {
+  const product = try Factory
+  const api: Conversations = {
+    post: (room, body) => accepted(product.post(room, body.clientId, body.name, body.text)),
+    read: (room, after) => Effect.mapError(product.read(room, after), () => new Unreachable({ what: "conversation" })),
+    tour: (room) => accepted(product.tour(room)),
+    endTour: (room) => accepted(product.endTour(room)),
+    events: (room) => effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      return eventStream(Stream.orDie(product.events(room, afterOf(new URL(request.url, "http://local")) ?? 0)))
+    },
+  }
+  try HttpServer.serveEffect(handle(api, unavailableHistory))
+  return { origin: "" }
+}
+
+describe("the HTTP Factory", () => {
+  it.live("posts, replays, follows, cancels a follower and tours through the real HTTP protocol", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      const { origin } = try served()
+      const status = try health(origin)
+      provide LiveFactory(origin) {
+        const factory = try Factory
+        try factory.post("home", "a", "Ada", "question")
+        const duplicate = factory.post("home", "a", "Ada", "question") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+        try Stream.runCollect(factory.events("home", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+        const snapshot = try factory.read("home", 0)
+        const replay = try Stream.runCollect(Stream.take(factory.events("home", 0), 1))
+        const cancelled = fork Stream.runDrain(factory.events("home", 1))
+        try Effect.yieldNow
+        try Fiber.interrupt(cancelled)
+        try factory.tour("tour-room")
+        const tour = try factory.read("tour-room", 0)
+        const busy = factory.tour("tour-room") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+        try factory.endTour("tour-room")
+        const ended = factory.endTour("tour-room") catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+        const after = try factory.read("tour-room", tour.seq)
+        try Effect.try(() => {
+          expect(status).toEqual({ ok: true, agent: "live" })
+          expect(factory.mode).toBe("live")
+          expect([duplicate, busy, ended]).toEqual(["duplicate", "busy", "not-replying"])
+          expect(snapshot.entries[0]).toMatchObject({ text: "question", name: "Ada" })
+          expect(snapshot.entries[1]).toMatchObject({ author: "agent", done: true, error: "" })
+          expect(snapshot.entries[1]!.text.length).toBeGreaterThan(0)
+          expect(replay).toEqual([{ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "question" }])
+          expect(after.seq).toBeGreaterThan(tour.seq)
+          expect(after.entries).toMatchObject([{ id: tour.entries[0]!.id, done: true }])
+        })
+      }
+    }
+  }))
+
+  it.live("checks byte limits, JSON, names, methods and cursors before reaching the sequencer", () => scoped(effect {
+    provide NodeHttpServer.layerTest, MockFactory {
+      const { origin } = try served()
+      const client = try HttpClient.HttpClient
+      const send = (text: string, length: string) => client.execute(HttpClientRequest.post(`${origin}/api/conversations/home/posts`).pipe(
+        HttpClientRequest.bodyText(text), HttpClientRequest.setHeader("content-length", length),
+      ))
+      // The server's HTTP parser enforces actual byte framing; exercise valid-sized invalid protocol bodies here.
+      const body = JSON.stringify({ clientId: "a", name: "x".repeat(MAX_NAME + 1), text: "hello" })
+      const name = try send(body, String(body.length))
+      const malformed = try send("{", "1")
+      const missing = try client.post(`${origin}/api/conversations/home/posts`)
+      const large = "x".repeat(MAX_POST_BYTES + 1)
+      const tooLarge = try send(large, String(large.length))
+      const wrong = try client.get(`${origin}/api/conversations/home/posts`)
+      const readCursor = try client.get(`${origin}/api/conversations/home?after=01`)
+      const streamCursor = try client.get(`${origin}/api/conversations/home/events?after=-1`)
+      const empty = try client.get(`${origin}/api/conversations/home`)
+      const snapshot = try empty.json
+      try Effect.try(() => {
+        expect([name.status, malformed.status, missing.status, tooLarge.status, wrong.status, readCursor.status, streamCursor.status]).toEqual([400, 400, 413, 413, 404, 400, 400])
+        expect(snapshot).toEqual({ seq: 0, entries: [] })
+      })
+    }
+  }))
+
+  for (const operation of ["post", "read", "events", "tour", "endTour", "health"] as const) {
+    it.effect(`${operation} reports an unavailable transport with its operation`, () => effect {
+      const broken = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) })))
+      provide HttpClient.HttpClient = broken {
+        provide LiveFactory("http://offline.invalid") {
+          const factory = try Factory
+          const result = (operation === "post" ? factory.post("home", "a", "Ada", "hi")
+            : operation === "read" ? factory.read("home", 0)
+            : operation === "events" ? Stream.runDrain(factory.events("home", 0))
+            : operation === "tour" ? factory.tour("home") : operation === "health" ? Effect.asVoid(health("http://offline.invalid")) : factory.endTour("home")) catch (error) => fault(error)
+          try Effect.try(() => expect(result).toMatchObject({ _tag: "Unavailable", reason: `${operation === "endTour" ? "end tour" : operation} unreachable` }))
+        }
+      }
+    })
+  }
+
+  for (const [status, body, reason] of [[503, "", "events answered 503"], [200, "data: {}\n\n", "events interrupted"], [200, "data: {\n\n", "events interrupted"]] as const) {
+    it.effect(`an event stream reports a faulty response: ${status} ${body}`, () => effect {
+      const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status })))))
+      provide HttpClient.HttpClient = broken {
+        provide LiveFactory("http://broken.invalid") {
+          const result = Stream.runDrain((try Factory).events("home", 0)) catch (error) => fault(error)
+          try Effect.try(() => expect(result).toMatchObject({ _tag: "Unavailable", reason }))
+        }
+      }
+    })
+  }
+
+  it.live("reports an unreachable conversation as HTTP 503, preserving a safe reason", () => scoped(effect {
+    const broken: Conversations = {
+      post: () => fail(new Unreachable({ what: "conversation" })),
+      read: () => fail(new Unreachable({ what: "conversation" })),
+      tour: () => fail(new Unreachable({ what: "conversation" })),
+      endTour: () => fail(new Unreachable({ what: "conversation" })),
+      events: () => fail(new Unreachable({ what: "conversation" })),
+    }
+    provide NodeHttpServer.layerTest {
+      try HttpServer.serveEffect(handle(broken, unavailableHistory))
+      const client = try HttpClient.HttpClient
+      const response = try client.get("/api/conversations/home")
+      const body = try response.json
+      try Effect.try(() => {
+        expect(response.status).toBe(503)
+        expect(body).toEqual({ error: "conversation" })
+      })
+    }
+  }))
+
+  for (const [label, status, text, reason] of [
+    ["HTTP failure", 503, "", "answered 503"],
+    ["malformed JSON", 200, "{", "is not JSON"],
+    ["wrong schema", 200, "{}", "is not the protocol"],
+  ] as const) {
+    for (const operation of ["health", "read"] as const) {
+      it.effect(`${operation} reports ${label}`, () => effect {
+        const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(text, { status })))))
+        provide HttpClient.HttpClient = broken {
+          provide LiveFactory("http://broken.invalid") {
+            const factory = try Factory
+            const result = (operation === "health" ? Effect.asVoid(health("http://broken.invalid")) : Effect.asVoid(factory.read("home", 0))) catch (error) => fault(error)
+            try Effect.try(() => expect(result).toMatchObject({ _tag: "Unavailable", reason: `${operation} ${reason}` }))
+          }
+        }
+      })
+    }
+  }
+
+  for (const [status, body, reason] of [[503, "", "post answered 503"], [409, "{", "refusal is not JSON"], [409, "{}", "refusal is not the protocol"]] as const) {
+    it.effect(`a post reports a faulty ${status} response: ${reason}`, () => effect {
+      const broken = HttpClient.make((request) => succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status })))))
+      provide HttpClient.HttpClient = broken {
+        provide LiveFactory("http://broken.invalid") {
+          const result = (try Factory).post("home", "a", "Ada", "hi") catch (error) => fault(error)
+          try Effect.try(() => expect(result).toMatchObject({ _tag: "Unavailable", reason }))
+        }
+      }
+    })
+  }
+})

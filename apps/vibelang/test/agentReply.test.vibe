@@ -2,7 +2,7 @@
 // it is asked, the answer a person sees while it streams, the tokens it spent, and the reason a failure reads.
 import { describe, expect, it } from "@effect/vitest"
 import type { AgentEvent } from "@smthrs/harness"
-import { failureReason, fold, MAX_TURNS, promptOf, REASONS, started, type Progress } from "../worker/Reply.vibe"
+import { failureReason, fold, MAX_TURNS, promptOf, REASONS, started, tagOf, type Progress } from "../worker/Reply.vibe"
 
 const fence = "`".repeat(3)
 
@@ -18,6 +18,9 @@ function folded(events: ReadonlyArray<AgentEvent.AgentEvent>): Progress {
 }
 
 describe("the agent's task", () => {
+  it("does not invent a task when the history is empty", () => {
+    expect(promptOf({ turns: [] })).toBe("")
+  })
   it("is the post alone when it opens the conversation", () => {
     expect(promptOf({ turns: [{ author: "person", text: "How do services work?" }] })).toBe("How do services work?")
   })
@@ -42,6 +45,11 @@ describe("the agent's task", () => {
 })
 
 describe("the answer while it streams", () => {
+  it("ignores non-text deltas and unrelated events, and treats missing usage as zero", () => {
+    expect(fold(started, event({ _tag: "model-delta", delta: { type: "reasoning-delta", text: "hidden" } }))).toBe(started)
+    expect(fold(started, event({ _tag: "cell-started" }))).toBe(started)
+    expect(fold(started, event({ _tag: "model-settled", usage: {} })).tokens).toBe(0)
+  })
   it("shows the text the reply passes to ctx.done, as far as it has arrived", () => {
     const progress = folded([
       event({ _tag: "model-requested" }),
@@ -77,6 +85,11 @@ describe("the answer while it streams", () => {
 })
 
 describe("the reason a failed agent reads", () => {
+  it("records only a failure tag and classifies both provider credit failures", () => {
+    expect([tagOf(null), tagOf("secret"), tagOf({ message: "secret" }), tagOf({ _tag: "Transport", message: "secret" })]).toEqual(["defect", "defect", "defect", "Transport"])
+    expect(failureReason("/harness/HarnessError", { ...started, failed: "quota_exceeded" })).toBe(REASONS.credit)
+    expect(failureReason("/harness/HarnessError", { ...started, failed: "content_policy" })).toBe(REASONS.refused)
+  })
   it("names a missing model, an answer that never came, and the model's own failure", () => {
     expect(failureReason("@smthrs/agent/Seat/SeatUnresolved", started)).toBe(REASONS.unconfigured)
     expect(failureReason("/harness/StructuredOutputFailure", started)).toBe(REASONS.empty)

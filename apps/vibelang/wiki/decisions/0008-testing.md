@@ -141,3 +141,12 @@ remain unchanged. The cold-load regression failed before this fixture correction
 
 - `vibelang-unplugin@0.0.12`: engine browser-bundle proof for VibeLang source. Already used in the monorepo; added only as the SDK package's build/test tool. Awaiting Will's VL-5 approval. No new app dependency.
 - `vibelang-runtime@0.0.12`: the registry and engine now publish VibeLang sources and declare the runtime already used by this app.
+
+**Coverage boundary tests (0016).** The ordinary suite adds real loopback HTTP over both client protocols,
+sequencer ordering, history pages and lifecycle, cancellation, exact backend deadlines, budget boundaries, model
+configuration and the Alchemy resource graph. The prototype uses the monorepo's V8 provider 5.0.0 and Chromium's
+built-in API. Strict 100% gates remain below target and are not installed on main. Proposed app test-tool declarations
+`@vitest/coverage-v8` 5.0.0 and `ast-v8-to-istanbul` 1.0.5 await Will's VL-5 approval; see [0016](0016-coverage.md).
+Node cases use the workspace's finite 30-second budget: MCP discovery starts the real stdio server and CLI, whose
+combined cold startup exceeded the implicit five seconds after engine observation landed. The MCP protocol's own
+10-second limit and browser assertions are unchanged; whole-history replay under coverage measured 23.5 seconds.

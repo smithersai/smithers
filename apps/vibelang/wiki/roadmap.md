@@ -56,3 +56,7 @@ brick                                   state         proof
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
 
 - **vl-actions (0023):** SDK foundation is tested and landed. The unlanded mock preview and proof receipts are preserved in the lane report; live routes, agent tools and full browser/workerd coverage remain.
+
+- **Source coverage (0016, lane vl-coverage): in progress.** Boundary tests and Alchemy graph coverage; prepared
+  100% gates remain below target. Two upstream reproductions await Will; precise coverage could not be enabled on
+  the installed workerd 1.20261019.1 inspector.

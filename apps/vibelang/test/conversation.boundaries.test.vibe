@@ -1,0 +1,32 @@
+import { describe, expect, it } from "@effect/vitest"
+import { apply, empty, hasClientId, post, type Client, type Event } from "../src/core/conversation.vibe"
+
+const posted: Event = { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" }
+const withPost = apply(empty, posted)
+const answering = apply(withPost, { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" })
+
+describe("malformed replay and pending identity", () => {
+  it("advances past a tour start that is busy, reuses an entry id or has an empty id", () => {
+    expect(apply(answering, { type: "TourStarted", seq: 3, id: "t3" })).toEqual({ ...answering, seq: 3 })
+    for (const id of ["m1", ""]) {
+      expect(apply(withPost, { type: "TourStarted", seq: 2, id })).toEqual({ ...withPost, seq: 2 })
+    }
+  })
+  for (const type of ["ReplyRestarted", "ReplyFinished", "ReplyFailed"] as const) {
+    it(`advances the cursor for an unrelated ${type} without touching the active answer`, () => {
+      const event: Event = type === "ReplyFailed" ? { type, seq: 3, id: "other", reason: "failure" } : { type, seq: 3, id: "other" }
+      expect(apply(answering, event)).toEqual({ ...answering, seq: 3 })
+    })
+  }
+  it("gives an empty reply failure its default reason and keeps unrelated entries intact", () => {
+    const failed = apply(answering, { type: "ReplyFailed", seq: 3, id: "r1", reason: "" })
+    expect(failed.entries[0]).toBe(answering.entries[0])
+    expect(failed.entries[1]).toMatchObject({ done: true, error: "failed" })
+    expect(failed).toMatchObject({ seq: 3, agent: "failed", replying: "" })
+  })
+  it("never treats the empty client id as an existing post, and never recreates an acknowledged optimistic post", () => {
+    expect(hasClientId(answering.entries, "")).toBe(false)
+    const client: Client = { conversation: answering, pending: [], gap: false }
+    expect(post(client, "a", "again")).toBe(client)
+  })
+})

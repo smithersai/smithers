@@ -16,6 +16,8 @@ export default defineConfig(({ mode }) => ({
   server: { port: 5178 },
   test: {
     environment: mode === "workerd" ? "node" : "happy-dom",
+    // Process discovery starts both MCP and CLI; match the workspace's finite budget.
+    testTimeout: 30_000,
     // Bound per-lane compiler and real-engine load on the shared host, matching the browser pool.
     maxWorkers: 3,
     include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],

@@ -153,9 +153,11 @@ export function mockReply(prompt: string): string {
   return index < 0 ? DEFAULT : SCRIPTS[index]!.reply
 }
 
+const CHUNK_SIZE = 24
+
 /** `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`. */
-export function chunks(text: string, size = 24): ReadonlyArray<string> {
+export function chunks(text: string): ReadonlyArray<string> {
   const pieces: Array<string> = []
-  for (let start = 0; start < text.length; start += size) pieces.push(text.slice(start, start + size))
+  for (let start = 0; start < text.length; start += CHUNK_SIZE) pieces.push(text.slice(start, start + CHUNK_SIZE))
   return pieces
 }

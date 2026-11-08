@@ -25,7 +25,7 @@ export function blocks(text: string): ReadonlyArray<Block> {
       if (code === undefined) {
         flushProse()
         code = []
-        language = fence[1] ?? ""
+        language = fence[1]!
       } else {
         result.push({ kind: "code", language, text: code.join("\n") })
         code = undefined

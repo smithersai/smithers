@@ -1,0 +1,60 @@
+import { describe, expect, it } from "@effect/vitest"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import type { Event } from "../src/core/conversation.vibe"
+import { Reply } from "../src/core/flows.vibe"
+import { chatModel } from "../worker/AgentModel.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { repliesOf } from "../worker/Objects.vibe"
+import { ChatModel, registration, Replies, REASONS, Spend } from "../worker/Reply.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+
+effect function world(limit: number) {
+  const events = try Ref.make<ReadonlyArray<Event>>([])
+  const ledger = try Ref.make<Readonly<Record<string, number>>>({})
+  const sequencer = try Sequencer.make(
+    { read: () => Ref.get(events), write: (event) => Ref.update(events, (events) => [...events, event]) },
+    { start: () => Effect.void, tour: () => Effect.void },
+  )
+  const budget = try Budget.make({ read: (key) => Ref.get(ledger).pipe(Effect.map((entries) => entries[key])), write: (entries) => Ref.update(ledger, (data) => ({ ...data, ...entries })) }, limit)
+  const replies = repliesOf(sequencer)
+  const spend: Spend.Shape = { admit: () => budget.admit(), spend: (_day, reply, tokens) => budget.spend(reply, tokens) }
+  const model = try Effect.provide(chatModel(), ConfigProvider.layer(ConfigProvider.fromUnknown({})))
+  const flows = registration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.mergeAll(Layer.succeed(Replies, replies), Layer.succeed(Spend, spend), Layer.succeed(ChatModel, model))),
+  )
+  const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+  return { engine, sequencer, events }
+}
+
+describe("live reply flows", () => {
+  for (const [limit, reason] of [[0, REASONS.budget], [100, REASONS.unconfigured]] as const) {
+    it.live(`settles a persisted post with its actual ${limit === 0 ? "budget" : "configuration"} refusal`, () => scoped(effect {
+      const w = try world(limit)
+      try w.sequencer.post("a", "Ada", "question")
+      const answer = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
+      const replayed = try w.engine.execute(Reply, { executionId: "reply/m1", payload: { post: "m1" } })
+      const snapshot = try w.sequencer.read(0)
+      const events = try Ref.get(w.events)
+      try Effect.try(() => {
+        expect([answer, replayed]).toEqual([null, null])
+        expect(snapshot.entries[1]).toMatchObject({ id: "r1", done: true, error: reason })
+        expect(events.map((event) => event.type)).toEqual(["Posted", "ReplyStarted", "ReplyFailed"])
+      })
+    }))
+  }
+
+  it.live("refuses an unknown post without creating or failing another answer", () => scoped(effect {
+    const w = try world(100)
+    try w.sequencer.post("a", "Ada", "question")
+    const answer = try w.engine.execute(Reply, { executionId: "reply/m99", payload: { post: "m99" } })
+    const events = try Ref.get(w.events)
+    try Effect.try(() => {
+      expect(answer).toBe(null)
+      expect(events).toHaveLength(1)
+      expect(events[0]).toMatchObject({ type: "Posted", id: "m1" })
+    })
+  }))
+
+})

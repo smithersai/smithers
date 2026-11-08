@@ -81,3 +81,36 @@ it.effect("forcing mock skips health and scope disposal interrupts an unresolved
   try TestClock.adjust("5 seconds")
   try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true }))
 })
+
+it.effect("the selected mock accepts a tour and its cancellation through the shared browser Factory", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", true).pipe(Layer.provide(health.layer)) {
+    const factory = try Factory
+    try factory.tour("tour-browser")
+    const started = try factory.read("tour-browser", 0)
+    try factory.endTour("tour-browser")
+    const ended = try factory.read("tour-browser", 0)
+    try Effect.try(() => {
+      expect(started.entries[0]).toMatchObject({ author: "agent", done: false })
+      expect(ended.entries[0]).toMatchObject({ author: "agent", done: true })
+      expect(health.snapshot().calls).toBe(0)
+    })
+  }
+})
+
+it.effect("selects live once when health says live; an invalid later protocol answer never switches the backend", () => effect {
+  const health = try heldHealth()
+  provide BrowserFactory("http://startup.test", false).pipe(Layer.provide(health.layer)) {
+    const backend = try AgentBackend
+    const factory = try Factory
+    try health.release("live")
+    const mode = try backend.ready
+    const failure = factory.read("home", 0) catch (error) => error.reason
+    try Effect.try(() => {
+      expect(mode).toBe("live")
+      expect(factory.mode).toBe("live")
+      expect(failure).toBe("read is not the protocol")
+      expect(health.snapshot()).toEqual({ calls: 2, settled: true, cancelled: false })
+    })
+  }
+})
