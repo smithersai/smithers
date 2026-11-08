@@ -12,6 +12,7 @@
  * @since 1.0.0
  */
 import { Smithers } from "@smthrs/targets"
+import { Package as flowPackage } from "../../.smithers/flows/PACKAGE.ts"
 
 /** Everything the app's scripts read: sources, tests, proofs and their configuration. */
 const sources = [
@@ -20,6 +21,9 @@ const sources = [
   Smithers.glob("//apps/vibelang/worker/**/*"),
   Smithers.glob("//apps/vibelang/infra/**/*"),
   Smithers.glob("//apps/vibelang/test/**/*"),
+  Smithers.glob("//apps/vibelang/fuzz/**/*"),
+  Smithers.file("//apps/vibelang/fuzz.config.ts"),
+  flowPackage.vibelangFuzzSources,
   Smithers.glob("//apps/vibelang/bench/*.{vibe,ts,json,md}"),
   Smithers.glob("//apps/vibelang/e2e/**/*"),
   Smithers.glob("//apps/vibelang/skills/**/*"),
@@ -142,4 +146,23 @@ const benchLive = Smithers.Shell.Test({
   exclusive: true
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken, bench, benchCoverage, benchLive } })
+/** Schema-derived whole-app targets, real workerd and Chromium, through the durable local flow. */
+const fuzz = Smithers.Shell.Test({
+  summary: "Fuzz the state machines, protocol, flows, views, surfaces and native Worker routes; replay retained findings.",
+  shell: "cd apps/vibelang && pnpm fuzz",
+  data: sources,
+  timeout: "20m",
+  sandbox: { network: true }
+})
+
+/** Fuzz-only coverage qualification; includes every source module except the Alchemy declaration (0015). */
+const fuzzCoverage = Smithers.Shell.Test({
+  summary: "Require independent fuzz-only 100% per-file source coverage; report real gaps without unit-suite credit.",
+  shell: "cd apps/vibelang && pnpm fuzz:coverage",
+  data: sources,
+  timeout: "20m",
+  sandbox: { network: true },
+  exclusive: true
+})
+
+export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken, bench, benchCoverage, benchLive, fuzz, fuzzCoverage } })

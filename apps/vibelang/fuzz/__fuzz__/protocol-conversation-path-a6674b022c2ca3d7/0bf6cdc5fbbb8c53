@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 13
+bias 5
+null-prototype false
+key 3148088909
+tape 6xEis9Svrfk
+schedule-key 3985817621
+schedule 
+signature "Died:URIError"
+path 
+codec "json"
+value "\"\\ud800\""
+# Died:URIError
+# "\ud800"

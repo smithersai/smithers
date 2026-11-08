@@ -1,0 +1,105 @@
+import { afterAll, beforeAll, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveApi, type Served } from "../test/support/workerd.vibe"
+import { EventSchema } from "../src/core/schemas.vibe"
+import { MAX_POST_BYTES, PostBody, DurableText } from "../src/core/wire.vibe"
+import { run, Int, TextOrBoundary } from "./run.vibe"
+
+let api: Served | undefined
+beforeAll(async () => {
+  api = await runPromise(serveApi({ CHAT_DAILY_TOKENS: "0" }))
+  await runPromise(Effect.provide(effect {
+    const client = try HttpClient.HttpClient
+    try client.execute(HttpClientRequest.post(api!.origin + "/api/conversations/fuzz-stream/posts").pipe(HttpClientRequest.bodyText(JSON.stringify({ clientId: "seed", name: "Guest", text: "hello" }))))
+  }, FetchHttpClient.layer))
+}, 120_000)
+afterAll(async () => { await api?.dispose() })
+
+it.live("workerd/api-requests", () => run("workerd/api-requests", Schema.Struct({ kind: Int, text: TextOrBoundary, id: Int }), ({ kind, text, id }) => effect {
+  provide FetchHttpClient.layer {
+    const client = try HttpClient.HttpClient
+    const room = `/api/conversations/fuzz-${id}`
+    let path = "/api/health"
+    let method: "GET" | "POST" | "DELETE" | "HEAD" = "GET"
+    let body: string | undefined
+    let expected: ReadonlyArray<number> = [200]
+    switch (kind % 9) {
+      case 0: method = kind % 2 ? "POST" : "GET"; break
+      case 1: path = "/not-api/" + id; expected = [404]; break
+      case 2: path = room + "/posts"; method = "POST"; body = JSON.stringify({ clientId: `c${id}`, name: "Guest", text }); expected = Schema.is(PostBody)({ clientId: `c${id}`, name: "Guest", text }) ? [200, 409] : [400]; break
+      case 3: path = room + "/posts"; method = "POST"; body = "{" + text; expected = [400, 413]; break
+      case 4: path = room + "/posts"; method = "POST"; body = ["null", "[]", "{}", "1", "\"string\""][id % 5]!; expected = [400]; break
+      case 5: path = "/api/conversations/%E0%A4%A"; expected = [404]; break
+      case 6: path = room + "?after=" + ["-1", "1.5", "01", "1e3", "", "9007199254740992"][id % 6]!; expected = [400]; break
+      case 7: path = room + "/tour"; method = kind % 2 ? "POST" : "DELETE"; expected = [200, 409]; break
+      default: path = room + "/posts"; method = "POST"; body = "x".repeat(MAX_POST_BYTES + 1); expected = [413]
+    }
+    const request = HttpClientRequest.make(method)(api!.origin + path)
+    const response = try client.execute(body === undefined ? request : HttpClientRequest.bodyText(request, body))
+    const output = try response.text
+    if (!expected.includes(response.status)) return false
+    if (response.status === 409) {
+      const value = try Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({ refusal: Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying"]) })))(output)
+      return value.refusal.length > 0
+    }
+    return response.status < 500
+  }
+}))
+
+it.live("workerd/event-stream", () => run("workerd/event-stream", Int, (cursor) => effect {
+  provide FetchHttpClient.layer {
+    const client = try HttpClient.HttpClient
+    const response = try client.get(api!.origin + "/api/conversations/fuzz-stream/events?after=0")
+    const first = try Stream.runHead(response.stream.pipe(Stream.decodeText()))
+    if (response.status !== 200 || !response.headers["content-type"]?.includes("text/event-stream") || Option.isNone(first)) return false
+    const data = first.value.split("\n").find((line) => line.startsWith("data: "))
+    if (data === undefined) return false
+    const event = try Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))(data.slice(6))
+    const snapshot = try client.get(api!.origin + `/api/conversations/fuzz-stream?after=${cursor}`)
+    return event.seq > 0 && snapshot.status === 200
+  }
+}))
+
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { Outline as HistorySchema } from "../src/history/schemas.vibe"
+
+it.live("workerd/history-reader-and-policy", () => run("workerd/history-reader-and-policy", Schema.Struct({ id: Int, text: TextOrBoundary }), ({ id, text }) => effect {
+  provide LiveMythical(api!.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+    const history = try Mythical
+    const snapshot = try history.outline()
+    if (!Schema.is(HistorySchema)(snapshot) || snapshot.epics.length === 0) return false
+    const answers = try forEach([
+      history.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: text, task: `t${id}` }),
+      history.start(`m${id}`, "fuzz"), history.note(`m${id}`, "tried", text), history.approve(`m${id}`), history.fold(),
+    ] as ReadonlyArray<unknown!(import("../src/core/Factory.vibe").Refused | import("../src/core/Factory.vibe").Unavailable)>, (action) => exit(action))
+    return answers.every((answer, index) => {
+      if (answer._tag === "Success" || Cause.hasDies(answer.cause)) return false
+      const error = Cause.findError(answer.cause)
+      return error._tag === "Success" && (error.success._tag === "Refused" ? error.success.refusal === "forbidden" : (index === 0 || index === 2) && !Schema.is(DurableText)(text) && error.success._tag === "Unavailable")
+    })
+  }
+}))
+
+
+it.live("workerd/refuses-malformed-unicode", () => run("workerd/refuses-malformed-unicode", Schema.Struct({ field: Schema.Literals(["clientId", "name", "text"]), text: Schema.Literals(["\ud800", "\udfff"]) }), ({ field, text }) => effect {
+  provide FetchHttpClient.layer {
+    const response = try (try HttpClient.HttpClient).execute(HttpClientRequest.post(api!.origin + "/api/conversations/unicode/posts").pipe(HttpClientRequest.bodyText(JSON.stringify({ clientId: "c", name: "Guest", text: "question", [field]: text }))))
+    return response.status === 400
+  }
+}))
+
+
+it.live("workerd/refuses-malformed-history", () => run("workerd/refuses-malformed-history", Schema.Struct({ op: Int, text: Schema.Literals(["\ud800", "\udfff"]) }), ({ op, text }) => effect {
+  const cases = [
+    { action: "plan", body: { how: "append", epic: "e1", newEpic: "", target: "", title: text, task: "" } },
+    { action: "start", body: { id: "m1", lane: text } },
+    { action: "note", body: { id: "m1", section: "tried", text } },
+    { action: "approve", body: { id: text } },
+  ]
+  const selected = cases[op % cases.length]!
+  provide FetchHttpClient.layer {
+    const response = try (try HttpClient.HttpClient).execute(HttpClientRequest.post(api!.origin + "/api/history/" + selected.action).pipe(HttpClientRequest.bodyText(JSON.stringify(selected.body))))
+    return response.status === 400
+  }
+}))

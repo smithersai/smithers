@@ -1,0 +1,104 @@
+import { it } from "@effect/vitest"
+import * as History from "../src/history/mythical.vibe"
+import * as Codec from "../src/history/schemas.vibe"
+import * as Seed from "../src/history/seed.vibe"
+import { ROLES, HISTORY_ROLES, PEOPLE_ONLY, may, atLeast } from "../src/history/roles.vibe"
+import { make, memoryStore, trailerOf } from "../src/history/Sequencer.vibe"
+import { run, Steps, TextOrBoundary, Int, same } from "./run.vibe"
+
+function invariant(h: History.History): boolean {
+  return h.seq >= 0 && new Set(h.epics.map((e) => e.id)).size === h.epics.length && new Set(h.commits.map((c) => c.id)).size === h.commits.length && new Set(h.real.map((r) => r.sha)).size === h.real.length && h.commits.every((c) => h.epics.some((e) => e.id === c.epic) && h.commits.filter((other) => other.epic === c.epic && other.rank === c.rank).length === 1) && h.real.every((r) => h.commits.some((c) => c.id === r.mythical)) && h.main === (h.real.at(-1)?.sha ?? "")
+}
+
+function intent(step: typeof Steps.Type[number]): History.Intent {
+  const id = `m${step.id % 6}`
+  const epic = `e${step.id % 3}`
+  switch (step.op % 7) {
+    case 0: return { type: "OpenEpic", id: epic, title: step.text }
+    case 1: return { type: "Plan", id, epic, before: step.flag ? "" : `m${(step.id + 1) % 6}`, title: step.text, task: step.flag ? step.text : "" }
+    case 2: return { type: "Amend", id, task: step.text }
+    case 3: return { type: "Start", id, lane: step.text }
+    case 4: return { type: "Approve", id, by: step.text }
+    case 5: return { type: "Fold", sha: `s${step.id % 5}`, change: `c${step.id}`, title: step.text, into: id }
+    default: return { type: "AddNote", id, section: ["tried", "evidence", "superseded"][step.id % 3] as History.Section, text: step.text, by: step.flag ? "Guest" : "" }
+  }
+}
+
+it.live("history/state-machine", () => run("history/state-machine", Steps, (steps) => {
+  let state = History.empty
+  const events: Array<History.Event> = []
+  for (const step of steps) {
+    const decision = History.decide(state, intent(step))
+    if (!decision.ok) {
+      if (!["empty", "too-long", "duplicate", "unknown", "state"].includes(decision.refusal)) return false
+      continue
+    }
+    if (decision.event.seq !== state.seq + 1) return false
+    events.push(decision.event)
+    state = History.apply(state, decision.event)
+    if (!invariant(state)) return false
+  }
+  return same(events.reduce(History.apply, History.empty), state)
+}))
+
+it.live("history/sequencer-replay", () => run("history/sequencer-replay", Steps, (steps) => effect {
+  const store = try memoryStore()
+  const sequencer = try make(store)
+  let expected = History.empty
+  for (const step of steps) {
+    const command = intent(step)
+    const decision = History.decide(expected, command)
+    const recorded = try sequencer.record(command)
+    if (!same(decision, recorded)) return false
+    if (decision.ok) expected = History.apply(expected, decision.event)
+  }
+  const restarted = try make(store)
+  return invariant(expected) && same(try restarted.read(), expected) && same(try sequencer.read(), expected)
+}))
+
+const HistoryWire = Schema.Struct({ ...Codec.History.fields, commits: Schema.Array(Schema.Struct({ ...Codec.Commit.fields, rank: Schema.Union([Schema.Number, Schema.Null]) })) })
+
+it.live("history/codecs", () => run("history/codecs", Schema.Struct({ history: HistoryWire, event: Codec.HistoryEvent, seed: Codec.Seed }), (input) => effect {
+  const decoded = try exit(Schema.decodeUnknownEffect(Schema.fromJsonString(Codec.History))(JSON.stringify(input.history)))
+  if (!Schema.is(Codec.History)(input.history)) return decoded._tag === "Failure" && !Cause.hasDies(decoded.cause)
+  if (decoded._tag === "Failure") return false
+  const history = decoded.value
+  const event = try Schema.decodeUnknownEffect(Schema.fromJsonString(Codec.HistoryEvent))(JSON.stringify(input.event))
+  const seed = try Schema.decodeUnknownEffect(Codec.SeedJson)(JSON.stringify(input.seed))
+  return same(history, input.history) && same(event, input.event) && same(seed, input.seed)
+}))
+
+it.live("history/roles", () => run("history/roles", Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), other: Int, agent: Schema.Boolean, action: Int }), ({ role, other, agent, action }) => {
+  const key = Object.keys(HISTORY_ROLES)[action % 7] as keyof typeof HISTORY_ROLES
+  const least = ROLES[other % ROLES.length]!
+  const expected = ROLES.indexOf(role) >= ROLES.indexOf(HISTORY_ROLES[key]) && !(agent && PEOPLE_ONLY.includes(key))
+  return may({ role, name: "Fuzz", agent }, key) === expected && atLeast(role, least) === (ROLES.indexOf(role) >= other % ROLES.length)
+}))
+
+const Title = Schema.Union([TextOrBoundary, Schema.Literals(["feat(fuzz): corpus", "chore(docs): regenerate guides", "Revert \"feat(fuzz): corpus\"", "fix(compiler): parser", "docs: words", "Tests: regression", "scope: title", "feat: plain"])])
+const SeedInput = Schema.Array(Schema.Struct({ title: Title, merge: Schema.Boolean, state: Schema.Literals(["landed", "rejected", "superseded", "withdrawn", "running"]), reason: TextOrBoundary })).check(Schema.isMaxLength(20))
+
+it.live("history/seed-and-buckets", () => run("history/seed-and-buckets", SeedInput, (rows) => {
+  const commits: Array<Seed.RawCommit> = []
+  const entries: Array<Seed.QueueEntry> = []
+  for (const [index, row] of rows.entries()) {
+    const previous = commits.at(-1)?.sha
+    if (row.merge && previous !== undefined) commits.push({ sha: `side${index}`, change: `change-side-${index}`, description: row.title + "\nTests: passed\nBefore: rejected\nAfter: accepted", parents: [previous] })
+    commits.push({ sha: `main${index}`, change: `change-main-${index}`, description: row.title + "\nValidation: schema round trip", parents: previous === undefined ? [] : [previous, ...(row.merge ? [`side${index}`] : [])] })
+    entries.push({ id: `q${index}`, lane: "fuzz", state: row.state, reason: row.reason, gate: index % 2 ? "" : "checks", titles: [row.title, row.title] })
+  }
+  const buckets = Seed.bucketsOf(commits)
+  if (buckets.length !== commits.length || new Set(buckets.map((b) => b.commit.sha)).size !== commits.length) return false
+  const seed = Seed.seedOf("fuzz", commits, entries)
+  const replay = Seed.replay(Seed.intentsOf(seed))
+  if (replay.refused.length > 0 || replay.history.real.length !== commits.length || !invariant(replay.history)) return false
+  const restored = Seed.replay(Seed.intentsOf(Seed.seedFrom("fuzz", replay.history)))
+  return restored.refused.length === 0 && same(restored.history, replay.history) && seed.real.every((r) => seed.epics.some((e) => e.commits.some((c) => c.id === r.into)))
+}))
+
+it.live("history/notes-and-trailers", () => run("history/notes-and-trailers", Schema.Tuple([TextOrBoundary, Int]), ([text, id]) => {
+  const sanitized = Seed.sanitize(text)
+  const expected = `m${id}`
+  const trailer = trailerOf(`Title\n\nMythical: ${expected}\n`)
+  return trailer === expected && trailerOf("No trailer\n" + text) !== undefined && sanitized.length <= History.MAX_NOTE && !sanitized.includes("\n") && Seed.titleOf(text).length > 0 && Seed.evidenceOf(`Tests: ${text}\nOther: ignored`).every((line) => Seed.endsSentence(line) && !line.includes("Other: ignored")) && typeof Seed.areaOf(text) === "string" && typeof Seed.scopeOf(text) === "string"
+}))

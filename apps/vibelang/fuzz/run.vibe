@@ -1,0 +1,63 @@
+// One bounded target, its persistent regressions, and content-free campaign receipts.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { Fuzz } from "@smthrs/fuzz"
+import { FuzzCorpus } from "@smthrs/testing"
+import { MAX_TEXT } from "../src/core/conversation.vibe"
+
+export error Finding {
+  report: string
+  get message() { return this.report }
+}
+export error BudgetInvalid { message: string }
+
+const executions = Metric.counter("vibelang_fuzz_executions", { incremental: true })
+
+/** Every target has its own wall budget; corpus replay happens on every invocation. */
+export effect function run<S extends Schema.Constraint>(
+  name: string,
+  schema: S,
+  property: (input: S["Type"]) => boolean | (boolean!unknown!Scope.Scope),
+  execution?: Fuzz.Execution,
+  options?: { readonly revision?: string; readonly codec?: Fuzz.Codec<S["Type"]> },
+) {
+  provide NodeServices.layer {
+    return try withSpan(effect {
+      const began = try Clock.currentTimeMillis
+      const budget = try Config.withDefault(Config.Duration("FUZZ_BUDGET"), name.startsWith("browser/") ? Duration.seconds(25) : Duration.millis(250))
+      if (Duration.toMillis(budget) <= 0) throw new BudgetInvalid({ message: "FUZZ_BUDGET must be positive" })
+      const seed = try Config.withDefault(Config.String("FUZZ_SEED"), "20261107")
+      const limit = try Config.option(Config.Int("FUZZ_EXECUTIONS"))
+      const path = try Path.Path
+      const directory = path.resolve("fuzz")
+      const store = try Effect.try(() => FuzzCorpus.fileCorpus({ failures: path.join(directory, "__fuzz__"), inputs: path.join(directory, "../node_modules/.cache/effect-fuzz") }))
+      const target = try Effect.try(() => Fuzz.target(schema, (input) => scoped(Effect.suspend(() => {
+        const output = property(input)
+        return Effect.isEffect(output) ? output : succeed(output)
+      })).pipe(Effect.provideService(References.MinimumLogLevel, "Warning")), { id: name, revision: options?.revision ?? "1", ...(options?.codec === undefined ? {} : { codec: options.codec }) }))
+      const report = try Fuzz.runTarget(target, {
+        duration: budget, seed, maxShrinks: name.startsWith("browser/") ? 16 : 64,
+        ...(Option.isSome(limit) ? { executions: limit.value } : {}),
+        ...(execution === undefined ? {} : { execution }),
+      }).pipe(Effect.provideService(Fuzz.Corpus, store))
+      const ended = try Clock.currentTimeMillis
+      try Metric.update(Metric.withAttributes(executions, { target: name }), report.stats.executions)
+      try Effect.logInfo("vibelang.fuzz.target").pipe(Effect.annotateLogs({ target: name, outcome: report._tag, executions: report.stats.executions, regressions: report.stats.regressions, stoppedBy: report.stats.stoppedBy }))
+      const fs = try FileSystem.FileSystem
+      const receipts = path.resolve("fuzz-results")
+      try fs.makeDirectory(receipts, { recursive: true })
+      try fs.writeFileString(path.join(receipts, name.replaceAll("/", "--") + ".json"), JSON.stringify({ target: name, seed, budget: Duration.toMillis(budget), outcome: report._tag, began, ended, elapsedMs: ended - began, stats: report.stats }))
+      const finding = try Effect.try(() => Fuzz.formatReport(report))
+      if (finding !== undefined) throw new Finding({ report: finding })
+    }, `vibelang.fuzz.${name}`)
+  }
+}
+
+export const Int = Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 31 }))
+export const Text = Schema.String.check(Schema.isMaxLength(120))
+export const TextOrBoundary = Schema.Union([Text, Schema.Literals(["", " ", "\n\t", "x".repeat(MAX_TEXT + 1), "```vibe\nhello\n```", "a`b`c", "\ud800"])])
+export const Steps = Schema.Array(Schema.Struct({ op: Int, id: Int, text: TextOrBoundary, flag: Schema.Boolean })).check(Schema.isMaxLength(48))
+
+/** Structural comparison keeps prototypes out of the value-level invariants. */
+export function same(a: unknown, b: unknown): boolean {
+  try { return JSON.stringify(a) === JSON.stringify(b) } catch { return false }
+}

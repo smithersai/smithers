@@ -1,0 +1,36 @@
+// Persisted counterexamples from historyApp.vibe at e39a2306, before history reads became pages.
+// Generation uses today's public Model; the public Fuzz codec alone upgrades old JSON without changing its file.
+import { SchemaGetter } from "effect"
+import { HistoryModel, init } from "../src/web/historyApp.vibe"
+import { Commit, Epic, Real, Seq } from "../src/history/schemas.vibe"
+import { outlineOf, epicPageOf, commitPageOf, matchesOf } from "../src/history/pages.vibe"
+
+// Freeze the persisted v1 shape; today's History adds a rank/cursor refinement that v1 did not have.
+const LegacyHistory = Schema.Struct({ seq: Seq, epics: Schema.Array(Epic), commits: Schema.Array(Commit), real: Schema.Array(Real), main: Schema.String })
+const f = HistoryModel.fields
+const Legacy = Schema.Struct({
+  mode: f.mode, role: f.role, status: f.status, history: LegacyHistory, hash: f.hash, open: f.open,
+  full: Schema.Array(Schema.String), filter: f.filter, dialog: f.dialog, form: f.form, lane: f.lane,
+  noteSection: f.noteSection, noteText: f.noteText, error: f.error, busy: f.busy, epoch: f.epoch,
+})
+const Saved = Schema.Union([HistoryModel, Legacy])
+const Compatible = Saved.pipe(Schema.decodeTo(HistoryModel, {
+  decode: SchemaGetter.transform((model) => {
+    if (!("history" in model)) return model
+    return {
+      ...init({ mode: model.mode, role: model.role, hash: model.hash }).model,
+      ...model,
+      outline: outlineOf(model.history),
+      pages: model.history.epics.map((epic) => epicPageOf(model.history, epic.id, 0)),
+      commit: commitPageOf(model.history, model.hash), commitId: model.hash,
+      matches: matchesOf(model.history, model.filter), latest: model.history.seq,
+    }
+  }),
+  encode: SchemaGetter.passthrough(),
+}))
+
+export const historyModelCodec = {
+  id: "json",
+  encode: Schema.encodeSync(Schema.fromJsonString(HistoryModel)),
+  decode: Schema.decodeSync(Schema.fromJsonString(Compatible)),
+}

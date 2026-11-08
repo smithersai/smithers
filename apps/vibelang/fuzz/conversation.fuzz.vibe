@@ -1,0 +1,118 @@
+import { it } from "@effect/vitest"
+import { Fuzz } from "@smthrs/fuzz"
+import * as M from "../src/core/conversation.vibe"
+import { EventSchema, RefusalReason } from "../src/core/schemas.vibe"
+import { Int, run, same, Steps } from "./run.vibe"
+
+/** The proved invariants, checked after each transition rather than just at the end. */
+export function invariant(state: M.Conversation): boolean {
+  const working = state.agent === "working"
+  if (working !== (state.replying !== "")) return false
+  const unfinished = state.entries.filter((entry) => !entry.done)
+  if (working ? unfinished.length !== 1 || unfinished[0]!.id !== state.replying : unfinished.length !== 0) return false
+  const ids = state.entries.map((entry) => entry.id)
+  if (ids.includes("") || new Set(ids).size !== ids.length) return false
+  const people = state.entries.filter((entry) => entry.author === "person")
+  if (people.some((entry) => entry.clientId === "") || new Set(people.map((entry) => entry.clientId)).size !== people.length) return false
+  for (let index = 0; index < state.entries.length; index++) {
+    const entry = state.entries[index]!
+    if (entry.seq > state.seq || entry.seq < 1 || (index > 0 && state.entries[index - 1]!.seq >= entry.seq)) return false
+    if (entry.author === "agent" && entry.inReplyTo !== "" && !people.some((post) => post.id === entry.inReplyTo && post.seq < entry.seq)) return false
+  }
+  const replies = state.entries.filter((entry) => entry.author === "agent" && entry.inReplyTo !== "").map((entry) => entry.inReplyTo)
+  return new Set(replies).size === replies.length
+}
+
+export function intent(step: typeof Steps.Type[number], state: M.Conversation): M.Intent {
+  const ids = ["", `m${step.id}`, `r${step.id}`, state.replying]
+  const id = step.flag ? ids[step.id % ids.length]! : `e${state.seq + 1}`
+  const post = state.entries.filter((entry) => entry.author === "person").at(-1)?.id ?? "missing"
+  switch (step.op % 9) {
+    case 0: return { type: "Post", id, clientId: step.flag ? "" : `c${step.id}`, name: "Guest", text: step.text }
+    case 1: return { type: "StartReply", id, inReplyTo: step.flag ? `m${step.id}` : post }
+    case 2: return { type: "AppendReply", id: step.flag ? id : state.replying, text: step.text }
+    case 3: return { type: "RestartReply", id: step.flag ? id : state.replying }
+    case 4: return { type: "FinishReply", id: step.flag ? id : state.replying }
+    case 5: return { type: "FailReply", id: step.flag ? id : state.replying, reason: step.text }
+    case 6: return { type: "StartTour", id }
+    case 7: return { type: "EndTour", id: step.flag ? id : state.replying }
+    default: return { type: "OpenPane", id: step.flag ? id : state.replying, url: step.text }
+  }
+}
+
+it.live("conversation/sequences", () => run("conversation/sequences", Steps, (steps) => effect {
+  let state = M.empty
+  let client = M.newClient
+  const events: M.Event[] = []
+  for (const step of steps) {
+    const command = intent(step, state)
+    if (command.type === "Post") client = M.post(client, command.clientId, command.text)
+    const result = M.decide(state, command)
+    try Fuzz.observe(result.ok ? `accepted/${result.event.type}` : `refused/${result.refusal}`)
+    if (!result.ok) {
+      if (!["empty", "too-long", "duplicate", "busy", "not-replying", "forbidden", "full"].includes(result.refusal)) return false
+      if (command.type === "Post") {
+        const failed = M.failPost(client, command.clientId, step.flag ? "" : result.refusal)
+        const retried = M.retryPost(failed, command.clientId)
+        if (!same(retried.pending.map((p) => [p.clientId, p.text]), client.pending.map((p) => [p.clientId, p.text]))) return false
+        client = retried
+      }
+      continue
+    }
+    const event = result.event
+    if (event.seq !== state.seq + 1) return false
+    const next = M.apply(state, event)
+    if (!invariant(next) || next.seq !== event.seq || M.apply(next, event) !== next) return false
+    for (const before of state.entries) {
+      if (before.id !== event.id && !same(next.entries.find((entry) => entry.id === before.id), before)) return false
+    }
+    state = next
+    events.push(event)
+    client = M.receive(client, event)
+    if (M.receive(client, event) !== client) return false
+    if (!same(client.conversation, state)) return false
+  }
+  return same(events.reduce(M.apply, M.empty), state) && new Set(client.pending.map((p) => p.clientId)).size === client.pending.length
+}))
+
+it.live("conversation/delivery", () => run("conversation/delivery", Schema.Struct({ steps: Steps, order: Schema.Array(Int).check(Schema.isMaxLength(70)) }), ({ steps, order }) => effect {
+  let state = M.empty
+  const events: M.Event[] = []
+  for (const step of steps) {
+    const result = M.decide(state, intent(step, state))
+    if (result.ok) { events.push(result.event); state = M.apply(state, result.event) }
+  }
+  let client = M.newClient
+  const delivered = events.length === 0 ? [] : [...order.map((n) => events[n % events.length]!), events.at(-1)!]
+  for (const event of delivered) {
+    client = M.receive(client, event)
+    if (client.gap) {
+      const cursor = client.conversation.seq
+      client = M.resume(client)
+      for (const replayed of events.filter((item) => item.seq > cursor)) client = M.receive(client, replayed)
+    }
+    if (event.seq <= client.conversation.seq && M.receive(client, event) !== client) return false
+  }
+  return same(client.conversation, state) && !client.gap
+}))
+
+it.live("conversation/malformed-events", () => run("conversation/malformed-events", Schema.Array(EventSchema).check(Schema.isMaxLength(30)), (events) => {
+  let state = M.empty
+  for (const arbitrary of events) {
+    const next = M.apply(state, { ...arbitrary, seq: state.seq + 1 })
+    if (!invariant(next)) return false
+    state = next
+  }
+  return true
+}))
+
+import { Conversation as ConversationSchema } from "../src/core/schemas.vibe"
+const BoundaryStep = Schema.Struct({ op: Int, id: Int, text: Schema.String, flag: Schema.Boolean })
+/** Schema-shaped pre-states exercise refusal and overflow paths beyond a short reachable command history. */
+it.live("conversation/arbitrary-state-decisions", () => run("conversation/arbitrary-state-decisions", Schema.Struct({ state: ConversationSchema, step: BoundaryStep, edge: Schema.Literals([0, 1, 31, Number.MAX_SAFE_INTEGER - 1, Number.MAX_SAFE_INTEGER]) }), ({ state, step, edge }) => {
+  const model = { ...state, seq: edge }
+  const decision = M.decide(model, intent(step, model))
+  if (!decision.ok) return Schema.is(RefusalReason)(decision.refusal)
+  const event = decision.event
+  return Schema.is(EventSchema)(event) && event.seq === model.seq + 1 && event.seq <= Number.MAX_SAFE_INTEGER
+}))

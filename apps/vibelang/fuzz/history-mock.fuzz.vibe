@@ -1,0 +1,64 @@
+import { it } from "@effect/vitest"
+import { MockMythical, seeded, landedSha } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { may } from "../src/history/roles.vibe"
+import { History as HistorySchema, Outline as OutlineSchema } from "../src/history/schemas.vibe"
+import { run, Int, TextOrBoundary } from "./run.vibe"
+
+const Principal = Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), name: Schema.Literal("Fuzz"), agent: Schema.Boolean })
+const Input = Schema.Struct({ principal: Principal, id: Int, text: TextOrBoundary })
+
+function refusal<E>(result: Exit.Exit<unknown, E>): string | undefined {
+  if (result._tag === "Success") return undefined
+  const error = Cause.findError(result.cause)
+  if (error._tag === "Failure") return "defect"
+  const value = error.success as { readonly refusal?: string }
+  return value.refusal
+}
+
+it.live("history/mock-roles-and-flows", () => run("history/mock-roles-and-flows", Input, ({ principal, id, text }) => effect {
+  provide MockMythical(principal, () => succeed(empty)) {
+    const history = try Mythical
+    if ((try history.outline()).seq !== 0) return false
+    const planned = try exit(history.plan({ how: "append", epic: "", newEpic: "Epic", target: "", title: `Change ${id}`, task: "" }))
+    if (may(principal, "append") ? planned._tag !== "Success" : refusal(planned) !== "forbidden") return false
+    const started = try exit(history.start("missing", "lane"))
+    if (refusal(started) !== (may(principal, "start") ? "unknown" : "forbidden")) return false
+    const noted = try exit(history.note("missing", "tried", text))
+    const expected = !may(principal, "note") ? "forbidden" : text.trim() === "" ? "empty" : text.trim().length > 1000 ? "too-long" : "unknown"
+    if (refusal(noted) !== expected) return false
+    const approved = try exit(history.approve("missing"))
+    if (refusal(approved) !== (may(principal, "approve") ? "unknown" : "forbidden")) return false
+    const folded = try exit(history.fold())
+    return may(principal, "fold") ? folded._tag === "Success" && folded.value === 0 : refusal(folded) === "forbidden"
+  }
+}))
+
+it.live("history/mock-lifecycle", () => run("history/mock-lifecycle", Schema.Struct({ id: Int, text: TextOrBoundary }), ({ id, text }) => effect {
+  provide MockMythical({ role: "maintainer", name: "Fuzz", agent: false }, () => succeed(empty)) {
+    const history = try Mythical
+    const planned = try history.plan({ how: "append", epic: "", newEpic: "Epic", target: "", title: `Change ${id}`, task: `Task ${id}` })
+    const inserted = try history.plan({ how: "insert", epic: "", newEpic: "", target: planned, title: "Before", task: "" })
+    try history.start(planned, `lane-${id}`)
+    try history.note(planned, "tried", "First attempt")
+    const working = try history.commit(planned)
+    if (working.commit?.state !== "working" || (try history.commit(inserted)).commit?.rank !== 0) return false
+    try history.approve(planned)
+    if ((try history.fold()) !== 1 || (try history.fold()) !== 0) return false
+    const landed = try history.commit(planned)
+    if ((try history.outline()).main !== landedSha(planned) || landed.real.length !== 1) return false
+    const amended = try history.plan({ how: "amend", epic: "", newEpic: "", target: planned, title: "", task: "Amend" })
+    if (amended !== planned) return false
+    const written = try exit(history.note(planned, "evidence", text))
+    const expected = text.trim() === "" ? "empty" : text.trim().length > 1000 ? "too-long" : undefined
+    if (refusal(written) !== expected) return false
+    const missing = try exit(history.start("missing", "lane"))
+    return refusal(missing) === "unknown" && Schema.is(OutlineSchema)(try history.outline())
+  }
+}))
+
+it.live("history/bootstrap-snapshot", () => run("history/bootstrap-snapshot", Int, () => effect {
+  const history = try seeded()
+  return Schema.is(HistorySchema)(history) && history.real.length === new Set(history.real.map((r) => r.sha)).size && history.commits.length > 0 && history.main === history.real.at(-1)?.sha
+}))

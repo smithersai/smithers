@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 26
+bias 3
+null-prototype false
+key 3174480417
+tape AQICZGCUL-JNDanxy2K7iAPVFmY
+schedule-key 3227539335
+schedule 
+signature "Died:URIError"
+path 0
+codec "json"
+value "{\"what\":\"epic\",\"id\":\"\\ud800\",\"from\":0}"
+# Died:URIError
+# {"what":"epic","id":"\ud800","from":0}

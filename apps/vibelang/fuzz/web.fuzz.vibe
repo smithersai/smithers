@@ -1,0 +1,51 @@
+import { it } from "@effect/vitest"
+import { scene, given, getAllByRole, findAll, type SceneSimulation } from "foldkit/scene"
+import * as M from "../src/core/conversation.vibe"
+import { Model, Flags, Message, init, update, keyMessage, viewTransition } from "../src/web/main.vibe"
+import { view, failureOf } from "../src/web/view.vibe"
+import { blocks, inline } from "../src/web/markdown.vibe"
+import { run, TextOrBoundary, Int, same } from "./run.vibe"
+
+it.live("web/view-models", () => run("web/view-models", Schema.Struct({ model: Model, own: Schema.Boolean }), ({ model, own }) => effect {
+  const rendered: Model = { ...model, client: { ...model.client, conversation: { ...model.client.conversation, entries: model.client.conversation.entries.map((entry, index) => own ? { ...entry, clientId: `${model.session}-${index + 1}` } : entry) } } }
+  return try Effect.try(() => {
+    let named = true
+    scene({ update, view }, given(rendered), (simulation: SceneSimulation<Model, Message>) => {
+      for (const role of ["button", "link", "textbox", "combobox", "checkbox", "radio", "switch", "slider", "searchbox", "spinbutton", "option", "tab", "menuitem", "treeitem"]) {
+        if (getAllByRole(role)(simulation.html).length !== getAllByRole(role, { name: /\S/ })(simulation.html).length) named = false
+      }
+      if (findAll(simulation.html, "script").length !== 0) named = false
+      return simulation
+    })
+    return named
+  })
+}))
+
+it.live("web/update-sequences", () => run("web/update-sequences", Schema.Struct({ flags: Flags, messages: Schema.Array(Message).check(Schema.isMaxLength(40)) }), ({ flags, messages }) => {
+  let model = init(flags).model
+  for (const message of messages) {
+    const before = model
+    const result = update(model, message)
+    model = result.model
+    if (!Schema.is(Model)(model)) return false
+    if (message._tag === "ReceivedEvent" && !same(model.client.conversation, M.receive(before.client, message.event).conversation)) return false
+    if (model.announced < before.announced) return false
+  }
+  return true
+}))
+
+it.live("web/arbitrary-update", () => run("web/arbitrary-update", Schema.Struct({ model: Model, message: Message }), ({ model, message }) => Schema.is(Model)(update(model, message).model)))
+
+it.live("web/keys-and-transition", () => run("web/keys-and-transition", Schema.Struct({ key: Schema.Union([TextOrBoundary, Schema.Literals(["k", "K", "Escape"])]), meta: Schema.Boolean, control: Schema.Boolean, before: Model, after: Model }), ({ key, meta, control, before, after }) => {
+  const result = keyMessage(key, meta, control)
+  const expected = ((meta || control) && key.toLowerCase() === "k") || key === "Escape"
+  const transition = viewTransition({ previousModel: before, model: after, message: Message.FocusedPrompt() })
+  return Option.isSome(result) === expected && (before.surface === after.surface ? transition === false : same(transition, { types: [after.surface === "chat" ? "to-chat" : "to-splash"] }))
+}))
+
+it.live("web/markdown-and-reasons", () => run("web/markdown-and-reasons", Schema.Union([TextOrBoundary, Schema.Literals(["failed", "```\n\n```", "```vibe\nhello", "one\n\ntwo", "a``b`c"]) ]), (text) => {
+  const parsed = blocks(text)
+  if (!parsed.every((block) => block.kind === "code" || block.text.trim() !== "")) return false
+  if (inline(text).map((piece) => piece.text).join("") !== text.replaceAll("`", "")) return false
+  return failureOf(text) === (text === "" || text === "failed" ? "Answer failed" : text)
+}))

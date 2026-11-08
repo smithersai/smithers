@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 31
+bias 4
+null-prototype false
+key 1006271426
+tape qfGKcTRYFYEYxhkHaes6yickKuQeKeSatCPEf5nkmaNzUc_9StMsFojrlpA5v2ghV6zZJFRAwdtd2GPFhBiM2zioZ0cSY31iVFFECF9sfucunnywqPigIMB7zayjmJ1S05BNU1SD3QEm5zJp56Jf8fuur9f4GLsd7w_gB5URRgfXo-8pYOby_ANXSNpwqj8aWKoJ62_06p1TLzBK8e6wuRzyyNOVvv-a2O1gIdrLWXmydAi-kWg_s4Hdft1fB7GPDqr_iK5jSYCY6mskJcpJJ7IF8fU3QGd9x_5mk7jiBKGNx96TOv6L_OZ3nwjeHqx4FsDz7QsXvUc-hzcSQQnMxG5VQ12iyKfilWSYGV7K8dHiKfPopjgJ5IIDMqjejrHaKo5u4a32R0Gs0hluwDmOfMFngFi790eVHobSfChaSxWUq5nxEiIDeF6vj82jUfNbB__04f03Igs
+schedule-key 2496832040
+schedule 
+signature "ReturnedFalse"
+path 2.4.4.11.13.15
+codec "json"
+value "[{\"op\":0,\"role\":\"new\",\"grant\":\"new\",\"target\":0},{\"op\":3,\"role\":\"viewer\",\"grant\":\"new\",\"target\":16},{\"op\":2,\"role\":\"contributor\",\"grant\":\"community\",\"target\":0},{\"op\":29,\"role\":\"maintainer\",\"grant\":\"contributor\",\"target\":28},{\"op\":13,\"role\":\"community\",\"grant\":\"community\",\"target\":15},{\"op\":29,\"role\":\"maintainer\",\"grant\":\"community\",\"target\":1}]"
+# ReturnedFalse
+# [{"op":0,"role":"new","grant":"new","target":0},{"op":3,"role":"viewer","grant":"new","target":16},{"op":2,"role":"contributor","grant":"community","target":0},{"op":29,"role":"maintainer","grant":"contributor","target":28},{"op":13,"role":"community","grant":"community","target":15},{"op":29,"role":"maintainer","grant":"community","target":1}]

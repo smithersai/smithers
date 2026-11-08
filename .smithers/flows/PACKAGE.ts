@@ -18,6 +18,12 @@ const pack = Smithers.NodeTest({
   deps: []
 })
 
+/** Files read by the app's durable fuzz runner, owned by this flow package. */
+const vibelangFuzzSources = Smithers.Filegroup({
+  cwd: ".smithers/flows",
+  srcs: [Smithers.glob("vibelang-fuzz/*.{vibe,ts}"), Smithers.file("package.json"), Smithers.file("tsconfig.json")]
+})
+
 const cwd = ".smithers/flows"
 const sources = Smithers.glob("//.smithers/flows/**/*.ts")
 // The repository automation modules flows import and run (release, evidence,
@@ -1601,6 +1607,7 @@ const moduleLint = Smithers.EsLint({
 
 export const Package = Smithers.Package({
   targets: {
+    vibelangFuzzSources,
     issueClaim,
     evidenceBindings,
     releaseRehearsal,

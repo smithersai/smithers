@@ -1,0 +1,25 @@
+import { expect, vi } from "vitest"
+import { it } from "@effect/vitest"
+import { Runtime } from "foldkit"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { init } from "../src/web/main.vibe"
+import { application } from "../test/support/application.vibe"
+import { activeId, clickAsk, commandK, container, focusComposer, hasAsk, remove, send } from "../test/support/browser.ts"
+import { mockReply } from "../src/core/mockReplies.vibe"
+import { run, Int } from "./run.vibe"
+
+it.live("web/native-runtime", () => run("web/native-runtime", Schema.Struct({ topic: Schema.Literals(["install", "error", "service", "function", "VIP"]), id: Int, key: Schema.Boolean }), ({ topic, id, key }) => effect {
+  let latest = init({ session: `f${id}`, name: "Guest", mode: "mock" }).model
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  const app = try Effect.try(() => application(node, MockFactory, (model) => { latest = model }))
+  try acquireRelease(sync(() => Runtime.embed(app, { flags: succeed({ session: `f${id}`, name: "Guest", mode: "mock" as const }) })), (handle) => sync(() => handle.dispose()))
+  try promise(() => vi.waitFor(() => { expect(hasAsk()).toBe(true) }))
+  try Effect.try(key ? commandK : clickAsk)
+  try promise(() => vi.waitFor(() => { expect(activeId()).toBe("vl-palette-prompt") }))
+  try Effect.try(() => send(topic))
+  try promise(() => vi.waitFor(() => { expect(latest.client.conversation.entries[1]?.done).toBe(true) }, { timeout: 10_000 }))
+  if (latest.client.conversation.entries[1]?.text !== mockReply(topic) || latest.client.pending.length > 0 || latest.palette) return false
+  try Effect.try(commandK)
+  try promise(() => vi.waitFor(() => { expect(activeId()).toBe("vl-palette-prompt") }))
+  return latest.palette && latest.client.conversation.entries.length === 2
+}))

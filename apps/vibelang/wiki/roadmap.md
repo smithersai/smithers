@@ -55,7 +55,7 @@ brick                                   state         proof
 - **`@smthrs/ui-css`** holds `@smthrs/ui`'s framework-free CSS so React and Foldkit share one stylesheet.
 
 - Brick 2 policy and shared authentication: decision [0019](decisions/0019-sign-in-and-roles.md); lane vl-roles.
-- **vl-fuzzpkg, in progress:** package the Effect fork as `@smthrs/fuzz`, then independent whole-app fuzz coverage and a 30-minute campaign (decision 0015).
+- **vl-fuzzpkg, in progress:** `@smthrs/fuzz` landed at 100%; app Schema targets and the 31.69-minute campaign found/fixed product bugs. Independent fuzz coverage remains below 100%, with bundled source-map measurement and authorized live-host gaps (decision 0015).
 
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
 

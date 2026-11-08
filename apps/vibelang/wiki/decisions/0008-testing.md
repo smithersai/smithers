@@ -15,7 +15,7 @@
 | Proof sensitivity | Executable mutations with byte-identical contracts | `pnpm verify:broken` |
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
-| Fuzz package and corpus regression tooling | `@smthrs/fuzz`; `@smthrs/testing/Vitest` (0015) | package tests; whole-app `pnpm fuzz` follows the package landing |
+| Fuzzing and corpus regressions | `fuzz/*.fuzz.vibe`, native workerd and Chromium (0015); `@smthrs/fuzz`, `@smthrs/testing` | `pnpm fuzz`; independent strict gate `pnpm fuzz:coverage` |
 | Benchmarks | `bench/`: built-in Vitest, Chromium, emitted CLI/MCP and real workerd (0017) | `pnpm bench`; opt-in `pnpm bench:live`; independent `pnpm bench:coverage` |
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
@@ -239,6 +239,13 @@ The retained stale-edit red reproduced overwriting a person's file. `fs.edit` no
 Five marked policy functions prove ten Dafny obligations, with five unchanged-contract negative controls.
 
 A native role regression first reproduced a nonfunctional Mock identity picker after 0019 landed. The shared Accounts seam now follows the selected Factory, refreshes identity on model-mode changes and restores Viewer for local project operations. The real native case opens People in Mock and verifies that local sign-in reports unavailable without navigation.
+
+**Fuzz lane tools (0015).** Existing monorepo test tools `@smthrs/testing`, `@smthrs/platform-node`,
+`ast-v8-to-istanbul` 1.0.5, `istanbul-lib-coverage` ^3.2.2, `istanbul-lib-report` ^3.0.1 and
+`istanbul-reports` ^3.2.0 are added at their monorepo versions, awaiting Will's VL-5 approval.
+The fuzz runner is a durable Smithers flow using the real Node SQLite host, production step and file boundaries,
+workerd and Chromium on lane port 4501. It never merges unit-suite coverage into fuzz evidence.
+The strict coverage target is explicit, like benchmark qualification; its current failure remains recorded in 0015.
 
 **History coverage (0016).** All 57 startup cases measure historyStartup.vibe at 100% on all four metrics. Native form
 and real HTTP runtime tests cover planning, every note section, approval/folding, insertion/amendment and unavailable

@@ -25,7 +25,9 @@
     "bench": "pnpm build:surfaces && pnpm build:scripts && BENCH_COVERAGE=0 vitest bench --run --config bench/config.ts",
     "bench:coverage": "pnpm build:surfaces && pnpm build:scripts && BENCH_COVERAGE=1 vitest run --config bench/coverage.config.ts --coverage",
     "bench:live": "BENCH_LIVE=1 playwright test --config bench/playwright.config.ts",
-    "bench:browser": "BENCH_LIVE=0 playwright test --config bench/playwright.config.ts"
+    "bench:browser": "BENCH_LIVE=0 playwright test --config bench/playwright.config.ts",
+    "fuzz": "pnpm --workspace-root exec node --import=vibelang/register .smithers/flows/vibelang-fuzz/main.vibe",
+    "fuzz:coverage": "FUZZ_COVERAGE=1 pnpm fuzz"
   },
   "dependencies": {
     "@smthrs/agent": "workspace:*",
@@ -66,7 +68,13 @@
     "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vite": "8.3.4",
-    "vitest": "5.0.0"
+    "vitest": "5.0.0",
+    "@smthrs/testing": "workspace:*",
+    "ast-v8-to-istanbul": "1.0.5",
+    "istanbul-lib-coverage": "^3.2.2",
+    "istanbul-lib-report": "^3.0.1",
+    "istanbul-reports": "^3.2.0",
+    "@smthrs/platform-node": "workspace:*"
   },
   "bin": {
     "vibelang-factory": "dist-factory/surfaces/cli-entry.js"

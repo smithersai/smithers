@@ -63,13 +63,22 @@ effect function modulesOf(bundled: Bundle) {
 export interface Served {
   readonly origin: string
   readonly dispose: () => Promise<void>
+  /** Dispatches through this actual workerd instance, preserving the incoming request. */
+  readonly fetch: (request: Request) => Promise<Response>
 }
 
 effect function listen(config: Record<string, unknown>) {
   const options = { host: "127.0.0.1", port: 0, workers: [{ config }] } as ConstructorParameters<typeof Miniflare>[0]
   const worker = try Effect.try({ try: () => new Miniflare(options), catch: (cause) => new WorkerdFailed({ cause }) })
   const url = try tryPromise({ try: () => worker.ready, catch: (cause) => new WorkerdFailed({ cause }) })
-  const served: Served = { origin: url.origin, dispose: () => worker.dispose() }
+  const served: Served = {
+    origin: url.origin, dispose: () => worker.dispose(),
+    fetch: async (request) => {
+      const response = await worker.dispatchFetch(request.url, { method: request.method, headers: Object.fromEntries(request.headers), ...(request.method === "GET" || request.method === "HEAD" ? {} : { body: await request.text() }) })
+      // Miniflare and the browser expose the same Fetch response with distinct platform declarations.
+      return response as unknown as Response
+    },
+  }
   return served
 }
 

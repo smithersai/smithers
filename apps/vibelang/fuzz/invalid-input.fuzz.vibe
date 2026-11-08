@@ -1,0 +1,31 @@
+import { it } from "@effect/vitest"
+import { HttpClient } from "effect/http"
+import { Factory, Unavailable } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { run, Int } from "./run.vibe"
+
+// An invalid id must be refused before this deliberately faulty service can run.
+const unreachable = HttpClient.make(() => Effect.die("invalid-id network escape"))
+const live = LiveFactory("https://api.invalid").pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, unreachable)))
+
+it.live("protocol/invalid-id-never-reaches-network", () => run("protocol/invalid-id-never-reaches-network", Schema.Struct({ id: Schema.Literals(["", "\ud800", "\udfff", "x".repeat(129)]), operation: Int }), ({ id, operation }) => effect {
+  provide live {
+    const factory = try Factory
+    const outcome = try exit(effect {
+      switch (operation % 9) {
+        case 0: try factory.post(id, "c", "Guest", "hello"); break
+        case 1: try factory.read(id, 0); break
+        case 2: try factory.tour(id); break
+        case 3: try factory.endTour(id); break
+        case 4: try Stream.runDrain(factory.events(id, 0)); break
+        case 5: try factory.sandbox(id); break
+        case 6: try factory.startSandbox(id, "fuzz"); break
+        case 7: try factory.stopSandbox(id, "fuzz", 0); break
+        default: try factory.sandboxCommand(id, "fuzz", "pwd", 0)
+      }
+    })
+    if (outcome._tag === "Success" || Cause.hasDies(outcome.cause)) return false
+    const error = Cause.findError(outcome.cause)
+    return error._tag === "Success" && error.success instanceof Unavailable && error.success.reason === "invalid conversation"
+  }
+}))

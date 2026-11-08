@@ -1,0 +1,64 @@
+import { Cell } from "@smthrs/harness"
+import { it } from "@effect/vitest"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { may } from "../src/history/roles.vibe"
+import { type HistoryReader, note, plan, requestOf, ShowPage, show, start } from "../src/history/tools.vibe"
+import { historyTools, REPLY_CALLS } from "../worker/HistoryTools.vibe"
+import { run, Int, TextOrBoundary, same } from "./run.vibe"
+
+const Principal = Schema.Struct({ role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]), name: Schema.Literal("Fuzz"), agent: Schema.Boolean })
+const Input = Schema.Struct({ principal: Principal, op: Int, text: TextOrBoundary, optional: Schema.Boolean })
+
+it.live("history/agent-tool-pages-and-writes", () => run("history/agent-tool-pages-and-writes", Input, ({ principal, op, text, optional }) => effect {
+  provide MockMythical(principal, () => succeed(empty)) {
+    const history = try Mythical
+    const before = try history.outline()
+    const planned = try plan(history, { how: "append", epic: "", newEpic: "Epic", target: "", title: "Change", task: "" }, "plan")
+    if (may(principal, "append") ? planned.refusal !== null : planned.refusal !== "forbidden") return false
+    const id = planned.id || "missing"
+    const started = try start(history, id, "fuzz", "start")
+    if (!may(principal, "start") && started.refusal !== "forbidden") return false
+    const written = try note(history, id, (["tried", "evidence", "superseded"] as const)[op % 3]!, text, "note")
+    if (!may(principal, "note") && written.refusal !== "forbidden") return false
+    const what = (["outline", "epic", "commit", "search"] as const)[op % 4]!
+    const input = { what, ...(optional ? { id, from: op, query: text } : {}) }
+    const request = requestOf(input)
+    const actual = try show(history, input)
+    const expected = match (request) {
+      when { what: "outline" }: try history.outline();
+      when { what: "epic", let id, let from }: try history.epic(id, from);
+      when { what: "commit", let id }: try history.commit(id);
+      when { what: "search", let query }: try history.search(query);
+    }
+    const tools = try historyTools(history).bindings()
+    const names = ["vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note"]
+    if (!same(tools.map((tool) => tool.descriptor.name), names)) return false
+    const inputs = [input, { how: "append", epic: "", newEpic: "Epic", target: "", title: "Tool change", task: "" }, { id, lane: "fuzz" }, { id, section: "tried", text: "Tool note." }]
+    for (let at = 0; at < tools.length; at++) {
+      const call = new Cell.Call({
+        flowName: names[at]!, input: inputs[at] as Schema.Json, capabilities: [],
+        effects: { reads: [], writes: [], mode: "hermetic", onConflict: "serialize", tier: "sealed" },
+        placement: Option.none(), identity: new Cell.CallIdentity({ session: "fuzz", frame: 0, cell: "fuzz", ordinal: at, declaration: tools[at]!.descriptor.name, layers: [] }),
+      })
+      const called = try tools[at]!.run(call)
+      const sequence = (try history.outline()).seq
+      try tools[at]!.run(call)
+      if ((try history.outline()).seq !== sequence || called === undefined) return false
+    }
+    return Schema.is(ShowPage)(actual) && same(actual, expected) && REPLY_CALLS > 0 && (may(principal, "append") || same(before, try history.outline()))
+  }
+}))
+
+it.live("history/agent-tool-unavailable", () => run("history/agent-tool-unavailable", Schema.Struct({ op: Int, text: TextOrBoundary }), ({ op, text }) => effect {
+  const unavailable = () => fail(new Unavailable({ reason: "injected unavailable history" }))
+  const history: HistoryReader = { outline: unavailable, epic: unavailable, commit: unavailable, search: unavailable, plan: unavailable, start: unavailable, note: unavailable }
+  const writes = [
+    try plan(history, { how: "append", epic: "", newEpic: "Epic", target: "", title: text, task: "" }, "plan"),
+    try start(history, "missing", text, "start"),
+    try note(history, "missing", "tried", text, "note"),
+  ]
+  const read = try exit(show(history, { what: (["outline", "epic", "commit", "search"] as const)[op % 4]! }))
+  return writes.every((answer) => answer.id === "" && answer.refusal === "unavailable") && read._tag === "Failure" && !Cause.hasDies(read.cause)
+}))

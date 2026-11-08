@@ -1,0 +1,77 @@
+import { it } from "@effect/vitest"
+import { fixtureIssues, makeIssueFactory } from "../src/core/IssuesFactory.vibe"
+import { applyIssues, canLinkIssues, issuePermission } from "../src/core/conversation.vibe"
+import { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
+import { run, Int, Text, same } from "./run.vibe"
+
+const RoleSchema = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Forest = Schema.Struct({ parents: Schema.Array(Int).check(Schema.isMaxLength(12)), child: Int, parent: Int })
+
+/** An independent ancestor walk checks that every accepted link preserves a rooted forest. */
+it.live("issues/forests-and-links", () => run("issues/forests-and-links", Forest, ({ parents, child, parent }) => {
+  const items = parents.map((seed, at) => ({ ...fixtureIssues[0]!, number: at + 1, parent: seed % (at + 1) }))
+  const target = child % (items.length + 2)
+  const proposed = parent % (items.length + 2)
+  if (!canLinkIssues(items, target, proposed)) return true
+  const next = items.map((item) => item.number === target ? { ...item, parent: proposed } : item)
+  for (const item of next) {
+    const seen = new Set<number>()
+    let current = item.number
+    while (current !== 0) {
+      if (seen.has(current)) return false
+      seen.add(current)
+      const record = next.find((candidate) => candidate.number === current)
+      if (record === undefined) return false
+      current = record.parent
+    }
+  }
+  return next.every((item) => item.number === target || item.parent === items.find((old) => old.number === item.number)!.parent)
+}))
+
+it.live("issues/role-gated-command-sequences", () => run("issues/role-gated-command-sequences", Schema.Struct({ role: RoleSchema, requests: Schema.Array(IssueRequest).check(Schema.isMaxLength(8)) }), ({ role, requests }) => effect {
+  const api = try makeIssueFactory(role)
+  for (const request of requests) {
+    const before = try api.read()
+    const answer = try exit(api.act(request))
+    const after = try api.read()
+    if (!Schema.is(IssuesState)(after) || after.seq < before.seq || after.items.length !== new Set(after.items.map((item) => item.number)).size) return false
+    if (answer._tag === "Failure") {
+      if (Cause.hasDies(answer.cause) || after.seq !== before.seq) return false
+      if (!issuePermission(role, request.op)) {
+        const failure = Cause.findError(answer.cause)
+        if (failure._tag !== "Success" || (failure.success as { readonly reason?: string }).reason !== "forbidden") return false
+      }
+      continue
+    }
+    if (!issuePermission(role, request.op)) return false
+    if (request.op === "read" || request.op === "draft") {
+      if (!same(before.items, after.items) || before.seq !== after.seq) return false
+    }
+    const again = try api.act(request)
+    if (!Schema.is(IssuesState)(again) || (try api.read()).seq !== after.seq) return false
+    if (!same(applyIssues({ seq: after.seq, items: after.items }, { type: "IssuesObserved", seq: after.seq, items: [] }), { seq: after.seq, items: after.items })) return false
+  }
+  return true
+}, undefined, { revision: "2" }))
+
+it.live("issues/product-mock-lifecycle", () => run("issues/product-mock-lifecycle", Schema.Struct({ text: Text, decline: Schema.Boolean }), ({ text, decline }) => effect {
+  let participations = 0
+  const api = try makeIssueFactory("maintainer", () => sync(() => { participations++ }))
+  const request = (op: typeof IssueRequest.Type["op"], number: number, key: string): typeof IssueRequest.Type => ({ op, number, key, parent: 38, title: "Fuzz " + text, text: "Attempt " + text, assignee: "Will", example: "const x = 1", prior: "Existing syntax" })
+  const opened = try api.act(request("new", 0, "new"))
+  const id = opened.selected!
+  try api.act(request("comment", id, "comment"))
+  try api.act(request("commit", id, "commit"))
+  if ((try api.read()).items.find((item) => item.number === id)?.task !== "Queued") return false
+  try api.act(request("uncommit", id, "uncommit"))
+  const split = try api.act(request("split", id, "split"))
+  if (split.items.find((item) => item.number === split.selected)?.parent !== id) return false
+  try api.act(request("link", id, "link"))
+  const proposal = try api.act(request("propose", 0, "propose"))
+  const vip = proposal.selected!
+  try api.act(request(decline ? "decline" : "accept", vip, "review"))
+  const reviewed = (try api.read()).items.find((item) => item.number === vip)
+  if (reviewed?.vip !== (decline ? "Declined" : "Accepted") || reviewed.task !== "") return false
+  const draft = try api.act({ ...request("draft", 0, "draft"), title: "", text: "", example: "", prior: "" })
+  return draft.draft !== undefined && participations === 2 && (try api.read()).items.find((item) => item.number === id)?.task === ""
+}))

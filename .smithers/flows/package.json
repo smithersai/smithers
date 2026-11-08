@@ -43,7 +43,8 @@
     "mermaid": "^11.17.2",
     "@smthrs/platform-bun": "workspace:*",
     "@smthrs/jj": "workspace:*",
-    "@smthrs/fs": "workspace:*"
+    "@smthrs/fs": "workspace:*",
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",

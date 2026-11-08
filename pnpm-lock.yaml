@@ -291,6 +291,9 @@ importers:
       playwright:
         specifier: 1.62.1
         version: 1.62.1
+      vibelang-runtime:
+        specifier: 0.0.12
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
     devDependencies:
       '@eslint/js':
         specifier: 9.39.5
@@ -1005,6 +1008,12 @@ importers:
       '@smthrs/fuzz':
         specifier: workspace:*
         version: link:../../packages/fuzz
+      '@smthrs/platform-node':
+        specifier: workspace:*
+        version: link:../../packages/smithers/flows/platform-node
+      '@smthrs/testing':
+        specifier: workspace:*
+        version: link:../../packages/testing
       '@types/node':
         specifier: 26.4.1
         version: 26.4.1
@@ -1014,12 +1023,24 @@ importers:
       alchemy:
         specifier: 2.0.0-beta.85
         version: 2.0.0-beta.85(patch_hash=32cafa1a4611a2e5a676c64a67de43d30408f883b68ab8efd9e9551d42df13b7)(760b2e4a7919d3e66bcd7fd1fe209c8a)
+      ast-v8-to-istanbul:
+        specifier: 1.0.5
+        version: 1.0.5
       esbuild:
         specifier: 0.28.2
         version: 0.28.2
       happy-dom:
         specifier: 20.13.2
         version: 20.13.2
+      istanbul-lib-coverage:
+        specifier: ^3.2.2
+        version: 3.2.2
+      istanbul-lib-report:
+        specifier: ^3.0.1
+        version: 3.0.1
+      istanbul-reports:
+        specifier: ^3.2.0
+        version: 3.2.0
       miniflare:
         specifier: 5.20261019.0-beta
         version: 5.20261019.0-beta(@types/node@26.4.1)

@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 0
+bias 3
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8EMIubWI-daZw
+schedule-key 951120712
+schedule 
+signature "PropertyError:UnknownError"
+path 0
+codec "json"
+value "{\"text\":\"\",\"role\":\"maintainer\",\"more\":false,\"cancel\":false}"
+# PropertyError:UnknownError
+# {"text":"","role":"maintainer","more":false,"cancel":false}

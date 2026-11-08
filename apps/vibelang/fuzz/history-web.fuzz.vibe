@@ -1,0 +1,31 @@
+import { it } from "@effect/vitest"
+import { scene, given, getAllByRole, type SceneSimulation } from "foldkit/scene"
+import { HistoryModel, HistoryFlags, HistoryMessage, init, update } from "../src/web/historyApp.vibe"
+import { view } from "../src/web/historyView.vibe"
+import { historyModelCodec } from "./history-corpus.vibe"
+import { run } from "./run.vibe"
+
+it.live("history/view-models", () => run("history/view-models", HistoryModel, (model) => {
+  let named = true
+  scene({ update, view }, given(model), (simulation: SceneSimulation<HistoryModel, HistoryMessage>) => {
+    for (const role of ["button", "link", "textbox", "combobox", "searchbox", "option", "tab", "menuitem", "treeitem"]) {
+      if (getAllByRole(role)(simulation.html).length !== getAllByRole(role, { name: /\S/ })(simulation.html).length) named = false
+    }
+    return simulation
+  })
+  return named
+}, undefined, { revision: "2", codec: historyModelCodec }))
+
+it.live("history/update-sequences", () => run("history/update-sequences", Schema.Struct({ flags: HistoryFlags, messages: Schema.Array(HistoryMessage).check(Schema.isMaxLength(32)) }), ({ flags, messages }) => {
+  let model = init(flags).model
+  for (const message of messages) {
+    model = update(model, message).model
+    if (!Schema.is(HistoryModel)(model)) return false
+  }
+  return true
+}, undefined, { revision: "2" }))
+
+it.live("history/arbitrary-update", () => run("history/arbitrary-update", Schema.Struct({ model: HistoryModel, message: HistoryMessage }), ({ model, message }) => {
+  const next = update(model, message).model
+  return Schema.is(HistoryModel)(next)
+}, undefined, { revision: "2" }))

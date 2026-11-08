@@ -1,0 +1,77 @@
+import { it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { mockReply, scriptedReplies } from "../src/core/mockReplies.vibe"
+import { run, Text, Int, same } from "./run.vibe"
+
+const Topic = Schema.Literals(["install", "propose a VIP", "throw an error", "provide a service", "effect function", "hello"])
+const Prompts = Schema.Array(Schema.Struct({ topic: Topic, suffix: Text })).check(Schema.isMinLength(1), Schema.isMaxLength(3))
+
+it.live("mock/agent-and-machine", () => run("mock/agent-and-machine", Schema.Struct({ prompts: Prompts, room: Int }), ({ prompts, room }) => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const conversation = `fuzz-${room}`
+    const texts = prompts.map((prompt) => `${prompt.topic} ${prompt.suffix}`.trim())
+    for concurrent (const [index, text] of texts.entries()) try factory.post(conversation, `c${index}`, "Guest", text)
+    let finished = 0
+    const events = Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil((event) => {
+      if (event.type === "ReplyFinished") finished++
+      return finished === texts.length
+    }))))
+    const state = events.reduce(apply, empty)
+    const posts = state.entries.filter((entry) => entry.author === "person")
+    const replies = state.entries.filter((entry) => entry.author === "agent")
+    if (!events.every((event, index) => event.seq === index + 1) || posts.length !== texts.length || replies.length !== texts.length || state.agent !== "idle") return false
+    for (const post of posts) {
+      const index = Number(post.clientId.slice(1))
+      if (post.text !== texts[index]) return false
+      const reply = replies.find((entry) => entry.inReplyTo === post.id)
+      if (!reply?.done || reply.text !== mockReply(post.text) || !scriptedReplies.includes(reply.text) || reply.error !== "") return false
+    }
+    const snapshot = try factory.read(conversation, 0)
+    if (!same(snapshot.entries, state.entries) || snapshot.seq !== state.seq) return false
+    const duplicate = try exit(factory.post(conversation, "c0", "Guest", texts[0]!))
+    if (duplicate._tag === "Success" || Cause.hasDies(duplicate.cause)) return false
+    const reason = Cause.findError(duplicate.cause)
+    return reason._tag === "Success" && reason.success._tag === "Refused" && reason.success.refusal === "duplicate"
+  }
+}))
+
+it.live("mock/room-isolation", () => run("mock/room-isolation", Schema.Tuple([Topic, Topic]), ([a, b]) => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const follow = (room: string) => Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+    const left = fork follow("left")
+    const right = fork follow("right")
+    try.all [factory.post("left", "a", "Left", a), factory.post("right", "b", "Right", b)]
+    const leftState = Array.from(join left).reduce(apply, empty)
+    const rightState = Array.from(join right).reduce(apply, empty)
+    return leftState.entries[0]?.name === "Left" && rightState.entries[0]?.name === "Right" && leftState.entries[1]?.text === mockReply(a) && rightState.entries[1]?.text === mockReply(b)
+  }
+}))
+
+import { DOCS_ORIGIN, STOPS } from "../src/core/flows.vibe"
+import { TOUR } from "../src/core/mockReplies.vibe"
+
+it.live("mock/tour-lifecycle", () => run("mock/tour-lifecycle", Schema.Struct({ id: Int, end: Schema.Boolean }), ({ id, end }) => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const room = `tour-${id}`
+    const followed = fork Stream.runCollect(factory.events(room, 0).pipe(Stream.takeUntil((event) => end ? event.type === "TourEnded" : event.type === "ReplyFinished")))
+    try factory.tour(room)
+    const again = try exit(factory.tour(room))
+    if (again._tag !== "Failure" || Cause.hasDies(again.cause)) return false
+    if (end) {
+      try Stream.runDrain(factory.events(room, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta")))
+      try factory.endTour(room)
+    }
+    const events = Array.from(join followed)
+    const state = events.reduce(apply, empty)
+    const before = state.seq
+    try sleep("50 millis")
+    if ((try factory.read(room, 0)).seq !== before || state.agent !== "idle" || !state.entries[0]?.done) return false
+    const opened = events.filter((event) => event.type === "PaneOpened")
+    return end ? opened.length > 0 && opened.length < STOPS.length : opened.map((event) => event.url).join() === STOPS.map((stop) => DOCS_ORIGIN + stop.path).join() && state.entries[0]?.text === TOUR.map((stop) => stop.words).join("\n\n")
+  }
+}))

@@ -1,0 +1,42 @@
+import { it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientError, HttpClientResponse, HttpServerResponse } from "effect/http"
+import { githubMain, newCommits, type GitHubCommit } from "../worker/MainLog.vibe"
+import { titleOf } from "../src/history/seed.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+const Graph = Schema.Struct({ nodes: Schema.Array(Schema.Struct({ text: Text, merge: Schema.Boolean, missing: Schema.Boolean })).check(Schema.isMaxLength(24)), cursor: Int })
+
+it.live("history/main-first-parent-graph", () => run("history/main-first-parent-graph", Graph, ({ nodes, cursor }) => {
+  const listed: ReadonlyArray<GitHubCommit> = nodes.map((node, at) => ({ sha: (at + 1).toString(16).padStart(12, "0").padEnd(40, "0"), commit: { message: node.text }, parents: at === 0 ? [] : [{ sha: (node.missing ? 1000 : at).toString(16).padStart(12, "0").padEnd(40, "0") }, ...(node.merge && at > 1 ? [{ sha: (at - 1).toString(16).padStart(12, "0").padEnd(40, "0") }] : [])] })).reverse()
+  const target = cursor % (nodes.length + 1)
+  const key = target === 0 ? "" : target.toString(16).padStart(12, "0").padEnd(40, "0")
+  const actual = newCommits(listed, key)
+  let at = listed[0]
+  const reached = new Set<string>()
+  while (at !== undefined && at.sha !== key) {
+    reached.add(at.sha)
+    at = listed.find((node) => node.sha === at!.parents[0]?.sha)
+  }
+  if (target !== 0 && at === undefined) return actual === undefined
+  if (actual === undefined || actual.length !== new Set(actual.map((node) => node.sha)).size) return false
+  return actual.every((node) => listed.some((source) => source.sha.slice(0, 12) === node.sha && node.title === titleOf(source.commit.message))) && actual.length >= reached.size && (actual.length === 0 || actual.at(-1)?.sha === listed[0]?.sha.slice(0, 12))
+}))
+
+it.live("history/github-faults", () => run("history/github-faults", Schema.Struct({ kind: Int, text: Text }), ({ kind, text }) => effect {
+  const mode = kind % 6
+  const omitted = Array.from({ length: 100 }, (_, at): GitHubCommit => ({ sha: at.toString(16).padStart(40, "0"), commit: { message: text }, parents: [] }))
+  const body = mode === 1 ? "{" : mode === 4 ? JSON.stringify(omitted) : mode === 5 ? "[]" : JSON.stringify({ bad: text })
+  const client = HttpClient.make((request) => mode === 0 ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })) : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(body, { status: mode === 3 ? 403 : 200 })))))
+  const result = try exit(githubMain("fuzz/fuzz", client, kind % 2 ? "synthetic-fault-token" : undefined).since("missing"))
+  if (result._tag === "Success" || Cause.hasDies(result.cause)) return false
+  const error = Cause.findError(result.cause)
+  return error._tag === "Success" && error.success._tag === "MainUnavailable" && !error.success.reason.includes("synthetic-fault-token")
+}))
+
+it.live("history/github-public-read", () => run("history/github-public-read", Schema.Boolean, (withCursor) => effect {
+  provide FetchHttpClient.layer {
+    const result = try exit(githubMain("smithersai/effect", try HttpClient.HttpClient, undefined).since(withCursor ? "not-a-commit" : "").pipe(timeout("3 seconds")))
+    // The network may refuse or time out. It may never produce an unchecked defect.
+    return result._tag === "Success" ? result.value.every((commit) => commit.sha.length === 12 && typeof commit.title === "string") : !Cause.hasDies(result.cause)
+  }
+}))

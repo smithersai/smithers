@@ -23,7 +23,8 @@
     ]
   },
   "include": [
-    "**/*.ts"
+    "**/*.ts",
+    "vibelang-fuzz/*.vibe"
   ],
   "exclude": [
     "node_modules",

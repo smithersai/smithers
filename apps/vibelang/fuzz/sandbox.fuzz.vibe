@@ -1,0 +1,70 @@
+import { it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import * as Decision from "../src/core/sandboxDecision.vibe"
+import { meter, monthOf } from "../src/core/sandboxMeter.vibe"
+import { run, Int, same } from "./run.vibe"
+
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const Delta = Schema.Int.check(Schema.isBetween({ minimum: -120, maximum: 120 }))
+const MeterInput = Schema.Struct({ deltas: Schema.Array(Delta).check(Schema.isMaxLength(30)), count: Schema.Int.check(Schema.isBetween({ minimum: 0, maximum: 3 })) })
+
+/** The sandbox lane's independent millisecond-by-millisecond oracle, under this suite's own budget and corpus. */
+it.live("sandbox/utc-meter-oracle", () => run("sandbox/utc-meter-oracle", MeterInput, ({ deltas, count }) => effect {
+  let high = Date.UTC(2026, 10, 30, 23, 59, 59, 990)
+  let now = high
+  let ledger = { ...Decision.emptySandboxLedger("u", "contributor", 36000, monthOf(high), high), sandboxes: Array.from({ length: count }, (_, n) => ({ id: `s${n}`, conversation: `c${n}`, running: true })) }
+  let months: Readonly<Record<string, number>> = {}
+  const expected: Record<string, number> = { [monthOf(high)]: 0 }
+  for (const delta of deltas) {
+    now += delta
+    const end = Math.max(high, now)
+    for (let instant = high; instant < end; instant++) expected[String(monthOf(instant))] = (expected[String(monthOf(instant))] ?? 0) + count
+    high = end
+    const next = try meter(ledger, months, now, 36000)
+    ledger = { ...next.ledger, sandboxes: [...next.ledger.sandboxes] }
+    months = next.months
+    if (ledger.lastMeteredAt !== high || ledger.usedMilliseconds < 0) return false
+    for (const [month, used] of Object.entries(months)) if (used !== (expected[month] ?? 0)) return false
+  }
+  return true
+}))
+
+it.live("sandbox/factory-role-replay-and-files", () => run("sandbox/factory-role-replay-and-files", Schema.Struct({ role: Role, value: Schema.Int }), ({ role, value }) => effect {
+  provide mockFactoryFor(role) {
+    const factory = try Factory
+    const started = try exit(factory.startSandbox("fuzz", "start"))
+    if (role !== "contributor" && role !== "maintainer") return started._tag === "Failure" && !Cause.hasDies(started.cause)
+    if (started._tag === "Failure") return false
+    const first = started.value
+    try factory.sandboxCommand("fuzz", "write", `echo ${value} > keep`, first.generation)
+    try factory.stopSandbox("fuzz", "stop", first.generation)
+    const second = try factory.startSandbox("fuzz", "restart")
+    try factory.stopSandbox("fuzz", "stop", first.generation)
+    const bytes = try factory.sandboxCommand("fuzz", "read", "cat keep", second.generation)
+    const snapshot = try factory.sandbox("fuzz")
+    return bytes === `${value}\n` && snapshot.generation === first.generation + 1 && snapshot.status === "running" && snapshot.remaining > 0
+  }
+}))
+
+const Step = Schema.Struct({ type: Schema.Literals(["start", "stop", "meter"]), role: Role, id: Int, delta: Delta, owned: Schema.Boolean, duplicate: Schema.Boolean })
+it.live("sandbox/decision-sequences", () => run("sandbox/decision-sequences", Schema.Array(Step).check(Schema.isMaxLength(48)), (steps) => {
+  let ledger = Decision.emptySandboxLedger("owner", "contributor", 500, 0, 0)
+  let replay = ledger
+  let clock = 0
+  for (const [at, step] of steps.entries()) {
+    clock = Math.max(0, clock + step.delta)
+    const intent = { type: step.type, owner: step.owned ? "owner" : "other", role: step.role, allowanceMilliseconds: 500, conversation: `c${step.id}`, sandboxId: `s${step.id}`, operationId: step.duplicate ? ledger.lastOperationId : `op${at}`, now: clock, month: 0 }
+    const result = Decision.decideSandbox(ledger, intent)
+    if (result.ok) {
+      if (result.event.sequence !== ledger.sequence + 1) return false
+      ledger = Decision.applySandbox(ledger, result.event)
+      replay = Decision.applySandbox(replay, result.event)
+      if (!same(Decision.applySandbox(ledger, result.event), ledger)) return false
+    }
+    if (!same(ledger, replay) || ledger.owner !== "owner" || ledger.usedMilliseconds < 0 || !Decision.validSandboxes(ledger.sandboxes)) return false
+    if (Decision.remainingMilliseconds(ledger.allowanceMilliseconds, ledger.usedMilliseconds) < 0) return false
+    if (Decision.runningCount(ledger.sandboxes) !== ledger.sandboxes.filter((box) => box.running).length) return false
+  }
+  return true
+}))

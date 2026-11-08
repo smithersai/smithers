@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 1
+bias 3
+null-prototype true
+key 2394790482
+tape vnNL9Eu6d8GTvwqyYUZSJngi621zm38jUCer70xwRlE
+schedule-key 951120712
+schedule 
+signature "ReturnedFalse"
+path 0.0.0
+codec "json"
+value "{\"principal\":{\"role\":\"maintainer\",\"name\":\"Fuzz\",\"agent\":false},\"op\":0,\"text\":\"\",\"optional\":false}"
+# ReturnedFalse
+# {"principal":{"role":"maintainer","name":"Fuzz","agent":false},"op":0,"text":"","optional":false}

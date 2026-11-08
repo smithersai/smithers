@@ -1,0 +1,62 @@
+import { it } from "@effect/vitest"
+import { HttpClient, HttpClientError } from "effect/http"
+import * as MockAccounts from "../src/core/MockAccounts.vibe"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
+import { Identity, AccountUnavailable } from "../src/core/roles.vibe"
+import { apply, empty, roleOf } from "../src/core/conversation.vibe"
+import { run, Int, Text, same } from "./run.vibe"
+
+const Role = Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"])
+const SignedRole = Schema.Literals(["new", "community", "contributor", "maintainer"])
+const Step = Schema.Struct({ op: Int, role: Role, grant: SignedRole, target: Int })
+const Input = Schema.Array(Step).check(Schema.isMinLength(1), Schema.isMaxLength(24))
+
+/** Real product mock flows: role choice, authorization, grants, participation, replay and sign-out. */
+it.live("accounts/random-role-sequences", () => run("accounts/random-role-sequences", Input, (steps) => effect {
+  const accounts = try MockAccounts.make()
+  // The oracle's own ledger: the seed grants plus every grant the mock actually records. A grant that matches the
+  // target's current role is a recorded nothing, and participation never overrides an explicit grant.
+  const grants = new Map((try Stream.runCollect(accounts.events(-1).pipe(Stream.take(4)))).reduce(apply, empty).roles.map((grant) => [grant.id, grant.role]))
+  const people = ["1", "2", "3", "4", "5"]
+  const modelRole = (id: string) => grants.get(id) ?? "new"
+  for (const step of steps) {
+    const before = try accounts.current()
+    const op = step.op % 5
+    const existing = op === 0 && step.role !== "viewer" ? people.find((id) => modelRole(id) === step.role) : undefined
+    const result = try exit(op === 0 ? accounts.choose(step.role) : op === 1 ? accounts.signOut() : op === 2 ? accounts.participated() : op === 3 ? accounts.grant(String(1 + step.target % 5), step.grant) : accounts.members())
+    if (result._tag === "Failure" && Cause.hasDies(result.cause)) return false
+    const after = try accounts.current()
+    if (!Schema.is(Identity)(after)) return false
+    if (op === 0 && (after.role !== step.role || (after.role === "viewer") !== (after.id === "") || (existing !== undefined && after.id !== existing))) return false
+    if (op === 1 && (after.id !== "" || after.role !== "viewer")) return false
+    if (op === 2 && before.role === "new" && after.role !== (grants.has(before.id) ? "new" : "community")) return false
+    if (result._tag === "Failure" && !same(before, after)) return false
+    if (result._tag !== "Success") continue
+    if (op === 0 && step.role !== "viewer" && existing === undefined && after.id !== "") {
+      people.push(after.id)
+      if (step.role !== "new") grants.set(after.id, step.role)
+    }
+    if (op === 2 && before.id !== "" && !grants.has(before.id)) grants.set(before.id, "community")
+    if (op === 3) {
+      const target = String(1 + step.target % 5)
+      if (modelRole(target) !== step.grant) grants.set(target, step.grant)
+    }
+  }
+  const events = try Stream.runCollect(accounts.events(-1).pipe(Stream.take(4)))
+  if (events.length !== 4 || events.some((event, at) => event.seq !== at + 1)) return false
+  const ledger = events.reduce(apply, empty)
+  return roleOf(ledger.roles, "1") === "maintainer" && roleOf(ledger.roles, "4") === "contributor"
+}))
+
+/** Fault injection is the HTTP service itself; no request interception or manufactured happy response. */
+it.live("accounts/transport-refusal", () => run("accounts/transport-refusal", Schema.Struct({ op: Int, text: Text }), ({ op, text }) => effect {
+  const client = HttpClient.make((request) => fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request }) })))
+  provide Layer.succeed(HttpClient.HttpClient, client) {
+    const accounts = try LiveAccounts.make("https://accounts.invalid")
+    const actions = [accounts.current(), accounts.members(), accounts.grant(text, "new"), accounts.signOut(), accounts.choose("maintainer"), Stream.runDrain(accounts.events(op))] as ReadonlyArray<unknown!unknown>
+    const answer = try exit(actions[op % actions.length]!)
+    if (answer._tag !== "Failure" || Cause.hasDies(answer.cause) || Cause.hasInterrupts(answer.cause)) return false
+    const error = Cause.findError(answer.cause)
+    return error._tag === "Success" && error.success instanceof AccountUnavailable && error.success.reason === "account unavailable"
+  }
+}))

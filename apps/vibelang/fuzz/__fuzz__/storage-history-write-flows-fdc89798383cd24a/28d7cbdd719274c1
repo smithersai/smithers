@@ -1,0 +1,16 @@
+effect-fuzz 2
+kind failure
+revision "1"
+size 0
+bias 3
+null-prototype false
+key 2394790482
+tape vnNL9Eu6d8E
+schedule-key 951120712
+schedule 
+signature "Died:@smthrs/run-store/RunStoreError"
+path 
+codec "json"
+value "{\"text\":\"\",\"agent\":false,\"permitted\":true}"
+# Died:@smthrs/run-store/RunStoreError
+# {"text":"","agent":false,"permitted":true}

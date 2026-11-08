@@ -1,0 +1,63 @@
+import { beforeAll, afterAll, it } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { HttpClientRequest } from "effect/http"
+import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
+import { Miniflare } from "miniflare"
+import worker from "../worker/index.vibe"
+import { serveApi, type Served } from "../test/support/workerd.vibe"
+import { run, Int, Text } from "./run.vibe"
+
+type Bindings = Parameters<typeof worker.fetch>[1]
+type Incoming = Parameters<typeof worker.fetch>[0]
+let host: Miniflare
+let api: Served
+let bindings: Bindings
+let origin: string
+let directory: string
+
+beforeAll(async () => {
+  await runPromise(Effect.provide(effect {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    directory = try fs.makeTempDirectory({ prefix: "vibelang-fuzz-site-" })
+    try fs.makeDirectory(path.join(directory, "media"))
+    try fs.writeFileString(path.join(directory, "index.html"), "<!doctype html><title>Asset fixture</title><main>Asset fixture</main>")
+    try fs.writeFileString(path.join(directory, "media/logo.svg"), '<svg xmlns="http://www.w3.org/2000/svg"/>')
+    const entry = try path.fromFileUrl(new URL("../worker/index.vibe", import.meta.url))
+    const bundled = try tryPromise(() => build({ entryPoints: [entry], bundle: true, write: false, format: "esm", platform: "browser", target: "es2022", plugins: [vibelang()], logLevel: "silent" }))
+    host = try Effect.try(() => new Miniflare({ host: "127.0.0.1", port: 0, workers: [{ config: { name: "site", compatibilityDate: "2026-10-01", manifest: { mainModule: "worker.js", modules: { "worker.js": { type: "esm", contents: bundled.outputFiles[0]!.text } } }, env: { ASSETS: { type: "assets" } }, assets: { directory, hasUserWorker: true, runWorkerFirst: true, notFoundHandling: "single-page-application" } } }] }))
+    origin = (try tryPromise(() => host.ready)).origin
+    bindings = (try tryPromise(() => host.getBindings())) as unknown as Bindings
+    api = try serveApi({ CHAT_DAILY_TOKENS: "0" })
+  }, NodeServices.layer))
+}, 120_000)
+
+afterAll(async () => {
+  await host?.dispose()
+  await api?.dispose()
+  if (directory) await runPromise(Effect.provide(effect { try (try FileSystem.FileSystem).remove(directory, { recursive: true }) }, NodeServices.layer))
+})
+
+/** Actual static assets and actual API workerd bindings: no stand-in Fetcher or response interception. */
+it.live("site/routes-assets-and-binding", () => run("site/routes-assets-and-binding", Schema.Struct({ op: Int, text: Text, bound: Schema.Boolean }), ({ op, text, bound }) => effect {
+  const segment = try Effect.try(() => "fuzz-" + new URLSearchParams({ q: text }).toString().slice(2))
+  const paths = ["/", "/index.html", "/history", "/history/" + segment, "/media/logo.svg", "/assets/missing.js", "/missing/" + segment, "/api/health", "/api/missing"]
+  const selected = op % paths.length
+  const path = paths[selected]!
+  const request = try HttpClientRequest.toWeb(HttpClientRequest.get(origin + path))
+  const env = bound ? { ...bindings, API: { fetch: api.fetch } } as unknown as Bindings : bindings
+  const direct = try tryPromise(() => worker.fetch(request as Incoming, env))
+  const body = try tryPromise(() => direct.text())
+  if (path.startsWith("/api/")) {
+    if (selected === 7) {
+      const answer = try Effect.try(() => JSON.parse(body) as { readonly agent: string })
+      return direct.status === 200 && answer.agent === (bound ? "live" : "mock")
+    }
+    return direct.status === 404
+  }
+  const native = try tryPromise(() => host.dispatchFetch(origin + path))
+  const nativeBody = try tryPromise(() => native.text())
+  const expected = selected <= 4 ? 200 : 404
+  return direct.status === expected && native.status === expected && body === nativeBody
+}))
