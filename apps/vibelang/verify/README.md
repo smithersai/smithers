@@ -29,6 +29,11 @@ exactly once fails the run until it is updated. Keep executable mutations meanin
 never change annotations to make a copy fail. macOS installers support Apple Silicon and Intel but were not run on
 the Linux lane. Versions are LemmaScript 0.6.6 and Dafny 4.11.0; release archives are pinned by SHA-256.
 
+`verify/fetch.sh` gets the Dafny archive: a copy in the host's shared cache (`VIBELANG_VERIFY_CACHE`, default
+`~/.cache/vibelang-verify`, keyed by SHA-256) is reused when its checksum matches; otherwise it downloads with 6
+attempts and backoff from 2 seconds, doubling, and caches only a verified archive. `verify/fetch_test.py` runs it
+against a local server that answers 504.
+
 
 Expensive negatives select exact production postconditions using `mutation_targets.py`; source changes that remove
 or duplicate a selected clause fail closed. Select the earliest broken contract: an earlier assumed postcondition or
