@@ -62,3 +62,7 @@ brick                                   state         proof
   the installed workerd 1.20261019.1 inspector.
 
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
+
+- **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.
+  Fixed: the page follows its conversation from the start (VL-12, VL-26); view transitions tested (VL-17). Open gap:
+  VL-19, six marketing files unused.

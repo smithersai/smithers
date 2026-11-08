@@ -177,3 +177,10 @@ retain maps and inline source text. Generator process tests use a separate ignor
 remain available until reporting; they never overwrite the app's generated context or history seed. The seed command
 reads real jj commits and queue entries, including known commits in its second revset batch, and must preserve output
 after failed reads. `ast-v8-to-istanbul` 1.0.5 and whole-app coverage gates remain proposed in the measurement prototype.
+
+**Dogfooding and view transitions (vl-audit, 2026-11-08).** `test/dogfood.runtime.test.vibe` embeds the real app
+and runs the `ask` and `read` commands the CLI and MCP server run, on one mock Factory: the app shows the agent's
+posts before its person posts, and `read` returns the person's post. `e2e/live.spec.ts` repeats it with the emitted
+CLI and a browser on a live origin. `e2e/transitions.spec.ts` records which typed view transitions the page renders
+(`:active-view-transition-type`) in every project: `to-chat`, then `to-splash`, none for ⌘K. Removing the transition,
+or running one on every change, fails it.
