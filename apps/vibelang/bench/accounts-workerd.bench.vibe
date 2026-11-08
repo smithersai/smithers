@@ -1,0 +1,93 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveApi } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const configuredOrigin = "https://factory.example"
+const setup = {
+  VIBELANG_ORIGIN: configuredOrigin, VIBELANG_INITIAL_MAINTAINER_ID: "1", GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+  SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+}
+function request(client: HttpClient.HttpClient, origin: string, path: string, cookie = "", body?: unknown, source = configuredOrigin) {
+  const req = body === undefined ? HttpClientRequest.get(origin + path) : HttpClientRequest.post(origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body))
+  return client.execute(req.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", source)))
+}
+
+it("workerd signed sessions and current project-role authorization", async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const api = try acquireRelease(serveApi(setup), (api) => promise(api.dispose))
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const client = try HttpClient.HttpClient
+      let identity = 1000
+      const result = try Effect.try(() => workload(bench, "workerd-account-session-grants", async () => {
+        const id = String(identity++)
+        const issue = async (person: string, expired = false) => {
+          const response = await runPromise(request(client, api.origin, `/__fixture/issue?id=${person}&login=benchmark${expired ? "&expired=1" : ""}`))
+          expect(response.status).toBe(200)
+          return Schema.decodeUnknownSync(Schema.Struct({ cookie: Schema.String }))(await runPromise(response.json)).cookie
+        }
+        const admin = await issue("1"), cookie = await issue(id), expired = await issue(String(identity++), true)
+        const current = await runPromise(request(client, api.origin, "/api/auth/session", cookie))
+        expect(current.status).toBe(200)
+        expect(await runPromise(current.json)).toMatchObject({ id, login: "benchmark", role: "new", available: true })
+        for (const value of [cookie + "0", expired]) expect(await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", value))).json)).toEqual({ id: "", login: "", role: "viewer", available: true })
+        expect((await runPromise(request(client, api.origin, "/api/roles", cookie, { id, role: "maintainer" }))).status).toBe(403)
+        expect((await runPromise(request(client, api.origin, "/api/roles", admin, { id, role: "contributor" }))).status).toBe(200)
+        const promoted = await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", cookie))).json)
+        expect(promoted).toMatchObject({ id, role: "contributor" })
+        expect(await runPromise((await runPromise(request(client, api.origin, "/__fixture/sandbox-principal", cookie))).json)).toEqual({ owner: id, role: "contributor" })
+        expect((await runPromise(request(client, api.origin, "/api/roles", admin, { id, role: "maintainer" }, "https://other.example"))).status).toBe(403)
+        expect(await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", cookie))).json)).toEqual(promoted)
+        const people = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ id: Schema.String, login: Schema.String, role: Schema.String })))(await runPromise((await runPromise(request(client, api.origin, "/api/roles", cookie))).json))
+        expect(people.find((person) => person.id === id)).toEqual({ id, login: "benchmark", role: "contributor" })
+        const signedOut = await runPromise(request(client, api.origin, "/api/auth/sign-out", cookie, {}))
+        expect(signedOut.status).toBe(204)
+        const flags = (signedOut.headers["set-cookie"] ?? "").toLowerCase()
+        expect(flags.includes("httponly")).toBe(true)
+        expect(flags.includes("secure")).toBe(true)
+        expect(flags.includes("samesite=lax")).toBe(true)
+        expect(await runPromise((await runPromise(request(client, api.origin, "/api/auth/session", cookie))).json)).toEqual({ id: "", login: "", role: "viewer", available: true })
+      }))
+      try artifact("accounts-workerd", "Vitest built-in bench; real production account service, cookie signatures, SQLite sessions, durable role grants and current sandbox authority in local workerd. Each of three samples uses fresh signed/expired fixture sessions and a unique person; check tamper/expiry, self-promotion refusal, maintainer grant, current role, cross-origin refusal/unchanged state, People and session revocation. Host startup excluded; requests/assertions included.", ["Only the unshipped test host issues fixture sessions with real signatures. This does not benchmark successful GitHub OAuth/consent, provider latency or production credentials. No cookie/token values enter artifacts; all configuration is synthetic."], try tryPromise(() => result.run(slow)))
+    }
+  }))
+})
+
+it("workerd disabled sign-in and injected OAuth exchange failure", async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const disabled = try acquireRelease(serveApi(), (api) => promise(api.dispose))
+    const faulty = try acquireRelease(serveApi({ ...setup, ACCOUNT_FAULT: "exchange" }), (api) => promise(api.dispose))
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const client = try HttpClient.HttpClient
+      const disabledCase = try Effect.try(() => workload(bench, "workerd-account-disabled", async () => {
+        expect(await runPromise((await runPromise(request(client, disabled.origin, "/api/auth/session"))).json)).toEqual({ id: "", login: "", role: "viewer", available: false })
+        expect((await runPromise(request(client, disabled.origin, "/api/auth/sign-in"))).status).toBe(503)
+        expect((await runPromise(request(client, disabled.origin, "/api/roles", "", { id: "1", role: "maintainer" }))).status).toBe(503)
+      }))
+      const failureCase = try Effect.try(() => workload(bench, "workerd-account-exchange-failure", async () => {
+        const start = await runPromise(request(client, faulty.origin, "/api/auth/sign-in"))
+        expect(start.status).toBe(302)
+        const location = new URL(start.headers.location!)
+        expect(location.origin + location.pathname).toBe("https://github.com/login/oauth/authorize")
+        expect(location.searchParams.get("redirect_uri")).toBe(configuredOrigin + "/api/auth/callback")
+        expect((location.searchParams.get("code_challenge") ?? "").length).toBeGreaterThan(30)
+        const cookie = start.headers["set-cookie"]!.split(";")[0]!
+        const callback = `/api/auth/callback?state=${encodeURIComponent(location.searchParams.get("state")!)}&code=benchmark-unused-code`
+        const failed = await runPromise(request(client, faulty.origin, callback, cookie))
+        expect(failed.status).toBe(302)
+        expect(failed.headers.location).toBe(configuredOrigin + "/?sign-in=failed")
+        const cookies = failed.cookies.cookies
+        expect(Object.hasOwn(cookies, "__Host-vibelang-session"), "failure must not issue a session cookie").toBe(false)
+        expect(Object.keys(cookies)).toEqual(["__Host-vibelang-sign-in"])
+        const cleared = cookies["__Host-vibelang-sign-in"]
+        expect(cleared?.value === "").toBe(true)
+        expect(Duration.toMillis(cleared?.options?.maxAge ?? 1)).toBe(0)
+        expect((await runPromise(request(client, faulty.origin, callback, cookie))).status).toBe(400)
+        expect(await runPromise((await runPromise(request(client, faulty.origin, "/api/auth/session"))).json)).toEqual({ id: "", login: "", role: "viewer", available: true })
+      }))
+      const results = [try tryPromise(() => disabledCase.run(slow)), try tryPromise(() => failureCase.run(slow))]
+      try artifact("accounts-workerd-faults", "Vitest built-in bench; actual account configuration/router and journaled sign-in/callback flows in local workerd. Three samples each: missing configuration stays viewer/503; configured PKCE redirect then an injected faulty Effect GitHub exchange, visible failure redirect, consumed state and refused replay, cleared state cookie and no session cookie issued. Redirect following disabled. Startup excluded; crypto/storage/requests/assertions included.", ["The production GitHub service is replaced only by the existing host's explicit failing Effect service. No request interception, GitHub request, real login or successful provider exchange. Synthetic secrets/cookies remain in memory and are omitted from artifacts."], results)
+    }
+  }))
+})

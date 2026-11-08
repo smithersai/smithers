@@ -461,3 +461,108 @@ test("sandbox start, terminal, stop, retained restart, pane and viewer", async (
     await save("sandbox-browser-actions", { origin: baseURL, timings }, ["One serial real Chromium journey over product mock flows and supported terminal commands; exact retained terminal transcript checked across Stop/Start. No model/backend/real Container. Forced mock roles never grant live authority. Automation and scripted waits included; no percentile."])
   }
 })
+
+test("role views, People, grant confirmation, sign-out and participation", async ({ page, baseURL }) => {
+  test.skip(live, "Product fixture identities; no production sign-in or account mutation.")
+  const timings: { action: string; ms: number; passed: boolean }[] = []
+  const coverage = await collectBrowserCoverage(page.context(), page, baseURL, "roles")
+  const time = async (action: string, body: () => Promise<void>) => {
+    const start = performance.now(); let passed = false
+    try { await body(); passed = true } finally { timings.push({ action, ms: performance.now() - start, passed }) }
+  }
+  try {
+    await page.goto(`${baseURL}/?agent=mock`)
+    const picker = page.getByRole("combobox", { name: "Visit as" })
+    for (const role of ["viewer", "new", "community", "contributor", "maintainer"]) {
+      await time(`role-view-${role}`, async () => {
+        await picker.selectOption(role)
+        await expect(picker).toHaveValue(role)
+        if (role === "viewer") await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible()
+        else {
+          await page.getByRole("button", { name: "Account", exact: true }).click()
+          await page.getByRole("menuitem", { name: "People", exact: true }).click()
+          await expect(page.getByRole("region", { name: "People", exact: true })).toBeVisible()
+          if (role === "maintainer") await expect(page.getByRole("combobox", { name: "Role for rira", exact: true })).toHaveValue("contributor")
+          else await expect(page.getByRole("combobox", { name: /^Role for/ })).toHaveCount(0)
+          await page.getByRole("button", { name: "Close People", exact: true }).click()
+        }
+      })
+    }
+    await time("account-menu-keyboard", async () => {
+      const account = page.getByRole("button", { name: "Account", exact: true })
+      await account.focus()
+      await account.press("Enter")
+      await expect(page.getByRole("menuitem", { name: "People", exact: true })).toBeFocused()
+      await page.keyboard.press("ArrowDown")
+      await expect(page.getByRole("menuitem", { name: "Sign out", exact: true })).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("menu", { name: "Account menu", exact: true })).toHaveCount(0)
+      await expect(account).toBeFocused()
+    })
+    await page.getByRole("button", { name: "Account", exact: true }).click()
+    await page.getByRole("menuitem", { name: "People", exact: true }).click()
+    await time("promote-member", async () => {
+      const target = page.getByRole("combobox", { name: "Role for joss", exact: true })
+      await expect(target).toHaveValue("new")
+      await target.selectOption("community")
+      await page.getByRole("dialog", { name: "Promote joss to Community?", exact: true }).getByRole("button", { name: "Promote", exact: true }).click()
+      await expect(target).toHaveValue("community")
+    })
+    const target = page.getByRole("combobox", { name: "Role for rira", exact: true })
+    await time("cancel-role-change", async () => {
+      await target.selectOption("maintainer")
+      await page.getByRole("dialog", { name: "Promote rira to Maintainer?", exact: true }).getByRole("button", { name: "Cancel", exact: true }).click()
+      await expect(target).toHaveValue("contributor")
+    })
+    await time("escape-role-dialog", async () => {
+      await target.selectOption("maintainer")
+      await expect(page.getByRole("button", { name: "Cancel", exact: true })).toBeFocused()
+      await page.keyboard.press("Escape")
+      await expect(page.getByRole("dialog", { name: "Promote rira to Maintainer?", exact: true })).toHaveCount(0)
+      await expect(target).toHaveValue("contributor")
+    })
+    await time("demote-member", async () => {
+      await target.selectOption("community")
+      await page.getByRole("dialog", { name: "Demote rira to Community?", exact: true }).getByRole("button", { name: "Demote", exact: true }).click()
+      await expect(target).toHaveValue("community")
+    })
+    await time("restore-member", async () => {
+      await target.selectOption("contributor")
+      await page.getByRole("dialog", { name: "Promote rira to Contributor?", exact: true }).getByRole("button", { name: "Promote", exact: true }).click()
+      await expect(target).toHaveValue("contributor")
+    })
+    await page.getByRole("button", { name: "Close People", exact: true }).click()
+    await time("sign-out", async () => {
+      await page.getByRole("button", { name: "Account", exact: true }).click()
+      await page.getByRole("menuitem", { name: "Sign out", exact: true }).click()
+      await expect(page.getByRole("button", { name: "Sign in", exact: true })).toBeVisible()
+      await expect(picker).toHaveValue("viewer")
+      await expect(page.getByRole("combobox", { name: /^Role for/ })).toHaveCount(0)
+    })
+    await time("mock-sign-in", async () => {
+      await page.getByRole("button", { name: "Sign in", exact: true }).click()
+      await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible()
+      await expect(picker).toHaveValue("new")
+    })
+    await time("participation-promotes-community", async () => {
+      await page.keyboard.press("Meta+k")
+      const prompt = page.getByRole("dialog", { name: "Ask the agent", exact: true })
+      await prompt.getByRole("textbox", { name: "Message", exact: true }).fill("How do I install it?")
+      await prompt.getByRole("button", { name: "Send", exact: true }).click()
+      await expect(page.getByText("You're now Community.", { exact: true })).toBeVisible()
+      await expect(picker).toHaveValue("community")
+      await expect(page.locator("[data-role='assistant'][data-done='true']")).toHaveCount(1)
+      await expect(page.locator("[data-role='assistant']")).toContainText("create vibelang@latest")
+    })
+    await page.goto(`${baseURL}/?agent=mock&sign-in=failed`)
+    await expect(page.getByRole("alert")).toContainText("Sign-in failed.")
+    await time("retry-mock-sign-in", async () => {
+      await page.getByRole("button", { name: "Retry", exact: true }).click()
+      await expect(page.getByRole("button", { name: "Account", exact: true })).toBeVisible()
+      await expect(page.getByRole("alert")).toHaveCount(0)
+    })
+  } finally {
+    if (coverage) await coverage()
+    await save("local-role-actions", { origin: baseURL, timings }, ["One serial native-browser journey over the real product fixture account/role flows. Each role visit includes selection, identity visibility and (for signed roles) opening/checking/closing People. Other actions include confirmation or cancellation and resulting state. Sign-in/retry use the explicit mock identity host; no GitHub login, production identity, account mutation or model. Scripted reply/automation delays included; one observation per action establishes no percentile."])
+  }
+})
