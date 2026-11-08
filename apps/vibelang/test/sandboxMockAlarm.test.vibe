@@ -1,0 +1,35 @@
+import { expect, it } from "@effect/vitest"
+import { makeMockSandboxes } from "../src/core/sandboxMock.vibe"
+
+// The mock keeps the host's alarm contract, as the live object does: it meters only while a sandbox runs or an
+// operation is pending, so an idle page runs no flow and keeps no execution.
+effect function seconds(count: number) {
+  for (let second = 0; second < count; second++) {
+    try TestClock.adjust("1 second")
+    // Let the due meter's flow finish before the next second.
+    for (let turn = 0; turn < 50; turn++) try Effect.yieldNow
+  }
+}
+
+it.effect("meters only while a sandbox runs", () => effect {
+  const meters = try Ref.make(0)
+  const counting = Logger.layer([Logger.make((options) => {
+    const annotations = options.fiber.getRef(References.CurrentLogAnnotations)
+    if (JSON.stringify(options.message).includes("vibelang.sandbox") && annotations["step"] === "meter") Effect.runSync(Ref.update(meters, (count) => count + 1))
+  })])
+  provide counting {
+    try scoped(effect {
+      const sandboxes = try makeMockSandboxes("contributor")
+      try seconds(10)
+      try Effect.try(() => expect(Effect.runSync(Ref.get(meters))).toBe(0))
+      const box = try sandboxes.startSandbox("home", "start-1")
+      const started = try Ref.get(meters)
+      try seconds(3)
+      try Effect.try(() => expect(Effect.runSync(Ref.get(meters)) - started).toBeGreaterThan(0))
+      try sandboxes.stopSandbox("home", "stop-1", box.generation)
+      const stopped = try Ref.get(meters)
+      try seconds(10)
+      try Effect.try(() => expect(Effect.runSync(Ref.get(meters))).toBe(stopped))
+    })
+  }
+})

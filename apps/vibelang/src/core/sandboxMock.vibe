@@ -14,9 +14,11 @@ export effect function makeMockSandboxes(role: Role) {
   const random = try Effect.provide(SecureRandom.SecureRandom, WebCrypto.layer)
   effect function execution(prefix: string) { return `${prefix}/${try random.uuidV4()}` }
   const state = try Ref.make<SandboxState | undefined>(undefined)
+  // The host arms an alarm only while a sandbox runs or an operation is pending (sandboxHost.vibe `arm`).
+  const armed = try Ref.make<number | null>(null)
   const receipts = new Map<string, Receipt>()
   const machines = memoryMachines()
-  const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: () => Effect.void }, machines), mockPolicy(role))
+  const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: (at) => Ref.set(armed, at) }, machines), mockPolicy(role))
   const runtime = sandboxRegistration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.succeed(SandboxHost, host)),
@@ -24,10 +26,13 @@ export effect function makeMockSandboxes(role: Role) {
   )
   const context = try Layer.build(runtime)
   const engine = Context.get(context, FlowRuntime.FlowRuntime)
-  // The real clock's alarm is a scoped fiber in product mock mode, never a backend or model.
+  // The real clock's alarm is a scoped fiber in product mock mode, never a backend or model. It meters only when the
+  // host's alarm is due, as the live object's storage alarm does, so an idle page runs no flow.
   let ticks = 0
   try Effect.forkScoped(Effect.forever(effect {
     try sleep("1 second")
+    const at = try Ref.get(armed)
+    if (at === null || at > (try Clock.currentTimeMillis)) return
     try Effect.ignore(engine.execute(SandboxMeter, { executionId: `meter/${++ticks}`, payload: {} }))
   }))
 
