@@ -805,7 +805,7 @@ jobs:
         shell: "bash"
       - name: "Workspace targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs ci '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs ci '//packages/fuzz:*' '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"
@@ -2980,7 +2980,7 @@ jobs:
         shell: "bash"
       - name: "Package test targets"
         if: ${{ !cancelled() && steps.setup.conclusion == 'success' }}
-        run: "pnpm exec smthrs test '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
+        run: "pnpm exec smthrs test '//packages/fuzz:*' '//packages/repo-targets:*' '//packages/smithers/agent/chain:*' '//packages/smithers/agent/regression:*' '//packages/smithers/build/infra:*' '//packages/smithers/flows/jj-wasm:*' '//packages/smithers/flows/jj:*' '//packages/smithers/flows/keys:*' '//packages/smithers/flows/platform-bun:*' '//packages/smithers/flows/platform-node:*' '//packages/smithers/flows/sync:*' '//packages/smithers/mcp:*' '//packages/smithers/ui/ui-css:*' --jobs 2 --known-red '.github/ci-known-red.json' --results-file \"$RUNNER_TEMP/smthrs-results/$GITHUB_ACTION.json\" --verbose"
         shell: "bash"
         env:
           "SMITHERS_CACHE_URL": "${{ secrets.SMITHERS_CACHE_URL }}"

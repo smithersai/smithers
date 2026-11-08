@@ -11,7 +11,8 @@ const generated = ["packages/smithers/src/internal/backend/ProductApi.ts"]
 const sources = ["packages/*/src/**/*.ts", "packages/*/*/src/**/*.ts", "packages/*/*/*/src/**/*.ts"]
 
 export default [
-  { ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/template/**", "**/fixtures/**", ...optedOut, ...generated] },
+  { ignores: ["**/node_modules/**", "**/dist/**", "**/coverage/**", "**/template/**", "**/fixtures/**", ...optedOut, ...generated, "packages/fuzz/src/{Fuzz.ts,testing/FuzzSimulation.ts,internal/**}", "packages/testing/src/internal/fuzz.ts"] },
+  // Fuzz is the exact Effect contribution copy (VL-29); its upstream JSDoc is retained.
   // Non-JSDoc directives belong to each package's full lint pass.
   { linterOptions: { reportUnusedDisableDirectives: false } },
   // Operator scripts carry no public-JSDoc contract; they share one statement style.

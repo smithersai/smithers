@@ -49,3 +49,4 @@ brick                                   state         proof
 - **`@smthrs/ui-css`** holds `@smthrs/ui`'s framework-free CSS so React and Foldkit share one stylesheet.
 
 - Brick 2 policy and shared authentication: decision [0019](decisions/0019-sign-in-and-roles.md); lane vl-roles.
+- **vl-fuzzpkg, in progress:** package the Effect fork as `@smthrs/fuzz`, then independent whole-app fuzz coverage and a 30-minute campaign (decision 0015).

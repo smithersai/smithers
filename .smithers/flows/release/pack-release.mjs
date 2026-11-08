@@ -60,6 +60,7 @@ export const publishedPackages = [
   "@smthrs/evals",
   "@smthrs/flow",
   "@smthrs/flows",
+  "@smthrs/fuzz",
   "@smthrs/gateway",
   "@smthrs/harness",
   "@smthrs/integrations",

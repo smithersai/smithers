@@ -32,6 +32,8 @@ next. Every decision lands here in the same change as the code it shapes.
 
 | [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
 
+| [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
+
 ## Layout
 
 ```

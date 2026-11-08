@@ -91,6 +91,7 @@
 ## Package documentation
 
 - [@smthrs/errors](https://github.com/smithersai/smithers/tree/main/packages/errors/docs): SmithersError and the error codes the integration adapters raise
+- [@smthrs/fuzz](https://github.com/smithersai/smithers/tree/main/packages/fuzz/docs): Feedback-guided fuzzing and deterministic fiber simulation over Effect Arbitrary
 - [@smthrs/cli](https://github.com/smithersai/smithers/tree/main/packages/smithers/docs): Node command-line interface for Smithers control
 - [@smthrs/agent](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/docs): The Smithers agent: the production agent loop composed on the durable engine, plus the two adapters that run it, AgentSession for control-plane runs and AgentAction for typed workflow steps
 - [@smthrs/evals](https://github.com/smithersai/smithers/tree/main/packages/smithers/agent/evals/docs): Fixed-suite evaluation, baselines, regression reports, and score gates for flows

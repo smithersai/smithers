@@ -15,7 +15,8 @@
 | Proof sensitivity | Executable mutations with byte-identical contracts | `pnpm verify:broken` |
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
-| Benchmarks, fuzzing | next | with roadmap 1b |
+| Fuzz package and corpus regression tooling | `@smthrs/fuzz`; `@smthrs/testing/Vitest` (0015) | package tests; whole-app `pnpm fuzz` follows the package landing |
+| Benchmarks | next | with roadmap 1b |
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
 waits on what a person sees (a role, a text, `data-done`), never a timer. Screenshots wait for view transitions to end.

@@ -427,7 +427,7 @@
     "lint": "eslint src --max-warnings=0 && dprint check",
     "format": "dprint fmt",
     "build": "node scripts/build.mjs",
-    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit",
+    "check": "vibelang -b tsconfig.json && vibelang -p tsconfig.test.json --noEmit && vibelang -p tsconfig.fuzz.json --noEmit",
     "circular": "node ../repo-targets/scripts/circular.mjs",
     "test": "vitest",
     "coverage": "vitest --coverage"
@@ -445,7 +445,8 @@
     "@smthrs/scorers": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
     "string-width": "7.2.0",
-    "@smthrs/platform-node": "workspace:*"
+    "@smthrs/platform-node": "workspace:*",
+    "@smthrs/fuzz": "workspace:*"
   },
   "peerDependencies": {
     "effect": "4.1.1",

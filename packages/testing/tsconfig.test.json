@@ -8,5 +8,12 @@
     "composite": false,
     "resolveJsonModule": true
   },
-  "include": ["src/**/*", "test/**/*", "examples/**/*"]
+  "include": [
+    "src/**/*",
+    "test/**/*",
+    "examples/**/*"
+  ],
+  "exclude": [
+    "test/fuzz*.test.ts"
+  ]
 }
