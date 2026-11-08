@@ -6,16 +6,25 @@ from mutation_targets import POSTCONDITIONS, postcondition_line
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=ROOT.parent
 if len(sys.argv)>1:
- source=pathlib.Path(sys.argv[1]).resolve()
- if not source.exists(): raise SystemExit(f'Not found: {source}')
- if not source.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
- selected=[source] if source.is_file() else sorted(p for p in source.rglob('*.ts') if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(source).parts))
+ sources=[pathlib.Path(arg).resolve() for arg in sys.argv[1:]]
+ selected=[]
+ for candidate in sources:
+  if not candidate.exists(): raise SystemExit(f'Not found: {candidate}')
+  if not candidate.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
+  selected += [candidate] if candidate.is_file() else sorted(p for p in candidate.rglob('*.ts') if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(candidate).parts))
+ selected=list(dict.fromkeys(selected))
+ source=sources[0] if len(sources)==1 else APP
 else:
  source=APP
  selected=production_sources(APP)
 started=time.monotonic()
 # A run owns its artifacts and cannot use a previously successful proof.
 (ROOT/'.checks').mkdir(exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks'))
+# The proof sources strictly typecheck separately. Keep identical compiler options while
+# excluding unrelated application files from each ts-morph generation project.
+proof_sources=run/'source'
+proof_sources.mkdir()
+(proof_sources/'tsconfig.json').write_text(json.dumps({'extends':str(APP/'tsconfig.json'),'files':[],'include':[],'exclude':[]}))
 # LemmaScript reads TypeScript. A `.vibe` module written in its verifiable subset is TypeScript syntax, so the run
 # proves an exact `.ts` copy of its text, staged with this run's artifacts; reports name the `.vibe` file and line.
 shown={}
@@ -130,6 +139,14 @@ with concurrent.futures.ThreadPoolExecutor(max_workers=jobs) as pool:
    for line in r['output'].splitlines():
     if 'finished with' in line: print('  '+line)
   sys.stdout.flush()
+# A late edit or newly marked module invalidates the whole production receipt too.
+if len(sys.argv)==1 and production_sources(APP) != selected:
+ raise SystemExit('FAIL: production source set changed during verification')
+for r in results:
+ original=pathlib.Path(r['file'])
+ if not original.exists() or hashlib.sha256(original.read_bytes()).hexdigest() != r['sha256']:
+  r['exit']=2; r['output']+='ERROR: source changed before verification completed\n'
+  print('FAIL: source changed before verification completed: '+r['file'])
 summary={'directory':str(source),'seconds':round(time.monotonic()-started,3),'passed':sum(r['exit']==0 for r in results),'total':len(results),'jobs':jobs,'results':results,'commands':commands}
 (run/'summary.json').write_text(json.dumps(summary,indent=2))
 print(f"{summary['passed']}/{len(results)} files verified in {summary['seconds']:.3f}s; results: {run/'summary.json'}")

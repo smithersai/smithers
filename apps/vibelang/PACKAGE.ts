@@ -36,6 +36,7 @@ const proofs = [
   Smithers.glob("//apps/vibelang/src/**/*.vibe"),
   Smithers.glob("//apps/vibelang/worker/**/*.vibe"),
   Smithers.glob("//apps/vibelang/scripts/**/*.vibe"),
+  Smithers.file("//apps/vibelang/tsconfig.json"),
   Smithers.file("//apps/vibelang/wiki/decisions/0018-proofs.md")
 ]
 
@@ -80,7 +81,7 @@ const workerd = Smithers.Shell.Test({
 })
 
 /**
- * `pnpm verify`: LemmaScript's contracts on `src/core/conversation.vibe`, proven by Dafny.
+ * `pnpm verify`: every marked production contract, proved by Dafny, plus the complete source inventory.
  *
  * @since 1.0.0
  * @category test
@@ -99,7 +100,7 @@ const verify = Smithers.Shell.Test({
  * @category test
  */
 const verifyBroken = Smithers.Shell.Test({
-  summary: "Check that every generated mutation of the state machine fails a proof obligation.",
+  summary: "Check that every generated mutation of a production decision fails a proof obligation.",
   shell: "cd apps/vibelang && pnpm verify:broken",
   data: proofs,
   timeout: "60m",

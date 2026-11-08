@@ -212,6 +212,7 @@ export function refusalText(refusal: string): string {
     case "duplicate": return "Already there."
     case "unknown": return "No such epic or commit."
     case "state": return "Not in that state."
+    case "full": return "History full."
     case "unavailable": return "The history can't be reached."
     default: return refusal
   }

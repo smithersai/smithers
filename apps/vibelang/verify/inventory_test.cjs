@@ -40,3 +40,15 @@ test('original effect declarations, blocks, constructors, methods and getters ar
 test('malformed source cannot produce a successful partial inventory', () => {
   assert.throws(() => inventorySource(path.join(app, 'inventory-fixture.vibe'), 'export function broken('), /parse|compiler|syntax/i);
 });
+
+test('membership and numeric predicates are decisions, while native DOM work is an effect shell', () => {
+  const source = 'function member(values: string[], value: string) { return values.includes(value) }\n' +
+    'function safe(value: number) { return Number.isSafeInteger(value) }\n' +
+    'function focus(element: HTMLElement) { element.focus() }\n';
+  const rows = inventorySource(path.join(app, 'inventory-fixture.vibe'), source);
+  assert.deepEqual(rows.map(({ label, category }) => ({ label, category })), [
+    { label: 'member', category: 'pure logic' },
+    { label: 'safe', category: 'pure logic' },
+    { label: 'focus', category: 'effectful shell' },
+  ]);
+});

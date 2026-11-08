@@ -1,0 +1,85 @@
+// The sequencer admits only ranks/cursors whose JavaScript arithmetic matches the proved integer domain.
+import { expect, it } from "@effect/vitest"
+import { empty, type History, type Event } from "../src/history/mythical.vibe"
+import { History as HistorySchema, HistoryEvent, decodeStoredHistory } from "../src/history/schemas.vibe"
+import { make, memoryStore, type Store } from "../src/history/Sequencer.vibe"
+
+const planned: Event = { type: "Planned", seq: 2, id: "m1", epic: "e1", rank: 0, title: "One", task: "" }
+function snapshot(rank: number): History {
+  return { ...empty, seq: 2, epics: [{ id: "e1", title: "Compiler" }], commits: [{ id: "m1", epic: "e1", rank, title: "One", state: "planned", task: "", lane: "", notes: [] }] }
+}
+
+it.effect("wire schemas reject unsafe, fractional and out-of-sequence ranks", () => effect {
+  for (const rank of [-1, 0.5, 2, 2 ** 53, Infinity, NaN]) {
+    const state = try Effect.exit(Schema.decodeUnknownEffect(HistorySchema)(snapshot(rank)))
+    const event = try Effect.exit(Schema.decodeUnknownEffect(HistoryEvent)({ ...planned, rank }))
+    try Effect.try(() => {
+      expect(Exit.isFailure(state), `snapshot rank ${rank}`).toBe(true)
+      expect(Exit.isFailure(event), `event rank ${rank}`).toBe(true)
+    })
+  }
+  const good = try Schema.decodeUnknownEffect(HistorySchema)(snapshot(1))
+  try Effect.try(() => expect(good.commits[0]?.rank).toBe(1))
+})
+
+it.effect("invalid bootstrap never reaches storage", () => effect {
+  const store = try memoryStore()
+  const sequencer = try make(store)
+  const result = try Effect.exit(sequencer.bootstrap(snapshot(2 ** 53)))
+  const stored = try store.load()
+  try Effect.try(() => {
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("Invalid history state")
+    expect(stored).toEqual({ base: undefined, events: [] })
+  })
+})
+
+it.effect("a faulty store cannot replay an unsafe event into the state", () => effect {
+  const store = try memoryStore()
+  const faulty: Store = { ...store, load: () => succeed({ base: { ...empty, seq: 1, epics: [{ id: "e1", title: "Compiler" }] }, events: [{ ...planned, rank: 2 ** 53 }] }) }
+  const sequencer = try make(faulty)
+  const result = try Effect.exit(sequencer.read())
+  try Effect.try(() => expect(Exit.isFailure(result)).toBe(true))
+})
+
+it.effect("the final safe event is recorded once and the next write is refused without effects", () => effect {
+  const store = try memoryStore()
+  const sequencer = try make(store)
+  try sequencer.bootstrap({ ...empty, seq: Number.MAX_SAFE_INTEGER - 1 })
+  const last = try sequencer.record({ type: "OpenEpic", id: "e1", title: "Compiler" })
+  const before = try sequencer.read()
+  const overflow = try sequencer.record({ type: "OpenEpic", id: "e2", title: "Docs" })
+  const after = try sequencer.read()
+  const stored = try store.load()
+  try Effect.try(() => {
+    expect(last.ok).toBe(true)
+    expect(before.seq).toBe(Number.MAX_SAFE_INTEGER)
+    expect(overflow).toEqual({ ok: false, refusal: "full" })
+    expect(after).toEqual(before)
+    expect(stored.events).toHaveLength(1)
+  })
+})
+
+it.effect("a later follow read validates stored events even after the state was cached", () => effect {
+  const store = try memoryStore()
+  const sequencer = try make(store)
+  try sequencer.read()
+  try store.append({ ...planned, rank: 2 ** 53 })
+  const result = try Effect.exit(Stream.runCollect(Stream.take(sequencer.follow(0), 1)))
+  try Effect.try(() => {
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) expect(Cause.pretty(result.cause)).toContain("Invalid history events")
+  })
+})
+
+it.effect("invalid stored JSON never exposes stored titles in diagnostics", () => effect {
+  const invalid = { ...snapshot(2 ** 53), main: "PRIVATE_STORED_TEXT" }
+  const result = try Effect.exit(decodeStoredHistory(JSON.stringify(invalid)))
+  try Effect.try(() => {
+    expect(Exit.isFailure(result)).toBe(true)
+    if (Exit.isFailure(result)) {
+      expect(Cause.pretty(result.cause)).toContain("Invalid history state")
+      expect(Cause.pretty(result.cause)).not.toContain("PRIVATE_STORED_TEXT")
+    }
+  })
+})

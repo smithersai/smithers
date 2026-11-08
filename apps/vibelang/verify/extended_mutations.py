@@ -681,3 +681,810 @@ cases = [
   '(run.phase === "recorded" && run.action === "fold")',
   '(run.phase === "recorded")',
   'only a fold records more than once')]
+
+
+cases += [('src/history/mythical.vibe',
+  'history-apply-next',
+  'apply',
+  'event.seq !== history.seq + 1',
+  'event.seq === history.seq + 1',
+  'only the next event applies'),
+ ('src/history/mythical.vibe',
+  'history-apply-number',
+  'apply',
+  'seq: event.seq',
+  'seq: event.seq + 1',
+  'applied event preserves its sequence'),
+ ('src/history/mythical.vibe',
+  'history-epic-identity',
+  'apply',
+  'hasEpic(history.epics, event.id)',
+  'false',
+  'epic ids stay unique'),
+ ('src/history/mythical.vibe',
+  'history-commit-identity',
+  'apply',
+  'event.epic === "" || hasCommit(history.commits, event.id)',
+  'event.epic === "" || false',
+  'mythical commit ids stay unique'),
+ ('src/history/mythical.vibe',
+  'history-plan-epic',
+  'apply',
+  '!hasEpic(history.epics, event.epic)',
+  'false',
+  'every mythical commit belongs to an epic'),
+ ('src/history/mythical.vibe',
+  'history-plan-shift',
+  'apply',
+  'rank: commit.rank + 1',
+  'rank: commit.rank',
+  'insertion preserves unique ranks'),
+ ('src/history/mythical.vibe',
+  'history-plan-frame',
+  'apply',
+  'id: event.id,\n        epic: event.epic',
+  'id: event.id,\n        epic: ""',
+  'the new commit belongs to the requested epic'),
+ ('src/history/mythical.vibe',
+  'history-fold-duplicate',
+  'apply',
+  'hasSha(history.real, event.sha)',
+  'false',
+  'each real commit is folded once'),
+ ('src/history/mythical.vibe',
+  'history-fold-target',
+  'apply',
+  '!hasCommit(history.commits, event.into)',
+  'false',
+  'fold targets exist'),
+ ('src/history/mythical.vibe',
+  'history-fold-prefix',
+  'apply',
+  'const real = [...history.real,',
+  'const real = [',
+  'fold preserves every prior real commit'),
+ ('src/history/mythical.vibe',
+  'history-amend-state',
+  'amended',
+  'state: "planned"',
+  'state: "landed"',
+  'amending reopens the task'),
+ ('src/history/mythical.vibe',
+  'history-amend-task',
+  'amended',
+  'state: "planned", task',
+  'state: "planned", task: ""',
+  'amending keeps the new task'),
+ ('src/history/mythical.vibe',
+  'history-start-state',
+  'started',
+  'state: "working"',
+  'state: "planned"',
+  'start enters working'),
+ ('src/history/mythical.vibe',
+  'history-start-lane',
+  'started',
+  'state: "working", lane',
+  'state: "working", lane: ""',
+  'start records the requested lane'),
+ ('src/history/mythical.vibe',
+  'history-approval-state',
+  'approved',
+  'state: "approved"',
+  'state: "working"',
+  'approval enters approved'),
+ ('src/history/mythical.vibe',
+  'history-approval-note',
+  'approved',
+  'notes: [...commit.notes, approval]',
+  'notes: commit.notes',
+  'approval appends evidence'),
+ ('src/history/mythical.vibe', 'history-land-state', 'landed', 'state: "landed"', 'state: "approved"', 'fold enters landed'),
+ ('src/history/mythical.vibe', 'history-land-task', 'landed', 'task: ""', 'task: commit.task', 'fold clears the open task'),
+ ('src/history/mythical.vibe',
+  'history-land-lane',
+  'landed',
+  'lane: ""',
+  'lane: commit.lane',
+  'fold clears the active lane'),
+ ('src/history/mythical.vibe',
+  'history-has-epic',
+  'hasEpic',
+  'if (epics[i]!.id === id) return true',
+  'if (epics[i]!.id === id) return false',
+  'exact epic membership'),
+ ('src/history/mythical.vibe',
+  'history-has-commit',
+  'hasCommit',
+  'if (commits[i]!.id === id) return true',
+  'if (commits[i]!.id === id) return false',
+  'exact commit membership'),
+ ('src/history/mythical.vibe',
+  'history-has-sha',
+  'hasSha',
+  'if (real[i]!.sha === sha) return true',
+  'if (real[i]!.sha === sha) return false',
+  'exact real commit membership'),
+ ('src/history/mythical.vibe',
+  'history-in-state',
+  'isIn',
+  ' && commits[i]!.state === state',
+  '',
+  'membership includes the requested state'),
+ ('src/history/mythical.vibe',
+  'history-task-lookup',
+  'taskOf',
+  'return commits[i]!.task',
+  'return ""',
+  'the first matching task is returned'),
+ ('src/history/mythical.vibe',
+  'history-epic-lookup',
+  'epicOf',
+  'return commits[i]!.epic',
+  'return ""',
+  'the first matching epic is returned'),
+ ('src/history/mythical.vibe',
+  'history-rank-lookup',
+  'rankOf',
+  'return commits[i]!.rank',
+  'return -1',
+  'the first matching rank is returned'),
+ ('src/history/mythical.vibe',
+  'history-end-rank',
+  'endOf',
+  'end = commits[i]!.rank + 1',
+  'end = commits[i]!.rank + 2',
+  'append rank is exactly one past the last rank'),
+ ('src/history/mythical.vibe',
+  'history-decide-sequence',
+  'decide',
+  'history.seq + 1',
+  'history.seq + 2',
+  'every accepted intent gets the next sequence'),
+ ('src/history/mythical.vibe',
+  'history-open-empty',
+  'decide',
+  'intent.id === "" || intent.title.trim() === ""',
+  'intent.id === ""',
+  'an epic title must be nonblank'),
+ ('src/history/mythical.vibe',
+  'history-open-limit',
+  'decide',
+  'intent.id.length > MAX_ID || intent.title.length > MAX_TITLE',
+  'intent.id.length > MAX_ID',
+  'epic title length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-open-duplicate',
+  'decide',
+  'if (hasEpic(history.epics, intent.id))',
+  'if (false)',
+  'duplicate epics are refused'),
+ ('src/history/mythical.vibe',
+  'history-plan-empty',
+  'decide',
+  'intent.id === "" || title === ""',
+  'intent.id === ""',
+  'a planned title must be nonblank'),
+ ('src/history/mythical.vibe',
+  'history-plan-title-limit',
+  'decide',
+  ' || title.length > MAX_TITLE',
+  '',
+  'planned title length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-plan-task-limit',
+  'decide',
+  ' || intent.task.length > MAX_TITLE',
+  '',
+  'planned task length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-plan-before-epic',
+  'decide',
+  'epicOf(history.commits, intent.before) !== intent.epic',
+  'false',
+  'insertion belongs to the same epic'),
+ ('src/history/mythical.vibe',
+  'history-plan-negative',
+  'decide',
+  'if (rank < 0)',
+  'if (false)',
+  'negative ranks cannot be inserted'),
+ ('src/history/mythical.vibe',
+  'history-amend-empty',
+  'decide',
+  'if (intent.task.trim() === "")',
+  'if (false)',
+  'amending tasks are nonblank'),
+ ('src/history/mythical.vibe',
+  'history-amend-limit',
+  'decide',
+  'if (intent.task.length > MAX_TITLE)',
+  'if (false)',
+  'amending task length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-amend-state-guard',
+  'decide',
+  '!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== ""',
+  '!isIn(history.commits, intent.id, "landed")',
+  'only a landed commit without an open task can be amended'),
+ ('src/history/mythical.vibe',
+  'history-start-empty',
+  'decide',
+  'if (intent.lane.trim() === "")',
+  'if (false)',
+  'lanes are nonblank'),
+ ('src/history/mythical.vibe',
+  'history-start-limit',
+  'decide',
+  'if (intent.lane.length > MAX_TITLE)',
+  'if (false)',
+  'lane length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-start-guard',
+  'decide',
+  'if (!isIn(history.commits, intent.id, "planned"))',
+  'if (false)',
+  'only planned commits start'),
+ ('src/history/mythical.vibe',
+  'history-approve-guard',
+  'decide',
+  'if (!isIn(history.commits, intent.id, "working"))',
+  'if (false)',
+  'only working commits are approved'),
+ ('src/history/mythical.vibe',
+  'history-fold-change-limit',
+  'decide',
+  ' || intent.change.length > MAX_ID',
+  '',
+  'change id length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-note-author-limit',
+  'decide',
+  ' || intent.by.length > MAX_TITLE',
+  '',
+  'note author length is bounded'),
+ ('src/history/mythical.vibe',
+  'history-note-author',
+  'decide',
+  'text === "" || intent.by === ""',
+  'text === ""',
+  'notes require an author'),
+ ('src/history/mythical.vibe', 'history-rank-low', 'validRank', '0 <= rank', '0 < rank', 'zero is a valid first rank'),
+ ('src/history/mythical.vibe',
+  'history-rank-high',
+  'validRank',
+  'rank < seq',
+  'rank <= seq',
+  'rank stays strictly below the cursor'),
+ ('src/history/mythical.vibe', 'history-ranks-loop', 'validRanks', 'i++', 'i += 2', 'every stored rank is validated'),
+ ('src/history/mythical.vibe',
+  'history-ranks-invalid',
+  'validRanks',
+  'return false',
+  'return true',
+  'one invalid rank refuses the snapshot'),
+ ('src/history/mythical.vibe',
+  'history-ranks-valid',
+  'validRanks',
+  'return true',
+  'return false',
+  'a valid snapshot is accepted'),
+ ('src/history/mythical.vibe',
+  'history-capacity-low',
+  'decideWithinCapacity',
+  'history.seq < 0',
+  'history.seq < -1',
+  'negative sequence is refused before deciding'),
+ ('src/history/mythical.vibe',
+  'history-capacity-high',
+  'decideWithinCapacity',
+  'history.seq >= 9007199254740991',
+  'history.seq > 9007199254740991',
+  'exhausted sequence is refused before increment'),
+ ('src/history/mythical.vibe',
+  'history-capacity-reason',
+  'decideWithinCapacity',
+  'refused("full")',
+  'refused("state")',
+  'exhaustion has the full refusal'),
+ ('src/history/mythical.vibe',
+  'history-plan-shift-boundary',
+  'apply',
+  'commit.rank >= event.rank',
+  'commit.rank > event.rank',
+  'insert shifts the existing occupant'),
+ ('src/history/mythical.vibe',
+  'history-plan-shift-epic',
+  'apply',
+  'commit.epic === event.epic && ',
+  '',
+  'other epics retain their ranks'),
+ ('src/history/mythical.vibe',
+  'history-plan-new-rank',
+  'apply',
+  'rank: event.rank,',
+  'rank: event.rank + 1,',
+  'insert uses the requested rank'),
+ ('src/history/mythical.vibe',
+  'history-plan-new-title',
+  'apply',
+  'rank: event.rank,\n        title: event.title,',
+  'rank: event.rank,\n        title: "",',
+  'insert preserves the title'),
+ ('src/history/mythical.vibe',
+  'history-plan-new-task',
+  'apply',
+  'task: event.task,',
+  'task: "",',
+  'insert preserves the task'),
+ ('src/history/mythical.vibe',
+  'history-plan-new-state',
+  'apply',
+  'state: "planned",',
+  'state: "working",',
+  'insert begins planned'),
+ ('src/history/mythical.vibe',
+  'history-plan-new-lane',
+  'apply',
+  'lane: "",',
+  'lane: "wrong",',
+  'insert starts without a lane'),
+ ('src/history/mythical.vibe',
+  'history-fold-main',
+  'apply',
+  'main: event.sha',
+  'main: history.main',
+  'fold advances main to the new real commit'),
+ ('src/history/mythical.vibe',
+  'history-fold-change',
+  'apply',
+  'change: event.change',
+  'change: ""',
+  'fold records the change id'),
+ ('src/history/mythical.vibe',
+  'history-fold-title',
+  'apply',
+  'change: event.change, title: event.title',
+  'change: event.change, title: ""',
+  'fold records the title'),
+ ('src/history/mythical.vibe',
+  'history-fold-landing',
+  'apply',
+  'commit.id === event.into ? landed(commit) : commit',
+  'commit',
+  'fold lands exactly the target'),
+ ('src/history/mythical.vibe',
+  'history-epic-title-guard',
+  'apply',
+  'event.title === "" || hasEpic',
+  'false || hasEpic',
+  'blank epics do not change contents'),
+ ('src/history/mythical.vibe',
+  'history-plan-rank-guard',
+  'apply',
+  'event.rank < 0 || ',
+  '',
+  'negative insert ranks do not change contents'),
+ ('src/history/mythical.vibe',
+  'history-amend-empty-guard',
+  'apply',
+  'event.task === "" || ',
+  '',
+  'empty amends do not change contents'),
+ ('src/history/mythical.vibe',
+  'history-start-empty-guard',
+  'apply',
+  'event.lane === "" || ',
+  '',
+  'empty starts do not change contents'),
+ ('src/history/mythical.vibe',
+  'history-approve-empty-guard',
+  'apply',
+  'event.by === "" || !isIn',
+  'false || !isIn',
+  'approval requires an author'),
+ ('src/history/mythical.vibe', 'history-note-empty-guard', 'apply', 'event.text === "" || ', '', 'notes require text'),
+ ('src/history/mythical.vibe',
+  'history-note-by-guard',
+  'apply',
+  'event.by === "" || !hasCommit',
+  'false || !hasCommit',
+  'notes require an author'),
+ ('src/history/mythical.vibe',
+  'history-accepted-payload',
+  'accepted',
+  'return { ok: true, event }',
+  'return { ok: true, event: { ...event, seq: event.seq + 1 } }',
+  'accepted preserves the entire event'),
+ ('src/history/mythical.vibe',
+  'history-refused-reason',
+  'refused',
+  'return { ok: false, refusal }',
+  'const wrong: Refusal = "full"; return { ok: false, refusal: wrong }',
+  'refused preserves its reason'),
+ ('src/history/mythical.vibe',
+  'history-refusal-0',
+  'decide',
+  '    case "OpenEpic": {\n      if (intent.id === "" || intent.title.trim() === "") return refused("empty")',
+  '    case "OpenEpic": {\n      if (intent.id === "" || intent.title.trim() === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-1',
+  'decide',
+  '    case "OpenEpic": {\n'
+  '      if (intent.id === "" || intent.title.trim() === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")',
+  '    case "OpenEpic": {\n'
+  '      if (intent.id === "" || intent.title.trim() === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-2',
+  'decide',
+  '    case "OpenEpic": {\n'
+  '      if (intent.id === "" || intent.title.trim() === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (hasEpic(history.epics, intent.id)) return refused("duplicate")',
+  '    case "OpenEpic": {\n'
+  '      if (intent.id === "" || intent.title.trim() === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || intent.title.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (hasEpic(history.epics, intent.id)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-3',
+  'decide',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-4',
+  'decide',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-5',
+  'decide',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-6',
+  'decide',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")\n'
+  '      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("unknown")',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")\n'
+  '      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-7',
+  'decide',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")\n'
+  '      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("unknown")\n'
+  '      if (intent.before === "") {\n'
+  '        return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank: endOf(history.commits, '
+  'intent.epic), title, task: intent.task })\n'
+  '      }\n'
+  '      if (epicOf(history.commits, intent.before) !== intent.epic) return refused("unknown")',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")\n'
+  '      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("full")\n'
+  '      if (intent.before === "") {\n'
+  '        return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank: endOf(history.commits, '
+  'intent.epic), title, task: intent.task })\n'
+  '      }\n'
+  '      if (epicOf(history.commits, intent.before) !== intent.epic) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-8',
+  'decide',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")\n'
+  '      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("unknown")\n'
+  '      if (intent.before === "") {\n'
+  '        return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank: endOf(history.commits, '
+  'intent.epic), title, task: intent.task })\n'
+  '      }\n'
+  '      if (epicOf(history.commits, intent.before) !== intent.epic) return refused("unknown")\n'
+  '      const rank = rankOf(history.commits, intent.before)\n'
+  '      if (rank < 0) return refused("unknown")',
+  '    case "Plan": {\n'
+  '      const title = intent.title.trim()\n'
+  '      if (intent.id === "" || title === "") return refused("empty")\n'
+  '      if (intent.id.length > MAX_ID || title.length > MAX_TITLE || intent.task.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasCommit(history.commits, intent.id)) return refused("duplicate")\n'
+  '      if (intent.epic === "" || !hasEpic(history.epics, intent.epic)) return refused("full")\n'
+  '      if (intent.before === "") {\n'
+  '        return accepted({ type: "Planned", seq, id: intent.id, epic: intent.epic, rank: endOf(history.commits, '
+  'intent.epic), title, task: intent.task })\n'
+  '      }\n'
+  '      if (epicOf(history.commits, intent.before) !== intent.epic) return refused("full")\n'
+  '      const rank = rankOf(history.commits, intent.before)\n'
+  '      if (rank < 0) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-9',
+  'decide',
+  '    case "Amend": {\n      if (intent.task.trim() === "") return refused("empty")',
+  '    case "Amend": {\n      if (intent.task.trim() === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-10',
+  'decide',
+  '    case "Amend": {\n'
+  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.length > MAX_TITLE) return refused("too-long")',
+  '    case "Amend": {\n'
+  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.length > MAX_TITLE) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-11',
+  'decide',
+  '    case "Amend": {\n'
+  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")',
+  '    case "Amend": {\n'
+  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-12',
+  'decide',
+  '    case "Amend": {\n'
+  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
+  '      if (!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== "") return '
+  'refused("state")',
+  '    case "Amend": {\n'
+  '      if (intent.task.trim() === "") return refused("empty")\n'
+  '      if (intent.task.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
+  '      if (!isIn(history.commits, intent.id, "landed") || taskOf(history.commits, intent.id) !== "") return '
+  'refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-13',
+  'decide',
+  '    case "Start": {\n      if (intent.lane.trim() === "") return refused("empty")',
+  '    case "Start": {\n      if (intent.lane.trim() === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-14',
+  'decide',
+  '    case "Start": {\n'
+  '      if (intent.lane.trim() === "") return refused("empty")\n'
+  '      if (intent.lane.length > MAX_TITLE) return refused("too-long")',
+  '    case "Start": {\n'
+  '      if (intent.lane.trim() === "") return refused("empty")\n'
+  '      if (intent.lane.length > MAX_TITLE) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-15',
+  'decide',
+  '    case "Start": {\n'
+  '      if (intent.lane.trim() === "") return refused("empty")\n'
+  '      if (intent.lane.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")',
+  '    case "Start": {\n'
+  '      if (intent.lane.trim() === "") return refused("empty")\n'
+  '      if (intent.lane.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-16',
+  'decide',
+  '    case "Start": {\n'
+  '      if (intent.lane.trim() === "") return refused("empty")\n'
+  '      if (intent.lane.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
+  '      if (!isIn(history.commits, intent.id, "planned")) return refused("state")',
+  '    case "Start": {\n'
+  '      if (intent.lane.trim() === "") return refused("empty")\n'
+  '      if (intent.lane.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
+  '      if (!isIn(history.commits, intent.id, "planned")) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-17',
+  'decide',
+  '    case "Approve": {\n      if (intent.by === "") return refused("empty")',
+  '    case "Approve": {\n      if (intent.by === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-18',
+  'decide',
+  '    case "Approve": {\n'
+  '      if (intent.by === "") return refused("empty")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")',
+  '    case "Approve": {\n'
+  '      if (intent.by === "") return refused("empty")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-19',
+  'decide',
+  '    case "Approve": {\n'
+  '      if (intent.by === "") return refused("empty")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
+  '      if (!isIn(history.commits, intent.id, "working")) return refused("state")',
+  '    case "Approve": {\n'
+  '      if (intent.by === "") return refused("empty")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")\n'
+  '      if (!isIn(history.commits, intent.id, "working")) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-20',
+  'decide',
+  '    case "Fold": {\n      if (intent.sha === "") return refused("empty")',
+  '    case "Fold": {\n      if (intent.sha === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-21',
+  'decide',
+  '    case "Fold": {\n'
+  '      if (intent.sha === "") return refused("empty")\n'
+  '      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return '
+  'refused("too-long")',
+  '    case "Fold": {\n'
+  '      if (intent.sha === "") return refused("empty")\n'
+  '      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return '
+  'refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-22',
+  'decide',
+  '    case "Fold": {\n'
+  '      if (intent.sha === "") return refused("empty")\n'
+  '      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasSha(history.real, intent.sha)) return refused("duplicate")',
+  '    case "Fold": {\n'
+  '      if (intent.sha === "") return refused("empty")\n'
+  '      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasSha(history.real, intent.sha)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-23',
+  'decide',
+  '    case "Fold": {\n'
+  '      if (intent.sha === "") return refused("empty")\n'
+  '      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasSha(history.real, intent.sha)) return refused("duplicate")\n'
+  '      if (intent.into === "" || !hasCommit(history.commits, intent.into)) return refused("unknown")',
+  '    case "Fold": {\n'
+  '      if (intent.sha === "") return refused("empty")\n'
+  '      if (intent.sha.length > MAX_ID || intent.change.length > MAX_ID || intent.title.length > MAX_TITLE) return '
+  'refused("too-long")\n'
+  '      if (hasSha(history.real, intent.sha)) return refused("duplicate")\n'
+  '      if (intent.into === "" || !hasCommit(history.commits, intent.into)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-24',
+  'decide',
+  '    case "AddNote": {\n'
+  '      const text = intent.text.trim()\n'
+  '      if (text === "" || intent.by === "") return refused("empty")',
+  '    case "AddNote": {\n'
+  '      const text = intent.text.trim()\n'
+  '      if (text === "" || intent.by === "") return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-25',
+  'decide',
+  '    case "AddNote": {\n'
+  '      const text = intent.text.trim()\n'
+  '      if (text === "" || intent.by === "") return refused("empty")\n'
+  '      if (text.length > MAX_NOTE || intent.by.length > MAX_TITLE) return refused("too-long")',
+  '    case "AddNote": {\n'
+  '      const text = intent.text.trim()\n'
+  '      if (text === "" || intent.by === "") return refused("empty")\n'
+  '      if (text.length > MAX_NOTE || intent.by.length > MAX_TITLE) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/history/mythical.vibe',
+  'history-refusal-26',
+  'decide',
+  '    case "AddNote": {\n'
+  '      const text = intent.text.trim()\n'
+  '      if (text === "" || intent.by === "") return refused("empty")\n'
+  '      if (text.length > MAX_NOTE || intent.by.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("unknown")',
+  '    case "AddNote": {\n'
+  '      const text = intent.text.trim()\n'
+  '      if (text === "" || intent.by === "") return refused("empty")\n'
+  '      if (text.length > MAX_NOTE || intent.by.length > MAX_TITLE) return refused("too-long")\n'
+  '      if (intent.id === "" || !hasCommit(history.commits, intent.id)) return refused("full")',
+  'the first failed guard selects its exact refusal'),
+ ('src/core/conversation.vibe',
+  'receive-gap-frame',
+  'receive',
+  '{ ...client, gap: true }',
+  '{ ...client, pending: [], gap: true }',
+  'a missing event preserves pending posts'),
+ ('src/core/conversation.vibe',
+  'receive-next-seq',
+  'receive',
+  'conversation, pending, gap: false',
+  'conversation: client.conversation, pending, gap: false',
+  'the next event advances conversation'),
+ ('src/core/conversation.vibe',
+  'receive-next-gap',
+  'receive',
+  'conversation, pending, gap: false',
+  'conversation, pending, gap: true',
+  'the next event closes the gap'),
+ ('src/core/conversation.vibe',
+  'receive-pending-filter',
+  'receive',
+  'waiting.clientId !== event.clientId',
+  'waiting.clientId === event.clientId',
+  'only acknowledged posts are removed'),
+ ('src/core/conversation.vibe',
+  'receive-pending-other',
+  'receive',
+  ': client.pending\n',
+  ': []\n',
+  'non-post events preserve pending posts'),
+ ('src/history/mythical.vibe',
+  'history-note-frame',
+  'noted',
+  'return { ...commit, notes: [...commit.notes, note] }',
+  'return { ...commit, state: "landed", notes: [...commit.notes, note] }',
+  'notes preserve the state'),
+ ('src/history/mythical.vibe',
+  'history-approval-frame',
+  'apply',
+  'approved(commit, approval)',
+  'approved({ ...commit, task: "" }, approval)',
+  'approvals preserve the task')]

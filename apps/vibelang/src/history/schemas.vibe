@@ -1,3 +1,4 @@
+import { validRank, validRanks } from "./mythical.vibe"
 // Schemas for the mythical history's state, events and seed (mythical.vibe, seed.vibe), so the wire, the store, the
 // Foldkit Model and the tests decode and encode them. Each one matches the TypeScript type of the same name.
 
@@ -8,7 +9,7 @@ export const CommitState = Schema.Literals(["planned", "working", "approved", "l
 export const Section = Schema.Literals(["tried", "evidence", "superseded"])
 
 /** Why the history's sequencer refused an intent (`Refusal` in mythical.vibe). */
-export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "unknown", "state"])
+export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "unknown", "state", "full"])
 
 export schema Note { readonly section: "tried" | "evidence" | "superseded"; readonly text: string; readonly by: string }
 export schema Epic { readonly id: string; readonly title: string }
@@ -16,7 +17,7 @@ export schema Epic { readonly id: string; readonly title: string }
 export schema Commit {
   readonly id: string
   readonly epic: string
-  readonly rank: number
+  readonly rank: Seq
   readonly title: string
   readonly state: "planned" | "working" | "approved" | "landed"
   readonly task: string
@@ -26,7 +27,7 @@ export schema Commit {
 
 export schema Real { readonly sha: string; readonly change: string; readonly title: string; readonly mythical: string }
 
-export schema History {
+schema HistoryFields {
   readonly seq: Seq
   readonly epics: ReadonlyArray<Epic>
   readonly commits: ReadonlyArray<Commit>
@@ -34,16 +35,21 @@ export schema History {
   readonly main: string
 }
 
+/** Validated snapshots keep every rank below the cursor, leaving room for the next increment. */
+export const History = HistoryFields.check(Schema.makeFilter(validRanks))
+
 export schema EpicOpened { readonly type: "EpicOpened"; readonly seq: Seq; readonly id: string; readonly title: string }
-export schema Planned {
+schema PlannedFields {
   readonly type: "Planned"
   readonly seq: Seq
   readonly id: string
   readonly epic: string
-  readonly rank: number
+  readonly rank: Seq
   readonly title: string
   readonly task: string
 }
+export const Planned = PlannedFields.check(Schema.makeFilter((event) => validRank(event.rank, event.seq)))
+
 export schema Amended { readonly type: "Amended"; readonly seq: Seq; readonly id: string; readonly task: string }
 export schema Started { readonly type: "Started"; readonly seq: Seq; readonly id: string; readonly lane: string }
 export schema Approved { readonly type: "Approved"; readonly seq: Seq; readonly id: string; readonly by: string }
@@ -80,6 +86,11 @@ export schema Seed {
 
 /** A seed as the generator writes it: JSON text. */
 export const SeedJson = Schema.fromJsonString(Seed)
+
+/** Decode the stored JSON snapshot at the storage boundary. */
+export function decodeStoredHistory(json: string) {
+  return Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(History))(json), () => new Error("Invalid history state")))
+}
 
 // ── pages (pages.vibe): what a reader asks for and gets ─────────────────────────────────────────────────────────────
 

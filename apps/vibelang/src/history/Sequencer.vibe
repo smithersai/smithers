@@ -1,11 +1,16 @@
+import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
 // The mythical history's sequencer (wiki/decisions/0020-mythical-history.md): the only writer of its numbered events,
 // as a conversation's is (0003). Every intent, a step of one of the history's flows, goes through `decide` and `apply`
 // under one lock, is written to the store before anyone sees it, and is then published to every follower. The mock
 // keeps its store in memory; the live History object (worker/HistoryObject.vibe) keeps it in its own storage. Nothing
 // here names a host.
-import { apply, decide, type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
+import { apply, decideWithinCapacity, type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
 import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
+
+// Decode failures report only the boundary, never stored titles, tasks or notes.
+const checkedHistory = (value: unknown) => Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(HistorySchema)(value), () => new Error("Invalid history state")))
+const checkedEvents = (value: unknown) => Effect.orDie(Effect.mapError(Schema.decodeUnknownEffect(Schema.Array(HistoryEvent))(value), () => new Error("Invalid history events")))
 
 /** What a store holds: the snapshot a bootstrap loaded, if any, and every event numbered after it, in order. */
 export interface Stored {
@@ -72,7 +77,9 @@ export effect function make(store: Store) {
     const known = try Ref.get(loaded)
     if (known !== undefined) return known
     const stored = try store.load()
-    const history = stored.events.reduce(apply, stored.base ?? empty)
+    const base = stored.base === undefined ? empty : try checkedHistory(stored.base)
+    const events = try checkedEvents(stored.events)
+    const history = events.reduce(apply, base)
     try Ref.set(loaded, history)
     return history
   }
@@ -80,7 +87,7 @@ export effect function make(store: Store) {
   /** Decides `intent`; an accepted event is written, applied and published. Call under the lock. */
   effect function record(intent: Intent) {
     const history = try current()
-    const decision = decide(history, intent)
+    const decision = decideWithinCapacity(history, intent)
     if (!decision.ok) return decision
     try store.append(decision.event)
     try Ref.set(loaded, apply(history, decision.event))
@@ -114,7 +121,7 @@ export effect function make(store: Store) {
         const live = try PubSub.subscribe(published)
         const stored = try locked(effect {
           const history = try current()
-          return { seq: history.seq, events: try store.since(after) }
+          return { seq: history.seq, events: try checkedEvents(try store.since(after)) }
         })
         const replay = stored.events.filter((event) => event.seq > after)
         const replayedTo = Math.max(after, stored.seq)
@@ -188,8 +195,9 @@ export effect function make(store: Store) {
     bootstrap: (history: History) =>
       locked(effect {
         if ((try current()).seq !== 0) return false
-        try store.seed(history)
-        try Ref.set(loaded, history)
+        const checked = try checkedHistory(history)
+        try store.seed(checked)
+        try Ref.set(loaded, checked)
         return true
       }),
   }

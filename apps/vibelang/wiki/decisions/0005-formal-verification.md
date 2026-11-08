@@ -124,3 +124,11 @@ text after a terminal reply/tour, exact delta/failure payloads, and admissible i
 also proves browser, mock and protocol policies. Five expensive negative cases select a named production
 postcondition with fail-closed matching; positive proofs still check every obligation. Parser errors and solver
 timeouts remain failures of the mutation gate, never successful rejections. Current receipts are in 0018.
+
+**History and numeric boundaries (0018).** Exact mythical transitions, refusal precedence and rank-bound induction
+are proved. Runtime decoding now enforces the safe-integer domain before replay, follow and bootstrap; sequence
+exhaustion is refused before incrementing. The unsafe-integer fixture records why a mathematical integer proof
+alone does not establish IEEE-754 behavior. Receiver proofs additionally cover gap frames and pending membership.
+
+The current shared gate passes 161 obligations in ten modules and rejects 302 executable mutations; 0018 records
+the exact receipt composition and the remaining proof boundaries.

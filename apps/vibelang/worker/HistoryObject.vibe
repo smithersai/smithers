@@ -13,7 +13,7 @@ import { Caller, type Principal, VIEWER } from "../src/history/roles.vibe"
 import { Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
 import type { PageRequest } from "../src/history/pages.vibe"
 import {
-  CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, History as HistorySchema, Matches as MatchesSchema,
+  CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, decodeStoredHistory, Matches as MatchesSchema,
   Outline as OutlineSchema,
 } from "../src/history/schemas.vibe"
 import type { HistoryReader } from "../src/history/tools.vibe"
@@ -28,11 +28,10 @@ const BASE = "base"
 const CHUNK = 64 * 1024
 const EVENT = "event/"
 
-const decodeHistory = Schema.decodeUnknownEffect(Schema.fromJsonString(HistorySchema))
 
 /** The bootstrapped history this deployment carries. */
 export effect function seeded() {
-  return try Effect.orDie(decodeHistory(HISTORY_JSON))
+  return try decodeStoredHistory(HISTORY_JSON)
 }
 
 /** The history's store over the object's own storage. */
@@ -43,7 +42,7 @@ export function storeOver(storage: KeyValue): Store {
       let base: History | undefined = undefined
       if (typeof count === "number") {
         const chunks = try promise(() => storage.list({ prefix: `${BASE}/` }))
-        base = try Effect.orDie(decodeHistory([...chunks.values()].join("")))
+        base = try decodeStoredHistory([...chunks.values()].join(""))
       }
       const events = [...(try promise(() => storage.list({ prefix: EVENT }))).values()] as ReadonlyArray<Event>
       return { base, events }

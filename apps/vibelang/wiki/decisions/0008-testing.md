@@ -155,3 +155,13 @@ combined cold startup exceeded the implicit five seconds after engine observatio
 
 **Sandbox lane tool review (0024).** `@smthrs/fuzz` is the monorepo's existing feedback-fuzz tool, added as a test dependency, awaiting Will's VL-5 approval. Sandbox fuzz uses fixed seeds and a millisecond-by-millisecond clock oracle; the benchmark checks 100 actual mock lifecycle cycles. Neither is a whole-app coverage or live-container performance claim.
 
+
+
+**History boundary regressions (0018).** Six behavioral tests cover invalid ranks, rejected bootstrap, faulty stored
+replay, cached follow rereads, redacted JSON diagnostics, and the final safe event followed by a write-free capacity
+refusal. Four initial cases and the two follow-up cases failed before their fixes. No dependency was added.
+
+**Tour page observation (0018).** The tour browser test observes rendered iframe sources from startup and checks
+all five stops in exact order. This retains the first/second page and narration assertions without assuming earlier
+glow/layout checks finish before the tour advances. The final iframe, finished answer and released controls remain
+asserted; no request interception or synthetic events are used.

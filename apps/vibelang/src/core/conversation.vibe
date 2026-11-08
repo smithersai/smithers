@@ -504,6 +504,11 @@ export function retryPost(client: Client, clientId: string): Client {
 //@ requires 0 <= client.conversation.seq && client.conversation.seq < 9007199254740991
 //@ ensures event.seq <= client.conversation.seq ==> \result == client
 //@ ensures event.seq > client.conversation.seq + 1 ==> \result.gap
+//@ ensures event.seq > client.conversation.seq + 1 ==> \result.conversation == client.conversation && \result.pending == client.pending
+//@ ensures event.seq == client.conversation.seq + 1 ==> \result.conversation.seq == event.seq && !\result.gap
+//@ ensures event.seq == client.conversation.seq + 1 && event.type != "Posted" ==> \result.pending == client.pending
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> \result.pending.length <= client.pending.length && forall(i, 0 <= i && i < \result.pending.length ==> \result.pending[i].clientId != event.clientId && exists(j, 0 <= j && j < client.pending.length && \result.pending[i] == client.pending[j]))
+//@ ensures event.seq == client.conversation.seq + 1 && event.type == "Posted" ==> forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> exists(j, 0 <= j && j < \result.pending.length && client.pending[i] == \result.pending[j]))
 export function receive(client: Client, event: Event): Client {
   const seq = client.conversation.seq
   if (event.seq <= seq) return client
@@ -512,6 +517,8 @@ export function receive(client: Client, event: Event): Client {
   const pending = event.type === "Posted"
     ? client.pending.filter((waiting) => waiting.clientId !== event.clientId)
     : client.pending
+  //@ assert event.type != "Posted" || forall(i, 0 <= i && i < pending.length ==> client.pending.includes(pending[i]) && pending[i].clientId != event.clientId)
+  //@ assert event.type != "Posted" || forall(i, 0 <= i && i < client.pending.length && client.pending[i].clientId != event.clientId ==> pending.includes(client.pending[i]))
   return { conversation, pending, gap: false }
 }
 

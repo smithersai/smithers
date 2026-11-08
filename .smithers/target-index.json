@@ -48002,6 +48002,10 @@
       },
       {
         "kind": "file",
+        "path": "apps/vibelang/tsconfig.json"
+      },
+      {
+        "kind": "file",
         "path": "apps/vibelang/wiki/decisions/0018-proofs.md"
       }
     ],
@@ -48019,7 +48023,7 @@
     "kinds": [
       "test"
     ],
-    "summary": "Check that every generated mutation of the state machine fails a proof obligation.",
+    "summary": "Check that every generated mutation of a production decision fails a proof obligation.",
     "cacheable": false,
     "inputs": [
       {
@@ -48041,6 +48045,10 @@
         "kind": "glob",
         "pattern": "apps/vibelang/scripts/**/*.vibe",
         "exclude": []
+      },
+      {
+        "kind": "file",
+        "path": "apps/vibelang/tsconfig.json"
       },
       {
         "kind": "file",

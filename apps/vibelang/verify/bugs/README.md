@@ -32,3 +32,16 @@ strictly checked receipts under the host reproduction directories named in 0018.
 `filter-method.ts` retains a single-expression filter callback calling a loop-backed verified predicate; the backend
 rejects the resulting method call inside its lambda. `empty-string-union.ts` retains an empty string alternative;
 the backend emits an invalid empty constructor. Both strictly typecheck; neither failure is a rejected mutation.
+
+`unsafe-integer.ts` demonstrates the mathematical-integer/IEEE-754 boundary; history now validates safe integers
+and proves the rank bound inductive. `date-day.ts` retains unsupported host Date lowering. `nullish-contract.ts`
+retains unsupported `??` annotation syntax; guarded Map invariants and Set/sort primitives themselves verify.
+
+`annotation-lambda.ts` keeps exact filter equality, including order and multiplicity; the annotation parser rejects
+the lambda. `method-spec.ts` keeps a loop-backed verified callee in a caller postcondition; Dafny rejects the method
+call as an expression. These explain the remaining compositional receiver boundaries without weakening the intended
+claims. Both sources strictly typecheck.
+
+- `record-literal-union.ts`: a correct literal-union field in a returned record emits a string instead of its datatype constructor. Exposed by a wrong-reason mutation; the typed-local version of that same mutation reaches and fails its unchanged contract.
+- `sort-membership.ts`: comparator sorting proves order and length but both membership-preservation assertions fail, despite the emitted multiset-permutation axiom. Sort itself is supported; exact membership remains pending.
+- `record-identity.ts`: object equality is structural in the backend and reference-based in JavaScript; the tool warns and the correct fresh-copy identity contract fails. Structural frame proofs do not establish object identity.

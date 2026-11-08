@@ -9,6 +9,9 @@ function scan(folder) {
     e.isDirectory() ? scan(path.join(folder,e.name)) : e.name.endsWith('.vibe') ? [path.join(folder,e.name)] : []);
 }
 const shellBoundaries = {
+  'src/history/Sequencer.vibe': 'Calls the proved history machine, rank validation and capacity guard. Decodes storage/replay/follow/bootstrap with redacted errors. Fold targets call the proved foldTarget. Locking, store-before-publish, epic opening for untrailered folds, title truncation and trailer regexp remain unproved.',
+  'src/history/schemas.vibe': 'Rank bounds call proved validRank/validRanks; Schema safe-integer and JSON decoding remain runtime boundaries (unsafe-integer.ts, json-codec.ts).',
+  'worker/HistoryObject.vibe': 'Uses the redacted validated history decoder before replay; chunking, JSON serialization and durable flow execution remain unproved.',
   'src/web/main.vibe': 'Calls proved screenDecision policies and the conversation machine; full Foldkit update objects, pending-post selection and command execution remain unproved.',
   'src/web/viewport.vibe': 'Follow revisions and pause decisions are proved in screenDecision under integer coordinates; DOM observations/writes, floating-point pixels and touch lookup remain runtime boundaries.',
   'src/core/mockReplies.vibe': 'First matching script is proved in mockDecision; Unicode casing and slicing chunks remain unproved (unicode-case.ts, slice-clamp reproduction).',
@@ -23,14 +26,14 @@ const shellBoundaries = {
   'src/core/flows.vibe': 'Dispatch and terminal-event decisions are proved in flowDecision.vibe; conversation guards in conversation.vibe. The reading-time policy is proved too; flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   'worker/Sequencer.vibe': 'Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved.',
   'src/history/flows.vibe': 'Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020).',
-  'src/history/Sequencer.vibe': 'Calls the proved decide, apply and foldTarget. Locking, store-before-publish, epic opening for untrailered folds, title truncation and the trailer regexp remain unproved (0020).',
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  'src/core/sandboxDecision.vibe': 'Sandbox integer kernel: running counts, exact interval usage and accumulation, remaining allowance, monotone clocks, identity/ownership and transition frames (0024). Date/IEEE-754 normalization, durable shell behavior and complete guard mutation coverage remain outside these clauses.',
   'src/core/mockDecision.vibe': 'Exact keyword membership, first-match priority and fallback; proved for normalized prompts.',
   'src/core/protocolDecision.vibe': 'Conversation/cursor/body validation, exact route and HTTP outcomes, explicit backend choice; proved.',
   'src/web/screenDecision.vibe': 'Escape/palette/minimize/scroll/focus intent/tour-stream/announcement/shortcut decisions; proved in Dafny integer model, not fractional DOM or IEEE-754.',
-  'src/history/mythical.vibe': 'Mythical-history machine: numbering, linearity, no lost epic, commit, real commit or note, exactly-one folds, and a trailer folds only into an approved or landed commit; proved, with executable mutations (0020).',
+  'src/history/mythical.vibe': 'Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts).',
   'src/history/flowMachine.vibe': 'Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020).',
   'src/core/conversation.vibe': 'Production state machine; contracts and executable mutations.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
@@ -49,8 +52,22 @@ function children(node) {
 function containsLogic(node) {
   if (functions.has(node.type)) return false; // Nested functions have their own inventory row.
   return logicNodes.has(node.type) || (node.type === 'CallExpression' && node.callee?.type === 'MemberExpression'
-    && ['filter', 'find', 'sort', 'reduce', 'test', 'exec', 'slice', 'join', 'map', 'stringify'].includes(node.callee.property?.name))
+    && (['filter', 'find', 'findIndex', 'some', 'every', 'includes', 'has', 'indexOf', 'lastIndexOf', 'sort', 'reduce', 'test', 'exec', 'slice', 'join', 'map', 'stringify', 'startsWith', 'endsWith', 'trim', 'toLowerCase', 'toUpperCase', 'max', 'min', 'round', 'floor', 'ceil', 'abs', 'parseInt', 'parseFloat'].includes(node.callee.property?.name) || /^is[A-Z]/.test(node.callee.property?.name ?? '')))
     || children(node).some(containsLogic);
+}
+const effectRoots = new Set(['Effect', 'Ref', 'Queue', 'PubSub', 'Semaphore', 'Clock', 'Console', 'Logger', 'Runtime', 'Dom', 'document', 'window']);
+const domEffects = new Set(['focus', 'blur', 'scrollTo', 'scrollIntoView', 'setAttribute', 'appendChild', 'removeChild', 'addEventListener', 'removeEventListener', 'getBoundingClientRect', 'querySelector', 'querySelectorAll']);
+function containsEffects(node) {
+  if (functions.has(node.type)) return false;
+  if (node.type === 'CallExpression') {
+    let root = node.callee;
+    while (root?.type === 'MemberExpression') root = root.object;
+    if (effectRoots.has(root?.name) || ['fetch', 'setTimeout', 'queueMicrotask'].includes(root?.name)
+      || (node.callee?.type === 'MemberExpression' && domEffects.has(node.callee.property?.name))) return true;
+  }
+  if (node.type === 'AssignmentExpression' && node.left?.type === 'MemberExpression'
+    && ['scrollTop', 'scrollLeft', 'innerHTML', 'textContent'].includes(node.left.property?.name)) return true;
+  return children(node).some(containsEffects);
 }
 function inventorySource(file, source) {
   const rel = path.relative(app, file);
@@ -79,7 +96,7 @@ function inventorySource(file, source) {
       // Look only at the original declaration header: strings/comments and nested
       // effect functions do not turn a plain enclosing function into an Effect.
       const header = source.slice(range[0], node.body.range[0]);
-      const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async;
+      const effectful = /^(?:(?:export|default|static|public|private|protected|override)\s+)*effect\b/.test(header.trim()) || node.async || containsEffects(node.body);
       const category = effectful ? 'effectful shell' : (containsLogic(node.body) || boundaries[rel] ? 'pure logic' : 'wiring');
       const why = boundaries[rel] || shellBoundaries[rel] || (category === 'wiring'
         ? 'Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision.'
