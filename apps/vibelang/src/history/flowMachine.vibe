@@ -28,6 +28,11 @@ export interface Principal {
 /** A role's place in the order, least first: `viewer` is 0, `maintainer` 4. */
 //@ verify
 //@ ensures 0 <= \result && \result <= 4
+//@ ensures role == "viewer" ==> \result == 0
+//@ ensures role == "new" ==> \result == 1
+//@ ensures role == "community" ==> \result == 2
+//@ ensures role == "contributor" ==> \result == 3
+//@ ensures role == "maintainer" ==> \result == 4
 export function standing(role: Role): number {
   switch (role) {
     case "viewer": return 0
@@ -45,6 +50,7 @@ export function standing(role: Role): number {
 //@ verify
 //@ ensures action == "approve" || action == "fold" || action == "retell" ==> \result == "maintainer"
 //@ ensures action == "show" ==> \result == "viewer"
+//@ ensures action == "append" || action == "start" || action == "note" ==> \result == "contributor"
 export function leastRole(action: Action): Role {
   switch (action) {
     case "show": return "viewer"

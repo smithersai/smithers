@@ -6,7 +6,7 @@
 //   queue entries ──notes──▶ tried / evidence                          regenerated docs and reverts fold into theirs
 //
 // `intentsOf` turns a seed into the history machine's intents (mythical.vibe), which the Bootstrap flow records.
-import { apply, decide, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
+import { apply, decideWithinCapacity, empty, type History, type Intent, MAX_NOTE, MAX_TITLE, type Section } from "./mythical.vibe"
 
 /** A commit reachable from main, as the generator reads it; `parents` first parent first. */
 export interface RawCommit {
@@ -460,7 +460,7 @@ export function replay(intents: ReadonlyArray<Intent>, from: History = empty): R
   let history = from
   const refused: Array<Intent> = []
   for (const intent of intents) {
-    const decision = decide(history, intent)
+    const decision = decideWithinCapacity(history, intent)
     if (decision.ok) history = apply(history, decision.event)
     else refused.push(intent)
   }

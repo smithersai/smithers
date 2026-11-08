@@ -142,3 +142,7 @@ lifted to receive, including role-ledger prepend order. Pending removal and unan
 witnesses; replay carries a retained-log bound. The fresh Dafny proof adds only a checked recursive lemma call for
 the pending-count measure. Every positive assertion is checked, with conversation assertions split for tractability;
 its batch count is recorded separately from ordinary obligations. Stored conversation rows are decoded before replay.
+
+History replay (0018) now carries every apply contract through a maximum-cursor wrapper. Its production fold proves
+safe cursor and rank preservation and exact numbering for contiguous events; this is not a proof of journal ordering
+or full replay-state equivalence. Every decide clause is retained through the writer's capacity wrapper.

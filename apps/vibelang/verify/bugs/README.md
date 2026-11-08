@@ -48,3 +48,6 @@ claims. Both sources strictly typecheck.
 
 - `readonly-set.ts`: ReadonlySet.has is not lowered, while the same Set contract verifies. The mock dispatcher owns and passes an actual Set.
 - `conditional-method.ts`: a guarded method call in a ternary is hoisted before its discriminant guard. The receiver uses an equivalent guarded statement, preserving all specifications; the malformed lowering remains reproduced.
+
+- `union-widening.ts`: a strict TypeScript return widens a string union, but LemmaScript emits incompatible Dafny
+  datatypes. Exact value contracts remain in the fixture; no production workaround is added.

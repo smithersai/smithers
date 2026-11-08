@@ -31,7 +31,7 @@ brick                                   state         proof
 7   Electrobun desktop app              later         VL-6
 ```
 
-- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,380 executable items. Twelve modules carry proved contracts and 435 executable mutations reject; unproved logic and tool boundaries remain explicit.
+- **Proofs of all logic (0018, lane vl-proveall): in progress.** The inventory contains 1,582 executable items. Twelve modules carry proved contracts and 451 current mutations reject; unproved logic and tool boundaries remain explicit.
 
 ## Open work outside this app
 

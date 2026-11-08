@@ -178,7 +178,39 @@ lowering; the supported Set membership proof checks the same selection property.
 guard. The production receiver uses the equivalent guarded statement, preserving behavior and every contract.
 Neither reproduction is counted as a rejected mutation.
 
+## Sixth module batch: history rank and validated replay
+
+`decide` now specifies the exact append rank (zero or one above the maximum matching epic rank) and the first
+matching insertion target's rank. `decideWithinCapacity`, which the writer actually calls, exposes every original
+`decide` guarantee below capacity. History role standing specifies each of the five values; append, start and note
+specify their contributor minimum.
+
+`replayEvent` retains every `apply` postcondition while admitting a validated snapshot already at the maximum safe
+cursor: every validated event is then stale and the snapshot is unchanged. `replayHistory` is the sequencer's actual
+replay loop. It proves a safe monotone cursor, no more advances than input events, preservation of `0 <= rank < seq`,
+and exact final numbering when events are contiguous from the initial snapshot. Schema decoding establishes its
+preconditions. These clauses do not prove full replay-state equivalence, snapshot identity uniqueness, epic membership,
+or journal ordering. The writer retains direct `apply`, whose precondition follows from an accepted capacity decision.
+
+Two failing-first behavioral regressions found seed intent replay accepting an event past `MAX_SAFE_INTEGER`.
+It now uses the same capacity decision, preserving the final safe event and refusing subsequent intents. The complete
+seed intent fold and refusal order still need contracts; malformed arbitrary starting snapshots are not claimed safe.
+No dependency or compiler behavior changes.
+
+The full positive gate passes all twelve modules: **5,588 isolated conversation batches plus 154 ordinary
+obligations** in 336.462 seconds. All **451 current mutations** reject: 144 fresh history mutations in 383.912 seconds
+and 307 byte-identical inherited inputs with matching manifests and actual Dafny failures. All current source hashes
+still match after the roles and benchmark rebase. The inventory now contains **1,582 executable items**. Two new
+seed regressions failed first; the focused history suite passes 26 tests. The nine history/seed benchmark workloads
+pass, checking their results throughout. After the final test-only rebase, typecheck and **545 unit/integration tests**
+pass. The unchanged worker and browser inputs pass **33 local worker tests** (four opt-in skips) and **192 browser
+tests** (nine opt-in skips). All command exits and intermediate failures remain in the lane report.
+
 ## Product defects
+
+- **Seed replay could overflow a valid cursor.** Starting at the safe maximum, or reaching it on one intent and then
+  replaying another, produced cursor `9007199254740992`. Both regressions failed before the capacity decision was
+  applied to seed replay.
 
 - **Conversation storage bypassed its numeric and event-shape proof domain.** A faulty Log could supply negative,
   fractional or unsafe cursors, malformed text or unknown variants before replay. EventSchema decoding now rejects
@@ -275,6 +307,11 @@ Two additional probes strictly typecheck but do not verify:
   string-literal union becomes an empty Dafny constructor (`Route.`), which the backend cannot parse. The typed route
   reproduction retains both exact outcomes; no production contract is suppressed.
 
+- `union-widening.ts` / `~/vl/vibelang-bugs/lemmascript-union-widening/`: a narrow string union returned as its
+  wider union strictly typechecks, but the backend emits incompatible Dafny datatypes. The pending overlay-priority
+  extraction exposed this gap. Its exact-value reproduction is retained; the existing UI remains intact, with no
+  production workaround or weakened contract.
+
 Each new fixture also lives at `~/vl/vibelang-bugs/lemmascript-<name>/` with its command. These are not mutation
 successes. Compiler/runtime execution of Effect, Schema and Foldkit remains outside LemmaScript's plain subset.
 
@@ -289,7 +326,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-1580 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+1582 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -646,15 +683,15 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/wire.vibe:47` | `conversationPath` | pure logic | Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts). |
 | `src/core/wire.vibe:65` | `routeOf` | pure logic | Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts). |
 | `src/core/wire.vibe:75` | `decodeSegment` | wiring | Length and method/subroute admission are proved in protocolDecision; URI codecs remain unproved (uri-codec.ts). |
-| `src/history/flowMachine.vibe:31` | `standing` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:48` | `leastRole` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:63` | `peopleOnly` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:72` | `may` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:92` | `begin` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:106` | `authorize` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:118` | `canRecord` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:128` | `record` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
-| `src/history/flowMachine.vibe:143` | `lawful` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:36` | `standing` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:54` | `leastRole` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:69` | `peopleOnly` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:78` | `may` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:98` | `begin` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:112` | `authorize` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:124` | `canRecord` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:134` | `record` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
+| `src/history/flowMachine.vibe:149` | `lawful` | pure logic | Who may take each history action, and each flow run: authorized once, records only after an allowed authorization, the agent never records an approval or fold; proved, with executable mutations (0020). |
 | `src/history/flows.vibe:68` | `counted` | effectful shell | Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020). |
 | `src/history/flows.vibe:74` | `signature` | pure logic | Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020). |
 | `src/history/flows.vibe:79` | `authorized` | effectful shell | Who may act and the order of authorize and record steps run the proved flowMachine.vibe (authorize, canRecord, record); the sequencer decides through mythical.vibe. Engine execution, journaling, metrics and logs remain runtime boundaries (0020). |
@@ -754,10 +791,12 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/history/mythical.vibe:444` | `foldTarget` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
 | `src/history/mythical.vibe:477` | `accepted` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
 | `src/history/mythical.vibe:483` | `refused` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
-| `src/history/mythical.vibe:540` | `decide` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
-| `src/history/mythical.vibe:602` | `validRank` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
-| `src/history/mythical.vibe:608` | `validRanks` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
-| `src/history/mythical.vibe:623` | `decideWithinCapacity` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
+| `src/history/mythical.vibe:542` | `decide` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
+| `src/history/mythical.vibe:604` | `validRank` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
+| `src/history/mythical.vibe:610` | `validRanks` | pure logic | Exact history transitions and unchanged fields, refusal precedence, first-match lookup, rank-bound induction and sequence capacity; notes are retained and trailers fold only into approved or landed commits; proved over validated safe integers (0020, unsafe-integer.ts). |
+| `src/history/mythical.vibe:675` | `decideWithinCapacity` | pure logic | Exact capacity refusal and every decide postcondition, including append/insertion rank, lifted through the production wrapper; proved. |
+| `src/history/mythical.vibe:728` | `replayEvent` | pure logic | Retains every apply transition/frame over a validated safe event, including unchanged full snapshots; proved without weakening apply's below-capacity precondition. |
+| `src/history/mythical.vibe:742` | `replayHistory` | pure logic | Proved safe monotone cursor bounds, rank-below-cursor preservation and exact final cursor for contiguous validated events. Full replay-state equivalence and journal ordering remain unproved. |
 | `src/history/MythicalHistory.vibe:35` | `settled` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/history/pages.vibe:80` | `foldCounts` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/history/pages.vibe:86` | `headOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -808,7 +847,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/history/seed.vibe:419` | `notesOf/callback@419` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/history/seed.vibe:420` | `notesOf/callback@420` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/history/seed.vibe:431` | `intentsOf` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/history/seed.vibe:459` | `replay` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/history/seed.vibe:459` | `replay` | pure logic | Calls proved capacity decision and apply; safe-limit overflow fixed by failing-first regressions. Complete intent-fold/refusal-order contracts and arbitrary malformed starting snapshots remain unproved. |
 | `src/history/seed.vibe:474` | `seedFrom` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/history/seed.vibe:475` | `seedFrom/callback@475` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/history/seed.vibe:479` | `seedFrom/callback@479` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |

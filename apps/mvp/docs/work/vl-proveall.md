@@ -10,7 +10,8 @@ Will's VL-29 proof lane: inventory every executable function, extract and prove 
 and record every tool boundary. [Decision0018](../../../vibelang/wiki/decisions/0018-proofs.md) holds the current
 inventory and claims. The app's normal CI includes proof, mutation and inventory gates.
 
-The fifth module batch adds exact conversation/role frames, pending order, mock dispatch selection and stored
-event decoding. Its gate covers twelve modules and 435 rejected mutations. Follow-up work covers remaining web
-and flow decisions, live dispatch order, history capacity replay, issue acyclicity, and new functionality from other lanes.
+Five module batches are landed, through `7196da05d59c`: twelve proved modules and 435 rejected mutations.
+The sixth batch proves exact history ranks/roles and validated replay bounds, and fixes seed replay at the safe cursor
+limit. Its 451 current mutations reject. Follow-up work covers remaining web and flow decisions, live dispatch
+order, full replay-state equivalence, issue acyclicity, and new functionality from other lanes.
 The host receipt is `~/vl/vl-proveall.REPORT.md`. No deployment is part of this lane.

@@ -43,6 +43,10 @@ const boundaries = {
   'src/core/flowDecision.vibe': 'Dispatch admission, append ordering, tour terminal events, reading-time policy and first undispatched source index; proved.',
 };
 const functionBoundaries = {
+  "src/history/mythical.vibe:replayEvent": "Retains every apply transition/frame over a validated safe event, including unchanged full snapshots; proved without weakening apply's below-capacity precondition.",
+  "src/history/mythical.vibe:replayHistory": "Proved safe monotone cursor bounds, rank-below-cursor preservation and exact final cursor for contiguous validated events. Full replay-state equivalence and journal ordering remain unproved.",
+  "src/history/mythical.vibe:decideWithinCapacity": "Exact capacity refusal and every decide postcondition, including append/insertion rank, lifted through the production wrapper; proved.",
+  "src/history/seed.vibe:replay": "Calls proved capacity decision and apply; safe-limit overflow fixed by failing-first regressions. Complete intent-fold/refusal-order contracts and arbitrary malformed starting snapshots remain unproved.",
   "src/core/conversation.vibe:applyIssues": "Exact next-numbered observation replacement and stale/future no-op; requires a safe sequence below capacity. The host cursor domain remains to audit (0022).",
   "src/core/conversation.vibe:issuePermission": "Exact least-role permission for each issue operation, through the shared role policy (0022).",
   "src/core/conversation.vibe:issuePolicyAction": "Exact mapping of each issue operation to the shared authorization action (0022).",

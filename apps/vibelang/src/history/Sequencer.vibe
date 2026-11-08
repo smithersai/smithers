@@ -4,7 +4,7 @@ import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
 // under one lock, is written to the store before anyone sees it, and is then published to every follower. The mock
 // keeps its store in memory; the live History object (worker/HistoryObject.vibe) keeps it in its own storage. Nothing
 // here names a host.
-import { apply, decideWithinCapacity, type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
+import { apply, replayHistory, decideWithinCapacity, type Decision, empty, epicOf, foldTarget, hasSha, type History, type Event, type Intent, MAX_TITLE } from "./mythical.vibe"
 import type { Stack } from "./flows.vibe"
 import { areaOf } from "./seed.vibe"
 
@@ -79,7 +79,7 @@ export effect function make(store: Store) {
     const stored = try store.load()
     const base = stored.base === undefined ? empty : try checkedHistory(stored.base)
     const events = try checkedEvents(stored.events)
-    const history = events.reduce(apply, base)
+    const history = replayHistory(base, events)
     try Ref.set(loaded, history)
     return history
   }

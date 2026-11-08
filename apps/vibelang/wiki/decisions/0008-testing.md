@@ -212,3 +212,7 @@ retaining the app's Foldkit transform. This keeps the adapter in the running CLI
 optional peers differently. This lane adds no dependency version, coverage threshold or file-exclusion change.
 
 **Benchmark independence (0017).** Reuses the patched monorepo V8 provider and matching Vitest 5.0.0, with no new benchmark library or runtime dependency. Existing test-tool declarations await Will’s VL-5 approval. Timing and benchmark-only coverage receipts remain separate; strict coverage is unfinished.
+
+**Seed replay capacity (0018).** Two behavioral regressions fail when replay starts at the maximum safe cursor or
+accepts its final safe event before another intent. The seed helper now uses the shared capacity decision; the
+valid final event remains and the next intent is refused. No dependency is added.
