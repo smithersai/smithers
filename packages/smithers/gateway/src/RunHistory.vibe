@@ -13,7 +13,6 @@
  * @since 1.0.0
  */
 
-import { Context, type Effect, Schema } from "effect"
 
 /**
  * One recorded step, by the key its attempts are recorded under, with the

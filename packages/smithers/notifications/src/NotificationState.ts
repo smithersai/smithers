@@ -6,7 +6,7 @@
 
 import type { Notification } from "./Notification.vibe"
 import { admissionClass, coalesceKey } from "./Notification.vibe"
-import type * as NotificationEvent from "./NotificationEvent.ts"
+import type * as NotificationEvent from "./NotificationEvent.vibe"
 
 /**
  * The default maximum number of pending notifications retained per run.

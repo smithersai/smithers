@@ -7,14 +7,12 @@
  * @since 0.1.0
  */
 
-import { canonicalize } from "@smthrs/canonical"
-import { digestSync } from "@smthrs/crypto"
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Context, Effect, HashMap, Layer, Option, Schema, SchemaIssue, Semaphore } from "effect"
+import { canonical, fingerprint } from "./internal/fingerprint.ts"
 import * as FoldCache from "./internal/foldCache.ts"
 import * as Replay from "./internal/replay.ts"
 import * as NotificationModel from "./Notification.vibe"
-import * as NotificationEvent from "./NotificationEvent.ts"
+import * as NotificationEvent from "./NotificationEvent.vibe"
 import * as NotificationState from "./NotificationState.ts"
 
 /**
@@ -299,11 +297,11 @@ const decodeNotification = Schema.decodeUnknownEffect(NotificationModel.Notifica
 const validated = (
   notification: NotificationModel.Notification
 ): Effect.Effect<NotificationModel.Notification, NotificationError> =>
-  Effect.gen(function*() {
+  effect {
     const notificationId = identifiedBy(notification)
     const exceeded = exceededBound(notification)
     if (exceeded !== undefined) {
-      return yield* new NotificationError({
+      throw new NotificationError({
         code: "notification_invalid",
         message: exceeded === "depth"
           ? `A notification nests deeper than the ${maximumPayloadDepth} level bound`
@@ -311,7 +309,7 @@ const validated = (
         ...(notificationId === undefined ? {} : { notificationId })
       })
     }
-    return yield* decodeNotification(copied(notification)).pipe(
+    return try decodeNotification(copied(notification)).pipe(
       Effect.mapError((error) => {
         // The formatter reports at least one issue for a failure and gives
         // every issue a concrete path. Standard Schema's result type widens
@@ -329,14 +327,7 @@ const validated = (
         })
       })
     )
-  })
-
-// Persisted notification JSON predates RFC 8785's rejection of lone surrogates.
-const canonical = (value: unknown): string => canonicalize(value, { loneSurrogates: "escape" })
-
-/** Fingerprint the validated input before the journal redacts its payload. */
-const fingerprint = (notification: NotificationModel.Notification): Effect.Effect<string> =>
-  Effect.sync(() => digestSync(canonical(notification)))
+  }
 
 /** Freeze the decoded JSON graph before any queue output can expose it. */
 const freeze = (value: unknown): void => {
@@ -413,8 +404,8 @@ export const layerWith = (
 ): Layer.Layer<NotificationQueue, never, Journal.Journal> =>
   Layer.effect(
     NotificationQueue,
-    Effect.gen(function*() {
-      const journal = yield* Journal.Journal
+    effect {
+      const journal = try Journal.Journal
       // Orders this layer's own fibers so one process never runs two of its
       // admissions or drains against the fold cache at once. It is
       // process-local by construction and is NOT what enforces capacity or
@@ -422,7 +413,7 @@ export const layerWith = (
       // inside `journal.transact`, decided and committed in one serialized
       // write transaction. Always enter the journal transaction before taking
       // this permit, matching callers already inside an enclosing transaction.
-      const operations = yield* Semaphore.make(1)
+      const operations = try Semaphore.make(1)
       const capacity = options.capacity ?? NotificationState.defaultCapacity
       // Only committed folds may be shared. A transaction reads its own
       // inserts, but its read-back is still provisional until the OUTERMOST
@@ -475,9 +466,9 @@ export const layerWith = (
         })
 
       const load = (runId: JournalEvent.RunId): Effect.Effect<Loaded, Journal.JournalError> =>
-        Effect.gen(function*() {
+        effect {
           const base: Loaded = folded.get(runId) ?? {
-            state: NotificationState.empty(capacity),
+            state: try sync(() => NotificationState.empty(capacity)),
             admissions: HashMap.empty(),
             promotions: HashMap.empty(),
             cursor: undefined
@@ -487,7 +478,7 @@ export const layerWith = (
           while (true) {
             // `after` is an exact-optional property upstream, so an explicit
             // `undefined` is not the same as an absent key.
-            const page = yield* journal.entries({
+            const page = try journal.entries({
               runId,
               eventTypes: [NotificationEvent.AdmittedEventType, NotificationEvent.PromotedEventType],
               ...(after === undefined ? {} : { after }),
@@ -527,14 +518,14 @@ export const layerWith = (
                 NotificationEvent.drainKey(event.targetLineageId, event.boundary),
                 entry.seq
               )
-              state = NotificationState.applyPromoted(state, event.ids)
+              state = try sync(() => NotificationState.applyPromoted(state, event.ids))
             }
           }
 
           const loaded: Loaded = { state, admissions, promotions, cursor }
-          yield* journal.whenCommitted(Effect.sync(() => folded.put(runId, loaded)))
+          try journal.whenCommitted(Effect.sync(() => folded.put(runId, loaded)))
           return loaded
-        })
+        }
 
       /**
        * One conditional admission: the duplicate check, the capacity guard,
@@ -558,14 +549,14 @@ export const layerWith = (
         admittedFingerprint: string,
         version?: number
       ): Effect.Effect<AdmissionReceipt, Journal.JournalError | NotificationError> =>
-        Effect.gen(function*() {
-          const loaded = yield* load(runId)
+        effect {
+          const loaded = try load(runId)
           const prior = Option.getOrUndefined(HashMap.get(loaded.admissions, admitted.id))
           const replacing = prior !== undefined && version !== undefined && version > (prior.version ?? 0)
           if (replacing) {
-            const original = yield* admittedAt(runId, prior.seq)
+            const original = try admittedAt(runId, prior.seq)
             if (Option.isNone(original)) {
-              return yield* new NotificationError({
+              throw new NotificationError({
                 code: "notification_unavailable",
                 notificationId: admitted.id,
                 message: "Original steering input is unreadable"
@@ -573,7 +564,7 @@ export const layerWith = (
             }
             const identity = (input: NotificationModel.Notification) => ({ ...input, payload: null })
             if (canonical(identity(original.value.notification)) !== canonical(identity(admitted))) {
-              return yield* new NotificationError({
+              throw new NotificationError({
                 code: "notification_id_reused",
                 notificationId: admitted.id,
                 message: "An edit cannot change the notification owner or delivery binding"
@@ -581,9 +572,9 @@ export const layerWith = (
             }
           }
           if (replacing && !loaded.state.items.some((item) => item.notification.id === admitted.id)) {
-            const original = yield* admittedAt(runId, prior.seq)
+            const original = try admittedAt(runId, prior.seq)
             if (Option.isNone(original)) {
-              return yield* new NotificationError({
+              throw new NotificationError({
                 code: "notification_unavailable",
                 message: "Consumed input is unreadable"
               })
@@ -607,9 +598,9 @@ export const layerWith = (
             // New rows settle on the fingerprint alone and read nothing.
             let same = prior.fingerprint === admittedFingerprint
             if (prior.fingerprint === undefined) {
-              const original = yield* admittedAt(runId, prior.seq)
+              const original = try admittedAt(runId, prior.seq)
               if (Option.isNone(original)) {
-                return yield* new NotificationError({
+                throw new NotificationError({
                   code: "notification_unavailable",
                   notificationId: admitted.id,
                   message: `The admission for notification ${admitted.id} is no longer readable`
@@ -618,7 +609,7 @@ export const layerWith = (
               same = canonical(original.value.notification) === canonical(admitted)
             }
             if (!same) {
-              return yield* new NotificationError({
+              throw new NotificationError({
                 code: "notification_id_reused",
                 notificationId: admitted.id,
                 message: `Notification id ${admitted.id} was already admitted with different content`
@@ -632,10 +623,8 @@ export const layerWith = (
             }
           }
 
-          const admission = replacing ? { decision: "coalesced" as const } : NotificationState.admit(
-            loaded.state,
-            admitted,
-            loaded.cursor === undefined ? 0 : loaded.cursor + 1
+          const admission = replacing ? { decision: "coalesced" as const } : try sync(() =>
+            NotificationState.admit(loaded.state, admitted, loaded.cursor === undefined ? 0 : loaded.cursor + 1)
           )
           if (admission.decision === "rejected-full") {
             // Nothing is journaled. A rejection recorded as an admission
@@ -650,7 +639,7 @@ export const layerWith = (
             }
           }
 
-          const receipt = yield* journal.emitDurableUnfenced(
+          const receipt = try journal.emitDurableUnfenced(
             new JournalEvent.Input({
               runId,
               sourceId: NotificationEvent.admissionSourceId(admitted.id),
@@ -670,12 +659,12 @@ export const layerWith = (
               }
             })
           )
-          const committed = Option.getOrUndefined(HashMap.get((yield* load(runId)).admissions, admitted.id))
+          const committed = Option.getOrUndefined(HashMap.get((try load(runId)).admissions, admitted.id))
           if (committed === undefined) {
             // Only reachable when the emit deduped against an entry this
             // queue did not write, so nothing was committed and there is
             // no admission to report.
-            return yield* new NotificationError({
+            throw new NotificationError({
               code: "notification_id_reused",
               notificationId: admitted.id,
               message: `The journal identity for notification ${admitted.id} holds an event this queue did not write`
@@ -687,18 +676,17 @@ export const layerWith = (
             seq: committed.seq,
             duplicate: receipt._tag === "Duplicate"
           }
-        })
+        }
 
       return make({
-        admit: Effect.fn("NotificationQueue.admit")((rawRunId, notification, version) =>
-          Effect.gen(function*() {
+        admit: Effect.fn("NotificationQueue.admit")(effect (rawRunId, notification, version) => {
             if (version !== undefined && (!Number.isSafeInteger(version) || version < 1)) {
-              return yield* new NotificationError({
+              throw new NotificationError({
                 code: "notification_invalid",
                 message: "version must be a positive safe integer"
               })
             }
-            const admitted = yield* validated(notification)
+            const admitted = try validated(notification)
             // T-COL-12 stays dark: nothing yet authenticates a watcher burst, pins
             // its coding run or enforces fresh machine reads. Refusing here, before
             // the journal, keeps co-admitted steers deliverable on every replay.
@@ -707,29 +695,29 @@ export const layerWith = (
               typeof payload === "object" && payload !== null && !Array.isArray(payload) &&
               (payload as Readonly<Record<string, unknown>>)["kind"] === "outside_change"
             ) {
-              return yield* new NotificationError({
+              throw new NotificationError({
                 code: "notification_refused",
                 notificationId: admitted.id,
                 message: "Outside-change delivery requires authenticated watcher facts and stale-write enforcement"
               })
             }
-            const admittedFingerprint = yield* fingerprint(admitted)
-            return yield* journal.transact(
+            const admittedFingerprint = try fingerprint(admitted)
+            return try journal.transact(
               operations.withPermits(1)(
                 admitInTransaction(JournalEvent.RunId.make(rawRunId), admitted, admittedFingerprint, version)
               )
             )
-          })
+          }
         ),
         drain: Effect.fn("NotificationQueue.drain")((input) =>
           journal.transact(
-            operations.withPermits(1)(Effect.gen(function*() {
+            operations.withPermits(1)(effect {
               // A cutoff no sequence can satisfy would commit this boundary as
               // delivering nothing, and every retry would replay that record.
               if (
                 input.cutoffSeq !== undefined && !(Number.isSafeInteger(input.cutoffSeq) && input.cutoffSeq >= 0)
               ) {
-                return yield* new NotificationError({
+                throw new NotificationError({
                   code: "notification_invalid",
                   message: "A drain cutoff must be a non-negative integer journal sequence",
                   path: "cutoffSeq"
@@ -737,7 +725,7 @@ export const layerWith = (
               }
               const runId = JournalEvent.RunId.make(input.runId)
               const key = NotificationEvent.drainKey(input.targetLineageId, input.boundary)
-              const loaded = yield* load(runId)
+              const loaded = try load(runId)
               // A replay reports what the committed record delivered, read
               // back from the journal: the fold holds the identities, not the
               // notifications, so a run's drained payloads are not retained.
@@ -749,41 +737,41 @@ export const layerWith = (
                 Journal.JournalError | NotificationError
               > =>
                 Effect.forEach(record.ids, (id) =>
-                  Effect.gen(function*() {
+                  effect {
                     const committed = HashMap.get(admissions, id)
                     const event = Option.isNone(committed)
                       ? Option.none<NotificationEvent.Admitted>()
-                      : yield* admittedAt(runId, committed.value.seq)
+                      : try admittedAt(runId, committed.value.seq)
                     // A committed drain promises this exact delivery. Missing or
                     // corrupt payloads cannot become a successful partial replay.
                     if (Option.isNone(event)) {
-                      return yield* new NotificationError({
+                      throw new NotificationError({
                         code: "notification_unavailable",
                         notificationId: id,
                         message: `The delivered notification ${id} is no longer readable`
                       })
                     }
                     return event.value.notification
-                  }))
+                  })
 
               const replayed = (seq: number, admissions: HashMap.HashMap<string, Committed>) =>
-                Effect.gen(function*() {
-                  const record = yield* promotedAt(runId, seq)
+                effect {
+                  const record = try promotedAt(runId, seq)
                   if (Option.isNone(record)) {
-                    return yield* new NotificationError({
+                    throw new NotificationError({
                       code: "notification_unavailable",
                       message: `The drain record for boundary ${input.boundary} is no longer readable`
                     })
                   }
                   return {
-                    notifications: yield* delivered(record.value, admissions),
+                    notifications: try delivered(record.value, admissions),
                     boundary: input.boundary,
                     duplicate: true
                   }
-                })
+                }
 
               const prior = HashMap.get(loaded.promotions, key)
-              if (Option.isSome(prior)) return yield* replayed(prior.value, loaded.admissions)
+              if (Option.isSome(prior)) return try replayed(prior.value, loaded.admissions)
 
               const cutoff = input.cutoffSeq ?? loaded.cursor ?? 0
               // The existing coding park ladder waits for a person's answer.
@@ -801,14 +789,15 @@ export const layerWith = (
                   })
                 }
                 : loaded.state
-              const steers = input.ids === undefined
-                ? NotificationState.promoteSteers(promotionState, cutoff, input.targetLineageId)
-                : NotificationState.promoteIds(promotionState, input.ids, input.targetLineageId)
+              const ids = input.ids
+              const steers = ids === undefined
+                ? try sync(() => NotificationState.promoteSteers(promotionState, cutoff, input.targetLineageId))
+                : try sync(() => NotificationState.promoteIds(promotionState, ids, input.targetLineageId))
               const queued = input.ids === undefined && input.wouldIdle && steers.promoted.length === 0
-                ? NotificationState.promoteQueued(steers.state, input.targetLineageId)
+                ? try sync(() => NotificationState.promoteQueued(steers.state, input.targetLineageId))
                 : { state: steers.state, promoted: [] }
               const promoted = [...steers.promoted, ...queued.promoted].map((item) => item.notification)
-              const receipt = yield* journal.emitDurableUnfenced(
+              const receipt = try journal.emitDurableUnfenced(
                 new JournalEvent.Input({
                   runId,
                   sourceId: NotificationEvent.drainSourceId(input.targetLineageId, input.boundary),
@@ -825,10 +814,10 @@ export const layerWith = (
                   }
                 })
               )
-              const settled = yield* load(runId)
+              const settled = try load(runId)
               const committed = HashMap.get(settled.promotions, key)
               if (Option.isNone(committed)) {
-                return yield* new NotificationError({
+                throw new NotificationError({
                   code: "notification_unavailable",
                   message: `The journal identity for boundary ${input.boundary} holds an event this queue did not write`
                 })
@@ -838,8 +827,8 @@ export const layerWith = (
               if (receipt._tag === "Accepted") {
                 return { notifications: promoted, boundary: input.boundary, duplicate: false }
               }
-              return yield* replayed(committed.value, settled.admissions)
-            }))
+              return try replayed(committed.value, settled.admissions)
+            })
           )
         ),
         pending: Effect.fn("NotificationQueue.pending")((rawRunId) =>
@@ -854,7 +843,7 @@ export const layerWith = (
           )
         )
       })
-    })
+    }
   )
 
 /**

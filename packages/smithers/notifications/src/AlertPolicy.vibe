@@ -5,7 +5,7 @@
  * Everything here is pure and a function of journal time, so the same entries
  * decide the same alerts in any process at any instant past the delay. The
  * transport that pages about them is `./layerWebhook.ts` and the journal-backed
- * tick that drives them is `./AlertRuntime.ts`; `./Alerts.ts` is the module a
+ * tick that drives them is `./AlertRuntime.vibe`; `./Alerts.ts` is the module a
  * consumer imports.
  *
  * @since 1.0.0

@@ -41,17 +41,17 @@ export * as RunDevTools from "./RunDevTools.ts"
 /**
  * @since 1.0.0 @category projections
  */
-export * as GatewayProjection from "./GatewayProjection.ts"
+export * as GatewayProjection from "./GatewayProjection.vibe"
 
 /**
  * @since 1.0.0 @category rpc
  */
-export * as GatewayRpcs from "./GatewayRpcs.ts"
+export * as GatewayRpcs from "./GatewayRpcs.vibe"
 
 /**
  * @since 1.0.0 @category layers
  */
-export * as GatewayServer from "./GatewayServer.ts"
+export * as GatewayServer from "./GatewayServer.vibe"
 
 /**
  * @since 1.0.0 @category services
@@ -61,7 +61,7 @@ export * as Projections from "./Projections.ts"
 /**
  * @since 1.0.0 @category rpc
  */
-export * as RunHistory from "./RunHistory.ts"
+export * as RunHistory from "./RunHistory.vibe"
 
 /**
  * @since 1.0.0 @category runtime bridge

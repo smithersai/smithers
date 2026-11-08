@@ -9,7 +9,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { test } from "node:test"
-import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
+import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
 import { contractFailure } from "../coding/planning-memory.ts"
 import {
   declineLayer,

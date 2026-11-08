@@ -29,7 +29,7 @@ const securityReview = Smithers.SecurityReview({
         "An AlertError or failed-delivery journal payload that embeds the url, the request, the headers, or the HttpClientError cause instead of only its reason tag.",
         "Caller headers set after Idempotency-Key so a deployment header can replace the dedupe key."
       ],
-      paths: ["src/layerWebhook.vibe", "src/AlertSink.vibe", "src/AlertRuntime.ts"]
+      paths: ["src/layerWebhook.vibe", "src/AlertSink.vibe", "src/AlertRuntime.vibe"]
     },
     {
       id: "webhook-bounded-delivery",
@@ -41,7 +41,7 @@ const securityReview = Smithers.SecurityReview({
         "A 3xx or other non-2xx status counted as delivered instead of sink_rejected.",
         "A sink failure that escapes the tick as a defect instead of being recorded as flows.alerts.failed."
       ],
-      paths: ["src/layerWebhook.vibe", "src/AlertRuntime.ts"]
+      paths: ["src/layerWebhook.vibe", "src/AlertRuntime.vibe"]
     },
     {
       id: "steer-payload-classification",
@@ -68,7 +68,7 @@ const securityReview = Smithers.SecurityReview({
         "A NotificationError message or path that includes the offending payload value rather than only the issue tag and field path.",
         "No bound on payload byte size or array length before canonicalize and digestSync run."
       ],
-      paths: ["src/NotificationQueue.ts", "src/Notification.vibe"]
+      paths: ["src/NotificationQueue.vibe", "src/Notification.vibe"]
     },
     {
       id: "notification-identity-isolation",
@@ -81,7 +81,7 @@ const securityReview = Smithers.SecurityReview({
         "A duplicate admission accepted when its fingerprint differs from the committed one, or a legacy row without a fingerprint accepted for new content.",
         "drain delivering notifications whose targetLineageId differs from the drain input's lineage."
       ],
-      paths: ["src/NotificationQueue.ts", "src/NotificationState.ts", "src/AlertPolicy.vibe", "src/AlertRuntime.ts"]
+      paths: ["src/NotificationQueue.vibe", "src/NotificationState.ts", "src/AlertPolicy.vibe", "src/AlertRuntime.vibe"]
     },
     {
       id: "notification-capacity-enforcement",
@@ -93,7 +93,7 @@ const securityReview = Smithers.SecurityReview({
         "A fold published to FoldCache before journal.whenCommitted, so a rolled-back admission is later treated as committed.",
         "Coalescing that replaces an event across targetLineageId values or across runs."
       ],
-      paths: ["src/NotificationQueue.ts", "src/NotificationState.ts", "src/internal/foldCache.ts"]
+      paths: ["src/NotificationQueue.vibe", "src/NotificationState.ts", "src/internal/foldCache.ts"]
     },
     {
       id: "notification-record-forgery",
@@ -105,7 +105,7 @@ const securityReview = Smithers.SecurityReview({
         "The NotificationQueue fold or Projection.derive applying a decoded Admitted record whose decision was never produced by applyAdmission.",
         "A forged Promoted record whose ids remove another lineage's pending notifications, dropping an operator steer."
       ],
-      paths: ["src/NotificationEvent.ts", "src/NotificationQueue.ts", "src/Projection.ts", "src/NotificationState.ts"]
+      paths: ["src/NotificationEvent.vibe", "src/NotificationQueue.vibe", "src/Projection.ts", "src/NotificationState.ts"]
     },
     {
       id: "alert-journal-evidence-spoofing",
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
         "A detector field read through the prototype chain instead of Object.hasOwn.",
         "Policy decoding that admits a NaN, negative, or non-integer afterMs."
       ],
-      paths: ["src/AlertPolicy.vibe", "src/AlertRuntime.ts"]
+      paths: ["src/AlertPolicy.vibe", "src/AlertRuntime.vibe"]
     }
   ]
 })

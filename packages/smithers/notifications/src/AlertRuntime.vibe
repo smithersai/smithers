@@ -14,7 +14,6 @@
  */
 
 import { Journal, JournalEvent } from "@smthrs/journal"
-import { Clock, Context, Effect, HashSet, Layer, Result, Schema } from "effect"
 import {
   type Alert,
   alertId,
@@ -30,7 +29,7 @@ import {
 import { Sink } from "./AlertSink.vibe"
 import * as FoldCache from "./internal/foldCache.ts"
 import type * as NotificationModel from "./Notification.vibe"
-import { type NotificationError, NotificationQueue } from "./NotificationQueue.ts"
+import { type NotificationError, NotificationQueue } from "./NotificationQueue.vibe"
 
 /**
  * What one tick decided.
@@ -152,24 +151,24 @@ export const layer = (
 ): Layer.Layer<AlertRuntime, never, Journal.Journal | NotificationQueue | Sink> =>
   Layer.effect(
     AlertRuntime,
-    Effect.gen(function*() {
-      const checked = yield* Effect.orDie(Schema.decodeUnknownEffect(Policy)(policy))
+    effect {
+      const checked = try Effect.orDie(Schema.decodeUnknownEffect(Policy)(policy))
       const detectors = detectorsOf(checked)
-      const journal = yield* Journal.Journal
-      const queue = yield* NotificationQueue
-      const sink = yield* Sink
+      const journal = try Journal.Journal
+      const queue = try NotificationQueue
+      const sink = try Sink
       // Folded history per run, so a tick costs the entries committed since
       // the previous one rather than the run's whole journal.
       const watched = FoldCache.make<Watched>(maximumWatchedRuns)
 
       const observed = (runId: JournalEvent.RunId): Effect.Effect<Watched, Journal.JournalError> =>
-        Effect.gen(function*() {
+        effect {
           const base: Watched = watched.get(runId) ??
             { open: new Map(), delivered: HashSet.empty(), cursor: undefined }
           const fresh: Array<JournalEvent.Entry> = []
           let after = base.cursor === undefined ? undefined : JournalEvent.Seq.make(base.cursor)
           while (true) {
-            const page = yield* journal.entries({ runId, ...(after === undefined ? {} : { after }), limit: 512 })
+            const page = try journal.entries({ runId, ...(after === undefined ? {} : { after }), limit: 512 })
             fresh.push(...page.entries)
             if (!page.hasMore || page.entries.length === 0) break
             after = page.entries.at(-1)!.seq
@@ -202,9 +201,9 @@ export const layer = (
           // transaction's uncommitted rows, and caching them would outlive the
           // rollback that erased them: the run would page about a condition
           // durable history never held.
-          yield* journal.whenCommitted(Effect.sync(() => watched.put(runId, next)))
+          try journal.whenCommitted(Effect.sync(() => watched.put(runId, next)))
           return next
-        })
+        }
 
       const record = (
         eventType: string,
@@ -235,10 +234,10 @@ export const layer = (
         ).pipe(Effect.asVoid)
 
       return AlertRuntime.of({
-        tick: Effect.fn("AlertRuntime.tick")(function*(runId: string) {
+        tick: Effect.fn("AlertRuntime.tick")(effect (runId: string) => {
           const journalRunId = JournalEvent.RunId.make(runId)
-          const history = yield* observed(journalRunId)
-          const now = yield* Clock.currentTimeMillis
+          const history = try observed(journalRunId)
+          const now = try Clock.currentTimeMillis
           const open = Array.from(history.open, ([condition, since]) => ({ runId, condition, since }))
           const raised = decide(checked, open, now)
           const delivered: Array<Alert> = []
@@ -253,28 +252,28 @@ export const layer = (
             // Raised unchanged: a queue that rejects the admission outright is
             // not the journal failing, and calling it `sink_failed` would send
             // an operator looking at the webhook.
-            const receipt = yield* queue.admit(runId, alertNotification(alert))
+            const receipt = try queue.admit(runId, alertNotification(alert))
             if (receipt.decision === "rejected-full") {
               // The alert has nowhere durable to sit, so paging about it would
               // tell an operator about something the run will never read.
-              yield* record(failedEventType, alert, "refused", { code: "notification_full" })
+              try record(failedEventType, alert, "refused", { code: "notification_full" })
               refused.push(alert)
               continue
             }
-            const outcome = yield* Effect.result(sink.deliver(alert))
+            const outcome = try Effect.result(sink.deliver(alert))
             if (Result.isFailure(outcome)) {
-              yield* record(failedEventType, alert, `failed/${outcome.failure.code}`, {
+              try record(failedEventType, alert, `failed/${outcome.failure.code}`, {
                 code: outcome.failure.code,
                 status: outcome.failure.status
               })
               failed.push(alert)
             } else {
-              yield* record(deliveredEventType, alert, "delivered", {})
+              try record(deliveredEventType, alert, "delivered", {})
               delivered.push(alert)
             }
           }
           return { delivered, failed, refused, suppressed }
         })
       })
-    })
+    }
   )

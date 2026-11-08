@@ -15,6 +15,7 @@ import * as NotificationState from "../NotificationState.js";
  * the cutoff the first version was admitted under. Every other record applies
  * the decision it committed.
  *
+ * @throws {never}
  * @private
  * @since 1.0.0
  */

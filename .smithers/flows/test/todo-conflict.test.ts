@@ -29,7 +29,7 @@ import { join } from "node:path"
 import { test } from "node:test"
 import * as Jj from "../../../packages/smithers/flows/jj/src/index.ts"
 import * as CacheStore from "../../../packages/smithers/flows/step-cache/src/CacheStore.vibe"
-import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
+import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
 import { ConflictInput, Done, Repair, Resolved, TodoConflict, todoConflictDoneLayer } from "../coding/todo-conflict.ts"
 
 // Agent and native observations are substituted only to exercise the durable

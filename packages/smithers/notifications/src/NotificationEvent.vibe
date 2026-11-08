@@ -5,8 +5,6 @@
  */
 
 import { JournalEvent } from "@smthrs/journal"
-import * as Option from "effect/Option"
-import * as Schema from "effect/Schema"
 import * as Notification from "./Notification.vibe"
 
 /**

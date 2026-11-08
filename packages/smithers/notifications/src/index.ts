@@ -32,7 +32,7 @@ export * as Notification from "./Notification.vibe"
  * @category events
  * @since 0.1.0
  */
-export * as NotificationEvent from "./NotificationEvent.ts"
+export * as NotificationEvent from "./NotificationEvent.vibe"
 
 /**
  * @category models
@@ -44,7 +44,7 @@ export * as NotificationState from "./NotificationState.ts"
  * @category services
  * @since 0.1.0
  */
-export * as NotificationQueue from "./NotificationQueue.ts"
+export * as NotificationQueue from "./NotificationQueue.vibe"
 
 /**
  * @category projections

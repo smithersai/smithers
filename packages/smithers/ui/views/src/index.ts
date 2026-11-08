@@ -25,7 +25,7 @@ export * as Bridge from "./Bridge.vibe"
  * @category homes
  * @since 0.1.0
  */
-export * as Docs from "./Docs.ts"
+export * as Docs from "./Docs.vibe"
 
 /**
  * @category homes
@@ -49,7 +49,7 @@ export * as Presentation from "./Presentation.ts"
  * @category rendering
  * @since 0.1.0
  */
-export * as PresentationRealm from "./PresentationRealm.ts"
+export * as PresentationRealm from "./PresentationRealm.vibe"
 
 /**
  * @category checking
@@ -67,4 +67,4 @@ export * as ViewCsp from "./ViewCsp.vibe"
  * @category framing
  * @since 0.1.0
  */
-export * as WebPage from "./WebPage.ts"
+export * as WebPage from "./WebPage.vibe"

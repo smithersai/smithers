@@ -33,16 +33,17 @@ import type * as ControlSchema from "@smthrs/control/ControlSchema"
 import * as ControlServer from "@smthrs/control/ControlServer"
 import { SyncRpcs } from "@smthrs/sync/SyncRpcs"
 import * as SyncServer from "@smthrs/sync/SyncServer"
-import { Effect, Layer, Option, Schema, Stream, type Types } from "effect"
+import type { Types } from "effect"
 import * as ByteSize from "effect/ByteSize"
 import { Headers, HttpRouter, HttpServerRequest, HttpServerResponse } from "effect/http"
 import { RpcSerialization, RpcServer } from "effect/rpc"
 import { GatewayError, settingRefusal } from "./GatewayError.vibe"
-import { GatewayRpcs } from "./GatewayRpcs.ts"
+import { GatewayRpcs } from "./GatewayRpcs.vibe"
+import { newTicket } from "./GatewayServer.platform.ts"
 import * as GatewaySchema from "./GatewaySchema.vibe"
-import * as HostBranchPresence from "./HostBranchPresence.ts"
+import * as HostBranchPresence from "./HostBranchPresence.vibe"
 import { heartbeatIntervalMillis, Projections } from "./Projections.ts"
-import * as RunHistory from "./RunHistory.ts"
+import * as RunHistory from "./RunHistory.vibe"
 import * as RuntimeBridge from "./RuntimeBridge.ts"
 
 /**
@@ -85,23 +86,23 @@ export const layerHealth = (health: Health): Layer.Layer<never, never, HttpRoute
  * @category layers
  */
 export const layerHandlers = GatewayRpcs.toLayer(
-  Effect.gen(function*() {
-    const projections = yield* Projections
-    const control = yield* Control
+  effect {
+    const projections = try Projections
+    const control = try Control
     // Only a host that owns the project's stores can fork or verify its runs.
-    const history = yield* Effect.serviceOption(RunHistory.RunHistory)
+    const history = try Effect.serviceOption(RunHistory.RunHistory)
     const historyHost = Option.match(history, {
       onNone: () => Effect.fail(new ControlError.Unavailable({ feature: "run history", ticket: "smithers#3242" })),
       onSome: Effect.succeed
     })
     // Forking writes a durable run and verifying drives the project's flow
     // code, so neither is an anonymous loopback read.
-    const operator = Effect.gen(function*() {
-      const principal = yield* ControlPrincipal
+    const operator = effect {
+      const principal = try ControlPrincipal
       if (principal.id === "loopback" && principal.kind === "anonymous") {
-        return yield* new ControlError.Unauthorized({ message: "An operator credential is required" })
+        throw new ControlError.Unauthorized({ message: "An operator credential is required" })
       }
-    })
+    }
     return GatewayRpcs.of({
       "Projection.Snapshot": Effect.fn("Gateway.snapshot")(
         ({ selector, after }) => projections.snapshot(selector, after),
@@ -112,17 +113,17 @@ export const layerHandlers = GatewayRpcs.toLayer(
       /* One operator command. Control owns the atomic decision plus durable
        * resume delegation; the gateway is only a transport adapter. */
       "Approval.Submit": Effect.fn("Gateway.submitApproval")((input) =>
-        Effect.gen(function*() {
+        effect {
           // The identity the shared `ControlAuth` middleware authenticated, as
           // `ControlServer` stamps it on `Approve` and `Deny`. This mount is
           // the same decision under a different payload, so it is answerable
           // to the same operator, and a decision journaled under the
           // composition's default operator names the wrong one.
-          const principal = yield* ControlPrincipal
+          const principal = try ControlPrincipal
           // Answering a human wait uses signal rather than the approval policy.
           // Do not let that alternate mutation path bypass loopback authentication.
           if (principal.id === "loopback" && principal.kind === "anonymous") {
-            return yield* new ControlError.Unauthorized({ message: "An operator credential is required" })
+            throw new ControlError.Unauthorized({ message: "An operator credential is required" })
           }
           const payload = {
             target: input.target,
@@ -150,16 +151,16 @@ export const layerHandlers = GatewayRpcs.toLayer(
             // leaves it parked until its own attempt budget or deadline ends
             // it — and an approval with no value supplies none.
             if (input.decision === "deny") {
-              return yield* new ControlError.InvalidInput({
+              throw new ControlError.InvalidInput({
                 issue: `decision: "${wait.name}" asks a question, which is answered rather than denied`
               })
             }
             if (input.answer === undefined) {
-              return yield* new ControlError.InvalidInput({
+              throw new ControlError.InvalidInput({
                 issue: `answer: "${wait.name}" asks a question, so a decision alone does not answer it`
               })
             }
-            const decision = yield* control.signal({
+            const decision = try control.signal({
               runId: input.target.runId,
               signal: { name: wait.name, payload: input.answer },
               idempotencyKey: input.idempotencyKey,
@@ -168,10 +169,10 @@ export const layerHandlers = GatewayRpcs.toLayer(
             return { decision }
           }
           const decision = input.decision === "approve"
-            ? yield* control.approve(payload)
-            : yield* control.deny(payload)
+            ? try control.approve(payload)
+            : try control.deny(payload)
           return { decision }
-        }), Effect.tapCause(ControlServer.logDefect)),
+        }, Effect.tapCause(ControlServer.logDefect)),
       "Run.Fork": Effect.fn("Gateway.fork")(
         (input) => Effect.andThen(operator, Effect.flatMap(historyHost, (host) => host.fork(input))),
         Effect.tapCause(ControlServer.logDefect)
@@ -181,7 +182,7 @@ export const layerHandlers = GatewayRpcs.toLayer(
         Effect.tapCause(ControlServer.logDefect)
       )
     })
-  })
+  }
 )
 
 /**
@@ -536,10 +537,6 @@ export type Ticket = typeof Ticket.Type
 
 const encodeTicket = Schema.encodeUnknownSync(Ticket)
 
-/** 256 random bits, hex-encoded so a query string carries them unescaped. */
-const newTicket = (): string =>
-  Array.from(crypto.getRandomValues(new Uint8Array(32)), (byte) => byte.toString(16).padStart(2, "0")).join("")
-
 /** The `ticket` query parameter of a request target, when it has one. */
 const presentedTicket = (url: string): string | undefined => {
   const parsed = URL.parse(url, "http://gateway.invalid")
@@ -785,8 +782,8 @@ export const layerIngress = (options: IngressOptions = {}) => {
   const allowedHosts = options.allowedHosts ?? loopbackHostHeaderNames
   const ticketMillis = options.ticketMillis ?? defaultTicketMillis
   return HttpRouter.middleware(
-    Effect.gen(function*() {
-      const serialization = yield* RpcSerialization.RpcSerialization
+    effect {
+      const serialization = try RpcSerialization.RpcSerialization
       const binary = !serialization.contentType.includes("json")
       /** Outstanding tickets: the Authorization header each was issued under, and when it lapses. */
       const tickets = new Map<string, { readonly authorization: string; readonly expiresAt: number }>()
@@ -809,41 +806,41 @@ export const layerIngress = (options: IngressOptions = {}) => {
         return entry.expiresAt > now ? entry.authorization : undefined
       }
       return (httpEffect: Effect.Effect<HttpServerResponse.HttpServerResponse, Types.unhandled>) =>
-        Effect.gen(function*() {
-          const request = yield* HttpServerRequest.HttpServerRequest
+        effect {
+          const request = try HttpServerRequest.HttpServerRequest
           const browserRefusal = browserRequestRefusal(request.headers, allowedHosts, options.loopbackOnly === true)
           if (browserRefusal !== undefined) return refuse(browserRefusal.error, browserRefusal.status)
           const path = routedPath(request.url)
           if (path === ticketPath && request.method === "POST" && options.authorize !== undefined) {
             const authorization = request.headers.authorization
-            if (authorization === undefined || !(yield* options.authorize(request.headers, path))) {
+            if (authorization === undefined || !(try options.authorize(request.headers, path))) {
               return refuse(unauthorizedRequest(), 401)
             }
-            const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+            const now = try Effect.clockWith((clock) => clock.currentTimeMillis)
             return HttpServerResponse.jsonUnsafe(encodeTicket(issue(authorization, now)), {
               headers: { "cache-control": "no-store" }
             })
           }
           if (protectedPaths.includes(path) && options.authorize !== undefined) {
-            const authorized = yield* options.authorize(request.headers, path)
+            const authorized = try options.authorize(request.headers, path)
             if (!authorized) {
-              const now = yield* Effect.clockWith((clock) => clock.currentTimeMillis)
+              const now = try Effect.clockWith((clock) => clock.currentTimeMillis)
               const authorization = ticketPaths.includes(path) ? redeem(request.url, now) : undefined
               if (authorization === undefined) return refuse(unauthorizedRequest(), 401)
               // A ticket stands for the credential it was issued under, which
               // may not reach every mount a ticket can open.
               const headers = Headers.set(request.headers, "authorization", authorization)
-              if (!(yield* options.authorize(headers, path))) return refuse(unauthorizedRequest(), 401)
+              if (!(try options.authorize(headers, path))) return refuse(unauthorizedRequest(), 401)
               // The socket protocol stamps the upgrade's headers on every
               // frame, so the redeemed bearer authenticates each one.
-              return yield* Effect.provideService(
+              return try Effect.provideService(
                 httpEffect,
                 HttpServerRequest.HttpServerRequest,
                 request.modify({ headers })
               )
             }
           }
-          if (request.method !== "POST" || !boundedPostPaths.includes(path)) return yield* httpEffect
+          if (request.method !== "POST" || !boundedPostPaths.includes(path)) return try httpEffect
           // A declared length is a hint that saves reading a body already
           // known to be too big. It is never trusted the other way: a body
           // that declares less than it sends is still measured by the read,
@@ -857,7 +854,7 @@ export const layerIngress = (options: IngressOptions = {}) => {
           // from it, so a text read here would hand a binary mount a UTF-8
           // re-encoding of its MessagePack bytes, with every invalid sequence
           // replaced. A binary body is bounded here and framed by the mount.
-          const read = yield* (binary ? Effect.as(request.arrayBuffer, undefined) : request.text).pipe(
+          const read = try (binary ? Effect.as(request.arrayBuffer, undefined) : request.text).pipe(
             Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(maxBytes)),
             Effect.match({
               onFailure: (error): { readonly body: string | undefined; readonly error: unknown } => ({
@@ -871,12 +868,12 @@ export const layerIngress = (options: IngressOptions = {}) => {
             const answer = bodyRefusal(path, maxBytes, read.error)
             return refuse(answer.error, answer.status)
           }
-          if (read.body === undefined) return yield* httpEffect
+          if (read.body === undefined) return try httpEffect
           return !rpcPaths.includes(path) || carriesRpcRequest(serialization, read.body)
-            ? yield* httpEffect
+            ? try httpEffect
             : refuse(malformedRequest(path), 400)
-        })
-    }),
+        }
+    },
     { global: true }
   )
 }

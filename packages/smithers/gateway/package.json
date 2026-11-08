@@ -57,13 +57,13 @@
       "default": "./.vibelang/js/src/GatewayError.js"
     },
     "./GatewayProjection": {
-      "types": "./src/GatewayProjection.ts",
-      "vibelang-source": "./src/GatewayProjection.ts",
+      "types": "./.vibe/declarations/src/GatewayProjection.d.vibe.ts",
+      "vibelang-source": "./src/GatewayProjection.vibe",
       "default": "./.vibelang/js/src/GatewayProjection.js"
     },
     "./GatewayRpcs": {
-      "types": "./src/GatewayRpcs.ts",
-      "vibelang-source": "./src/GatewayRpcs.ts",
+      "types": "./.vibe/declarations/src/GatewayRpcs.d.vibe.ts",
+      "vibelang-source": "./src/GatewayRpcs.vibe",
       "default": "./.vibelang/js/src/GatewayRpcs.js"
     },
     "./GatewaySchema": {
@@ -72,8 +72,8 @@
       "default": "./.vibelang/js/src/GatewaySchema.js"
     },
     "./GatewayServer": {
-      "types": "./src/GatewayServer.ts",
-      "vibelang-source": "./src/GatewayServer.ts",
+      "types": "./.vibe/declarations/src/GatewayServer.d.vibe.ts",
+      "vibelang-source": "./src/GatewayServer.vibe",
       "default": "./.vibelang/js/src/GatewayServer.js"
     },
     "./Projections": {
@@ -116,7 +116,11 @@
       "vibelang-source": "./src/RunDevTools.ts",
       "default": "./.vibelang/js/src/RunDevTools.js"
     },
-    "./RunHistory": "./src/RunHistory.ts",
+    "./RunHistory": {
+      "types": "./.vibe/declarations/src/RunHistory.d.vibe.ts",
+      "vibelang-source": "./src/RunHistory.vibe",
+      "default": "./.vibelang/js/src/RunHistory.js"
+    },
     "./SuperviseRuntime": null,
     "./test/TestSuperviseRuntime": null
   },

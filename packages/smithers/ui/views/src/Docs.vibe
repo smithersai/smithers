@@ -28,6 +28,7 @@ import type * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
+import { decodeUtf8 } from "./Docs.platform.ts"
 import { refusal } from "./internal/hosts.ts"
 
 /**
@@ -364,9 +365,9 @@ export const fetchText = (
   url: string,
   options: FetchOptions = {}
 ): Effect.Effect<Fetched, never, HttpClient.HttpClient> =>
-  Effect.gen(function*(): Effect.fn.Return<Fetched, never, HttpClient.HttpClient> {
-    const client = yield* HttpClient.HttpClient
-    const init = Option.getOrElse(yield* Effect.serviceOption(FetchHttpClient.RequestInit), () => ({}))
+  (effect {
+    const client = try HttpClient.HttpClient
+    const init = Option.getOrElse(try Effect.serviceOption(FetchHttpClient.RequestInit), () => ({}))
     const privateHosts = (options.privateHosts ?? []).map((host) => host.toLowerCase())
     const maxRedirects = options.maxRedirects ?? 5
     const request = (href: string) =>
@@ -381,40 +382,36 @@ export const fetchText = (
         Effect.provideService(HttpClient.TracerPropagationEnabled, false)
       )
     const follow = (current: URL, hop: number): Effect.Effect<Followed, never, HttpClient.HttpClient> =>
-      Effect.gen(function*() {
+      effect {
         const refused = refusal(current, privateHosts)
         if (refused !== undefined) return { refused: hop > 0 && refused === "invalid_url" ? "redirects" : refused }
-        const answered = yield* Effect.result(request(current.href))
+        const answered = try Effect.result(request(current.href))
         if (answered._tag === "Failure") return { refused: "unreachable" }
         const response = answered.success
         const location = header(response, "location")
         if (!REDIRECTS.has(response.status) || location === undefined) return { response, url: current }
         const next = URL.parse(location, current)
         if (hop === maxRedirects || next === null) return { refused: "redirects" }
-        return yield* follow(next, hop + 1)
-      })
+        return try follow(next, hop + 1)
+      }
     const start = URL.parse(url)
     if (start === null) return { _tag: "Refused", reason: "invalid_url" } as const
-    const read: Effect.Effect<Fetched, never, HttpClient.HttpClient> = Effect.gen(function*() {
-      const followed = yield* follow(start, 0)
+    const read: Effect.Effect<Fetched, never, HttpClient.HttpClient> = effect {
+      const followed = try follow(start, 0)
       if ("refused" in followed) return { _tag: "Refused", reason: followed.refused }
       const { response, url: ended } = followed
       if (response.status >= 400) return { _tag: "Refused", reason: "status", status: response.status } as const
       const type = (header(response, "content-type") ?? "").split(";")[0]!.trim().toLowerCase()
       if (!textual(type)) return { _tag: "Refused", reason: "content" } as const
-      const body = yield* Effect.orElseSucceed(readBody(response, options.maxBytes ?? 1024 * 1024), () => null)
+      const body = try Effect.orElseSucceed(readBody(response, options.maxBytes ?? 1024 * 1024), () => null)
       if (body === null) return { _tag: "Refused", reason: "unreachable" } as const
       if (body === undefined) return { _tag: "Refused", reason: "too_large" } as const
       if (body.includes(0)) return { _tag: "Refused", reason: "content" } as const
-      let text: string
-      try {
-        text = new TextDecoder("utf-8", { fatal: true }).decode(body)
-      } catch {
-        return { _tag: "Refused", reason: "content" } as const
-      }
+      const text = decodeUtf8(body)
+      if (text === undefined) return { _tag: "Refused", reason: "content" } as const
       return { _tag: "Text", text, type: type === "" ? "text/plain" : type, url: ended.href } as const
-    })
-    return yield* read.pipe(
+    }
+    return try read.pipe(
       Effect.timeoutOrElse({
         duration: options.timeout ?? "8 seconds",
         orElse: () => Effect.succeed<Fetched>({ _tag: "Refused", reason: "timeout" })

@@ -20,6 +20,7 @@
  * to evicting the oldest, and it then clears the reuse marks so a fold cannot
  * hold a slot on one ancient read forever.
  *
+ * @throws {never}
  * @private
  * @since 1.0.0
  */

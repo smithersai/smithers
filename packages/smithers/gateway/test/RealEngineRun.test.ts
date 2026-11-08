@@ -18,7 +18,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { Control } from "@smthrs/control/Control"
 import type { ApprovalPayload, PlanCard, RunSummary } from "@smthrs/control/ControlSchema"
 import { Effect, type Scope } from "effect"
-import type * as GatewayProjection from "../src/GatewayProjection.ts"
+import type * as GatewayProjection from "../src/GatewayProjection.vibe"
 import { Projections } from "../src/Projections.ts"
 import { Drives, EngineRun, flowId, stack } from "./RealEngineRun.ts"
 

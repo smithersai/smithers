@@ -6,7 +6,7 @@
  */
 
 import { ControlSchema } from "@smthrs/control"
-import * as GatewayProjection from "./GatewayProjection.ts"
+import * as GatewayProjection from "./GatewayProjection.vibe"
 
 /**
  * Health response used to prove a singleton belongs to this workspace.

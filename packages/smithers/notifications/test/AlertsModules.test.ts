@@ -13,7 +13,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import * as AlertPolicy from "../src/AlertPolicy.vibe"
-import * as AlertRuntime from "../src/AlertRuntime.ts"
+import * as AlertRuntime from "../src/AlertRuntime.vibe"
 import * as Alerts from "../src/Alerts.ts"
 import * as AlertSink from "../src/AlertSink.vibe"
 import * as layerWebhook from "../src/layerWebhook.vibe"

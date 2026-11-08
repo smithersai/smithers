@@ -40,6 +40,7 @@ import * as Option from "effect/Option"
 import * as Schema from "effect/Schema"
 import * as Stream from "effect/Stream"
 import { refusal } from "./internal/hosts.ts"
+import { decoderFor, decodeStreamed } from "./WebPage.platform.ts"
 
 /**
  * What a browser would do with the page in a frame: show it (`allowed`),
@@ -478,16 +479,6 @@ export interface Options {
 const unknown = (reason: Reason, status?: number): Checked =>
   status === undefined ? { framing: "unknown", reason } : { framing: "unknown", reason, status }
 
-/** A decoder for the charset `type` names, when the platform's `TextDecoder` reads it, else UTF-8. */
-const decoderFor = (type: string): TextDecoder => {
-  const charset = /charset\s*=\s*"?([^";\s]+)/i.exec(type)?.[1]
-  try {
-    return new TextDecoder(charset ?? "utf-8")
-  } catch {
-    return new TextDecoder("utf-8")
-  }
-}
-
 /**
  * The body's text up to `</head>` or `maxBytes`, whichever comes first, read
  * for at most `within`: what arrived by then when the deadline passes or the
@@ -502,7 +493,7 @@ const readHead = (response: HttpClientResponse.HttpClientResponse, maxBytes: num
       Effect.sync(() => {
         const kept = chunk.subarray(0, maxBytes - bytes)
         bytes += kept.byteLength
-        text += decoder.decode(kept, { stream: true })
+        text += decodeStreamed(decoder, kept)
         return bytes < maxBytes && !/<\/head\s*>/i.test(text.slice(-(kept.byteLength + 16)))
       })).pipe(Effect.timeoutOption(within), Effect.ignore, Effect.map(() => text))
   })
@@ -533,9 +524,9 @@ type Answer =
  * @since 0.1.0
  */
 export const check = (url: string, options: Options): Effect.Effect<Checked, never, HttpClient.HttpClient> =>
-  Effect.gen(function*() {
-    const client = yield* HttpClient.HttpClient
-    const init = Option.getOrElse(yield* Effect.serviceOption(FetchHttpClient.RequestInit), () => ({}))
+  (effect {
+    const client = try HttpClient.HttpClient
+    const init = Option.getOrElse(try Effect.serviceOption(FetchHttpClient.RequestInit), () => ({}))
     const privateHosts = (options.privateHosts ?? []).map((host) => host.toLowerCase())
     const maxRedirects = options.maxRedirects ?? 5
     const request = (href: string) =>
@@ -556,20 +547,20 @@ export const check = (url: string, options: Options): Effect.Effect<Checked, nev
 
     /** Requests `current`, guarded, and follows its redirects to the page it ends on, or why it can't. */
     const follow = (current: URL, hop: number): Effect.Effect<Answer, never, HttpClient.HttpClient> =>
-      Effect.gen(function*() {
+      effect {
         const refused = refusal(current, privateHosts)
         if (refused !== undefined) {
           return { checked: unknown(hop > 0 && refused === "invalid_url" ? "redirects" : refused) }
         }
-        const answered = yield* Effect.result(request(current.href))
+        const answered = try Effect.result(request(current.href))
         if (answered._tag === "Failure") return { checked: unknown("unreachable") }
         const response = answered.success
         const location = header(response.headers, "location")
         if (!REDIRECTS.has(response.status) || location === undefined) return { response, page: current, hop }
         const next = URL.parse(location, current)
         if (hop === maxRedirects || next === null) return { checked: unknown("redirects", response.status) }
-        return yield* follow(next, hop + 1)
-      })
+        return try follow(next, hop + 1)
+      }
 
     const start = URL.parse(url)
     const respond = start === null ?
@@ -581,13 +572,13 @@ export const check = (url: string, options: Options): Effect.Effect<Checked, nev
         })
       )
 
-    const answer = yield* respond
+    const answer = try respond
     if ("checked" in answer) return answer.checked
     const { response, page, hop } = answer
-    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "web_page.redirects": hop })
+    try Effect.annotateCurrentSpan({ "http.response.status_code": response.status, "web_page.redirects": hop })
     const html = /^(text\/html|application\/xhtml\+xml)$/.test(mediaType(response.headers))
     const head = html
-      ? yield* readHead(response, options.maxBytes ?? 256 * 1024, options.headTimeout ?? "3 seconds")
+      ? try readHead(response, options.maxBytes ?? 256 * 1024, options.headTimeout ?? "3 seconds")
       : ""
     const shown = { ...(html ? preview(head, page.href) : {}), status: response.status }
     const framed = framing(response.headers, { page: page.href, ancestors: options.ancestors })

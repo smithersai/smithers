@@ -4,7 +4,7 @@ import { Action, HumanTask, Interpreter } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime } from "effect"
 import assert from "node:assert/strict"
 import { test } from "node:test"
-import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.ts"
+import * as NotificationQueue from "../../../packages/smithers/notifications/src/NotificationQueue.vibe"
 import {
   carriedAnswer,
   declineLayer,

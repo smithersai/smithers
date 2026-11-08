@@ -1,6 +1,6 @@
 import type { ControlSchema } from "@smthrs/control"
 import { describe, expect, it } from "vitest"
-import * as Projection from "../src/GatewayProjection.ts"
+import * as Projection from "../src/GatewayProjection.vibe"
 import {
   callEventKey,
   callScope,

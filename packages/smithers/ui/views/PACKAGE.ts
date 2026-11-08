@@ -60,7 +60,7 @@ const securityReview = Smithers.SecurityReview({
         "`Date`, `Math.random`, `Proxy`, `WeakRef` or `FinalizationRegistry` left in the realm, or `install` publishing before `harden` freezes the global.",
         "`install` hardening less than `require` and every module behind it, or a runtime kept for a second render or interaction instead of closed after its call."
       ],
-      paths: ["src/PresentationRealm.ts", "src/Presentation.ts", "src/internal/harden.ts"]
+      paths: ["src/PresentationRealm.vibe", "src/PresentationRealm.platform.ts", "src/Presentation.ts", "src/internal/harden.ts"]
     },
     {
       id: "realm-limits",
@@ -71,7 +71,7 @@ const securityReview = Smithers.SecurityReview({
         "A stack bound large enough for the host's own stack to overflow first, or a broken runtime disposed after a host overflow.",
         "A runtime reused after a time, step, memory or stack limit instead of replaced."
       ],
-      paths: ["src/PresentationRealm.ts"]
+      paths: ["src/PresentationRealm.vibe", "src/PresentationRealm.platform.ts"]
     },
     {
       id: "telemetry-content-free",
@@ -84,7 +84,7 @@ const securityReview = Smithers.SecurityReview({
         "Module text written into `ViewCodeError.message` or any field other than the redacted `detail` and `problems`.",
         "A metric attribute other than `limit`."
       ],
-      paths: ["src/PresentationRealm.ts", "src/ViewCode.ts"]
+      paths: ["src/PresentationRealm.vibe", "src/PresentationRealm.platform.ts", "src/ViewCode.ts"]
     },
     {
       id: "frame-policy",

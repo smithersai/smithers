@@ -68,13 +68,13 @@
       }
     },
     "./NotificationEvent": {
-      "types": "./src/NotificationEvent.ts",
-      "vibelang-source": "./src/NotificationEvent.ts",
+      "types": "./.vibe/declarations/src/NotificationEvent.d.vibe.ts",
+      "vibelang-source": "./src/NotificationEvent.vibe",
       "default": "./.vibelang/js/src/NotificationEvent.js"
     },
     "./NotificationQueue": {
-      "types": "./src/NotificationQueue.ts",
-      "vibelang-source": "./src/NotificationQueue.ts",
+      "types": "./.vibe/declarations/src/NotificationQueue.d.vibe.ts",
+      "vibelang-source": "./src/NotificationQueue.vibe",
       "default": "./.vibelang/js/src/NotificationQueue.js"
     },
     "./NotificationState": {

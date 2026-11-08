@@ -26,7 +26,7 @@ import type { ServeError } from "effect/http/HttpServerError"
 import { RpcSerialization } from "effect/rpc"
 import type { ListenOptions } from "node:net"
 import { GatewayError, settingRefusal } from "../GatewayError.vibe"
-import * as GatewayServer from "../GatewayServer.ts"
+import * as GatewayServer from "../GatewayServer.vibe"
 import type * as RuntimeBridge from "../RuntimeBridge.ts"
 
 /**

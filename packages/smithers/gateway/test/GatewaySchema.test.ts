@@ -4,7 +4,7 @@
 import type { ControlSchema } from "@smthrs/control"
 import { Effect, Schema, Stream } from "effect"
 import { describe, expect, expectTypeOf, it } from "vitest"
-import * as GatewayProjection from "../src/GatewayProjection.ts"
+import * as GatewayProjection from "../src/GatewayProjection.vibe"
 import * as GatewaySchema from "../src/GatewaySchema.vibe"
 import type * as Projections from "../src/Projections.ts"
 

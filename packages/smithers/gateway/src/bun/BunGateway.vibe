@@ -6,7 +6,7 @@ import * as BunHttpServer from "@effect/platform-bun/BunHttpServer"
 import type { HttpServer } from "effect/http/HttpServer"
 import type { ServeError } from "effect/http/HttpServerError"
 import { GatewayError } from "../GatewayError.vibe"
-import type * as GatewayServer from "../GatewayServer.ts"
+import type * as GatewayServer from "../GatewayServer.vibe"
 import * as NativeGateway from "../internal/NativeGateway.ts"
 
 export { bearerPrincipal, scopedPrincipal } from "../internal/NativeGateway.ts"

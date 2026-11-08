@@ -6,7 +6,7 @@
  * @since 1.0.0
  */
 
-import type * as NotificationEvent from "../NotificationEvent.ts"
+import type * as NotificationEvent from "../NotificationEvent.vibe"
 import * as NotificationState from "../NotificationState.ts"
 
 /**
@@ -17,6 +17,7 @@ import * as NotificationState from "../NotificationState.ts"
  * the cutoff the first version was admitted under. Every other record applies
  * the decision it committed.
  *
+ * @throws {never}
  * @private
  * @since 1.0.0
  */
