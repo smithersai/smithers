@@ -56,7 +56,10 @@ const freePort = (): Promise<number> =>
   })
 
 const launch = (argv: ReadonlyArray<string>): Host => {
-  const child = ChildProcesses.spawn(process.execPath, argv, { cwd: repositoryRoot, env: childEnv })
+  const child = ChildProcesses.spawn(process.execPath, [ChildProcesses.vibeImport, ...argv], {
+    cwd: repositoryRoot,
+    env: childEnv
+  })
   // Observe exit before a fast replay can print its result and leave.
   const exited = once(child, "exit").then(() => undefined)
   const events: Array<Record<string, unknown>> = []

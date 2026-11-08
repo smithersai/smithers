@@ -23,7 +23,7 @@ it(
     }
     await mkdir(join(root, ".flows"))
     await writeFile(join(root, "config.txt"), "initial")
-    const child = ChildProcesses.spawn(process.execPath, [fixture, root, "crash"], {
+    const child = ChildProcesses.spawn(process.execPath, [ChildProcesses.vibeImport, fixture, root, "crash"], {
       env,
       stdio: ["pipe", "pipe", "pipe"]
     })
@@ -53,12 +53,16 @@ it(
       expect(await readFile(join(root, "config.txt"), "utf8")).toBe("initial!")
       expect(ChildProcesses.killGroup(child)).toBe(true)
       expect((await exited).signal).toBe("SIGKILL")
-      const resumed = await promisify(execFile)(process.execPath, [fixture, root, "resume"], {
-        env,
-        timeout: 60_000,
-        killSignal: "SIGKILL",
-        maxBuffer: 524_288
-      })
+      const resumed = await promisify(execFile)(
+        process.execPath,
+        [ChildProcesses.vibeImport, fixture, root, "resume"],
+        {
+          env,
+          timeout: 60_000,
+          killSignal: "SIGKILL",
+          maxBuffer: 524_288
+        }
+      )
       const report = JSON.parse(resumed.stdout.trim().split("\n").at(-1)!)
       expect(report.updates).toBe(0)
       expect(report.changedEnvironmentRefused).toBe(true)

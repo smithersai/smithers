@@ -63,7 +63,13 @@ const serve = async (
   port: number,
   environment: NodeJS.ProcessEnv = childEnv
 ): Promise<Serving> => {
-  const child = ChildProcesses.spawn(process.execPath, [fixture, filename, root, String(port)], {
+  const child = ChildProcesses.spawn(process.execPath, [
+    ChildProcesses.vibeImport,
+    fixture,
+    filename,
+    root,
+    String(port)
+  ], {
     cwd: repositoryRoot,
     env: environment
   })

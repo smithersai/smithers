@@ -17,7 +17,7 @@ export const processBudget = 120_000
 
 /** Starts the child that claims `runId` in `filename` and then runs until killed. */
 export const launch = (filename: string, runId: string): ChildProcessWithoutNullStreams =>
-  ChildProcesses.spawn(process.execPath, [fixture, filename, runId], {
+  ChildProcesses.spawn(process.execPath, [ChildProcesses.vibeImport, fixture, filename, runId], {
     cwd: repositoryRoot,
     // The fixture reads only argv; never hand it the parent's credentials.
     env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }

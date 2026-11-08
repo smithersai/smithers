@@ -22,6 +22,12 @@ import {
 } from "node:child_process"
 import type { Readable, Writable } from "node:stream"
 
+/**
+ * A plain Node child that imports workspace sources needs the VibeLang loader: the engine's StepTrace and the
+ * registry's Bundled are `.vibe` files, which Node does not load on its own. Prepend it to the child's argv.
+ */
+export const vibeImport: string = "--import=vibelang/register"
+
 const live = new Set<ChildProcess>()
 
 const exited = (child: ChildProcess): boolean => child.exitCode !== null || child.signalCode !== null

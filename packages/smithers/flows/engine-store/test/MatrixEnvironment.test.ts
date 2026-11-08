@@ -43,7 +43,7 @@ console.log("matrix environment qualified")
 `
 
 const check = (url?: string, name = "SMITHERS_TEST_PG_URL") =>
-  spawnSync(process.execPath, ["--input-type=module", "-e", probe], {
+  spawnSync(process.execPath, ["--input-type=module", "--import=vibelang/register", "-e", probe], {
     cwd: root,
     encoding: "utf8",
     timeout: 20_000,

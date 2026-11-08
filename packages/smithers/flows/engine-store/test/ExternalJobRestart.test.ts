@@ -10,7 +10,7 @@ import * as ChildProcesses from "./ChildProcesses.ts"
 const fixture = fileURLToPath(new URL("./fixtures/external-job-child.ts", import.meta.url))
 const root = fileURLToPath(new URL("../../../../../", import.meta.url))
 const launch = (directory: string, mode: string) =>
-  ChildProcesses.spawn(process.execPath, [fixture, directory, mode], {
+  ChildProcesses.spawn(process.execPath, [ChildProcesses.vibeImport, fixture, directory, mode], {
     cwd: root,
     env: { PATH: process.env.PATH, TMPDIR: process.env.TMPDIR, LANG: "C.UTF-8" }
   })

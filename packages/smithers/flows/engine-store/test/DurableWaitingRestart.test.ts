@@ -48,7 +48,10 @@ const tail = (text: string): string => text.length > outputTailBytes ? `...${tex
 
 /** Every child a case starts leads its own process group; `afterEach` kills each group and awaits the child. */
 const spawnChild = (args: ReadonlyArray<string>): ChildProcessWithoutNullStreams => {
-  const child = ChildProcesses.spawn(process.execPath, [fixture, ...args], { cwd: repositoryRoot, env: childEnv })
+  const child = ChildProcesses.spawn(process.execPath, [ChildProcesses.vibeImport, fixture, ...args], {
+    cwd: repositoryRoot,
+    env: childEnv
+  })
   return child
 }
 
