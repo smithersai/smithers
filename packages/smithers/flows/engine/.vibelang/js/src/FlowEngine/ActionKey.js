@@ -155,8 +155,8 @@ const declarationDigest = (action, encoding) => {
         if (cached !== undefined)
             return cached;
         const digest = yield* Schema.decodeUnknownEffect(DerivedKey)({
-            success: yield* Effect.orDie(Effect.try({ try: () => Node.representationIdentity(action.successSchema, version), catch: (error) => error })),
-            error: yield* Effect.orDie(Effect.try({ try: () => Node.representationIdentity(action.errorSchema, version), catch: (error) => error }))
+            success: yield* Effect.sync(() => Node.representationIdentity(action.successSchema, version)),
+            error: yield* Effect.sync(() => Node.representationIdentity(action.errorSchema, version))
         });
         if (errors === undefined) {
             errors = new WeakMap();

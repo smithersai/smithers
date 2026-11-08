@@ -3,7 +3,7 @@ import * as WriteAuthority from "../WriteAuthority.js";
 import { digestSync } from "@smthrs/crypto";
 import { Clock, Context, Effect, Metric, Option, Schema } from "effect";
 import { SqlClient } from "effect/sql";
-import { foldCommit } from "#vibelang/emitted/worker/stack/StackFeed";
+import { foldCommit } from "./StackFeed.js";
 import * as WorkLinks from "../github/WorkLinks.js";
 import { todoExecutionId } from "../../src/features/pulls/contract.js";
 import { STACK_OUTCOMES, } from "../../src/features/todos/contract.js";

@@ -5,7 +5,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { ARCHIVE_ROUTE, CONVERSATION_PEOPLE_TABLE, MAX_ARCHIVE_BODY_BYTES, MY_CONVERSATIONS_SHAPE_ROUTE, } from "../../src/features/conversations/contract.js";
 import { boundTo, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as ShapeAccess from "../ShapeAccess.js";
 import { branchAccess, canView } from "./Access.js";

@@ -29,7 +29,7 @@ const make = Effect_1.gen(function* make() {
     const writes = yield* Semaphore.make(1);
     /** Keeps a tab for `path` at `here` with `lines`: a new one at the strip's end, or the lines of the one it has. */
     const keep = (here, path, lines) => { var topic_1; return Effect.catchTag((topic_1 = Effect_1.gen(function* () {
-        const key = yield* Effect.orDie(Effect.try({ try: () => tabKey(here, path), catch: (e) => e }));
+        const key = yield* Effect.sync(() => tabKey(here, path));
         const existing = yield* tabs.get(key);
         if (Option.isSome(existing)) {
             if (existing.value.lines === lines)
@@ -39,7 +39,7 @@ const make = Effect_1.gen(function* make() {
         }
         const rows = yield* tabs.toArray;
         const position = rows.reduce((last, row) => Math.max(last, row.position), 0) + 1;
-        const repository = yield* Effect.orDie(Effect.try({ try: () => repoId(here.owner, here.name), catch: (e) => e }));
+        const repository = yield* Effect.sync(() => repoId(here.owner, here.name));
         yield* (yield* tabs.insert({
             key,
             owner: here.owner,
@@ -55,7 +55,7 @@ const make = Effect_1.gen(function* make() {
     };
     /** Closes `path`'s tab at `here`; whether it had one. */
     const drop = (here, path) => { var topic_2; return Effect.orDie((topic_2 = Effect_1.gen(function* () {
-        const key = yield* Effect.orDie(Effect.try({ try: () => tabKey(here, path), catch: (e) => e }));
+        const key = yield* Effect.sync(() => tabKey(here, path));
         if (Option.isNone(yield* tabs.get(key)))
             return false;
         yield* (yield* tabs.delete(key)).persisted;

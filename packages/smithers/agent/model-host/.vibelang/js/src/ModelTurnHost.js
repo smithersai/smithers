@@ -180,8 +180,8 @@ export const runModelTurn = (model, turn, options, write, host, diagnostics = cr
                 }
                 settled = event;
                 return Effect_1.gen(function* () {
-                    yield* emitDelta("reasoning", yield* Effect.orDie(Effect.try({ try: () => reasoning.finish(), catch: (e) => e })));
-                    yield* emitDelta("text", yield* Effect.orDie(Effect.try({ try: () => text.finish(), catch: (e) => e })));
+                    yield* emitDelta("reasoning", yield* Effect.sync(() => reasoning.finish()));
+                    yield* emitDelta("text", yield* Effect.sync(() => text.finish()));
                 });
             case "usage":
                 usage = mergeUsage(usage, event);

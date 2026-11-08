@@ -11,7 +11,7 @@ import { MAX_ISSUE_NUMBER } from "../../src/features/issues/contract.js";
 import { isRepository, REPOS_ROUTE, repoId } from "../../src/features/repo/contract.js";
 import { isAcceptance, isPrompt, isTitle, MAX_LANES, MAX_OPEN_LIMIT, MAX_STACK_BODY_BYTES, MAX_TODO_NUMBER, STACK_BASES, REFUSAL_STATUS, STACK_SEGMENT, TODO_STATUS_NOT_FOUND, TODO_COLUMNS, TODO_REQUEST_COLUMNS, TODO_REQUESTS_SHAPE_ROUTE, TODO_REQUESTS_TABLE, TODOS_SHAPE_ROUTE, TODOS_TABLE, } from "../../src/features/todos/contract.js";
 import { refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import { repositoryOf as repositoryNamed } from "../github/Config.js";
 import * as RepoRoles from "../github/RepoRoles.js";

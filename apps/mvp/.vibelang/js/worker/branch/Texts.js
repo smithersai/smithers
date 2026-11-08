@@ -8,13 +8,13 @@ import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { HOME, MAX_TEXT_BODY_BYTES, MAX_UPDATE_LENGTH, TEXT_UPDATE_COLUMNS, TEXT_UPDATES_TABLE, TEXTS_ROUTE, TEXTS_SHAPE_ROUTE, } from "../../src/features/coedit/contract.js";
 import { Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as ShapeAccess from "../ShapeAccess.js";
 import { askingOf, branchAccess, canEdit, canView, installedOn, isMember, roleOn } from "./Access.js";
 import * as Conversations from "./Conversations.js";
 import { Rooms } from "./Rooms.js";
-import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade";
+import { isUpgrade, sameOrigin } from "./Upgrade.js";
 import * as SocketAccess from "../SocketAccess.js";
 import * as WriteAuthority from "../WriteAuthority.js";
 // Co-editing's routes (decision 0013 §4, docs/features/coedit.md): every input two people see at once is a text they

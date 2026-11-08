@@ -47,7 +47,11 @@
       "vibelang-source": "./src/AttemptStore.vibe",
       "default": "./.vibelang/js/src/AttemptStore.js"
     },
-    "./Heartbeat": "./src/Heartbeat.ts",
+    "./Heartbeat": {
+      "types": "./src/Heartbeat.ts",
+      "vibelang-source": "./src/Heartbeat.ts",
+      "default": "./.vibelang/js/src/Heartbeat.js"
+    },
     "./Migrations": {
       "types": "./.vibe/declarations/src/Migrations.d.vibe.ts",
       "vibelang-source": "./src/Migrations.vibe",

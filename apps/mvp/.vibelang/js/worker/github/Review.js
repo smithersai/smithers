@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql";
 import { checkFlowOf, PULLS_SEGMENT, REVIEW_CHECK, REVIEW_SEGMENT, reviewExecutionId, SHA, } from "../../src/features/pulls/contract.js";
 import { isRepository, REPOS_ROUTE } from "../../src/features/repo/contract.js";
 import { refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import { FlowStarter } from "../Flows.js";
 import { checkRunIdOf, ReviewRun } from "../flows/Checks.js";

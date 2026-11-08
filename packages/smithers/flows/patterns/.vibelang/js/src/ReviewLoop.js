@@ -121,7 +121,7 @@ export const run = (input, options) => {
         return Effect.fail(stall);
     const signals = options.stall?.signals ?? ((output) => ({ output }));
     return Effect_1.gen(function* () {
-        const observe = yield* Effect.orDie(Effect.try({ try: () => Stalling.tracker(stall, signals), catch: (error) => error }));
+        const observe = yield* Effect.sync(() => Stalling.tracker(stall, signals));
         let output = yield* stages.produce(input);
         let round = 1;
         while (true) {
@@ -134,10 +134,10 @@ export const run = (input, options) => {
                 const spent = { _tag: "Exhausted", output, review };
                 return spent;
             }
-            const stalled = yield* Effect.orDie(Effect.try({ try: () => observe(output), catch: (error) => error }));
+            const stalled = yield* Effect.sync(() => observe(output));
             if (stalled !== undefined) {
                 if (stalled.on === "escalate") {
-                    return yield* Effect_1.fail(yield* Effect.orDie(Effect.try({ try: () => Stalling.escalated("ReviewLoop", stalled.rounds), catch: (error) => error })));
+                    return yield* Effect_1.fail(yield* Effect.sync(() => Stalling.escalated("ReviewLoop", stalled.rounds)));
                 }
                 const parked = { _tag: "Stalled", output, review, stalled };
                 return parked;

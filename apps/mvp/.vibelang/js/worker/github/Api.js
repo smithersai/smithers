@@ -20,7 +20,7 @@ import { publishExecutionId, resyncExecutionId, UPDATE_METHODS, updateExecutionI
 import { branchAccess, branchAccessAs, canEdit } from "../branch/Access.js";
 import { Publish, publishBlocked, Resync, Update } from "../branch/Publish.js";
 import { canAsk, refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as PersonalStore from "../personal/Store.js";
 import * as Dispatch from "../ci/Dispatch.js";

@@ -415,7 +415,7 @@ export const run = (prompt, caller) => {
         }), isPatternError, (error) => Effect.fail(refuse("derisk_failed", error.message))));
         const exhausted = derisked._tag === "Exhausted";
         const authored = derisked.output;
-        const refusals = yield* Effect.orDie(Effect.try({ try: () => Trellis.validate(authored, envelope), catch: (error) => error }));
+        const refusals = yield* Effect.sync(() => Trellis.validate(authored, envelope));
         if (refusals.length > 0) {
             const refusal = refusals[0];
             return yield* Effect_1.fail(new Trellis.TrellisError({
@@ -462,7 +462,7 @@ export const run = (prompt, caller) => {
                 })));
             }
         });
-        const leaves = (yield* Effect.orDie(Effect.try({ try: () => Trellis.leaves(plan), catch: (error) => error }))).map((leaf) => outputs.get(leaf.path));
+        const leaves = (yield* Effect.sync(() => Trellis.leaves(plan))).map((leaf) => outputs.get(leaf.path));
         const review = yield* options.review({ stage: "chain", goal, plan, leaves });
         return yield* options.settle({
             prompt,

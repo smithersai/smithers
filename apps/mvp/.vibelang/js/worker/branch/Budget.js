@@ -3,7 +3,7 @@ import { Effect, Metric } from "effect";
 import { SqlClient } from "effect/sql";
 import { DEFAULT_SANDBOX_LIMITS } from "../../src/features/spend/contract.js";
 import { codeOf } from "../ErrorCode.js";
-import { CI_OWNER } from "#vibelang/emitted/worker/flows/CiJobMachine";
+import { CI_OWNER } from "../flows/CiJobMachine.js";
 // Sandbox budgets (ruling AUTH-5, decision 0103, docs/features/sandbox-budgets.md): how many machines may be awake, and
 // what they cost. Will, 2026-10-19 22:45: "Add this as a TODO but we won't worry about this until we ship."
 //

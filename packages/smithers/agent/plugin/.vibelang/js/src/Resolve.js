@@ -354,7 +354,7 @@ export const resolve = (input, options = {}, configOverride) => Effect_1.gen(fun
     const cacheEnvironment = yield* snapshotCacheEnvironment(raw.cacheEnvironment, orderedEntries);
     return Object.freeze({
         plugins,
-        handlers: yield* Effect.orDie(Effect.try({ try: () => ImmutableMap.make(entries), catch: (error) => error })),
+        handlers: yield* Effect.sync(() => ImmutableMap.make(entries)),
         kinds: known,
         parallelConcurrency,
         ...(cacheEnvironment === undefined ? {} : { cacheEnvironment })

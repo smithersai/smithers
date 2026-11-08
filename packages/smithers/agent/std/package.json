@@ -122,7 +122,11 @@
       "vibelang-source": "./src/PortableSearch.ts",
       "default": "./.vibelang/js/src/PortableSearch.js"
     },
-    "./Probe": "./src/Probe.ts",
+    "./Probe": {
+      "types": "./src/Probe.ts",
+      "vibelang-source": "./src/Probe.ts",
+      "default": "./.vibelang/js/src/Probe.js"
+    },
     "./Read": {
       "types": "./src/Read.ts",
       "vibelang-source": "./src/Read.ts",
@@ -158,7 +162,11 @@
       "vibelang-source": "./src/ShellCommand.ts",
       "default": "./.vibelang/js/src/ShellCommand.js"
     },
-    "./StdError": "./src/StdError.ts",
+    "./StdError": {
+      "types": "./src/StdError.ts",
+      "vibelang-source": "./src/StdError.ts",
+      "default": "./.vibelang/js/src/StdError.js"
+    },
     "./TestRun": {
       "types": "./src/TestRun.ts",
       "vibelang-source": "./src/TestRun.ts",
@@ -169,13 +177,21 @@
       "vibelang-source": "./src/TestRunner.vibe",
       "default": "./.vibelang/js/src/TestRunner.js"
     },
-    "./TreeFingerprint": "./src/TreeFingerprint.ts",
+    "./TreeFingerprint": {
+      "types": "./src/TreeFingerprint.ts",
+      "vibelang-source": "./src/TreeFingerprint.ts",
+      "default": "./.vibelang/js/src/TreeFingerprint.js"
+    },
     "./UpdatePlan": {
       "types": "./.vibe/declarations/src/UpdatePlan.d.vibe.ts",
       "vibelang-source": "./src/UpdatePlan.vibe",
       "default": "./.vibelang/js/src/UpdatePlan.js"
     },
-    "./WebFetch": "./src/WebFetch.ts",
+    "./WebFetch": {
+      "types": "./src/WebFetch.ts",
+      "vibelang-source": "./src/WebFetch.ts",
+      "default": "./.vibelang/js/src/WebFetch.js"
+    },
     "./WebSearch": {
       "types": "./.vibe/declarations/src/WebSearch.d.vibe.ts",
       "vibelang-source": "./src/WebSearch.vibe",

@@ -7,14 +7,14 @@ import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { MAX_OPEN_BODY_BYTES, ADMIT_WAIT_SECONDS, OPEN_DEADLINE_SECONDS, openExecutionId, TERMINALS_TABLE, } from "../../src/features/terminal/contract.js";
 import { refusesPersonOnly, canAsk, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Flows from "../Flows.js";
 import { TerminalOpen } from "../flows/TerminalOpen.js";
 import * as ShapeAccess from "../ShapeAccess.js";
 import { branchAccess, canEdit, canView } from "./Access.js";
 import { TerminalSockets } from "./Sandboxes.js";
-import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade";
+import { isUpgrade, sameOrigin } from "./Upgrade.js";
 import * as SocketAccess from "../SocketAccess.js";
 // The terminal routes (decision 0013 §2-§3, docs/features/branch-workspace.md#the-terminal):
 //

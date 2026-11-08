@@ -10,7 +10,7 @@ import * as Config from "../github/Config.js";
 import * as RepoRoles from "../github/RepoRoles.js";
 import * as Conversations from "./Conversations.js";
 import * as Repos from "../Repos.js";
-import { CreateRefused } from "#vibelang/emitted/worker/branch/CreateRefused";
+import { CreateRefused } from "./CreateRefused.js";
 export const creations = Metric.counter("smithers_branch_github_creations", { incremental: true });
 const refused = (error) => {
     if (error instanceof CreateRefused)

@@ -6,7 +6,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { KEY_REFUSALS } from "../../src/features/personal-model/contract.js";
 import { repoId } from "../../src/features/repo/contract.js";
-import * as RegistryEgress from "#vibelang/emitted/worker/branch/RegistryEgress";
+import * as RegistryEgress from "../branch/RegistryEgress.js";
 import * as Store_ from "../personal/Store.js";
 import * as Subscriptions from "../personal/Subscriptions.js";
 import * as Overflow from "../runners/Overflow.js";

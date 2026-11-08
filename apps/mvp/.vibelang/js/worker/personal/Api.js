@@ -8,7 +8,7 @@ import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/h
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { checkSave, CODEX_LINK_ROUTE, JEV_ROUTE, jevOf, keyTail, LINK_SECONDS, MAX_JEV_BODY_BYTES, MAX_PUT_BODY_BYTES, PERSONAL_MODEL_ROUTE, PERSONAL_MODEL_SHAPE_COLUMNS, PERSONAL_MODEL_SHAPE_ROUTE, PERSONAL_MODEL_TEST_ROUTE, PERSONAL_MODELS_TABLE, TEST_MAX_TOKENS, TEST_PROMPT, writeExecutionId, } from "../../src/features/personal-model/contract.js";
 import { refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Flows from "../Flows.js";
 import { SecretKeys } from "../secrets/Keys.js";
@@ -16,10 +16,10 @@ import * as ShapeAccess from "../ShapeAccess.js";
 import * as Codex from "./Codex.js";
 import * as ModelFlows from "./ModelFlows.js";
 import { PersonalModels, PersonalModelUnusable, sealContext } from "./Models.js";
-import { connectionDefaults } from "#vibelang/emitted/worker/personal/Defaults";
+import { connectionDefaults } from "./Defaults.js";
 import * as Subscriptions from "./Subscriptions.js";
 import * as Store from "./Store.js";
-import * as PersonalUsage from "#vibelang/emitted/worker/personal/Usage";
+import * as PersonalUsage from "./Usage.js";
 // A person's own connections' routes (decisions 0096, 0107 and 0132, docs/features/personal-model.md). Credentials are
 // write-only: no route answers one.
 //

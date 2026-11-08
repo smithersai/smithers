@@ -16,7 +16,7 @@ import * as Metrics from "../github/Metrics.js";
 import { fetchPull, projectPull } from "../github/Pulls.js";
 import { permissionOf } from "../github/RepoRoles.js";
 import * as Store from "../github/Store.js";
-import { base64Of, collect } from "#vibelang/emitted/worker/branch/Change";
+import { base64Of, collect } from "./Change.js";
 import { Machines } from "./Machines.js";
 import { resync } from "./Resync.js";
 // Publish and Update branch (docs/features/branch-publish.md; rulings GH-6 and GH-11). A Smithers-only branch lives in

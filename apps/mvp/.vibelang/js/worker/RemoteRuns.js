@@ -8,7 +8,7 @@ import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { CLOUD_RUNS_ROUTE, isRemoteRun, JOURNAL_PAGE, MAX_STEER_BODY_BYTES, MAX_STEER_CHARS, MAX_STEER_JSON_BYTES, REMOTE_RUN_SHAPE_ROUTE, REMOTE_RUNS_ROUTE, RUN_CHANGE_COLUMNS, RUN_CHANGES_TABLE, settled, steerable, stoppable, } from "../src/features/runs/contract.js";
 import { canAsk, Sessions } from "./Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import * as CloudRuns from "./CloudRuns.js";
 import * as TodoSession from "./flows/TodoSession.js";
 import { codeOf } from "./ErrorCode.js";
@@ -19,7 +19,7 @@ import * as RepoRoles from "./github/RepoRoles.js";
 import { repositoryOf } from "./github/Config.js";
 import { mayRead } from "./stack/Access.js";
 import * as SocketAccess from "./SocketAccess.js";
-import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade";
+import { isUpgrade, sameOrigin } from "./branch/Upgrade.js";
 // Runs Smithers runs on Cloudflare, read from the browser (ruling TODO-3, docs/features/runs.md#a-run-on-cloudflare), and
 // a repository's runs (docs/features/actions.md), read and stopped with a role on their recorded repository.
 // A TODO's `todo` run lives in the engine's Postgres schema, not on any device, so a person watches it through two

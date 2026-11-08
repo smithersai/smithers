@@ -8,7 +8,7 @@ import { installUrl } from "../src/features/repo/contract.js";
 import * as Actor from "./Actor.js";
 import { DEFAULT_REPOSITORY } from "./defaultRepository.js";
 import * as Conversations from "./branch/Conversations.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { HOSTNAME, parseAliases } from "./aliases.js";
 import * as Domains from "./domains/Store.js";
 import { codeOf } from "./ErrorCode.js";

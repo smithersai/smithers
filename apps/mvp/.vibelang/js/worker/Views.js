@@ -15,7 +15,7 @@ import { checkUrl } from "../src/features/web/url.js";
 import { Sessions } from "./Actor.js";
 import { askingOf, branchAccess, canView } from "./branch/Access.js";
 import * as Conversations from "./branch/Conversations.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { DocsSource } from "./docs/Source.js";
 import { codeOf } from "./ErrorCode.js";
 import * as Messages from "./Messages.js";

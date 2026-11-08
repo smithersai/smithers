@@ -12,10 +12,10 @@ import { FlowStarter } from "./Flows.js";
 import * as HostedModel from "./HostedModel.js";
 import * as ModelRoles from "./ModelRoles.js";
 import * as ModelSpend from "./ModelSpend.js";
-import * as ModelTiers from "#vibelang/emitted/worker/ModelTiers";
+import * as ModelTiers from "./ModelTiers.js";
 import * as ModelUsage from "./ModelUsage.js";
 import { PersonalModels, PersonalModelUnusable } from "./personal/Models.js";
-import * as PersonalUsage from "#vibelang/emitted/worker/personal/Usage";
+import * as PersonalUsage from "./personal/Usage.js";
 // The metered model endpoint (docs/features/model-endpoint.md): every model call the browser's agent makes is one
 // `POST /api/model/<role>`, served by `ModelProxy.serve` from @smthrs/model. Before the model runs it refuses a
 // signed-out request and bounds the request. Each role maps to a tier and an effort (`ModelTiers`, decision 0107). A

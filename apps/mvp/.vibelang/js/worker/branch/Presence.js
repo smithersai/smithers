@@ -6,7 +6,7 @@ import { codeOf } from "../ErrorCode.js";
 import * as SocketAccess from "../SocketAccess.js";
 import { branchAccess, canView } from "./Access.js";
 import { Rooms } from "./Rooms.js";
-import { isUpgrade, sameOrigin } from "#vibelang/emitted/worker/branch/Upgrade";
+import { isUpgrade, sameOrigin } from "./Upgrade.js";
 // `GET /api/branches/<id>/room` with `Upgrade: websocket` (decision 0013 §4, docs/features/branch-workspace.md#presence):
 // joins the page's socket to the branch's room, where everyone on the branch sees who else is and where. Only this
 // app's own pages may (the `Origin` must be the request's), and only someone who may view the branch: the room stamps

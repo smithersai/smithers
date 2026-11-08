@@ -246,10 +246,7 @@ export const captureSnapshot = (options) => {
         // Starting a stopped machine that records no network would boot
         // it under the vendor's open default, which nobody asked for.
         if (handle.status !== "running" &&
-            (yield* Effect.orDie(Effect.try({
-                try: () => recordedNetwork(handle.configJson),
-                catch: (error) => error
-            }))) === undefined) {
+            (yield* Effect.sync(() => recordedNetwork(handle.configJson))) === undefined) {
             return yield* Effect_1.fail(new ProviderError({
                 code: "unavailable",
                 message: `${failed}: it records no network, so starting it would open one`

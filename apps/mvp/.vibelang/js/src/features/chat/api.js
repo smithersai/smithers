@@ -47,7 +47,7 @@ export const postQuestion = (url, question, within) => {
                 return { _tag: "existing" };
             }
             if (response.status !== 202) {
-                const sessionCheck = yield* Effect.orDie(Effect.try({ try: () => sessionCheckOf(response.headers), catch: (e) => e }));
+                const sessionCheck = yield* Effect.sync(() => sessionCheckOf(response.headers));
                 return yield* Effect_1.fail(new QuestionNotTaken({ reason: "refused", status: response.status, ...sessionCheck }));
             }
             yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return HttpClientResponse.schemaBodyJson(Inserted)(response); }); })(), () => (_tail_2 => { return Effect_1.gen(function* () {

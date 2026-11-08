@@ -7,7 +7,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { base64Bytes, LEASE_SECONDS, MAX_RUNNER_BODY_BYTES } from "../../src/features/runners/contract.js";
 import { SUMMARY_EVERY_SECONDS } from "../../src/features/transcript/contract.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import { bearerOf } from "../RunCredentials.js";
 import * as Fleet from "./Fleet.js";

@@ -70,17 +70,14 @@ export class HostModel extends Context.Service()("@smthrs/model-host/HostModel")
         let $do1;
         {
             const catchProgram = (Effect_1.gen(function* () {
-                const keyName = yield* Effect.orDie(Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error }));
+                const keyName = yield* Effect.sync(() => ConfiguredModel.modelCredentialEnvName(record.credential));
                 const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`;
                 const apiKey = yield* Config.option(Config.Redacted(keyName));
                 const origin = yield* Config.option(Config.String(originName));
-                const planned = yield* Effect.orDie(Effect.try({
-                    try: () => ConfiguredModel.planModelBinding(record, ConfiguredModel.hostModelCredentials({
-                        [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
-                        [originName]: Option.getOrUndefined(origin)
-                    }), { kind: "generation" }),
-                    catch: (error) => error
-                }));
+                const planned = yield* Effect.sync(() => ConfiguredModel.planModelBinding(record, ConfiguredModel.hostModelCredentials({
+                    [keyName]: Option.match(apiKey, { onNone: () => undefined, onSome: Redacted.value }),
+                    [originName]: Option.getOrUndefined(origin)
+                }), { kind: "generation" }));
                 if (!planned.ok)
                     return yield* Effect_1.fail(new HostModelUnusable({ reason: planned.failure.code })
                     // The planner refuses a record whose key is missing, so a usable plan has one.
@@ -149,17 +146,14 @@ export class HostModel extends Context.Service()("@smthrs/model-host/HostModel")
     static layerConfig = (name, fallback, options = {}) => Layer.unwrap(Effect_1.gen(function* () {
         const configured = Config.schema(RecordJson, name);
         const record = yield* (fallback === undefined ? configured : configured.pipe(Config.withDefault(fallback)));
-        const keyName = yield* Effect.orDie(Effect.try({ try: () => ConfiguredModel.modelCredentialEnvName(record.credential), catch: (error) => error }));
+        const keyName = yield* Effect.sync(() => ConfiguredModel.modelCredentialEnvName(record.credential));
         const apiKey = yield* Config.Redacted(keyName);
         const originName = `${keyName}${ConfiguredModel.MODEL_CREDENTIAL_ORIGIN_SUFFIX}`;
         const origin = yield* Config.option(Config.String(originName));
-        const planned = yield* Effect.orDie(Effect.try({
-            try: () => ConfiguredModel.planModelBinding(record, ConfiguredModel.hostModelCredentials({
-                [keyName]: Redacted.value(apiKey),
-                [originName]: Option.getOrUndefined(origin)
-            }), { kind: "generation" }),
-            catch: (error) => error
-        }));
+        const planned = yield* Effect.sync(() => ConfiguredModel.planModelBinding(record, ConfiguredModel.hostModelCredentials({
+            [keyName]: Redacted.value(apiKey),
+            [originName]: Option.getOrUndefined(origin)
+        }), { kind: "generation" }));
         if (!planned.ok)
             return yield* Effect.die(new Error(`${name} is not usable: ${JSON.stringify(planned.failure)}`));
         return HostModel.layer(planned.plan, apiKey, options);

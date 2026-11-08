@@ -10,7 +10,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { cloneExecutionId, isFilePath, isRepository, MAX_REQUEST_BYTES, MAX_PATH_LENGTH, MAX_BLOB_BYTES, repoId, LAUNCH_ROUTE, REPOS_ROUTE, REPOSITORIES_SHAPE_ROUTE, REPOSITORIES_TABLE, SHA_PATTERN, textOf, } from "../src/features/repo/contract.js";
 import { canClone, Sessions } from "./Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { codeOf } from "./ErrorCode.js";
 import { FlowStarter } from "./Flows.js";
 import { Clone } from "./flows/RepoClone.js";

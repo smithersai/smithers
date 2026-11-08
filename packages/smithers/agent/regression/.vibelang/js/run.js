@@ -89,7 +89,7 @@ const update = Effect_1.gen(function* update() {
         }));
     }
     const baseline = yield* Baseline.fromRun(run);
-    yield* host.writeBaseline(yield* Effect.orDie(Effect.try({ try: () => Baseline.write(baseline), catch: (e) => e })));
+    yield* host.writeBaseline(yield* Effect.sync(() => Baseline.write(baseline)));
     yield* host.stdout(`${scores(run)}\nrecorded ${baseline.records.length} baseline record(s)\n`);
     return 0;
 });
@@ -107,13 +107,13 @@ const gate = Effect_1.gen(function* gate() {
         summary: `${error.code}: threshold ${error.threshold}, actual ${error.actual}`,
     }); }));
     const drifted = regression.regressions.length + regression.nondeterminism.length + regression.missing.length;
-    yield* host.stdout(`${scores(run)}\n\n${yield* Effect.orDie(Effect.try({ try: () => Report.markdown(regression), catch: (e) => e }))}`);
+    yield* host.stdout(`${scores(run)}\n\n${yield* Effect.sync(() => Report.markdown(regression))}`);
     if (drifted > 0) {
         // The full JSON report carries per-case latencies, which are the one
         // nondeterministic field in a run; it is printed only on request so the
         // ordinary output stays diffable.
         if (host.args.includes("--json")) {
-            yield* host.stdout(yield* Effect.orDie(Effect.try({ try: () => Report.json(regression), catch: (e) => e })));
+            yield* host.stdout(yield* Effect.sync(() => Report.json(regression)));
         }
         yield* host.stdout(`\nthe run disagrees with ${baselinePath.pathname}\n`);
     }

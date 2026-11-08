@@ -5,7 +5,7 @@ import { ConfiguredModel } from "@smthrs/rpc";
 import { Context, Effect, Layer, Option, Schema, Stream } from "effect";
 import { hostOf, resolveTier } from "../../src/features/personal-model/contract.js";
 import { codeOf } from "../ErrorCode.js";
-import { acceptsEffort } from "#vibelang/emitted/worker/ModelTiers";
+import { acceptsEffort } from "../ModelTiers.js";
 import { SecretKeys } from "../secrets/Keys.js";
 import * as Store from "./Store.js";
 // A person's own model, opened for one call (decisions 0096, 0107 and 0132, docs/features/personal-model.md#answering).

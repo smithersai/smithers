@@ -8,7 +8,7 @@ import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { repoId } from "../../src/features/repo/contract.js";
 import { MAX_PUT_BODY_BYTES, parseSecretRoute, SECRETS_SHAPE_COLUMNS, SECRETS_SHAPE_ROUTE, SECRETS_TABLE, writeExecutionId, } from "../../src/features/secrets/contract.js";
 import { canAsk, refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Flows from "../Flows.js";
 import * as ShapeAccess from "../ShapeAccess.js";

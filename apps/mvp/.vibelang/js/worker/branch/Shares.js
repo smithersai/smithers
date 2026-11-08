@@ -6,7 +6,7 @@ import { SqlClient } from "effect/sql";
 import { isLogin, MAX_SHARE_BODY_BYTES, MAX_SHARES, REPOSITORY_GRANTEE, SHARE_ACCESSES, SHARES_TABLE, } from "../../src/features/branch/contract.js";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Repos from "../Repos.js";
 import * as ShapeAccess from "../ShapeAccess.js";

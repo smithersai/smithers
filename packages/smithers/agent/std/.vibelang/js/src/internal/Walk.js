@@ -98,7 +98,7 @@ export const files = (fileSystem, path, root, hidden, noIgnore = false, included
         });
         if (!noIgnore && children.includes(".gitignore")) {
             const content = yield* runtime.$catch(yield* (() => { return Effect_1.sync(() => { return fileSystem.readFileString(path.join(directory, ".gitignore")); }); })(), () => Effect_1.sync(() => { return ""; }));
-            const scope = yield* Effect.orDie(Effect.try({ try: () => Ignore.parse(directory, content), catch: (error) => error }));
+            const scope = yield* Effect.sync(() => Ignore.parse(directory, content));
             if (scope.rules.length > 0)
                 scopes = [...scopes, scope];
         }
@@ -112,10 +112,7 @@ export const files = (fileSystem, path, root, hidden, noIgnore = false, included
         const nested = [];
         for (const entry of entries) {
             if (entry.type !== undefined &&
-                (yield* Effect.orDie(Effect.try({
-                    try: () => Ignore.ignored(scopes, entry.candidate, path.basename(entry.candidate), entry.type === "Directory", (from, to) => relativeForPattern(path, from, to)),
-                    catch: (error) => error
-                })))) {
+                (yield* Effect.sync(() => Ignore.ignored(scopes, entry.candidate, path.basename(entry.candidate), entry.type === "Directory", (from, to) => relativeForPattern(path, from, to))))) {
                 if (entry.type === "Directory" ||
                     included(relativeForPattern(path, root, entry.candidate), path.basename(entry.candidate)))
                     excluded = true;

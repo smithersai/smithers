@@ -8,7 +8,7 @@ import { segmentRevision } from "../src/features/timeline/identity.js";
 import { checkPlan, exchangeUnits, phaseUnits, sealSpans } from "../src/features/timeline/marks.js";
 import { Sessions } from "./Actor.js";
 import { branchAccess, canView } from "./branch/Access.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 // The timeline's summaries, once per message for everyone (docs/features/timeline.md#cost). A tab that wants a model
 // summary of a finished answer claims it first; only the claim that inserts the row calls the model, and its summary is
 // recorded on the message, which every device syncs. On smithers.sh on 2026-10-25 each tab, device and fresh browser

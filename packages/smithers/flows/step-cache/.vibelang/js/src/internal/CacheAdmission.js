@@ -76,9 +76,9 @@ const entryJsonLimits = {
 const encodeBounded = (value, field, limits) => Effect.suspend(() => {
     const admitted = BoundedJson.admit(value, limits);
     return admitted.ok
-        ? (Effect.mapError(Schema.decodeUnknownEffect(Canonical)(admitted.value)
+        ? Effect.mapError(Schema.decodeUnknownEffect(Canonical)(admitted.value), 
         /* v8 ignore next -- bounded inert JSON is exactly Canonical's accepted domain */
-        , () => error("invalid_cache", `${field} must have a bounded canonical JSON form`)))
+        () => error("invalid_cache", `${field} must have a bounded canonical JSON form`))
         : Effect.fail(error("invalid_cache", `${field} ${admitted.complaint}`));
 });
 /**

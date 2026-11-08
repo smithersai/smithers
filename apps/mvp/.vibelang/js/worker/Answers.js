@@ -7,7 +7,7 @@ import { AnswerWrite } from "../src/features/agent/schema.js";
 import { agentLiveSeconds } from "../src/features/model/contract.js";
 import { boundTo, Sessions } from "./Actor.js";
 import { askingOnAnswer } from "./branch/Access.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { codeOf } from "./ErrorCode.js";
 import * as Notifications from "./Notifications.js";
 import * as Messages from "./Messages.js";

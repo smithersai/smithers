@@ -6,7 +6,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { isBranchName, MAX_TRACK_BODY_BYTES } from "../../src/features/branch/contract.js";
 import { isRepository, repoId } from "../../src/features/repo/contract.js";
 import { Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import { branchAccess, canView, isMemberOn } from "./Access.js";
 import * as Repos from "../Repos.js";

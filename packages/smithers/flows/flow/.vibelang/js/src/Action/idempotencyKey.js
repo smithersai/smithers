@@ -42,7 +42,7 @@ export const idempotencyKey =
             name,
             idempotency: parentScope
         })));
-        const ordinal = yield* Effect.orDie(Effect.try({ try: () => instance.actionState.nextOrdinal(scope), catch: (error) => error }));
+        const ordinal = yield* Effect.sync(() => instance.actionState.nextOrdinal(scope));
         const identityScope = JSON.stringify([name, parentScope ?? null]);
         return yield* (Effect.orDie(StepIdentity.invocationKey({
             runId: instance.executionId,

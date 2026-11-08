@@ -9,7 +9,7 @@ import { MAX_RUN_BODY_BYTES, RUNS_TABLE } from "../src/features/status/contract.
 import { Decision, Report as ReportSchema, RunAnswer as RunAnswerSchema, } from "../src/features/status/schema.js";
 import { boundTo, refusesPersonOnly, Sessions } from "./Actor.js";
 import { askingOnAnswer } from "./branch/Access.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { codeOf } from "./ErrorCode.js";
 import { withAnswerConversation } from "./Messages.js";
 import * as Notifications from "./Notifications.js";

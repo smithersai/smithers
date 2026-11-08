@@ -8,7 +8,7 @@ import { BUG_READ_TOKEN_VARIABLE, BUG_REPORT_COLUMNS, BUG_REPORTS_ROUTE, BUG_REP
 import { ReportRequest } from "../../src/features/bugs/schema.js";
 import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Flows from "../Flows.js";
 import { BugReport } from "../flows/BugReport.js";

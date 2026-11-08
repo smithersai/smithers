@@ -20,15 +20,15 @@ read) => Effect.orDie(Effect_1.gen(function* () {
     if (!SHA.test(base) || !SHA.test(head))
         return;
     const repoId = `github/${owner}/${name}`.toLowerCase();
-    const id = yield* Effect.orDie(Effect.try({ try: () => comparisonKey(repoId, base, head), catch: (e) => e }));
+    const id = yield* Effect.sync(() => comparisonKey(repoId, base, head));
     const repos = yield* Effect.serviceOption(RepoStore);
     if (Option.isSome(repos)
-        && (yield* Effect.orDie(Effect.try({ try: () => repos.value.isRefused(repoId), catch: (e) => e }))))
+        && (yield* Effect.sync(() => repos.value.isRefused(repoId))))
         return;
     const fence = Option.isSome(repos)
-        ? yield* Effect.orDie(Effect.try({ try: () => repos.value.fenceOf(repoId), catch: (e) => e })) : 0;
+        ? yield* Effect.sync(() => repos.value.fenceOf(repoId)) : 0;
     // `crypto.randomUUID()`: a UUIDv4 from `globalThis.crypto`.
-    const requestId = yield* Effect.orDie(Effect.try({ try: () => SecureRandom.uuidV4Unsafe(), catch: (e) => e }));
+    const requestId = yield* Effect.sync(() => SecureRandom.uuidV4Unsafe());
     read?.(repoId, id);
     // Independent repository keys, and independent request identities after a wipe or retry.
     const held = yield* rows.get(id);

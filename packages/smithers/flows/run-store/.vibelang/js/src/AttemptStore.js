@@ -633,7 +633,7 @@ export const makeWith = (options = {}) => Effect_1.gen(function* () {
         return rows.length === 0 ? Option.none() : yield* Effect.map(decodeRow("get", rows[0]), Option.some);
     })));
     const listRun = Effect.fn("AttemptStore.listRun")((runId) => observeExit(Effect_1.gen(function* () {
-        if (!(yield* Effect.orDie(Effect.try({ try: () => Boundary.isDurableText(runId), catch: (error) => error })))) {
+        if (!(yield* Effect.sync(() => Boundary.isDurableText(runId)))) {
             return yield* Effect_1.fail(error("listRun", "invalid_attempt", "run id violates the durable identifier contract"));
         }
         yield* Effect.annotateCurrentSpan({ runId });
@@ -704,7 +704,7 @@ export const makeWith = (options = {}) => Effect_1.gen(function* () {
             ownerHostId: owner.hostId
         });
         if (inProgressStates.includes(attempt.state) ||
-            !(yield* Effect.orDie(Effect.try({ try: () => Boundary.isDurableText(attempt.state), catch: (error) => error })))) {
+            !(yield* Effect.sync(() => Boundary.isDurableText(attempt.state)))) {
             return yield* Effect_1.fail(error("finish", "invalid_attempt", "finish requires a terminal state and valid timestamp"));
         }
         const attemptError = yield* finishEncodeOptional(attempt.error, "error");

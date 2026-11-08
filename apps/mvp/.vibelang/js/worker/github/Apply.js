@@ -121,7 +121,7 @@ export const read = (services) => (request) => withSpan(Effect.mapError(Effect.p
         if (services.startApply !== undefined) {
             const delivery = request.deliveryId.split(":")[0];
             const before = yield* Store.relationBefore(repository.id, request.number);
-            const parents = yield* Effect.orDie(Effect.try({ try: () => neighbours(repository.id, before, fetched), catch: (e) => e }));
+            const parents = yield* Effect.sync(() => neighbours(repository.id, before, fetched));
             for (const parent of parents) {
                 if (!services.mayAct(parent.repository.id))
                     continue;

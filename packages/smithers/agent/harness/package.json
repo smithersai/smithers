@@ -41,53 +41,101 @@
     },
     "./internal/*": null,
     "./*/index": null,
-    "./AgentEvent": "./src/AgentEvent.ts",
+    "./AgentEvent": {
+      "types": "./src/AgentEvent.ts",
+      "vibelang-source": "./src/AgentEvent.ts",
+      "default": "./.vibelang/js/src/AgentEvent.js"
+    },
     "./CallLedger": {
       "types": "./.vibe/declarations/src/CallLedger.d.vibe.ts",
       "vibelang-source": "./src/CallLedger.vibe",
       "default": "./.vibelang/js/src/CallLedger.js"
     },
-    "./Cell": "./src/Cell.ts",
-    "./CellCalls": "./src/CellCalls.ts",
-    "./CellHistory": "./src/CellHistory.ts",
+    "./Cell": {
+      "types": "./src/Cell.ts",
+      "vibelang-source": "./src/Cell.ts",
+      "default": "./.vibelang/js/src/Cell.js"
+    },
+    "./CellCalls": {
+      "types": "./src/CellCalls.ts",
+      "vibelang-source": "./src/CellCalls.ts",
+      "default": "./.vibelang/js/src/CellCalls.js"
+    },
+    "./CellHistory": {
+      "types": "./src/CellHistory.ts",
+      "vibelang-source": "./src/CellHistory.ts",
+      "default": "./.vibelang/js/src/CellHistory.js"
+    },
     "./CellTurn": {
       "types": "./src/CellTurn.ts",
       "vibelang-source": "./src/CellTurn.ts",
       "default": "./.vibelang/js/src/CellTurn.js"
     },
-    "./CellValidation": "./src/CellValidation.ts",
+    "./CellValidation": {
+      "types": "./src/CellValidation.ts",
+      "vibelang-source": "./src/CellValidation.ts",
+      "default": "./.vibelang/js/src/CellValidation.js"
+    },
     "./Compaction": {
       "types": "./src/Compaction.ts",
       "vibelang-source": "./src/Compaction.ts",
       "default": "./.vibelang/js/src/Compaction.js"
     },
-    "./CompletionClaim": "./src/CompletionClaim.ts",
+    "./CompletionClaim": {
+      "types": "./src/CompletionClaim.ts",
+      "vibelang-source": "./src/CompletionClaim.ts",
+      "default": "./.vibelang/js/src/CompletionClaim.js"
+    },
     "./ContextWindow": {
       "types": "./src/ContextWindow.ts",
       "vibelang-source": "./src/ContextWindow.ts",
       "default": "./.vibelang/js/src/ContextWindow.js"
     },
-    "./EngineLike": "./src/EngineLike.ts",
-    "./ExternalTranscript": "./src/ExternalTranscript.ts",
+    "./EngineLike": {
+      "types": "./src/EngineLike.ts",
+      "vibelang-source": "./src/EngineLike.ts",
+      "default": "./.vibelang/js/src/EngineLike.js"
+    },
+    "./ExternalTranscript": {
+      "types": "./src/ExternalTranscript.ts",
+      "vibelang-source": "./src/ExternalTranscript.ts",
+      "default": "./.vibelang/js/src/ExternalTranscript.js"
+    },
     "./FlowBinding": {
       "types": "./src/FlowBinding.ts",
       "vibelang-source": "./src/FlowBinding.ts",
       "default": "./.vibelang/js/src/FlowBinding.js"
     },
-    "./HarnessError": "./src/HarnessError.ts",
-    "./Judgement": "./src/Judgement.ts",
+    "./HarnessError": {
+      "types": "./src/HarnessError.ts",
+      "vibelang-source": "./src/HarnessError.ts",
+      "default": "./.vibelang/js/src/HarnessError.js"
+    },
+    "./Judgement": {
+      "types": "./src/Judgement.ts",
+      "vibelang-source": "./src/Judgement.ts",
+      "default": "./.vibelang/js/src/Judgement.js"
+    },
     "./Monitor": {
       "types": "./.vibe/declarations/src/Monitor.d.vibe.ts",
       "vibelang-source": "./src/Monitor.vibe",
       "default": "./.vibelang/js/src/Monitor.js"
     },
-    "./NarrowedCheck": "./src/NarrowedCheck.ts",
+    "./NarrowedCheck": {
+      "types": "./src/NarrowedCheck.ts",
+      "vibelang-source": "./src/NarrowedCheck.ts",
+      "default": "./.vibelang/js/src/NarrowedCheck.js"
+    },
     "./Notifications": {
       "types": "./src/Notifications.ts",
       "vibelang-source": "./src/Notifications.ts",
       "default": "./.vibelang/js/src/Notifications.js"
     },
-    "./Plan": "./src/Plan.ts",
+    "./Plan": {
+      "types": "./src/Plan.ts",
+      "vibelang-source": "./src/Plan.ts",
+      "default": "./.vibelang/js/src/Plan.js"
+    },
     "./QuickJSSandbox": {
       "types": "./src/QuickJSSandbox.ts",
       "vibelang-source": "./src/QuickJSSandbox.ts",
@@ -103,15 +151,31 @@
       "vibelang-source": "./src/Relevance.vibe",
       "default": "./.vibelang/js/src/Relevance.js"
     },
-    "./Sandbox": "./src/Sandbox.ts",
+    "./Sandbox": {
+      "types": "./src/Sandbox.ts",
+      "vibelang-source": "./src/Sandbox.ts",
+      "default": "./.vibelang/js/src/Sandbox.js"
+    },
     "./Steering": {
       "types": "./.vibe/declarations/src/Steering.d.vibe.ts",
       "vibelang-source": "./src/Steering.vibe",
       "default": "./.vibelang/js/src/Steering.js"
     },
-    "./StructuredOutput": "./src/StructuredOutput.ts",
-    "./Sufficiency": "./src/Sufficiency.ts",
-    "./Supervisor": "./src/Supervisor.ts",
+    "./StructuredOutput": {
+      "types": "./src/StructuredOutput.ts",
+      "vibelang-source": "./src/StructuredOutput.ts",
+      "default": "./.vibelang/js/src/StructuredOutput.js"
+    },
+    "./Sufficiency": {
+      "types": "./src/Sufficiency.ts",
+      "vibelang-source": "./src/Sufficiency.ts",
+      "default": "./.vibelang/js/src/Sufficiency.js"
+    },
+    "./Supervisor": {
+      "types": "./src/Supervisor.ts",
+      "vibelang-source": "./src/Supervisor.ts",
+      "default": "./.vibelang/js/src/Supervisor.js"
+    },
     "./Tokens": {
       "types": "./.vibe/declarations/src/Tokens.d.vibe.ts",
       "vibelang-source": "./src/Tokens.vibe",
@@ -127,9 +191,21 @@
       "vibelang-source": "./src/TruncatedOutput.vibe",
       "default": "./.vibelang/js/src/TruncatedOutput.js"
     },
-    "./UnmovedTree": "./src/UnmovedTree.ts",
-    "./UnresolvedFailure": "./src/UnresolvedFailure.ts",
-    "./FailedCall": "./src/FailedCall.ts",
+    "./UnmovedTree": {
+      "types": "./src/UnmovedTree.ts",
+      "vibelang-source": "./src/UnmovedTree.ts",
+      "default": "./.vibelang/js/src/UnmovedTree.js"
+    },
+    "./UnresolvedFailure": {
+      "types": "./src/UnresolvedFailure.ts",
+      "vibelang-source": "./src/UnresolvedFailure.ts",
+      "default": "./.vibelang/js/src/UnresolvedFailure.js"
+    },
+    "./FailedCall": {
+      "types": "./src/FailedCall.ts",
+      "vibelang-source": "./src/FailedCall.ts",
+      "default": "./.vibelang/js/src/FailedCall.js"
+    },
     "./VacuousVerification": {
       "types": "./.vibe/declarations/src/VacuousVerification.d.vibe.ts",
       "vibelang-source": "./src/VacuousVerification.vibe",

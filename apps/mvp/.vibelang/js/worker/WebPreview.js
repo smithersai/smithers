@@ -7,7 +7,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { MAX_PREVIEW_BODY_BYTES, MAX_URL_LENGTH, WEB_MODES } from "../src/features/web/contract.js";
 import { checkUrl, LOCAL_HOSTS } from "../src/features/web/url.js";
 import { Sessions } from "./Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { codeOf } from "./ErrorCode.js";
 import { localHttpConfig, policyFor } from "./Views.js";
 // Checking a page before the conversation shows it (docs/features/web-pages.md#before-a-page-is-framed):

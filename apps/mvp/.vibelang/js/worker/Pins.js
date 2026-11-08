@@ -9,7 +9,7 @@ import { boundTo, Sessions } from "./Actor.js";
 import { branchAccess, canView } from "./branch/Access.js";
 import * as Conversations from "./branch/Conversations.js";
 import { answerConversation } from "./branch/SandboxCalls.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import * as ShapeAccess from "./ShapeAccess.js";
 const Id = Schema.String.check(Schema.isUUID());
 const Request = Schema.Struct({

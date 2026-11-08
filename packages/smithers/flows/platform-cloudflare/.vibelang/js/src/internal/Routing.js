@@ -69,7 +69,7 @@ const read = (executionId) => {
         const self = lineage[index];
         const successor = lineage[index + 1];
         const settled = successor === undefined &&
-            (yield* Effect.orDie(Effect.try({ try: () => RunStore.isTerminalRunStatus(self.status), catch: (error) => error })));
+            (yield* Effect.sync(() => RunStore.isTerminalRunStatus(self.status)));
         const linked = new Set();
         for (const round of settled ? lineage : [self]) {
             for (const edge of yield* engineState.runChildren(round.runId))

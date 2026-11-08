@@ -5,7 +5,7 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http";
 import { SqlClient } from "effect/sql";
 import { callExecutionId, COMMAND_LIMIT_SECONDS, MAX_CALL_BODY_BYTES, SANDBOX_CALLS_ROUTE, } from "../../src/features/sandbox/contract.js";
 import { boundTo, canAsk, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Flows from "../Flows.js";
 import { SandboxCall } from "../flows/SandboxCall.js";

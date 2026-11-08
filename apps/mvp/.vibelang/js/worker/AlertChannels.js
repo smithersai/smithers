@@ -7,7 +7,7 @@ import { SqlClient } from "effect/sql";
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { ALERT_CHANNEL_COLUMNS, ALERT_CHANNELS_TABLE, ALERT_DELIVERIES_TABLE, ALERT_DELIVERY_COLUMNS, MAX_ALERT_CHANNEL_BODY_BYTES, MAX_DESTINATIONS, } from "../src/features/spend/contract.js";
 import { refusesPersonOnly, Sessions } from "./Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { codeOf } from "./ErrorCode.js";
 import * as ShapeAccess from "./ShapeAccess.js";
 // Where spend alerts go outside the app (docs/features/spend-alerts.md#channels). Will, 2026-10-20: "configurable but

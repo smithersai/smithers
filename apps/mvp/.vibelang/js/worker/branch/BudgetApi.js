@@ -6,7 +6,7 @@ import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { MAX_SANDBOX_LIMITS_BODY_BYTES, SANDBOX_LIMIT_COLUMNS, SANDBOX_LIMITS_TABLE, } from "../../src/features/spend/contract.js";
 import { SandboxLimitsRequest } from "../../src/features/spend/schema.js";
 import { refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as ShapeAccess from "../ShapeAccess.js";
 import * as Budget from "./Budget.js";

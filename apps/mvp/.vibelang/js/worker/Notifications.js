@@ -10,7 +10,7 @@ import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.js";
 import { memberOrAbove, refusesPersonOnly, Sessions } from "./Actor.js";
 import { branchAccess, branchAccessAs, BranchRoles, canView, isMember, policyOf, underPolicy, roleOn as workRoleOn } from "./branch/Access.js";
 import * as Conversations from "./branch/Conversations.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "./Body.js";
 import { codeOf } from "./ErrorCode.js";
 import * as FeedLocks from "./FeedLocks.js";
 import * as SessionStore from "./SessionStore.js";

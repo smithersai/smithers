@@ -130,6 +130,7 @@ export const judge = (context, items) => {
                         Option.getOrElse(Classifier.confident(answer, confidentAt), () => false)
                 };
             }),
+            /* v8 ignore next -- a digest that throws is a defect, as it was in the TypeScript this module came from */
             catch: (e) => e
         }));
         const usages = read.asked.flatMap((asked) => asked.usage === undefined ? [] : [asked.usage]);

@@ -6,7 +6,7 @@ import { LOCAL_ELECTRIC_URL } from "../../src/features/chat/contract.js";
 import { DOMAINS_SHAPE_COLUMNS, DOMAINS_SHAPE_ROUTE, DOMAINS_TABLE, isUnder, MAX_DOMAIN_BODY_BYTES, normalizeHostname, parseDomainRoute, writeExecutionId, } from "../../src/features/domains/contract.js";
 import { repoId } from "../../src/features/repo/contract.js";
 import { refusesPersonOnly, Sessions } from "../Actor.js";
-import { readBounded } from "#vibelang/emitted/worker/Body";
+import { readBounded } from "../Body.js";
 import { codeOf } from "../ErrorCode.js";
 import * as Flows from "../Flows.js";
 import * as ShapeAccess from "../ShapeAccess.js";
