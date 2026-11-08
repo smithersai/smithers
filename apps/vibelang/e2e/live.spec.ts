@@ -35,6 +35,9 @@ test.describe("the live agent", () => {
   // Dogfooding (VL-26, 0007): the agent works through the emitted Factory CLI while a person has the page open, in the
   // one home conversation. Run `pnpm build:surfaces` first. The CLI exits nonzero when the reply fails (no model key).
   test("the CLI's post reaches an open page, and the page's post reaches the CLI", async ({ page }) => {
+    // Every project posts into the one home conversation, whose agent answers one post at a time (0007), so a reply
+    // can wait behind the other projects' replies: the test needs the same patience as its reply assertion.
+    test.setTimeout(180_000)
     const cli = fileURLToPath(new URL("../dist-factory/surfaces/cli-entry.js", import.meta.url))
     const env = { ...process.env, VIBELANG_FACTORY: "", VIBELANG_FACTORY_URL: live!, NO_COLOR: "1" }
     const run = (args: ReadonlyArray<string>) => promisify(execFile)(process.execPath, [cli, ...args], { env }).catch((failed: { stdout: string }) => failed)
