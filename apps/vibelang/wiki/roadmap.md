@@ -22,7 +22,8 @@ brick                                   state         proof
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   in progress         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       later         VL-20
-4   actions and slash commands          later         VL-24
+4   actions and slash commands          held          0023: registry catalog and engine step telemetry landed; app held at
+                                                      actions-schema-json-field (Effect/VibeLang metadata); upstream approval pending
 5   mythical history                    done (local)  0020: the History machine proved (linearity, no loss, exactly one), the
                                                       bootstrap of 6,737 real commits, the flows, the live object and /history;
                                                       read by page (lane vl-mythical2); live writes wait for 0019's policy
@@ -53,3 +54,5 @@ brick                                   state         proof
 - **vl-fuzzpkg, in progress:** package the Effect fork as `@smthrs/fuzz`, then independent whole-app fuzz coverage and a 30-minute campaign (decision 0015).
 
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
+
+- **vl-actions (0023):** SDK foundation is tested and landed. The unlanded mock preview and proof receipts are preserved in the lane report; live routes, agent tools and full browser/workerd coverage remain.

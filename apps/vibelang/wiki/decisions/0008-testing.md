@@ -136,3 +136,8 @@ The happy-dom startup runtime check uses that same held-health Clock and statica
 its responsiveness assertions begin. This excludes cold source-compiler work from a compiled-page latency check;
 browser cases retain cold asset loading. Its 500 ms input, four-second completion and five-second overall limits
 remain unchanged. The cold-load regression failed before this fixture correction (0014 production follow-up).
+
+## Tool list: actions SDK foundation
+
+- `vibelang-unplugin@0.0.12`: engine browser-bundle proof for VibeLang source. Already used in the monorepo; added only as the SDK package's build/test tool. Awaiting Will's VL-5 approval. No new app dependency.
+- `vibelang-runtime@0.0.12`: the registry and engine now publish VibeLang sources and declare the runtime already used by this app.

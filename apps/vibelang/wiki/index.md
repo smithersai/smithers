@@ -28,12 +28,11 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
 | [0014](decisions/0014-agent-tour.md) | Learn more is a tour the agent drives: its pane actions are numbered events of the one state machine (VL-28) |
 | [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
-| [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries |
-| [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
-
-| [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
-
 | [0015](decisions/0015-fuzzing.md) | Effect fork as `@smthrs/fuzz`, corpus, budgets, whole-app fuzz targets and independent coverage |
+| [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries |
+| [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
+| [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
+| [0023](decisions/0023-actions.md) | Registered flow catalogs and engine step telemetry; actions UI held at the Schema.Json integration gap |
 
 ## Layout
 
