@@ -307,7 +307,7 @@
     "@lezer/highlight": "1.2.3",
     "y-protocols": "1.0.6",
     "@smthrs/views": "workspace:*",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "peerDependencies": {
     "react": "^19.2.8",
@@ -329,8 +329,8 @@
     "playwright": "1.62.1",
     "quickjs-emscripten-core": "0.32.0",
     "happy-dom": "20.13.2",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12"
+    "vibelang": "0.0.13",
+    "vibelang-unplugin": "0.0.13"
   },
   "imports": {
     "#vibelang/emitted/src/app-operations/index": {

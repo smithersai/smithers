@@ -208,7 +208,7 @@
   },
   "dependencies": {
     "@smthrs/crypto": "1.0.0-rc.16",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -228,8 +228,8 @@
     "madge": "8.0.0",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

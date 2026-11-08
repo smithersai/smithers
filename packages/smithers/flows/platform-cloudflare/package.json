@@ -99,7 +99,7 @@
     "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/run-store": "1.0.0-rc.16",
     "@smthrs/sandbox": "1.0.0-rc.16",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "@cloudflare/workers-types": "5.20261019.1",
@@ -123,8 +123,8 @@
     "miniflare": "5.20261019.0-beta",
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0"
   },
   "peerDependencies": {

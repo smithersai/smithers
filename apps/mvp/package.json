@@ -394,7 +394,7 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "sucrase": "3.35.1",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "@cloudflare/vite-plugin": "1.64.0",
@@ -416,9 +416,9 @@
     "miniflare": "5.20261019.0-beta",
     "minimatch": "10.2.6",
     "typescript": "^5.9.3",
-    "vibelang": "0.0.12",
-    "vibelang-unplugin": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-unplugin": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vite": "8.3.4",
     "vite-plugin-pwa": "2.0.0",
     "vitest": "5.0.0",

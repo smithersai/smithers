@@ -43,7 +43,7 @@
     "string-width": "7.2.0",
     "@smthrs/ui": "workspace:*",
     "@smthrs/crypto": "workspace:*",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "devDependencies": {
     "@eslint/js": "9.39.5",
@@ -58,7 +58,7 @@
     "eslint-plugin-unicorn": "65.0.0",
     "typescript": "~5.9.3",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
+    "vibelang": "0.0.13",
     "@smthrs/testing": "workspace:*"
   },
   "imports": {

@@ -512,7 +512,7 @@
     "redis": "6.2.1",
     "@types/ws": "8.18.2",
     "ws": "8.22.0",
-    "vibelang-runtime": "0.0.12"
+    "vibelang-runtime": "0.0.13"
   },
   "optionalDependencies": {
     "@smthrs/agent": "1.0.0-rc.16",
@@ -544,8 +544,8 @@
     "eslint-plugin-unicorn": "65.0.0",
     "madge": "8.0.0",
     "typescript-eslint": "8.69.0",
-    "vibelang": "0.0.12",
-    "vibelang-vite": "0.0.12",
+    "vibelang": "0.0.13",
+    "vibelang-vite": "0.0.13",
     "vitest": "5.0.0",
     "@effect/platform-node": "4.1.1",
     "@effect/platform-node-shared": "4.1.1",
