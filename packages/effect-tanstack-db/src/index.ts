@@ -10,13 +10,13 @@
  * @category collections
  * @since 0.1.0
  */
-export * as Collection from "./Collection.ts"
+export * as Collection from "./Collection.vibe"
 
 /**
  * @category queries
  * @since 0.1.0
  */
-export * as LiveQuery from "./LiveQuery.ts"
+export * as LiveQuery from "./LiveQuery.vibe"
 
 /**
  * @category queries
@@ -28,16 +28,16 @@ export * as Query from "./Query.ts"
  * @category persistence
  * @since 0.2.0
  */
-export * as Persistence from "./Persistence.ts"
+export * as Persistence from "./Persistence.vibe"
 
 /**
  * @category writes
  * @since 0.2.0
  */
-export * as Outbox from "./Outbox.ts"
+export * as Outbox from "./Outbox.vibe"
 
 /**
  * @category migrations
  * @since 0.3.0
  */
-export * as Migrations from "./Migrations.ts"
+export * as Migrations from "./Migrations.vibe"

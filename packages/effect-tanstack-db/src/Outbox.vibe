@@ -1,0 +1,1459 @@
+/**
+ * A durable outbox for TanStack DB writes, through
+ * `@tanstack/offline-transactions`, as an Effect service.
+ *
+ * A write is an offline transaction: its optimistic rows show at once, the
+ * transaction is stored durably (IndexedDB in a browser) before anything is
+ * sent, and the library sends it with its own backoff, one at a time in the
+ * order written, across reloads and restarts. Each named mutation is an
+ * Effect; this module turns its typed failures into the library's retry
+ * decisions:
+ *
+ * - `Refused`: the server refused the write for good; it is never sent again
+ *   and its optimistic rows roll back;
+ * - `Retry`: the write didn't get through (the network, a 5xx, a 429, a
+ *   deadline); the library sends it again after its backoff, 1 second
+ *   doubling to 60, jittered, or at once on `retryNow` or the browser coming
+ *   back online. With `held: true`, its row also retains a hold until settlement. When dependency keys are supplied,
+ *   unrelated writes may pass while later writes sharing any dependency wait;
+ * - a defect is never retried, and is logged.
+ *
+ * Only a program that leads the outbox, with durable storage, admits a write.
+ * `transact` never takes the library's online-only path for followers; it
+ * fails with `NotAdmitted` instead. Who leads is injected (`leader`); without
+ * one, the library elects with its own Web Lock. Closing retains that election
+ * until persistence already in flight has drained, and refuses later writes.
+ *
+ * `withdraw` takes back a write not sent yet, under the same lock a send
+ * claims its write with, so a write is never both sent and taken back.
+ *
+ * The host supplies the library's entry point and storage as arguments
+ * (`startOfflineExecutor`, `IndexedDBAdapter`), so this module imports and
+ * runs anywhere Effect does.
+ *
+ * @since 0.2.0
+ */
+
+import type {
+  LeaderElection,
+  OfflineConfig,
+  OfflineExecutor,
+  OnlineDetector,
+  StorageAdapter
+} from "@tanstack/offline-transactions"
+import * as Cause from "effect/Cause"
+import * as Context from "effect/Context"
+import * as Effect from "effect/Effect"
+import * as Layer from "effect/Layer"
+import * as Metric from "effect/Metric"
+import * as Option from "effect/Option"
+import type * as Scope from "effect/Scope"
+import type * as Stream from "effect/Stream"
+import type { Collection } from "./Collection.vibe"
+import { errorName } from "./internal/errorName.ts"
+import { type MutationRefused, TransactionFailed } from "./internal/model.vibe"
+import type { OutboxUpgrade } from "./Migrations.vibe"
+
+/**
+ * The server refused a write for good: it is never sent again, and its
+ * optimistic rows roll back. `status` is the HTTP status, when there was one.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export error Refused { status?: number }
+
+/**
+ * A write didn't get through and is sent again after the backoff: `status` is
+ * the HTTP status (5xx, 408, 429), or absent for the network or a deadline.
+ * `held` retains a durable hold until settlement, reported through `Status.held`, and permits unrelated dependency
+ * keys to pass it. Neither a hold nor a subsequent transient failure removes the write.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export error Retry {
+  status?: number
+  held?: boolean
+}
+
+/**
+ * The outbox didn't take a write, so nothing was stored or sent and its rows
+ * rolled back:
+ * - `follower`: this program no longer leads, including closing or leadership lost before persistence;
+ * - `storage`: the outbox's storage failed to store it.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export error NotAdmitted {
+  reason: "follower" | "storage"
+}
+
+/**
+ * `withdraw` didn't take the write back, so nothing changed:
+ * - `follower`: this program doesn't lead the outbox, so another program may
+ *   be sending the write;
+ * - `gone`: no stored write waiting to be sent has that idempotency key: it
+ *   was sent or refused already, isn't stored yet (`admitted` hasn't
+ *   succeeded), or was never made;
+ * - `sending`: the write is being sent now, or was just sent or refused and is
+ *   leaving the storage; it settles as usual;
+ * - `storage`: reading or deleting the outbox's storage failed; the write is
+ *   sent as usual.
+ *
+ * @category errors
+ * @since 0.2.0
+ */
+export error NotWithdrawn {
+  reason: "follower" | "gone" | "sending" | "storage"
+}
+
+/**
+ * A named mutation: sends the rows of one write. `idempotencyKey` is the same
+ * on every attempt, so the server can tell a resend from a new write.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export type Mutation<R> = (params: {
+  readonly rows: ReadonlyArray<unknown>
+  readonly idempotencyKey: string
+}) => void!(Refused | Retry)!R
+
+/**
+ * Who leads the outbox: the library's `LeaderElection`, such as its own
+ * `WebLocksLeader`, or the host's tab leader.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export type Leader = LeaderElection & {
+  /** Serializes admission and recovery across contexts, independently of a stealable leadership lock. */
+  readonly withAdmission?: <A>(action: () => Promise<A>) => Promise<A>
+}
+
+/**
+ * Whether the network is there, and the signal to send now: the library's
+ * `OnlineDetector`.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export type Online = OnlineDetector
+
+/**
+ * What `layer` starts the outbox with.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Options<R> {
+  /** The library's entry point: `startOfflineExecutor` from `@tanstack/offline-transactions`. */
+  readonly start: (config: OfflineConfig) => OfflineExecutor
+  /**
+   * The collections writes may change, keyed by a name that never changes: a stored write names its collection by
+   * this key, so a write queued by one version of a program is restored into the same collection by the next.
+   */
+  readonly collections: Readonly<Record<string, Collection<any, any, any>>>
+  /** Where writes are stored: `new IndexedDBAdapter(...)` in a browser. */
+  readonly storage: StorageAdapter & {
+    /** Atomically persists the admission counter and its write. A failed batch persists neither row. */
+    readonly setMany: (entries: ReadonlyArray<readonly [string, string]>) => Promise<void>
+    /** Non-stealable exclusion shared by every context using this storage, held until the action settles. */
+    readonly withLock: <A>(name: string, action: () => Promise<A>) => Promise<A>
+  }
+  /** Who leads. Defaults to the library's election: `WebLocksLeader` where Web Locks exist. */
+  readonly leader?: Leader
+  /** The network detector: the library's `WebOnlineDetector` in a browser, `Online.always()` elsewhere. */
+  readonly online: Online
+  readonly mutations: Readonly<Record<string, Mutation<R>>>
+  /**
+   * How writes cross builds: `Migrations.outbox(registry)`. Each write is stamped with its rows' versions, and before
+   * the outbox loads the stored writes, each one an older build made is upgraded, or parked when it can't be.
+   */
+  readonly upgrade?: OutboxUpgrade | undefined
+  /**
+   * What takes a parked write of each mutation name, as its feature shows it Not sent. A handler that succeeds with
+   * `true` took it, and the outbox deletes it; `false` leaves it parked. Each runs as the outbox starts.
+   */
+  readonly parked?: Readonly<Record<string, (write: Parked) => boolean!never!R>> | undefined
+  /**
+   * Who this program writes as, so a write is sent only as who queued it. Without it, every stored write is this
+   * program's.
+   */
+  readonly principal?: Principal | undefined
+  /** Stable dependency keys, derived from persisted payloads. Missing keys conservatively order against every write. */
+  readonly orderingKeys?: Readonly<Record<string, (rows: ReadonlyArray<unknown>) => ReadonlyArray<string>>> | undefined
+  /** Cross-context storage invalidations. Receivers reread storage; notifications never carry payloads or authority. */
+  readonly changes?: {
+    readonly publish: () => void
+    readonly subscribe: (listener: () => void) => () => void
+  } | undefined
+}
+
+/**
+ * Who a program writes as, read synchronously each time the outbox asks:
+ * - `now`: the principal this program writes as at this moment, such as the person whose data it opened; none when it
+ *   writes as nobody yet;
+ * - `ownsUnstamped`: whether the writes stored before writes were stamped, which name no principal, are `now`'s.
+ *
+ * Each write `transact` makes is stamped with `now`. The outbox loads, shows and sends only the stored writes that are
+ * the principal's: stamped with `now`, or unstamped when `ownsUnstamped`. Every other write stays in the storage,
+ * sealed: never loaded, parked, sent or deleted, logged as `outbox write sealed`. A write whose principal changed after
+ * it was loaded, and before it was sent, is sealed the same way as it comes up to be sent (`attempts` counts it
+ * `sealed`): its rows roll back, `settled` fails, and the storage keeps it.
+ *
+ * @category models
+ * @since 0.3.0
+ */
+export interface Principal {
+  readonly now: () => string | undefined
+  readonly ownsUnstamped: () => boolean
+}
+
+/**
+ * A write the outbox parked because this build can't send it as it was
+ * meant: its id and mutation `name`, why (`Migrations.UpgradedWrite`'s
+ * reasons), and its rows as stored, which no schema checked.
+ *
+ * @category models
+ * @since 0.3.0
+ */
+export interface Parked {
+  readonly id: string
+  readonly name: string
+  readonly reason: string
+  readonly rows: ReadonlyArray<unknown>
+}
+
+/**
+ * The outbox's state, as `status` reports it:
+ * - `leader`: this program leads the outbox, so it admits and sends writes;
+ * - `held`: at least one persisted, owned write is held, including on followers before any send;
+ * - `failing`: the last send didn't get through, on the `network` or at the
+ *   `server`; null once one does.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Status {
+  readonly leader: boolean
+  readonly held: boolean
+  readonly failing: null | "network" | "server"
+}
+
+/**
+ * A write the outbox took. Its rows show at once.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Write {
+  readonly id: string
+  /** Succeeds once the write is stored durably; fails with `NotAdmitted` if the storage refused it. */
+  readonly admitted: void!NotAdmitted
+  /** Succeeds once the mutation succeeded; fails with `TransactionFailed` when the write rolled back. */
+  readonly settled: void!TransactionFailed
+}
+
+/**
+ * The outbox.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Service {
+  /** This program's live receipt for a key; restored writes are already durable and have no live receipt here. */
+  readonly admission: (name: string, idempotencyKey: string) => Option.Option<Write>!!
+  /**
+   * Writes through mutation `name`: `mutate` runs at once, synchronously, inside the write, so its inserts, updates
+   * and deletes show as optimistic rows until the write settles. Fails with `NotAdmitted` when this program doesn't
+   * lead the outbox, and with `mutate`'s `MutationRefused`, after rolling the write back, when a change is refused.
+   * The current span, if any, is stored with the write, and every send links to it.
+   */
+  readonly transact: (
+    name: string,
+    ids: { readonly idempotencyKey: string; readonly joinExisting?: boolean },
+    mutate: void!MutationRefused
+  ) => Write!(NotAdmitted | MutationRefused)
+  /** The outbox's state now, then each change. */
+  readonly status: Stream.Stream<Status>
+  /** Sends every waiting write now instead of waiting out its backoff. */
+  readonly retryNow: void!!
+  /**
+   * Takes back a write not sent yet, by its idempotency key: it is deleted from the storage, never sent, and its
+   * optimistic rows roll back, whether it was made by this program or restored after a reload. Its rows are gone when
+   * `withdraw` succeeds, and its `settled` fails with `TransactionFailed`, whose cause is an error named
+   * `OutboxWithdrawn`. The check and the moment a send claims its write share one lock, so a write is never both sent
+   * and taken back: one being sent fails with `NotWithdrawn` `sending` and settles as usual. Fails with `follower`
+   * when this program doesn't lead, `gone` when no write waiting to be sent has the key, and `storage` when the
+   * storage can't be read or deleted from. Each call is a span, `outbox.withdraw`, with `outcome`.
+   */
+  readonly withdraw: (idempotencyKey: string) => void!NotWithdrawn
+  /** The writes parked now: ones an older build made that this build can't send as they were meant. */
+  readonly parked: ReadonlyArray<Parked>!!
+  /** Deletes parked write `id`, logged as `outbox write discarded` with its name; one that isn't parked is no-op. */
+  readonly discard: (id: string) => void!!
+}
+
+/**
+ * The outbox writes are made through.
+ *
+ * @category services
+ * @since 0.2.0
+ */
+export service Outbox: Service {
+  static readonly key = "@smthrs/effect-tanstack-db/Outbox"
+}
+
+/**
+ * Each send, by `name` and `outcome`: `sent`, `retry`, `held`, `refused` or `defect`; `sent_elsewhere`, a write this
+ * program queued that another program sent and deleted while this one followed, settled here without sending it;
+ * `withdrawn`, a write `withdraw` took back, settled without sending it; or `sealed`, a write another principal queued
+ * (`Options.principal`), never sent and kept in the storage.
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const attempts = Metric.counter("outbox_attempts", {
+  description: "Sends of outbox writes, by mutation name and outcome",
+  incremental: true
+})
+
+/**
+ * Writes the server refused, by `name` and `status`.
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const refused = Metric.counter("outbox_refused", {
+  description: "Outbox writes the server refused for good, by mutation name and status",
+  incremental: true
+})
+
+/**
+ * Milliseconds from a write to its mutation succeeding, by `name`.
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const queuedMs = Metric.histogram("outbox_queued_ms", {
+  description: "Milliseconds from an outbox write to its mutation succeeding",
+  boundaries: Metric.exponentialBoundaries({ start: 50, factor: 2, count: 14 })
+})
+
+/**
+ * Times this program became, or stopped being, the outbox's leader, by `leader`.
+ *
+ * @category metrics
+ * @since 0.2.0
+ */
+export const leaderChanges = Metric.counter("outbox_leader_changes", {
+  description: "Times this program took or lost the outbox's leadership",
+  incremental: true
+})
+
+/**
+ * Stored writes an older build made that this build upgraded (`outcome:
+ * upgraded`) or parked (`outcome: parked`, with `reason`), by `name`.
+ *
+ * @category metrics
+ * @since 0.3.0
+ */
+export const carried = Metric.counter("outbox_carried", {
+  description: "Stored outbox writes from an older build, upgraded or parked, by mutation name, outcome and reason",
+  incremental: true
+})
+
+// The library's storage key for a write (`OutboxManager`).
+const KEY_PREFIX = "tx:"
+const HELD_INDEX = "outbox:held"
+const ORDER_MIGRATION = "outbox:admission-migration"
+const ADMISSION_COUNTER = "outbox:admission-counter"
+// Where a parked write waits: the library never loads it.
+const PARKED_PREFIX = "parked:"
+
+/** A parked write as stored: why, its mutation's name, and the write as the library stored it. */
+interface StoredParked {
+  readonly reason: string
+  readonly name: string
+  readonly write: string
+}
+
+/** A stored write's mutation name and rows, as far as they can be read. */
+const readWrite = (stored: string): { readonly name: string; readonly rows: ReadonlyArray<unknown> } => {
+  try {
+    const parsed = JSON.parse(stored) as { readonly mutationFnName?: unknown; readonly mutations?: unknown }
+    return {
+      name: typeof parsed.mutationFnName === "string" ? parsed.mutationFnName : "unknown",
+      rows: Array.isArray(parsed.mutations)
+        ? parsed.mutations.map((mutation: { readonly modified?: unknown }) => mutation.modified)
+        : []
+    }
+  } catch {
+    return { name: "unknown", rows: [] }
+  }
+}
+
+/**
+ * Upgrades every stored write an older build made, before the library loads
+ * them: rewrites one it can bring forward, and moves one it can't to
+ * `parked:<id>`. Each is logged and counted in `carried`; a storage that fails
+ * leaves the write as it was.
+ */
+const carry = (storage: StorageAdapter, upgrade: OutboxUpgrade) =>
+  effect {
+    const keys = try Effect.tryPromise(() => storage.keys())
+    for (const key of keys.filter((key) => key.startsWith(KEY_PREFIX))) {
+      const stored = try Effect.tryPromise(() => storage.get(key))
+      if (stored === null) continue
+      const upgraded = upgrade.write(stored)
+      if (upgraded._tag === "Current") continue
+      const { name } = readWrite(stored)
+      if (upgraded._tag === "Upgraded") {
+        try Effect.tryPromise(() => storage.set(key, upgraded.value))
+        try Metric.update(Metric.withAttributes(carried, { name, outcome: "upgraded", reason: "none" }), 1)
+        try (Effect.logInfo("outbox write upgraded") |> Effect.annotateLogs({ name })(%))
+        continue
+      }
+      const parked: StoredParked = { reason: upgraded.reason, name, write: stored }
+      try Effect.tryPromise(() =>
+        storage.set(`${PARKED_PREFIX}${key.slice(KEY_PREFIX.length)}`, JSON.stringify(parked))
+      )
+      try Effect.tryPromise(() => storage.delete(key))
+      try Metric.update(Metric.withAttributes(carried, { name, outcome: "parked", reason: upgraded.reason }), 1)
+      try (Effect.logWarning("outbox write parked")
+        |> Effect.annotateLogs({ name, reason: upgraded.reason, stage: "upgrade" })(%))
+    }
+  }
+    |> Effect.catch(%, (error) =>
+      Effect.logWarning("outbox couldn't upgrade its writes") |> Effect.annotateLogs({ error: errorName(error) })(%)
+    )
+    |> withSpan(%, "outbox.carry")
+
+/** The writes parked in `storage` that are `principal`'s. A storage that fails reads as none, and is logged. */
+const parkedIn = (storage: StorageAdapter, principal: Principal | undefined): ReadonlyArray<Parked>!! =>
+  effect {
+    const keys = try Effect.tryPromise(() => storage.keys())
+    const writes: Array<Parked> = []
+    for (const key of keys.filter((key) => key.startsWith(PARKED_PREFIX))) {
+      const stored = try Effect.tryPromise(() => storage.get(key))
+      if (stored === null) continue
+      const parked = try Effect.orDie(Effect.try(() => JSON.parse(stored) as StoredParked))
+      if (!owns(principal, stampOf(parked.write))) continue
+      writes.push({
+        id: key.slice(PARKED_PREFIX.length),
+        name: parked.name,
+        reason: parked.reason,
+        rows: readWrite(parked.write).rows
+      })
+    }
+    return writes
+  }
+    |> Effect.catch(%, (error) =>
+      Effect.as(
+        Effect.logWarning("outbox couldn't read its parked writes")
+          |> Effect.annotateLogs({ error: errorName(error) })(%),
+        []
+      )
+    )
+
+// The error names a mutation's failure becomes. Their messages are fixed, so the library's substring rules never read
+// anything else, and `shouldRetry` decides on the name alone.
+const RETRY = "OutboxRetry"
+const HELD = "OutboxHeld"
+const WITHDRAWN = "OutboxWithdrawn"
+
+const thrown = (name: string, message: string): Error => Object.assign(new Error(message), { name })
+
+// A write another principal queued, as it comes up to be sent: its mutation's `name`.
+error Sealed { name: string }
+
+/**
+ * What a write carries besides its rows: when it was made, the span it was made in, and the version of each payload
+ * collection when the outbox carries writes across builds (`Options.upgrade`).
+ */
+interface Metadata {
+  readonly admissionSequence: number
+  readonly orderingKeys?: ReadonlyArray<string>
+  readonly held?: boolean
+  readonly queuedAt: number
+  readonly trace?: { readonly traceId: string; readonly spanId: string }
+  readonly versions?: Readonly<Record<string, number>>
+  /** Who queued the write (`Options.principal`); absent on a write stored before writes were stamped. */
+  readonly principal?: string
+}
+
+// What the held index reads of a stored write: whether the library is done with it, and whether it is held.
+interface StoredWrite {
+  readonly outboxPhase?: unknown
+  readonly metadata?: { readonly held?: unknown }
+  readonly lastError?: { readonly name?: unknown }
+}
+
+// The principal a stored write names in its metadata, or none: unstamped, or not a write the library stored.
+const stampOf = (stored: string): string | undefined => {
+  try {
+    const principal = (JSON.parse(stored) as { readonly metadata?: { readonly principal?: unknown } }).metadata
+      ?.principal
+    return typeof principal === "string" ? principal : undefined
+  } catch {
+    return undefined
+  }
+}
+
+// Whether a write stamped `stamp` (none: unstamped) is `principal`'s now. Without a principal, every write is.
+const owns = (principal: Principal | undefined, stamp: string | undefined): boolean =>
+  principal === undefined || (stamp === undefined ? principal.ownsUnstamped() : stamp === principal.now())
+
+/**
+ * Starts the outbox and waits until it has loaded the writes stored earlier,
+ * restored their rows, and asked to lead. Each mutation runs with the services
+ * of the fiber that builds the layer. Each send is a span, `outbox.send`, with
+ * `name`, `attempt` and `outcome`, linked to the span the write was made in,
+ * and is counted in `attempts`. The outbox stops when the layer closes.
+ *
+ * @category layers
+ * @since 0.2.0
+ */
+export const layer = <R>(options: Options<R>): Layer.Layer<Outbox, never, R> =>
+  Layer.effect(
+    Outbox,
+    effect {
+      const context = try Effect.context<R>()
+      const run = Effect.runSyncWith(context)
+      const status = try SubscriptionRef.make<Status>({ leader: false, failing: null, held: false })
+      const setStatus = (next: Partial<Status>) => run(SubscriptionRef.update(status, (now) => ({ ...now, ...next })))
+      let closing = false
+      const open = () => {
+        if (closing) $raise(thrown("OutboxClosed", "The outbox is closing."))
+      }
+
+      // One permit for the moment a send claims its write and for `withdraw`, so a write is never both sent and
+      // taken back.
+      const permit = try Semaphore.make(1)
+      const creating = try Semaphore.make(1)
+      // The write this program's send claimed, held until the library is done with it. The library sends one write at
+      // a time. A write sent or refused stays held until the library deletes it, so `withdraw` finds it held or gone.
+      // A write to be sent again (`retry`) is released once the library has stored its next attempt, so `withdraw`
+      // never deletes it under that store.
+      let inFlight: { readonly id: string; readonly retry: boolean } | undefined
+      // Writes `withdraw` took back that the library hasn't reached yet: when it does, the send settles them unsent.
+      const withdrawn = new Set<string>()
+      // Each write this program made, until it settles: `withdraw` waits for it, so its rows are gone when it returns.
+      const live = new Map<string, Promise<void>>()
+
+      // Admission is the storage write of the write's own key; whoever waits on a write learns of it here.
+      const admissions = new Map<string, Deferred.Deferred<void, NotAdmitted>>()
+      const admissionMetadata = new Map<string, Metadata>()
+      const withAdmission = options.leader?.withAdmission ?? (<A>(action: () => Promise<A>) => action())
+      const liveAdmissions = new Map<string, Write>()
+      // Another principal's stored write is sealed: the library never sees it, so it never loads, sends or deletes it.
+      const sealed = (key: string, stored: string | null) =>
+        key.startsWith(KEY_PREFIX) && stored !== null && !owns(options.principal, stampOf(stored))
+      const seal = (stored: string, stage: "load" | "send") =>
+        run(
+          Effect.logWarning("outbox write sealed") |> Effect.annotateLogs({ name: readWrite(stored).name, stage })(%)
+        )
+      const ownKeys = async (migrated = true) => {
+        // Replay must wait for the same recovery barrier as admission after a leadership transfer.
+        await sequenceReady
+        const keys = (await options.storage.keys()).filter((key) =>
+          !key.startsWith("outbox:") && (!migrated || sequenceKnown || !key.startsWith(KEY_PREFIX))
+        )
+        if (options.principal === undefined) return keys
+        const own: Array<string> = []
+        for (const key of keys) {
+          const stored = key.startsWith(KEY_PREFIX) ? await options.storage.get(key) : null
+          if (!sealed(key, stored)) own.push(key)
+          else seal(stored!, "load")
+        }
+        return own
+      }
+      // The index contains keys only. Rows remain authoritative for ownership and hold state, including after a crash.
+      const heldKeys = new Map<string, string | undefined>()
+      const ownedHeld = new Set<string>()
+      let indexDirty = false
+      let heldPrincipal = options.principal?.now()
+      let heldUnstamped = options.principal?.ownsUnstamped() ?? true
+      let sequenceKnown = false
+      let updating: Promise<void> = try Effect.sync(() => Promise.resolve())
+      const serialize = <A>(action: () => Promise<A>): Promise<A> => {
+        const result = updating.then(action)
+        updating = result.then(() => undefined, () => undefined)
+        return result
+      }
+      // Reads a stored write's hold into the index. `write` is `value` parsed by the caller, which is async, so a row
+      // that isn't JSON rejects the caller before the index changes.
+      const readStatus = (key: string, value: string | null, write: StoredWrite | undefined) => {
+        heldKeys.delete(key)
+        ownedHeld.delete(key)
+        if (!key.startsWith(KEY_PREFIX) || value === null || write === undefined) return
+        if (!write.outboxPhase && (write.metadata?.held === true || write.lastError?.name === HELD)) {
+          heldKeys.set(key, stampOf(value))
+          if (!sealed(key, value)) ownedHeld.add(key)
+        }
+      }
+      const reportHeld = () => {
+        const principal = options.principal?.now()
+        const unstamped = options.principal?.ownsUnstamped() ?? true
+        if (principal !== heldPrincipal || unstamped !== heldUnstamped) {
+          // Owner stamps are cached, but ownership can change in place without a storage notification.
+          ownedHeld.clear()
+          for (const [key, stamp] of heldKeys) if (owns(options.principal, stamp)) ownedHeld.add(key)
+          heldPrincipal = principal
+          heldUnstamped = unstamped
+        }
+        setStatus({ held: ownedHeld.size > 0 })
+      }
+      const statusError = (error: unknown, stage: "read" | "write" = "read") => {
+        run(
+          Effect.logWarning(stage === "write" ? "outbox couldn't write held index" : "outbox couldn't read held status")
+              |> Effect.annotateLogs({ stage, error: errorName(error) })(%)
+        )
+      }
+      const persistIndex = async () => {
+        // A failed publication stays dirty until an existing storage or retry step can repair it.
+        indexDirty = true
+        return options.storage.withLock(HELD_INDEX, async () => {
+          // A failed publication can overlap another tab's settlement or hold. Recheck every affected row before repair.
+          const keys = new Set<string>([
+            ...JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"),
+            ...heldKeys.keys()
+          ])
+          const rows = await Promise.all([...keys].map(async (key) => [key, await options.storage.get(key)] as const))
+          const writes = new Map<string, StoredWrite>()
+          for (const [key, value] of rows) if (value !== null) writes.set(key, JSON.parse(value))
+          for (const [key, value] of rows) readStatus(key, value, writes.get(key))
+          reportHeld()
+          if (heldKeys.size > 0) await options.storage.set(HELD_INDEX, JSON.stringify([...heldKeys.keys()]))
+          else if (await options.storage.get(HELD_INDEX) !== null) await options.storage.delete(HELD_INDEX)
+          indexDirty = false
+        })
+      }
+      const reconcile = async (readOnly = false) => {
+        // A durable plan makes a partially written migration resume with the same order after a crash.
+        type Assignment = { key: string; sequence: number }
+        const apply = async (plan: Array<Assignment>) => {
+          const pending: Array<Assignment> = []
+          for (const item of plan) {
+            await options.storage.withLock(item.key, async () => {
+              const value = await options.storage.get(item.key)
+              if (value === null) return
+              if (sealed(item.key, value)) {
+                pending.push(item)
+                return
+              }
+              const row = JSON.parse(value)
+              row.metadata = { ...row.metadata, admissionSequence: item.sequence }
+              await options.storage.set(item.key, JSON.stringify(row))
+            })
+          }
+          if (pending.length > 0) await options.storage.set(ORDER_MIGRATION, JSON.stringify(pending))
+          else await options.storage.delete(ORDER_MIGRATION)
+          return pending
+        }
+        const plan: Array<Assignment> = JSON.parse(await options.storage.get(ORDER_MIGRATION) ?? "[]")
+        const pending = !readOnly && plan.length > 0 ? await apply(plan) : plan
+        const rows: Array<[string, string | null]> = []
+        for (const key of await options.storage.keys()) {
+          if (key.startsWith(KEY_PREFIX)) rows.push([key, await options.storage.get(key)])
+        }
+        // Only owned rows are migrated. No upgrade or mutation callback sees another person's payload.
+        const owned = rows.filter(([key, value]) => value !== null && !sealed(key, value)).map(([key, value]) => ({
+          key,
+          row: JSON.parse(value!)
+        }))
+        const sequences = owned.map(({ row }) => row.metadata?.admissionSequence)
+        const ambiguous = sequences.some((sequence) => !Number.isFinite(sequence)) ||
+          new Set(sequences).size !== sequences.length
+        if (!readOnly && ambiguous) {
+          const order = (row: any): number => row.metadata?.admissionSequence ?? new Date(row.createdAt).getTime()
+          const held = (row: any): number => Number(row.metadata?.held === true || row.lastError?.name === HELD)
+          // Equal timestamps or collided sequences cannot establish historical order. A held member precedes ambiguous peers.
+          owned.sort((a, b) => order(a.row) - order(b.row) || held(b.row) - held(a.row) || a.key.localeCompare(b.key))
+          const base = Math.max(0, ...owned.map(({ row }) => order(row) || 0))
+          const assignments = owned.map(({ key }, index) => ({ key, sequence: base + index + 1 }))
+          await options.storage.set(ORDER_MIGRATION, JSON.stringify([...pending, ...assignments]))
+          await apply([...pending, ...assignments])
+          for (let index = 0; index < rows.length; index++) {
+            const [key, row] = rows[index]!
+            if (row !== null && !sealed(key, row)) rows[index] = [key, await options.storage.get(key)]
+          }
+          run(
+            Effect.logInfo("outbox admission order migrated") |> Effect.annotateLogs({ writes: assignments.length })(%)
+          )
+        }
+        // Do not discard the last known status if storage cannot complete its snapshot.
+        const writes = new Map<string, StoredWrite>()
+        for (const [key, value] of rows) if (value !== null) writes.set(key, JSON.parse(value))
+        heldKeys.clear()
+        ownedHeld.clear()
+        for (const [key, value] of rows) readStatus(key, value, writes.get(key))
+        reportHeld()
+        if (!readOnly) {
+          // Recovery scans once under the admission lock. The counter never moves backward, even with sealed rows.
+          const counter = await options.storage.get(ADMISSION_COUNTER)
+          let maximum = Number(counter ?? 0)
+          if (!Number.isSafeInteger(maximum) || maximum < 0) throw new Error("Invalid admission counter")
+          for (const [, value] of rows) {
+            if (value === null) continue
+            const row = JSON.parse(value)
+            const prior = row.metadata?.admissionSequence ?? new Date(row.createdAt).getTime()
+            if (Number.isFinite(prior)) maximum = Math.max(maximum, prior)
+          }
+          if (maximum > Number(counter ?? 0)) await options.storage.set(ADMISSION_COUNTER, String(maximum))
+        }
+        sequenceKnown = !readOnly || (!ambiguous && plan.length === 0)
+      }
+      let invalidated = false
+      let refreshing: Promise<void> | undefined
+      let publishing = false
+      const refreshHeld = (): Promise<void> => {
+        invalidated = true
+        return refreshing ??= serialize(async () => {
+          invalidated = false
+          // An incomplete index cannot revoke unpublished local membership. Rows decide whether each hold survives.
+          const keys = new Set<string>([
+            ...JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"),
+            ...heldKeys.keys()
+          ])
+          const rows = await Promise.all([...keys].map(async (key) => [key, await options.storage.get(key)] as const))
+          const writes = new Map<string, StoredWrite>()
+          for (const [key, value] of rows) if (value !== null) writes.set(key, JSON.parse(value))
+          const indexed = new Set<string>(JSON.parse(await options.storage.get(HELD_INDEX) ?? "[]"))
+          heldKeys.clear()
+          ownedHeld.clear()
+          for (const [key, value] of rows) readStatus(key, value, writes.get(key))
+          if ([...heldKeys.keys()].some((key) => !indexed.has(key))) indexDirty = true
+          reportHeld()
+        }).catch(statusError).finally(() => {
+          refreshing = undefined
+          if (invalidated) void refreshHeld()
+        })
+      }
+      const changed = () => {
+        publishing = true
+        try {
+          options.changes?.publish()
+        } catch (error) {
+          indexDirty = true
+          // Notifications are hints and cannot revoke a successful durable admission.
+          run(
+            Effect.logWarning("outbox couldn't publish its change")
+              |> Effect.annotateLogs({ error: errorName(error) })(%)
+          )
+        } finally {
+          publishing = false
+        }
+      }
+      const updateHeld = async (key: string, value: string | null) => {
+        const before = heldKeys.has(key)
+        readStatus(key, value, value === null ? undefined : JSON.parse(value))
+        reportHeld()
+        if (before !== heldKeys.has(key)) indexDirty = true
+        if (indexDirty) {
+          try {
+            await persistIndex()
+            changed()
+          } catch (error) {
+            statusError(error, "write")
+          }
+        }
+      }
+      const storage: StorageAdapter = {
+        get: async (key) => {
+          const stored = await options.storage.get(key)
+          return sealed(key, stored) ? null : stored
+        },
+        keys: ownKeys,
+        delete: (key) =>
+          serialize(async () => {
+            const removed = await options.storage.withLock(key, async () => {
+              if (options.principal !== undefined && sealed(key, await options.storage.get(key))) return false
+              await options.storage.delete(key)
+              return true
+            })
+            if (removed) await updateHeld(key, null)
+          }),
+        clear: () =>
+          serialize(async () => {
+            for (const key of await options.storage.keys()) {
+              await options.storage.withLock(key, () => options.storage.delete(key))
+            }
+            indexDirty = false
+            heldKeys.clear()
+            ownedHeld.clear()
+            reportHeld()
+            changed()
+          }),
+        set: (key, value) =>
+          serialize(() => {
+            const id = key.slice(KEY_PREFIX.length)
+            const admission = admissions.get(id)
+            const persist = async () => {
+              let persisted: string | null = value
+              try {
+                await options.storage.withLock(key, async () => {
+                  if (key.startsWith(KEY_PREFIX)) {
+                    const write = JSON.parse(value)
+                    if (admission !== undefined && admissionMetadata.has(id)) {
+                      open()
+                      if (options.leader !== undefined && !options.leader.isLeader()) {
+                        throw thrown("OutboxNotLeader", "Leadership ended before admission.")
+                      }
+                      // The shared counter also fences queued callbacks from an earlier leadership term.
+                      const maximum = Number(await options.storage.get(ADMISSION_COUNTER) ?? 0)
+                      if (!Number.isSafeInteger(maximum) || maximum < 0) {
+                        throw new Error("Invalid admission counter")
+                      }
+                      const sequence = Math.max(maximum + 1, write.metadata?.queuedAt ?? 0)
+                      write.metadata = { ...write.metadata, admissionSequence: sequence }
+                      Object.assign(admissionMetadata.get(id)!, { admissionSequence: sequence })
+                      admissionMetadata.delete(id)
+                      persisted = JSON.stringify(write)
+                      await options.storage.setMany([[ADMISSION_COUNTER, String(sequence)], [key, persisted]])
+                      return
+                    }
+                    // A predecessor's retry snapshot cannot revoke a successor's hold, ordering repair or settlement.
+                    // Read and merge under the same cross-context lock as row replacement and deletion.
+                    const current = await options.storage.get(key)
+                    if (current === null) {
+                      persisted = null
+                      return
+                    }
+                    const prior = JSON.parse(current)
+                    if (prior.outboxPhase !== undefined) {
+                      persisted = current
+                      return
+                    }
+                    write.metadata = {
+                      ...write.metadata,
+                      ...(prior.metadata?.admissionSequence === undefined
+                        ? {}
+                        : { admissionSequence: prior.metadata.admissionSequence })
+                    }
+                    if (
+                      write.lastError?.name === HELD || write.metadata?.held === true ||
+                      prior.lastError?.name === HELD || prior.metadata?.held === true
+                    ) {
+                      write.metadata.held = true
+                    }
+                    value = JSON.stringify(write)
+                  }
+                  persisted = value
+                  await options.storage.set(key, value)
+                })
+              } catch (error) {
+                if (admission) {
+                  run(
+                    Deferred.fail(
+                      admission,
+                      new NotAdmitted({
+                        reason: closing || options.leader !== undefined && !options.leader.isLeader()
+                          ? "follower"
+                          : "storage"
+                      })
+                    )
+                  )
+                }
+                throw error
+              }
+              if (inFlight?.retry === true && inFlight.id === id) inFlight = undefined
+              if (admission) run(Deferred.succeed(admission, undefined))
+              // Index publication has its own lock; never wait for it while holding the row lock.
+              await updateHeld(key, persisted)
+            }
+            // Parking and retry metadata allocate no sequence and must remain available to followers.
+            return key.startsWith(KEY_PREFIX) && admissionMetadata.has(id) ? withAdmission(persist) : persist()
+          })
+      }
+
+      try Effect.acquireRelease(
+        Effect.sync(() =>
+          options.changes?.subscribe(() => {
+            if (!publishing) void refreshHeld()
+          })
+        ),
+        (unsubscribe) => Effect.sync(() => unsubscribe?.())
+      )
+      let sequenceReady: Promise<void> = try Effect.sync(() => Promise.resolve())
+
+      // Which send of each write this is, for its span; forgotten once the write settles.
+      const sends = new Map<string, number>()
+      const send = (name: string, mutation: Mutation<R>): OfflineConfig["mutationFns"][string] => (params) => {
+        // Every write is made by `transact`, which stores its metadata.
+        const { id, metadata } = params.transaction as unknown as { readonly id: string; readonly metadata: Metadata }
+        const attempt = (sends.get(id) ?? 0) + 1
+        sends.set(id, attempt)
+        const trace = metadata.trace
+        const outcome = (value: string): void!! =>
+          Effect.all([
+            Effect.annotateCurrentSpan({ outcome: value }),
+            Metric.update(Metric.withAttributes(attempts, { name, outcome: value }), 1)
+          ], { discard: true })
+        // A write is sent only while the storage holds it. One this program queued, then followed while another led,
+        // may have been sent and deleted by the other: leading again, this program settles it without sending it twice.
+        // A storage that can't be read doesn't stop a send.
+        const stored = Effect.promise(() =>
+          options.storage.get(`${KEY_PREFIX}${id}`).then((value) => value !== null, () => true)
+        )
+        const sending: void!(Refused | Retry)!R = mutation({
+          rows: params.transaction.mutations.map((change) => change.modified),
+          idempotencyKey: params.idempotencyKey
+        })
+          |> Effect.tap(%, effect () => {
+            try outcome("sent")
+            try Metric.update(
+              Metric.withAttributes(queuedMs, { name }),
+              (try Clock.currentTimeMillis) - metadata.queuedAt
+            )
+          })
+          // A refusal is final and logged; a write that will be sent again is logged on its first retry only, so a long
+          // outage writes one line per write, while `attempts` counts every send.
+          |> Effect.tapError(%, (error): void!! => {
+            const status = String(error.status ?? "none")
+            return error._tag === "Refused"
+              ? Effect.all([
+                outcome("refused"),
+                Metric.update(Metric.withAttributes(refused, { name, status }), 1),
+                Effect.logWarning("outbox write refused")
+                  |> Effect.annotateLogs({ name, status, outcome: "refused" })(%)
+              ], { discard: true })
+              : Effect.andThen(
+                outcome(error.held ? "held" : "retry"),
+                attempt === 1
+                  ? (Effect.logWarning("outbox write retrying")
+                    |> Effect.annotateLogs({ name, status, outcome: error.held ? "held" : "retry" })(%))
+                  : Effect.void
+              )
+          })
+          |> Effect.tapDefect(%, (defect) =>
+            Effect.all([
+              outcome("defect"),
+              Effect.logError("outbox write failed")
+                |> Effect.annotateLogs({ name, outcome: "defect", "error.type": errorName(defect) })(%)
+            ])
+          )
+        // Under the permit, so `withdraw` sees this write either taken back, and it settles here unsent, or in flight.
+        // A write queued by another principal than this program's now is never sent: it is sealed.
+        const claim = permit.withPermit(effect {
+          if (withdrawn.delete(id)) return "withdrawn" as const
+          if (!(try stored)) return "sent_elsewhere" as const
+          if (!owns(options.principal, metadata.principal)) return "sealed" as const
+          inFlight = { id, retry: false }
+          return "sent" as const
+        })
+        // Succeeds with whether the write reached a server, which clears `failing`: a withdrawn one never did. A sealed
+        // one fails, so its rows roll back; the library's delete leaves it in the storage, which is another's.
+        const program = Effect.flatMap(claim, (claimed): boolean!(Refused | Retry | Sealed)!R =>
+          claimed === "sent"
+            ? Effect.as(sending, true)
+            : claimed === "sealed"
+            ? Effect.andThen(
+              outcome("sealed"),
+              Effect.andThen(
+                Effect.logWarning("outbox write sealed") |> Effect.annotateLogs({ name, stage: "send" })(%),
+                Effect.fail(new Sealed({ name }))
+              )
+            )
+            : Effect.as(outcome(claimed), claimed === "sent_elsewhere"))
+          |> withSpan(%, "outbox.send", {
+            attributes: { name, attempt },
+            ...(trace ? { links: [{ span: Tracer.externalSpan(trace), attributes: {} }] } : {})
+          })
+        return Effect.runPromiseExitWith(context)(program).then((exit) => {
+          if (Exit.isSuccess(exit)) {
+            sends.delete(id)
+            if (exit.value) {
+              setStatus({ failing: null })
+            }
+            return
+          }
+          const error = Cause.findErrorOption(exit.cause)
+          if (Option.isSome(error) && error.value._tag === "Retry") {
+            // Free to withdraw again once the library has stored its next attempt.
+            if (error.value.held) {
+              Object.assign(metadata, { held: true })
+            }
+            inFlight = { id, retry: true }
+            setStatus({ failing: error.value.held ? null : error.value.status === undefined ? "network" : "server" })
+            $raise(thrown(error.value.held ? HELD : RETRY, "The write didn't get through; it is sent again."))
+          }
+          sends.delete(id)
+          setStatus({ failing: null })
+          $raise(Option.isSome(error)
+            ? error.value._tag === "Sealed"
+              ? thrown("OutboxSealed", "Another principal queued the write; it is never sent as this one.")
+              : thrown("OutboxRefused", "The server refused the write.")
+            : thrown("OutboxDefect", "The write failed with a defect."))
+        })
+      }
+
+      // The writes an older build stored are brought forward, or parked, before the library loads any.
+      if (options.upgrade !== undefined) {
+        // Payload recovery must be able to park unreadable rows before ordering recovery gates replay.
+        try carry({
+          ...storage,
+          keys: () =>
+            ownKeys(false)
+        }, options.upgrade)
+      }
+      // A follower can open while another context's admission is paused. Only the leader mutates ordering.
+      sequenceReady = try Effect.sync(() =>
+        serialize(() =>
+          options.leader?.isLeader()
+            ? withAdmission(() =>
+              reconcile()
+            )
+            : reconcile(true)
+        ).catch(statusError)
+      )
+      try Effect.promise(() => sequenceReady)
+
+      const executor = try Effect.acquireRelease(
+        Effect.sync(() =>
+          options.start({
+            collections: Object.fromEntries(
+              Object.entries(options.collections).map(([key, collection]) => [key, collection.tanstack])
+            ),
+            storage,
+            ...(options.leader ? { leaderElection: options.leader } : {}),
+            onlineDetector: options.online,
+            mutationFns: Object.fromEntries(
+              Object.entries(options.mutations).map(([name, mutation]) => [name, send(name, mutation)])
+            ),
+            // Only a mutation's `Retry` is sent again: the library's own rules (an `AbortError`, a message with "400")
+            // never see another error.
+            shouldRetry: (error) => error.name === RETRY || error.name === HELD,
+            retryScheduling: {
+              // Earlier builds did not stamp dependency keys. Their persisted payload still defines the dependency.
+              compare: (left, right) =>
+                (left.metadata?.admissionSequence ?? left.createdAt.getTime()) -
+                (right.metadata?.admissionSequence ?? right.createdAt.getTime()),
+              keys: (transaction) =>
+                transaction.metadata?.orderingKeys ??
+                  options.orderingKeys?.[transaction.mutationFnName]?.(
+                    transaction.mutations.map((change) => change.modified)
+                  ),
+              bypass: (transaction) => transaction.metadata?.held === true || transaction.lastError?.name === HELD
+            },
+            onLeadershipChange: (leader) => {
+              if (leader && !closing) {
+                sequenceKnown = false
+                // A follower may have waited while newer writes were admitted. Reconcile before its first admission.
+                sequenceReady = serialize(() =>
+                  withAdmission(async () => {
+                    await reconcile()
+                    try {
+                      await persistIndex()
+                      changed()
+                    } catch (error) {
+                      statusError(error, "write")
+                    }
+                  })
+                ).catch(statusError)
+              }
+              // Subscribers can admit immediately. Publish only after their recovery barrier names this leadership.
+              setStatus({ leader })
+              run(Metric.update(Metric.withAttributes(leaderChanges, { leader: String(leader) }), 1))
+            }
+          })
+        ),
+        effect (executor) => {
+          // Without a separate admission fence, keep the election through persistence already running; a new
+          // executor cannot allocate from a counter this one might still overwrite. A fenced custom election can
+          // close immediately: its admission lock survives independently until persistence actually completes.
+          // Later admissions refuse before touching the counter. Settlement remains available: the executor
+          // deliberately persists a successful response that outlives disposal, preventing a later replay.
+          closing = true
+          if (options.leader?.withAdmission === undefined) try Effect.promise(() => updating)
+          try Effect.sync(() => executor.dispose())
+        }
+      )
+      try (Effect.tryPromise(() => executor.waitForInit())
+        |> Effect.catch(%, (error) =>
+          Effect.logWarning("outbox couldn't load its writes") |> Effect.annotateLogs({ error: errorName(error) })(%)
+        ))
+
+      // Who a write is queued by, stamped into its metadata when the outbox has a principal.
+      const principalStamp = (): { readonly principal?: string } => {
+        const now = options.principal?.now()
+        return now === undefined ? {} : { principal: now }
+      }
+
+      const transact: Service["transact"] = (name, { idempotencyKey, joinExisting }, mutate) =>
+        effect {
+          const key = JSON.stringify([name, idempotencyKey])
+          const existing = liveAdmissions.get(key)
+          if (joinExisting && existing !== undefined) return existing
+          // A follower would get the library's online-only transaction, with no storage and no retry: refuse instead.
+          if (closing || !executor.isOfflineEnabled) throw new NotAdmitted({ reason: "follower" })
+          const services = try Effect.context<never>()
+          const span = try Effect.option(Effect.currentSpan)
+          try Effect.promise(() => sequenceReady)
+          if (!sequenceKnown) throw new NotAdmitted({ reason: "storage" })
+          if (closing || !executor.isOfflineEnabled) throw new NotAdmitted({ reason: "follower" })
+          const queuedAt = try Clock.currentTimeMillis
+          const metadata: Metadata = {
+            admissionSequence: 0,
+            queuedAt,
+            ...(Option.isSome(span) ? { trace: { traceId: span.value.traceId, spanId: span.value.spanId } } : {}),
+            ...(options.upgrade === undefined ? {} : { versions: options.upgrade.stamp }),
+            ...principalStamp()
+          }
+          const offline = executor.createOfflineTransaction({
+            mutationFnName: name,
+            idempotencyKey,
+            autoCommit: false,
+            metadata
+          })
+          // The library calls `mutate` synchronously, inside the transaction, so its writes join it.
+          const changed: { exit: Exit.Exit<void, MutationRefused> } = { exit: Exit.void }
+          const transaction = offline.mutate(() => {
+            changed.exit = Effect.runSyncExitWith(services)(mutate)
+          })
+          if (Exit.isFailure(changed.exit)) {
+            offline.rollback()
+            return try Effect.failCause(changed.exit.cause)
+          }
+          const ordering = options.orderingKeys?.[name]
+          if (ordering !== undefined) {
+            const rows = transaction.mutations.map((change) => change.modified)
+            const orderingKeys = Effect.try(() => ordering(rows)) catch effect (error) => {
+              // A selector defect cannot leave optimistic rows for a write that was never committed.
+              offline.rollback()
+              return try Effect.die(error.cause)
+            }
+            Object.assign(metadata, { orderingKeys })
+          }
+          const admission = try Deferred.make<void, NotAdmitted>()
+          admissions.set(transaction.id, admission)
+          admissionMetadata.set(transaction.id, metadata)
+          try Effect.sync(() =>
+            live.set(
+              transaction.id,
+              transaction.isPersisted.promise.then(() => undefined, () => undefined).finally(() =>
+                live.delete(transaction.id)
+              )
+            )
+          )
+          const write = {
+            id: transaction.id,
+            admitted: Deferred.await(admission),
+            settled: Effect.tryPromise({
+              try: () => transaction.isPersisted.promise,
+              catch: (cause) => new TransactionFailed({ cause })
+            }) |> Effect.asVoid(%)
+          } satisfies Write
+          liveAdmissions.set(key, write)
+          // Admitted, the write settles through the executor; refused by the storage, it rolls back before that.
+          try Effect.sync(() => {
+            void offline.commit().catch(() => undefined)
+            void transaction.isPersisted.promise.then(
+              () => run(Deferred.succeed(admission, undefined)),
+              () =>
+                run(Deferred.fail(
+                  admission,
+                  new NotAdmitted({
+                    reason: executor.isOfflineEnabled ? "storage" : "follower"
+                  })
+                ))
+            ).finally(() => {
+              admissions.delete(transaction.id)
+              admissionMetadata.delete(transaction.id)
+              if (liveAdmissions.get(key)?.id === transaction.id) liveAdmissions.delete(key)
+            })
+          })
+          return write
+        } |> Semaphore.withPermits(creating, 1)(%)
+
+      const notWithdrawn = (reason: NotWithdrawn["reason"]) => new NotWithdrawn({ reason })
+      const withdraw: Service["withdraw"] = (idempotencyKey) =>
+        permit.withPermit(Effect.uninterruptible(effect {
+          // A follower's view of the storage is no lock: the leader may be sending the write.
+          if (!executor.isOfflineEnabled) throw notWithdrawn("follower")
+          const writes = try Effect.tryPromise({
+            try: () => executor.peekOutbox(),
+            catch: () => notWithdrawn("storage")
+          })
+          const write = writes.find((entry) => entry.idempotencyKey === idempotencyKey)
+          if (write === undefined) throw notWithdrawn("gone")
+          // A write with an `outboxPhase` was sent or refused, and only its deletion is left.
+          if (write.outboxPhase !== undefined || inFlight?.id === write.id) throw notWithdrawn("sending")
+          try Effect.tryPromise({
+            try: () => executor.removeFromOutbox(write.id),
+            catch: () => notWithdrawn("storage")
+          })
+          withdrawn.add(write.id)
+          // Rejects the waiter of a write made here, whose transaction rolls its rows back, or rolls back a restored
+          // write's rows at once.
+          try Effect.sync(() =>
+            executor.rejectTransaction(write.id, thrown(WITHDRAWN, "The write was withdrawn before it was sent."))
+          )
+          return write
+        }))
+          |> Effect.tap(%, (write) => Effect.promise(() => live.get(write.id) ?? Promise.resolve()))
+          |> Effect.tap(%, (write) =>
+            Effect.all([
+              Effect.annotateCurrentSpan({ outcome: "withdrawn" }),
+              Effect.logInfo("outbox write withdrawn") |> Effect.annotateLogs({ name: write.mutationFnName })(%)
+            ], { discard: true })
+          )
+          |> Effect.tapError(%, ({ reason }) =>
+            Effect.all([
+              Effect.annotateCurrentSpan({ outcome: reason }),
+              (reason === "storage" ? Effect.logWarning : Effect.logDebug)("outbox write not withdrawn")
+                |> Effect.annotateLogs({ reason })(%)
+            ], { discard: true })
+          )
+          |> Effect.asVoid(%)
+          |> withSpan(%, "outbox.withdraw")
+
+      const discard: Service["discard"] = (id) =>
+        effect {
+          const key = `${PARKED_PREFIX}${id}`
+          const stored = try Effect.tryPromise(() => options.storage.get(key))
+          if (stored === null) return
+          const parked = try Effect.orDie(Effect.try(() => JSON.parse(stored) as StoredParked))
+          if (!owns(options.principal, stampOf(parked.write))) return
+          try Effect.tryPromise(() => options.storage.delete(key))
+          try (Effect.logInfo("outbox write discarded") |> Effect.annotateLogs({ name: parked.name })(%))
+        }
+          |> Effect.catch(%, (error) =>
+            Effect.logWarning("outbox couldn't discard a parked write")
+              |> Effect.annotateLogs({ error: errorName(error) })(%)
+          )
+
+      // Each parked write goes to its feature, which shows it Not sent; one it took leaves the outbox.
+      // One no feature takes stays parked, never sent: it is logged again on each load, so it is never forgotten silently.
+      for (const write of try parkedIn(options.storage, options.principal)) {
+        const take = options.parked?.[write.name]
+        if (take !== undefined && (try take(write))) try discard(write.id)
+        else {
+          try (Effect.logWarning("outbox write parked")
+            |> Effect.annotateLogs({ name: write.name, reason: write.reason, stage: "load" })(%))
+        }
+      }
+
+      return Outbox.of({
+        admission: (name, key) =>
+          Effect.sync(() => Option.fromUndefinedOr(liveAdmissions.get(JSON.stringify([name, key])))),
+        transact,
+        status: SubscriptionRef.changes(status),
+        retryNow: Effect.sync(() => {
+          // A settled executor has no transaction left to trigger storage repair.
+          // The public retry signal stays synchronous for input handlers; storage maintenance joins its existing chain.
+          void serialize(async () => {
+            if (!indexDirty) return
+            try {
+              await persistIndex()
+              changed()
+            } catch (error) {
+              statusError(error, "write")
+            }
+          }).then(refreshHeld).catch(statusError)
+          executor.getOnlineDetector().notifyOnline()
+        }),
+        withdraw,
+        parked: parkedIn(options.storage, options.principal),
+        discard
+      })
+    }
+  )
+
+/**
+ * Network detectors for the outbox.
+ *
+ * @category constructors
+ * @since 0.2.0
+ */
+export const Online = {
+  /**
+   * Always online: the outbox sends whenever it has a write, and `retryNow`
+   * sends at once. For Node, a Worker or a test, where the browser's detector
+   * has no `online` event to follow.
+   */
+  always: (): Online => {
+    const listeners = new Set<() => void>()
+    return {
+      subscribe: (listener) => {
+        listeners.add(listener)
+        return () => listeners.delete(listener)
+      },
+      notifyOnline: () => {
+        for (const listener of listeners) listener()
+      },
+      isOnline: () => true,
+      dispose: () => listeners.clear()
+    }
+  }
+}
+
+/**
+ * A lock service: `hold(name)` waits until this program holds the exclusive
+ * lock `name`, and holds it until the scope closes; with `steal`, it takes the
+ * lock at once from whichever program holds it. `tryHold(name)` takes it only
+ * when no program holds it or waits for it, and answers none otherwise. `lost`
+ * completes when another program steals it. `@smthrs/platform-browser`'s
+ * `WebLock` is one.
+ *
+ * @category models
+ * @since 0.2.0
+ */
+export interface Lock {
+  readonly hold: (
+    name: string,
+    options?: { readonly steal?: boolean }
+  ) => { readonly lost: void!! }!never!Scope.Scope
+  readonly tryHold: (
+    name: string
+  ) => Option.Option<{ readonly lost: void!! }>!never!Scope.Scope
+}
+
+/**
+ * A leader for the outbox over a lock service, so the outbox shares the
+ * host's one election mechanism. Unlike the library's `WebLocksLeader`, a
+ * program that doesn't get the lock waits for it, so when the leader closes,
+ * the next one leads and restores the writes it stored. `requestLeadership`
+ * answers what the lock says, however long it takes to say it: `true` when the
+ * lock was free and this program now holds it, `false` when another program
+ * holds it or waits for it. A lock granted later is reported through
+ * `onLeadershipChange`.
+ *
+ * `take` makes this program lead at once, as the tab a person is using should:
+ * it steals the lock unless this program leads already, and completes once it
+ * leads. The program it took the lead from stops leading, and waits for the
+ * lock again, so it leads again once this one closes. The lock is released
+ * when the outbox stops or the scope closes.
+ *
+ * @category constructors
+ * @since 0.2.0
+ */
+export const lockLeader = effect (options: {
+  readonly lock: Lock
+  readonly name: string
+}): (Leader & { readonly take: void!!; readonly dispose: () => void })!never!Scope.Scope => {
+  const context = try Effect.context<never>()
+  const runFork = Effect.runForkWith(context)
+  const listeners = new Set<(leader: boolean) => void>()
+  let leader = false
+  let holding: Fiber.Fiber<void> | undefined
+  // Whoever waits for this program to lead, told whether it does: `requestLeadership`'s answer and `take`.
+  const waiting = new Set<(led: boolean) => void>()
+  const tell = (led: boolean) => {
+    const told = [...waiting]
+    waiting.clear()
+    for (const hear of told) hear(led)
+  }
+  const set = (next: boolean) => {
+    if (next === leader) return
+    leader = next
+    for (const listener of listeners) listener(next)
+    // After the outbox heard: whoever waited may write at once.
+    if (next) tell(true)
+  }
+  // Takes the lock and holds it until the scope closes; stolen, it waits for it again. `wait` waits in line, `steal`
+  // takes it at once, and `try` takes it only if it is free: held elsewhere, `taken` hears so, and it waits in line.
+  // It starts once `holding` names it.
+  const take = (how: "wait" | "steal" | { readonly taken: () => void }) =>
+    typeof how === "object"
+      ? Effect.flatMap(
+        options.lock.tryHold(options.name),
+        Option.match({
+          onSome: Effect.succeed,
+          onNone: () => Effect.andThen(Effect.sync(how.taken), options.lock.hold(options.name))
+        })
+      )
+      : options.lock.hold(options.name, how === "steal" ? { steal: true } : undefined)
+  // A lock manager that refuses the request (a defect of the lock service) leaves this program not leading: whoever
+  // waits hears so, and the next `requestLeadership` or `take` asks again.
+  const hold = (how: "wait" | "steal" | { readonly taken: () => void }) => {
+    holding = runFork(
+      Effect.scoped(
+        Effect.yieldNow
+          |> Effect.andThen(%, take(how))
+          |> Effect.tap(%, () => Effect.sync(() => set(true)))
+          |> Effect.flatMap(%, (held) => held.lost)
+      )
+        |> Effect.andThen(%, Effect.sync(() => {
+          set(false)
+          hold("wait")
+        }))
+        |> Effect.catchDefect(%, (defect) =>
+          Effect.andThen(
+            Effect.logWarning("outbox lock refused")
+              |> Effect.annotateLogs({ error: defect instanceof Error ? defect.name : typeof defect })(%),
+            Effect.sync(() => {
+              holding = undefined
+              set(false)
+              tell(false)
+            })
+          )
+        )
+    )
+  }
+  // Interrupted at once, so a hold let go never leads: a wait is withdrawn, a held lock released.
+  const letGo = () => {
+    holding?.interruptUnsafe()
+    holding = undefined
+  }
+  // Let go, nobody waits any more: a `requestLeadership` not yet answered answers that this program doesn't lead.
+  const release = () => {
+    letGo()
+    set(false)
+    tell(false)
+  }
+  try Effect.addFinalizer(() => Effect.sync(release))
+  return {
+    // This lock is never stolen. A successor drains its predecessor's admission before recovery or allocation.
+    withAdmission: <A>(action: () => Promise<A>): Promise<A> =>
+      Effect.runPromiseWith(context)(
+        Effect.scoped(effect {
+          try options.lock.hold(`${options.name}:admission`)
+          return try Effect.promise(action)
+        }) |> Effect.uninterruptible(%)
+      ),
+    requestLeadership: () =>
+      new Promise<boolean>((answer) => {
+        if (leader) return answer(true)
+        // A hold already in line, or a take under way, reports its grant through `onLeadershipChange`.
+        if (holding !== undefined) return answer(false)
+        waiting.add(answer)
+        hold({
+          taken: () => {
+            waiting.delete(answer)
+            answer(false)
+          }
+        })
+      }),
+    releaseLeadership: release,
+    isLeader: () => leader,
+    onLeadershipChange: (listener) => {
+      listeners.add(listener)
+      return () => listeners.delete(listener)
+    },
+    take: Effect.callback<void>((resume) => {
+      if (leader) return resume(Effect.void)
+      // It completes only once this program leads: a release before then leaves it to be interrupted.
+      const led = (now: boolean) => {
+        if (now) resume(Effect.void)
+      }
+      waiting.add(led)
+      // The wait in line is withdrawn: the steal replaces it.
+      letGo()
+      hold("steal")
+      return Effect.sync(() => waiting.delete(led))
+    }),
+    dispose: () => {
+      release()
+      listeners.clear()
+    }
+  }
+}
+
+module $throw$ts {
+export function raise(value: unknown): never { throw value }
+}
+import { raise as $raise } from $throw$ts

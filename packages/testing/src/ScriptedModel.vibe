@@ -25,7 +25,7 @@ import type { ModelEvent } from "@smthrs/model/ModelEvent"
 import type { ModelRequest } from "@smthrs/model/ModelRequest"
 import { UnscriptedModelError } from "./TestingError.vibe"
 import type * as TurnGate from "./TurnGate.vibe"
-import type * as TurnLog from "./TurnLog.ts"
+import type * as TurnLog from "./TurnLog.vibe"
 
 /**
  * One scripted answer.

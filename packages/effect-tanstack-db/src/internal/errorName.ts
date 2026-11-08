@@ -11,6 +11,7 @@
  *
  * @private
  * @since 0.2.0
+ * @throws {never}
  */
 export const errorName = (failure: unknown, unwrap: ReadonlyArray<string> = ["UnknownError"]): string => {
   const tag = typeof failure === "object" && failure !== null && "_tag" in failure ? String(failure._tag) : undefined

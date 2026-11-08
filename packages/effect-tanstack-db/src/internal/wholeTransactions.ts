@@ -35,6 +35,7 @@ type Open = { steps: Array<() => void> } | "live"
  *
  * @category internal
  * @since 0.2.0
+ * @throws {never}
  */
 export const wholeTransactions = <C extends { readonly sync: (params: never) => unknown }>(config: C): C => ({
   ...config,

@@ -4,7 +4,7 @@ import { Effect, PlatformError } from "effect"
 import { link, mkdtemp, readFile, rm, symlink, writeFile } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as TurnLog from "../src/TurnLog.ts"
+import * as TurnLog from "../src/TurnLog.vibe"
 
 describe("TurnLog private publication", () => {
   it.live("does not remember a turn when the private publication service fails", () =>

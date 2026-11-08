@@ -28,7 +28,7 @@ const securityReview = Smithers.SecurityReview({
         "A browser query parameter outside the protocol allowlist reaching the upstream URL.",
         "The host's table, where or params appended before the browser's, or the browser's value winning a duplicate."
       ],
-      paths: ["src/ShapeProxy.ts"]
+      paths: ["src/ShapeProxy.vibe"]
     },
     {
       id: "secret-opacity",
@@ -38,7 +38,7 @@ const securityReview = Smithers.SecurityReview({
         "The secret appended as a plain string where an HTTP client span records url.full.",
         "A log annotation, span attribute or response header carrying the secret or the upstream URL."
       ],
-      paths: ["src/ShapeProxy.ts"]
+      paths: ["src/ShapeProxy.vibe"]
     }
   ]
 })

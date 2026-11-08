@@ -6,7 +6,7 @@ import type * as ModelEvent from "@smthrs/model/ModelEvent"
 import * as ModelRequest from "@smthrs/model/ModelRequest"
 import { Cause, Effect, Exit, Fiber, Option, Ref, Stream } from "effect"
 import type { RecordedCall } from "../src/Fixture.vibe"
-import * as RecordingModel from "../src/RecordingModel.ts"
+import * as RecordingModel from "../src/RecordingModel.vibe"
 
 const request = (text: string, modelId = "openai:gpt-5-mini"): ModelRequest.ModelRequest =>
   ModelRequest.ModelRequest.make({

@@ -13,7 +13,7 @@ import * as HttpClientRequest from "effect/http/HttpClientRequest"
 import * as HttpClientResponse from "effect/http/HttpClientResponse"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { describe, expect, it } from "vitest"
-import * as HostSuite from "../../src/HostSuite.ts"
+import * as HostSuite from "../../src/HostSuite.vibe"
 import { CapabilityContractError } from "../../src/TestingError.vibe"
 
 const profile: HostSuite.HostProfile = {

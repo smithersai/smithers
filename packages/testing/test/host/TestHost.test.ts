@@ -7,7 +7,7 @@ import { Clock, Effect, FileSystem, Random, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import { TestClock } from "effect/testing"
-import * as TestHost from "../../src/TestHost.ts"
+import * as TestHost from "../../src/TestHost.vibe"
 
 const decoder = new TextDecoder()
 

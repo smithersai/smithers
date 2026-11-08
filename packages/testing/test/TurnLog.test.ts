@@ -7,7 +7,7 @@ import { Effect, Stream } from "effect"
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
-import * as TurnLog from "../src/TurnLog.ts"
+import * as TurnLog from "../src/TurnLog.vibe"
 
 const request = ModelRequest.make({
   modelId: "m",

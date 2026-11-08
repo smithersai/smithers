@@ -8,7 +8,7 @@ import * as NodeFs from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it } from "vitest"
-import * as HostSuite from "../../src/HostSuite.ts"
+import * as HostSuite from "../../src/HostSuite.vibe"
 
 const profile: HostSuite.HostProfile = {
   fileSystem: { supported: true },

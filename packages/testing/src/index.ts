@@ -45,13 +45,13 @@ export * as Conformance from "./Conformance.vibe"
 export * as RecordedModel from "./RecordedModel.vibe"
 
 /** @since 0.0.0 @category models */
-export * as RecordingModel from "./RecordingModel.ts"
+export * as RecordingModel from "./RecordingModel.vibe"
 
 /** @since 0.0.0 @category models */
 export * as CachedModel from "./CachedModel.vibe"
 
 /** @since 1.0.0 @category models */
-export * as CachedEvaluator from "./CachedEvaluator.ts"
+export * as CachedEvaluator from "./CachedEvaluator.vibe"
 
 /** @since 1.0.0 @category models */
 export * as TurnGate from "./TurnGate.vibe"
@@ -78,13 +78,13 @@ export * as FlowEngineLike from "./FlowEngineLike.vibe"
 export * as RestartableEngine from "./RestartableEngine.vibe"
 
 /** @since 0.0.0 @category conformance */
-export * as HostSuite from "./HostSuite.ts"
+export * as HostSuite from "./HostSuite.vibe"
 
 /** @since 0.0.0 @category assertions */
 export * as ScoreGate from "./ScoreGate.ts"
 
 /** @since 1.0.0 @category testing */
-export * as RealCliDriver from "./RealCliDriver.ts"
+export * as RealCliDriver from "./RealCliDriver.vibe"
 
 /** @since 1.0.0 @category testing */
-export * as TerminalRecording from "./TerminalRecording.ts"
+export * as TerminalRecording from "./TerminalRecording.vibe"

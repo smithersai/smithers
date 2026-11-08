@@ -2,7 +2,7 @@ import { runHostContract } from "@smthrs/kernel/test/contract"
 import { Deferred, Effect, FileSystem, Layer, Stream } from "effect"
 import * as ChildProcess from "effect/process/ChildProcess"
 import { expect } from "vitest"
-import * as TestHost from "../../src/TestHost.ts"
+import * as TestHost from "../../src/TestHost.vibe"
 
 const host = TestHost.layer({
   files: {},

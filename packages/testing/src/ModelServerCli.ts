@@ -52,7 +52,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { existsSync, readFileSync } from "node:fs"
 import { dirname, resolve } from "node:path"
 import * as BuiltinScript from "./BuiltinScript.ts"
-import * as CachedEvaluator from "./CachedEvaluator.ts"
+import * as CachedEvaluator from "./CachedEvaluator.vibe"
 import * as CachedModel from "./CachedModel.vibe"
 import { decode } from "./Fixture.vibe"
 import * as FixtureStore from "./FixtureStore.ts"
@@ -60,7 +60,7 @@ import type { RecordedRequestLike } from "./ModelLike.vibe"
 import * as ModelServer from "./ModelServer.ts"
 import * as ScriptedModel from "./ScriptedModel.vibe"
 import * as TurnGate from "./TurnGate.vibe"
-import * as TurnLog from "./TurnLog.ts"
+import * as TurnLog from "./TurnLog.vibe"
 
 /**
  * A parsed command line.

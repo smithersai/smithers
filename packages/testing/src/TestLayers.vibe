@@ -12,7 +12,7 @@ import * as Kernel from "@smthrs/kernel"
 import * as Layer from "effect/Layer"
 import type { EngineSubject } from "./EngineSubject.vibe"
 import { ModelLike } from "./ModelLike.vibe"
-import * as TestHost from "./TestHost.ts"
+import * as TestHost from "./TestHost.vibe"
 import { CapabilityContractError } from "./TestingError.vibe"
 
 const denied = (capability: string, operation: string): CapabilityContractError =>

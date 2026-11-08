@@ -11,7 +11,7 @@
 import { describe, expect, it } from "@effect/vitest"
 import * as BrowserFileSystem from "@smthrs/platform-browser/BrowserFileSystem"
 import { Effect, Option, Stream } from "effect"
-import { makeMemoryFs } from "../../src/TestHost.ts"
+import { makeMemoryFs } from "../../src/TestHost.vibe"
 
 const decoder = new TextDecoder()
 const encoder = new TextEncoder()

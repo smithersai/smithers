@@ -17,7 +17,7 @@ import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { canonicalRequestDigest } from "../src/Fixture.vibe"
 import * as ModelServer from "../src/ModelServer.ts"
 import * as TurnGate from "../src/TurnGate.vibe"
-import * as TurnLog from "../src/TurnLog.ts"
+import * as TurnLog from "../src/TurnLog.vibe"
 
 const http = FetchHttpClient.layer
 const executor = RequestExecutor.layer.pipe(Layer.provide(http))

@@ -25,4 +25,4 @@ export {
   type SuiteGates,
   type SuiteOptions,
   type SuiteReport
-} from "./internal/ScoreSuite.ts"
+} from "./internal/ScoreSuite.vibe"

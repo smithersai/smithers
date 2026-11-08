@@ -86,8 +86,8 @@
       "default": "./.vibelang/js/src/FlowEngineLike.js"
     },
     "./HostSuite": {
-      "types": "./src/HostSuite.ts",
-      "vibelang-source": "./src/HostSuite.ts",
+      "types": "./.vibe/declarations/src/HostSuite.d.vibe.ts",
+      "vibelang-source": "./src/HostSuite.vibe",
       "default": "./.vibelang/js/src/HostSuite.js"
     },
     "./JournalAssertions": {
@@ -128,8 +128,8 @@
       "default": "./.vibelang/js/src/RecordedModel.js"
     },
     "./RecordingModel": {
-      "types": "./src/RecordingModel.ts",
-      "vibelang-source": "./src/RecordingModel.ts",
+      "types": "./.vibe/declarations/src/RecordingModel.d.vibe.ts",
+      "vibelang-source": "./src/RecordingModel.vibe",
       "default": "./.vibelang/js/src/RecordingModel.js"
     },
     "./RestartableEngine": {
@@ -138,7 +138,11 @@
       "default": "./.vibelang/js/src/RestartableEngine.js"
     },
     "./ScoreGate": "./src/ScoreGate.ts",
-    "./TestHost": "./src/TestHost.ts",
+    "./TestHost": {
+      "types": "./.vibe/declarations/src/TestHost.d.vibe.ts",
+      "vibelang-source": "./src/TestHost.vibe",
+      "default": "./.vibelang/js/src/TestHost.js"
+    },
     "./TestLayers": {
       "types": "./.vibe/declarations/src/TestLayers.d.vibe.ts",
       "vibelang-source": "./src/TestLayers.vibe",
@@ -155,8 +159,8 @@
       "default": "./.vibelang/js/src/index.js"
     },
     "./pins/Identity": {
-      "types": "./src/pins/Identity.ts",
-      "vibelang-source": "./src/pins/Identity.ts",
+      "types": "./.vibe/declarations/src/pins/Identity.d.vibe.ts",
+      "vibelang-source": "./src/pins/Identity.vibe",
       "default": "./.vibelang/js/src/pins/Identity.js"
     },
     "./pins/Interrupt": {
@@ -165,19 +169,19 @@
       "default": "./.vibelang/js/src/pins/Interrupt.js"
     },
     "./pins/Race": {
-      "types": "./src/pins/Race.ts",
-      "vibelang-source": "./src/pins/Race.ts",
+      "types": "./.vibe/declarations/src/pins/Race.d.vibe.ts",
+      "vibelang-source": "./src/pins/Race.vibe",
       "default": "./.vibelang/js/src/pins/Race.js"
     },
     "./pins/Replay": {
-      "types": "./src/pins/Replay.ts",
-      "vibelang-source": "./src/pins/Replay.ts",
+      "types": "./.vibe/declarations/src/pins/Replay.d.vibe.ts",
+      "vibelang-source": "./src/pins/Replay.vibe",
       "default": "./.vibelang/js/src/pins/Replay.js"
     },
     "./ProcessTable": "./src/ProcessTable.ts",
     "./TurnLog": {
-      "types": "./src/TurnLog.ts",
-      "vibelang-source": "./src/TurnLog.ts",
+      "types": "./.vibe/declarations/src/TurnLog.d.vibe.ts",
+      "vibelang-source": "./src/TurnLog.vibe",
       "default": "./.vibelang/js/src/TurnLog.js"
     }
   },

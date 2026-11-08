@@ -38,11 +38,11 @@ const securityReview = Smithers.SecurityReview({
         "Anyone who can read a committed fixture reads API keys, tokens, or private user text that a recording run captured from the live model exchange.",
       lookFor: [
         "recordedRequest in src/Fixture.ts copying system, message, tool-result, or tool-call argument text verbatim with no redaction hook or secret scan.",
-        "recordedFailure in src/RecordingModel.ts storing a provider ModelError message, path, or requestId that can echo a key or auth header.",
+        "recordedFailure in src/RecordingModel.vibe storing a provider ModelError message, path, or requestId that can echo a key or auth header.",
         "FixtureStore.makeFile writing the fixture or its .journal with default permissions instead of owner-only mode.",
         "CachedModel or RecordingModel recording a call whose request carries headers, credentials, or provider options beyond the projected ModelRequest fields."
       ],
-      paths: ["src/Fixture.vibe", "src/RecordingModel.ts", "src/CachedModel.vibe", "src/FixtureStore.ts"]
+      paths: ["src/Fixture.vibe", "src/RecordingModel.vibe", "src/CachedModel.vibe", "src/FixtureStore.ts"]
     },
     {
       id: "fixture-store-path-safety",
@@ -94,7 +94,7 @@ const securityReview = Smithers.SecurityReview({
         "makeStubBash matching a command by prefix or pattern, or through a prototype key, instead of Object.hasOwn exact lookup.",
         "HostSuite capability cases that pass when the host silently performs the real side effect."
       ],
-      paths: ["src/TestHost.ts", "src/HostSuite.ts"]
+      paths: ["src/TestHost.vibe", "src/HostSuite.vibe"]
     },
     {
       id: "process-probe-exec",
@@ -125,7 +125,7 @@ const securityReview = Smithers.SecurityReview({
         "src/PlanAssertions.vibe",
         "src/JournalAssertions.vibe",
         "src/Divergence.vibe",
-        "src/internal/ScoreSuite.ts"
+        "src/internal/ScoreSuite.vibe"
       ]
     }
   ]

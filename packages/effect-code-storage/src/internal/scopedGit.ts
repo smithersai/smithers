@@ -9,12 +9,14 @@ const decoder = new TextDecoder("utf-8", { fatal: true, ignoreBOM: true })
 
 /** Frames a UTF-8 payload as one git pkt-line.
  * @private
+ * @throws {never}
  * @since 0.2.0
  */
 export const packet = (line: string): string => (encoder.encode(line).length + 4).toString(16).padStart(4, "0") + line
 
 /** Ref names cannot inject advertisement framing or capabilities.
  * @private
+ * @throws {never}
  * @since 0.2.0
  */
 export const validBranch = (branch: string): boolean =>
@@ -27,6 +29,7 @@ export const validBranch = (branch: string): boolean =>
 
 /** Validates every byte; strips haves so arbitrary private object IDs cannot become an ACK oracle.
  * @private
+ * @throws {never}
  * @since 0.2.0
  */
 export const negotiation = (bytes: Uint8Array, tip: string): string | undefined => {

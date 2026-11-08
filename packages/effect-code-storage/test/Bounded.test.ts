@@ -1,6 +1,6 @@
 import { Effect, Exit, Stream } from "effect"
 import { expect, test } from "vitest"
-import { readAtMost, readPackets } from "../src/internal/bounded.ts"
+import { readAtMost, readPackets } from "../src/internal/bounded.vibe"
 
 test.each([NaN, Infinity, -Infinity, -1, 0.5, Number.MAX_SAFE_INTEGER + 1])(
   "invalid cap %s never pulls either reader",

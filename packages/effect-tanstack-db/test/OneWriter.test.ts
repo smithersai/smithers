@@ -6,7 +6,7 @@ import { databaseFile, id, Note, note, persistenceOn, sqlite, webLocks, withLogs
 
 // A persisted synced collection on a device whose programs share one SQLite file through TanStack DB's coordinator,
 // as a browser's tabs do, and elect its writer with the device's lock (Persistence's `lock`): only the program holding
-// it stores what its source syncs (src/internal/oneWriter.ts). The source here is a test's own: it records each session
+// it stores what its source syncs (src/internal/oneWriter.vibe). The source here is a test's own: it records each session
 // TanStack DB starts, with the params it was given, and the test drives begin, write and commit as Electric does.
 
 type Params = {
