@@ -14,6 +14,8 @@ import { SandboxSnapshot, EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
 import { escapeAction, canMinimize, hasContent, toggleDocs, scrollFollow, follows, failedTourKeepsControl, paletteChange, tourStream, completedEvent, answerAnnouncement, screenKey } from "./screenDecision.vibe"
 import { MediaSources, observeMedia } from "./media.vibe"
+import { Identity, viewer } from "../core/roles.vibe"
+import { Navigation } from "foldkit"
 import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
@@ -25,11 +27,31 @@ export schema Flags {
   readonly name: string
   readonly mediaSources?: MediaSources
   readonly reducedMotion?: boolean
+  readonly signInFailed?: boolean
 }
+
+export schema AccountState {
+  readonly identity: Identity
+  readonly menu: boolean
+  readonly people: "closed" | "pane" | "max"
+  readonly members: ReadonlyArray<Identity>
+  readonly target: string
+  readonly targetRole: "new" | "community" | "contributor" | "maintainer"
+  readonly pending: boolean
+  readonly error: string
+  readonly retry: "sign-in" | "people" | "grant" | "sign-out" | "roles"
+  readonly notice: string
+  readonly ledger: Client
+  readonly epoch: number
+  readonly from: number
+}
+export const signedOut: AccountState = { identity: viewer, menu: false, people: "closed", members: [], target: "", targetRole: "community", pending: false, error: "", retry: "sign-in", notice: "", ledger: Machine.newClient, epoch: 0, from: 0 }
+export function accountOf(model: Model): AccountState { return model.account ?? signedOut }
 
 // MODEL
 
 export schema Model {
+  readonly account?: AccountState
   /** `splash`: the home page fills the window. `chat`: the conversation, with the home page as its first pane. */
   readonly surface: "splash" | "chat"
   /** Whether the ⌘K prompt is open. */
@@ -95,6 +117,24 @@ export const Message = defineMessageUnion({
   ObservedMedia: {},
   LoadedMedia: { kind: Schema.Literals(["image", "video"]) },
   FailedMedia: { src: Schema.String, kind: Schema.Literals(["image", "video"]) },
+  AccountLoaded: { identity: Identity },
+  AccountFailed: {},
+  ClickedAccount: {},
+  ClickedSignIn: {},
+  ClickedSignOut: {},
+  ClickedPeople: {},
+  LoadedPeople: { members: Schema.Array(Identity) },
+  ClosedPeople: {},
+  ToggledPeople: {},
+  ChoseIdentity: { role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
+  SelectedRole: { id: Schema.String, role: Schema.Literals(["new", "community", "contributor", "maintainer"]) },
+  CancelledRole: {},
+  ConfirmedRole: {},
+  GrantedRole: {},
+  ReceivedRole: { event: EventSchema },
+  FailedRoles: {},
+  DismissedAccountError: {},
+  RetriedAccount: {},
   ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
   PressedCommandK: {},
   PressedEscape: {},
@@ -134,6 +174,7 @@ export type Message = typeof Message.Type
 export function init(flags: Flags): Update.Return<Model, Message, Factory> {
   return {
     model: {
+      account: flags.signInFailed ? { ...signedOut, error: "Sign-in failed. GitHub didn’t answer." } : signedOut,
       surface: "splash",
       palette: false,
       draft: "",
@@ -168,15 +209,78 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ObservedMedia: () => ({ model }),
     LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
     FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
-    ResolvedMode: ({ mode }) => ({ model: { ...model, mode } }),
+    ResolvedMode: ({ mode }) => ({ model: { ...model, mode }, commands: [LoadAccount({})] }),
+    AccountLoaded: ({ identity }) => {
+      const { ledger: snapshot, ...person } = identity
+      const { sandbox: previousSandbox, ...withoutSandbox } = model
+      const ledger = { conversation: snapshot ?? Machine.empty, pending: [], gap: false }
+      const changedPerson = person.id !== accountOf(model).identity.id
+      const changedRole = person.role !== accountOf(model).identity.role
+      return {
+        model: { ...(changedPerson || changedRole ? withoutSandbox : model), ...(changedPerson || changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), ...(changedPerson ? { terminalDraft: "", sandboxPane: "closed" as const } : {}), name: person.login || "Guest", account: {
+          ...accountOf(model), identity: person, pending: false,
+          error: person.id === "" ? accountOf(model).error : "", menu: false, target: "",
+          people: person.id === "" ? "closed" : accountOf(model).people,
+          ledger, epoch: accountOf(model).epoch + 1, from: ledger.conversation.seq,
+          notice: person.id === "" ? "" : "Signed in as " + person.login + ".",
+        } },
+        ...(accountOf(model).target !== "" ? { commands: [CloseRoleDialog({})] } : {}),
+      }
+    },
+    AccountFailed: () => ({ model: { ...model, account: { ...accountOf(model), pending: false, error: accountOf(model).retry === "grant" ? "Role change failed." : accountOf(model).retry === "people" ? "People couldn’t load." : accountOf(model).retry === "sign-out" ? "Sign out failed." : "Sign-in failed. GitHub didn’t answer." } } }),
+    ClickedAccount: () => ({ model: { ...model, account: { ...accountOf(model), menu: !accountOf(model).menu } }, commands: [FocusAccountMenu({ open: !accountOf(model).menu })] }),
+    ClickedSignIn: () => model.mode === "live" && accountOf(model).identity.available === false
+      ? { model: { ...model, account: { ...accountOf(model), pending: false, retry: "sign-in", error: "Sign-in unavailable." } } }
+      : ({ model: { ...model, account: { ...accountOf(model), pending: true, error: "", retry: "sign-in" } }, commands: [SignInAccount({ mock: model.mode === "mock" })] }),
+    ClickedSignOut: () => ({ model: { ...model, account: { ...accountOf(model), retry: "sign-out" } }, commands: [SignOutAccount({})] }),
+    ChoseIdentity: ({ role }) => ({ model, commands: [ChooseIdentity({ role })] }),
+    ClickedPeople: () => ({ model: { ...model, surface: "chat", account: { ...accountOf(model), menu: false, people: "pane", retry: "people" } }, commands: [LoadPeople({})] }),
+    LoadedPeople: ({ members }) => ({ model: { ...model, account: { ...accountOf(model), members, pending: false } } }),
+    ClosedPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: "closed" } } }),
+    ToggledPeople: () => ({ model: { ...model, account: { ...accountOf(model), people: accountOf(model).people === "max" ? "pane" : "max" } } }),
+    SelectedRole: ({ id, role }) => accountOf(model).identity.role !== "maintainer" ? { model } : ({ model: { ...model, account: { ...accountOf(model), target: id, targetRole: role, error: "" } }, commands: [ShowRoleDialog({})] }),
+    CancelledRole: () => ({ model: { ...model, account: { ...accountOf(model), target: "", error: "" } }, commands: [CloseRoleDialog({})] }),
+    ConfirmedRole: () => ({ model: { ...model, account: { ...accountOf(model), pending: true, retry: "grant" } }, commands: [GrantRole({ id: accountOf(model).target, role: accountOf(model).targetRole })] }),
+    GrantedRole: () => ({ model: { ...model, account: { ...accountOf(model), target: "", pending: false } }, commands: [CloseRoleDialog({}), LoadPeople({})] }),
+    ReceivedRole: ({ event }) => {
+      const account = accountOf(model)
+      const ledger = Machine.receive(account.ledger, event)
+      if (ledger.gap) return { model: { ...model, account: { ...account, ledger: Machine.resume(ledger), epoch: account.epoch + 1, from: ledger.conversation.seq } } }
+      const changed = ledger.conversation.seq > account.ledger.conversation.seq && event.type === "RoleGranted" && ledger.conversation.roles.length > account.ledger.conversation.roles.length
+      const identity = changed && event.id === account.identity.id ? { ...account.identity, role: Machine.roleOf(ledger.conversation.roles, account.identity.id) } : account.identity
+      const changedRole = identity.role !== account.identity.role
+      const { sandbox: previousSandbox, ...withoutSandbox } = model
+      const name = account.members.find(person => person.id === event.id)?.login ?? event.id
+      const notice = changed && event.id === account.identity.id
+        ? event.mode === "participation" ? "You're now Community." : "You're now " + roleLabel(event.role) + "."
+        : changed && event.mode === "person" && account.people !== "closed" ? name + " is now " + roleLabel(event.role) + "." : account.notice
+      const close = identity.role !== "maintainer" && account.target !== ""
+      const commands = [...(close ? [CloseRoleDialog({})] : []), ...(changed && account.people !== "closed" ? [LoadPeople({})] : [])]
+      return { model: { ...(changedRole ? withoutSandbox : model), ...(changedRole ? { sandboxBusy: false, sandboxRequest: (model.sandboxRequest ?? 0) + 1 } : {}), account: { ...account, ledger, identity, notice, target: close ? "" : account.target, pending: close ? false : account.pending } }, ...(commands.length > 0 ? { commands } : {}) }
+    },
+    FailedRoles: () => ({ model: { ...model, account: { ...accountOf(model), error: "Connection lost.", retry: "roles", pending: false } } }),
+    RetriedAccount: () => accountOf(model).retry === "roles" ? ({
+      model: { ...model, account: { ...accountOf(model), error: "", pending: false, epoch: accountOf(model).epoch + 1, from: accountOf(model).ledger.conversation.seq } },
+    }) : accountOf(model).retry === "sign-in" ? update(model, Message.ClickedSignIn()) : ({
+      model: { ...model, account: { ...accountOf(model), pending: true, error: "" } },
+      commands: [accountOf(model).retry === "grant" ? GrantRole({ id: accountOf(model).target, role: accountOf(model).targetRole })
+        : accountOf(model).retry === "people" ? LoadPeople({})
+        : accountOf(model).retry === "sign-out" ? SignOutAccount({})
+        : SignInAccount({ mock: model.mode === "mock" })],
+    }),
+    DismissedAccountError: () => ({ model: { ...model, account: { ...accountOf(model), error: "" } } }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
     // Escape first takes control back from the agent, then closes what is open, innermost first.
     PressedEscape: () => {
-      if (!model.tour && !touringHere(model) && !model.palette && model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
-      switch (escapeAction(model.tour, touringHere(model), model.palette, model.surface, model.docs)) {
-        case "tour": return endTour(model)
-        case "palette": return openPalette(model, false)
+      const action = escapeAction(model.tour, touringHere(model), model.palette, model.surface, model.docs)
+      if (action === "tour") return endTour(model)
+      const account = accountOf(model)
+      if (account.target !== "") return { model: { ...model, account: { ...account, target: "", error: "" } }, commands: [CloseRoleDialog({})] }
+      if (action === "palette") return openPalette(model, false)
+      if (account.menu) return { model: { ...model, account: { ...account, menu: false } }, commands: [FocusAccountMenu({ open: false })] }
+      if (model.sandboxPane === "max") return { model: { ...model, sandboxPane: "pane" } }
+      switch (action) {
         case "docs": return { model: { ...model, docs: "pane" } }
         case "splash": return minimizeSplash(model)
       }
@@ -538,6 +642,21 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         },
       },
     ),
+    roles: entry(
+      { person: Schema.String, epoch: Schema.Number, from: Schema.Number },
+      {
+        modelToDependencies: (model: Model) => ({ person: accountOf(model).identity.id, epoch: accountOf(model).epoch, from: accountOf(model).from }),
+        dependenciesToStream: ({ person, from }) => person === "" ? Stream.empty : Stream.unwrap(effect {
+          const factory = try Factory
+          if (factory.accounts === undefined) return Stream.empty
+          return factory.accounts.events(from).pipe(
+            Stream.map(event => Message.ReceivedRole({ event })),
+            Stream.concat(Stream.fromEffect(message(() => Message.FailedRoles()))),
+            Stream.catch(() => Stream.succeed(Message.FailedRoles())),
+          )
+        }),
+      },
+    ),
     events: entry(
       { conversation: Schema.String, epoch: Schema.Number, from: Schema.Number, open: Schema.Boolean },
       {
@@ -593,3 +712,64 @@ export const SandboxAction = Command.define("SandboxAction", {
     } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
   },
 })
+
+export function roleLabel(role: Machine.Role): string { return role.slice(0, 1).toUpperCase() + role.slice(1) }
+
+export const LoadAccount = Command.define("LoadAccount", { args: {}, messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect () => {
+  const factory = try Factory
+  const identity = factory.accounts === undefined ? viewer : (factory.accounts.current() catch () => undefined)
+  return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+} })
+export const ChooseIdentity = Command.define("ChooseIdentity", {
+  args: { role: Schema.Literals(["viewer", "new", "community", "contributor", "maintainer"]) },
+  messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect ({ role }) => {
+    const factory = try Factory
+    const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose(role) catch () => undefined)
+    return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+  },
+})
+export const SignInAccount = Command.define("SignInAccount", {
+  args: { mock: Schema.Boolean }, messages: [Message.AccountLoaded, Message.AccountFailed, Message.FocusedPrompt], execute: effect ({ mock }) => {
+    if (!mock) { try Navigation.load("/api/auth/sign-in"); return try message(() => Message.FocusedPrompt()) }
+    const factory = try Factory
+    const identity = factory.accounts === undefined ? viewer : (factory.accounts.choose("new") catch () => undefined)
+    return try message(() => identity === undefined ? Message.AccountFailed() : Message.AccountLoaded({ identity }))
+  },
+})
+export const SignOutAccount = Command.define("SignOutAccount", { args: {}, messages: [Message.AccountLoaded, Message.AccountFailed], execute: effect () => {
+  const factory = try Factory
+  if (factory.accounts !== undefined) {
+    const failed = factory.accounts.signOut().pipe(Effect.as(false)) catch () => true
+    if (failed) return try message(() => Message.AccountFailed())
+  }
+  return try message(() => Message.AccountLoaded({ identity: viewer }))
+} })
+export const LoadPeople = Command.define("LoadPeople", { args: {}, messages: [Message.LoadedPeople, Message.AccountFailed], execute: effect () => {
+  const factory = try Factory
+  const members = factory.accounts === undefined ? [] : (factory.accounts.members() catch () => undefined)
+  return try message(() => members === undefined ? Message.AccountFailed() : Message.LoadedPeople({ members: Array.from(members) }))
+} })
+export const GrantRole = Command.define("GrantRole", {
+  args: { id: Schema.String, role: Schema.Literals(["new", "community", "contributor", "maintainer"]) },
+  messages: [Message.GrantedRole, Message.AccountFailed], execute: effect ({ id, role }) => {
+    const factory = try Factory
+    const failed = factory.accounts === undefined ? true : (factory.accounts.grant(id, role).pipe(Effect.as(false)) catch () => true)
+    return try message(() => failed ? Message.AccountFailed() : Message.GrantedRole())
+  },
+})
+export const ShowRoleDialog = Command.define("ShowRoleDialog", { args: {}, messages: [Message.FocusedPrompt], execute: effect () => {
+  try Render.afterCommit
+  Dom.showDialog("#vl-role-dialog", { isModal: true, focusSelector: "#vl-role-cancel" }) catch () => false
+  return try message(() => Message.FocusedPrompt())
+} })
+export const CloseRoleDialog = Command.define("CloseRoleDialog", { args: {}, messages: [Message.FocusedPrompt], execute: effect () => {
+  try Render.afterCommit
+  Dom.closeDialog("#vl-role-dialog") catch () => false
+  return try message(() => Message.FocusedPrompt())
+} })
+
+export const FocusAccountMenu = Command.define("FocusAccountMenu", { args: { open: Schema.Boolean }, messages: [Message.FocusedPrompt], execute: effect ({ open }) => {
+  try Render.afterCommit
+  Dom.focus(open ? "#vl-account-people" : "#vl-account", { preventScroll: true }) catch () => undefined
+  return try message(() => Message.FocusedPrompt())
+} })

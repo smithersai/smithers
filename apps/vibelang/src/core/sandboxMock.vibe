@@ -7,10 +7,10 @@ import { FlowRuntime } from "@smthrs/flow"
 import { Factory, Unavailable } from "./Factory.vibe"
 import { SandboxCommand, SandboxHost, SandboxMeter, SandboxStart, SandboxStop, sandboxRegistration } from "./flows.vibe"
 import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from "./sandboxHost.vibe"
-import { mockPolicy } from "./sandboxPolicy.vibe"
+import { mockPolicy, type SandboxPolicy } from "./sandboxPolicy.vibe"
 import type { Role } from "./sandboxDecision.vibe"
 
-export effect function makeMockSandboxes(role: Role) {
+export effect function makeMockSandboxes(role: Role, policy: Layer.Layer<SandboxPolicy> = mockPolicy(role)) {
   const random = try Effect.provide(SecureRandom.SecureRandom, WebCrypto.layer)
   effect function execution(prefix: string) { return `${prefix}/${try random.uuidV4()}` }
   const state = try Ref.make<SandboxState | undefined>(undefined)
@@ -18,7 +18,7 @@ export effect function makeMockSandboxes(role: Role) {
   const armed = try Ref.make<number | null>(null)
   const receipts = new Map<string, Receipt>()
   const machines = memoryMachines()
-  const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: (at) => Ref.set(armed, at) }, machines), mockPolicy(role))
+  const host = try Effect.provide(makeSandboxHost({ read: () => Ref.get(state), receipt: (id) => succeed(receipts.get(id)), write: (next, receipt) => sync(() => { if (receipt) receipts.set(receipt.request.operationId, receipt) }).pipe(Effect.andThen(Ref.set(state, next))), alarm: (at) => Ref.set(armed, at) }, machines), policy)
   const runtime = sandboxRegistration.pipe(
     Layer.provideMerge(FlowEngine.layerMemory),
     Layer.provide(Layer.succeed(SandboxHost, host)),

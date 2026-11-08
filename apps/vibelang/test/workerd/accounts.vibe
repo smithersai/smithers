@@ -1,0 +1,56 @@
+// Local workerd host for the production account service. Fixture issuance uses real cookie signatures and storage.
+import { Core, GitHub } from "@smthrs/integrations"
+import { FetchHttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import * as Accounts from "../../worker/Accounts.vibe"
+import type { Storage } from "../../worker/Objects.vibe"
+
+interface State { readonly id: { toString(): string }; readonly storage: Storage }
+interface Env { readonly [name: string]: unknown }
+
+export class ProjectAccounts {
+  readonly setup: Promise<Accounts.Setup | undefined>
+  readonly service: Promise<Effect.Success<ReturnType<typeof Accounts.make>> | undefined>
+  constructor(readonly state: State, readonly env: Env) {
+    this.setup = runPromise(scoped(Accounts.configured().pipe(
+      Effect.provide(FetchHttpClient.layer), Effect.provide(ConfigProvider.layer(ConfigProvider.fromUnknown(env))),
+    )))
+    this.service = this.setup.then(async setup => {
+      if (setup === undefined) return undefined
+      const configured = env.ACCOUNT_FAULT === "exchange" ? {
+        ...setup, github: { ...setup.github, exchange: () => Effect.fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" })) },
+      } : setup
+      return await runPromise(Accounts.make(state.id.toString(), state.storage, configured))
+    })
+  }
+  async fetch(request: Request): Promise<Response> {
+    const setup = await this.setup
+    const service = await this.service
+    const url = new URL(request.url)
+    const incoming = HttpServerRequest.fromWeb(request).modify({ url: (setup?.origin ?? url.origin) + url.pathname + url.search })
+    if (service === undefined || setup === undefined) return HttpServerResponse.toWeb(await runPromise(
+      Accounts.disabled().pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming)),
+    ))
+    // Only this unshipped test host can issue a fixture session; the live callback owns issuance.
+    if (url.pathname === "/__fixture/issue") {
+      const id = url.searchParams.get("id") ?? "2"
+      const login = url.searchParams.get("login") ?? "ada"
+      const expires = url.searchParams.has("expired") ? 0 : (await runPromise(Clock.currentTimeMillis)) + 60_000
+      const keys = await runPromise(Core.CookieKeys.make({ primary: setup.signingSecret }, "primary"))
+      const sessionId = await runPromise(keys.token)
+      await this.state.storage.put("session/" + sessionId, { id, login, expires })
+      await this.state.storage.put("person/" + id, { id, login })
+      const signed = await runPromise(keys.sign("session", sessionId))
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe({ cookie: Accounts.SESSION + "=" + signed }))
+    }
+    if (url.pathname === "/__fixture/sandbox-principal") {
+      // Alchemy supplies this same raw Effect shape: relative `url`, absolute `originalUrl`.
+      const principal = await runPromise(Accounts.sandboxPrincipal(service.current, service.allowed).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))))
+      return HttpServerResponse.toWeb(HttpServerResponse.jsonUnsafe(principal))
+    }
+    if (url.pathname === "/__fixture/participation") {
+      await runPromise(service.participation(incoming.cookies[Accounts.SESSION]))
+      return HttpServerResponse.toWeb(HttpServerResponse.empty())
+    }
+    return HttpServerResponse.toWeb(await runPromise(service.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, incoming))))
+  }
+}

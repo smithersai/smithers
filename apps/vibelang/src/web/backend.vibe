@@ -30,6 +30,15 @@ export function BrowserFactory(origin: string, forceMock: boolean, role: import(
     const ready = Fiber.join(selected)
     const factory: Factory.Shape = {
       get mode() { return current },
+      accounts: {
+        current: effect () => { return try (try ready).factory.accounts!.current() },
+        members: effect () => { return try (try ready).factory.accounts!.members() },
+        grant: effect (id, role) => { try (try ready).factory.accounts!.grant(id, role) },
+        signOut: effect () => { try (try ready).factory.accounts!.signOut() },
+        choose: effect (role) => { return try (try ready).factory.accounts!.choose(role) },
+        participated: effect (id) => { try (try ready).factory.accounts!.participated(id) },
+        events: (after) => Stream.unwrap(effect { return (try ready).factory.accounts!.events(after) }),
+      },
       post: effect (conversation, clientId, name, text) => {
         const { factory } = try ready
         return try factory.post(conversation, clientId, name, text)

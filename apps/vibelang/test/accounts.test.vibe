@@ -1,0 +1,156 @@
+import { describe, expect, it } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+
+describe("the product's offline accounts", () => {
+  it.effect("selects every role without a backend; sign-out returns to viewer", () => effect {
+    provide MockFactory {
+      const accounts = (try Factory).accounts!
+      for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) {
+        const identity = try accounts.choose(role)
+        try Effect.try(() => expect(identity.role).toBe(role))
+      }
+      try accounts.signOut()
+      const signedOut = try accounts.current()
+      try Effect.try(() => expect(signedOut).toEqual({ id: "", login: "", role: "viewer" }))
+    }
+  })
+  it.effect("numbers promotions and demotions and refuses lower roles", () => effect {
+    provide MockFactory {
+      const accounts = (try Factory).accounts!
+      try accounts.choose("community")
+      const refused = try Effect.flip(accounts.grant("4", "maintainer"))
+      try Effect.try(() => expect(refused._tag).toBe("Denied"))
+      try accounts.choose("maintainer")
+      for (const role of ["maintainer", "contributor", "community", "new"] as const) {
+        try accounts.grant("4", role)
+        const people = try accounts.members()
+        try Effect.try(() => expect(people.find(person => person.id === "4")?.role).toBe(role))
+      }
+      const all = try Stream.runCollect(accounts.events(0).pipe(Stream.take(8)))
+      try Effect.try(() => expect(all.map(event => event.seq)).toEqual([1, 2, 3, 4, 5, 6, 7, 8]))
+    }
+  })
+  it.effect("promotes the signed-in author only after an accepted post", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      const accounts = factory.accounts!
+      try accounts.choose("new")
+      const blank = try Effect.flip(factory.post("roles", "empty", "joss", " "))
+      const before = try accounts.current()
+      try factory.post("roles", "accepted", "wire-name", "install")
+      const after = try accounts.current()
+      const history = try factory.read("roles", 0)
+      try Effect.try(() => {
+        expect(blank._tag).toBe("Refused")
+        expect(before.role).toBe("new")
+        expect(after.role).toBe("community")
+        expect(history.entries[0]?.name).toBe("joss")
+      })
+    }
+  })
+})
+
+it.effect("an injected account failure becomes a safe UI failure without changing the target's role", () => effect {
+  const { GrantRole } = try promise(() => import("../src/web/main.vibe"))
+  const { AccountUnavailable } = try promise(() => import("../src/core/roles.vibe"))
+  provide MockFactory {
+    const base = try Factory
+    const accounts = base.accounts!
+    try accounts.choose("maintainer")
+    const faulty: Factory.Shape = { sandbox: base.sandbox, startSandbox: base.startSandbox, stopSandbox: base.stopSandbox, sandboxCommand: base.sandboxCommand, mode: base.mode, post: base.post, read: base.read, events: base.events, tour: base.tour, endTour: base.endTour, accounts: { current: accounts.current, members: accounts.members, signOut: accounts.signOut, choose: accounts.choose, participated: accounts.participated, events: accounts.events, grant: () => Effect.fail(new AccountUnavailable({ reason: "private provider words" })) } }
+    const command = try Effect.try(() => GrantRole({ id: "4", role: "maintainer" }))
+    const result = try Effect.provideService(command.effect, Factory, faulty)
+    const people = try accounts.members()
+    try Effect.try(() => {
+      expect(result).toEqual({ _tag: "AccountFailed" })
+      expect(JSON.stringify(result)).not.toContain("private provider words")
+      expect(people.find(person => person.id === "4")?.role).toBe("contributor")
+    })
+  }
+})
+
+it.effect("records grant logs and counts without names or person text", () => effect {
+  const { References } = try promise(() => import("effect"))
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const capture = Logger.layer([Logger.make(options => {
+    runSync(Ref.update(lines, all => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+  provide capture {
+    provide MockFactory {
+      const accounts = (try Factory).accounts!
+      try accounts.choose("maintainer")
+      const counter = Metric.withAttributes(Metric.counter("vibelang_role_grants", { incremental: true }), { outcome: "accepted" })
+      const before = try Metric.value(counter)
+      try accounts.grant("4", "maintainer")
+      const after = try Metric.value(counter)
+      const records = (try Ref.get(lines)).filter(line => line.includes("vibelang.role"))
+      try Effect.try(() => {
+        expect(Number(after.count)).toBe(Number(before.count) + 1)
+        expect(records.some(line => line.includes("accepted"))).toBe(true)
+        for (const line of records) expect(line).not.toMatch(/will|rira|joss|ada|secret/)
+      })
+    }
+  }
+})
+
+it.effect("gives a fresh offline participant a distinct identity after the first participates", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    try accounts.choose("new")
+    try factory.post("fixtures", "first", "Guest", "install")
+    const fresh = try accounts.choose("new")
+    const members = try accounts.members()
+    try Effect.try(() => {
+      expect(fresh.role).toBe("new")
+      expect(new Set(members.map(person => person.login)).size).toBe(members.length)
+    })
+  }
+})
+
+it.effect("keeps every offline role selectable after a maintainer steps down", () => effect {
+  provide MockFactory {
+    const accounts = (try Factory).accounts!
+    try accounts.choose("maintainer")
+    try accounts.grant("4", "new")
+    try accounts.grant("1", "community")
+    const contributor = try accounts.choose("contributor")
+    try Effect.try(() => expect(contributor.role).toBe("contributor"))
+  }
+})
+
+it.effect("sandbox admission follows the selected account without rebuilding the factory", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    for (const role of ["viewer", "new", "community"] as const) {
+      try accounts.choose(role)
+      const result = try Effect.result(factory.startSandbox("roles-sandbox", "denied-" + role))
+      try Effect.try(() => expect(result._tag).toBe("Failure"))
+    }
+    try accounts.choose("contributor")
+    const started = try factory.startSandbox("roles-sandbox", "start-rira")
+    try Effect.try(() => expect(started.status).toBe("running"))
+    try accounts.grant("4", "new")
+    const replay = try Effect.result(factory.startSandbox("roles-sandbox", "start-rira"))
+    const stopped = try factory.sandbox("roles-sandbox")
+    try Effect.try(() => { expect(replay._tag).toBe("Failure"); expect(stopped.status).toBe("stopped") })
+  }
+})
+
+it.effect("switching mock identities isolates sandbox files and allowances", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    const accounts = factory.accounts!
+    try accounts.choose("contributor")
+    const rira = try factory.startSandbox("isolated", "rira-start")
+    try factory.sandboxCommand("isolated", "rira-write", "echo private > note", rira.generation)
+    try accounts.choose("maintainer")
+    const will = try factory.startSandbox("isolated", "will-start")
+    const absent = try factory.sandboxCommand("isolated", "will-read", "cat note", will.generation)
+    try accounts.choose("contributor")
+    const own = try factory.sandboxCommand("isolated", "rira-read", "cat note", rira.generation)
+    try Effect.try(() => { expect(absent).toContain("No such file"); expect(own).toBe("private\n"); expect(will.allowance).not.toBe(rira.allowance) })
+  }
+})

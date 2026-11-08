@@ -71,7 +71,7 @@ describe("the API Worker in local workerd", () => {
       try Effect.try(() => {
         expect(posted.status).toBe(200)
         expect(response.headers["content-type"]).toContain("text/event-stream")
-        expect(Option.getOrThrow(text)).toContain(`id: 1\ndata: ${JSON.stringify({ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "hi" })}\n\n`)
+        expect(Option.getOrThrow(text)).toContain(`id: 1\ndata: ${JSON.stringify({ type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Guest", text: "hi" })}\n\n`)
         expect(Option.getOrThrow(text)).toContain("id: 3\ndata: ")
       })
     }

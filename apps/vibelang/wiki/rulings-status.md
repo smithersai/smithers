@@ -28,11 +28,11 @@ States: **done** (evidence on main or production), **lane** (a running lane owns
 | VL-18 copy GitHub | lane | no current surface has a GitHub counterpart beyond the history; the designs for issues, actions, wiki and roles follow GitHub | vl-issues, vl-actions, vl-wiki, vl-roles |
 | VL-19 marketing materials throughout | done (local) | all 10 original files plus 2 new posters: splash, five tour stops and empty chat; [0026](decisions/0026-marketing-media.md), `e2e/media.spec.ts`, designer source in `wiki/designs/media/`; lead deploys | vl-media |
 | VL-20 VIPs, issues versus tasks, issue tree | lane | design `~/vl/designs/issues/`; not on main | vl-issues (0022) |
-| VL-21 five roles and promotion | lane | policy 0019; shared GitHub authentication landed | vl-roles (0019) |
+| VL-21 five roles and promotion | done (local) | 0019; shared GitHub sign-in, numbered grants, five offline identities, People UI and promotion tests | lead: GitHub callback/configuration and deploy |
 | VL-22 mythical history viewable; work runs through its flows | done (local) | 0020; `e2e/history.spec.ts`; CLI `history`, `plan`, `start`, `note`; not deployed | lead deploys |
 | VL-23 wiki is the working memory | done; in-app lane | this wiki; `/wiki` in the app is not on main | vl-wiki (0021) |
 | VL-24 actions and slash commands by role | lane | SDK foundation landed; app held (0023) | vl-actions (0023) |
-| VL-25 sandboxes with minute allowances | lane | metered conversation sandboxes landed (965fb766); live compute waits for 0019 identity | vl-sandboxes (0024) |
+| VL-25 sandboxes with minute allowances | lane | metered sandboxes (0024); 0019 binds human sessions and offline owners; live agent tools remain closed | lead deploys; vl-sandboxes: originating live-agent owner |
 | VL-26 dogfood in parallel: agent by MCP/skill/CLI, Will by UI | done | the page follows the shared conversation from the start; `test/dogfood.runtime.test.vibe` (real app plus the commands); `e2e/live.spec.ts` "the CLI's post reaches an open page" (emitted CLI plus browser on `alchemy dev`) | — |
 | VL-27 dark only | done | `e2e/chat.spec.ts` checks dark in the light project (0013) | — |
 | VL-28 Learn more tour | done | 0014; `e2e/tour.spec.ts`, `e2e/tourfix.spec.ts` | vl-tourfix |

@@ -3,6 +3,8 @@
 // and one per UTC day. Alchemy runs every handler; nothing here runs an Effect itself.
 import * as Cloudflare from "@alchemy.run/cloudflare"
 import { RuntimeContext } from "alchemy"
+import * as Accounts from "./Accounts.vibe"
+import type { Identity } from "../src/core/roles.vibe"
 import { HttpServerRequest } from "effect/http"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
@@ -16,7 +18,7 @@ import { afterOf, eventStream, handle, type Conversations, type Histories } from
 import { githubMain } from "./MainLog.vibe"
 import * as Objects from "./Objects.vibe"
 import type { Spend } from "./Reply.vibe"
-import { SandboxGateway, gatewayLive } from "./SandboxAccounts.vibe"
+import { SandboxGateway, SandboxIdentity, gatewayWithIdentity } from "./SandboxAccounts.vibe"
 import { Unreachable } from "./Unreachable.vibe"
 
 export interface ConversationShape {
@@ -48,6 +50,24 @@ export class History extends Cloudflare.DurableObject<History, HistoryShape>()("
 
 /** The repository whose history the History object holds. */
 export const REPOSITORY = "vibelang"
+
+export interface AccountsShape {
+  readonly role: (owner: string) => import("../src/core/conversation.vibe").Role!!RuntimeContext
+  readonly allowed: (actor: string, action: import("../src/core/conversation.vibe").Action) => boolean!!RuntimeContext
+  readonly current: (cookie: string | undefined) => Identity!!RuntimeContext
+  readonly participation: (cookie: string | undefined) => void!!RuntimeContext
+}
+export class ProjectAccounts extends Cloudflare.DurableObject<ProjectAccounts, AccountsShape>()("ProjectAccounts") {}
+
+const AccountsLive = ProjectAccounts.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  const setup = try Effect.orDie(Accounts.configured().pipe(Effect.provide(FetchHttpClient.layer)))
+  return effect {
+    if (setup === undefined) return { current: () => Effect.succeed({ id: "", login: "", role: "viewer" as const }), role: () => succeed("viewer" as const), allowed: () => succeed(false), participation: () => Effect.void, fetch: Accounts.disabled() }
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    return try Effect.orDie(Accounts.make(hostId, state.raw.storage, setup))
+  }
+})
 
 type Namespace<Shape> = Cloudflare.DurableObject<Shape>
 
@@ -159,9 +179,31 @@ export const props = {
   build: workerBuild,
 }
 
+const SandboxIdentityLive = Layer.effect(SandboxIdentity, effect {
+  const namespace = (try ProjectAccounts) as Namespace<AccountsShape>
+  return {
+    request: effect () => {
+      const runtime = try RuntimeContext
+      const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
+      return try Accounts.sandboxPrincipal(
+        signed => Effect.orDie(reached(runtime, "accounts", account.current(signed))),
+        (actor, action) => Effect.orDie(reached(runtime, "accounts", account.allowed(actor, action))),
+      )
+    },
+    role: effect (owner: string) => {
+      const runtime = try RuntimeContext
+      const account = try Effect.orDie(objectOf(namespace, "project", "accounts"))
+      const allowed = try Effect.orDie(reached(runtime, "accounts", account.allowed(owner, "sandbox")))
+      return allowed ? try Effect.orDie(reached(runtime, "accounts", account.role(owner))) : "viewer" as const
+    },
+  }
+})
+const AuthenticatedSandboxes = gatewayWithIdentity.pipe(Layer.provide(SandboxIdentityLive))
+
 const program = effect {
   const conversations = (try Conversation) as Namespace<ConversationShape>
   const { gateway } = try SandboxGateway
+  const accounts = (try ProjectAccounts) as Namespace<AccountsShape>
   const histories = (try History) as Namespace<HistoryShape>
   // Bound when the Worker deploys, as its objects read them.
   try Effect.orDie(chatModel())
@@ -169,10 +211,21 @@ const program = effect {
   return {
     fetch: effect {
       const runtime = try RuntimeContext
+      const request = try HttpServerRequest.HttpServerRequest
+      const path = new URL(request.url, "http://api.invalid").pathname
+      if (path.startsWith("/api/auth/") || path.startsWith("/api/roles")) {
+        const object = try Effect.orDie(objectOf(accounts, "project", "accounts"))
+        return try Effect.orDie(reached(runtime, "accounts", object.fetch(request)))
+      }
       const api: Conversations = {
         post: (conversation, body) => effect {
           const object = try objectOf(conversations, conversation, "conversation")
-          return try reached(runtime, "conversation", object.post(body.clientId, body.name, body.text))
+          const account = try objectOf(accounts, "project", "accounts")
+          const identity = try reached(runtime, "accounts", account.current(request.cookies[Accounts.SESSION]))
+          if (identity.id !== "" && !Accounts.sameOrigin(request)) return "forbidden"
+          const refusal = try reached(runtime, "conversation", object.post(body.clientId, identity.login || "Guest", body.text))
+          if (refusal === null && identity.id !== "") try reached(runtime, "accounts", account.participation(request.cookies[Accounts.SESSION]))
+          return refusal
         },
         read: (conversation, after) => effect {
           const object = try objectOf(conversations, conversation, "conversation")
@@ -215,6 +268,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive), Effect.provide(gatewayLive)),
+  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive), Effect.provide(AuthenticatedSandboxes), Effect.provide(AccountsLive)),
 ) {}
 

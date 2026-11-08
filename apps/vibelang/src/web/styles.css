@@ -193,3 +193,43 @@ html { overflow-anchor: none; }
 .vl-term-input:focus-visible, .vl-term-body:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
 .vl-sandboxes .sui-table-container { margin: 12px; width: auto; }
 @media (prefers-reduced-motion: reduce) { .vl-dot-run, .vl-ind { animation: none; } }
+
+/* Brick 2: the roles designer's account, badges and People pane. Native select popups escape pane clipping. */
+.vl-identity-tools { display:flex; align-items:center; gap:4px; flex:none; }
+.vl-visit { display:inline-flex; align-items:center; gap:6px; font-size:12px; color:var(--text-muted); }
+.vl-visit .sui-select-trigger { min-width:100px; max-width:125px; }
+.vl-account { position:relative; }
+.vl-account .sui-action-menu { position:absolute; right:0; top:calc(100% + 6px); z-index:60; min-width:190px; }
+.vl-account .sui-action-menu-item { display:flex; width:100%; border:0; background:transparent; text-align:left; font:inherit; font-size:13px; }
+.vl-account .sui-action-menu-head { display:grid; gap:6px; padding:8px; border-bottom:1px solid var(--border); font-size:12px; }
+.vl-account .sui-action-menu-head .sui-badge { justify-self:start; }
+.vl-people { display:flex; flex-direction:column; overflow:visible; border:1px solid var(--border); border-radius:var(--r-bubble); background:var(--surface); }
+.vl-people-bar { display:flex; align-items:center; gap:8px; padding:6px 8px 6px 16px; border-bottom:1px solid var(--border); color:var(--text-muted); font-size:13px; }
+.vl-people-bar strong { color:var(--text); font-weight:650; flex:1; }
+.vl-people-toggle { display:inline-grid; place-items:center; width:30px; height:30px; padding:0; border:1px solid var(--border); border-radius:var(--r-1); background:transparent; color:var(--text-muted); cursor:pointer; }
+.vl-people-list { display:grid; overflow:auto; border-radius:0 0 var(--r-bubble) var(--r-bubble); }
+.vl-person { display:flex; align-items:center; gap:10px; padding:8px 16px; border-bottom:1px solid var(--border); }
+.vl-person:last-child { border-bottom:0; }
+.vl-person .sui-avatar { width:28px; height:28px; font-size:12px; }
+.vl-person-who { min-width:0; flex:1; display:flex; align-items:baseline; gap:8px; }
+.vl-person-name { font-size:13px; font-weight:650; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.vl-person-handle { color:var(--text-faint); font-size:12px; }
+.vl-person .sui-select-trigger { min-height:26px; max-width:135px; font-size:12px; padding:0 8px; }
+.vl-people[data-maximized="true"] { position:fixed; inset:80px 24px 130px; z-index:45; }
+.vl-role-dialog { width:calc(100vw - 32px); max-width:400px; padding:16px; border:1px solid var(--border); border-radius:var(--r-2); background:var(--surface); color:var(--text); box-shadow:var(--shadow-3); }
+.vl-role-dialog::backdrop { background:rgb(0 0 0 / .45); backdrop-filter:blur(2px); }
+.vl-role-dialog h2 { margin:0; } .vl-role-dialog p { margin:8px 0 16px; }
+.vl-role-dialog[data-state="closed"] { display:none; }
+@media (max-width:600px) {
+  .vl-nav-role, .vl-visit-as { display:none; }
+  .vl-app:has(.vl-visit) { --vl-header-height:92px; }
+  .vl-top:has(.vl-visit) { min-height:var(--vl-header-height); }
+  .vl-nav:has(.vl-identity-tools) { max-width:calc(100vw - 64px); flex-wrap:wrap; justify-content:flex-end; row-gap:4px; }
+  .vl-top .vl-logo img { height:20px; }
+  .vl-docs[data-maximized="true"], .vl-docs[data-driving="true"] { inset-block-start:var(--vl-header-height, 60px); }
+  .vl-esc { top:calc(var(--vl-header-height, 60px) + 4px); }
+  .vl-top { gap:8px; padding:12px; }
+  .vl-top:has(.vl-identity-tools) .vl-home .vl-logo { width:24px; overflow:hidden; }
+  .vl-visit .sui-select-trigger { min-width:0; max-width:116px; }
+  .vl-people[data-maximized="true"] { inset:calc(var(--vl-header-height, 60px) + 10px) 12px 130px; }
+}

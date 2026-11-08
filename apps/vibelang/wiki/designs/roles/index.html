@@ -1,0 +1,661 @@
+<!doctype html>
+<html lang="en" data-theme="dark">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VibeLang — Sign-in and roles design</title>
+<style>
+:root { --font-sans: Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif; --font-mono: ui-monospace,SFMono-Regular,Menlo,Monaco,Consolas,monospace; }
+:root[data-theme="dark"] { color-scheme: dark; --bg: #0d1514; --text: #ece7db; --text-muted: #a8a193; --text-faint: #969083; --text-placeholder: #958f82; --surface: #131b1a; --surface-2: #1a2422; --surface-3: #202b29; --surface-glass: rgba(19,27,26,0.72); --surface-glass-strong: rgba(19,27,26,0.85); --border: rgba(236,231,219,0.1); --border-strong: rgba(236,231,219,0.18); --border-solid: #293532; --hover: #1a2422; --hover-subtle: rgba(236,231,219,0.05); --inverse-bg: #ece7db; --inverse-text: #211d18; --code-bg: #101917; --code-text: #ece7db; --brand: #45c4b2; --success: #7fbfb3; --danger: #d97757; --warning: #f0c169; --info: #82a8b8; --shadow-rgb: 0 0 0; --shadow-1: 0 1px 2px rgb(0 0 0 / .24), 0 1px 3px rgb(0 0 0 / .32); --shadow-2: 0 1px 2px rgb(0 0 0 / .24), 0 12px 32px rgb(0 0 0 / .4); --shadow-3: 0 4px 12px rgb(0 0 0 / .45), 0 16px 48px rgb(0 0 0 / .5);
+  --brand-soft: color-mix(in srgb, var(--brand) 10%, var(--surface)); --brand-soft-strong: color-mix(in srgb, var(--brand) 16%, var(--surface)); --brand-border: color-mix(in srgb, var(--brand) 40%, transparent); --success-soft: color-mix(in srgb, var(--success) 10%, var(--surface)); --info-soft: color-mix(in srgb, var(--info) 10%, var(--surface)); --ring: color-mix(in srgb, var(--brand) 22%, transparent);
+  --sp-1: 4px; --sp-2: 8px; --sp-3: 12px; --sp-4: 16px; --fs-1: 11px; --fs-2: 12px; --r-1: 6px; --r-2: 10px; --r-bubble: 18px; --r-full: 999px; --ctl-h: 32px; }
+:root { --vl-cyan: #41d1ff; --vl-violet: #747bff; --vl-magenta: #bd34fe; --vl-gradient: linear-gradient(120deg, var(--vl-cyan) 8%, var(--vl-violet) 48%, var(--vl-magenta) 88%); }
+* { box-sizing: border-box; }
+html, body { margin: 0; min-height: 100%; }
+body { background: var(--bg); color: var(--text); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+button { font: inherit; }
+.vl-app { min-height: 100dvh; display: flex; flex-direction: column; }
+.vl-top { position: sticky; top: 0; z-index: 30; display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 14px 24px; background: color-mix(in srgb, var(--bg) 82%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.vl-home { display: inline-flex; align-items: center; padding: 4px; border: 0; border-radius: var(--r-1); background: transparent; cursor: pointer; }
+.vl-logo { display: inline-flex; }
+.vl-logo img { height: 24px; width: auto; display: block; }
+.vl-nav { display: flex; align-items: center; gap: 4px; }
+.vl-nav-link { display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border: 0; border-radius: var(--r-1); background: none; color: var(--text-muted); font-size: 14px; font-weight: 500; text-decoration: none; cursor: pointer; transition: color .15s ease, background .15s ease; }
+.vl-nav-link:hover { background: var(--hover); color: var(--text); }
+.vl-nav-link:focus-visible { outline: 2px solid var(--brand); outline-offset: 1px; }
+.vl-mark { width: 16px; height: 16px; fill: currentColor; }
+.vl-away { color: var(--text-faint); font-size: 12px; }
+.vl-icon { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.vl-pill { padding: 2px 8px; border: 1px solid var(--brand-border); border-radius: var(--r-full); background: var(--brand-soft); color: var(--brand); font-size: 11px; font-weight: 650; letter-spacing: .02em; }
+.vl-kbd { margin-left: 8px; padding: 1px 6px; border: 1px solid var(--border); border-radius: 4px; background: var(--surface-2); color: var(--text-muted); font-family: var(--font-mono); font-size: 11px; }
+.vl-splash { position: relative; flex: 1; display: grid; grid-template-columns: minmax(0,1fr) minmax(0,1.1fr); align-items: center; gap: 48px; width: min(100%,1200px); margin: 0 auto; padding: 48px 32px 96px; }
+.vl-eyebrow { color: var(--text-muted); font-size: 13px; font-weight: 650; letter-spacing: .08em; text-transform: uppercase; }
+.vl-title { margin: 12px 0 0; font-size: clamp(56px,9vw,96px); font-weight: 750; letter-spacing: -.035em; line-height: .95; }
+.vl-gradient { background: var(--vl-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.vl-tagline { max-width: 34ch; margin: 22px 0 0; color: var(--text-muted); font-size: 19px; line-height: 1.5; }
+.vl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 32px; }
+.vl-primary { display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border: 1px solid var(--brand); border-radius: var(--r-2); background: var(--brand); color: var(--inverse-text); font-size: 15px; font-weight: 650; cursor: pointer; }
+.vl-ask { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--brand-border); border-radius: var(--r-2); background: var(--brand-soft); color: var(--brand); font-size: 15px; font-weight: 650; cursor: pointer; }
+.vl-install { display: inline-block; margin: 24px 0 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--code-bg); color: var(--code-text); font-family: var(--font-mono); font-size: 14px; }
+.vl-install::before { content: "$ "; color: var(--text-faint); }
+.vl-media { margin: 0; overflow: hidden; border: 1px solid var(--border); border-radius: 14px; background: #0e0e11; box-shadow: var(--shadow-3); }
+.vl-media img { display: block; width: 100%; height: auto; }
+@media (max-width: 900px) { .vl-splash { grid-template-columns: 1fr; gap: 36px; padding: 24px 16px 64px; } }
+@media (max-width: 600px) { .vl-nav-link { padding: 6px 8px; } .vl-away { display: none; } .vl-top { padding: 12px 16px; } .vl-visit-as { display: none; } .vl-nav > .sui-badge { display: none; }
+  .vl-nav:has(.vl-role-select) .vl-ext, .vl-nav:has(.sui-avatar) .vl-ext { display: none; } }
+.vl-chat { flex: 1; display: flex; flex-direction: column; }
+.vl-pane { display: flex; align-items: center; gap: 12px; width: 100%; padding: 14px 16px; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); color: var(--text-muted); text-align: left; cursor: pointer; }
+.vl-pane .vl-logo img { height: 20px; }
+.vl-pane-text { flex: 1; font-size: 13px; }
+.vl-pane-expand { display: inline-flex; color: var(--text-faint); }
+.vl-chat .sui-chat-composer[data-docked="true"] { width: auto; max-width: 720px; margin: 0 auto; }
+@media (max-width: 600px) { .vl-chat .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; } }
+.sui-chat-messages { display: flex; flex-direction: column; gap: 18px; width: min(100%,720px); min-height: 100%; margin: 0 auto; padding: 36px 24px 156px; }
+.sui-chat-message { display: grid; max-width: 100%; }
+.sui-chat-message[data-role="user"] { justify-items: end; }
+.sui-chat-message[data-role="assistant"] { justify-items: start; }
+.sui-chat-message[data-role="system"] { justify-items: center; }
+.sui-chat-bubble { max-width: 80%; padding: 10px 14px; border-radius: var(--r-bubble); background: var(--hover); color: var(--text); font-size: 15px; line-height: 1.5; overflow-wrap: anywhere; }
+.sui-chat-message[data-role="user"] .sui-chat-bubble { border-bottom-right-radius: var(--r-1); background: var(--inverse-bg); color: var(--inverse-text); white-space: pre-wrap; }
+.sui-chat-message[data-role="assistant"] .sui-chat-bubble { border-bottom-left-radius: var(--r-1); }
+.sui-chat-message[data-role="system"] .sui-chat-bubble { max-width: min(92%,620px); border: 1px solid var(--border); background: var(--surface-glass-strong); color: var(--text-muted); font-size: 13px; text-align: center; }
+.sui-chat-message-label { max-width: 80%; padding: 0 8px; color: var(--text-muted); font-size: 11px; line-height: 1.4; margin-bottom: 4px; font-weight: 650; }
+.sui-chat-composer { position: relative; display: grid; gap: 12px; width: min(100%,720px); margin: 0 auto; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface-glass); backdrop-filter: blur(20px) saturate(180%); box-shadow: 0 1px 2px rgb(0 0 0 / .24), 0 16px 40px rgb(0 0 0 / .4); }
+.sui-chat-composer[data-docked="true"] { position: fixed; right: 24px; bottom: max(18px, env(safe-area-inset-bottom)); left: 24px; z-index: 40; }
+.sui-chat-composer-input { width: 100%; min-height: 28px; padding: 2px 4px; resize: none; border: 0; outline: 0; background: transparent; color: var(--text); font: inherit; font-size: 16px; line-height: 1.5; }
+.sui-chat-composer-input::placeholder { color: var(--text-placeholder); }
+.sui-chat-composer-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.sui-chat-composer-status { color: var(--text-muted); font-size: 11px; }
+.sui-chat-composer-actions { display: flex; align-items: center; justify-content: flex-end; gap: 8px; }
+.sui-chat-composer-send { width: 34px; height: 34px; min-height: 34px; border-radius: var(--r-2); font-size: 18px; border: 0; background: var(--brand); color: var(--inverse-text); cursor: pointer; }
+@media (max-width: 620px) { .sui-chat-messages { padding: 24px 14px 146px; } .sui-chat-bubble { max-width: 90%; } .sui-chat-composer[data-docked="true"] { right: 12px; left: 12px; } }
+.sui-button { min-height: var(--ctl-h); display: inline-flex; align-items: center; justify-content: center; gap: 6px; padding: 0 12px; border: 1px solid var(--border-solid); border-radius: var(--r-1); background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap; user-select: none; }
+.sui-button:hover { background: var(--hover); }
+.sui-button:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
+.sui-button:disabled { cursor: not-allowed; opacity: .45; }
+.sui-button-solid { border-color: var(--brand); background: var(--brand); color: var(--inverse-text); font-weight: 650; }
+.sui-button-solid:hover { background: color-mix(in srgb, var(--brand) 88%, var(--text)); }
+.sui-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 22px; padding: 0 10px; border: 1px solid var(--border); border-radius: var(--r-full); background: transparent; color: var(--text-muted); font-size: 12px; font-weight: 650; white-space: nowrap; }
+.sui-badge-default { border-color: var(--brand-border); background: var(--brand-soft); color: var(--brand); }
+.sui-badge-success { border-color: color-mix(in srgb, var(--success) 40%, transparent); background: var(--success-soft); color: var(--success); }
+.sui-badge-outline { border-color: var(--border-solid); color: var(--text); }
+.sui-badge-secondary { border-color: var(--border); background: var(--hover-subtle); color: var(--text-muted); }
+.sui-avatar { flex: 0 0 auto; width: 24px; height: 24px; display: inline-flex; align-items: center; justify-content: center; border-radius: var(--r-full); background: var(--sui-avatar-lane, var(--text-muted)); color: var(--inverse-text); font-size: 11px; font-weight: 650; line-height: 1; user-select: none; }
+.sui-avatar[data-lane="0"] { --sui-avatar-lane: #b05a41; }
+.sui-avatar[data-lane="1"] { --sui-avatar-lane: #4d7e94; }
+.sui-avatar[data-lane="2"] { --sui-avatar-lane: #6e675c; }
+.sui-avatar[data-lane="3"] { --sui-avatar-lane: #96721f; }
+.sui-avatar[data-lane="4"] { --sui-avatar-lane: #2f8c7f; }
+.sui-avatar[data-lane="5"] { --sui-avatar-lane: #5c8a70; }
+button.sui-avatar { margin: 0; padding: 0; border: 0; cursor: pointer; }
+button.sui-avatar:focus-visible { outline: none; box-shadow: 0 0 0 2px var(--bg), 0 0 0 4px var(--brand); }
+.sui-action-menu { z-index: 60; min-width: 180px; padding: 4px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface-3); color: var(--text); box-shadow: var(--shadow-3); outline: none; }
+.sui-action-menu-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; border-radius: var(--r-1); color: var(--text); font-size: 13px; cursor: pointer; user-select: none; outline: none; }
+.sui-action-menu-item:hover, .sui-action-menu-item[data-highlighted] { background: var(--hover); }
+.sui-action-menu-head { padding: 6px 8px; border-bottom: 1px solid var(--border); margin-bottom: 4px; display: grid; gap: 4px; }
+.sui-action-menu-head .who { font-size: 12px; color: var(--text-muted); }
+.sui-select-trigger { min-width: 0; min-height: var(--ctl-h); display: inline-flex; align-items: center; justify-content: space-between; gap: 8px; padding: 0 10px; border: 1px solid var(--border-solid); border-radius: var(--r-1); background: var(--surface); color: var(--text); font-size: 13px; cursor: pointer; white-space: nowrap; }
+.sui-select-trigger:hover { background: var(--hover); }
+.sui-select-trigger:focus-visible { outline: none; border-color: var(--brand); box-shadow: 0 0 0 3px var(--ring); }
+.sui-select-icon { color: var(--text-muted); flex: 0 0 auto; font-size: 10px; }
+.sui-select-content { z-index: 60; min-width: 140px; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface-3); color: var(--text); box-shadow: var(--shadow-3); }
+.sui-select-viewport { padding: 4px; }
+.sui-select-item { position: relative; display: flex; align-items: center; gap: 6px; padding: 6px 8px 6px 26px; border-radius: var(--r-1); color: var(--text); font-size: 13px; cursor: pointer; user-select: none; outline: none; }
+.sui-select-item[data-highlighted] { background: var(--hover); }
+.sui-select-item[data-disabled] { opacity: .45; cursor: not-allowed; }
+.sui-select-item-indicator { position: absolute; left: 7px; display: inline-flex; align-items: center; color: var(--brand); }
+.sui-dialog-overlay { position: fixed; inset: 0; z-index: 50; background: rgb(0 0 0 / .45); backdrop-filter: blur(2px); }
+.sui-dialog-content { position: fixed; top: 50%; left: 50%; transform: translate(-50%,-50%); z-index: 50; display: grid; gap: 10px; width: calc(100vw - 32px); max-width: 400px; padding: 16px; border: 1px solid var(--border); border-radius: var(--r-2); background: var(--surface); color: var(--text); box-shadow: var(--shadow-3); }
+.sui-dialog-header { display: grid; gap: 4px; padding-right: 28px; }
+.sui-dialog-title { color: var(--text); font-size: 13px; font-weight: 650; }
+.sui-dialog-description { color: var(--text-muted); font-size: var(--fs-2); line-height: 1.45; }
+.sui-dialog-footer { display: flex; align-items: center; justify-content: flex-end; gap: 8px; flex-wrap: wrap; }
+.sui-dialog-close { position: absolute; top: 10px; right: 10px; display: inline-flex; align-items: center; justify-content: center; width: 26px; height: 26px; border: 1px solid transparent; border-radius: var(--r-1); background: transparent; color: var(--text-muted); cursor: pointer; }
+.sui-dialog-close:hover { background: var(--hover); color: var(--text); }
+.sui-toast-stack { position: fixed; z-index: 70; left: 16px; bottom: 16px; display: flex; flex-direction: column; gap: 6px; width: min(380px, calc(100vw - 32px)); }
+.sui-toast { display: flex; align-items: center; gap: 8px; width: 100%; padding: 6px 6px 6px 12px; border-left: 3px solid var(--text-muted); border-radius: var(--r-2); background: var(--surface); color: var(--text); box-shadow: var(--shadow-3); font-size: 13px; }
+.sui-toast[data-tone="failed"] { border-left-color: var(--danger); }
+.sui-toast[data-tone="failed"] .sui-toast-glyph { color: var(--danger); }
+.sui-toast[data-tone="update"] .sui-toast-glyph { color: var(--text-muted); }
+.sui-toast-text { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.sui-toast-text b { font-weight: 650; }
+.sui-toast-hide { flex: 0 0 auto; color: var(--text-muted); border: 0; background: none; cursor: pointer; padding: 4px 6px; }
+.sui-loading-bar { position: fixed; top: 0; right: 0; left: 0; z-index: 60; height: 2px; overflow: hidden; pointer-events: none; }
+.sui-loading-bar::before { content: ""; position: absolute; inset: 0; transform-origin: left center; background: var(--brand); animation: vl-load 1.4s cubic-bezier(.4,0,.2,1) infinite; }
+@keyframes vl-load { 0% { transform: scaleX(0); } 50% { transform: scaleX(.6); } 100% { transform: scaleX(1); } }
+/* ── new: the people pane (vl-people-*, on the wiki/docs pane pattern) ── */
+.vl-people { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble); background: var(--surface); }
+.vl-people-bar { display: flex; align-items: center; gap: 8px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-people-bar b { color: var(--text); font-weight: 650; flex: 1; }
+.vl-people-toggle { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1); background: transparent; color: var(--text-muted); cursor: pointer; }
+.vl-people-toggle:hover { color: var(--text); border-color: var(--border-strong); }
+.vl-people-list { display: grid; }
+.vl-person { display: flex; align-items: center; gap: 10px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+.vl-person:last-child { border-bottom: 0; }
+.vl-person .sui-avatar { width: 28px; height: 28px; font-size: 12px; }
+.vl-person-who { min-width: 0; flex: 1; display: flex; align-items: baseline; gap: 8px; }
+.vl-person-name { color: var(--text); font-size: 13px; font-weight: 650; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-person-handle { color: var(--text-faint); font-size: 12px; font-family: var(--font-mono); }
+.vl-person .sui-select-trigger { min-height: 26px; font-size: 12px; padding: 0 8px; }
+/* account menu anchored under the avatar */
+.vl-account { position: relative; }
+.vl-account .sui-action-menu { position: absolute; right: 0; top: calc(100% + 6px); }
+/* role select open (promote/demote) */
+.vl-role-select { position: relative; }
+.vl-role-select .sui-select-content { position: absolute; right: 0; top: calc(100% + 4px); }
+/* design switcher */
+.design-bar { position: sticky; top: 0; z-index: 100; display: flex; flex-wrap: wrap; gap: 4px; padding: 6px 10px; background: #000; border-bottom: 1px solid #333; }
+.design-bar button { padding: 3px 9px; border: 1px solid #444; border-radius: 999px; background: #161616; color: #bbb; font: 11px/1.4 ui-monospace,monospace; cursor: pointer; }
+.design-bar button:hover { color: #fff; border-color: #888; }
+.design-bar button[aria-pressed="true"] { background: #45c4b2; border-color: #45c4b2; color: #06231f; font-weight: 700; }
+[data-screen-block] { display: none; }
+</style>
+</head>
+<body data-screen="viewer">
+
+<div class="design-bar" id="bar" aria-label="Design screens"></div>
+
+<!-- ══ 1. viewer: signed out ══ -->
+<div data-screen-block="viewer">
+<div class="vl-app" data-surface="splash">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <button class="vl-nav-link" style="color:var(--text);font-weight:650"><svg class="vl-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>Sign in</button>
+    </nav>
+  </header>
+  <main class="vl-splash">
+    <section class="vl-hero">
+      <div class="vl-eyebrow">Effect, as a language</div>
+      <h1 class="vl-title"><span class="vl-gradient">Vibe</span>Lang</h1>
+      <p class="vl-tagline">VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.</p>
+      <div class="vl-actions">
+        <button class="vl-primary">Learn more</button>
+        <button class="vl-ask" aria-label="Ask the agent">Ask the agent<kbd class="vl-kbd">⌘K</kbd></button>
+        <a class="vl-ask" href="#">Contribute</a>
+      </div>
+      <pre class="vl-install"><code>npm create vibelang@latest my-app</code></pre>
+    </section>
+    <figure class="vl-media"><img src="../wiki/contract-poster.jpg" alt=""></figure>
+  </main>
+</div>
+</div>
+
+<!-- ══ 2. signing in ══ -->
+<div data-screen-block="signing-in">
+<div class="vl-app" data-surface="splash">
+  <div class="sui-loading-bar" role="status" aria-label="Signing in"></div>
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <button class="vl-nav-link" disabled style="opacity:.5"><svg class="vl-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>Signing in…</button>
+    </nav>
+  </header>
+  <main class="vl-splash">
+    <section class="vl-hero">
+      <div class="vl-eyebrow">Effect, as a language</div>
+      <h1 class="vl-title"><span class="vl-gradient">Vibe</span>Lang</h1>
+      <p class="vl-tagline">VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.</p>
+      <div class="vl-actions">
+        <button class="vl-primary">Learn more</button>
+        <button class="vl-ask" aria-label="Ask the agent">Ask the agent<kbd class="vl-kbd">⌘K</kbd></button>
+        <a class="vl-ask" href="#">Contribute</a>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+
+<!-- ══ 3. sign-in failed ══ -->
+<div data-screen-block="sign-in-error">
+<div class="vl-app" data-surface="splash">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <button class="vl-nav-link" style="color:var(--text);font-weight:650"><svg class="vl-mark" viewBox="0 0 16 16" aria-hidden="true"><path d="M8 0c4.42 0 8 3.58 8 8a8.013 8.013 0 0 1-5.45 7.59c-.4.08-.55-.17-.55-.38 0-.27.01-1.13.01-2.2 0-.75-.25-1.23-.54-1.48 1.78-.2 3.65-.88 3.65-3.95 0-.88-.31-1.59-.82-2.15.08-.2.36-1.02-.08-2.12 0 0-.67-.22-2.2.82-.64-.18-1.32-.27-2-.27-.68 0-1.36.09-2 .27-1.53-1.03-2.2-.82-.44 1.1-.16 1.92-.08 2.12-.51.56-.82 1.28-.82 2.15 0 3.06 1.86 3.75 3.64 3.95-.23.2-.44.55-.51 1.07-.46.21-1.61.55-2.33-.66-.15-.24-.6-.83-1.23-.82-.67.01-.27.38.01.53.34.19.73.9.82 1.13.16.45.68 1.31 2.69.94 0 .67.01 1.3.01 1.49 0 .21-.15.45-.55.38A7.995 7.995 0 0 1 0 8c0-4.42 3.58-8 8-8Z"/></svg>Sign in</button>
+    </nav>
+  </header>
+  <main class="vl-splash">
+    <section class="vl-hero">
+      <div class="vl-eyebrow">Effect, as a language</div>
+      <h1 class="vl-title"><span class="vl-gradient">Vibe</span>Lang</h1>
+      <p class="vl-tagline">VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.</p>
+      <div class="vl-actions">
+        <button class="vl-primary">Learn more</button>
+        <button class="vl-ask" aria-label="Ask the agent">Ask the agent<kbd class="vl-kbd">⌘K</kbd></button>
+        <a class="vl-ask" href="#">Contribute</a>
+      </div>
+    </section>
+  </main>
+  <div class="sui-toast-stack" role="alert">
+    <div class="sui-toast" data-tone="failed">
+      <span class="sui-toast-glyph">✕</span>
+      <span class="sui-toast-text"><b>Sign-in failed.</b> GitHub didn't answer.</span>
+      <button class="sui-button sui-button-sm" style="min-height:26px;padding:0 8px;font-size:12px">Retry</button>
+      <button class="sui-toast-hide" aria-label="Dismiss">✕</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ 4. new: signed in, not yet participated ══ -->
+<div data-screen-block="new">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-outline" style="margin-left:4px">New</span>
+      <button class="sui-avatar" data-lane="1" aria-label="Account: ada, New">A</button>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <button class="vl-pane" aria-label="Expand the VibeLang home page">
+        <span class="vl-logo"><img src="logo-dark.svg" alt=""></span>
+        <span class="vl-pane-text">Effect, as a language</span>
+        <span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span>
+      </button>
+      <article class="sui-chat-message" data-role="system">
+        <div class="sui-chat-bubble">Signed in as <b>ada</b>.</div>
+      </article>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+</div>
+
+<!-- ══ 5. community: account menu open ══ -->
+<div data-screen-block="community">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-secondary" style="margin-left:4px">Community</span>
+      <span class="vl-account">
+        <button class="sui-avatar" data-lane="1" aria-label="Account: ada, Community" aria-expanded="true">A</button>
+        <span class="sui-action-menu" role="menu" aria-label="Account">
+          <span class="sui-action-menu-head">
+            <span class="who">Signed in as <b style="color:var(--text)">ada</b></span>
+            <span class="sui-badge sui-badge-secondary" style="justify-self:start">Community</span>
+          </span>
+          <span class="sui-action-menu-item" role="menuitem">People</span>
+          <span class="sui-action-menu-item" role="menuitem">Sign out</span>
+        </span>
+      </span>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <article class="sui-chat-message" data-role="user" data-done="true">
+        <div class="sui-chat-message-label">ada</div>
+        <div class="sui-chat-bubble">Does the compiler catch a missing requirement?</div>
+      </article>
+      <article class="sui-chat-message" data-role="assistant" data-done="true">
+        <div class="sui-chat-message-label">VibeLang agent</div>
+        <div class="sui-chat-bubble"><p>Yes. A!E!R lists what a function needs, and the compiler checks that every requirement is provided before it runs.</p></div>
+      </article>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+</div>
+
+<!-- ══ 6. people: community sees it read-only ══ -->
+<div data-screen-block="people-community">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-secondary" style="margin-left:4px">Community</span>
+      <button class="sui-avatar" data-lane="1" aria-label="Account: ada, Community">A</button>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <section class="vl-people" aria-label="People">
+        <div class="vl-people-bar">
+          <b>People · 5</b>
+          <button class="vl-people-toggle" aria-label="Maximize people"><svg class="vl-icon" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+        </div>
+        <div class="vl-people-list">
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="4">W</span>
+            <span class="vl-person-who"><span class="vl-person-name">will</span></span>
+            <span class="sui-badge sui-badge-default">Maintainer</span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="5">M</span>
+            <span class="vl-person-who"><span class="vl-person-name">mina</span></span>
+            <span class="sui-badge sui-badge-default">Maintainer</span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="0">R</span>
+            <span class="vl-person-who"><span class="vl-person-name">rira</span></span>
+            <span class="sui-badge sui-badge-success">Contributor</span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="1">A</span>
+            <span class="vl-person-who"><span class="vl-person-name">ada</span><span class="vl-person-handle">you</span></span>
+            <span class="sui-badge sui-badge-secondary">Community</span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="3">J</span>
+            <span class="vl-person-who"><span class="vl-person-name">joss</span></span>
+            <span class="sui-badge sui-badge-outline">New</span>
+          </div>
+        </div>
+      </section>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+</div>
+
+<!-- ══ 7. people: maintainer edits roles; one select open ══ -->
+<div data-screen-block="people-maintainer">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-default" style="margin-left:4px">Maintainer</span>
+      <button class="sui-avatar" data-lane="4" aria-label="Account: will, Maintainer">W</button>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <section class="vl-people" aria-label="People">
+        <div class="vl-people-bar">
+          <b>People · 5</b>
+          <button class="vl-people-toggle" aria-label="Maximize people"><svg class="vl-icon" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+        </div>
+        <div class="vl-people-list">
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="4">W</span>
+            <span class="vl-person-who"><span class="vl-person-name">will</span><span class="vl-person-handle">you</span></span>
+            <span class="sui-badge sui-badge-default">Maintainer</span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="5">M</span>
+            <span class="vl-person-who"><span class="vl-person-name">mina</span></span>
+            <span class="vl-role-select">
+              <button class="sui-select-trigger" aria-label="mina's role" aria-expanded="true">Maintainer <span class="sui-select-icon">▾</span></button>
+              <span class="sui-select-content" role="listbox" aria-label="mina's role">
+                <span class="sui-select-viewport">
+                  <span class="sui-select-item" role="option"><span class="sui-select-item-indicator">✓</span>Maintainer</span>
+                  <span class="sui-select-item" role="option" data-highlighted>Contributor</span>
+                  <span class="sui-select-item" role="option">Community</span>
+                  <span class="sui-select-item" role="option" data-disabled>New</span>
+                </span>
+              </span>
+            </span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="0">R</span>
+            <span class="vl-person-who"><span class="vl-person-name">rira</span></span>
+            <span class="vl-role-select">
+              <button class="sui-select-trigger" aria-label="rira's role">Contributor <span class="sui-select-icon">▾</span></button>
+            </span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="1">A</span>
+            <span class="vl-person-who"><span class="vl-person-name">ada</span></span>
+            <span class="vl-role-select">
+              <button class="sui-select-trigger" aria-label="ada's role">Community <span class="sui-select-icon">▾</span></button>
+            </span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="3">J</span>
+            <span class="vl-person-who"><span class="vl-person-name">joss</span></span>
+            <span class="vl-role-select">
+              <button class="sui-select-trigger" aria-label="joss's role">New <span class="sui-select-icon">▾</span></button>
+            </span>
+          </div>
+        </div>
+      </section>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+</div>
+
+<!-- ══ 8. promote: confirm dialog ══ -->
+<div data-screen-block="promote-dialog">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-default" style="margin-left:4px">Maintainer</span>
+      <button class="sui-avatar" data-lane="4" aria-label="Account: will, Maintainer">W</button>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <section class="vl-people" aria-label="People">
+        <div class="vl-people-bar">
+          <b>People · 5</b>
+          <button class="vl-people-toggle" aria-label="Maximize people"><svg class="vl-icon" viewBox="0 0 24 24"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></button>
+        </div>
+        <div class="vl-people-list">
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="0">R</span>
+            <span class="vl-person-who"><span class="vl-person-name">rira</span></span>
+            <span class="sui-badge sui-badge-success">Contributor</span>
+          </div>
+          <div class="vl-person">
+            <span class="sui-avatar" data-lane="1">A</span>
+            <span class="vl-person-who"><span class="vl-person-name">ada</span></span>
+            <span class="sui-badge sui-badge-secondary">Community</span>
+          </div>
+        </div>
+      </section>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+  <div class="sui-dialog-overlay"></div>
+  <div class="sui-dialog-content" role="alertdialog" aria-labelledby="promote-title" aria-describedby="promote-desc">
+    <button class="sui-dialog-close" aria-label="Close">✕</button>
+    <div class="sui-dialog-header">
+      <span class="sui-dialog-title" id="promote-title">Promote rira to Maintainer?</span>
+      <span class="sui-dialog-description" id="promote-desc">Maintainers merge, promote and edit the wiki directly.</span>
+    </div>
+    <div class="sui-dialog-footer">
+      <button class="sui-button">Cancel</button>
+      <button class="sui-button sui-button-solid">Promote</button>
+    </div>
+  </div>
+</div>
+</div>
+
+<!-- ══ 9. automatic promotion: new → community on first participation ══ -->
+<div data-screen-block="auto-promotion">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-secondary" style="margin-left:4px">Community</span>
+      <button class="sui-avatar" data-lane="3" aria-label="Account: joss, Community">J</button>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <article class="sui-chat-message" data-role="user" data-done="true">
+        <div class="sui-chat-message-label">joss</div>
+        <div class="sui-chat-bubble">How do I write a service in VibeLang?</div>
+      </article>
+      <article class="sui-chat-message" data-role="system">
+        <div class="sui-chat-bubble">You're now <b>Community</b>.</div>
+      </article>
+      <article class="sui-chat-message" data-role="assistant" data-done="true">
+        <div class="sui-chat-message-label">VibeLang agent</div>
+        <div class="sui-chat-bubble"><p>Extend <code style="padding:1px 5px;border-radius:4px;background:var(--code-bg);font-family:var(--font-mono);font-size:.88em">Context.Tag</code>…</p></div>
+      </article>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+</div>
+
+<!-- ══ 10. mock mode: the identity picker ══ -->
+<div data-screen-block="mock-picker">
+<div class="vl-app" data-surface="splash" data-mode="mock">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <span class="vl-pill">Mock</span>
+      <span class="vl-role-select">
+        <button class="sui-select-trigger" aria-label="Visit as" aria-expanded="true" style="min-height:28px;font-size:12px"><span class="vl-visit-as">Visit as: </span>Community <span class="sui-select-icon">▾</span></button>
+        <span class="sui-select-content" role="listbox" aria-label="Visit as">
+          <span class="sui-select-viewport">
+            <span class="sui-select-item" role="option">Viewer</span>
+            <span class="sui-select-item" role="option">New</span>
+            <span class="sui-select-item" role="option"><span class="sui-select-item-indicator">✓</span>Community</span>
+            <span class="sui-select-item" role="option" data-highlighted>Contributor</span>
+            <span class="sui-select-item" role="option">Maintainer</span>
+          </span>
+        </span>
+      </span>
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-secondary" style="margin-left:4px">Community</span>
+      <button class="sui-avatar" data-lane="1" aria-label="Account: ada, Community">A</button>
+    </nav>
+  </header>
+  <main class="vl-splash">
+    <section class="vl-hero">
+      <div class="vl-eyebrow">Effect, as a language</div>
+      <h1 class="vl-title"><span class="vl-gradient">Vibe</span>Lang</h1>
+      <p class="vl-tagline">VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.</p>
+      <div class="vl-actions">
+        <button class="vl-primary">Learn more</button>
+        <button class="vl-ask" aria-label="Ask the agent">Ask the agent<kbd class="vl-kbd">⌘K</kbd></button>
+        <a class="vl-ask" href="#">Contribute</a>
+      </div>
+    </section>
+  </main>
+</div>
+</div>
+
+<!-- ══ 11. the agent promotes through the same action ══ -->
+<div data-screen-block="agent">
+<div class="vl-app" data-surface="chat">
+  <header class="vl-top">
+    <button class="vl-home" aria-label="Home"><span class="vl-logo"><img src="logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <button class="vl-nav-link">Wiki</button>
+      <a class="vl-nav-link vl-ext" href="#">Docs<span class="vl-away">↗</span></a>
+      <a class="vl-nav-link vl-ext" href="#">GitHub<span class="vl-away">↗</span></a>
+      <span class="sui-badge sui-badge-default" style="margin-left:4px">Maintainer</span>
+      <button class="sui-avatar" data-lane="4" aria-label="Account: will, Maintainer">W</button>
+    </nav>
+  </header>
+  <main class="vl-chat">
+    <div class="sui-chat-messages" role="log" aria-label="Conversation">
+      <article class="sui-chat-message" data-role="user" data-done="true">
+        <div class="sui-chat-message-label">will</div>
+        <div class="sui-chat-bubble">Promote rira to contributor — her VIP draft was solid.</div>
+      </article>
+      <article class="sui-chat-message" data-role="system">
+        <div class="sui-chat-bubble"><b>rira</b> is now Contributor.</div>
+      </article>
+      <article class="sui-chat-message" data-role="assistant" data-done="true">
+        <div class="sui-chat-message-label">VibeLang agent</div>
+        <div class="sui-chat-bubble"><p>Done — rira is a Contributor.</p></div>
+      </article>
+    </div>
+    <form class="sui-chat-composer" data-docked="true">
+      <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+      <div class="sui-chat-composer-toolbar">
+        <span class="sui-chat-composer-status"></span>
+        <div class="sui-chat-composer-actions"><button class="sui-chat-composer-send" type="submit" aria-label="Send">↑</button></div>
+      </div>
+    </form>
+  </main>
+</div>
+</div>
+
+<script>
+const screens = ["viewer","signing-in","sign-in-error","new","community","people-community","people-maintainer","promote-dialog","auto-promotion","mock-picker","agent"];
+const bar = document.getElementById("bar");
+for (const s of screens) {
+  const b = document.createElement("button");
+  b.textContent = s;
+  b.setAttribute("aria-pressed", "false");
+  b.onclick = () => { location.hash = s; show(s); };
+  bar.appendChild(b);
+}
+function show(s) {
+  if (!screens.includes(s)) s = "viewer";
+  document.body.dataset.screen = s;
+  for (const el of document.querySelectorAll("[data-screen-block]"))
+    el.style.display = el.dataset.screenBlock === s ? "block" : "none";
+  bar.querySelectorAll("button").forEach((b, i) => b.setAttribute("aria-pressed", String(screens[i] === s)));
+}
+show(location.hash.slice(1));
+window.addEventListener("hashchange", () => show(location.hash.slice(1)));
+</script>
+</body>
+</html>

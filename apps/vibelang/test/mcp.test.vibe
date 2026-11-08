@@ -19,6 +19,9 @@ const clientLayer = Layer.unwrap(effect {
   })
 }).pipe(Layer.provide(platform))
 
+// Match the CLI process suite: allow startup plus the MCP client's ten-second protocol deadline.
+const LIMIT = 30_000
+
 describe("built MCP stdio server through McpClient", () => {
   it.live("discovers the exact same names and schemas as the CLI manifest", () => effect {
     provide clientLayer, platform {
@@ -36,7 +39,7 @@ describe("built MCP stdio server through McpClient", () => {
         expect(markdown.length).toBeLessThan(1000 * tools.length)
       })
     }
-  })
+  }, LIMIT)
 
   it.live("asks, reads, polls after a cursor, and shares state across tool calls", () => effect {
     provide clientLayer {
@@ -58,7 +61,7 @@ describe("built MCP stdio server through McpClient", () => {
         expect(other.entries).toEqual([])
       })
     }
-  })
+  }, LIMIT)
 
   it.live("returns declared refusals and rejects malformed input through the protocol", () => effect {
     provide clientLayer {
@@ -78,5 +81,5 @@ describe("built MCP stdio server through McpClient", () => {
       const healthy = try client.callTool({ tool: read, schema: ReadOutput, arguments: {} })
       try Effect.try(() => expect(healthy.entries).toEqual([]))
     }
-  })
+  }, LIMIT)
 })

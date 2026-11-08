@@ -1,0 +1,169 @@
+import { Command, click, expect, given, role, scene, Subscription, text } from "foldkit/scene"
+import { describe, expect as assert, it } from "@effect/vitest"
+import { EndTourCommand, FocusComposer, ChooseIdentity, CloseRoleDialog, FocusAccountMenu, GrantRole, init, LoadPeople, Message, ShowRoleDialog, signedOut, update } from "../src/web/main.vibe"
+import { view } from "../src/web/view.vibe"
+
+const home = init({ session: "roles", mode: "mock", name: "Guest" }).model
+const people = [
+  { id: "1", login: "will", role: "maintainer" as const },
+  { id: "2", login: "joss", role: "new" as const },
+  { id: "4", login: "rira", role: "contributor" as const },
+]
+const idleSandbox = { id: "", generation: 0, sequence: 0, status: "stopped" as const, role: "new" as const, allowance: 0, remaining: 0, used: 0, resetAt: 100, output: "" }
+
+for (const [from, to] of [["new", "contributor"], ["maintainer", "new"]] as const) {
+  it("refreshes an idle sandbox after an own-role event from " + from + " to " + to, () => {
+    const before = { ...home, surface: "chat" as const, sandbox: { ...idleSandbox, role: from }, sandboxBusy: true, sandboxPane: "pane" as const, sandboxRequest: 7, account: { ...signedOut, identity: { id: "2", login: "joss", role: from } } }
+    const event = { type: "RoleGranted" as const, seq: 1, id: "2", by: "1", role: to, mode: "person" as const }
+    const after = update(before, Message.ReceivedRole({ event })).model
+    assert(after.sandbox).toBeUndefined()
+    assert(after.sandboxBusy).toBe(false)
+    assert(after.sandboxRequest).toBe(8)
+    assert(after.sandboxPane).toBe("pane")
+    assert(update(after, Message.LoadedSandbox({ conversation: home.conversation, request: 7, snapshot: before.sandbox })).model).toBe(after)
+    assert(update(after, Message.FailedSandbox({ conversation: home.conversation, request: 7, reason: "old" })).model).toBe(after)
+    const fresh = update(after, Message.LoadedSandbox({ conversation: home.conversation, request: 8, snapshot: { ...idleSandbox, role: to } })).model
+    assert(update(fresh, Message.ReceivedRole({ event })).model.sandboxRequest).toBe(8)
+    const other = update(fresh, Message.ReceivedRole({ event: { ...event, seq: 2, id: "4" } })).model
+    assert(other.sandbox).toBe(fresh.sandbox)
+    assert(other.sandboxRequest).toBe(8)
+  })
+  it("refreshes an idle sandbox after a same-owner session snapshot from " + from + " to " + to, () => {
+    const before = { ...home, surface: "chat" as const, sandbox: { ...idleSandbox, role: from }, sandboxBusy: true, sandboxPane: "pane" as const, sandboxRequest: 7, account: { ...signedOut, identity: { id: "2", login: "joss", role: from } } }
+    const same = update(before, Message.AccountLoaded({ identity: before.account.identity })).model
+    assert(same.sandbox).toBe(before.sandbox)
+    assert(same.sandboxRequest).toBe(7)
+    const after = update(before, Message.AccountLoaded({ identity: { ...before.account.identity, role: to } })).model
+    assert(after.sandbox).toBeUndefined()
+    assert(after.sandboxBusy).toBe(false)
+    assert(after.sandboxRequest).toBe(8)
+    assert(after.sandboxPane).toBe("pane")
+  })
+}
+describe("each role's designed view", () => {
+  for (const value of ["viewer", "new", "community", "contributor", "maintainer"] as const) {
+    it(value + " can use the offline identity picker and public actions", () => {
+      const identity = { id: value === "viewer" ? "" : "2", login: value === "viewer" ? "" : "joss", role: value }
+      scene({ update, view }, given(home),
+        expect(role("combobox", { name: "Visit as" })).toExist(),
+        Subscription.emit(Message.ChoseIdentity({ role: value })),
+        Command.expectExact(ChooseIdentity({ role: value })),
+        Command.resolve(ChooseIdentity, Message.AccountLoaded({ identity })),
+        expect(role("button", { name: value === "viewer" ? "Sign in" : "Account" })).toExist(),
+        expect(role("button", { name: "Learn more" })).toExist(),
+        expect(role("button", { name: "Ask the agent" })).toExist(),
+      )
+    })
+  }
+  it("shows People read-only to a community member", () => {
+    scene({ update, view }, given({ ...home, account: { ...signedOut, identity: { id: "2", login: "joss", role: "community" } } }),
+      click(role("button", { name: "Account" })),
+      Command.resolve(FocusAccountMenu, Message.FocusedPrompt()),
+      click(role("menuitem", { name: "People" })),
+      Command.expectExact(LoadPeople({})),
+      Command.resolve(LoadPeople, Message.LoadedPeople({ members: people })),
+      expect(role("region", { name: "People" })).toExist(),
+      expect(role("combobox", { name: "Role for rira" })).toBeAbsent(),
+    )
+  })
+  for (const [from, to, label] of [["new", "community", "Community"], ["community", "contributor", "Contributor"], ["contributor", "maintainer", "Maintainer"]] as const) {
+  it("confirms a maintainer's promotion to " + label + " and refreshes People after completion", () => {
+    const members = people.map(person => person.id === "4" ? { ...person, role: from } : person)
+    scene({ update, view }, given({ ...home, surface: "chat", account: { ...signedOut, identity: people[0]!, members, people: "pane" } }),
+      expect(role("combobox", { name: "Role for will" })).toBeAbsent(),
+      expect(role("combobox", { name: "Role for rira" })).toExist(),
+      Subscription.emit(Message.SelectedRole({ id: "4", role: to })),
+      Command.expectExact(ShowRoleDialog({})),
+      Command.resolve(ShowRoleDialog, Message.FocusedPrompt()),
+      expect(role("dialog", { name: "Promote rira to " + label + "?" })).toHaveAttr("data-state", "open"),
+      click(role("button", { name: "Promote" })),
+      Command.expectExact(GrantRole({ id: "4", role: to })),
+      Command.resolve(GrantRole, Message.GrantedRole()),
+      Command.expectExact(CloseRoleDialog({}), LoadPeople({})),
+      Command.resolve(CloseRoleDialog, Message.FocusedPrompt()),
+      Command.resolve(LoadPeople, Message.LoadedPeople({ members: people.map(person => person.id === "4" ? { ...person, role: to } : person) })),
+    )
+  })
+  }
+  it("applies automatic participation as a numbered event and ignores a duplicate", () => {
+    const event = { type: "RoleGranted" as const, seq: 1, id: "2", by: "2", role: "community" as const, mode: "participation" as const }
+    scene({ update, view }, given({ ...home, surface: "chat", account: { ...signedOut, identity: { id: "2", login: "joss", role: "new" } } }),
+      Subscription.emit(Message.ReceivedRole({ event })),
+      expect(text("You're now Community.")).toExist(),
+      Subscription.emit(Message.ReceivedRole({ event })),
+      expect(text("You're now Community.")).toExist(),
+    )
+  })
+})
+
+it("a failed promotion keeps its target, explains the failure, and retries the same grant", () => {
+  scene({ update, view }, given({
+    ...home, surface: "chat",
+    account: { ...signedOut, identity: people[0]!, members: people, people: "pane", target: "4", targetRole: "maintainer", pending: true, retry: "grant" },
+  }),
+    Subscription.emit(Message.AccountFailed()),
+    expect(role("alert")).toHaveText("Role change failed."),
+    click(role("button", { name: "Retry" })),
+    Command.expectExact(GrantRole({ id: "4", role: "maintainer" })),
+    Command.resolve(GrantRole, Message.GrantedRole()),
+    Command.resolve(CloseRoleDialog, Message.FocusedPrompt()),
+    Command.resolve(LoadPeople, Message.LoadedPeople({ members: people })),
+  )
+})
+
+it("a demotion closes a pending promotion and removes its controls immediately", () => {
+  scene({ update, view }, given({
+    ...home, surface: "chat",
+    account: { ...signedOut, identity: people[0]!, members: people, people: "pane", target: "4", targetRole: "maintainer" },
+  }),
+    Subscription.emit(Message.ReceivedRole({ event: { type: "RoleGranted", seq: 1, id: "1", by: "5", role: "community", mode: "person" } })),
+    Command.expectExact(CloseRoleDialog({}), LoadPeople({})),
+    Command.resolve(CloseRoleDialog, Message.FocusedPrompt()),
+    Command.resolve(LoadPeople, Message.LoadedPeople({ members: people.map(person => person.id === "1" ? { ...person, role: "community" as const } : person) })),
+    expect(role("combobox", { name: "Role for rira" })).toBeAbsent(),
+  )
+})
+
+it("reconnects role events from the applied cursor without reauthenticating", () => {
+  const opened = { ...home, mode: "live" as const, account: { ...signedOut, identity: people[0]!, ledger: { conversation: { ...home.client.conversation, seq: 7 }, pending: [], gap: false } } }
+  const failed = update(opened, Message.FailedRoles()).model
+  const retried = update(failed, Message.RetriedAccount())
+  assert(retried.commands ?? []).toEqual([])
+  assert(retried.model.account?.epoch).toBe(1)
+  assert(retried.model.account?.from).toBe(7)
+  assert(retried.model.account?.identity.id).toBe("1")
+})
+
+it("opens an account snapshot at its cursor and never announces historical grants as new", () => {
+  const snapshot = { ...home.client.conversation, seq: 4, roles: [{ id: "1", role: "maintainer" as const, blocked: false }] }
+  const result = update(home, Message.AccountLoaded({ identity: { ...people[0]!, ledger: snapshot } }))
+  assert(result.model.account?.ledger.conversation).toEqual(snapshot)
+  assert(result.model.account?.from).toBe(4)
+  assert(result.model.account?.notice).toBe("Signed in as will.")
+})
+
+it("keeps an unavailable live sign-in on the page with a retryable notice", () => {
+  const unavailable = { ...home, mode: "live" as const, account: { ...signedOut, identity: { id: "", login: "", role: "viewer" as const, available: false } } }
+  const attempted = update(unavailable, Message.ClickedSignIn())
+  assert(attempted.commands ?? []).toEqual([])
+  assert(attempted.model.account?.error).toBe("Sign-in unavailable.")
+  const retried = update(attempted.model, Message.RetriedAccount())
+  assert(retried.commands ?? []).toEqual([])
+  assert(retried.model.account?.error).toBe("Sign-in unavailable.")
+})
+
+for (const overlay of ["menu", "confirmation"] as const) {
+  it("Escape stops an active tour before closing the account " + overlay, () => {
+    const touring = { ...home, surface: "chat" as const, tour: true, account: { ...signedOut, identity: people[0]!, menu: overlay === "menu", target: overlay === "confirmation" ? "4" : "" } }
+    const result = update(touring, Message.PressedEscape())
+    assert(result.model.tour).toBe(false)
+    scene({ update, view }, given(touring),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectExact(EndTourCommand({ conversation: home.conversation }), FocusComposer({})),
+      Command.resolve(EndTourCommand, Message.FocusedPrompt()),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
+    )
+    assert(result.model.account?.menu).toBe(touring.account.menu)
+    assert(result.model.account?.target).toBe(touring.account.target)
+  })
+}

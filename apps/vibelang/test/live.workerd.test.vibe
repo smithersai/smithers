@@ -65,7 +65,7 @@ describe("the live Factory in local workerd, with no model key", () => {
         expect(answer).toEqual({ ok: true, agent: "live" })
         expect(factory.mode).toBe("live")
         expect(events).toEqual([
-          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "How do services work?" },
+          { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Guest", text: "How do services work?" },
           { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" },
           { type: "ReplyFailed", seq: 3, id: "r1", reason: REASONS.unconfigured },
         ])
@@ -276,7 +276,7 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
         const end = events.find((event) => event.type === "TourEnded")!
         const post = events.find((event) => event.type === "Posted")!
         expect(end.id).toBe("t1")
-        expect(post).toMatchObject({ clientId: "a", name: "Ada", text: "hi" })
+        expect(post).toMatchObject({ clientId: "a", name: "Guest", text: "hi" })
         expect(post.seq).toBeGreaterThan(end.seq)
         expect(events.at(-1)).toMatchObject({ type: "ReplyStarted", inReplyTo: post.id })
         expect(events.at(-1)!.seq).toBeGreaterThan(post.seq)

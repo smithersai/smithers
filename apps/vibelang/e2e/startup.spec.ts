@@ -10,7 +10,7 @@ declare global {
   }
 }
 
-test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4516 ?? process.env.E2E_4502 ?? process.env.E2E_PORT ?? 4173}` })
+test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? process.env.E2E_4505 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173}` })
 
 for (const input of ["Command K", "Tab"] as const) {
   test(`${input} works while the startup health answer is held open`, async ({ page }) => {
@@ -23,8 +23,11 @@ for (const input of ["Command K", "Tab"] as const) {
     if (input === "Command K") {
       await page.keyboard.press("ControlOrMeta+k")
     } else {
-      // Home, History, Docs, GitHub, Learn more, then Ask the agent.
-      for (let i = 0; i < 6; i++) await page.keyboard.press("Tab")
+      const ask = page.getByRole("button", { name: "Ask the agent" })
+      for (let i = 0; i < 12; i++) {
+        await page.keyboard.press("Tab")
+        if (await ask.evaluate(node => node === document.activeElement)) break
+      }
       await expect(page.getByRole("button", { name: "Ask the agent" })).toBeFocused()
       await page.keyboard.press("Enter")
     }

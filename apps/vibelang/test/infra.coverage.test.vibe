@@ -27,7 +27,7 @@ it.live(`declares the bound resource graph: ${dev ? "dev" : domain ?? "productio
         expect(compiled.resources["vibelang-site"]!.Props).toMatchObject({ vite: { main: "worker/index.vibe" }, assets: { notFoundHandling: "single-page-application" }, observability: { enabled: true } })
         expect(compiled.resources["vibelang-site"]!.Props.domain).toBe(domain)
         expect(compiled.resources["vibelang-site"]!.Props.env.API).toBeDefined()
-        expect(compiled.bindings.VibelangApi!.flatMap((binding) => binding.data.bindings ?? []).filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["Budget", "Conversation", "History"])
+        expect(compiled.bindings.VibelangApi!.flatMap((binding) => binding.data.bindings ?? []).filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["Budget", "Conversation", "History", "ProjectAccounts"])
         expect(Object.keys(compiled.resources).sort()).toEqual(["VibelangApi", "vibelang-site"])
       })
     }

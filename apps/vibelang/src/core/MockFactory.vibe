@@ -1,4 +1,5 @@
 import { firstUndispatched } from "./flowDecision.vibe"
+import * as MockAccounts from "./MockAccounts.vibe"
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
 // (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
 // conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
@@ -20,6 +21,7 @@ import { type HistoryPages, show } from "../history/tools.vibe"
 import { matches } from "./mockDecision.vibe"
 import { makeMockSandboxes } from "./sandboxMock.vibe"
 import type { Role } from "./sandboxDecision.vibe"
+import { SandboxPolicy } from "./sandboxPolicy.vibe"
 import { chunks, HISTORY_WORDS, historyReply, mockReply, TOUR } from "./mockReplies.vibe"
 
 /** Who the scripted agent reads the mythical history as: the agent for a person who has not signed in. */
@@ -114,14 +116,36 @@ effect function cryptoOf() {
 }
 
 /** The mock factory. Each layer build is its own world; closing that layer ends all work and subscriptions. */
-export function mockFactoryFor(role: Role = "viewer") {
+export function mockFactoryFor(role?: Role) {
 return Layer.effect(Factory, effect {
   const scope = try Effect.scope
+  const accounts = try MockAccounts.make()
+  if (role !== undefined) try Effect.orDie(accounts.choose(role))
   const rooms = try Ref.make(new Map<string, Room>())
   const published = try acquireRelease(PubSub.unbounded<Published>(), PubSub.shutdown)
   const ids = try Ref.make(0)
   const executions = try Ref.make(0)
-  const sandboxes = try makeMockSandboxes(role)
+  const sandboxAccounts = new Map<string, Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand">>()
+  const sandboxLock = try Semaphore.make(1)
+  const sandboxForOwner = (owner: string) => Semaphore.withPermits(sandboxLock, 1)(effect {
+    let service = sandboxAccounts.get(owner)
+    if (service === undefined) {
+      const policy = Layer.succeed(SandboxPolicy, { current: effect () => ({ owner, role: try accounts.role(owner) }) })
+      service = try Effect.provideService(makeMockSandboxes(try accounts.role(owner), policy), Scope.Scope, scope)
+      sandboxAccounts.set(owner, service)
+    }
+    return service
+  })
+  const sandboxFor = effect {
+    const person = try Effect.mapError(accounts.current(), () => new Unavailable({ reason: "account-unavailable" }))
+    return try sandboxForOwner(person.id)
+  }
+  const sandboxes: Pick<Factory.Shape, "sandbox" | "startSandbox" | "stopSandbox" | "sandboxCommand"> = {
+    sandbox: effect (conversation) => try (try sandboxFor).sandbox(conversation),
+    startSandbox: effect (conversation, operationId) => try (try sandboxFor).startSandbox(conversation, operationId),
+    stopSandbox: effect (conversation, operationId, generation) => try (try sandboxFor).stopSandbox(conversation, operationId, generation),
+    sandboxCommand: effect (conversation, operationId, command, generation) => try (try sandboxFor).sandboxCommand(conversation, operationId, command, generation),
+  }
   // The engine digests what it journals, with the platform's Web Crypto.
   const crypto = try cryptoOf()
   // The mythical history the scripted agent reads, built (and its snapshot downloaded) only when first asked about.
@@ -188,10 +212,13 @@ return Layer.effect(Factory, effect {
       const gate = try Semaphore.make(1)
       const wake = try Scope.provide(scope)(acquireRelease(Queue.sliding<void>(1), Queue.shutdown))
       const record = recorder(state, gate, conversation)
+      // Recorded with the accepted post; delayed replies never borrow the currently selected identity.
+      const postOwners = new Map<string, string>()
       const posts: Posts.Shape = {
-        record: effect (clientId: string, name: string, text: string) => {
+        record: effect (clientId: string, name: string, text: string, owner?: string) => {
           const id = try nextId("m")
           const decision = try record({ type: "Post", id, clientId, name, text })
+          if (decision.ok) postOwners.set(id, owner ?? "")
           return decision.ok ? null : decision.refusal
         },
         dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
@@ -236,7 +263,9 @@ return Layer.effect(Factory, effect {
         tourRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
-          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post, history, conversation, sandboxes), "vibelang.reply")))
+          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post, history, conversation, {
+            startSandbox: effect (room, operationId) => try (try sandboxForOwner(postOwners.get(payload.post) ?? "")).startSandbox(room, operationId),
+          }), "vibelang.reply")))
           try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
         }),
       ).pipe(
@@ -257,11 +286,14 @@ return Layer.effect(Factory, effect {
   const mode: Mode = "mock"
   return {
     mode,
+    accounts,
     post: effect (conversation: string, clientId: string, name: string, text: string) => {
+      const identity = try Effect.orDie(accounts.current())
       const room = try openRoom(conversation)
       const executionId = `post/${try Ref.updateAndGet(executions, (value) => value + 1)}`
-      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name, text } }))
+      const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name: identity.login || name, text, owner: identity.id } }))
       if (refusal !== null) throw new Refused({ refusal })
+      try Effect.orDie(accounts.participated(identity.id))
     },
     tour: effect (conversation: string) => {
       const room = try openRoom(conversation)

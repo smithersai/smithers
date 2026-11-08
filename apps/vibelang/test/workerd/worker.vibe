@@ -1,3 +1,4 @@
+export { ProjectAccounts } from "./accounts.vibe"
 // The workerd test's API Worker (test/live.workerd.test.vibe): plain Durable Objects over the same code the Alchemy ones
 // in worker/Api.vibe run (worker/Objects.vibe, worker/Http.vibe), so local workerd runs the real sequencer, the real
 // reply flow on the engine in each object's SQLite, and the real HTTP protocol. Alchemy's own bundle can't be loaded
@@ -58,6 +59,7 @@ interface Env {
   readonly CONVERSATION: Namespace
   readonly BUDGET: Namespace
   readonly SANDBOX_LEDGER: Namespace
+  readonly ACCOUNTS: Namespace
   readonly HISTORY: Namespace
   readonly [name: string]: unknown
 }
@@ -264,9 +266,21 @@ export default {
     // The suite's way to call the agent's history tools from a conversation's object: /history-tool/<conversation>.
     const tool = new URL(request.url).pathname.match(/^\/history-tool\/(.+)$/)
     if (tool !== null) return json(await call(env.CONVERSATION, decodeURIComponent(tool[1]!), "history-tool", await request.json()))
+    const path = new URL(request.url).pathname
+    if (path.startsWith("/api/auth/") || path.startsWith("/api/roles") || path.startsWith("/__fixture/")) {
+      return await env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project")).fetch(request)
+    }
     const conversations: Conversations = {
       post: (conversation, body) =>
-        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),
+        reach("conversation", async () => {
+          const account = env.ACCOUNTS.get(env.ACCOUNTS.idFromName("project"))
+          const headers = { cookie: request.headers.get("cookie") ?? "" }
+          const identity = await (await account.fetch("https://object/api/auth/session", { headers })).json() as { readonly id: string; readonly login: string }
+          if (identity.id !== "" && request.headers.get("origin") !== env.VIBELANG_ORIGIN) return "forbidden"
+          const result = await call(env.CONVERSATION, conversation, "post", { ...body, name: identity.login || "Guest" }) as { readonly refusal: string | null }
+          if (result.refusal === null && identity.id !== "") await account.fetch("https://object/__fixture/participation", { headers })
+          return result.refusal
+        }),
       read: (conversation, after) =>
         reach("conversation", () => call(env.CONVERSATION, conversation, "read", { after }) as Promise<ReadSnapshot>),
       tour: (conversation) =>

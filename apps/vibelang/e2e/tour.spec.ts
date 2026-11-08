@@ -76,7 +76,8 @@ test.describe("the agent's tour", () => {
     await expect(page.getByRole("region", { name: "Docs" })).toBeVisible()
     // Esc never covers the top bar's links.
     const esc = (await page.getByRole("button", { name: "Esc" }).boundingBox())!
-    const docs = (await page.getByRole("link", { name: "Docs" }).boundingBox())!
+    const nav = await page.getByRole("link", { name: "Docs" }).isVisible() ? page.getByRole("link", { name: "Docs" }) : page.getByRole("button", { name: "Sign in", exact: true })
+    const docs = (await nav.boundingBox())!
     expect(esc.x + esc.width <= docs.x || esc.y >= docs.y + docs.height).toBe(true)
     await settled(page)
     await page.screenshot({ path: testInfo.outputPath("tour.png") })

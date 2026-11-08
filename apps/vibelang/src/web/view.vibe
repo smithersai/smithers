@@ -4,6 +4,7 @@ import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
 import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
+import { accountNotice, accountOverlays, identityNav, peoplePane } from "./roleView.vibe"
 import { render } from "./markdown.vibe"
 import { STOPS, type StopMedia } from "../core/tourStops.vibe"
 import { sandboxPane } from "./sandboxView.vibe"
@@ -29,6 +30,7 @@ export function view(model: Model, h: H): Document {
         model.surface === "splash" ? splash(model, h) : chat(model, h),
         ...(model.surface === "chat" && model.client.conversation.pane !== "" && (model.tour || model.docs === "max") ? [docsPane(model, h)] : []),
         palette(model, h),
+        ...accountOverlays(model, h),
         ...(model.tour ? control(h) : []),
         h.div([h.Id("vl-announcements")], [
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
@@ -51,10 +53,10 @@ function top(model: Model, h: H): Html {
   return h.header([h.Class("vl-top")], [
     h.button([h.Class("vl-home"), h.Type("button"), h.AriaLabel("Home"), h.OnClick(Message.ClickedSplash())], [logo(h)]),
     h.nav([h.Class("vl-nav")], [
-      ...(model.mode === "mock" ? [h.span([h.Class("vl-pill")], ["Mock"])] : []),
       h.a([h.Class("vl-nav-link"), h.Href("/history")], ["History"]),
-      h.a([h.Class("vl-nav-link"), h.Href(DOCS_URL)], ["Docs", away(h)]),
-      h.a([h.Class("vl-nav-link"), h.Href(SOURCE_URL)], [githubMark(h), "GitHub", away(h)]),
+      h.a([h.Class("vl-nav-link vl-ext"), h.Href(DOCS_URL)], ["Docs", away(h)]),
+      h.a([h.Class("vl-nav-link vl-ext"), h.Href(SOURCE_URL)], [githubMark(h), "GitHub", away(h)]),
+      ...identityNav(model, h),
     ]),
   ])
 }
@@ -163,6 +165,8 @@ function chat(model: Model, h: H): Html {
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
       sandboxPane(model, h),
+      ...peoplePane(model, h),
+      ...accountNotice(model, h),
       ...(conversation.pane === "" || model.tour || model.docs === "max" ? [] : [docsPane(model, h)]),
       ...(conversation.entries.length === 0 && pending.length === 0 ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
         src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",

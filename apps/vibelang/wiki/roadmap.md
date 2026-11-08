@@ -20,7 +20,7 @@ brick                                   state         proof
 1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
                                                       all logic; fuzzing from the Effect fork as @smthrs/fuzz
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
-2   sign-in and roles                   in progress         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
+2   sign-in and roles                   done (local)         0019: shared GitHub auth, five mock identities, numbered grants; live callback setup/deploy remain (VL-21)
 3   issues as a tree, tasks, VIPs       in progress   0022: GitHub-backed issue flows, commitments, sub-issues and repository VIP review changes
 4   actions and slash commands          held          0023: registry catalog and engine step telemetry landed; app held at
                                                       actions-service-spread (VibeLang inference); compiler-policy approval pending

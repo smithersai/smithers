@@ -206,3 +206,7 @@ in a fresh empty lemma. No dependency is added. Exact gate counts and exits are 
 instead of assuming fifty scheduler yields complete native asynchronous flow work. Startup's own metering cannot
 satisfy the observer. The merged host regression retains its five-second live deadline and removes the fixed yields.
 Idle and post-stop counts remain unchanged, and the post-start count must increase.
+
+The app and isolated coverage fixture also deduplicate `vitest` and transform `@effect/vitest` through Vite,
+retaining the app's Foldkit transform. This keeps the adapter in the running CLI's suite context when pnpm binds
+optional peers differently. This lane adds no dependency version, coverage threshold or file-exclusion change.

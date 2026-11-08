@@ -14,8 +14,8 @@ import { signedOutGateway, type Gateway } from "./SandboxHttp.vibe"
 
 /** Implement this adapter with 0019's Accounts.current and Policy.authorize; only server code can provide it. */
 export service SandboxIdentity {
-  request(): SandboxPrincipal!!HttpServerRequest.HttpServerRequest
-  role(owner: string): Role!!
+  request(): SandboxPrincipal!!(HttpServerRequest.HttpServerRequest | RuntimeContext)
+  role(owner: string): Role!!RuntimeContext
 }
 export const noIdentity = Layer.succeed(SandboxIdentity, { request: () => succeed({ owner: "", role: "viewer" as const }), role: () => succeed("viewer" as const) })
 export service SandboxGateway { readonly gateway: Gateway<RuntimeContext> }
@@ -41,7 +41,7 @@ const accountLive = SandboxAccount.make(effect {
     const machines: Machines = { lease: (id, generation, milliseconds) => Effect.map(call(id, "lease", generation, "", String(milliseconds)), (status) => status === "running"), start: (id, generation) => Effect.asVoid(call(id, "start", generation)), stop: (id, generation) => Effect.asVoid(call(id, "stop", generation)), command: (id, generation, operationId, command) => call(id, "command", generation, operationId, command) }
     const policy = Layer.succeed(SandboxPolicy, { current: effect () => {
       const owner = (try promise(() => state.raw.storage.get<string>("owner"))) ?? ""
-      return { owner, role: try identity.role(owner) }
+      return { owner, role: try Effect.provideService(identity.role(owner), RuntimeContext, runtime) }
     } })
     const host = try Effect.provide(Sandboxes.open(state.raw.storage, machines), policy)
     const id = try Effect.orDie(Effect.try(() => state.id.toString()))
@@ -103,9 +103,9 @@ export const gatewayLive = gatewayWithIdentity.pipe(Layer.provide(noIdentity))
 
 /** Connect the 0019 account host's trusted request identity, current grant lookup and Policy.authorize interface. */
 export function identityFromPolicy(
-  current: () => SandboxPrincipal!!HttpServerRequest.HttpServerRequest,
-  roleOf: (owner: string) => Role!!,
-  policy: { readonly authorize: (actor: string, action: "sandbox") => void!unknown },
+  current: () => SandboxPrincipal!!(HttpServerRequest.HttpServerRequest | RuntimeContext),
+  roleOf: (owner: string) => Role!!RuntimeContext,
+  policy: { readonly authorize: (actor: string, action: "sandbox") => void!unknown!RuntimeContext },
 ) {
   return Layer.succeed(SandboxIdentity, {
     request: effect () => {

@@ -1,0 +1,263 @@
+import { Core, GitHub } from "@smthrs/integrations"
+import { WebCryptoCipher } from "@smthrs/control"
+import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { leastRole, roleOf, type Action as PolicyAction } from "../src/core/conversation.vibe"
+import { Identity, viewer, Denied, type Policy } from "../src/core/roles.vibe"
+import { type Storage, postExecutionId } from "./Objects.vibe"
+import * as Sequencer from "./Sequencer.vibe"
+import { afterOf, eventStream } from "./Http.vibe"
+import { logOver } from "./ObjectStorage.vibe"
+
+export const CALLBACK = "/api/auth/callback"
+export const SESSION = "__Host-vibelang-session"
+const STATE = "__Host-vibelang-sign-in"
+const AGE = 30 * 24 * 60 * 60 * 1000
+const noStore = { "cache-control": "no-store" }
+
+export interface Setup {
+  readonly origin: string
+  readonly initialMaintainer: string
+  readonly signingSecret: Redacted.Redacted<string>
+  readonly encryptionKey: Redacted.Redacted<string>
+  readonly github: GitHub.Auth.GitHubAuth["Service"]
+}
+
+const Mutation = Flow.make("vibelang/Account", {
+  description: "Changes a sign-in session or a project role through one journaled account step.",
+  modelInvocable: false,
+  payload: { step: Schema.Literals(["start", "callback", "sign-out", "grant", "participation"]) },
+  success: Schema.Null,
+  body: () => Node.succeed(null),
+})
+
+/** Host-only configuration: absent credentials disable sign-in without affecting the public factory. */
+effect function readSetup() {
+  const id = try Config.option(Config.String("GITHUB_CLIENT_ID"))
+  const secret = try Config.option(Config.Redacted("GITHUB_CLIENT_SECRET"))
+  const signing = try Config.option(Config.Redacted("SESSION_SECRET"))
+  const encryption = try Config.option(Config.Redacted("SESSION_ENCRYPTION_KEY"))
+  const origin = try Config.option(Config.String("VIBELANG_ORIGIN"))
+  const initial = try Config.option(Config.String("VIBELANG_INITIAL_MAINTAINER_ID"))
+  if (Option.isNone(id) || Option.isNone(secret) || Option.isNone(signing) || Option.isNone(encryption) || Option.isNone(origin) || Option.isNone(initial)) return undefined
+  if (Redacted.value(signing.value).length < 32) return undefined
+  if (!/^[1-9][0-9]{0,19}$/.test(initial.value)) return undefined
+  const parsed = try Effect.try(() => new URL(origin.value))
+  if (parsed.protocol !== "https:" || parsed.origin !== origin.value) return undefined
+  const validated = WebCryptoCipher.make({ key: encryption.value }) catch () => undefined
+  if (validated === undefined) return undefined
+  const github = try Layer.build(GitHub.Auth.layer({ clientId: id.value, clientSecret: secret.value }))
+  const setup: Setup = {
+    origin: origin.value, initialMaintainer: Option.getOrElse(initial, () => ""),
+    signingSecret: signing.value, encryptionKey: encryption.value,
+    github: Context.get(github, GitHub.Auth.GitHubAuth),
+  }
+  return setup
+}
+
+export function configured() {
+  return readSetup().pipe(Effect.catchCause(() => Effect.succeed(undefined)))
+}
+
+/** One project ledger and session store, owned by the Accounts Durable Object. */
+export effect function disabled() {
+  const request = try HttpServerRequest.HttpServerRequest
+  const path = new URL(request.url, "http://accounts.invalid").pathname
+  return path === "/api/auth/session" && request.method === "GET"
+    ? HttpServerResponse.jsonUnsafe({ ...viewer, available: false }, { headers: noStore })
+    : HttpServerResponse.jsonUnsafe({ error: "sign-in unavailable" }, { status: 503, headers: noStore })
+}
+
+export effect function make(hostId: string, storage: Storage, setup: Setup) {
+  const keys = try Core.CookieKeys.make({ primary: setup.signingSecret }, "primary")
+  const cipher = try Effect.orDie(WebCryptoCipher.make({ key: setup.encryptionKey }))
+  const sequencer = try Sequencer.make(logOver(storage), { start: () => Effect.void, tour: () => Effect.void })
+  const lock = try Semaphore.make(1)
+  const policy: Policy.Shape = {
+    authorize: effect (actor, action) => {
+      if (!(try sequencer.allows(actor, action))) throw new Denied({ action, least: leastRole(action) })
+    },
+  }
+  const contextOf = (id: string, name: string) => ({ id, name, version: 1 })
+  const get = (key: string) => promise(() => storage.get(key))
+  const put = (key: string, value: unknown) => promise(() => storage.put(key, value))
+  const remove = (key: string) => promise(() => storage.delete(key))
+  const cookie = (response: HttpServerResponse.HttpServerResponse, name: string, value: string, age: number) =>
+    HttpServerResponse.setCookieUnsafe(response, name, value, { httpOnly: true, secure: true, sameSite: "lax", path: "/", maxAge: Duration.millis(age) })
+  const json = (value: unknown, status = 200) => HttpServerResponse.jsonUnsafe(value, { status, headers: noStore })
+  const redirect = (url: string) => HttpServerResponse.empty({ status: 302, headers: { ...noStore, location: url } })
+
+  schema StoredSession { readonly id: string; readonly login: string; readonly expires: number }
+  schema SignIn { readonly expires: number; readonly verifier: { readonly nonce: string; readonly ciphertext: string } }
+  const sessionDecoder = Schema.decodeUnknownEffect(StoredSession)
+  const signInDecoder = Schema.decodeUnknownEffect(SignIn)
+  const decodeGrant = Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Struct({
+    id: Schema.String.check(Schema.isPattern(/^[1-9][0-9]*$/)),
+    role: Schema.Literals(["new", "community", "contributor", "maintainer"]),
+  })))
+
+  effect function session(signed: string | undefined) {
+    const verified = try keys.verify("session", signed)
+    if (Option.isNone(verified)) return undefined
+    const value = sessionDecoder(try get("session/" + verified.value.value)) catch () => undefined
+    if (value === undefined || value.expires <= (try Clock.currentTimeMillis)) return undefined
+    return { key: verified.value.value, value }
+  }
+  effect function current(signed: string | undefined) {
+    const live = try session(signed)
+    const outcome = live === undefined ? "viewer" : "signed-in"
+    try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_resolutions", { incremental: true }), { outcome }), 1)
+    try Effect.logInfo("vibelang.account.resolve").pipe(Effect.annotateLogs({ outcome }))
+    if (live === undefined) return viewer
+    const ledger = try sequencer.snapshot()
+    return { id: live.value.id, login: live.value.login, role: roleOf(ledger.roles, live.value.id), ledger } satisfies Identity
+  }
+
+  /** The journal stores only the step name and null; credentials stay in this host's encrypted records. */
+  effect function mutation<A>(step: typeof Mutation.payloadSchema.Type.step, body: A!!) {
+    const executionId = try postExecutionId("account")
+    let result: A | undefined
+    const registration = Layer.effectDiscard(effect {
+      const engine = try FlowRuntime.FlowRuntime
+      try engine.register(Mutation, () => withSpan(effect {
+        try Action.make({ name: "vibelang/account/" + step, success: Schema.Null, execute: effect { result = try body; return null } })
+        const status = result !== null && typeof result === "object" && "status" in result ? Number(result.status) : 200
+        const outcome = status >= 400 ? "refused" : "accepted"
+        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step, outcome }), 1)
+        try Effect.logInfo("vibelang.account").pipe(Effect.annotateLogs({ step, outcome }))
+        return null
+      }, "vibelang.account." + step))
+    })
+    const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Mutation._tag }, registration).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+    provide runtime {
+      try Effect.orDie((try FlowRuntime.FlowRuntime).execute(Mutation, { executionId, payload: { step } }))
+    }
+    return result as A
+  }
+
+  effect function handle(grantText: string | undefined) {
+    const request = try HttpServerRequest.HttpServerRequest
+    const url = new URL(request.url, setup.origin)
+    if (url.origin !== setup.origin) return json({ error: "origin" }, 403)
+    const path = url.pathname
+    if (request.method !== "GET" && request.headers.origin !== setup.origin) return json({ error: "origin" }, 403)
+    if (path === "/api/auth/session" && request.method === "GET") return json({ ...(try current(request.cookies[SESSION])), available: true })
+    if (path === "/api/auth/sign-in" && request.method === "GET") return try mutation("start", effect {
+      const id = try keys.token
+      const pair = try Effect.orDie(Core.Pkce.createPkcePair())
+      const verifier = try Effect.orDie(cipher.seal(Redacted.make(pair.codeVerifier), contextOf(id, "pkce")))
+      try put("sign-in/" + id, { expires: (try Clock.currentTimeMillis) + 600_000, verifier })
+      return cookie(redirect(setup.github.authorizeUrl({ state: id, codeChallenge: pair.codeChallenge, redirectUri: setup.origin + CALLBACK })), STATE, try keys.sign("sign_in", id), 600_000)
+    })
+    if (path === CALLBACK && request.method === "GET") return try mutation("callback", effect {
+      const verified = try keys.verify("sign_in", request.cookies[STATE])
+      const state = url.searchParams.get("state")
+      const code = url.searchParams.get("code")
+      if (Option.isNone(verified) || state !== verified.value.value || code === null || code.length > 4096) return json({ error: "sign-in" }, 400)
+      const pending = signInDecoder(try get("sign-in/" + state)) catch () => undefined
+      if (pending === undefined || pending.expires <= (try Clock.currentTimeMillis)) return json({ error: "sign-in" }, 400)
+      try remove("sign-in/" + state)
+      const verifier = try Effect.orDie(cipher.open(pending.verifier, contextOf(state, "pkce")))
+      const tokens = try Effect.orDie(setup.github.exchange({ code: Redacted.make(code), codeVerifier: verifier, redirectUri: setup.origin + CALLBACK }))
+      const person = try Effect.orDie(setup.github.user(tokens.accessToken))
+      if (!Number.isSafeInteger(person.id) || person.id <= 0) return json({ error: "sign-in" }, 400)
+      const id = String(person.id)
+      const sessionId = try keys.token
+      try put("session/" + sessionId, { id, login: person.login, expires: (try Clock.currentTimeMillis) + AGE })
+      try put("person/" + id, { id, login: person.login })
+      return cookie(cookie(redirect(setup.origin + "/"), SESSION, try keys.sign("session", sessionId), AGE), STATE, "", 0)
+    })
+    if (path === "/api/auth/sign-out" && request.method === "POST") return try mutation("sign-out", effect {
+      const live = try session(request.cookies[SESSION])
+      if (live !== undefined) {
+        try remove("session/" + live.key)
+      }
+      return cookie(HttpServerResponse.empty({ status: 204, headers: noStore }), SESSION, "", 0)
+    })
+    if (path === "/api/roles/events" && request.method === "GET") {
+      const permitted = policy.authorize((try current(request.cookies[SESSION])).id, "people").pipe(Effect.as(true)) catch () => false
+      if (!permitted) return json({ refusal: "forbidden" }, 403)
+      const after = afterOf(url)
+      return after === undefined ? json({ error: "after" }, 400) : eventStream(sequencer.follow(after))
+    }
+    if (path === "/api/roles" && request.method === "POST") return try mutation("grant", effect {
+      const actor = try current(request.cookies[SESSION])
+      const body = decodeGrant(grantText ?? "") catch () => undefined
+      if (body === undefined) return json({ error: "body" }, 400)
+      if (actor.id !== body.id) {
+        const permitted = policy.authorize(actor.id, "roles").pipe(Effect.as(true)) catch () => false
+        if (!permitted) return json({ refusal: "forbidden" }, 403)
+      }
+      if ((try sequencer.role(body.id)) === body.role) return json({})
+      const refusal = try sequencer.grant(body.id, actor.id, body.role, "person")
+      return refusal === null ? json({}) : json({ refusal }, 403)
+    })
+    if (path === "/api/roles" && request.method === "GET") {
+      const actor = try current(request.cookies[SESSION])
+      const permitted = policy.authorize(actor.id, "people").pipe(Effect.as(true)) catch () => false
+      if (!permitted) return json({ refusal: "forbidden" }, 403)
+      const rows = try promise(() => storage.list({ prefix: "person/" }))
+      const members: Array<Identity> = []
+      for (const row of rows.values()) {
+        const person = row as { readonly id: string; readonly login: string }
+        members.push({ ...person, role: try sequencer.role(person.id) })
+      }
+      return json(members)
+    }
+    return json({ error: "not found" }, 404)
+  }
+  if (/^[1-9][0-9]*$/.test(setup.initialMaintainer)) {
+    try mutation("grant", effect { try sequencer.grant(setup.initialMaintainer, "", "maintainer", "bootstrap") })
+  }
+  return {
+    current,
+    role: (owner: string) => sequencer.role(owner),
+    allowed: (actor: string, action: PolicyAction) => policy.authorize(actor, action).pipe(Effect.as(true), Effect.catch(() => succeed(false))),
+    fetch: effect {
+      const request = try HttpServerRequest.HttpServerRequest
+      const url = new URL(request.url, setup.origin)
+      let body: string | undefined
+      if (url.pathname === "/api/roles" && request.method === "POST") {
+        if (url.origin !== setup.origin || request.headers.origin !== setup.origin) return json({ error: "origin" }, 403)
+        const actor = try Semaphore.withPermits(lock, 1)(current(request.cookies[SESSION]))
+        if (actor.id === "") return json({ refusal: "forbidden" }, 403)
+        if (Number(request.headers["content-length"]) > 2048) return json({ error: "body size" }, 413)
+        const bounded = request.text.pipe(Effect.provideService(HttpServerRequest.MaxBodySize, ByteSize.bytes(2048)), Effect.timeoutOption("3 seconds"))
+        const read = bounded catch () => undefined
+        if (read === undefined) return json({ error: "body size" }, 413)
+        if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
+        body = read.value
+      }
+      return try Semaphore.withPermits(lock, 1)(handle(body)).pipe(Effect.catchCause(() => effect {
+        try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step: "request", outcome: "failed" }), 1)
+        try Effect.logWarning("vibelang.account").pipe(Effect.annotateLogs({ outcome: "failed" }))
+        return url.pathname === CALLBACK || url.pathname === "/api/auth/sign-in"
+        ? cookie(redirect(setup.origin + "/?sign-in=failed"), STATE, "", 0)
+        : json({ error: "account unavailable" }, 503)
+      }))
+    },
+    participation: (signed: string | undefined) => Effect.orDie(Semaphore.withPermits(lock, 1)(mutation("participation", effect {
+      const actor = try current(signed)
+      if (actor.id !== "") try sequencer.grant(actor.id, actor.id, "community", "participation")
+    }))),
+  }
+}
+
+/** Trusted sandbox authority: only a verified session supplies an owner; writes also bind the browser Origin. */
+export function sameOrigin(request: HttpServerRequest.HttpServerRequest): boolean {
+  // Effect's routed `url` omits the host; the original platform URL retains its trusted origin.
+  return request.headers.origin === new URL(request.originalUrl).origin
+}
+
+export effect function sandboxPrincipal(
+  current: (signed: string | undefined) => import("../src/core/roles.vibe").Identity!!,
+  allowed: (actor: string, action: PolicyAction) => boolean!!,
+) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (request.method !== "GET" && !sameOrigin(request)) return { owner: "", role: "viewer" as const }
+  const person = try current(request.cookies[SESSION])
+  const admitted = try allowed(person.id, "sandbox")
+  return { owner: person.id, role: admitted ? person.role : "viewer" as const }
+}

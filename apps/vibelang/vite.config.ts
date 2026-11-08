@@ -9,6 +9,8 @@ const WORKERD = "test/**/*.workerd.test.{ts,vibe}"
 
 export default defineConfig(({ mode }) => ({
   plugins: [vibelang()],
+  // pnpm may bind optional Vitest peers differently; every test must use the CLI's suite context.
+  resolve: { dedupe: ["vitest"] },
   build: {
     target: "es2022", sourcemap: true,
     ...(mode === "e2e" ? { rolldownOptions: { input: ["index.html", "e2e/runtime/index.html"] } } : {}),
@@ -23,7 +25,7 @@ export default defineConfig(({ mode }) => ({
     include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
     exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],
     ...(mode === "workerd" ? { testTimeout: 120_000, hookTimeout: 120_000 } : {}),
-    // Foldkit ships ESM that Vitest must transform with the app.
-    server: { deps: { inline: ["foldkit"] } },
+    // Transform the Effect adapter so Vite can deduplicate its Vitest peer with the running CLI.
+    server: { deps: { inline: ["foldkit", "@effect/vitest"] } },
   },
 }))

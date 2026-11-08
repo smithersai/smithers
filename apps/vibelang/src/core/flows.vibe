@@ -25,10 +25,11 @@ export const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_0
 /** A post's answer: `null` once the sequencer recorded it, else why it refused. */
 export const PostAnswer = Schema.NullOr(RefusalReason)
 
+/** `owner` is trusted factory metadata captured at acceptance; absent legacy owners have no compute authority. */
 export const Post = Flow.make("vibelang/Post", {
   description: "Records a person's post in its conversation, then makes sure the agent answers it.",
   modelInvocable: false,
-  payload: { clientId: Schema.String, name: Schema.String, text: Schema.String },
+  payload: { clientId: Schema.String, name: Schema.String, text: Schema.String, owner: Schema.optional(Schema.String) },
   success: PostAnswer,
   body: () => Node.succeed(null),
 })
@@ -54,7 +55,7 @@ export function unanswered(conversation: Conversation): ReadonlyArray<string> {
 /** The conversation's sequencer, as a Post's steps reach it. */
 export service Posts {
   /** Runs `decide` and `apply` on the post and stores its event: `null` once recorded, else the refusal. */
-  record(clientId: string, name: string, text: string): (Refusal | null)!!
+  record(clientId: string, name: string, text: string, owner?: string): (Refusal | null)!!
   /** Starts the reply flow of the oldest post with no reply, unless one runs. */
   dispatch(): void!!
 }
@@ -66,12 +67,12 @@ export const posts = Metric.counter("vibelang_posts", {
 })
 
 /** A Post's body: record the post; once recorded, dispatch its reply. The answer is the record step's. */
-export effect function posted(payload: { readonly clientId: string; readonly name: string; readonly text: string }) {
+export effect function posted(payload: { readonly clientId: string; readonly name: string; readonly text: string; readonly owner?: string | undefined }) {
   const sequencer = try Posts
   const answer = try Action.make({
     name: "vibelang/post/record",
     success: PostAnswer,
-    execute: sequencer.record(payload.clientId, payload.name, payload.text),
+    execute: sequencer.record(payload.clientId, payload.name, payload.text, payload.owner),
   })
   if (dispatches(answer)) try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
   const outcome = answer ?? "accepted"

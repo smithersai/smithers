@@ -5,7 +5,8 @@ import { selectModelTurns } from "../src/core/sequenceDecision.vibe"
 // published to every follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
 // Cloudflare.
 import {
-  apply, decide, empty, isReplying, isTouring, replayLog,
+  apply, decide, empty, isReplying, isTouring, replayLog, roleOf,
+  type GrantMode, type Role, type Action,
   type Conversation, type Entry, type Event, type Intent, type Refusal,
 } from "../src/core/conversation.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
@@ -124,6 +125,14 @@ export effect function make(log: Log, dispatch: Dispatch) {
 
   return {
     ensureDispatched,
+    snapshot: effect () => (try locked(state())).conversation,
+    allows: effect (by: string, action: Action) => decide((try locked(state())).conversation, { type: "Authorize", id: "policy", by, action }).ok,
+    role: effect (id: string) => roleOf((try locked(state())).conversation.roles, id),
+    grant: (id: string, by: string, role: Role, mode: GrantMode) => locked(effect {
+      const decision = try record({ type: "GrantRole", id, by, role, mode })
+      return decision.ok ? null : decision.refusal
+    }),
+
 
     /**
      * Records a person's post: `null` once its event is stored, else the sequencer's refusal. The `vibelang/Post`

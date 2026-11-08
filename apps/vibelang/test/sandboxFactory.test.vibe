@@ -77,3 +77,40 @@ it.live("treats prototype-named conversations as ordinary isolated sandbox ident
     }
   }
 })
+
+it.live("a queued Viewer prompt cannot borrow a subsequently selected Contributor's sandbox", () => effect {
+  provide MockFactory {
+    const factory = try Factory
+    try factory.tour("queued-viewer")
+    try factory.post("queued-viewer", "viewer-sandbox", "Guest", "start a sandbox")
+    try factory.accounts!.choose("contributor")
+    try factory.endTour("queued-viewer")
+    try Stream.runDrain(factory.events("queued-viewer", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+    const sandbox = try factory.sandbox("queued-viewer")
+    const chat = try factory.read("queued-viewer", 0)
+    try Effect.try(() => {
+      expect(sandbox.status).toBe("stopped")
+      expect(chat.entries.at(-1)!.text).toBe("Couldn't start a sandbox")
+    })
+  }
+})
+
+it.live("a queued Contributor prompt starts only its originating owner's sandbox after identity switching", () => effect {
+  provide mockFactoryFor("contributor") {
+    const factory = try Factory
+    try factory.tour("queued-contributor")
+    try factory.post("queued-contributor", "contributor-sandbox", "rira", "start a sandbox")
+    try factory.accounts!.choose("maintainer")
+    try factory.endTour("queued-contributor")
+    try Stream.runDrain(factory.events("queued-contributor", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished")))
+    const other = try factory.sandbox("queued-contributor")
+    try factory.accounts!.choose("contributor")
+    const own = try factory.sandbox("queued-contributor")
+    const chat = try factory.read("queued-contributor", 0)
+    try Effect.try(() => {
+      expect(other.status).toBe("stopped")
+      expect(own.status).toBe("running")
+      expect(chat.entries.at(-1)!.text).toBe(`Started ${own.id}.`)
+    })
+  }
+})

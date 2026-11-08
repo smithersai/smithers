@@ -1,0 +1,222 @@
+import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveApi, type Served } from "./support/workerd.vibe"
+
+let server: Served
+beforeAll(async () => { server = await runPromise(serveApi()) })
+afterAll(async () => { await server?.dispose() })
+
+describe("account boundary in local workerd", () => {
+  it.live("keeps the public app usable when GitHub sign-in is not configured", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const response = try HttpClient.get(server.origin + "/api/auth/session")
+      const session = try response.json
+      const signIn = try HttpClient.get(server.origin + "/api/auth/sign-in")
+      try Effect.try(() => {
+        expect(response.status).toBe(200)
+        expect(session).toEqual({ id: "", login: "", role: "viewer", available: false })
+        expect(signIn.status).toBe(503)
+      })
+    }
+  })
+  it.live("never accepts caller-supplied roles or anonymous grant requests", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const client = try HttpClient.HttpClient
+      const grant = try client.execute(HttpClientRequest.post(server.origin + "/api/roles").pipe(
+        HttpClientRequest.setHeader("x-vibelang-role", "maintainer"),
+        HttpClientRequest.bodyJsonUnsafe({ id: "42", role: "maintainer", by: "1", mode: "bootstrap" }),
+      ))
+      try Effect.try(() => expect(grant.status).toBe(503))
+    }
+  })
+})
+
+describe("configured sessions and grants in real workerd storage", () => {
+  let api: Served
+  const origin = "https://factory.example"
+  beforeAll(async () => { api = await runPromise(serveApi({
+    VIBELANG_ORIGIN: origin, VIBELANG_INITIAL_MAINTAINER_ID: "1",
+    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+    SESSION_SECRET: "fixture-only-signing-secret-32-chars",
+    SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+  })) })
+  afterAll(async () => { await api?.dispose() })
+  effect function request(path: string, cookie = "", body?: unknown) {
+    const client = try HttpClient.HttpClient
+    const req = body === undefined ? HttpClientRequest.get(api.origin + path) : HttpClientRequest.post(api.origin + path).pipe(HttpClientRequest.bodyJsonUnsafe(body))
+    return try client.execute(req.pipe(HttpClientRequest.setHeader("cookie", cookie), HttpClientRequest.setHeader("origin", origin)))
+  }
+  effect function issue(id: string, login: string, expired = false) {
+    const response = try request("/__fixture/issue?id=" + id + "&login=" + login + (expired ? "&expired=1" : ""))
+    const body = try response.json
+    return (body as { readonly cookie: string }).cookie
+  }
+  it.live("binds compute to signed owners, current grants and same-origin writes", () => effect {
+    provide FetchHttpClient.layer {
+      const maintainer = try issue("1", "will")
+      const person = try issue("7", "compute-person")
+      const before = try (try request("/__fixture/sandbox-principal", person)).json
+      try request("/api/roles", maintainer, { id: "7", role: "contributor" })
+      const promoted = try (try request("/__fixture/sandbox-principal", person)).json
+      const client = try HttpClient.HttpClient
+      const writable = try (try client.execute(HttpClientRequest.post(api.origin + "/__fixture/sandbox-principal").pipe(HttpClientRequest.setHeader("cookie", person), HttpClientRequest.setHeader("origin", api.origin), HttpClientRequest.bodyJsonUnsafe({})))).json
+      const cross = try client.execute(HttpClientRequest.post(api.origin + "/__fixture/sandbox-principal").pipe(HttpClientRequest.setHeader("cookie", person), HttpClientRequest.setHeader("origin", "https://other.example"), HttpClientRequest.bodyJsonUnsafe({ owner: "1", role: "maintainer" })))
+      const rejected = try cross.json
+      try request("/api/roles", maintainer, { id: "7", role: "new" })
+      const demoted = try (try request("/__fixture/sandbox-principal", person)).json
+      try Effect.try(() => {
+        expect(before).toEqual({ owner: "7", role: "viewer" })
+        expect(promoted).toEqual({ owner: "7", role: "contributor" })
+        expect(writable).toEqual({ owner: "7", role: "contributor" })
+        expect(rejected).toEqual({ owner: "", role: "viewer" })
+        expect(demoted).toEqual({ owner: "7", role: "viewer" })
+      })
+    }
+  })
+  it.live("verifies cookie signatures, rejects expired/tampered sessions, and durably signs out", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const cookie = try issue("2", "ada")
+      const current = try (try request("/api/auth/session", cookie)).json
+      const tampered = try (try request("/api/auth/session", cookie + "0")).json
+      const expired = try (try request("/api/auth/session", try issue("3", "joss", true))).json
+      const ended = try request("/api/auth/sign-out", cookie, {})
+      const after = try (try request("/api/auth/session", cookie)).json
+      try Effect.try(() => {
+        expect(current).toMatchObject({ id: "2", login: "ada", role: "new" })
+        expect(tampered).toMatchObject({ id: "", role: "viewer" })
+        expect(expired).toMatchObject({ id: "", role: "viewer" })
+        expect(ended.status).toBe(204)
+        expect(after).toMatchObject({ id: "", role: "viewer" })
+      })
+    }
+  })
+  it.live("checks every grant against current roles and makes demotion effective for an existing session", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const maintainer = try issue("1", "will")
+      const person = try issue("4", "rira")
+      const denied = try request("/api/roles", person, { id: "4", role: "maintainer" })
+      const promoted = try request("/api/roles", maintainer, { id: "4", role: "maintainer" })
+      const duplicate = try request("/api/roles", maintainer, { id: "4", role: "maintainer" })
+      const peerGrant = try request("/api/roles", person, { id: "5", role: "contributor" })
+      const demoted = try request("/api/roles", maintainer, { id: "4", role: "community" })
+      const stale = try request("/api/roles", person, { id: "5", role: "maintainer" })
+      const last = try request("/api/roles", maintainer, { id: "1", role: "new" })
+      const current = try (try request("/api/auth/session", person)).json
+      try Effect.try(() => {
+        expect([denied.status, promoted.status, duplicate.status, peerGrant.status, demoted.status, stale.status, last.status]).toEqual([403, 200, 200, 200, 200, 403, 403])
+        expect(current).toMatchObject({ id: "4", role: "community" })
+      })
+    }
+  })
+  it.live("attributes accepted posts to the session, promotes once, and rejects cross-origin named posts", () => effect {
+    provide FetchHttpClient.layer {
+      const cookie = try issue("6", "joss")
+      const client = try HttpClient.HttpClient
+      const posted = try client.execute(HttpClientRequest.post(api.origin + "/api/conversations/attribution/posts").pipe(
+        HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", cookie),
+        HttpClientRequest.bodyJsonUnsafe({ clientId: "named", name: "will", text: "hello" }),
+      ))
+      const snapshot = try (try request("/api/conversations/attribution")).json
+      const identity = try (try request("/api/auth/session", cookie)).json
+      const forged = try client.execute(HttpClientRequest.post(api.origin + "/api/conversations/attribution/posts").pipe(
+        HttpClientRequest.setHeader("origin", "https://elsewhere.example"), HttpClientRequest.setHeader("cookie", cookie),
+        HttpClientRequest.bodyJsonUnsafe({ clientId: "forged", name: "will", text: "forged" }),
+      ))
+      try Effect.try(() => {
+        expect(posted.status).toBe(200)
+        expect(snapshot).toMatchObject({ entries: expect.arrayContaining([expect.objectContaining({ author: "person", name: "joss", text: "hello" })]) })
+        expect(identity).toMatchObject({ id: "6", role: "community" })
+        expect(forged.status).toBe(409)
+      })
+    }
+  })
+  it.live("rejects cross-origin grants and oversized bodies before a mutation", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const cookie = try issue("1", "will")
+      const client = try HttpClient.HttpClient
+      const wrongOrigin = try client.execute(HttpClientRequest.post(api.origin + "/api/roles").pipe(
+        HttpClientRequest.setHeader("origin", "https://elsewhere.example"),
+        HttpClientRequest.setHeader("cookie", cookie),
+        HttpClientRequest.bodyJsonUnsafe({ id: "2", role: "contributor" }),
+      ))
+      const huge = try request("/api/roles", cookie, { id: "2", role: "contributor", padding: "x".repeat(4096) })
+      const stillUsable = try request("/api/auth/session", cookie)
+      try Effect.try(() => {
+        expect(wrongOrigin.status).toBe(403)
+        expect(huge.status).toBe(413)
+        expect(stillUsable.status).toBe(200)
+      })
+    }
+  })
+  it.live("binds OAuth state to its signed cookie and exact callback before any token exchange", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const client = try HttpClient.HttpClient
+      const response = try client.get(api.origin + "/api/auth/sign-in")
+      const location = response.headers.location!
+      const url = new URL(location)
+      const bad = try request("/api/auth/callback?state=forged&code=unused")
+      try Effect.try(() => {
+        expect(response.status).toBe(302)
+        expect(url.searchParams.get("redirect_uri")).toBe(origin + "/api/auth/callback")
+        expect(url.searchParams.get("code_challenge_method")).toBe("S256")
+        expect(url.searchParams.get("state")?.length).toBeGreaterThan(32)
+        expect(response.headers["set-cookie"]).toContain("HttpOnly")
+        expect(response.headers["set-cookie"]).toContain("Secure")
+        expect(bad.status).toBe(400)
+      })
+    }
+  })
+})
+
+describe("invalid authentication cannot take down public chat", () => {
+  let invalid: Served
+  beforeAll(async () => { invalid = await runPromise(serveApi({
+    VIBELANG_ORIGIN: "not-a-url", VIBELANG_INITIAL_MAINTAINER_ID: "will",
+    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+    SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "invalid",
+  })) })
+  afterAll(async () => { await invalid?.dispose() })
+  it.live("disables accounts and still records a public post", () => effect {
+    provide FetchHttpClient.layer {
+      const identity = try HttpClient.get(invalid.origin + "/api/auth/session")
+      const session = try identity.json
+      const client = try HttpClient.HttpClient
+      const posted = try client.execute(HttpClientRequest.post(invalid.origin + "/api/conversations/public/posts").pipe(
+        HttpClientRequest.bodyJsonUnsafe({ clientId: "invalid-auth", name: "Guest", text: "hello" }),
+      ))
+      try Effect.try(() => {
+        expect(session).toMatchObject({ role: "viewer", available: false })
+        expect(posted.status).toBe(200)
+      })
+    }
+  })
+})
+
+describe("OAuth exchange faults by injected GitHub service", () => {
+  let faulty: Served
+  beforeAll(async () => { faulty = await runPromise(serveApi({
+    VIBELANG_ORIGIN: "https://factory.example", VIBELANG_INITIAL_MAINTAINER_ID: "1",
+    GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+    SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+    ACCOUNT_FAULT: "exchange",
+  })) })
+  afterAll(async () => { await faulty?.dispose() })
+  it.live("returns a visible sign-in failure and consumes OAuth state once", () => effect {
+    provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+      const client = try HttpClient.HttpClient
+      const start = try client.get(faulty.origin + "/api/auth/sign-in")
+      const state = new URL(start.headers.location!).searchParams.get("state")!
+      const cookie = start.headers["set-cookie"]!.split(";")[0]!
+      const path = faulty.origin + "/api/auth/callback?state=" + state + "&code=fixture-unused-code"
+      const failed = try client.execute(HttpClientRequest.get(path).pipe(HttpClientRequest.setHeader("cookie", cookie)))
+      const repeated = try client.execute(HttpClientRequest.get(path).pipe(HttpClientRequest.setHeader("cookie", cookie)))
+      const session = try (try client.get(faulty.origin + "/api/auth/session")).json
+      try Effect.try(() => {
+        expect(failed.status).toBe(302)
+        expect(failed.headers.location).toBe("https://factory.example/?sign-in=failed")
+        expect(repeated.status).toBe(400)
+        expect(session).toMatchObject({ id: "", role: "viewer" })
+      })
+    }
+  })
+})

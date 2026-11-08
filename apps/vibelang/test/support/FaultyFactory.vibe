@@ -3,7 +3,7 @@ import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Refused, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable"
+export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming" | "tour-refuse" | "tour-unavailable" | "end-tour-unavailable" | "live-header"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -26,7 +26,7 @@ export function faultyFactory(fault: Fault, observation: Trace) {
       : Effect.asVoid(Deferred.succeed(released, undefined))
     try sync(() => { observation.base = base })
     return {
-      mode: base.mode,
+      mode: fault === "live-header" ? "live" : base.mode,
       post: effect (conversation, clientId, name, text) => {
         if (fault === "refuse" && !observation.faulted) {
           try sync(() => { observation.faulted = true })

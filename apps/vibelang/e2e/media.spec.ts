@@ -3,7 +3,7 @@ import { test, expect, type Page, type Locator } from "@playwright/test"
 test.beforeEach(async ({ page }, info) => {
   if (info.project.name === "phone") await page.setViewportSize({ width: 390, height: 844 })
 })
-const local = `http://127.0.0.1:${process.env.E2E_4516 ?? process.env.E2E_PORT ?? 4173}`
+const local = `http://127.0.0.1:${process.env.E2E_PORT ?? process.env.E2E_4505 ?? process.env.E2E_4516 ?? process.env.E2E_4511 ?? process.env.E2E_4502 ?? 4173}`
 const stops = [
   ["/", "card-01-contract.png"],
   ["/getting-started/002-why-effect", "magic-move.mp4"],
