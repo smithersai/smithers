@@ -64,7 +64,7 @@ import { TextWrites } from "./features/coedit/writes";
 import { tabNavigation } from "./features/navigation/tab.js";
 import { FilesPage } from "./features/files/actions";
 import { Files } from "./features/files/files";
-import { FilesStore } from "./features/files/store.js";
+import { FilesStore } from "./features/files/store";
 import { tabFiles } from "./features/files/tab.js";
 import { tabDoors } from "./flows/doors";
 import { RepoClient, REQUEST_WITHIN } from "./features/repo/api";

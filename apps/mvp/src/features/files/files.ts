@@ -4,7 +4,7 @@ import { Context, Effect, Layer, Metric } from "effect"
 import { FlowDispatch } from "../../flows/dispatch"
 import { closeTab, FilesPage, openTab } from "./actions"
 import { fileFocus } from "./metrics"
-import { FilesStore } from "#vibelang/emitted/src/features/files/store"
+import { FilesStore } from "./store"
 
 // File tabs as a frontend sees them: a live query to read and plain functions to act. React renders the query with
 // `useLiveQuery` and calls the actions from the strip; it holds no state and runs no Effect.

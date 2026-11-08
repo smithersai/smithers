@@ -3,7 +3,7 @@ import { Context, Effect, Layer, Option } from "effect";
 import { FlowDispatch } from "../../flows/dispatch";
 import { RepoStore } from "../repo/store";
 import { VIEW } from "../repo/rows";
-import { FilesStore } from "./store.js";
+import { FilesStore } from "./store";
 import { fileHref, hereOf, rootHref, tabsAt } from "./view";
 // What file tabs do in the tab (docs/features/files.md): open a file of the repository the tab shows as a tab at its
 // lines, and close a tab, moving to the tab beside it when it was the file on screen. The tab answers `file/open` and

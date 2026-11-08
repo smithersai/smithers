@@ -42,11 +42,6 @@
       "vibelang-source": "./src/features/navigation/tab.vibe",
       "default": "./.vibelang/js/src/features/navigation/tab.js"
     },
-    "#vibelang/emitted/src/features/files/store": {
-      "types": "./.vibe/declarations/src/features/files/store.d.vibe.ts",
-      "vibelang-source": "./src/features/files/store.vibe",
-      "default": "./.vibelang/js/src/features/files/store.js"
-    },
     "#vibelang/emitted/src/features/files/tab": {
       "types": "./.vibe/declarations/src/features/files/tab.d.vibe.ts",
       "vibelang-source": "./src/features/files/tab.vibe",

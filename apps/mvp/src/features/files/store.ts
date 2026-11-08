@@ -1,5 +1,5 @@
 import { Collection, LiveQuery } from "@smthrs/effect-tanstack-db"
-import { Context, Effect, Layer } from "effect"
+import { Context, Effect, Layer, Option, Semaphore, Stream } from "effect"
 import { RepoStore } from "../repo/store"
 import type { ViewRow } from "../repo/rows"
 import { FileTabsStore } from "../../device/registry"
@@ -20,58 +20,51 @@ export const tabsQuery = (tabs: Source<FileTabRow>) =>
 
 /** Whether `view` shows a file whose revision and commit resolved: a page to keep a tab for. */
 const fileShown = (view: ViewRow): boolean =>
-  view.kind === "blob" && view.revision !== null && view.sha !== null && !view.missing && view.failure === null
-  && view.path !== ""
+  view.kind === "blob" && view.revision !== null && view.sha !== null && !view.missing && view.failure === null &&
+  view.path !== ""
 
-const make = effect {
-  const tabs = try Collection.persisted(FileTabsStore)
+const make = Effect.gen(function* () {
+  const tabs = yield* Collection.persisted(FileTabsStore)
   // Through the data gate (repo/gate.ts): a refused or unverified repository's tabs leave the strip, and stay on the
   // device for when it shows again.
-  const repo = try RepoStore
-  const all = try tabsQuery(try repo.gate(tabs))
+  const repo = yield* RepoStore
+  const all = yield* tabsQuery(yield* repo.gate(tabs))
   // One write at a time, so the follower and an open of one file never both insert it.
-  const writes = try Semaphore.make(1)
+  const writes = yield* Semaphore.make(1)
 
   /** Keeps a tab for `path` at `here` with `lines`: a new one at the strip's end, or the lines of the one it has. */
   const keep = (here: Pick<Here, "owner" | "name" | "revision">, path: string, lines: string | null) =>
-    effect {
-      const key = try Effect.sync(() => tabKey(here, path))
-      const existing = try tabs.get(key)
+    Effect.gen(function* () {
+      const key = tabKey(here, path)
+      const existing = yield* tabs.get(key)
       if (Option.isSome(existing)) {
         if (existing.value.lines === lines) return
-        try (try tabs.update(key, (draft) => void (draft.lines = lines))).persisted
+        yield* (yield* tabs.update(key, (draft) => void (draft.lines = lines))).persisted
         return
       }
-      const rows = try tabs.toArray
+      const rows = yield* tabs.toArray
       const position = rows.reduce((last, row) => Math.max(last, row.position), 0) + 1
-      const repository = try Effect.sync(() => repoId(here.owner, here.name))
-      try (try tabs.insert({
-        key,
-        owner: here.owner,
-        name: here.name,
-        repoId: repository,
-        revision: here.revision,
-        path,
-        lines,
-        position,
+      yield* (yield* tabs.insert({
+        key, owner: here.owner, name: here.name, repoId: repoId(here.owner, here.name), revision: here.revision, path, lines, position,
       })).persisted
-    }
-    |> Semaphore.withPermits(writes, 1)(%)
-    // Keep the permit through the device write. Schema/key errors are bugs;
-    // persistence failures remain typed so the route follower can keep listening.
-    |> Effect.catchTag(%, "MutationRefused", Effect.die)
+    }).pipe(
+      Semaphore.withPermits(writes, 1),
+      // Keep the permit through the device write. Schema/key errors are bugs;
+      // persistence failures remain typed so the route follower can keep listening.
+      Effect.catchTag("MutationRefused", Effect.die),
+    )
 
   /** Closes `path`'s tab at `here`; whether it had one. */
   const drop = (here: Pick<Here, "owner" | "name" | "revision">, path: string) =>
-    effect {
-      const key = try Effect.sync(() => tabKey(here, path))
-      if (Option.isNone(try tabs.get(key))) return false
-      try (try tabs.delete(key)).persisted
+    Effect.gen(function* () {
+      const key = tabKey(here, path)
+      if (Option.isNone(yield* tabs.get(key))) return false
+      yield* (yield* tabs.delete(key)).persisted
       return true
-    } |> Semaphore.withPermits(writes, 1)(%) |> Effect.orDie(%)
+    }).pipe(Semaphore.withPermits(writes, 1), Effect.orDie)
 
   // Every file the routed repository view shows gets a tab, with the lines it highlights.
-  try (repo.view.changes({ initial: true }).pipe(
+  yield* repo.view.changes({ initial: true }).pipe(
     Stream.runForEach((changes) =>
       Effect.forEach(changes, (change) =>
         // The view's one row is never deleted: each change says where it is now.
@@ -84,10 +77,10 @@ const make = effect {
           ).pipe(Effect.ignore), { discard: true })
     ),
     Effect.forkScoped,
-  ))
+  )
 
   return { tabs, all, keep, drop }
-}
+})
 
 /**
  * File tabs' state for one tab:
