@@ -94,7 +94,7 @@ export const NODE_ONLY = [
   },
   {
     name: "@smthrs/jj/node/NodeJj",
-    entry: "packages/smithers/flows/jj/src/node/NodeJj.vibe",
+    entry: "packages/smithers/flows/jj/src/node/NodeJj.ts",
     expect: "node:child_process",
     reason: "the Node jj adapter spawns the jj CLI"
   },

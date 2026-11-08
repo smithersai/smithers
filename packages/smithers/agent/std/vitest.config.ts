@@ -42,7 +42,7 @@ export default defineConfig({
         "src/ApplyPatch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Read.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/Edit.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
-        "src/StdError.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
+        "src/StdError.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/FileMutation.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/internal/ApplyPatch.vibe": { branches: 100, functions: 100, lines: 100, statements: 100 },
         "src/ExaWebSearch.ts": { branches: 100, functions: 100, lines: 100, statements: 100 },

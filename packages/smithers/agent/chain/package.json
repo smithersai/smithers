@@ -237,8 +237,7 @@
     "README.md",
     "CHANGELOG.md",
     ".vibelang/js",
-    "src/SubChains.vibe",
-    "src/MemoryEntries.vibe"
+    "src/SubChains.vibe"
   ],
   "publishConfig": {
     "access": "public",

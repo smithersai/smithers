@@ -52,9 +52,9 @@ const modules = [
   ["GatewayProjection", GatewayProjection, declaredTypes("GatewayProjection.ts")],
   ["GatewayRpcs", GatewayRpcs, declaredTypes("GatewayRpcs.ts")],
   ["GatewayServer", GatewayServer, declaredTypes("GatewayServer.ts")],
-  ["Projections", Projections, declaredTypes("Projections.vibe")],
+  ["Projections", Projections, declaredTypes("Projections.ts")],
   ["RunHistory", RunHistory, declaredTypes("RunHistory.ts")],
-  ["RuntimeBridge", RuntimeBridge, declaredTypes("RuntimeBridge.vibe")],
+  ["RuntimeBridge", RuntimeBridge, declaredTypes("RuntimeBridge.ts")],
   ["node/NodeGateway", NodeGateway, declaredTypes("node/NodeGateway.vibe")]
 ] as const
 

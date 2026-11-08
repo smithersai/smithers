@@ -191,7 +191,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/Chain.ts",
         "src/MemoryEntries.ts",
-        "src/ModelAuthor.vibe",
+        "src/ModelAuthor.ts",
         "src/internal/failureCode.ts",
         "src/Observation.vibe"
       ]

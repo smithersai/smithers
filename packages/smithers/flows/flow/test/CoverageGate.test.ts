@@ -19,6 +19,6 @@ describe("coversWholeSuite", () => {
   it("is false for --changed and --related", () => {
     expect(coversWholeSuite({ filter: [], options: { changed: true } })).toBe(false)
     expect(coversWholeSuite({ filter: [], options: { changed: "main" } })).toBe(false)
-    expect(coversWholeSuite({ filter: [], options: { related: ["src/Poll.vibe"] } })).toBe(false)
+    expect(coversWholeSuite({ filter: [], options: { related: ["src/Poll.ts"] } })).toBe(false)
   })
 })
