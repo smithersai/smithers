@@ -16,6 +16,7 @@ strictly typecheck, and must fail a Dafny obligation in their named function. To
 | `src/core/sandboxDecision.vibe` | Role admission, running count, elapsed usage, nonnegative remaining allowance, ledger uniqueness, sequence and clock high-water preservation, and lease bounds (0024) | Host normalization, external containers and durable scheduling remain boundaries; exact guard and frame mutation receipts are recorded below |
 | `src/core/mockDecision.vibe` | Keyword membership, first matching script and fallback only if none matches | Input is already normalized; Unicode casing and script constants are outside the proof |
 | `src/core/protocolDecision.vibe` | Conversation/body length bounds; nonempty CLI/MCP identifiers and nonnegative cursors; exact method/subroute mapping; HTTP refusal/success; mock/live choice | Integer schema and URI/JSON/Schema decoding remain runtime boundaries; schema annotations are preserved |
+| `src/web/startupDecision.vibe` | Explicit query/default precedence, preference writes, authoritative role-list selection, saved tutorial controls and opposite-mode selection | URL/storage effects, denial fallback and Foldkit execution |
 | `src/web/screenDecision.vibe` | Escape priority, palette focus choice, minimizing eligibility, docs toggle, scroll revision/pausing/following, tour stream cursor, completion announcements and keyboard decisions | Dafny models numbers as integers. Fractional DOM coordinates, IEEE-754 arithmetic, native DOM effects and actual focus restoration are tested, not proved |
 | `src/core/conversation.vibe` | Conversation sequence, entry identity and correlation, at most one answer per post, terminal replies/tours ignore later text, exact entry/state/role frames, admissible intent completeness, stable pending removal, unanswered order, replay bounds, reply/tour guards and pane ownership | Integer sequences below MAX_SAFE_INTEGER; dense readonly arrays; UTF-16 strings |
 | `src/core/conversation.vibe` issue helpers (0022) | Exact numbered observations, operation-to-role policy, commitment/review field preservation and remaining actions after partial review; tree-walk termination and child-identity admission; VIP author and non-removed document admission | Acyclicity is not yet a Dafny theorem; host cursor capacity and review-call preconditions remain to audit; GitHub execution is an Effect boundary |
@@ -274,6 +275,19 @@ host/client rebase, 52 local workerd and 264 browser cases pass (three/twelve op
 All thirteen proof-module source hashes remain identical through that rebase. The inventory contains 2,458 items.
 Exact command exits, timings, paths and failed runs are in the host lane report.
 
+## Tenth module batch: startup choices
+
+The browser and history page call `startupDecision.vibe` for explicit-query precedence, preference writes,
+authoritative role-list membership/defaults and the mode switch. Tutorial startup preserves saved sessions (including
+empty strings), sound and active flags, and limits automatic entry to an unvisited home page. Storage reads/writes,
+their failure fallbacks and lazy resource loading retain their existing order; URL/JSON/Schema and host execution
+remain the documented boundaries. The project role list is passed from its existing owning module.
+
+The six new production obligations pass; all nineteen new mutants reject. All fourteen current proof-module
+hashes and all 671 current source/manifest inputs match the positive/rejection receipts. App/Worker typechecks,
+810 unit/integration cases and fifteen startup/Mock-switch browser cases pass (one/three respective opt-in skips).
+No runtime dependency or UI wording changes. Exact exits and receipt scope are in the host lane report.
+
 ## Product defects
 
 - **Two conversations shared one budget charge.** The daily ledger dedupes by reply id, and every conversation's
@@ -408,7 +422,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-2458 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+2462 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -1501,16 +1515,15 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/historyBackend.vibe:43` | `BrowserMythical/callback@18/approve` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/historyBackend.vibe:44` | `BrowserMythical/callback@18/fold` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/historyBackend.vibe:46` | `BrowserMythical/callback@18/callback@46` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/historyStartup.vibe:15` | `askedForMock` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/historyStartup.vibe:33` | `mockRole` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/historyStartup.vibe:42` | `mockRole/callback@42` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/historyStartup.vibe:45` | `backendMode` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/historyStartup.vibe:46` | `backendMode/callback@46` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/historyStartup.vibe:47` | `backendMode/callback@46/callback@47` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/historyStartup.vibe:49` | `backendMode/callback@46/callback@47/callback@49` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/historyStartup.vibe:55` | `historyMain` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/historyStartup.vibe:60` | `historyMain/callback@60` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/historyStartup.vibe:74` | `historyMain/callback@74` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/historyStartup.vibe:16` | `askedForMock` | effectful shell | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:34` | `mockRole` | effectful shell | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:46` | `backendMode` | wiring | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:47` | `backendMode/callback@47` | wiring | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:48` | `backendMode/callback@47/callback@48` | effectful shell | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:50` | `backendMode/callback@47/callback@48/callback@50` | wiring | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:56` | `historyMain` | effectful shell | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:61` | `historyMain/callback@61` | effectful shell | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
+| `src/web/historyStartup.vibe:75` | `historyMain/callback@75` | effectful shell | Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries. |
 | `src/web/historyView.vibe:18` | `view` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/historyView.vibe:21` | `view/callback@21` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/historyView.vibe:44` | `body` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -1986,7 +1999,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/media.vibe:4` | `callback@4` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/web/media.vibe:11` | `observeMedia` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/media.vibe:12` | `observeMedia/callback@12` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/modeSwitch.vibe:7` | `modeSwitch` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/modeSwitch.vibe:8` | `modeSwitch` | pure logic | Calls the proved opposite-mode choice; HtmlBuilder rendering and native navigation remain host boundaries. |
 | `src/web/roleView.vibe:8` | `badge` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/roleView.vibe:12` | `identityNav` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/roleView.vibe:20` | `identityNav/callback@20` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
@@ -2036,22 +2049,27 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/screenDecision.vibe:245` | `completeScreenTour` | pure logic | Exact six-field surface/tour projections plus escape, palette, scroll, focus, stream and announcement decisions; finite coordinate comparisons use exact reals. Native subtraction, nonfinite inputs and counter-capacity applicability remain unproved. |
 | `src/web/screenDecision.vibe:252` | `latestScreen` | pure logic | Exact six-field surface/tour projections plus escape, palette, scroll, focus, stream and announcement decisions; finite coordinate comparisons use exact reals. Native subtraction, nonfinite inputs and counter-capacity applicability remain unproved. |
 | `src/web/screenDecision.vibe:259` | `toggleScreenDocs` | pure logic | Exact six-field surface/tour projections plus escape, palette, scroll, focus, stream and announcement decisions; finite coordinate comparisons use exact reals. Native subtraction, nonfinite inputs and counter-capacity applicability remain unproved. |
-| `src/web/startup.vibe:24` | `askedForMock` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:42` | `backendMode` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/startup.vibe:43` | `backendMode/callback@43` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/startup.vibe:44` | `backendMode/callback@43/callback@44` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:47` | `backendMode/callback@43/callback@44/callback@47` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/startup.vibe:53` | `main` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:60` | `main/callback@60` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:67` | `main/callback@67` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:69` | `main/read` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/startup.vibe:69` | `main/read/callback@69` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:71` | `main/read/callback@69/callback@71` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:72` | `main/read/callback@69/callback@72` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/startup.vibe:74` | `main/write` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/startup.vibe:74` | `main/write/callback@74` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:79` | `main/callback@79` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/startup.vibe:89` | `main/callback@89` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/startup.vibe:25` | `askedForMock` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:43` | `backendMode` | wiring | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:44` | `backendMode/callback@44` | wiring | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:45` | `backendMode/callback@44/callback@45` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:48` | `backendMode/callback@44/callback@45/callback@48` | wiring | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:54` | `main` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:61` | `main/callback@61` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:70` | `main/read` | wiring | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:70` | `main/read/callback@70` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:72` | `main/read/callback@70/callback@72` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:73` | `main/read/callback@70/callback@73` | wiring | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:75` | `main/write` | wiring | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:75` | `main/write/callback@75` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:80` | `main/callback@80` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startup.vibe:93` | `main/callback@93` | effectful shell | Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries. |
+| `src/web/startupDecision.vibe:6` | `wantsMock` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
+| `src/web/startupDecision.vibe:15` | `preferenceWrite` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
+| `src/web/startupDecision.vibe:24` | `startupRole` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
+| `src/web/startupDecision.vibe:32` | `startupSession` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
+| `src/web/startupDecision.vibe:49` | `tutorialStartup` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
+| `src/web/startupDecision.vibe:57` | `otherMode` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
 | `src/web/styles.vibe:9` | `stylesheet` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/styles.vibe:10` | `stylesheet/callback@10` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/theatre.vibe:10` | `theatreSelector` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |

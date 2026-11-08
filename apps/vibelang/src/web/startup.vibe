@@ -1,3 +1,4 @@
+import { preferenceWrite, wantsMock, startupRole, tutorialStartup, startupSession } from "./startupDecision.vibe"
 import { MockJournal } from "../core/MockJournal.vibe"
 import { EventSchema } from "../core/schemas.vibe"
 // Browser startup: prepares styles and Foldkit without waiting for backend selection.
@@ -23,18 +24,18 @@ import { view } from "./view.vibe"
 /** Whether this page asked for the mock agent. Storage can be unavailable; that asks for nothing. */
 function askedForMock(window: Window): boolean {
   const asked = new URLSearchParams(window.location.search).get("agent")
+  const write = preferenceWrite(asked)
   try {
-    if (asked === "mock") window.localStorage.setItem("vibelang.agent", "mock")
-    if (asked === "live") window.localStorage.removeItem("vibelang.agent")
+    if (write === "set") window.localStorage.setItem("vibelang.agent", "mock")
+    if (write === "clear") window.localStorage.removeItem("vibelang.agent")
   } catch {
     // Storage can be unavailable (a private window): the query still chooses for this page.
   }
-  if (asked === "mock") return true
-  if (asked === "live") return false
+  if (write !== "keep") return wantsMock(asked, null)
   try {
-    return window.localStorage.getItem("vibelang.agent") === "mock"
+    return wantsMock(asked, window.localStorage.getItem("vibelang.agent"))
   } catch {
-    return false
+    return wantsMock(asked, null)
   }
 }
 
@@ -64,7 +65,7 @@ export effect function main() {
     return document.getElementById("root")!
   })
   const selectedRole = new URLSearchParams(window.location.search).get("role")
-  const role = ROLES.find((each) => each === selectedRole) ?? "viewer"
+  const role = startupRole(selectedRole, "viewer", ROLES) as (typeof ROLES)[number]
   const journal: MockJournal.Shape = {
     read: conversation => effect {
       if (!/^(tour|demo)-/.test(conversation)) return []
@@ -78,9 +79,12 @@ export effect function main() {
   const freshSession = try (try SecureRandom.SecureRandom).uuidV4()
   const saved = try sync(() => {
     try {
-      const session = window.sessionStorage.getItem("vibelang:tour-session") ?? freshSession
+      const session = startupSession(window.sessionStorage.getItem("vibelang:tour-session"), freshSession)
       window.sessionStorage.setItem("vibelang:tour-session", session)
-      return { tutorialSession: session, tourSound: window.localStorage.getItem("vibelang:tour-sound") === "on", resumeTour: window.sessionStorage.getItem("vibelang:tour-active") === "yes", autoTour: !window.localStorage.getItem("vibelang:toured") && window.location.pathname === "/" }
+      const sound = window.localStorage.getItem("vibelang:tour-sound")
+      const active = window.sessionStorage.getItem("vibelang:tour-active")
+      const toured = window.localStorage.getItem("vibelang:toured")
+      return tutorialStartup(session, freshSession, sound, active, toured, toured ? "" : window.location.pathname)
     } catch { return { tutorialSession: freshSession, tourSound: false, resumeTour: false, autoTour: true } }
   })
   const session = freshSession

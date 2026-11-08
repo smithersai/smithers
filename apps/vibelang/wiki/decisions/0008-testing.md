@@ -278,3 +278,7 @@ compiled without deployment. The emitted wiki generator is exercised against act
 unlanded recursive candidate and pass with the original iterative traversals. Stronger contracts remain proved;
 no runtime implementation change or dependency is needed. The exact admission, refusal, event and replacement
 fields have executable contract-preserving mutations.
+
+**Startup policy extraction (0018).** Existing browser/runtime startup, saved tutorial, role and Mock-switch tests
+exercise the shared proved choices. Executable mutants cover query precedence, persistence actions, role membership,
+tutorial state, session fallback and opposite-mode navigation, with unchanged contracts.

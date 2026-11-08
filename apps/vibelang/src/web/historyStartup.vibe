@@ -1,3 +1,4 @@
+import { preferenceWrite, wantsMock, startupRole } from "./startupDecision.vibe"
 // The history page's startup (wiki/decisions/0020-mythical-history.md): renders at once with mode `pending`, then the
 // backend selection resolves. In mock mode the page lets you be any role, with `?role=<role>` or the `vibelang.role`
 // storage key (maintainer when neither says); live, the server decides who you are, a viewer until sign-in lands.
@@ -14,18 +15,18 @@ import { stylesheet } from "./styles.vibe"
 /** The page asked for the mock agent, as the chat's startup reads it. Storage can be unavailable; that asks for nothing. */
 function askedForMock(window: Window): boolean {
   const asked = new URLSearchParams(window.location.search).get("agent")
+  const write = preferenceWrite(asked)
   try {
-    if (asked === "mock") window.localStorage.setItem("vibelang.agent", "mock")
-    if (asked === "live") window.localStorage.removeItem("vibelang.agent")
+    if (write === "set") window.localStorage.setItem("vibelang.agent", "mock")
+    if (write === "clear") window.localStorage.removeItem("vibelang.agent")
   } catch {
     // Storage can be unavailable (a private window): the query still chooses for this page.
   }
-  if (asked === "mock") return true
-  if (asked === "live") return false
+  if (write !== "keep") return wantsMock(asked, null)
   try {
-    return window.localStorage.getItem("vibelang.agent") === "mock"
+    return wantsMock(asked, window.localStorage.getItem("vibelang.agent"))
   } catch {
-    return false
+    return wantsMock(asked, null)
   }
 }
 
@@ -39,7 +40,7 @@ export function mockRole(window: Window): Role {
       asked = ""
     }
   }
-  return ROLES.find((role) => role === asked) ?? "maintainer"
+  return startupRole(asked, "maintainer", ROLES) as Role
 }
 
 function backendMode() {

@@ -19,6 +19,9 @@ const shellBoundaries = {
   'src/core/LiveFactory.vibe': 'HTTP outcome choice is proved in protocolDecision; HTTP/SSE and Schema codecs remain runtime boundaries (json-codec.ts).',
   'src/surfaces/commands.vibe': 'Conversation/cursor admission calls proved protocolDecision; commandDecision proves reply accumulation and outcome/error mapping. Schema decoding, stream execution and formatting remain boundaries.',
   'src/surfaces/backend.vibe': 'Host choice calls proved prefersMock/liveHealth policies; URL normalization and layer execution remain unproved.',
+  'src/web/startup.vibe': 'Calls proved startupDecision choices for preference, authoritative role list and saved tutorial controls. URL parsing, storage effects, storage-denial fallback, resource loading and Foldkit startup remain host boundaries.',
+  'src/web/historyStartup.vibe': 'Calls proved startupDecision preference and authoritative role-list/default choices. Storage, URL parsing, resource loading and Foldkit execution remain host boundaries.',
+  'src/web/modeSwitch.vibe': 'Calls the proved opposite-mode choice; HtmlBuilder rendering and native navigation remain host boundaries.',
   'src/web/backend.vibe': 'Health choice calls proved liveHealth; deadlines, cancellation and layer loading remain runtime behavior.',
   'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
   'worker/Budget.vibe': 'Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts).',
@@ -29,6 +32,7 @@ const shellBoundaries = {
   'src/history/roles.vibe': 'may, leastRole, peopleOnly and standing are proved in flowMachine.vibe; this module re-exports them and builds the role tables from them (0020).',
 };
 const boundaries = {
+  'src/web/startupDecision.vibe': 'Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries.',
   'src/web/viewDecision.vibe': 'Proved refusal/status labels, entry display flags, send/transition choices, sandbox pane/response/action guards and media failure/motion choices. Rendering, asset lookup and actual DOM execution remain host boundaries.',
   'src/surfaces/commandDecision.vibe': 'Proved own-post/reply correlation, exact ordered event-number accumulation, text/restart/terminal state, outcome and error mapping; UUID generation, streams and rendering are Effect/host boundaries.',
   'src/core/sequenceDecision.vibe': 'Proved first matching post prefix, exact eligible source indexes in strict order, role/text projection, exclusion of failed/unfinished/tour answers and latest-turn window; model execution remains an Effect boundary.',
