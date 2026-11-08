@@ -1,0 +1,142 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest, HttpServerResponse, FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { LiveActions } from "../src/actions/LiveActions.vibe"
+import { Actions } from "../src/actions/Actions.vibe"
+import type { Run } from "../src/actions/Actions.vibe"
+import { serveApi, type Served } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+const origin = "https://factory.example"
+const accountEnv = {
+  VIBELANG_ORIGIN: origin, VIBELANG_INITIAL_MAINTAINER_ID: "1", GITHUB_CLIENT_ID: "Iv1.fixture", GITHUB_CLIENT_SECRET: "fixture-only",
+  SESSION_SECRET: "fixture-only-signing-secret-32-chars", SESSION_ENCRYPTION_KEY: "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+}
+
+/** A real local deterministic model endpoint, as in the workerd sequencer bench; no inference. */
+effect function modelService() {
+  const server = try HttpServer.HttpServer
+  try server.serve(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const body = try request.text
+    const tour = body.includes("Give the tour now.")
+    const fence = "`".repeat(3)
+    const cell = tour
+      ? `${fence}cell\nctx.done({stops:["One.","Two.","Three.","Four.","Five."]});\n${fence}`
+      : `${fence}cell\nctx.done("Deterministic answer.");\n${fence}`
+    return HttpServerResponse.text([
+      `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: cell }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""), { contentType: "text/event-stream" })
+  })
+  return HttpServer.formatAddress(server.address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+}
+
+function call(client: HttpClient.HttpClient, api: Served, method: "GET" | "POST" | "DELETE", path: string, cookie = "", body?: unknown, originHeader = origin) {
+  const base = method === "GET" ? HttpClientRequest.get(api.origin + path) : method === "POST" ? HttpClientRequest.post(api.origin + path) : HttpClientRequest.delete(api.origin + path)
+  const withBody = body === undefined ? base : base.pipe(HttpClientRequest.bodyJsonUnsafe(body))
+  // The actions boundary checks Origin only when a browser sends one; the local loopback origin never matches
+  // the configured public origin, so API calls here omit it exactly as LiveActions does.
+  const withOrigin = originHeader === "" ? withBody : withBody.pipe(HttpClientRequest.setHeader("origin", originHeader))
+  return client.execute(withOrigin.pipe(HttpClientRequest.setHeader("cookie", cookie)))
+}
+
+effect function untilSettled<T extends { readonly state: string }>(read: () => Promise<T>, _id: string) {
+  const started = try Clock.currentTimeMillis
+  let latest = try tryPromise({ try: () => read(), catch: () => new ActionUnavailable() })
+  while (latest.state === "queued" || latest.state === "running") {
+    if (try Clock.currentTimeMillis - started > 90_000) return latest
+    try sleep("200 millis")
+    latest = try tryPromise({ try: () => read(), catch: () => new ActionUnavailable() })
+  }
+  return latest
+}
+error ActionUnavailable
+
+it("workerd actions API over LiveActions and signed sessions", async ({ bench }) => {
+  await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const model = try modelService()
+      const api = try acquireRelease(serveApi({
+        ...accountEnv,
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+      }), (served) => promise(served.dispose))
+      provide LiveActions(api.origin).pipe(Layer.provide(FetchHttpClient.layer)), FetchHttpClient.layer {
+        const actions = try Actions
+        const client = try HttpClient.HttpClient
+        const issue = async (person: string) => {
+          const response = await runPromise(call(client, api, "GET", `/__fixture/issue?id=${person}&login=bench${person}`))
+          expect(response.status).toBe(200)
+          return Schema.decodeUnknownSync(Schema.Struct({ cookie: Schema.String }))(await runPromise(response.json)).cookie
+        }
+        const result = try Effect.try(() => workload(bench, "workerd-actions", async () => {
+          const stamp = `${Date.now() % 100000}`
+          const listed = await runPromise(actions.list())
+          expect(listed.map((entry) => entry.name)).toEqual(expect.arrayContaining(["vibelang/Post", "vibelang/Tour", "vibelang/history/Plan"]))
+          expect((await runPromise(actions.commands())).map((entry) => entry.command)).toEqual(["/tour"])
+          const tourId = await runPromise(actions.start("vibelang/Tour", {}, "button"))
+          expect(tourId).toMatch(/^a/)
+          await runPromise(actions.cancel(tourId))
+          const tour = await runPromise(untilSettled(() => runPromise(actions.read(tourId)), tourId))
+          expect(["cancelled", "passed"]).toContain(tour.state)
+          const followed = await runPromise(Stream.runLast(actions.follow(tourId).pipe(Stream.takeUntil((run) => run.state !== "queued" && run.state !== "running"))))
+          expect(Option.isSome(followed) && followed.value.state).toBe(tour.state)
+          const tours = await runPromise(actions.runs("vibelang/Tour"))
+          expect(tours.some((run) => run.id === tourId)).toBe(true)
+          const rerunId = await runPromise(actions.rerun(tourId))
+          expect(rerunId).not.toBe(tourId)
+          await runPromise(actions.cancel(rerunId))
+          const slashed = await runPromise(actions.command("/tour"))
+          await runPromise(actions.cancel(slashed))
+          const unknown = await runPromise(Effect.flip(actions.command("/nope")))
+          expect(unknown.code).toBe("unknown-command")
+          const missing = await runPromise(Effect.flip(actions.read("a-nope")))
+          expect(missing.code).toBe("not-found")
+
+          const admin = await issue("1"), person = await issue("2")
+          const promoted = await runPromise(call(client, api, "POST", "/api/roles", admin, { id: "2", role: "contributor" }))
+          expect(promoted.status).toBe(200)
+          const commands = Schema.decodeUnknownSync(Schema.Array(Schema.Struct({ command: Schema.String })))(await runPromise((await runPromise(call(client, api, "GET", "/api/actions/commands", person, undefined, ""))).json))
+          expect(commands.map((entry) => entry.command)).toEqual(expect.arrayContaining(["/post", "/tour", "/plan"]))
+
+          const postId = `a-bench-${stamp}`
+          const started = await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: postId, flow: "vibelang/Post", input: { text: "Benchmark action" }, door: "button" }, ""))
+          expect(started.status).toBe(202)
+          const settled = await runPromise(untilSettled(async () => Schema.decodeUnknownSync(Schema.Struct({ state: Schema.String, door: Schema.String, steps: Schema.Array(Schema.Struct({ state: Schema.String })) }))(await runPromise((await runPromise(call(client, api, "GET", `/api/actions/runs/${postId}`, person, undefined, ""))).json)), postId))
+          expect(settled.state).toBe("passed")
+          expect(settled.door).toBe("button")
+          expect(settled.steps.length).toBeGreaterThan(0)
+          expect(settled.steps.every((step) => step.state === "passed")).toBe(true)
+
+          const planId = `a-plan-${stamp}`
+          const planned = await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: planId, flow: "vibelang/history/Plan", input: { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Task" }, door: "slash" }, ""))
+          expect(planned.status).toBe(202)
+          const plannedRun = await runPromise(untilSettled(async () => Schema.decodeUnknownSync(Schema.Struct({ state: Schema.String }))(await runPromise((await runPromise(call(client, api, "GET", `/api/actions/runs/${planId}`, person, undefined, ""))).json)), planId))
+          expect(plannedRun.state).toBe("passed")
+
+          const rerun = await runPromise(call(client, api, "POST", `/api/actions/runs/${postId}/rerun`, person, { id: `a-rerun-${stamp}` }, ""))
+          expect(rerun.status).toBe(202)
+          await runPromise(untilSettled(async () => Schema.decodeUnknownSync(Schema.Struct({ state: Schema.String }))(await runPromise((await runPromise(call(client, api, "GET", `/api/actions/runs/a-rerun-${stamp}`, person, undefined, ""))).json)), `a-rerun-${stamp}`))
+
+          const cases: Array<[number, number]> = []
+          cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: "bad", flow: "vibelang/Post", input: {}, door: "button" }, ""))).status, 400])
+          cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: `a-x-${stamp}`, flow: "vibelang/nope", input: {}, door: "button" }, ""))).status, 403])
+          cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs", "", { id: `a-y-${stamp}`, flow: "vibelang/Post", input: { text: "x" }, door: "button" }, ""))).status, 403])
+          cases.push([(await runPromise(call(client, api, "GET", "/api/actions/runs/a-nope", person, undefined, ""))).status, 404])
+          cases.push([(await runPromise(call(client, api, "DELETE", "/api/actions/runs/a-nope", person, undefined, ""))).status, 404])
+          cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs/a-nope/rerun", person, { id: `a-z-${stamp}` }, ""))).status, 404])
+          cases.push([(await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: postId, flow: "vibelang/Post", input: { text: "Different" }, door: "button" }, ""))).status, 409])
+          expect(cases.map(([, status]) => status)).toEqual([400, 403, 403, 404, 404, 404, 409])
+          const foreign = await runPromise(call(client, api, "GET", "/api/actions", person, undefined, "https://other.example"))
+          expect(foreign.status).toBe(200)
+          const foreignWrite = await runPromise(call(client, api, "POST", "/api/actions/runs", person, { id: `a-w-${stamp}`, flow: "vibelang/Tour", input: {}, door: "button" }, "https://other.example"))
+          expect(foreignWrite.status).toBe(403)
+        }))
+        try artifact("workerd-actions", "Vitest built-in bench; real local workerd API Worker with the deterministic model service: LiveActions list/commands/start/cancel/follow/runs/read/rerun/slash and its typed failures, then signed sessions run Post and history Plan flows to settlement, with the input/authority/conflict/not-found matrix and cross-origin refusal.", ["Flow/adapter overhead over local workerd, no WAN or production contention; model replies are deterministic HTTP fixtures. Three samples per command on one served instance."], try tryPromise(() => result.run(slow)))
+      }
+    }
+  }))
+})

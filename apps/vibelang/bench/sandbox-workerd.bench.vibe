@@ -1,0 +1,68 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { serveApi, type Served } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+effect function ledger(client: HttpClient.HttpClient, api: Served, kind: string, operationId: string, generation = 0, command = "", conversation = "home") {
+  const response = try client.execute(HttpClientRequest.post(`${api.origin}/sandbox-ledger/run`).pipe(HttpClientRequest.bodyJsonUnsafe({ kind, operationId, generation, command, conversation })))
+  return try response.json
+}
+
+it("workerd sandbox ledger lifecycle, metering and the public boundary", async ({ bench }) => {
+  await runPromise(scoped(effect {
+    const api = try acquireRelease(serveApi(), (served) => promise(served.dispose))
+    provide FetchHttpClient.layer {
+      const client = try HttpClient.HttpClient
+      const result = try Effect.try(() => workload(bench, "workerd-sandbox-ledger", async () => {
+        const stamp = `${Date.now() % 100000}`
+        const room = `bench-${stamp}`
+        const started = await runPromise(ledger(client, api, "start", `start-${stamp}`, 0, "", room))
+        expect(started).toMatchObject({ _tag: "Success", value: { status: "running", generation: 1 } })
+        const written = await runPromise(ledger(client, api, "command", `write-${stamp}`, 1, "echo saved > keep", room))
+        expect(written).toMatchObject({ _tag: "Success" })
+        const stopped = await runPromise(ledger(client, api, "stop", `stop-${stamp}`, 1, "", room))
+        expect(stopped).toMatchObject({ _tag: "Success", value: { status: "stopped" } })
+        const staleStop = await runPromise(ledger(client, api, "stop", `stop-again-${stamp}`, 1, "", room))
+        expect(staleStop).toMatchObject({ _tag: "Failure" })
+        const replayed = await runPromise(ledger(client, api, "stop", `stop-${stamp}`, 1, "", room))
+        expect(replayed).toEqual(stopped)
+        const restarted = await runPromise(ledger(client, api, "start", `restart-${stamp}`, 0, "", room))
+        expect(restarted).toMatchObject({ _tag: "Success", value: { status: "running", generation: 2 } })
+        const bytes = await runPromise(ledger(client, api, "command", `read-${stamp}`, 2, "cat keep", room))
+        expect(bytes).toMatchObject({ _tag: "Success", value: "saved\n" })
+        const staleCommand = await runPromise(ledger(client, api, "command", `stale-${stamp}`, 1, "cat keep", room))
+        expect(staleCommand).toMatchObject({ _tag: "Failure" })
+        const runs = await runPromise((await runPromise(client.get(api.origin + "/sandbox-ledger/runs"))).json)
+        expect(Array.isArray(runs) && runs.length > 0).toBe(true)
+        const receipts = await runPromise((await runPromise(client.get(api.origin + "/sandbox-ledger/receipts"))).json)
+        expect(Array.isArray(receipts) && receipts.length > 0).toBe(true)
+      }))
+      const metering = try Effect.try(() => workload(bench, "workerd-sandbox-meter", async () => {
+        const stamp = `m${Date.now() % 100000}`
+        const room = `meter-${stamp}`
+        await runPromise(ledger(client, api, "start", `start-${stamp}`, 0, "", room))
+        const metered = await runPromise(ledger(client, api, "meter", `meter-${stamp}`, 0, "", room))
+        expect(metered).toMatchObject({ _tag: "Success" })
+        const pruned = await runPromise((await runPromise(client.execute(HttpClientRequest.post(api.origin + "/sandbox-ledger/prune")))).json)
+        expect(pruned).toMatchObject({ _tag: "Success" })
+        const stopped = await runPromise(ledger(client, api, "stop", `stop-${stamp}`, 1, "", room))
+        expect(stopped).toMatchObject({ _tag: "Success", value: { status: "stopped" } })
+      }))
+      const boundary = try Effect.try(() => workload(bench, "workerd-sandbox-public", async () => {
+        const read = await runPromise(client.get(api.origin + "/api/sandboxes/home"))
+        expect(read.status).toBe(200)
+        expect(await runPromise(read.json)).toMatchObject({ role: "viewer", remaining: 0, status: "stopped" })
+        const forged = await runPromise(client.execute(HttpClientRequest.post(api.origin + "/api/sandboxes/home/start").pipe(HttpClientRequest.setHeader("x-role", "maintainer"), HttpClientRequest.bodyJsonUnsafe({ operationId: "forged", role: "maintainer" }))))
+        expect(forged.status).toBe(403)
+        const missing = await runPromise(client.get(api.origin + "/api/sandboxes/"))
+        expect(missing.status).toBe(404)
+        const oversized = await runPromise(client.execute(HttpClientRequest.post(api.origin + "/api/sandboxes/home/start").pipe(HttpClientRequest.bodyText("x".repeat(21_000)))))
+        expect(oversized.status).toBe(413)
+        const badBody = await runPromise(client.execute(HttpClientRequest.post(api.origin + "/api/sandboxes/home/command").pipe(HttpClientRequest.bodyText("{"))))
+        expect(badBody.status).toBe(400)
+      }))
+      try artifact("workerd-sandboxes", "Vitest built-in bench; the per-person sandbox ledger object in real workerd SQLite with the product in-memory machines: start/write/stop/restart with generation fencing, stale and replayed receipts, retained bytes, metering and pruning, plus the public HTTP boundary's signed-out snapshot, forged-role refusal, routing and body admission.", ["In-memory machines stand in for the opt-in Cloudflare Container; container latency is not measured. Three samples per journey on one served object."], [try tryPromise(() => result.run(slow)), try tryPromise(() => metering.run(slow)), try tryPromise(() => boundary.run(slow))])
+    }
+  }))
+})
