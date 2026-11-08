@@ -26,7 +26,7 @@ it("compile the real API and site resource graph", async ({ bench }) => {
               expect(compiled.resources["vibelang-site"]!.Props.domain).toBe(domain || undefined)
               expect(compiled.resources["vibelang-site"]!.Props.env.API).toBeDefined()
               const bindings = compiled.bindings.VibelangApi!.flatMap((binding) => binding.data.bindings ?? [])
-              expect(bindings.filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["Budget", "Conversation", "History", "ProjectAccounts"])
+              expect(bindings.filter((binding: { type: string }) => binding.type === "durable_object_namespace").map((binding: { className: string }) => binding.className).sort()).toEqual(["ActionIndex", "Budget", "Conversation", "History", "ProjectAccounts"])
             })
           }
         }

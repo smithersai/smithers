@@ -1,10 +1,13 @@
 // Stays .ts: Node 26 runs this gate directly (pnpm bench:coverage); Istanbul's untyped CJS API loads through
 // createRequire behind local interfaces, and no VibeLang compilation step is wanted after the suite has run.
 //
-// The benchmark coverage gate (decision 0017). Vitest's V8 provider credits Node and Chromium execution; workerd is
-// a separate V8 isolate whose inspector disables the Profiler domain, so the workerd benchmarks run bundles with
-// Istanbul counters and dump `globalThis.__coverage__` over the inspector (test/support/workerdCoverage.ts). This
-// script merges both evidences and enforces 100% lines, branches, functions and statements per file:
+// The benchmark coverage gate (decision 0017). Vitest's V8 provider credits Node execution, including the emitted
+// CLI/MCP/script subprocesses. Two other runtimes never enter Vitest's map, because their bundles are compiled again
+// and would union a second statement structure into each shared source: workerd is a separate V8 isolate whose
+// inspector disables the Profiler domain, so its bundles carry Istanbul counters dumped over the inspector
+// (test/support/workerdCoverage.ts); Chromium executes the minified site bundle, dumped with its precise Profiler
+// API into coverage/bench/chromium-raw (bench/browser.spec.ts). This script remaps both to source, credits them by
+// location, and enforces 100% lines, branches, functions and statements per file:
 //
 // - A file with no Vitest-recorded execution is gated on its workerd-remapped structure (all four metrics).
 // - A file executed in both keeps its Vitest structure, with each uncovered statement, function or branch credited
@@ -14,6 +17,10 @@
 // - Lines no benchmark should run are excluded only with their reason recorded here and in decision 0017.
 import { createRequire } from "node:module"
 import { existsSync, readdirSync, readFileSync, mkdirSync, writeFileSync } from "node:fs"
+import { dirname, isAbsolute, resolve } from "node:path"
+import { fileURLToPath } from "node:url"
+import { parseAstAsync } from "vite"
+import astV8ToIstanbul from "ast-v8-to-istanbul"
 
 const require = createRequire(import.meta.url)
 
@@ -83,6 +90,51 @@ async function workerdEvidence(): Promise<CoverageMap> {
   return merged
 }
 
+interface ScriptCoverage {
+  readonly url: string
+  readonly functions: unknown
+}
+
+const chromiumDir = "coverage/bench/chromium-raw"
+
+/**
+ * Chromium's precise Profiler dumps of the minified site bundle, converted per script with the bundle's own map and
+ * keyed by absolute source path. The bundle's statement structure is never merged into a source's Node structure;
+ * only its hits are, by location, in the union below.
+ */
+async function chromiumEvidence(): Promise<CoverageMap> {
+  const merged = libCoverage.createCoverageMap()
+  if (!existsSync(chromiumDir)) return merged
+  for (const name of readdirSync(chromiumDir).filter((name) => name.endsWith(".json"))) {
+    const dump = JSON.parse(readFileSync(`${chromiumDir}/${name}`, "utf8")) as { result: ReadonlyArray<ScriptCoverage> }
+    for (const script of dump.result) {
+      const filename = fileURLToPath(script.url)
+      // Generated bundler bootstrap ships no map and holds no production source (0017); skip it.
+      if (!existsSync(`${filename}.map`)) continue
+      const data = await astV8ToIstanbul({
+        code: readFileSync(filename, "utf8"),
+        sourceMap: JSON.parse(readFileSync(`${filename}.map`, "utf8")),
+        ast: await parseAstAsync(readFileSync(filename, "utf8")),
+        coverage: { functions: script.functions, url: script.url },
+      } as never)
+      const normalized: Record<string, unknown> = {}
+      for (const [key, value] of Object.entries(data)) {
+        const path = isAbsolute(key) ? key : resolve(dirname(filename), key)
+        const coverage = value as Record<string, unknown>
+        normalized[path] = { ...coverage, path }
+      }
+      const filtered = libCoverage.createCoverageMap()
+      for (const file of libCoverage.createCoverageMap(normalized).files()) {
+        if (!file.endsWith(".vibe")) continue
+        if (!file.startsWith(`${appRoot}/src/`) && !file.startsWith(`${appRoot}/worker/`) && !file.startsWith(`${appRoot}/infra/`) && !file.startsWith(`${appRoot}/scripts/`)) continue
+        filtered.merge({ [file]: libCoverage.createCoverageMap(normalized).fileCoverageFor(file).toJSON() })
+      }
+      merged.merge(filtered)
+    }
+  }
+  return merged
+}
+
 function compact(json: FileCoverageJSON): FileCoverageJSON {
   const statementIds = Object.keys(json.statementMap).sort((x, y) => Number(x) - Number(y))
   const fnIds = Object.keys(json.fnMap).sort((x, y) => Number(x) - Number(y))
@@ -135,8 +187,8 @@ function metrics(json: FileCoverageJSON) {
   return { total, covered }
 }
 
-/** Credits a Vitest-structured file with workerd evidence for the same source, by location. */
-function unionWorkerd(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
+/** Credits a Vitest-structured file with evidence for the same source from another runtime, by location. */
+function unionEvidence(base: FileCoverageJSON, evidence: FileCoverageJSON): FileCoverageJSON {
   const json = JSON.parse(JSON.stringify(base)) as FileCoverageJSON
   const spans = lineSpans(evidence)
   const hitAt = (line: number) => spans.some(([start, end, hits]) => start <= line && line <= end && hits > 0)
@@ -174,22 +226,24 @@ async function main() {
   const vitestFinal = "coverage/bench/coverage-final.json"
   if (!existsSync(vitestFinal)) throw new Error("coverage/bench/coverage-final.json missing: run vitest coverage first")
   const base = libCoverage.createCoverageMap(JSON.parse(readFileSync(vitestFinal, "utf8")))
-  const workerd = await workerdEvidence()
+  const evidences: ReadonlyArray<CoverageMap> = [await workerdEvidence(), await chromiumEvidence()]
 
   const combined: Record<string, FileCoverageJSON> = {}
   for (const file of base.files()) {
     if (!sourceFile(file)) continue
     combined[file] = base.fileCoverageFor(file).toJSON()
   }
-  for (const file of workerd.files()) {
-    const evidence = workerd.fileCoverageFor(file).toJSON()
-    const existing = combined[file]
-    if (existing === undefined || metrics(existing).covered.statements === 0) {
-      // No Node-side execution: the workerd structure is the gate for all four metrics.
-      combined[file] = evidence
-      continue
+  for (const evidenceMap of evidences) {
+    for (const file of evidenceMap.files()) {
+      const evidence = evidenceMap.fileCoverageFor(file).toJSON()
+      const existing = combined[file]
+      if (existing === undefined || metrics(existing).covered.statements === 0) {
+        // No Node-side execution: the other runtime's structure is the gate for all four metrics.
+        combined[file] = evidence
+        continue
+      }
+      combined[file] = unionEvidence(existing, evidence)
     }
-    combined[file] = unionWorkerd(existing, evidence)
   }
 
   const failures: Array<string> = []
@@ -224,7 +278,7 @@ async function main() {
   mkdirSync("coverage/bench/merged", { recursive: true })
   writeFileSync("coverage/bench/merged/coverage-final.json", JSON.stringify(finalMap, null, 1) + "\n")
   writeFileSync("coverage/bench/merged/per-file.json", JSON.stringify(rows, null, 1) + "\n")
-  console.log(`Merged benchmark coverage: ${rows.length} files; Vitest (Node/Chromium) evidence plus ${workerd.files().length} workerd-evidenced files.`)
+  console.log(`Merged benchmark coverage: ${rows.length} files; Vitest (Node and emitted subprocesses) evidence plus ${evidences[0]!.files().length} workerd-evidenced and ${evidences[1]!.files().length} Chromium-evidenced files.`)
   for (const row of rows.filter((row) => row.lines !== "100" || row.statements !== "100" || row.functions !== "100" || row.branches !== "100")) {
     console.log(`${row.file}: lines ${row.lines}% statements ${row.statements}% functions ${row.functions}% branches ${row.branches}%${row.uncovered === "" ? "" : ` uncovered ${row.uncovered}`}`)
   }

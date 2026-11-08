@@ -175,7 +175,7 @@ it("sandbox CLI and persistent MCP lifecycle latency", async ({ bench }) => {
   const lifecycle = await runPromise(Effect.provide(effect {
     const client = try McpClient.McpClient
     const tools = try client.listTools()
-    try Effect.try(() => expect(tools.map((tool) => tool.name).sort()).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue"].sort()))
+    try Effect.try(() => expect(tools.map((tool) => tool.name).sort()).toEqual(["ask", "read", "history", "plan", "start", "note", "sandboxes", "sandbox-start", "sandbox-stop", "sandbox-run", "issues", "issue", "actions", "run", "trace", "cancel", "rerun"].sort()))
     const tool = (name: string) => tools.find((tool) => tool.name === name)!
     let sample = 0
     const measured = try Effect.try(() => workload(bench, "mcp-sandbox-file-restart", async () => {
@@ -197,5 +197,5 @@ it("sandbox CLI and persistent MCP lifecycle latency", async ({ bench }) => {
     return try tryPromise(() => measured.run(slow))
   }, clientLayer))
   results.push(lifecycle)
-  await runPromise(artifact("sandbox-surfaces", "Vitest built-in bench; emitted CLI read/start includes cold process/layer setup. Persistent real stdio MCP starts, writes, stops, restarts, reads retained bytes, stops and verifies snapshot through seven calls; full twelve-command catalog and exact generations/output checked. Three samples; MCP handshake excluded.", ["Product mock backend and maintainer surface principal, no real Container, model or repository write. MCP keeps one engine across samples and grows its receipt history; CLI gets a fresh engine each time. Assertions and IPC included."], results))
+  await runPromise(artifact("sandbox-surfaces", "Vitest built-in bench; emitted CLI read/start includes cold process/layer setup. Persistent real stdio MCP starts, writes, stops, restarts, reads retained bytes, stops and verifies snapshot through seven calls; full seventeen-command catalog and exact generations/output checked. Three samples; MCP handshake excluded.", ["Product mock backend and maintainer surface principal, no real Container, model or repository write. MCP keeps one engine across samples and grows its receipt history; CLI gets a fresh engine each time. Assertions and IPC included."], results))
 })

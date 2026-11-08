@@ -27,8 +27,10 @@ async function save(name: string, measurements: unknown, limitations: string[]) 
 }
 
 async function collectBrowserCoverage(context: BrowserContext, page: Page, baseURL: string | undefined, name: string) {
-  const directory = process.env.NODE_V8_COVERAGE
-  if (!directory || live) return undefined
+  // Coverage mode only: the dump goes to the gate's own corpus (bench/merge-coverage.ts), never to Vitest's
+  // subprocess pickup, so the minified bundle's structure never merges with the Node structure of one source (0017).
+  if (process.env.BENCH_COVERAGE !== "1" || live) return undefined
+  const directory = resolve("coverage/bench/chromium-raw")
   const session = await context.newCDPSession(page)
   await session.send("Profiler.enable")
   await session.send("Profiler.startPreciseCoverage", { callCount: true, detailed: true })
