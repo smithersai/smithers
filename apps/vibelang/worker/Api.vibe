@@ -7,7 +7,11 @@ import { HttpServerRequest } from "effect/http"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { workerBuild } from "../infra/WorkerBuild.vibe"
 import { chatModel, dailyTokens } from "./AgentModel.vibe"
-import { afterOf, eventStream, handle, type Conversations } from "./Http.vibe"
+import { FetchHttpClient, HttpClient } from "effect/http"
+import type { Write } from "../src/history/wire.vibe"
+import * as HistoryObject from "./HistoryObject.vibe"
+import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
+import { githubMain } from "./MainLog.vibe"
 import * as Objects from "./Objects.vibe"
 import type { Spend } from "./Reply.vibe"
 import { Unreachable } from "./Unreachable.vibe"
@@ -25,10 +29,20 @@ export interface BudgetShape {
   readonly spend: (reply: string, tokens: number) => void!!RuntimeContext
 }
 
+export interface HistoryShape {
+  readonly read: () => unknown!!RuntimeContext
+  readonly write: (name: Write, body: unknown) => HistoryObject.Answered!!RuntimeContext
+}
+
 /** One conversation's sequencer and current reply, named by the conversation's id. */
 export class Conversation extends Cloudflare.DurableObject<Conversation, ConversationShape>()("Conversation") {}
 /** One UTC day's token budget, named by the day. */
 export class Budget extends Cloudflare.DurableObject<Budget, BudgetShape>()("Budget") {}
+/** VibeLang's mythical history, named by the repository (wiki/decisions/0020-mythical-history.md). */
+export class History extends Cloudflare.DurableObject<History, HistoryShape>()("History") {}
+
+/** The repository whose history the History object holds. */
+export const REPOSITORY = "vibelang"
 
 type Namespace<Shape> = Cloudflare.DurableObject<Shape>
 
@@ -48,6 +62,28 @@ const BudgetLive = Budget.make(effect {
   return effect {
     const budget = try Objects.budget(state.raw.storage, limit)
     return { admit: () => budget.admit(), spend: budget.spend }
+  }
+})
+
+const HistoryLive = History.make(effect {
+  const state = try Cloudflare.DurableObjectState
+  // Read when the Worker deploys and when an object starts: GitHub's rate limit is higher with a token.
+  const token = Option.getOrUndefined(try Effect.orDie(Config.option(Config.String("GITHUB_TOKEN"))))
+  return effect {
+    const hostId = try Effect.orDie(Effect.try(() => state.id.toString()))
+    const sequencer = try HistoryObject.history(state.raw.storage)
+    const client = try Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)
+    const main = githubMain("smithersai/vibelang", client, token)
+    if ((try sequencer.read()).seq === 0) try HistoryObject.bootstrap(hostId, state.raw.storage, sequencer, main)
+    return {
+      read: () => Effect.map(sequencer.read(), (history) => history as unknown),
+      write: (name: Write, body: unknown) =>
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, HistoryObject.principalOf(undefined), name, body),
+      fetch: effect {
+        const request = try HttpServerRequest.HttpServerRequest
+        return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://history.invalid")) ?? 0))
+      },
+    }
   }
 })
 
@@ -105,6 +141,7 @@ export const props = {
 
 const program = effect {
   const conversations = (try Conversation) as Namespace<ConversationShape>
+  const histories = (try History) as Namespace<HistoryShape>
   // Bound when the Worker deploys, as its objects read them.
   try Effect.orDie(chatModel())
   try Effect.orDie(dailyTokens)
@@ -134,7 +171,22 @@ const program = effect {
           return try reached(runtime, "conversation", object.fetch(request))
         },
       }
-      return try handle(api)
+      const history: Histories = {
+        read: effect () => {
+          const object = try objectOf(histories, REPOSITORY, "history")
+          return try reached(runtime, "history", object.read())
+        },
+        write: effect (name, body) => {
+          const object = try objectOf(histories, REPOSITORY, "history")
+          return try reached(runtime, "history", object.write(name, body))
+        },
+        events: effect () => {
+          const request = try HttpServerRequest.HttpServerRequest
+          const object = try objectOf(histories, REPOSITORY, "history")
+          return try reached(runtime, "history", object.fetch(request))
+        },
+      }
+      return try handle(api, history)
     },
   }
 }
@@ -142,6 +194,6 @@ const program = effect {
 export default class Api extends Cloudflare.Worker<Api>()(
   "VibelangApi",
   props,
-  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive)),
+  program.pipe(Effect.provide(ConversationLive), Effect.provide(BudgetLive), Effect.provide(HistoryLive)),
 ) {}
 

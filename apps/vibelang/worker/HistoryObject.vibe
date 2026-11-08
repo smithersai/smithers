@@ -1,0 +1,139 @@
+// The History object (wiki/decisions/0020-mythical-history.md): VibeLang's mythical history, one Durable Object named by
+// its repository, whoever hosts it: the Alchemy object the API Worker deploys (Api.vibe) and the plain one the workerd
+// test runs (test/workerd/worker.vibe). It holds the history's sequencer over its own storage, runs each write's flow
+// in the request that asks, on the engine in its own SQLite, and loads the bootstrapped history on its first start.
+//
+//   storage   base/<n>   the bootstrapped history's JSON, in chunks; `base` holds their count once all are written
+//             event/<seq> every event after it
+import { FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { Approve, Bootstrap, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
+import type { Event, History } from "../src/history/mythical.vibe"
+import { Caller, type Principal, VIEWER } from "../src/history/roles.vibe"
+import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
+import { make, type Sequencer, stackOf, type Store } from "../src/history/Sequencer.vibe"
+import type { Write } from "../src/history/wire.vibe"
+import { postExecutionId, type Storage } from "./Objects.vibe"
+import { eventKey, type KeyValue } from "./ObjectStorage.vibe"
+
+const BASE = "base"
+const CHUNK = 64 * 1024
+const EVENT = "event/"
+
+const decodeHistory = Schema.decodeUnknownEffect(Schema.fromJsonString(HistorySchema))
+
+/** The bootstrapped history this deployment carries. */
+export effect function seeded() {
+  return try Effect.orDie(decodeHistory(HISTORY_JSON))
+}
+
+/** The history's store over the object's own storage. */
+export function storeOver(storage: KeyValue): Store {
+  return {
+    load: effect () => {
+      const count = try promise(() => storage.get(BASE))
+      let base: History | undefined = undefined
+      if (typeof count === "number") {
+        const chunks = try promise(() => storage.list({ prefix: `${BASE}/` }))
+        base = try Effect.orDie(decodeHistory([...chunks.values()].join("")))
+      }
+      const events = [...(try promise(() => storage.list({ prefix: EVENT }))).values()] as ReadonlyArray<Event>
+      return { base, events }
+    },
+    append: effect (event: Event) => {
+      try promise(() => storage.put({ [eventKey(event.seq)]: event }))
+    },
+    seed: effect (history: History) => {
+      const json = try Effect.orDie(Effect.try(() => JSON.stringify(history)))
+      const entries: Record<string, string> = {}
+      let count = 0
+      for (let start = 0; start < json.length; start += CHUNK) {
+        entries[`${BASE}/${String(count++).padStart(6, "0")}`] = json.slice(start, start + CHUNK)
+      }
+      // At most 128 keys per write; the count, written last, marks the snapshot complete.
+      const keys = Object.keys(entries)
+      for (let at = 0; at < keys.length; at += 100) {
+        try promise(() => storage.put(Object.fromEntries(keys.slice(at, at + 100).map((key) => [key, entries[key]]))))
+      }
+      try promise(() => storage.put({ [BASE]: count }))
+    },
+  }
+}
+
+/** Who asks, from the request: a viewer until sign-in (decision 0019) lands; its policy replaces this one function. */
+export function principalOf(_request: unknown): Principal {
+  return VIEWER
+}
+
+/** The person that runs the bootstrap: the host, on first start. */
+const HOST: Principal = { role: "maintainer", name: "bootstrap", agent: false }
+
+/** The history's sequencer over the object's storage. */
+export function history(storage: Storage) {
+  return make(storeOver(storage))
+}
+
+/** The engine for one execution of `flow`, its steps reaching `sequencer` as `principal`. */
+function runtime(hostId: string, executionId: string, flow: string, storage: Storage, sequencer: Sequencer, principal: Principal, main: MainLog.Shape) {
+  return CloudflareRuntime.layer({ hostId, executionId, flow }, historyRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)),
+    Layer.provide(Layer.mergeAll(
+      Layer.succeed(Stack, stackOf(sequencer, seeded)),
+      Layer.succeed(MainLog, main),
+      Layer.succeed(Caller, { principal }),
+    )),
+  )
+}
+
+/** Loads the bootstrapped history on the object's first start: one `vibelang/history/Bootstrap` execution, ever. */
+export effect function bootstrap(hostId: string, storage: Storage, sequencer: Sequencer, main: MainLog.Shape) {
+  const executionId = "bootstrap/first-start"
+  return try Effect.orDie(effect {
+    provide runtime(hostId, executionId, Bootstrap._tag, storage, sequencer, HOST, main) {
+      const engine = try FlowRuntime.FlowRuntime
+      return try engine.execute(Bootstrap, { executionId, payload: {} })
+    }
+  })
+}
+
+/** What a write answers: the commit it wrote and how many commits it folded, or why it was refused. */
+export interface Answered {
+  readonly id: string
+  readonly folded: number
+  readonly refusal: string | null
+}
+
+/** Runs one write's flow in the request that asks, as `principal`: its own execution, on the engine in the object's SQLite. */
+export effect function write(
+  hostId: string,
+  storage: Storage,
+  sequencer: Sequencer,
+  main: MainLog.Shape,
+  principal: Principal,
+  name: Write,
+  payload: unknown,
+) {
+  const executionId = try postExecutionId(`history-${name}`)
+  const tag = { plan: Plan, start: Start, note: Note, approve: Approve, fold: Fold }[name]._tag
+  return try Effect.orDie(effect {
+    provide runtime(hostId, executionId, tag, storage, sequencer, principal, main) {
+      const engine = try FlowRuntime.FlowRuntime
+      const run = { executionId, payload: payload as never }
+      if (name === "fold") {
+        const answer = try engine.execute(Fold, { executionId, payload: {} })
+        const answered: Answered = { id: "", folded: answer.folded, refusal: answer.refusal }
+        return answered
+      }
+      const answer = name === "plan"
+        ? try engine.execute(Plan, run)
+        : name === "start"
+          ? try engine.execute(Start, run)
+          : name === "note"
+            ? try engine.execute(Note, run)
+            : try engine.execute(Approve, run)
+      const answered: Answered = { id: answer.id, folded: 0, refusal: answer.refusal }
+      return answered
+    }
+  })
+}

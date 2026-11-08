@@ -64,10 +64,17 @@ export function signature(principal: Principal): string {
   return principal.agent ? `${principal.name} (agent)` : principal.name
 }
 
-/** Runs `write` as the flow's one journaled step when the caller may take `action`; else `forbidden`. */
-effect function guarded(action: Action, write: (principal: Principal) => Answer!!) {
+/** Whether the caller may take `action`: a journaled step, so a refusal is on the record as an acceptance is. */
+effect function authorized(action: Action) {
   const { principal } = try Caller
-  if (!may(principal, action)) {
+  const allowed = try Step.make({ name: `vibelang/history/${action}/authorize`, success: Schema.Boolean, execute: Effect.succeed(may(principal, action)) })
+  return { principal, allowed }
+}
+
+/** Runs `write` as the flow's journaled step when the caller may take `action`; else `forbidden`. */
+effect function guarded(action: Action, write: (principal: Principal) => Answer!!) {
+  const { principal, allowed } = try authorized(action)
+  if (!allowed) {
     try counted(action, "forbidden")
     const forbidden: Answer = { id: "", refusal: "forbidden" }
     return forbidden
@@ -157,8 +164,8 @@ export effect function approved(id: string) {
  * own journaled step, so a resumed fold never folds one twice.
  */
 export effect function folded() {
-  const { principal } = try Caller
-  if (!may(principal, "fold")) {
+  const { allowed } = try authorized("fold")
+  if (!allowed) {
     try counted("fold", "forbidden")
     return { folded: 0, refusal: "forbidden" }
   }

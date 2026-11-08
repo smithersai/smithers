@@ -3,8 +3,8 @@
 **Status:** accepted, 2026-11-07; Will may override. **Rulings:** VL-22 (and VL-9, VL-11, VL-13, VL-17, VL-18, VL-21);
 Smithers D-09a, D-20; repository rules FLOW-3, "people merge; agents never approve or merge". **Brings back** what
 `apps/mvp/docs/rulings.md` TODO-2 deferred, for this app only. **Designed twice:** Claude Opus
-(`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built so far:** the machine, its proofs, the bootstrap, the flows and the mock; the live History
-object, its routes, the surfaces and the view land next, each with this record updated.
+(`~/vl/mythical/design-opus.md`) and Codex Sol (`~/vl/mythical/design-sol.md`), independently; Opus merged them. **Built so far:** the machine, its proofs, the bootstrap, the flows, the mock, the live History
+object and its routes; the surfaces and the view land next, each with this record updated.
 
 **Decision.** VibeLang's mythical history is a second state machine beside the conversation's (0003): one linear stack
 of mythical commits grouped into epics, written only by its sequencer in one Durable Object, `History`, bootstrapped
@@ -53,6 +53,29 @@ writes the history they built (`src/history/seed/vibelang.vibe`, generated, neve
   citation, never an attribution (Sol): it only writes notes, and the landing line says "(matched by title)".
 - The live object loads the snapshot once, on first start (`vibelang/history/Bootstrap`), so the deployed view shows
   the real history. `test/seed.test.vibe` replays the snapshot's intents and requires the same history.
+
+## The live object and its protocol
+
+`worker/HistoryObject.vibe` keeps the bootstrapped history in its storage in 64 KiB chunks (`base/<n>`, with `base`
+written last as their count) and every later event at `event/<seq>`. Its first start runs `vibelang/history/Bootstrap`
+once (execution `bootstrap/first-start`); each write runs its flow in the request that asks, as a post does (0011), on
+the engine in the object's SQLite. `src/history/wire.vibe`:
+
+```
+GET  /api/history                                  the whole history
+GET  /api/history/events?after=<seq>               Server-Sent Events, as a conversation's (0010)
+POST /api/history/<plan|start|note|approve|fold>   200 {id, folded} | 409 {refusal} | 403 forbidden | 503 unavailable
+```
+
+`LiveMythical` is the `Mythical` layer over it. A live Fold reads GitHub's commit list of `smithersai/vibelang`
+(`worker/MainLog.vibe`, at most ten pages of 100) and walks first parents back to the last folded commit; a merge's side
+commits the pages hold come before it, and one already folded is refused `duplicate`. `GITHUB_TOKEN`, when the
+deployment sets it, raises GitHub's rate limit. Authorization is itself a journaled step, so a refusal is on the record
+as an acceptance is.
+
+**Observability.** `vibelang.history.<step>` logs and `vibelang_history_steps{step, outcome}` counts, the flows'
+`vibelang.history.*` spans, and the API's `vibelang_api_requests{route}` with `history-read`, `history-events` and
+`history-write`. None carries a title, a task, a note or a name.
 
 ## Flows and their least roles
 

@@ -1,0 +1,76 @@
+// The live mythical history: `Mythical` over the API Worker's History object (wire.vibe;
+// wiki/decisions/0020-mythical-history.md), through Effect's `HttpClient`, so the browser, the CLI and the MCP server
+// share it. Who asks is the server's to know from the request; nothing here says it.
+import * as Sse from "effect/encoding/Sse"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
+import type { Mode } from "../core/Factory.vibe"
+import { Mythical, Refused, Unavailable } from "./MythicalHistory.vibe"
+import { History as HistorySchema, HistoryEvent } from "./schemas.vibe"
+import { HISTORY_PATH, HistoryRefusal, Written } from "./wire.vibe"
+
+const decodeHistory = Schema.decodeUnknownEffect(HistorySchema)
+const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(HistoryEvent))
+const decodeWritten = Schema.decodeUnknownEffect(Written)
+const decodeRefusal = Schema.decodeUnknownEffect(HistoryRefusal)
+
+/** `Unavailable`, naming what failed; never a response body. */
+function unavailable(what: string) {
+  return () => new Unavailable({ reason: what })
+}
+
+/** The history at `origin`, such as `https://vibelang.smithers.sh`. Each call is one request. */
+export function LiveMythical(origin: string) {
+  return Layer.effect(Mythical, effect {
+    const client = try HttpClient.HttpClient
+
+    /** Posts `body` to the write `write`: what it wrote, or its refusal as `Refused`. */
+    effect function write(name: string, body: object) {
+      const request = HttpClientRequest.post(`${origin}${HISTORY_PATH}/${name}`).pipe(HttpClientRequest.bodyJsonUnsafe(body))
+      const response: HttpClientResponse.HttpClientResponse = try Effect.mapError(client.execute(request), unavailable(`${name} unreachable`))
+      const json = try Effect.mapError(response.json, unavailable(`${name} is not JSON`))
+      if (response.status === 200) return try Effect.mapError(decodeWritten(json), unavailable(`${name} is not the protocol`))
+      if (response.status === 403 || response.status === 409 || response.status === 503) {
+        const refused = try Effect.mapError(decodeRefusal(json), unavailable(`${name} refusal is not the protocol`))
+        throw new Refused({ refusal: refused.refusal })
+      }
+      throw new Unavailable({ reason: `${name} answered ${response.status}` })
+    }
+
+    const mode: Mode = "live"
+    const service: Mythical.Shape = {
+      mode,
+      read: effect () => {
+        const response = try Effect.mapError(client.get(origin + HISTORY_PATH), unavailable("history unreachable"))
+        if (response.status !== 200) throw new Unavailable({ reason: `history answered ${response.status}` })
+        const body = try Effect.mapError(response.json, unavailable("history is not JSON"))
+        return try Effect.mapError(decodeHistory(body), unavailable("history is not the protocol"))
+      },
+      events: (after) =>
+        Stream.unwrap(effect {
+          const request = HttpClientRequest.get(`${origin}${HISTORY_PATH}/events?after=${after}`).pipe(
+            HttpClientRequest.setHeader("accept", "text/event-stream"),
+          )
+          const response = try Effect.mapError(client.execute(request), unavailable("history events unreachable"))
+          if (response.status !== 200) throw new Unavailable({ reason: `history events answered ${response.status}` })
+          return response.stream.pipe(
+            Stream.decodeText(),
+            Stream.pipeThroughChannel(Sse.decode()),
+            Stream.mapEffect((message) => decodeEvent(message.data)),
+            Stream.mapError(unavailable("history events interrupted")),
+          )
+        }),
+      plan: effect (request) => (try write("plan", request)).id,
+      start: effect (id, lane) => {
+        try write("start", { id, lane })
+      },
+      note: effect (id, section, text) => {
+        try write("note", { id, section, text })
+      },
+      approve: effect (id) => {
+        try write("approve", { id })
+      },
+      fold: effect () => (try write("fold", {})).folded,
+    }
+    return service
+  })
+}

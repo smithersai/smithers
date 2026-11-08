@@ -90,10 +90,12 @@ export effect function serveApi(env: Readonly<Record<string, string>> = {}) {
         ...Object.fromEntries(Object.entries(env).map(([name, value]) => [name, { type: "text", value }])),
         CONVERSATION: { type: "durable-object", worker: "api", exportName: "Conversation" },
         BUDGET: { type: "durable-object", worker: "api", exportName: "Budget" },
+        HISTORY: { type: "durable-object", worker: "api", exportName: "History" },
       },
       exports: {
         Conversation: { type: "durable-object", storage: "sqlite" },
         Budget: { type: "durable-object", storage: "sqlite" },
+        History: { type: "durable-object", storage: "sqlite" },
       },
     })
   }

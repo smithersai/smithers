@@ -4,10 +4,14 @@
 // here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
 // Its own answers are Effect's HTTP responses, converted to the platform's here.
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
+import type { Sequencer as HistorySequencer } from "../../src/history/Sequencer.vibe"
+import type { Write } from "../../src/history/wire.vibe"
+import * as HistoryObject from "../../worker/HistoryObject.vibe"
+import { githubMain } from "../../worker/MainLog.vibe"
 import type { ReadSnapshot } from "../../src/core/schemas.vibe"
 import { chatModel, dailyTokens } from "../../worker/AgentModel.vibe"
-import { afterOf, eventStream, handle, type Conversations } from "../../worker/Http.vibe"
+import { afterOf, eventStream, handle, type Conversations, type Histories } from "../../worker/Http.vibe"
 import * as Objects from "../../worker/Objects.vibe"
 import type { Spend } from "../../worker/Reply.vibe"
 import type { Sequencer } from "../../worker/Sequencer.vibe"
@@ -21,6 +25,7 @@ interface Namespace {
 interface Env {
   readonly CONVERSATION: Namespace
   readonly BUDGET: Namespace
+  readonly HISTORY: Namespace
   readonly [name: string]: unknown
 }
 
@@ -111,11 +116,44 @@ export class Budget {
   }
 }
 
+export class History {
+  readonly sequencer: Promise<HistorySequencer>
+  readonly main = githubMain("smithersai/vibelang", Effect.runSync(Effect.provide(HttpClient.HttpClient, FetchHttpClient.layer)), undefined)
+
+  constructor(readonly state: State, env: Env) {
+    const main = this.main
+    this.sequencer = Effect.runPromise(Effect.flatMap(HistoryObject.history(state.storage), (sequencer) =>
+      Effect.flatMap(sequencer.read(), (history) =>
+        history.seq === 0
+          ? Effect.as(HistoryObject.bootstrap(state.id.toString(), state.storage, sequencer, main), sequencer)
+          : Effect.succeed(sequencer))))
+  }
+
+  async fetch(request: Request): Promise<Response> {
+    const sequencer = await this.sequencer
+    const url = new URL(request.url)
+    if (url.pathname.endsWith("/events")) return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
+    if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read()))
+    // The engine's runs in this object's SQLite, so the suite sees each write ran as a flow.
+    if (url.pathname === "/runs") {
+      return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
+    }
+    const args = await request.json() as { readonly name: Write; readonly body: unknown }
+    return json(await Effect.runPromise(HistoryObject.write(
+      this.state.id.toString(), this.state.storage, sequencer, this.main, HistoryObject.principalOf(request), args.name, args.body,
+    )))
+  }
+}
+
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // The suite's window into a conversation object's engine: /runs/<conversation>.
     const runs = new URL(request.url).pathname.match(/^\/runs\/(.+)$/)
-    if (runs !== null) return json(await call(env.CONVERSATION, decodeURIComponent(runs[1]!), "runs", {}))
+    if (runs !== null) {
+      // /runs/history is the History object's (it is named by its repository); any other name is a conversation's.
+      if (runs[1] === "history") return json(await call(env.HISTORY, "vibelang", "runs", {}))
+      return json(await call(env.CONVERSATION, decodeURIComponent(runs[1]!), "runs", {}))
+    }
     const conversations: Conversations = {
       post: (conversation, body) =>
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),
@@ -133,8 +171,20 @@ export default {
             return HttpServerResponse.raw(await object.fetch(`https://object/events${url.search}`, { signal: request.signal }))
           })),
     }
+    const histories: Histories = {
+      read: () => reach("history", () => call(env.HISTORY, "vibelang", "read", {})),
+      write: (name, body) =>
+        reach("history", () => call(env.HISTORY, "vibelang", "write", { name, body }) as Promise<HistoryObject.Answered>),
+      events: () =>
+        Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
+          reach("history", async () => {
+            const object = env.HISTORY.get(env.HISTORY.idFromName("vibelang"))
+            const url = new URL(incoming.url, "https://object")
+            return HttpServerResponse.raw(await object.fetch(`https://object/events${url.search}`, { signal: request.signal }))
+          })),
+    }
     const response = await Effect.runPromise(
-      handle(conversations).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))),
+      handle(conversations, histories).pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(request))),
     )
     return HttpServerResponse.toWeb(response)
   },

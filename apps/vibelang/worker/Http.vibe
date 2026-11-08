@@ -6,6 +6,11 @@ import { HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"
+import { HistoryEvent as HistoryEventSchema } from "../src/history/schemas.vibe"
+import type { Event as HistoryEvent } from "../src/history/mythical.vibe"
+import {
+  ApproveBody, FoldBody, historyRouteOf, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody, statusOf, type HistoryRoute, type Write,
+} from "../src/history/wire.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 
 /** Each conversation's sequencer, as the API reaches its Durable Object. */
@@ -20,6 +25,16 @@ export interface Conversations {
   events(conversation: string): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
 }
 
+/** VibeLang's mythical history, as the API reaches its History object (wiki/decisions/0020-mythical-history.md). */
+export interface Histories {
+  /** The whole history, as its schema encodes it. */
+  read(): unknown!Unreachable
+  /** Runs the write's flow with its decoded body: what it wrote, or why it was refused. */
+  write(write: Write, body: unknown): { readonly id: string; readonly folded: number; readonly refusal: string | null }!Unreachable
+  /** The object's event stream, answering the current request. */
+  events(): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
+}
+
 /** How often an idle event stream sends a comment, so proxies keep it open (Cloudflare closes idle ones at 100 s). */
 export const KEEPALIVE = "20 seconds"
 
@@ -32,7 +47,7 @@ const encoder = new TextEncoder()
 const decodePost = Schema.decodeUnknownEffect(Schema.fromJsonString(PostBody))
 
 /** `events` as Server-Sent Events: `id` is each event's seq and `data` the event as JSON, with keep-alive comments. */
-export function eventStream(events: Stream.Stream<Event>) {
+export function eventStream(events: Stream.Stream<Event | HistoryEvent>) {
   const messages = events.pipe(Stream.map((event) =>
     Sse.encoder.write({ _tag: "Event", event: "message", id: String(event.seq), data: JSON.stringify(event) })
   ))
@@ -76,11 +91,48 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   return try conversations.events(route.conversation)
 }
 
-/** Answers the current request; every route but health reaches `conversations`. */
-export effect function handle(conversations: Conversations) {
+/** A write's body, decoded by its write's schema. */
+function decodeWrite(write: Write, text: string): unknown!Schema.SchemaError {
+  switch (write) {
+    case "plan": return Schema.decodeUnknownEffect(Schema.fromJsonString(PlanBody))(text)
+    case "start": return Schema.decodeUnknownEffect(Schema.fromJsonString(StartBody))(text)
+    case "note": return Schema.decodeUnknownEffect(Schema.fromJsonString(NoteBody))(text)
+    case "approve": return Schema.decodeUnknownEffect(Schema.fromJsonString(ApproveBody))(text)
+    case "fold": return Schema.decodeUnknownEffect(Schema.fromJsonString(FoldBody))(text)
+  }
+}
+
+/** Answers a history request: a read, the event stream, or a write's flow, its body decoded by the write's schema. */
+effect function answerHistory(route: HistoryRoute, url: URL, histories: Histories) {
+  const request = try HttpServerRequest.HttpServerRequest
+  if (route.kind === "history-read") return json(try histories.read())
+  if (route.kind === "history-events") {
+    if (afterOf(url) === undefined) return json({ error: "after" }, 400)
+    return try histories.events()
+  }
+  const length = Number(request.headers["content-length"] ?? "0")
+  if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
+  const text = request.text catch () => ""
+  const body = decodeWrite(route.write, text === "" ? "{}" : text) catch () => undefined
+  if (body === undefined) return json({ error: "body" }, 400)
+  const written = try histories.write(route.write, body)
+  return written.refusal === null ? json({ id: written.id, folded: written.folded }) : json({ refusal: written.refusal }, statusOf(written.refusal))
+}
+
+/** Answers the current request; health answers itself, history routes reach `histories`, the rest `conversations`. */
+export effect function handle(conversations: Conversations, histories: Histories) {
   const request = try HttpServerRequest.HttpServerRequest
   const url = new URL(request.url, "http://api.invalid")
   if (url.pathname === HEALTH_PATH) return json({ ok: true, agent: "live" })
+  const history = historyRouteOf(request.method, url.pathname)
+  if (history !== undefined) {
+    const answered = try withSpan(effect {
+      return answerHistory(history, url, histories) catch (error) => json({ error: error.what }, 503)
+    }, `vibelang.api.${history.kind}`)
+    try Metric.update(Metric.withAttributes(requests, { route: history.kind, status: String(answered.status) }), 1)
+    try Effect.logInfo("vibelang.api").pipe(Effect.annotateLogs({ route: history.kind, status: answered.status }))
+    return answered
+  }
   const route = routeOf(request.method, url.pathname)
   if (route === undefined) return json({ error: "not found" }, 404)
   const answered = try withSpan(effect {

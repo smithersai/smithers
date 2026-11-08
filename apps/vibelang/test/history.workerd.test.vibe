@@ -1,0 +1,104 @@
+// The History object in local workerd (wiki/decisions/0020-mythical-history.md): the API Worker's real routes, the real
+// sequencer over the object's storage, the bootstrap on first start, and each write's flow on the engine in the
+// object's SQLite, through the raw protocol and `LiveMythical`. Every HTTP caller is a viewer until sign-in lands, so
+// every write is refused `forbidden` and changes nothing.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { afterAll, beforeAll, describe, expect, it } from "@effect/vitest"
+import { FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { serveApi, type Served } from "./support/workerd.vibe"
+
+const platform = Layer.mergeAll(NodeServices.layer, FetchHttpClient.layer)
+
+/** `origin` + `path` answered: a GET, or a POST of `body`. */
+effect function at(origin: string, path: string, body?: string) {
+  const client = try HttpClient.HttpClient
+  return try client.execute(body === undefined
+    ? HttpClientRequest.get(origin + path)
+    : HttpClientRequest.post(origin + path).pipe(HttpClientRequest.bodyText(body, "application/json")))
+}
+
+describe("the History object in local workerd", () => {
+  let api: Served | undefined
+  beforeAll(async () => { api = await runPromise(serveApi()) }, 120_000)
+  afterAll(async () => { await api?.dispose() })
+
+  it.live("loads VibeLang's bootstrapped history on its first start, as a flow, once", () => effect {
+    provide platform {
+      const origin = api!.origin
+      const response = try at(origin, "/api/history")
+      const history = try Schema.decodeUnknownEffect(HistorySchema)(try response.json)
+      const again = try Schema.decodeUnknownEffect(HistorySchema)(try (try at(origin, "/api/history")).json)
+      const runs = try (try at(origin, "/runs/history")).json
+      try Effect.try(() => {
+        expect(response.status).toBe(200)
+        expect(history.epics.length).toBe(11)
+        expect(history.real.length).toBeGreaterThan(6000)
+        expect(new Set(history.real.map((real) => real.sha)).size).toBe(history.real.length)
+        expect(again.seq).toBe(history.seq)
+        expect(runs).toEqual([{ run_id: "bootstrap/first-start", status: "completed" }])
+      })
+    }
+  })
+
+  it.live("refuses every write to a viewer as a flow, and the history is unchanged", () => effect {
+    provide platform {
+      const origin = api!.origin
+      const before = try (try at(origin, "/api/history")).json
+      const plan = JSON.stringify({ how: "append", epic: "e1", newEpic: "", target: "", title: "fix(compiler): x", task: "t" })
+      const answers = [
+        try at(origin, "/api/history/plan", plan),
+        try at(origin, "/api/history/start", JSON.stringify({ id: "m1", lane: "a" })),
+        try at(origin, "/api/history/note", JSON.stringify({ id: "m1", section: "tried", text: "x" })),
+        try at(origin, "/api/history/approve", JSON.stringify({ id: "m1" })),
+        try at(origin, "/api/history/fold", "{}"),
+      ]
+      const statuses = answers.map((answer) => answer.status)
+      const bodies: Array<unknown> = []
+      for (const answer of answers) bodies.push(try answer.json)
+      const after = try (try at(origin, "/api/history")).json
+      const runs = (try (try at(origin, "/runs/history")).json) as ReadonlyArray<{ readonly run_id: string; readonly status: string }>
+      try Effect.try(() => {
+        expect(statuses).toEqual([403, 403, 403, 403, 403])
+        expect(bodies).toEqual(Array(5).fill({ refusal: "forbidden" }))
+        expect(after).toEqual(before)
+        expect(runs.filter((run) => run.run_id.startsWith("history-")).map((run) => [run.run_id.split("/")[0], run.status])).toEqual([
+          ["history-plan", "completed"], ["history-start", "completed"], ["history-note", "completed"],
+          ["history-approve", "completed"], ["history-fold", "completed"],
+        ])
+      })
+    }
+  })
+
+  it.live("answers the protocol's errors: unknown writes, bad bodies and bad cursors", () => effect {
+    provide platform {
+      const origin = api!.origin
+      const statuses = [
+        (try at(origin, "/api/history/merge", "{}")).status,
+        (try at(origin, "/api/history/plan", "{")).status,
+        (try at(origin, "/api/history/plan", JSON.stringify({ how: "rebase", epic: "", newEpic: "", target: "", title: "x", task: "" }))).status,
+        (try at(origin, "/api/history/note", JSON.stringify({ id: "m1", section: "lies", text: "x" }))).status,
+        (try at(origin, "/api/history/events?after=-1")).status,
+        (try at(origin, "/api/history/plan", "x".repeat(40_000))).status,
+      ]
+      try Effect.try(() => expect(statuses).toEqual([404, 400, 400, 400, 400, 413]))
+    }
+  })
+
+  it.live("serves LiveMythical: the same history, and a refusal typed as Refused", () => effect {
+    provide platform {
+      const result = try effect {
+        provide LiveMythical(api!.origin) {
+          const mythical = try Mythical
+          const history = try mythical.read()
+          const refusal = mythical.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "x", task: "" }) catch (error) =>
+            error._tag === "Refused" ? error.refusal : error._tag
+          return { epics: history.epics.length, refusal }
+        }
+      }
+      try Effect.try(() => expect(result).toEqual({ epics: 11, refusal: "forbidden" }))
+    }
+  })
+})

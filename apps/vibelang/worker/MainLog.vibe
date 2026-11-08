@@ -1,0 +1,88 @@
+// VibeLang's main as a fold reads it on Cloudflare (wiki/decisions/0020-mythical-history.md): GitHub's commit list of
+// the repository's main, newest first, read a page at a time until it reaches the history's last folded commit. The
+// commits after it are main's first-parent steps since, each preceded by the side commits its merge brought in that
+// the pages hold; a side commit already folded is refused `duplicate` by the sequencer and changes nothing.
+import { HttpClient, HttpClientRequest } from "effect/http"
+import { MainLog, MainUnavailable } from "../src/history/flows.vibe"
+import { SHA_LENGTH, titleOf } from "../src/history/seed.vibe"
+import type { MainCommit } from "../src/history/Sequencer.vibe"
+
+/** One commit of GitHub's list: `GET /repos/<owner>/<repo>/commits`. */
+export schema GitHubCommit {
+  readonly sha: string
+  readonly commit: { readonly message: string }
+  readonly parents: ReadonlyArray<{ readonly sha: string }>
+}
+
+const decodePage = Schema.decodeUnknownEffect(Schema.Array(GitHubCommit))
+
+/** How many commits a page holds, and how many pages a fold reads at most. */
+export const PER_PAGE = 100
+export const MAX_PAGES = 10
+
+/**
+ * The commits of `fetched` (newest first, as GitHub lists them) after `cursor`, a shortened id of a commit on main's
+ * first-parent line, oldest first: each first-parent step after its side commits. `undefined` when the first-parent
+ * walk from the newest commit doesn't reach `cursor` within `fetched`. An empty `cursor` takes the whole walk.
+ */
+export function newCommits(fetched: ReadonlyArray<GitHubCommit>, cursor: string): ReadonlyArray<MainCommit> | undefined {
+  const head = fetched[0]
+  if (head === undefined) return cursor === "" ? [] : undefined
+  const bySha = new Map(fetched.map((commit) => [commit.sha, commit]))
+  const spine: Array<GitHubCommit> = []
+  let at: GitHubCommit | undefined = head
+  while (at !== undefined && !(cursor !== "" && at.sha.startsWith(cursor))) {
+    spine.push(at)
+    at = bySha.get(at.parents[0]?.sha ?? "")
+  }
+  if (cursor !== "" && at === undefined) return undefined
+  const onSpine = new Set(spine.map((commit) => commit.sha))
+  const seen = new Set<string>()
+  const commits: Array<MainCommit> = []
+  const toCommit = (commit: GitHubCommit): MainCommit => ({
+    sha: commit.sha.slice(0, SHA_LENGTH),
+    change: "",
+    title: titleOf(commit.commit.message),
+    message: commit.commit.message,
+  })
+  for (const step of spine.reverse()) {
+    const side: Array<GitHubCommit> = []
+    const stack = step.parents.slice(1).map((parent) => parent.sha)
+    while (stack.length > 0) {
+      const commit = bySha.get(stack.pop()!)
+      if (commit === undefined || seen.has(commit.sha) || onSpine.has(commit.sha) || (cursor !== "" && commit.sha.startsWith(cursor))) continue
+      seen.add(commit.sha)
+      side.push(commit)
+      stack.push(...commit.parents.map((parent) => parent.sha))
+    }
+    // GitHub lists newest first; a side commit's place in that list orders it, oldest first.
+    side.sort((a, b) => fetched.indexOf(b) - fetched.indexOf(a))
+    commits.push(...side.map(toCommit), toCommit(step))
+  }
+  return commits
+}
+
+/** main of `repository` (`owner/name`) on GitHub; `token` raises GitHub's rate limit when the deployment has one. */
+export function githubMain(repository: string, client: HttpClient.HttpClient, token: string | undefined): MainLog.Shape {
+  return {
+    since: effect (cursor: string) => {
+      const fetched: Array<GitHubCommit> = []
+      for (let page = 1; page <= MAX_PAGES; page++) {
+        let request = HttpClientRequest.get(`https://api.github.com/repos/${repository}/commits?sha=main&per_page=${PER_PAGE}&page=${page}`).pipe(
+          HttpClientRequest.setHeader("accept", "application/vnd.github+json"),
+          HttpClientRequest.setHeader("user-agent", "vibelang-factory"),
+        )
+        if (token !== undefined) request = HttpClientRequest.setHeader(request, "authorization", `Bearer ${token}`)
+        const response = try Effect.mapError(client.execute(request), () => new MainUnavailable({ reason: "GitHub unreachable" }))
+        if (response.status !== 200) throw new MainUnavailable({ reason: `GitHub answered ${response.status}` })
+        const body = try Effect.mapError(response.json, () => new MainUnavailable({ reason: "GitHub's answer is not JSON" }))
+        const commits = try Effect.mapError(decodePage(body), () => new MainUnavailable({ reason: "GitHub's answer is not a commit list" }))
+        fetched.push(...commits)
+        const found = newCommits(fetched, cursor)
+        if (found !== undefined) return found
+        if (commits.length < PER_PAGE) break
+      }
+      throw new MainUnavailable({ reason: "main's last folded commit is not within reach" })
+    },
+  }
+}
