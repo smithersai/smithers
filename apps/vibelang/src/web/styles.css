@@ -459,6 +459,9 @@ html { overflow-anchor: none; }
 .vl-theatre-controls button:disabled{opacity:.3;cursor:default}
 .vl-theatre-controls button:focus-visible{outline:2px solid var(--ring,var(--brand));outline-offset:2px}
 .vl-app[data-tour=on] .vl-esc{z-index:103}
+/* While the agent drives, Esc sits under the top bar on every width, so it never covers a nav control (the top bar
+   fills its centre once the Mock switch, Visit as and Sign in are there). */
+.vl-app[data-tour=on] .vl-esc{top:calc(var(--vl-header-height, 60px) + 8px)}
 .vl-app[data-tour=on] .vl-wiki[data-maximized=true],.vl-app[data-tour=on] .vl-sandboxes[data-maximized=true]{bottom:220px}
 .vl-app[data-tour=on] .ix-surface{max-height:calc(100dvh - 270px);overflow:auto}
 .vl-app[data-tour=on] .sui-chat-composer[data-docked="true"]{bottom:230px}

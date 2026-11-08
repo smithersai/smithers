@@ -112,3 +112,21 @@ test("slash tour shares Learn more and keyboard focus stays in the theatre contr
   await page.keyboard.press("Escape")
   await expect(page.locator("#vl-prompt")).toBeFocused()
 })
+
+test("Esc never covers a top-bar control while the agent drives", async ({ page }) => {
+  await page.goto("/?agent=mock")
+  await page.getByRole("button", { name: "Learn more", exact: true }).click()
+  const esc = page.getByRole("button", { name: "Esc", exact: true })
+  for (const n of [1, 2, 3]) {
+    await step(page, n)
+    await expect(esc).toBeVisible()
+    const pill = (await esc.boundingBox())!
+    for (const control of await page.locator(".vl-top a, .vl-top button, .vl-top select").all()) {
+      if (!(await control.isVisible())) continue
+      const box = (await control.boundingBox())!
+      const overlaps = pill.x < box.x + box.width && box.x < pill.x + pill.width && pill.y < box.y + box.height && box.y < pill.y + pill.height
+      expect(overlaps, `Esc covers ${await control.textContent()}`).toBe(false)
+    }
+    if (n < 3) await skip(page, n + 1)
+  }
+})
