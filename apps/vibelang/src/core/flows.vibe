@@ -15,6 +15,8 @@ import { Action, DurableClock, Flow, FlowRuntime, RetryPolicy } from "@smthrs/fl
 import { Node } from "@smthrs/plan"
 import { canReplyTo, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
 import { dispatches, endsTourEvent, readingHold } from "./flowDecision.vibe"
+import { STOPS } from "./tourStops.vibe"
+export { STOPS, type Stop } from "./tourStops.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
 /** A contended reply or remote object waits through the engine's journaled retry policy. */
@@ -97,21 +99,6 @@ export const DOCS_ORIGIN = "https://vibelang.sh"
 export function docsPage(path: string): string | undefined {
   return /^\/[a-z0-9\-\/]*$/.test(path) && !path.includes("//") ? DOCS_ORIGIN + path : undefined
 }
-
-/** One stop of the tour: the docs page the agent opens, and what it says about it there. */
-export interface Stop {
-  readonly path: string
-  readonly topic: string
-}
-
-/** The tour's stops, in order. The live agent's instruction names them; the mock speaks a script for each. */
-export const STOPS: ReadonlyArray<Stop> = [
-  { path: "/", topic: "what VibeLang is: Effect as its own language, in TypeScript syntax" },
-  { path: "/getting-started/002-why-effect", topic: "why Effect: typed errors, services and layers, structured concurrency" },
-  { path: "/vibelang-features/115-cheat-sheet", topic: "the syntax, each form beside the Effect TypeScript it compiles to" },
-  { path: "/setup", topic: "how to start a project" },
-  { path: "/vips", topic: "how the language changes, through VIPs, and this site: VibeLang's open-source coding factory" },
-]
 
 /** The conversation's sequencer, as the tour's steps reach it. */
 export service Tours {

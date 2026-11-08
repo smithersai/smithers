@@ -3,6 +3,7 @@ import { Runtime } from "foldkit"
 import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
 import { application } from "../../test/support/application.vibe"
+import { MediaAssets } from "../../src/web/media.vibe"
 import { init } from "../../src/web/main.vibe"
 import { stylesheet } from "../../src/web/styles.vibe"
 import { main as startup, page as startupPage } from "../../src/web/startup.vibe"
@@ -29,7 +30,9 @@ export effect function main() {
   })
   const observation = trace()
   let model = init({ session: "browser", mode: "mock", name: "Guest" }).model
-  const program = application(root, faultyFactory(faultOf(window.location.search), observation), (value) => { model = value })
+  const empty = new URLSearchParams(window.location.search).get("fault") === "media-empty" || new URLSearchParams(window.location.search).get("fault") === "media-image"
+  const program = application(root, faultyFactory(faultOf(window.location.search), observation), (value) => { model = value },
+    (flags) => { const started = init(flags); return empty ? { ...started, model: { ...started.model, surface: "chat" as const } } : started })
   window.recovery = {
     snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map((event) => event.seq) }),
     canonical: () => runPromise(canonical(observation)),
@@ -43,6 +46,10 @@ const page = Layer.mergeAll(ExperimentalBrowserWindow.layer, ExperimentalBrowser
 const window = await runPromise(effect {
   provide page { return try (try Experimental.Window.Window).current }
 })
+const mediaSources = await runPromise(Effect.provide(effect { return try (try MediaAssets).sources }, Layer.succeed(MediaAssets, {
+  // Valid image bytes sent to the real video decoder: a native decode failure, without request interception.
+  sources: succeed(new URLSearchParams(window.location.search).get("fault") === "media-video" ? { "/media/magic-move.mp4": "/media/card-01-contract.png" } : new URLSearchParams(window.location.search).get("fault") === "media-image" ? { "/media/card-06-compiler.png": "/media/not-an-image.png" } : {}),
+})))
 const reducedMotion = await runPromise(effect {
   provide page { return try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)") }
 })
@@ -56,6 +63,6 @@ if (new URLSearchParams(window.location.search).get("fault") === "health") {
   }, startupPage) |> Effect.orDie(%))
 } else {
   Runtime.run(await runPromise(Effect.provide(main(), page) |> Effect.orDie(%)), {
-    flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest", reducedMotion }),
+    flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest", reducedMotion, mediaSources }),
   })
 }

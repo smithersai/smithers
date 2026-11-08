@@ -194,3 +194,5 @@ move with its final scroll position, preserving real pause and Latest behavior w
 The app also matches the monorepo test peers `@types/node` 26.4.1 and `happy-dom` 20.13.2. Distinct optional peers
 created two Vitest 5.0.0 instances; Effect's test helpers registered against the other instance, so suites could not
 load after a fresh install. These are version alignments of existing test tools, with no runtime dependency added.
+
+**Marketing media (0026).** `e2e/media.spec.ts` checks every tour placement in dark, light-preferring and phone browsers, decoded images/videos, native loading posters, loop policy, silence, reduced-motion stills, native decode failures through a faulty `MediaAssets` Effect service, and failed empty-state images. The compiler-card scene fails on the old view. Both designer-reported CSS bugs pass on current main (390px header and computed gradient); no CSS fix is needed. Existing monorepo tool versions `@types/node` 26.4.1 and `happy-dom` 20.13.2 share one Vitest runtime; this adds no dependency. `E2E_4516=4516` selects this lane’s local host across all fault suites.

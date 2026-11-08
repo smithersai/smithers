@@ -13,6 +13,7 @@ import * as Machine from "../core/conversation.vibe"
 import { SandboxSnapshot, EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
 import { escapeAction, canMinimize, hasContent, toggleDocs, scrollFollow, follows, failedTourKeepsControl, paletteChange, tourStream, completedEvent, answerAnnouncement, screenKey } from "./screenDecision.vibe"
+import { MediaSources, observeMedia } from "./media.vibe"
 import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
@@ -22,6 +23,7 @@ export schema Flags {
   readonly session: string
   readonly mode: "mock" | "live" | "pending"
   readonly name: string
+  readonly mediaSources?: MediaSources
   readonly reducedMotion?: boolean
 }
 
@@ -35,6 +37,8 @@ export schema Model {
   readonly draft: string
   readonly session: string
   readonly name: string
+  readonly mediaSources?: MediaSources
+  readonly failedMedia?: ReadonlyArray<string>
   readonly reducedMotion: boolean
   /** How many posts this tab has sent; the next one's client id is `<session>-<sent + 1>`. */
   readonly sent: number
@@ -88,6 +92,9 @@ export const CONTRIBUTE_URL = "https://github.com/smithersai/vibelang/blob/main/
 // MESSAGE
 
 export const Message = defineMessageUnion({
+  ObservedMedia: {},
+  LoadedMedia: { kind: Schema.Literals(["image", "video"]) },
+  FailedMedia: { src: Schema.String, kind: Schema.Literals(["image", "video"]) },
   ResolvedMode: { mode: Schema.Literals(["mock", "live"]) },
   PressedCommandK: {},
   PressedEscape: {},
@@ -133,6 +140,8 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       session: flags.session,
       name: flags.name,
       reducedMotion: flags.reducedMotion ?? false,
+      mediaSources: flags.mediaSources ?? {},
+      failedMedia: [],
       sent: 0,
       conversation: HOME_CONVERSATION,
       client: Machine.newClient,
@@ -156,6 +165,9 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
 
 export function update(model: Model, message: Message): Update.Return<Model, Message, Factory> {
   return Message.match<Update.Return<Model, Message, Factory>>(message, {
+    ObservedMedia: () => ({ model }),
+    LoadedMedia: ({ kind }) => ({ model, commands: [ObserveMedia({ kind, outcome: "loaded" })] }),
+    FailedMedia: ({ src, kind }) => ({ model: { ...model, failedMedia: [...(model.failedMedia ?? []), src] }, commands: [ObserveMedia({ kind, outcome: "failed" })] }),
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode } }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
@@ -315,6 +327,16 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
 }
 
 // COMMAND
+
+/** A native media observation is presentation state, independent of the durable conversation. */
+export const ObserveMedia = Command.define("ObserveMedia", {
+  args: { kind: Schema.Literals(["image", "video"]), outcome: Schema.Literals(["loaded", "failed"]) },
+  messages: [Message.ObservedMedia],
+  execute: effect ({ kind, outcome }) => {
+    try observeMedia(outcome, kind)
+    return try message(() => Message.ObservedMedia())
+  },
+})
 
 /** A Message from its constructor, in a Command. Constructors validate with Schema, so a bad payload is a defect. */
 effect function message<A>(make: () => A) {

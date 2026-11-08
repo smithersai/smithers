@@ -26,7 +26,7 @@ States: **done** (evidence on main or production), **lane** (a running lane owns
 | VL-16 splash, ⌘K, chat in smithers.sh's style | done | `e2e/chat.spec.ts`; `sui-*` classes from `@smthrs/ui-css` | — |
 | VL-17 everything is a chat, maximizable panes, view transitions | done | splash and docs panes maximize (`e2e/tour.spec.ts`); typed transitions `to-chat`/`to-splash`, none for ⌘K: `e2e/transitions.spec.ts` | — |
 | VL-18 copy GitHub | lane | no current surface has a GitHub counterpart beyond the history; the designs for issues, actions, wiki and roles follow GitHub | vl-issues, vl-actions, vl-wiki, vl-roles |
-| VL-19 marketing materials throughout | **gap** | the site uses 4 of the 10 files in `public/media` (logo, icon, `contract.mp4`, its poster); `agent-loop.mp4`, `magic-move.mp4`, `card-01`, `card-06`, `card-07` and `token-bars.png` appear nowhere. Lane designs carry their own media | lead: a designer pass on the splash and chat |
+| VL-19 marketing materials throughout | done (local) | all 10 original files plus 2 new posters: splash, five tour stops and empty chat; [0026](decisions/0026-marketing-media.md), `e2e/media.spec.ts`, designer source in `wiki/designs/media/`; lead deploys | vl-media |
 | VL-20 VIPs, issues versus tasks, issue tree | lane | design `~/vl/designs/issues/`; not on main | vl-issues (0022) |
 | VL-21 five roles and promotion | lane | policy 0019; shared GitHub authentication landed | vl-roles (0019) |
 | VL-22 mythical history viewable; work runs through its flows | done (local) | 0020; `e2e/history.spec.ts`; CLI `history`, `plan`, `start`, `note`; not deployed | lead deploys |

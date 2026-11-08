@@ -13,6 +13,7 @@ import { ROLES } from "../history/roles.vibe"
 import { AgentBackend, BrowserFactory } from "./backend.vibe"
 import { Flags, init, Message, Model, subscriptions, update, viewTransition } from "./main.vibe"
 import { stylesheet } from "./styles.vibe"
+import { MediaAssets } from "./media.vibe"
 import { view } from "./view.vibe"
 
 /** Whether this page asked for the mock agent. Storage can be unavailable; that asks for nothing. */
@@ -56,7 +57,8 @@ export effect function main() {
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
   // The full UUID: sandbox operation ids `${session}/sandbox/${n}` and their receipts are kept for good (0024).
   const session = try (try SecureRandom.SecureRandom).uuidV4()
-  const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion }
+  const mediaSources = try (try MediaAssets).sources
+  const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion, mediaSources }
   const application = try Effect.try(() => Runtime.makeApplication({
     Model,
     Flags,

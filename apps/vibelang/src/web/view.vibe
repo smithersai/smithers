@@ -5,6 +5,7 @@ import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
 import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { render } from "./markdown.vibe"
+import { STOPS, type StopMedia } from "../core/tourStops.vibe"
 import { sandboxPane } from "./sandboxView.vibe"
 
 type H = HtmlBuilder<AppMessage>
@@ -101,12 +102,10 @@ function splash(model: Model, h: H): Html {
       ]),
       h.pre([h.Class("vl-install")], [h.code([], [INSTALL])]),
     ]),
-    h.figure([h.Class("vl-media")], [
-      h.video(
-        [h.Src("/media/contract.mp4"), h.Poster("/media/contract-poster.jpg"), h.Autoplay(!model.reducedMotion), h.Controls(true), h.Muted(true), h.Loop(true), h.Playsinline(true), h.AriaLabel("A!E!R: what a function returns, how it fails, what it needs")],
-        [],
-      ),
-    ]),
+    ...media(model, h, "vl-media", {
+      src: "/media/contract.mp4", poster: "/media/contract-poster.jpg", loop: true,
+      alt: "A!E!R: what a function returns, how it fails, what it needs",
+    }, true),
   ])
 }
 
@@ -144,8 +143,14 @@ function docsPane(model: Model, h: H): Html {
           [paneIcon(h, maximized ? MINIMIZE : MAXIMIZE)],
         )]),
       ]),
-      h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs"), h.Inert(model.tour), h.Tabindex(model.tour ? -1 : 0)], []),
-      ...(model.tour ? [h.section([h.Class("vl-tour-narration sui-chat-bubble"), h.AriaLabel("Current stop")], render(h, current))] : []),
+      h.div([h.Class(model.tour ? "vl-docs-body" : "vl-docs-content")], [
+        h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs"), h.Inert(model.tour), h.Tabindex(model.tour ? -1 : 0)], []),
+        ...(model.tour ? [h.div([h.Class("vl-tour-side")], [
+          ...mediaForStop(model, h, page),
+          h.div([h.Class("sui-chat-message-label")], ["VibeLang agent"]),
+          h.section([h.Class("vl-tour-narration sui-chat-bubble"), h.AriaLabel("Current stop")], render(h, current)),
+        ])] : []),
+      ]),
     ],
   )
 }
@@ -159,6 +164,9 @@ function chat(model: Model, h: H): Html {
       splashPane(h),
       sandboxPane(model, h),
       ...(conversation.pane === "" || model.tour || model.docs === "max" ? [] : [docsPane(model, h)]),
+      ...(conversation.entries.length === 0 && pending.length === 0 ? [h.div([h.Class("sui-chat-empty")], media(model, h, "vl-empty-media", {
+        src: "/media/card-06-compiler.png", alt: "The compiler says what to write instead: VibeLang diagnostics with the fix to write",
+      }))] : []),
       ...conversation.entries.map((entry) => entryView(entry, model.session, h)),
       ...pending.map((post) => pendingView(post, h)),
       ...(model.stream === "failed"
@@ -280,4 +288,28 @@ function palette(model: Model, h: H): Html {
       ],
     ),
   ])
+}
+
+/** Only the flow's catalog chooses media; narration cannot name a file. */
+function mediaForStop(model: Model, h: H, page: string): ReadonlyArray<Html> {
+  const stop = STOPS.find((stop) => page === DOCS_URL + stop.path)
+  return stop === undefined ? [] : media(model, h, "vl-stop-media", stop.media)
+}
+
+/** Loading videos show their native poster. A failed image or video removes its whole figure. */
+function media(model: Model, h: H, className: string, asset: StopMedia, controls = false): ReadonlyArray<Html> {
+  if (model.failedMedia?.includes(asset.src)) return []
+  const source = (src: string) => model.mediaSources?.[src] ?? src
+  const video = asset.poster !== undefined
+  const failed = Message.FailedMedia({ src: asset.src, kind: video ? "video" : "image" })
+  const still = video && model.reducedMotion && !controls ? asset.poster! : asset.src
+  return [h.figure([h.Class(className), h.Key(asset.src)], [
+    ...(video && (!model.reducedMotion || controls) ? [h.video([
+      h.Key(asset.src), h.Src(source(asset.src)), h.Poster(source(asset.poster!)),
+      h.Autoplay(!model.reducedMotion), h.Muted(true), h.Playsinline(true), h.Loop(asset.loop ?? false), h.Controls(controls),
+      h.AriaLabel(asset.alt), h.OnError(failed), h.OnPlay(Message.LoadedMedia({ kind: "video" })),
+    ], [])] : [h.img([
+      h.Key(still), h.Src(source(still)), h.Alt(asset.alt), h.OnError(failed), h.OnLoad(Message.LoadedMedia({ kind: "image" })),
+    ])]),
+  ])]
 }

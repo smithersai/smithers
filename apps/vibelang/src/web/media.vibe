@@ -1,0 +1,16 @@
+// Browser assets are rendered natively. Tests inject a faulty asset service; no requests are intercepted.
+export const MediaSources = Schema.Record(Schema.String, Schema.String)
+export service MediaAssets {
+  static readonly defaultValue = () => ({ sources: succeed({} as Readonly<Record<string, string>>) })
+  readonly sources: Readonly<Record<string, string>>!!
+}
+
+export const mediaEvents = Metric.counter("vibelang_media_events", { description: "Native media outcomes", incremental: true })
+
+/** Outcomes only: never paths, page text, names or credentials. */
+export effect function observeMedia(outcome: "loaded" | "failed", kind: "image" | "video") {
+  try withSpan(effect {
+    try Metric.update(Metric.withAttributes(mediaEvents, { outcome, kind }), 1)
+    try logInfo("vibelang.media", { outcome, kind })
+  }, "vibelang.media")
+}

@@ -1,7 +1,7 @@
 // Stays .ts: Playwright collects test files by JS/TS extension only.
 import { expect, test } from "@playwright/test"
 
-const local = `http://127.0.0.1:${process.env.E2E_4502 ?? process.env.E2E_PORT ?? 4173}`
+const local = `http://127.0.0.1:${process.env.E2E_4516 ?? process.env.E2E_4502 ?? process.env.E2E_PORT ?? 4173}`
 
 test("a question without a matching script still gets a complete answer", async ({ page }) => {
   await page.goto("/?agent=mock")

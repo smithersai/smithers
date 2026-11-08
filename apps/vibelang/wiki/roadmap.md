@@ -64,8 +64,10 @@ brick                                   state         proof
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
 
 - **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.
-  Fixed: the page follows its conversation from the start (VL-12, VL-26); view transitions tested (VL-17). Open gap:
-  VL-19, six marketing files unused.
+  Fixed: the page follows its conversation from the start (VL-12, VL-26); view transitions tested (VL-17). The
+  VL-19 media gap is closed by 0026 (vl-media), below.
 
 - **Review (vl-review2):** [review of 2026-11-08](review-2026-11-08.md). Fixed: idle sandbox metering and reads in
   the chat. Open, with owners: Durable Object engine retention, idempotent history tool writes.
+
+- **Marketing media (vl-media, 0026):** all twelve assets placed by the shared Tour catalog or the splash/empty chat; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.

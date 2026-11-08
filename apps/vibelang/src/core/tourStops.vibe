@@ -1,0 +1,32 @@
+// The vibelang/Tour flow's stop catalog, shared by the controller, live narration and view.
+export interface StopMedia {
+  readonly src: string
+  readonly alt: string
+  readonly poster?: string
+  readonly loop?: boolean
+}
+export interface Stop {
+  readonly path: string
+  readonly topic: string
+  readonly media: StopMedia
+}
+
+export const STOPS: ReadonlyArray<Stop> = [
+  { path: "/", topic: "what VibeLang is: Effect as its own language, in TypeScript syntax", media: {
+    src: "/media/card-01-contract.png", alt: "Effect functions return effects: User!NotFound!Users — returns a User, fails with NotFound, needs Users, compiles to Effect.Effect<User, NotFound, Users>",
+  } },
+  { path: "/getting-started/002-why-effect", topic: "why Effect: typed errors, services and layers, structured concurrency", media: {
+    src: "/media/magic-move.mp4", poster: "/media/magic-move-poster.jpg", loop: false,
+    alt: "The same Effect program in TypeScript and in VibeLang: 136 tokens instead of 202",
+  } },
+  { path: "/vibelang-features/115-cheat-sheet", topic: "the syntax, each form beside the Effect TypeScript it compiles to", media: {
+    src: "/media/token-bars.png", alt: "Every cheat-sheet pair: 6.6% fewer tokens in VibeLang across all 47 entries",
+  } },
+  { path: "/setup", topic: "how to start a project", media: {
+    src: "/media/card-07-install.png", alt: "bun create vibelang@latest my-app, then bun run start — Hello, VibeLang!",
+  } },
+  { path: "/vips", topic: "how the language changes, through VIPs, and this site: VibeLang's open-source coding factory", media: {
+    src: "/media/agent-loop.mp4", poster: "/media/agent-loop-poster.jpg", loop: true,
+    alt: "The agent writes VibeLang; the compiler answers with diagnostics and what to write instead",
+  } },
+]

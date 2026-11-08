@@ -1,0 +1,416 @@
+<header class="d-bar">
+  <b>Media</b>
+  <label>Screen <select id="d-screen">
+    <option value="s-map">Placement map</option>
+    <option value="s-splash">Splash · contract.mp4 (unchanged)</option>
+    <option value="s-chat-empty">Chat · empty state · card-06</option>
+    <option value="s-chat-agent">Chat · agent answers with card-01</option>
+    <option value="s-tour-1">Tour 1 · what VibeLang is · card-01</option>
+    <option value="s-tour-2">Tour 2 · why Effect · magic-move.mp4</option>
+    <option value="s-tour-3">Tour 3 · cheat sheet · token-bars</option>
+    <option value="s-tour-4">Tour 4 · setup · card-07</option>
+    <option value="s-tour-5">Tour 5 · the factory · agent-loop.mp4</option>
+  </select></label>
+  <label>State <select id="d-state">
+    <option value="default">Default</option>
+    <option value="loading">Loading</option>
+    <option value="reduced">Reduced motion</option>
+    <option value="failed">Media failed</option>
+  </select></label>
+</header>
+
+<!-- ══ Placement map ══ -->
+<div class="d-screen" id="s-map">
+  <header class="vl-top">
+    <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+    <nav class="vl-nav">
+      <span class="vl-pill">Mock</span>
+      <a class="vl-nav-link" href="#">History</a>
+      <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+      <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+    </nav>
+  </header>
+  <main class="sui-page-body">
+    <div class="sui-table-container" data-variant="card">
+      <table class="sui-table">
+        <thead><tr><th>File</th><th>Placed at</th><th>Why</th></tr></thead>
+        <tbody>
+          <tr><td class="d-map-file">contract.mp4<br>contract-poster.jpg</td><td>Splash hero (unchanged)</td><td>The contract <code>A!E!R</code> is the one idea the splash teaches.</td></tr>
+          <tr><td class="d-map-file">card-01-contract.png</td><td>Tour stop 1 · agent's answers in chat</td><td>The card <em>is</em> the contract, drawn: returns, fails, needs.</td></tr>
+          <tr><td class="d-map-file">magic-move.mp4</td><td>Tour stop 2 (why Effect)</td><td>Shows "keeps Effect, drops the boilerplate"; plays once, holds the answer.</td></tr>
+          <tr><td class="d-map-file">token-bars.png</td><td>Tour stop 3 (cheat sheet)</td><td>The 47-pair measurement is the proof of the stop's claim.</td></tr>
+          <tr><td class="d-map-file">card-07-install.png</td><td>Tour stop 4 (setup)</td><td>The install command and its output, as a picture.</td></tr>
+          <tr><td class="d-map-file">agent-loop.mp4</td><td>Tour stop 5 (the factory)</td><td>The factory's loop: the agent writes, the compiler answers.</td></tr>
+          <tr><td class="d-map-file">card-06-compiler.png</td><td>Chat empty state</td><td>What asking gets: diagnostics that say what to write.</td></tr>
+          <tr><td class="d-map-file">icon.svg · logo-dark.svg</td><td>Favicon, header (unchanged)</td><td>Brand.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="sui-table-container" data-variant="card">
+      <table class="sui-table">
+        <thead><tr><th>Surface</th><th>Decision</th></tr></thead>
+        <tbody>
+          <tr><td>Wiki</td><td>No media. The working memory is prose by design (VL-23); a marketing figure decorates it.</td></tr>
+          <tr><td>History</td><td>No media. The commit stack is the evidence; art adds nothing.</td></tr>
+          <tr><td>Issues · Actions · Sandboxes</td><td>No media. GitHub-like operational lists (VL-18); GitHub puts no art on a list, and media pushes rows below the fold.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="sui-table-container" data-variant="card">
+      <table class="sui-table">
+        <thead><tr><th>Video</th><th>Motion</th><th>Reduced-motion still</th></tr></thead>
+        <tbody>
+          <tr><td class="d-map-file">contract.mp4</td><td>Muted, looped, controls (as live)</td><td class="d-map-file">contract-poster.jpg</td></tr>
+          <tr><td class="d-map-file">magic-move.mp4</td><td>Muted, plays once, holds the last frame</td><td class="d-map-file">magic-move-poster.jpg (new)</td></tr>
+          <tr><td class="d-map-file">agent-loop.mp4</td><td>Muted, looped</td><td class="d-map-file">agent-loop-poster.jpg (new)</td></tr>
+        </tbody>
+        <caption>Never autoplaying sound. Loading shows the poster; a failed video or image is removed and the layout holds.</caption>
+      </table>
+    </div>
+  </main>
+</div>
+
+<!-- ══ Splash (unchanged, shown as the baseline) ══ -->
+<div class="d-screen" id="s-splash">
+  <div class="vl-app" data-surface="splash" data-mode="mock" data-tour="off">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main class="vl-splash">
+      <section class="vl-hero">
+        <div class="vl-eyebrow">Effect, as a language</div>
+        <h1 class="vl-title"><span class="vl-gradient">Vibe</span>Lang</h1>
+        <p class="vl-tagline">VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.</p>
+        <div class="vl-actions">
+          <button class="vl-primary" type="button">Learn more</button>
+          <button class="vl-ask" type="button" aria-label="Ask the agent">Ask the agent <kbd class="vl-kbd" aria-hidden="true">⌘K</kbd></button>
+          <a class="vl-ask" href="#">Contribute</a>
+        </div>
+        <pre class="vl-install"><code>npm create vibelang@latest my-app</code></pre>
+      </section>
+      <figure class="vl-media">
+        <video src="media/contract.mp4" poster="media/contract-poster.jpg" autoplay controls muted loop playsinline aria-label="A!E!R: what a function returns, how it fails, what it needs"></video>
+      </figure>
+    </main>
+  </div>
+</div>
+
+<!-- ══ Chat · empty state ══ -->
+<div class="d-screen" id="s-chat-empty">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="off">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <button class="vl-pane" type="button" aria-label="Expand the VibeLang home page">
+          <span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span>
+          <span class="vl-pane-text">Effect, as a language</span>
+          <span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span>
+        </button>
+        <div class="sui-chat-empty">
+          <figure class="vl-empty-media" data-media>
+            <img data-v="play" src="media/card-06-compiler.png" alt="The compiler says what to write instead: VibeLang diagnostics with the fix to write">
+            <span data-v="load" class="sui-skeleton" hidden></span>
+          </figure>
+        </div>
+      </div>
+      <form class="sui-chat-composer" data-docked="true">
+        <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+        <div class="sui-chat-composer-toolbar">
+          <span class="sui-chat-composer-status"></span>
+          <div class="sui-chat-composer-actions">
+            <button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send" disabled>↑</button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+</div>
+
+<!-- ══ Chat · the agent answers with the picture ══ -->
+<div class="d-screen" id="s-chat-agent">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="off">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <main class="vl-chat">
+      <div class="sui-chat-messages" role="log" aria-label="Conversation">
+        <button class="vl-pane" type="button" aria-label="Expand the VibeLang home page">
+          <span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span>
+          <span class="vl-pane-text">Effect, as a language</span>
+          <span class="vl-pane-expand"><svg class="vl-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7"/></svg></span>
+        </button>
+        <article class="sui-chat-message" data-role="user">
+          <div class="sui-chat-message-label">You</div>
+          <div class="sui-chat-bubble">What does a function's type say in VibeLang?</div>
+        </article>
+        <article class="sui-chat-message" data-role="assistant">
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <div class="sui-chat-bubble">
+            <figure class="vl-msg-media" data-media>
+              <img data-v="play" src="media/card-01-contract.png" alt="Effect functions return effects: User!NotFound!Users — returns a User, fails with NotFound, needs Users, compiles to Effect.Effect&lt;User, NotFound, Users&gt;">
+            </figure>
+          </div>
+        </article>
+      </div>
+      <form class="sui-chat-composer" data-docked="true">
+        <textarea class="sui-chat-composer-input" rows="1" placeholder="Ask about VibeLang" aria-label="Message"></textarea>
+        <div class="sui-chat-composer-toolbar">
+          <span class="sui-chat-composer-status"></span>
+          <div class="sui-chat-composer-actions">
+            <button class="vl-send sui-chat-composer-send" type="submit" aria-label="Send" disabled>↑</button>
+          </div>
+        </div>
+      </form>
+    </main>
+  </div>
+</div>
+
+<!-- ══ Tour stops ══ -->
+<!-- stop: [id, url, mock docs html, media html, narration] — written out per stop below -->
+
+<div class="d-screen" id="s-tour-1">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="on">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <section class="vl-docs" aria-label="Docs" data-maximized="true" data-driving="true">
+      <div class="vl-docs-bar"><span class="vl-docs-page">vibelang.sh/</span></div>
+      <div class="vl-docs-body">
+        <div class="vl-docs-frame mdoc" title="VibeLang docs">
+          <span class="mdoc-tag">Effect, as a language</span>
+          <div class="mdoc-logo"><img src="media/logo-dark.svg" alt="VibeLang"></div>
+          <p class="mdoc-line" style="width:72%"></p>
+          <p class="mdoc-line" style="width:58%"></p>
+          <p class="mdoc-line" style="width:64%"></p>
+        </div>
+        <div class="vl-tour-side">
+          <figure class="vl-stop-media" data-media>
+            <img data-v="play" src="media/card-01-contract.png" alt="Effect functions return effects: User!NotFound!Users — returns a User, fails with NotFound, needs Users, compiles to Effect.Effect&lt;User, NotFound, Users&gt;">
+          </figure>
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <section class="vl-tour-narration sui-chat-bubble" aria-label="Current stop">
+            <p>VibeLang is Effect as its own language. You write TypeScript syntax: <code>effect</code> goes where <code>async</code> goes, <code>try</code> runs an Effect, and <code>A!E!R</code> says what a function returns, how it fails and what it needs. Its compiler, a fork of TypeScript 7 written in Go, builds the same Effect program you would write by hand.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+    <div class="vl-glow" aria-hidden="true"></div>
+    <button class="vl-esc" type="button"><kbd>Esc</kbd></button>
+  </div>
+</div>
+
+<div class="d-screen" id="s-tour-2">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="on">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <section class="vl-docs" aria-label="Docs" data-maximized="true" data-driving="true">
+      <div class="vl-docs-bar"><span class="vl-docs-page">vibelang.sh/getting-started/002-why-effect</span></div>
+      <div class="vl-docs-body">
+        <div class="vl-docs-frame mdoc" title="VibeLang docs">
+          <h1 class="mdoc-h">Why Effect</h1>
+          <p class="mdoc-line" style="width:80%"></p>
+          <p class="mdoc-line" style="width:66%"></p>
+          <p class="mdoc-line" style="width:74%"></p>
+          <p class="mdoc-line" style="width:52%"></p>
+          <p class="mdoc-line" style="width:70%"></p>
+        </div>
+        <div class="vl-tour-side">
+          <figure class="vl-stop-media" data-media>
+            <video data-v="play" src="media/magic-move.mp4" poster="media/magic-move-poster.jpg" autoplay muted playsinline aria-label="The same Effect program in TypeScript and in VibeLang: 136 tokens instead of 202"></video>
+            <img data-v="still" src="media/magic-move-poster.jpg" alt="The same Effect program in TypeScript and in VibeLang: 136 tokens instead of 202" hidden>
+          </figure>
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <section class="vl-tour-narration sui-chat-bubble" aria-label="Current stop">
+            <p>Effect gives a program typed errors, services and layers for its dependencies, and structured concurrency, with retries and timeouts as values. VibeLang keeps all of it and drops the generator boilerplate.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+    <div class="vl-glow" aria-hidden="true"></div>
+    <button class="vl-esc" type="button"><kbd>Esc</kbd></button>
+  </div>
+</div>
+
+<div class="d-screen" id="s-tour-3">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="on">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <section class="vl-docs" aria-label="Docs" data-maximized="true" data-driving="true">
+      <div class="vl-docs-bar"><span class="vl-docs-page">vibelang.sh/vibelang-features/115-cheat-sheet</span></div>
+      <div class="vl-docs-body">
+        <div class="vl-docs-frame mdoc" title="VibeLang docs">
+          <h1 class="mdoc-h">Cheat sheet</h1>
+          <p class="mdoc-line" style="width:64%"></p>
+          <div class="mdoc-code">effect { … }</div>
+          <div class="mdoc-code">throw new NotFound(…)</div>
+          <div class="mdoc-code">service Users { … }</div>
+          <p class="mdoc-line" style="width:58%"></p>
+        </div>
+        <div class="vl-tour-side">
+          <figure class="vl-stop-media" data-media>
+            <img data-v="play" src="media/token-bars.png" alt="Every cheat-sheet pair: 6.6% fewer tokens in VibeLang across all 47 entries">
+          </figure>
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <section class="vl-tour-narration sui-chat-bubble" aria-label="Current stop">
+            <p>The cheat sheet puts every VibeLang form beside the Effect TypeScript it compiles to: <code>effect { }</code> is <code>Effect.gen</code>, <code>throw</code> is <code>Effect.fail</code>, and a <code>service</code> declaration is a <code>Context.Service</code>.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+    <div class="vl-glow" aria-hidden="true"></div>
+    <button class="vl-esc" type="button"><kbd>Esc</kbd></button>
+  </div>
+</div>
+
+<div class="d-screen" id="s-tour-4">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="on">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <section class="vl-docs" aria-label="Docs" data-maximized="true" data-driving="true">
+      <div class="vl-docs-bar"><span class="vl-docs-page">vibelang.sh/setup</span></div>
+      <div class="vl-docs-body">
+        <div class="vl-docs-frame mdoc" title="VibeLang docs">
+          <h1 class="mdoc-h">Setup</h1>
+          <p class="mdoc-line" style="width:70%"></p>
+          <div class="mdoc-code">npm create vibelang@latest my-app</div>
+          <p class="mdoc-line" style="width:56%"></p>
+          <p class="mdoc-line" style="width:64%"></p>
+        </div>
+        <div class="vl-tour-side">
+          <figure class="vl-stop-media" data-media>
+            <img data-v="play" src="media/card-07-install.png" alt="bun create vibelang@latest my-app, then bun run start — Hello, VibeLang!">
+          </figure>
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <section class="vl-tour-narration sui-chat-bubble" aria-label="Current stop">
+            <p>To start a project, run <code>npm create vibelang@latest my-app</code>. VibeLang pins Effect to exactly 4.1.1, and <code>vibelang</code> checks <code>.vibe</code> and <code>.ts</code> files together.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+    <div class="vl-glow" aria-hidden="true"></div>
+    <button class="vl-esc" type="button"><kbd>Esc</kbd></button>
+  </div>
+</div>
+
+<div class="d-screen" id="s-tour-5">
+  <div class="vl-app" data-surface="chat" data-mode="mock" data-tour="on">
+    <header class="vl-top">
+      <button class="vl-home" type="button" aria-label="Home"><span class="vl-logo"><img src="media/logo-dark.svg" alt="VibeLang"></span></button>
+      <nav class="vl-nav">
+        <span class="vl-pill">Mock</span>
+        <a class="vl-nav-link" href="#">History</a>
+        <a class="vl-nav-link" href="#">Docs <span class="vl-away" aria-hidden="true">↗</span></a>
+        <a class="vl-nav-link" href="#">GitHub <span class="vl-away" aria-hidden="true">↗</span></a>
+      </nav>
+    </header>
+    <section class="vl-docs" aria-label="Docs" data-maximized="true" data-driving="true">
+      <div class="vl-docs-bar"><span class="vl-docs-page">vibelang.sh/vips</span></div>
+      <div class="vl-docs-body">
+        <div class="vl-docs-frame mdoc" title="VibeLang docs">
+          <h1 class="mdoc-h">VIPs</h1>
+          <p class="mdoc-line" style="width:76%"></p>
+          <p class="mdoc-line" style="width:60%"></p>
+          <p class="mdoc-line" style="width:68%"></p>
+          <p class="mdoc-line" style="width:48%"></p>
+        </div>
+        <div class="vl-tour-side">
+          <figure class="vl-stop-media" data-media>
+            <video data-v="play" src="media/agent-loop.mp4" poster="media/agent-loop-poster.jpg" autoplay muted loop playsinline aria-label="The agent writes VibeLang; the compiler answers with diagnostics and what to write instead"></video>
+            <img data-v="still" src="media/agent-loop-poster.jpg" alt="The agent writes VibeLang; the compiler answers with diagnostics and what to write instead" hidden>
+          </figure>
+          <div class="sui-chat-message-label">VibeLang agent</div>
+          <section class="vl-tour-narration sui-chat-bubble" aria-label="Current stop">
+            <p>A change to the language starts as a VIP: one feature, its examples, the Effect it compiles to and the alternatives rejected. This site is VibeLang's open-source coding factory, where people and agents work on the language together. Everything I do here, this tour included, runs as a durable flow.</p>
+          </section>
+        </div>
+      </div>
+    </section>
+    <div class="vl-glow" aria-hidden="true"></div>
+    <button class="vl-esc" type="button"><kbd>Esc</kbd></button>
+  </div>
+</div>
+
+<script>
+const screenSel = document.getElementById('d-screen');
+const stateSel = document.getElementById('d-state');
+
+function applyScreen() {
+  document.querySelectorAll('.d-screen').forEach(s => s.dataset.on = String(s.id === screenSel.value));
+  window.scrollTo(0, 0);
+}
+
+/* Media states: default plays/shows; loading shows the poster (or a skeleton);
+   reduced motion shows the still; failed removes the media and the layout holds. */
+function applyState() {
+  const st = stateSel.value;
+  document.querySelectorAll('[data-media]').forEach(fig => {
+    const play = fig.querySelector('[data-v="play"]');
+    const still = fig.querySelector('[data-v="still"]');
+    const load = fig.querySelector('[data-v="load"]');
+    [play, still, load].forEach(el => { if (el) el.hidden = true; });
+    fig.hidden = false;
+    if (st === 'failed') { fig.hidden = true; return; }
+    if (st === 'loading') { (load || still || play).hidden = false; if (play && play.tagName === 'VIDEO') play.pause(); return; }
+    if (st === 'reduced') { (still || play).hidden = false; if (play && play.tagName === 'VIDEO') play.pause(); return; }
+    play.hidden = false;
+  });
+}
+
+screenSel.addEventListener('change', applyScreen);
+stateSel.addEventListener('change', applyState);
+
+/* The fixed tour pane and Esc clear the design bar. */
+const bar = document.querySelector('.d-bar');
+function measureBar() { document.documentElement.style.setProperty('--d-bar-h', bar.offsetHeight + 'px'); }
+new ResizeObserver(measureBar).observe(bar);
+measureBar();
+
+applyScreen(); applyState();
+</script>

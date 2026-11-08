@@ -37,8 +37,8 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
 | [0022](decisions/0022-issues-and-vips.md) | GitHub issues and sub-issues, committed tasks, and agent-drafted VIP review changes |
 | [0023](decisions/0023-actions.md) | Registered flows and engine telemetry; Effect Json patch landed, action candidate held at service-spread inference |
-
 | [0024](decisions/0024-sandboxes.md) | Sandboxes, shared flows, a single durable minute writer and opt-in offline Cloudflare Containers |
+| [0026](decisions/0026-marketing-media.md) | The Tour flow selects each stop’s media; compiler card in empty chat, silent videos, posters and failure removal (VL-19) |
 
 ## Layout
 

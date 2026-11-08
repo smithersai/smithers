@@ -86,6 +86,15 @@ describe("the splash", () => {
 describe("the chat", () => {
   const chatting: Model = { ...home, surface: "chat", stream: "open", sent: 1 }
 
+  it("the empty chat shows the compiler card, then removes it on a post", () => {
+    scene(
+      { update, view }, given(chatting),
+      expect(role("img", { name: "The compiler says what to write instead: VibeLang diagnostics with the fix to write" })).toHaveAttr("src", "/media/card-06-compiler.png"),
+      Subscription.emit(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "other", name: "Grace", text: "hi" } })),
+      expect(role("img", { name: "The compiler says what to write instead: VibeLang diagnostics with the fix to write" })).toBeAbsent(),
+    )
+  })
+
   it("shows the agent's streamed reply as it arrives and confirms the pending post", () => {
     scene(
       { update, view },
