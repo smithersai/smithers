@@ -5,7 +5,7 @@ import vibelang from "vibelang-vite"
 import { configDefaults, defineConfig } from "vitest/config"
 
 export default defineConfig({
-  plugins: [vibelang({ project: "tsconfig.test.json" })],
+  plugins: [vibelang({ project: "tsconfig.test.json", register: true })],
   test: {
     globalSetup: [
       fileURLToPath(new URL("../../../repo-targets/test-utils/test-schemas.ts", import.meta.url)),
@@ -25,7 +25,8 @@ export default defineConfig({
       // Per-process report directory so concurrent vitest runs do not destroy
       // each other's coverage scratch state (issues #115/#121).
       reportsDirectory: join(tmpdir(), `flows-registry-coverage-${process.pid}`),
-      include: ["src/**"],
+      include: ["src/**/*.{ts,vibe}"],
+      exclude: ["src/**/*.d.vibe.ts"],
       // All runtime source counters are covered. Keep every category enforced
       // and retain malformed-declaration and diagnostic/path-collision controls.
       thresholds: {

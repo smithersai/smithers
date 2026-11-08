@@ -1,0 +1,4 @@
+# Registry's imported engine and bundled catalog contain VibeLang modules.
+preload = ["vibelang/bun"]
+[test]
+preload = ["vibelang/bun"]

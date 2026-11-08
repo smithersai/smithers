@@ -79,3 +79,6 @@ export * as Registry from "./Registry.ts"
 
 /** @category services @since 1.0.0-rc.1 */
 export * as ExecutionSnapshot from "./ExecutionSnapshot.ts"
+
+/** Bundled host declarations without filesystem discovery. @since 1.0.0 */
+export * as Bundled from "./Bundled.vibe"

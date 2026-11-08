@@ -23,6 +23,8 @@ import { actionKey, ActionKeyEncoding, keyEncodings, ordinalScope, uncanonicalKe
 import type { ActionExecuteOptions, Encoded } from "./Encoded.ts"
 import { SnapshotBoundary, type SnapshotBoundaryOptions, SnapshotBoundaryRequired } from "./SnapshotBoundary.ts"
 
+import * as StepTrace from "../StepTrace.vibe"
+
 import { FailureSite } from "./FailureSite.ts"
 
 type Instance = FlowRuntime.FlowInstance["Service"]
@@ -349,7 +351,7 @@ const runAttempt = (
   const execute = action.tier === "compensable"
     ? executeCompensable(options, instance, input)
     : settleTimedOut(driverExecute(options, input))
-  return execute.pipe(
+  return StepTrace.observed(execute, { run: instance.executionId, flow: instance.flow._tag, name: action.name, key, attempt }).pipe(
     Effect.provideService(Action.CurrentAttempt, attempt),
     Effect.provideService(CurrentActionParent, { executionId: instance.executionId, key }),
     // DECIDED: the implementation gets the dispatch's own key. Durable state

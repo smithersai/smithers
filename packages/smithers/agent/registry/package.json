@@ -53,6 +53,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -228,7 +229,8 @@
     "@smthrs/plan": "1.0.0-rc.16",
     "yaml": "2.9.0",
     "@mdx-js/mdx": "3.1.1",
-    "@smthrs/artifacts": "1.0.0-rc.16"
+    "@smthrs/artifacts": "1.0.0-rc.16",
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",

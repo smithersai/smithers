@@ -47,6 +47,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -151,12 +152,13 @@
   },
   "dependencies": {
     "@smthrs/canonical": "1.0.0-rc.16",
+    "@smthrs/capability": "1.0.0-rc.16",
     "@smthrs/crypto": "1.0.0-rc.16",
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/journal": "1.0.0-rc.16",
     "@smthrs/keys": "1.0.0-rc.16",
     "@smthrs/plan": "1.0.0-rc.16",
-    "@smthrs/capability": "1.0.0-rc.16"
+    "vibelang-runtime": "0.0.12"
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
@@ -179,6 +181,7 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.12",
+    "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
   },

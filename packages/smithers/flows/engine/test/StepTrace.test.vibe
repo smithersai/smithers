@@ -1,0 +1,235 @@
+import { expect, it } from "@effect/vitest"
+import * as NodeCrypto from "@effect/platform-node/NodeCrypto"
+import { FlowEngine, StepTrace } from "@smthrs/engine"
+import { Action, Flow, FlowRuntime } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+const Work = Flow.make("trace/Work", { payload: {}, success: Schema.Null, body: () => Node.succeed(null) })
+it.live("the engine observes real step identity and outcome without payloads", () => effect {
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Work, effect () => {
+      try Action.make({ name: "trace/read", execute: sleep("10 millis") })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  provide registration {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.execute(Work, { payload: {}, executionId: "one" }).pipe(Effect.provideService(StepTrace.Sink, { emit: (event) => Ref.update(events, (all) => [...all, event]) }))
+  }
+  const recorded = try Ref.get(events)
+  try Effect.try(() => {
+    expect(recorded.map((event) => event.state)).toEqual(["running", "passed"])
+    expect(recorded[0]).toMatchObject({ run: "one", name: "trace/read", attempt: 1 })
+    expect(recorded[0]!.key).toBe(recorded[1]!.key)
+    expect(recorded[1]!.at).toBeGreaterThanOrEqual(recorded[0]!.at)
+    expect(Object.keys(recorded[0]!)).not.toContain("payload")
+  })
+})
+
+const Failed = Flow.make("trace/Failed", { payload: {}, success: Schema.Null, error: Schema.String, body: () => Node.succeed(null) })
+it.live("failed attempts have a failure observation without the failure's words", () => effect {
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Failed, effect () => {
+      try Action.make({ name: "trace/fail", error: Schema.String, execute: Effect.fail("private failure words") })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  provide registration {
+    const engine = try FlowRuntime.FlowRuntime
+    const result = try exit(engine.execute(Failed, { payload: {}, executionId: "failed" }).pipe(Effect.provideService(StepTrace.Sink, { emit: (event) => Ref.update(events, (all) => [...all, event]) })))
+    const recorded = try Ref.get(events)
+    try Effect.try(() => {
+      expect(Exit.isFailure(result)).toBe(true)
+      expect(recorded.map((event) => event.state)).toEqual(["running", "failed"])
+      expect(JSON.stringify(recorded)).not.toContain("private failure words")
+    })
+  }
+})
+it.live("an interrupted attempt is cancelled, and replay of a completed execution emits no new attempt", () => effect {
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const started = try Deferred.make<void>()
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Work, effect (_payload, id) => {
+      try Action.make({ name: "trace/read", execute: id === "held" ? Effect.never : Effect.void })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  provide registration {
+    const engine = try FlowRuntime.FlowRuntime
+    const observer: StepTrace.Sink.Shape = { emit: effect (event) => {
+      try Ref.update(events, (all) => [...all, event])
+      if (event.run === "held" && event.state === "running") try Deferred.succeed(started, undefined)
+    } }
+    provide StepTrace.Sink = observer {
+      try engine.execute(Work, { payload: {}, executionId: "one" })
+      try engine.execute(Work, { payload: {}, executionId: "one" })
+      const held = try forkChild(exit(engine.execute(Work, { payload: {}, executionId: "held" })))
+      try Deferred.await(started)
+      try engine.interrupt(Work, "held")
+      try Fiber.join(held)
+    }
+    const recorded = try Ref.get(events)
+    try Effect.try(() => {
+      expect(recorded.filter((event) => event.run === "one").map((event) => event.state)).toEqual(["running", "passed"])
+      expect(recorded.filter((event) => event.run === "held").map((event) => event.state)).toEqual(["running", "cancelled"])
+    })
+  }
+})
+
+it.live("driver suspension and failure keep the lifecycle complete and the private cause out of observations", () => effect {
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const identity = { run: "driver", flow: "trace/Work", name: "trace/driver", key: "key", attempt: 1 }
+  const suspended = try Effect.try(() => new Flow.Suspended({}))
+  const interrupted = try Effect.try(() => new Flow.Complete({ exit: Exit.interrupt(1) }))
+  provide StepTrace.Sink = { emit: (event) => Ref.update(events, (all) => [...all, event]) } {
+    const waiting = try StepTrace.observed(succeed(suspended), identity)
+    try exit(StepTrace.observed(Effect.die("private driver defect"), { ...identity, run: "defect" }))
+    try StepTrace.observed(succeed(interrupted), { ...identity, run: "interrupted-result" })
+    try exit(StepTrace.observed(Effect.interrupt, { ...identity, run: "interrupted-call" }))
+    try Effect.try(() => expect(waiting._tag).toBe("Suspended"))
+  }
+  // The ordinary engine also works with the optional observer absent.
+  try StepTrace.observed(succeed(suspended), identity)
+  const recorded = try Ref.get(events)
+  try Effect.try(() => {
+    expect(recorded.filter((event) => event.state !== "running").map((event) => event.state)).toEqual(["waiting", "failed", "cancelled", "cancelled"])
+    expect(JSON.stringify(recorded)).not.toContain("private driver defect")
+  })
+})
+
+
+it.live.each([
+  { state: "running", fault: "defect" },
+  { state: "running", fault: "interrupt" },
+  { state: "passed", fault: "defect" },
+  { state: "passed", fault: "interrupt" },
+] as const)("a sink $fault at $state cannot change execution or replay", effect ({ state, fault }) => {
+  const calls = try Ref.make(0)
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const logs: Array<{ message: unknown; cause: Cause.Cause<unknown> }> = []
+  const logger = Logger.make((entry) => { logs.push(entry) })
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Work, effect () => {
+      try Action.make({ name: "trace/read", execute: Ref.update(calls, (count) => count + 1) })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  const observer: StepTrace.Sink.Shape = { emit: effect (event) => {
+    try Ref.update(events, (all) => [...all, event])
+    if (event.state === state) try (fault === "defect" ? die("private observer defect") : Effect.interrupt)
+  } }
+  provide registration, StepTrace.Sink = observer, Logger.CurrentLoggers = new Set([logger]) {
+    const engine = try FlowRuntime.FlowRuntime
+    const result = try engine.execute(Work, { payload: {}, executionId: "observer-fault" })
+    const replay = try engine.execute(Work, { payload: {}, executionId: "observer-fault" })
+    const recorded = try Ref.get(events)
+    const executed = try Ref.get(calls)
+    try Effect.try(() => {
+      expect(result).toBe(null)
+      expect(replay).toBe(null)
+      expect(executed).toBe(1)
+      expect(recorded.map((event) => event.state)).toEqual(["running", "passed"])
+      expect(recorded[0]!.key).toBe(recorded[1]!.key)
+      expect(recorded[0]!.attempt).toBe(recorded[1]!.attempt)
+      expect(logs.map((entry) => entry.message)).toEqual([["engine.step_trace.observer_failed"]])
+      expect(logs[0]!.cause.reasons).toEqual([])
+      expect(JSON.stringify(recorded)).not.toContain("private observer defect")
+    })
+  }
+})
+
+it.live.each(["defect", "interrupt"] as const)("a sink %s cannot replace the action's failure", effect (fault) => {
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Failed, effect () => {
+      try Action.make({ name: "trace/fail", error: Schema.String, execute: fail("action failure") })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  const observer: StepTrace.Sink.Shape = { emit: (event) => event.state === "failed"
+    ? fault === "defect" ? die("private observer defect") : Effect.interrupt
+    : Effect.void }
+  provide registration, StepTrace.Sink = observer {
+    const engine = try FlowRuntime.FlowRuntime
+    const result = try exit(engine.execute(Failed, { payload: {}, executionId: "observer-failed" }))
+    try Effect.try(() => expect(result).toEqual(Exit.fail("action failure")))
+  }
+})
+
+it.live.each(["defect", "interrupt"] as const)("a sink %s cannot swallow caller cancellation", effect (fault) => {
+  const started = try Deferred.make<void>()
+  const finalized = try Ref.make(false)
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Work, effect () => {
+      try Action.make({ name: "trace/held", execute: ensuring(effect {
+        try Deferred.succeed(started, undefined)
+        try Effect.never
+      }, Ref.set(finalized, true)) })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  const observer: StepTrace.Sink.Shape = { emit: effect (event) => {
+    try Ref.update(events, (all) => [...all, event])
+    if (event.state === "cancelled") try (fault === "defect" ? die("private observer defect") : Effect.interrupt)
+  } }
+  provide registration, StepTrace.Sink = observer {
+    const engine = try FlowRuntime.FlowRuntime
+    const held = try forkChild(exit(engine.execute(Work, { payload: {}, executionId: "observer-cancelled" })))
+    try Deferred.await(started)
+    try engine.interrupt(Work, "observer-cancelled")
+    const result = try Fiber.join(held)
+    const released = try Ref.get(finalized)
+    const recorded = try Ref.get(events)
+    try Effect.try(() => {
+      expect(Exit.isFailure(result) && Cause.hasInterruptsOnly(result.cause)).toBe(true)
+      expect(released).toBe(true)
+      expect(recorded.map((event) => event.state)).toEqual(["running", "cancelled"])
+    })
+  }
+})
+
+
+it.live.each(["defect", "interrupt"] as const)("cancellation during a running observation survives a sink %s", effect (fault) => {
+  const entered = try Deferred.make<void>()
+  const release = try Deferred.make<void>()
+  const calls = try Ref.make(0)
+  const events = try Ref.make<ReadonlyArray<StepTrace.Event>>([])
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    try engine.register(Work, effect () => {
+      try Action.make({ name: "trace/not-started", execute: Ref.update(calls, (count) => count + 1) })
+      return null
+    })
+  }).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(NodeCrypto.layer))
+  const observer: StepTrace.Sink.Shape = { emit: effect (event) => {
+    try Ref.update(events, (all) => [...all, event])
+    if (event.state === "running") {
+      try Deferred.succeed(entered, undefined)
+      try Deferred.await(release)
+      try (fault === "defect" ? die("private observer defect") : Effect.interrupt)
+    }
+  } }
+  provide registration, StepTrace.Sink = observer {
+    const engine = try FlowRuntime.FlowRuntime
+    const held = try forkChild(exit(engine.execute(Work, { payload: {}, executionId: "observer-admission" })))
+    try Deferred.await(entered)
+    // Cancellation is requested while the observer is in acquisition's mask.
+    try engine.interrupt(Work, "observer-admission")
+    try Deferred.succeed(release, undefined)
+    const result = try Fiber.join(held)
+    const executed = try Ref.get(calls)
+    const recorded = try Ref.get(events)
+    try Effect.try(() => {
+      expect(Exit.isFailure(result) && Cause.hasInterruptsOnly(result.cause)).toBe(true)
+      expect(executed).toBe(0)
+      expect(recorded.map((event) => event.state)).toEqual(["running", "cancelled"])
+    })
+  }
+})

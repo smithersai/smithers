@@ -150,3 +150,17 @@ resume requests before they reach the engine.
 A terminal action failure carries `FlowEngine.FailureSite` cause annotations with its action name, actual durable attempt count and interpreted node address. The registered flow's schema boundary preserves those annotations; durable hosts can persist a diagnostic without inspecting action payloads or repeating the action.
 
 Action error codecs and outcome decoding preserve cause annotations, including the original failure site of a child flow invoked inside an action. Durable hosts retain those coordinates in failed-attempt evidence for replay.
+
+## Live step observations
+
+`StepTrace.Sink` (root export) is an optional Effect reference. A host provides
+`{ emit(event) }` around execution to project live step attempts in memory or
+into an event stream. Both drivers use the same dispatch hook. Events carry
+only the execution id, flow tag, action name, engine invocation key, attempt, timestamp
+and lifecycle (`running`, `passed`, `failed`, `cancelled`, `waiting`). They never
+carry payloads, results or failure messages. Replays may emit the same key and
+attempt; projections upsert that identity. This is observational telemetry,
+not a durable journal, and a host must not re-enter storage from its callback.
+
+A sink defect or self-interruption logs only `engine.step_trace.observer_failed`;
+it never changes the step's result. Caller cancellation still interrupts execution.

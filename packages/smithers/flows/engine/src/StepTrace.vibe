@@ -1,0 +1,47 @@
+// A portable projection of engine dispatch observations. Persisted journals remain authoritative for recovery.
+import type { Flow } from "@smthrs/flow"
+
+/** Identity and lifecycle only: payloads, results and failure messages never enter telemetry. */
+export interface Event {
+  readonly run: string
+  readonly flow: string
+  readonly name: string
+  readonly key: string
+  readonly attempt: number
+  readonly at: number
+  readonly state: "running" | "passed" | "failed" | "cancelled" | "waiting"
+}
+
+/** Hosts enqueue observations here; callbacks must not re-enter an engine storage transaction. */
+export service Sink {
+  static readonly key = "@smthrs/engine/StepTrace"
+  static readonly defaultValue = () => ({ emit: (_event: Event) => Effect.void })
+  emit(event: Event): void!!
+}
+
+// A sink is observational: even a defect or self-interruption must not change
+// the action's result. Acquire/release mask caller interruption while emitting;
+// a pending caller cancellation still reaches the action after acquisition.
+effect function emit(sink: Sink.Shape, event: Event) {
+  try catchCause(effect { try sink.emit(event) }, () => logWarning("engine.step_trace.observer_failed"))
+}
+
+/** Observe a dispatch, including journal replay, with its engine-owned key and attempt. */
+export effect function observed<E, R>(
+  execute: Flow.Result<unknown, unknown>!E!R,
+  identity: { readonly run: string; readonly flow: string; readonly name: string; readonly key: string; readonly attempt: number },
+) {
+  const sink = try Sink
+  return try acquireUseRelease(
+    effect { try emit(sink, { ...identity, at: try Clock.currentTimeMillis, state: "running" }) },
+    () => execute,
+    effect (_resource, exit) => {
+      const state: Event["state"] = Exit.isFailure(exit)
+        ? Cause.hasInterruptsOnly(exit.cause) ? "cancelled" : "failed"
+        : exit.value._tag !== "Complete" ? "waiting"
+        : Exit.isSuccess(exit.value.exit) ? "passed"
+        : Cause.hasInterruptsOnly(exit.value.exit.cause) ? "cancelled" : "failed"
+      try emit(sink, { ...identity, at: try Clock.currentTimeMillis, state })
+    },
+  )
+}

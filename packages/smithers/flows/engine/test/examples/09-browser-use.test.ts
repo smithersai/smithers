@@ -1,6 +1,7 @@
 import { expect, it } from "@effect/vitest"
 import * as Effect from "effect/Effect"
 import { build } from "esbuild"
+import vibelang from "vibelang-unplugin/esbuild"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { main } from "../../examples/09-browser-use.ts"
@@ -21,6 +22,7 @@ it("bundles for the browser with no node: imports", async () => {
     entryPoints: [join(here, "../../examples/09-browser-use.ts")],
     absWorkingDir: join(here, ".."),
     bundle: true,
+    plugins: [vibelang({ root: join(here, "../.."), project: "tsconfig.json" })],
     write: false,
     platform: "browser",
     format: "esm",
