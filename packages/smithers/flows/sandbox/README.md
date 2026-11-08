@@ -171,3 +171,10 @@ between attempts. Custom conflict strategies run as separate actions. The raw
 `SandboxMerge.apply` effect makes one attempt without retries.
 
 `SandboxTools.Status` accepts an optional immutable 40-character `base` SHA. With a base, status compares the complete working tree (local commits and pending tracked/untracked files) with that tree, without changing the checkout or its index. Renames are reported as deletion/addition pairs. Oversized status output fails rather than returning a partial change.
+
+### Command receipt identities
+
+Command call IDs are encoded injectively as UTF-16 code units; `/`, `_`, percent, Unicode and long IDs have distinct
+fences. New run fences store the exact identity before execution. A pre-upgrade run fence without identity metadata
+is ambiguous and returns `ToolLost`; it is never executed again and never reported as another call's success.
+The old files remain available for inspection. Async command names retain their existing safe-name paths.
