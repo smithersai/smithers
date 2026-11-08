@@ -1,0 +1,70 @@
+diff --git a/dist/Schema.d.ts b/dist/Schema.d.ts
+index e8a212e66da0f2f69a3653ada31213e03aafda0a..d34ef9d5b7b9ddf6106e94f36e61abe255e2b45c 100644
+--- a/dist/Schema.d.ts
++++ b/dist/Schema.d.ts
+@@ -12855,6 +12855,21 @@ export interface JsonArray extends ReadonlyArray<Json> {
+ export interface JsonObject {
+     readonly [x: string]: Json;
+ }
++/**
++ * The JSON value schema, retaining its required readonly field metadata when
++ * annotated, checked, or rebuilt.
++ *
++ * @stability stable
++ * @category schemas
++ * @since 4.1.2
++ */
++export interface JsonValueSchema extends Codec<Json> {
++  readonly "Rebuild": JsonValueSchema
++  readonly "~type.mutability": "readonly"
++  readonly "~type.optionality": "required"
++  readonly "~encoded.mutability": "readonly"
++  readonly "~encoded.optionality": "required"
++}
+ /**
+  * Schema that accepts and validates any immutable JSON-compatible value.
+  *
+@@ -12870,7 +12885,7 @@ export interface JsonObject {
+  * @category schemas
+  * @since 4.0.0
+  */
+-export declare const Json: Codec<Json>;
++export declare const Json: JsonValueSchema;
+ /**
+  * Schema for readonly string-keyed records whose values are JSON-compatible.
+  *
+diff --git a/src/Schema.ts b/src/Schema.ts
+index 4b17a3312305ae2570014b2b0fb0e5e85caeddc2..4fb97826953d81ca2131b801edf09beb5458ea8c 100644
+--- a/src/Schema.ts
++++ b/src/Schema.ts
+@@ -18937,6 +18937,21 @@ export interface JsonArray extends ReadonlyArray<Json> {}
+ export interface JsonObject {
+   readonly [x: string]: Json
+ }
++/**
++ * The JSON value schema, retaining its required readonly field metadata when
++ * annotated, checked, or rebuilt.
++ *
++ * @stability stable
++ * @category schemas
++ * @since 4.1.2
++ */
++export interface JsonValueSchema extends Codec<Json> {
++  readonly "Rebuild": JsonValueSchema
++  readonly "~type.mutability": "readonly"
++  readonly "~type.optionality": "required"
++  readonly "~encoded.mutability": "readonly"
++  readonly "~encoded.optionality": "required"
++}
+ /**
+  * Schema that accepts and validates any immutable JSON-compatible value.
+  *
+@@ -18952,7 +18967,7 @@ export interface JsonObject {
+  * @category schemas
+  * @since 4.0.0
+  */
+-export const Json: Codec<Json> = make(SchemaAST.annotate(SchemaAST.Json, {
++export const Json: JsonValueSchema = make(SchemaAST.annotate(SchemaAST.Json, {
+   toCode: () => ({
+     runtime: "Schema.Json",
+     Type: "Schema.Json"

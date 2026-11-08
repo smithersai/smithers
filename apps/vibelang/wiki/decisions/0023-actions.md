@@ -51,18 +51,13 @@ agent tools, other lanes' flow registration and complete browser/workerd/flow co
 - Logs show actual engine steps and outcomes, not invented checkout/install/test output. Results remain separate.
 - Keep the complete designer artifact verbatim in wiki/designs/actions. Dark-only remains VL-27.
 
-## Upstream hold
+## Effect annotation correction (lead decision, 2026-11-07 00:10 PST)
 
-The live protocol's polymorphic JSON input reaches an integration gap between Effect4.1.1 and VibeLang0.0.12.
-Effect's Schema.Json annotation erases concrete readonly/required key flags. VibeLang deliberately refuses
-unprovable modifiers under its accepted VIP-15, raising EK2109. A blanket checker relaxation would weaken that
-rule. The minimal reproduction and independent source diagnosis are recorded as
-`actions-schema-json-field` under the lane's vibelang-bugs directory.
+The lead resolved `actions-schema-json-field` as an Effect 4.1.1 type annotation bug. It does not change VibeLang compilation rules and needs no compiler-policy approval. The initial upstream hold is lifted.
 
-The narrow proposed upstream correction preserves Effect Json's other public views and publishes its actual
-key metadata. Will's lane instruction requires bringing changes to how existing VibeLang code compiles or
-behaves to him first. Approval is pending. No compiler, dependency patch or alternate-schema workaround has
-been applied. The unfinished app source is preserved with the lane report.
+`patches/effect@4.1.1.patch`, registered through pnpm, changes the source and published declaration of `Schema.Json` from `Codec<Json>` to its concrete subtype `JsonValueSchema`. That interface extends `Codec<Json>`, specializes only the decoded/encoded required readonly key flags and `Rebuild`, and preserves every other public view. The existing JSON union type keeps its name. Effect already imports a JSON Schema module as `JsonSchema`, so `JsonValueSchema` also avoids that collision. Runtime code is unchanged. The same correction, a changeset and type/runtime regressions landed on our Effect fork main as `c30802502817062118a6b58904a362b6d2863ace` for upstreaming.
+
+The app compiler regression failed first with EK2109 on unpatched Effect. Positive cases cover required readonly JSON, aliases, annotation/check/rebuild, nested fields, schema errors, fixed tuples and records. Negative cases retain optionalKey/mutableKey and widened-key refusal, tuple/record strict checks, and required-input rejection. This preserves VIP-15 rather than weakening it. Every workspace package importing Schema is inventoried and typechecked; receipts, exits and source paths are in the lane report. Patch removal conditions are in `patches/README.md`: upgrade to a release carrying equivalent precise metadata and pass both regression classes without the patch.
 
 ## Dependencies and evidence
 
