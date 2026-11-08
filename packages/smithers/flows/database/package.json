@@ -204,9 +204,12 @@
   },
   "devDependencies": {
     "@effect/language-service": "0.87.2",
+    "@effect/sql-pg": "4.1.1",
+    "@effect/sql-sqlite-bun": "4.1.1",
     "@effect/sql-sqlite-node": "4.1.1",
     "@effect/vitest": "4.1.1",
     "@eslint/js": "9.39.5",
+    "@types/bun": "1.4.4",
     "@types/node": "26.4.1",
     "@vitest/coverage-v8": "5.0.0",
     "dprint": "0.57.1",
@@ -221,15 +224,13 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.12",
+    "vibelang-runtime": "0.0.12",
     "vibelang-vite": "0.0.12",
-    "vitest": "5.0.0",
-    "@effect/sql-sqlite-bun": "4.1.1",
-    "@types/bun": "1.4.4",
-    "@effect/sql-pg": "4.1.1"
+    "vitest": "5.0.0"
   },
   "peerDependencies": {
-    "effect": "4.1.1",
-    "@effect/sql-sqlite-bun": "4.1.1"
+    "@effect/sql-sqlite-bun": "4.1.1",
+    "effect": "4.1.1"
   },
   "peerDependenciesMeta": {
     "@effect/sql-sqlite-node": {

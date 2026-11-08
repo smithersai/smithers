@@ -4235,6 +4235,9 @@ importers:
       vibelang:
         specifier: 0.0.12
         version: 0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
+      vibelang-runtime:
+        specifier: 0.0.12
+        version: 0.0.12(patch_hash=b4234735160f57f19a344b14599ee3131048adeb7dde1eb05392dc48e81e4bb1)(@effect/platform-browser@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-bun@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(@effect/platform-node@4.1.1(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))(redis@6.2.1(@opentelemetry/api@1.9.1)))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08))
       vibelang-vite:
         specifier: 0.0.12
         version: 0.0.12(vibelang@0.0.12(@babel/core@7.29.7(supports-color@10.2.2))(effect@4.1.1(patch_hash=433802a240b001ab887c93d14d2fa7f2b855ab902d4ec4f21f79016d2e9f7e08)))(vite@8.3.4(@types/node@26.4.1)(esbuild@0.28.2)(jiti@2.7.0)(terser@5.50.0)(tsx@4.23.13)(yaml@2.9.0))

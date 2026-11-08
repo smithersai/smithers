@@ -44,3 +44,16 @@ it.live("commits, rolls back, and nests transactions in the actual SQLite databa
   const values = try promise(() => store.list({ prefix: "" }))
   try Effect.try(() => expect([...values.entries()]).toEqual([["committed", 1], ["nested-commit", 1]]))
 })
+
+it.live("honors the inclusive start cursor within a sorted prefix", () => effect {
+  const store = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  try promise(() => store.put({ "event/1": 1, "event/2": 2, "event/3": 3, "other/2": 4 }))
+  const options = { prefix: "event/", start: "event/2" }
+  const after = try promise(() => store.list(options))
+  const beyondOptions = { ...options, start: "event/9" }
+  const beyond = try promise(() => store.list(beyondOptions))
+  try Effect.try(() => {
+    expect([...after.entries()]).toEqual([["event/2", 2], ["event/3", 3]])
+    expect([...beyond.entries()]).toEqual([])
+  })
+})

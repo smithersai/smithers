@@ -1326,7 +1326,7 @@ used. The search stays bounded and never grants the host home or filesystem root
 
 ### `TestNodeRuntime.sqliteObjectStorage(filename?)`
 
-Creates real SQLite storage for exercising host-independent object code on Node. It exposes synchronous SQL cursors (`columnNames`, `raw()`, `toArray()`), structured key/value reads and writes, sorted prefix listing, nested transactions, and persisted alarm deadlines. Values use Node's structured serializer, preserving Maps, typed arrays, BigInts and `undefined`.
+Creates real SQLite storage for exercising host-independent object code on Node. It exposes synchronous SQL cursors (`columnNames`, `raw()`, `toArray()`), structured key/value reads and writes, sorted prefix listing with an inclusive optional `start` cursor, nested transactions, and persisted alarm deadlines. Values use Node's structured serializer, preserving Maps, typed arrays, BigInts and `undefined`.
 
 The caller closes it with `close()`, normally from an Effect scope finalizer. Alarm deadlines are data; the test's durable host drives the alarm entry point explicitly. Transaction SQL goes through `transaction()`, matching the object driver's API. This is a Node host adapter, with workerd tests still required for the native Durable Object boundary.
 

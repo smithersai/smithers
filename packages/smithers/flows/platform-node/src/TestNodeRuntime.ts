@@ -116,6 +116,7 @@ export const durableEngine = (filename: string, hostId: string) =>
 /**
  * SQLite-backed object storage for exercising host-independent object code on Node.
  * Keys and alarm deadlines persist in SQLite; values use V8's structured serializer.
+ * Prefix listings are lexically sorted and honor an inclusive optional `start` cursor.
  * The caller owns `close`. Alarms are persisted deadlines, driven explicitly by the
  * test's durable host, rather than timers owned by this storage primitive.
  *
@@ -159,10 +160,12 @@ export const sqliteObjectStorage = (filename = ":memory:") => {
   }
   const remove = async (key: string): Promise<boolean> =>
     Number(db.prepare("DELETE FROM _object_values WHERE key = ?").run(key).changes) !== 0
-  const list = async ({ prefix }: { readonly prefix: string }): Promise<Map<string, unknown>> =>
+  const list = async (
+    { prefix, start }: { readonly prefix: string; readonly start?: string }
+  ): Promise<Map<string, unknown>> =>
     new Map(
       db.prepare("SELECT key, value FROM _object_values ORDER BY key").all()
-        .filter((row) => String(row.key).startsWith(prefix))
+        .filter((row) => String(row.key).startsWith(prefix) && (start === undefined || String(row.key) >= start))
         .map((row) => [String(row.key), deserialize(row.value as Uint8Array)])
     )
   const transaction = async <A>(body: (txn: { rollback(): void }) => Promise<A>): Promise<A> => {
