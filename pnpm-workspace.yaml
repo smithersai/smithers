@@ -48,6 +48,13 @@ linkWorkspacePackages: true
 ignoreWorkspaceCycles: true
 verifyDepsBeforeRun: false
 
+# Until npm has VibeLang 0.0.13, its platform compiler packages are local file: tarballs (overrides below).
+# pnpm cannot skip a file: optional dependency for another platform (ENOTDIR while linking vibelang's bins),
+# so it installs all of them; drop this with the overrides when the npm release lands.
+supportedArchitectures:
+  os: [current, darwin, linux, win32]
+  cpu: [current, x64, arm64]
+
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
   "@types/bun": "1.4.4"
