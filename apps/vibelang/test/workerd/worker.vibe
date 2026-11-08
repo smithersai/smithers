@@ -45,6 +45,8 @@ export class SandboxLedger {
     const path = new URL(request.url).pathname
     if (path === "/runs") return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms").toArray())
     if (path === "/receipts") return json(this.state.storage.sql.exec("SELECT id FROM vibelang_sandbox_receipts ORDER BY id").toArray())
+    // The suite's retention pass: one meter execution that forgets every run settled before it.
+    if (path === "/prune") return json(await Effect.runPromise(Effect.result(Sandboxes.execute(this.state.id.toString(), this.state.storage, host, "meter", "home", `prune/${Date.now()}`, 0, "", { olderThanMs: 0 }))))
     const body = await request.json() as { readonly kind: "start" | "stop" | "command"; readonly conversation: string; readonly operationId: string; readonly generation: number; readonly command: string }
     const result = await Effect.runPromise(Effect.result(Sandboxes.execute(this.state.id.toString(), this.state.storage, host, body.kind, body.conversation, body.operationId, body.generation, body.command)))
     return json(result)
@@ -255,7 +257,7 @@ export class History {
 
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
-    const sandbox = new URL(request.url).pathname.match(/^\/sandbox-ledger\/(runs|receipts|run)$/)
+    const sandbox = new URL(request.url).pathname.match(/^\/sandbox-ledger\/(runs|receipts|run|prune)$/)
     if (sandbox !== null) {
       const object = env.SANDBOX_LEDGER.get(env.SANDBOX_LEDGER.idFromName("sandbox-test"))
       return await object.fetch(`https://object/${sandbox[1]}`, { method: request.method, ...(request.method === "POST" ? { body: await request.text() } : {}) })

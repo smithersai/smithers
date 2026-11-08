@@ -20,7 +20,7 @@ import type { HistoryReader } from "../src/history/tools.vibe"
 import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
 import { make, type Sequencer, stackOf, type Store } from "../src/history/Sequencer.vibe"
 import type { Write } from "../src/history/wire.vibe"
-import { postExecutionId, type Storage } from "./Objects.vibe"
+import { EXECUTION_RETENTION, postExecutionId, type Storage } from "./Objects.vibe"
 import { eventKey, type KeyValue } from "./ObjectStorage.vibe"
 import type { Unreachable } from "./Unreachable.vibe"
 
@@ -123,7 +123,7 @@ export function history(storage: Storage) {
 
 /** The engine for one execution of `flow`, its steps reaching `sequencer` as `principal`. */
 function runtime(hostId: string, executionId: string, flow: string, storage: Storage, sequencer: Sequencer, principal: Principal, main: MainLog.Shape) {
-  return CloudflareRuntime.layer({ hostId, executionId, flow }, historyRegistration).pipe(
+  return CloudflareRuntime.layer({ hostId, executionId, flow, retention: EXECUTION_RETENTION }, historyRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
     Layer.provide(Layer.mergeAll(
       Layer.succeed(Stack, stackOf(sequencer, seeded)),

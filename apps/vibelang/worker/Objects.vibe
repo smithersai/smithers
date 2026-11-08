@@ -123,6 +123,13 @@ export effect function postExecutionId(prefix = "post") {
   }
 }
 
+/**
+ * Settled engine runs in an object's own SQLite are forgotten a day after they finish (review 2026-11-08 P1,
+ * `CloudflareRuntime.Options.retention`): a day outlasts any retried execution id, since a re-executed tool call
+ * resumes within minutes, and a meter, read, post or tour execution names a fresh random id a caller never re-asks.
+ */
+export const EXECUTION_RETENTION: CloudflareRuntime.Retention = { olderThanMs: 86_400_000 }
+
 /** Resume a parked reading hold after Escape, then let the object's normal alarm settle the tour. */
 effect function wakeTour(hostId: string, storage: Storage) {
   // Wake the execution the object holds, even if another tour was accepted after the ended event.
@@ -131,7 +138,7 @@ effect function wakeTour(hostId: string, storage: Storage) {
   const intent = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
   if (intent.flow !== Tour._tag) return
   const executionId = intent.executionId
-  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Tour._tag }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Tour._tag, retention: EXECUTION_RETENTION }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
   provide runtime {
     const engine = try FlowRuntime.FlowRuntime
     const state = engine.poll(Tour, executionId) catch () => undefined
@@ -157,7 +164,7 @@ export effect function endTour(hostId: string, storage: Storage, sequencer: Sequ
 
 effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, flow: typeof StartTour | typeof EndTour, prefix: string) {
   const executionId = try postExecutionId(prefix)
-  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag }, tourRegistration).pipe(
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag, retention: EXECUTION_RETENTION }, tourRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
     Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
   )
@@ -178,7 +185,7 @@ export effect function post(hostId: string, storage: Storage, sequencer: Sequenc
   // HTTP decodes PostBody first; malformed direct host calls leave storage untouched.
   if (!Schema.is(PostBody)({ clientId, name, text })) return "invalid"
   const executionId = try postExecutionId()
-  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag }, postRegistration).pipe(
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag, retention: EXECUTION_RETENTION }, postRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
     Layer.provide(Layer.succeed(Posts, postsOf(sequencer))),
   )
@@ -240,7 +247,7 @@ export effect function alarm(
   const outcome = try ExecutionObject.alarm(executionStorage(storage), {
     flows: [Reply, Tour],
     runtime: (intent) =>
-      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
+      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow, retention: EXECUTION_RETENTION }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
         Layer.provide(ObjectDatabase.layer(storage)),
         Layer.provide(services),
       ),

@@ -3,7 +3,7 @@ import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SandboxHost, SandboxStart, SandboxStop, SandboxCommand, SandboxMeter, sandboxRegistration } from "../src/core/flows.vibe"
 import { makeSandboxHost, type Machines, type SandboxState, type Receipt } from "../src/core/sandboxHost.vibe"
-import { postExecutionId, type Storage } from "./Objects.vibe"
+import { EXECUTION_RETENTION, postExecutionId, type Storage } from "./Objects.vibe"
 
 export interface SandboxStorage extends Storage { transactionSync<A>(body: () => A): A }
 export effect function open(storage: SandboxStorage, machines: Machines) {
@@ -28,16 +28,16 @@ export effect function open(storage: SandboxStorage, machines: Machines) {
   }, machines)
 }
 
-export function runtime(hostId: string, executionId: string, flow: string, storage: Storage, host: SandboxHost.Shape) {
-  return CloudflareRuntime.layer({ hostId, executionId, flow }, sandboxRegistration).pipe(
+export function runtime(hostId: string, executionId: string, flow: string, storage: Storage, host: SandboxHost.Shape, retention: CloudflareRuntime.Retention = EXECUTION_RETENTION) {
+  return CloudflareRuntime.layer({ hostId, executionId, flow, retention }, sandboxRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(SandboxHost, host)),
   )
 }
-export effect function execute(hostId: string, storage: Storage, host: SandboxHost.Shape, kind: "start" | "stop" | "command" | "meter", conversation: string, operationId: string, generation: number, command: string) {
+export effect function execute(hostId: string, storage: Storage, host: SandboxHost.Shape, kind: "start" | "stop" | "command" | "meter", conversation: string, operationId: string, generation: number, command: string, retention?: CloudflareRuntime.Retention) {
   const flow = kind === "start" ? SandboxStart : kind === "stop" ? SandboxStop : kind === "command" ? SandboxCommand : SandboxMeter
   // Random execution ids retry a failed engine action; host receipts provide durable A/B/A idempotency across runs.
   const executionId = try postExecutionId(`sandbox-${kind}`)
-  provide runtime(hostId, executionId, flow._tag, storage, host) {
+  provide runtime(hostId, executionId, flow._tag, storage, host, retention) {
     const engine = try FlowRuntime.FlowRuntime
     if (kind === "start") return try engine.execute(SandboxStart, { executionId, payload: { conversation, operationId } })
     if (kind === "stop") return try engine.execute(SandboxStop, { executionId, payload: { conversation, operationId, generation } })
