@@ -10,6 +10,13 @@ The application owns one-time state consumption, expiring sessions, CSRF, callba
 refresh rotates the refresh token; revoke is idempotent for tokens GitHub already removed.
 permission returns GitHub's permission names, not an app role.
 
+Device flow signs a person in from a host without a browser: a CLI or an MCP server acting as that person's agent.
+deviceCode starts one with the client id alone (the secret is never sent) and answers the userCode and
+verificationUri the person visits; deviceToken polls once per call and reports pending, slowDown, denied, expired
+or authorized with the person's tokens. The application owns the poll schedule, the expiry, and what the grant
+becomes. The App must have device flow enabled in its GitHub settings; a client id GitHub refuses fails
+misconfigured. No device code or token appears in a refusal.
+
 webBaseUrl and apiBaseUrl are injected for enterprise hosts and integration fixtures. Defaults are github.com.
 The adapter uses @smthrs/integrations' OAuth, PKCE and GitHubClient contracts and sets GitHubClient.USER_AGENT even
 on Worker fetch. Each network mutation belongs in a durable flow step; the adapter starts no background work.

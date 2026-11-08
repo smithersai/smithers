@@ -24,7 +24,7 @@ export const appSlug = Config.schema(Schema.String.check(Schema.isPattern(/^[a-z
  * - `unavailable`: no answer, a rate limit, a server error, or an answer outside its contract.
  */
 export class GitHubRefused extends Schema.TaggedError<GitHubRefused>()("@smthrs/mvp/auth/GitHubRefused", {
-  step: Schema.Literals(["exchange", "refresh", "user", "permission", "revoke"]),
+  step: Schema.Literals(["exchange", "refresh", "user", "permission", "revoke", "device"]),
   reason: Schema.Literals(["rejected", "misconfigured", "unavailable"]),
 }) {}
 
@@ -37,6 +37,30 @@ export interface Tokens {
 
 /** A person's permission on a repository, as GitHub names it; `none` when they can't see it. */
 export type Permission = "admin" | "maintain" | "write" | "triage" | "read" | "none"
+
+/**
+ * What GitHub answers when a device flow starts: the code the person enters at `verificationUri`, and the device
+ * code the client polls with. Starting one needs only the App's client id, so a CLI or an MCP server can sign a
+ * person in on a host without a browser. The App must have device flow enabled.
+ */
+export interface DeviceSignIn {
+  readonly deviceCode: Redacted.Redacted<string>
+  readonly userCode: string
+  readonly verificationUri: string
+  readonly intervalSeconds: number
+  readonly expiresInSeconds: number
+}
+
+/**
+ * One poll of a running device flow: `pending` and `slowDown` say ask again later (after `intervalSeconds` when
+ * GitHub slowed the poll down), `denied` and `expired` end the flow, and `authorized` carries the person's tokens.
+ */
+export type DevicePoll =
+  | { readonly status: "pending" }
+  | { readonly status: "slowDown"; readonly intervalSeconds: number | null }
+  | { readonly status: "denied" }
+  | { readonly status: "expired" }
+  | { readonly status: "authorized"; readonly tokens: Tokens }
 
 export service GitHubAuth {
   static readonly key = "@smthrs/mvp/auth/GitHubAuth"
@@ -68,6 +92,16 @@ export service GitHubAuth {
      * issued) counts as revoked. Fails `misconfigured` when GitHub refuses the App's client credentials.
      */
     readonly revoke: (accessToken: Redacted.Redacted<string>) => void!GitHubRefused
+    /**
+     * Starts GitHub's device flow: the code the person enters at `verificationUri`. Needs only the App's client
+     * id; the client secret is never sent. Failures: `misconfigured` when GitHub refuses the client id.
+     */
+    readonly deviceCode: () => DeviceSignIn!GitHubRefused
+    /**
+     * One poll for the person's answer to a device flow. `pending` and `slowDown` are outcomes, not failures;
+     * a client id GitHub refuses mid-flow fails `misconfigured`.
+     */
+    readonly deviceToken: (deviceCode: Redacted.Redacted<string>) => DevicePoll!GitHubRefused
   
   /**
    * The real GitHub, as the App `clientId` with `clientSecret`, over the `HttpClient` in context. `webBaseUrl` and
@@ -84,6 +118,24 @@ export const layer = (options: {
     Layer.effect(GitHubAuth, make(options))
 
 schema User { readonly id: number; readonly login: string }
+
+const DeviceCodeAnswer = Schema.Struct({
+  device_code: Schema.NonEmptyString,
+  user_code: Schema.NonEmptyString,
+  verification_uri: Schema.NonEmptyString,
+  expires_in: Schema.Number,
+  interval: Schema.optional(Schema.Number),
+})
+
+const DeviceGrantAnswer = Schema.Struct({
+  access_token: Schema.NonEmptyString,
+  expires_in: Schema.optional(Schema.Number),
+})
+
+const DeviceErrorAnswer = Schema.Struct({
+  error: Schema.String,
+  interval: Schema.optional(Schema.Number),
+})
 
 const Repository = Schema.Struct({
   permissions: Schema.optional(
@@ -146,6 +198,29 @@ const make = effect (options: {
     clientCredentials: { clientId: options.clientId, clientSecret: options.clientSecret },
     apiBaseUrl,
   }, {})
+
+  const decodeDeviceStart = Schema.decodeUnknownEffect(DeviceCodeAnswer)
+  const decodeDeviceGrant = Schema.decodeUnknownEffect(DeviceGrantAnswer)
+  const decodeDeviceError = Schema.decodeUnknownOption(DeviceErrorAnswer)
+
+  /**
+   * One form POST to a GitHub device-flow endpoint with the client id and never the secret, decoded as JSON.
+   * GitHub answers a refused client id with 401 or 404; anything else that isn't a 2xx is `unavailable`.
+   */
+  const deviceJson = effect (path: string, form: Record<string, string>) => {
+    const http = try Client.HttpClient
+    const body = new URLSearchParams({ client_id: options.clientId, ...form }).toString()
+    const request = HttpClientRequest.post(web + path).pipe(
+      HttpClientRequest.setHeader("accept", "application/json"),
+      HttpClientRequest.bodyText(body, "application/x-www-form-urlencoded"),
+    )
+    const unavailable = () => new GitHubRefused({ step: "device", reason: "unavailable" })
+    const response = try Effect.mapError(http.execute(request), unavailable)
+    const text = try Effect.mapError(response.text, unavailable)
+    if (response.status === 401 || response.status === 404) throw new GitHubRefused({ step: "device", reason: "misconfigured" })
+    if (response.status < 200 || response.status >= 300) throw unavailable()
+    return try Effect.mapError(Effect.try(() => JSON.parse(text) as unknown), unavailable)
+  }
 
   return GitHubAuth.of({
     authorizeUrl: ({ state, codeChallenge, redirectUri }) =>
@@ -218,6 +293,48 @@ const make = effect (options: {
           }))
         )
         |> Effect.provide(%, context),
+    // GitHub's device flow: start with the client id alone, then poll until the person answers. A refused poll
+    // arrives as 200 with an `error` field; the person's "no" and an expired code are outcomes, not failures.
+    deviceCode: () =>
+      (effect {
+        const answer = try deviceJson("/login/device/code", {})
+        const decoded = try Effect.mapError(decodeDeviceStart(answer), () => new GitHubRefused({ step: "device", reason: "unavailable" }))
+        const signIn: DeviceSignIn = {
+          deviceCode: Redacted.make(decoded.device_code),
+          userCode: decoded.user_code,
+          verificationUri: decoded.verification_uri,
+          intervalSeconds: decoded.interval ?? 5,
+          expiresInSeconds: decoded.expires_in,
+        }
+        return signIn
+      }) |> Effect.provide(%, context),
+    deviceToken: (deviceCode) =>
+      (effect {
+        const answer = try deviceJson("/login/oauth/access_token", {
+          grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+          device_code: Redacted.value(deviceCode),
+        })
+        const refused = decodeDeviceError(answer)
+        if (Option.isSome(refused)) {
+          const code = refused.value.error
+          if (code === "authorization_pending") return { status: "pending" } as DevicePoll
+          if (code === "slow_down") return { status: "slowDown", intervalSeconds: refused.value.interval ?? null } as DevicePoll
+          if (code === "access_denied") return { status: "denied" } as DevicePoll
+          if (code === "expired_token") return { status: "expired" } as DevicePoll
+          throw new GitHubRefused({
+            step: "device",
+            reason: code === "incorrect_client_credentials" || code === "invalid_client" ? "misconfigured" : "unavailable",
+          })
+        }
+        const decoded = try Effect.mapError(decodeDeviceGrant(answer), () => new GitHubRefused({ step: "device", reason: "unavailable" }))
+        const now = try Clock.currentTimeMillis
+        const tokens: Tokens = {
+          accessToken: Redacted.make(decoded.access_token),
+          expiresAt: decoded.expires_in === undefined ? null : now + decoded.expires_in * 1000,
+          refreshToken: null,
+        }
+        return { status: "authorized", tokens } as DevicePoll
+      }) |> Effect.provide(%, context),
   })
 }
 

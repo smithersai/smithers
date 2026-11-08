@@ -247,3 +247,151 @@ it.effect("signs with the first configured key when the preferred one is absent,
     expect(Exit.isFailure(ghost)).toBe(true)
   })
 })
+
+describe("GitHub device sign-in, for a CLI or MCP server acting as a person's agent", () => {
+  it.effect("starts the flow with only the client id, then polls pending, slowed and authorized", () => effect {
+    let answer: unknown = { error: "authorization_pending" }
+    const fixture = try promise(() => startFixture((request, response) => {
+      if (request.url === "/login/device/code") {
+        const form = new URLSearchParams(request.body)
+        if (form.get("client_id") !== "Iv1.example") return json(response, 401, { message: "bad client" })
+        return json(response, 200, {
+          device_code: "device-private", user_code: "ABCD-EFGH",
+          verification_uri: "https://github.com/login/device", expires_in: 900, interval: 5,
+        })
+      }
+      if (request.url === "/login/oauth/access_token") return json(response, 200, answer)
+      json(response, 404, { message: "Not Found" })
+    }))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: fixture.origin, apiBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const signIn = try auth.deviceCode()
+      const pending = try auth.deviceToken(signIn.deviceCode)
+      answer = { error: "slow_down", interval: 10 }
+      const slowed = try auth.deviceToken(signIn.deviceCode)
+      answer = { access_token: "ghu_device", token_type: "bearer", expires_in: 28800 }
+      const authorized = try auth.deviceToken(signIn.deviceCode)
+      answer = { access_token: "ghu_second", token_type: "bearer" }
+      const timeless = try auth.deviceToken(signIn.deviceCode)
+      try Effect.try(() => {
+        expect(Redacted.value(signIn.deviceCode)).toBe("device-private")
+        expect(signIn.userCode).toBe("ABCD-EFGH")
+        expect(signIn.verificationUri).toBe("https://github.com/login/device")
+        expect([signIn.intervalSeconds, signIn.expiresInSeconds]).toEqual([5, 900])
+        expect(pending).toEqual({ status: "pending" })
+        expect(slowed).toEqual({ status: "slowDown", intervalSeconds: 10 })
+        expect(authorized.status).toBe("authorized")
+        if (authorized.status === "authorized") {
+          expect(Redacted.value(authorized.tokens.accessToken)).toBe("ghu_device")
+          expect(authorized.tokens.refreshToken).toBeNull()
+          expect(authorized.tokens.expiresAt).toBe(28_800_000)
+        }
+        expect(timeless.status).toBe("authorized")
+        if (timeless.status === "authorized") expect(timeless.tokens.expiresAt).toBeNull()
+        const [start, ...polls] = fixture.requests
+        const startForm = new URLSearchParams(start!.body)
+        expect([start!.method, start!.url]).toEqual(["POST", "/login/device/code"])
+        expect(startForm.get("client_id")).toBe("Iv1.example")
+        expect(startForm.get("client_secret")).toBeNull()
+        for (const poll of polls) {
+          expect([poll.method, poll.url]).toEqual(["POST", "/login/oauth/access_token"])
+          const form = new URLSearchParams(poll.body)
+          expect(form.get("grant_type")).toBe("urn:ietf:params:oauth:grant-type:device_code")
+          expect(form.get("device_code")).toBe("device-private")
+          expect(form.get("client_id")).toBe("Iv1.example")
+          expect(form.get("client_secret")).toBeNull()
+        }
+        expect(polls.length).toBe(4)
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("reports the person's no and an expired code as outcomes, not failures", () => effect {
+    let answer: unknown = { error: "access_denied" }
+    const fixture = try promise(() => startFixture((_request, response) => json(response, 200, answer)))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const denied = try auth.deviceToken(Redacted.make("device-private"))
+      answer = { error: "expired_token" }
+      const expired = try auth.deviceToken(Redacted.make("device-private"))
+      answer = { error: "something-else" }
+      const unknown = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+      answer = { error: "slow_down" }
+      const slowed = try auth.deviceToken(Redacted.make("device-private"))
+      answer = { error: "incorrect_client_credentials" }
+      const client = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+      try Effect.try(() => {
+        expect(denied).toEqual({ status: "denied" })
+        expect(expired).toEqual({ status: "expired" })
+        expect([unknown.step, unknown.reason]).toEqual(["device", "unavailable"])
+        expect(slowed).toEqual({ status: "slowDown", intervalSeconds: null })
+        expect([client.step, client.reason]).toEqual(["device", "misconfigured"])
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("fails safe: a refused client is misconfigured, faults carry no code or token", () => effect {
+    let status = 401
+    const refused = try promise(() => startFixture((_request, response) => json(response, status, { message: "bad client" })))
+    provide GitHub.Auth.layer({ clientId: "Iv1.nope", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: refused.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const failure = try Effect.flip(auth.deviceCode())
+      status = 404
+      const missing = try Effect.flip(auth.deviceCode())
+      status = 500
+      const down = try Effect.flip(auth.deviceCode())
+      const pollDown = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+      try Effect.try(() => {
+        expect([failure.step, failure.reason]).toEqual(["device", "misconfigured"])
+        expect([missing.step, missing.reason]).toEqual(["device", "misconfigured"])
+        expect([down.step, down.reason]).toEqual(["device", "unavailable"])
+        expect([pollDown.step, pollDown.reason]).toEqual(["device", "unavailable"])
+      })
+    }
+    try promise(() => refused.close())
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output") }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, try Effect.try(() => rejectingTransport("provider-private-text")))),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const start = try Effect.flip(auth.deviceCode())
+      const poll = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+      try Effect.try(() => {
+        expect([start.step, start.reason]).toEqual(["device", "unavailable"])
+        expect([poll.step, poll.reason]).toEqual(["device", "unavailable"])
+        expect(JSON.stringify([start, poll])).not.toMatch(/provider-private-text|device-private|secret-never-in-output/)
+      })
+    }
+  })
+
+  it.effect("refuses malformed answers without trusting them", () => effect {
+    let answer: unknown = { device_code: "device-private" }
+    const fixture = try promise(() => startFixture((_request, response) => json(response, 200, answer)))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const start = try Effect.flip(auth.deviceCode())
+      answer = { device_code: "device-private", user_code: "WXYZ-1234", verification_uri: "https://github.com/login/device", expires_in: 900 }
+      const defaulted = try auth.deviceCode()
+      try Effect.try(() => expect(defaulted.intervalSeconds).toBe(5))
+      answer = { access_token: "" }
+      const emptyToken = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+      answer = "not json"
+      const garbage = try Effect.flip(auth.deviceToken(Redacted.make("device-private")))
+      try Effect.try(() => {
+        expect([start.step, start.reason]).toEqual(["device", "unavailable"])
+        expect([emptyToken.step, emptyToken.reason]).toEqual(["device", "unavailable"])
+        expect([garbage.step, garbage.reason]).toEqual(["device", "unavailable"])
+      })
+    }
+    try promise(() => fixture.close())
+  })
+})
