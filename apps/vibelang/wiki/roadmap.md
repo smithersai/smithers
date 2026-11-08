@@ -57,9 +57,10 @@ brick                                   state         proof
 
 - **vl-actions (0023):** SDK foundation and Effect Json patch are landed. The second-run app delta, real-engine/browser/workerd receipts and remaining policy/integration checks are preserved in the lane report; service-spread inference awaits compiler approval.
 
-- **Source coverage (0016, lane vl-coverage): in progress.** Boundary tests and Alchemy graph coverage; prepared
-  100% gates remain below target. Two upstream reproductions await Will; precise coverage could not be enabled on
-  the installed workerd 1.20261019.1 inspector.
+- **Source coverage (0016, lane vl-coverage): in progress.** Per-file tables now record independent unit, Chromium
+  and Node-client workerd snapshots. Startup has 57 boundary cases at all-four 100%; native/HTTP history recovery and
+  amendment focus are tested. Whole-app strict gates remain red. Bundled attribution has both VibeLang and plain-JS
+  reproductions; the installed workerd inspector cannot enable precise collection. No runtime source is excluded.
 
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.
 

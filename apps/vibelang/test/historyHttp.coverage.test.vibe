@@ -2,77 +2,24 @@
 // LiveMythical over a real loopback server, the real product mock-mode flows, and faulty Effect transports.
 import { expect, it } from "@effect/vitest"
 import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
-import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerResponse } from "effect/http"
 import { LiveMythical } from "../src/history/LiveMythical.vibe"
 import { MockMythical } from "../src/history/MockMythical.vibe"
 import { Mythical } from "../src/history/MythicalHistory.vibe"
 import { empty } from "../src/history/mythical.vibe"
-import { ApproveBody, MAX_WRITE_BYTES, NoteBody, PlanBody, StartBody } from "../src/history/wire.vibe"
+import { MAX_WRITE_BYTES } from "../src/history/wire.vibe"
 import type { Principal } from "../src/history/roles.vibe"
-import { afterOf, eventStream, handle, type Conversations, type Histories } from "../worker/Http.vibe"
+import { serveHistory, unavailableConversations } from "./support/historyHttpHost.vibe"
+import { handle, type Histories } from "../worker/Http.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
 
-const unavailableConversations: Conversations = {
-  post: () => fail(new Unreachable({ what: "conversation" })),
-  read: () => fail(new Unreachable({ what: "conversation" })),
-  tour: () => fail(new Unreachable({ what: "conversation" })),
-  endTour: () => fail(new Unreachable({ what: "conversation" })),
-  events: () => fail(new Unreachable({ what: "conversation" })),
-}
 const plan = { how: "append" as const, epic: "", newEpic: "Coverage", target: "", title: "docs: boundary", task: "t" }
 const maintainer: Principal = { name: "Ada", role: "maintainer", agent: false }
 
-/** The same Histories host contract as the Worker, backed by actual product flows on their in-memory engine. */
-effect function serve() {
-  const product = try Mythical
-  const histories: Histories = {
-    page: effect (request) => {
-      switch (request.what) {
-        case "outline": return try Effect.orDie(product.outline())
-        case "epic": return try Effect.orDie(product.epic(request.id, request.from))
-        case "commit": return try Effect.orDie(product.commit(request.id))
-        case "search": return try Effect.orDie(product.search(request.query))
-      }
-    },
-    events: effect () => {
-      const request = try HttpServerRequest.HttpServerRequest
-      return eventStream(Stream.orDie(product.events(afterOf(new URL(request.url, "http://local")) ?? 0)))
-    },
-    write: effect (write, body) => {
-      const written = effect {
-        switch (write) {
-          case "plan": return { id: try product.plan(try Schema.decodeUnknownEffect(PlanBody)(body)), folded: 0, refusal: null }
-          case "start": {
-            const request = try Schema.decodeUnknownEffect(StartBody)(body)
-            try product.start(request.id, request.lane)
-            break
-          }
-          case "note": {
-            const request = try Schema.decodeUnknownEffect(NoteBody)(body)
-            try product.note(request.id, request.section, request.text)
-            break
-          }
-          case "approve": {
-            const request = try Schema.decodeUnknownEffect(ApproveBody)(body)
-            try product.approve(request.id)
-            break
-          }
-          case "fold": return { id: "", folded: try product.fold(), refusal: null }
-        }
-        return { id: "", folded: 0, refusal: null }
-      } catch effect (error) => {
-        if (error._tag === "Refused") return { id: "", folded: 0, refusal: error.refusal }
-        throw new Unreachable({ what: "history" })
-      }
-      return written
-    },
-  }
-  try HttpServer.serveEffect(handle(unavailableConversations, histories))
-}
 
 it.live("reads, follows, plans, works, notes, approves and folds through the shared HTTP protocol", () => scoped(effect {
   provide NodeHttpServer.layerTest, MockMythical(maintainer, () => succeed(empty)) {
-    try serve()
+    try serveHistory()
     provide LiveMythical("") {
       const client = try Mythical
       const initial = try client.outline()
@@ -110,7 +57,7 @@ it.live("reads, follows, plans, works, notes, approves and folds through the sha
 
 it.live("refuses viewer writes without changing history, and validates each write schema and size first", () => scoped(effect {
   provide NodeHttpServer.layerTest, MockMythical({ ...maintainer, role: "viewer" }, () => succeed(empty)) {
-    try serve()
+    try serveHistory()
     const http = try HttpClient.HttpClient
     const before = try (try Mythical).outline()
     const forbidden = try http.execute(HttpClientRequest.post("/api/history/plan").pipe(HttpClientRequest.bodyJsonUnsafe(plan)))
@@ -139,7 +86,7 @@ function chunked(text: string, pieces: number) {
 
 it.live("bounds a chunked history write: over the limit is refused unread, under it is decoded", () => scoped(effect {
   provide NodeHttpServer.layerTest, MockMythical(maintainer, () => succeed(empty)) {
-    try serve()
+    try serveHistory()
     const http = try HttpClient.HttpClient
     const before = try (try Mythical).outline()
     // 64 KiB pieces, 4 MiB in all: far past MAX_WRITE_BYTES, and no Content-Length to refuse it by.

@@ -6,6 +6,7 @@
 import { Command, Dom, Subscription, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import { Mythical } from "../history/MythicalHistory.vibe"
+import type { Refused, Unavailable } from "../history/MythicalHistory.vibe"
 import { PAGE } from "../history/pages.vibe"
 import { type Role, ROLES } from "../history/roles.vibe"
 import { CommitPage, EpicPage, HistoryEvent, Matches, Outline } from "../history/schemas.vibe"
@@ -285,8 +286,8 @@ effect function message<A>(make: () => A) {
 }
 
 /** Why a write failed, in the words the page shows: the refusal, or that the history can't be reached. */
-function reasonOf(error: { readonly _tag: string; readonly refusal?: string; readonly reason?: string }): string {
-  return error._tag === "Refused" ? error.refusal ?? "refused" : "unavailable"
+function reasonOf(error: Refused | Unavailable): string {
+  return error._tag === "Refused" ? error.refusal : "unavailable"
 }
 
 /** A failed read in the page's words. */

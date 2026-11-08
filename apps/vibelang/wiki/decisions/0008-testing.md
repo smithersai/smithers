@@ -239,3 +239,9 @@ The retained stale-edit red reproduced overwriting a person's file. `fs.edit` no
 Five marked policy functions prove ten Dafny obligations, with five unchanged-contract negative controls.
 
 A native role regression first reproduced a nonfunctional Mock identity picker after 0019 landed. The shared Accounts seam now follows the selected Factory, refreshes identity on model-mode changes and restores Viewer for local project operations. The real native case opens People in Mock and verifies that local sign-in reports unavailable without navigation.
+
+**History coverage (0016).** All 57 startup cases measure historyStartup.vibe at 100% on all four metrics. Native form
+and real HTTP runtime tests cover planning, every note section, approval/folding, insertion/amendment and unavailable
+read/write recovery, with persisted-state assertions. Amendment focuses Task and reopening is checked in Chromium.
+Dated per-file unit, browser and Node-only workerd tables are recorded in 0016; whole-app 100% remains unfinished.
+The strict all-four thresholds and Playwright coverage collector remain in the retained measurement prototype.
