@@ -1,0 +1,196 @@
+// @vitest-environment node
+// The conversation object (worker/Objects.vibe) on in-memory object storage: posts and tours run their real flows
+// on the engine in the object's SQLite, the reply's dispatch is observed in key-value storage, and one alarm drives
+// the reply execution with no model and with a spent budget.
+import { describe, expect, it } from "@effect/vitest"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { Reply, replyIdOf } from "../src/core/flows.vibe"
+import { dayOf, REASONS, type ChatModel, type Spend } from "../worker/Reply.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import { Unavailable } from "../src/history/MythicalHistory.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const hostId = "objects-coverage"
+
+/** A history reader that never answers: the reply paths exercised here settle before they would read history. */
+const unavailableHistory: HistoryReader = {
+  outline: () => fail(new Unavailable({ reason: "history unreachable" })),
+  epic: () => fail(new Unavailable({ reason: "history unreachable" })),
+  commit: () => fail(new Unavailable({ reason: "history unreachable" })),
+  search: () => fail(new Unavailable({ reason: "history unreachable" })),
+  plan: () => fail(new Unavailable({ reason: "history unreachable" })),
+  start: () => fail(new Unavailable({ reason: "history unreachable" })),
+  note: () => fail(new Unavailable({ reason: "history unreachable" })),
+}
+
+effect function world() {
+  const kv = try Effect.try(() => objectStorage())
+  const storage = kv as unknown as Objects.Storage
+  const sequencer = try Objects.conversation(storage)
+  return { kv, storage, sequencer }
+}
+
+describe("the conversation object's storage adapters", () => {
+  it.effect("keep the execution's intent and alarm, the budget's ledger, and name its executions", () => effect {
+    const { kv, storage, sequencer } = try world()
+    const executions = Objects.executionStorage(storage)
+    try executions.put("k", "v")
+    const got = try executions.get<string>("k")
+    try executions.setAlarm(1234)
+    const armed = kv.alarmAt
+    try executions.deleteAlarm()
+    const deleted = try executions.delete("k")
+    const missing = try executions.get("k")
+    const budget = try Objects.budget(storage, 100)
+    const admitted = try budget.admit()
+    const tours = Objects.toursOf(sequencer)
+    try tours.wake()
+    const execution = try Objects.postExecutionId("probe")
+    try Effect.try(() => {
+      expect(got).toBe("v")
+      expect(armed).toBe(1234)
+      expect(kv.alarmAt).toBeUndefined()
+      expect(deleted).toBe(true)
+      expect(missing).toBeUndefined()
+      expect(admitted).toBe(true)
+      expect(execution.startsWith("probe/")).toBe(true)
+      expect(Objects.executionIdOf("m41")).toBe("reply/m41")
+      expect(Objects.tourExecutionIdOf("t41")).toBe("tour/t41")
+      expect(Objects.SETTLED_RETENTION_MS).toBe(0)
+    })
+  })
+
+  it.effect("dies when a reply or tour execution tries to route", () => effect {
+    const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: "reply/m1", payload: { post: "m1" } }))
+    const started = try Effect.exit(Objects.unrouted.start(intent))
+    const woken = try Effect.exit(Objects.unrouted.wake("reply/m1"))
+    try Effect.try(() => {
+      expect(Exit.isFailure(started)).toBe(true)
+      expect(Exit.isFailure(woken)).toBe(true)
+    })
+  })
+})
+
+describe("posts and tours through their flows", () => {
+  it.live("records a post through its flow, dispatches its reply once, and refuses repeats", () => effect {
+    const { kv, storage, sequencer } = try world()
+    const invalid = try Objects.post(hostId, storage, sequencer, "c1", "ada", "\uD800")
+    const recorded = try Objects.post("h", storage, sequencer, "c1", "ada", "hello")
+    const keys = [...kv.kv.keys()]
+    const duplicate = try Objects.post("h", storage, sequencer, "c1", "ada", "hello")
+    const again = try Objects.post("h", storage, sequencer, "c2", "ada", "second")
+    const keysAfter = [...kv.kv.keys()]
+    const snapshot = try sequencer.read(0)
+    try Effect.try(() => {
+      expect(invalid).toBe("invalid")
+      expect(recorded).toBeNull()
+      expect(keys).toContain("smithers/intent")
+      expect(keys).toContain("dispatched/m1")
+      expect(duplicate).toBe("duplicate")
+      expect(again).toBeNull()
+      expect(keysAfter).toEqual([...keys, "event/0000000000000002"])
+      expect(snapshot.entries.map((entry) => entry.text)).toEqual(["hello", "second"])
+    })
+  }, 30_000)
+
+  it.live("starts and ends a tour through its flows, waking the parked execution on end", () => effect {
+    const { kv, storage, sequencer } = try world()
+    const endedEarly = try Objects.endTour("h", storage, sequencer)
+    const started = try Objects.tour("h", storage, sequencer)
+    const ended = try Objects.endTour("h", storage, sequencer)
+    const endedAgain = try Objects.endTour("h", storage, sequencer)
+    const snapshot = try sequencer.read(0)
+    try Effect.try(() => {
+      expect(endedEarly).toBe("not-replying")
+      expect(started).toBeNull()
+      expect(ended).toBeNull()
+      expect(endedAgain).toBe("not-replying")
+      expect(snapshot.entries).toHaveLength(1)
+      expect(snapshot.entries[0]).toMatchObject({ author: "agent", done: true })
+      expect(kv.kv.has("smithers/intent")).toBe(true)
+      expect(kv.alarmAt).not.toBeUndefined()
+    })
+  }, 30_000)
+})
+
+  it.live("a tour waits behind the held reply intent, and ending it leaves that intent parked", () => effect {
+    const { kv, storage, sequencer } = try world()
+    try Objects.post(hostId, storage, sequencer, "c1", "ada", "hello")
+    const started = try Objects.tour(hostId, storage, sequencer)
+    try sequencer.ensureDispatched()
+    const ended = try Objects.endTour(hostId, storage, sequencer)
+    const keys = [...kv.kv.keys()]
+    try Effect.try(() => {
+      expect(started).toBeNull()
+      expect(ended).toBeNull()
+      expect(keys).toContain("smithers/intent")
+      expect(keys).toContain("dispatched/m1")
+      expect(keys).not.toContain("dispatched/tour/t2")
+      expect(kv.alarmAt).not.toBeUndefined()
+    })
+  }, 30_000)
+
+  it.live("dispatches a running tour only once", () => effect {
+    const { kv, storage, sequencer } = try world()
+    try Objects.tour(hostId, storage, sequencer)
+    try sequencer.ensureDispatched()
+    const keys = [...kv.kv.keys()].filter((key) => key.startsWith("dispatched/"))
+    try Effect.try(() => expect(keys).toEqual(["dispatched/tour/t1"]))
+  }, 30_000)
+
+  it.live("a tour's end with no parked execution wakes nothing", () => effect {
+    const { kv, storage, sequencer } = try world()
+    const started = try Objects.tour(hostId, storage, sequencer)
+    try promise(() => kv.delete("smithers/intent"))
+    const ended = try Objects.endTour(hostId, storage, sequencer)
+    try Effect.try(() => {
+      expect(started).toBeNull()
+      expect(ended).toBeNull()
+    })
+  }, 30_000)
+
+describe("one alarm of the object", () => {
+  it.live("drives the dispatched reply to its model-less failure, forgets it, and idles", () => effect {
+    const { kv, storage, sequencer } = try world()
+    const posted = try Objects.post(hostId, storage, sequencer, "c1", "ada", "hello")
+    const spend: Spend.Shape = { admit: () => succeed(true), spend: () => Effect.void }
+    const model: ChatModel.Shape = { model: undefined, unusable: "unconfigured" }
+    const outcome = try Objects.alarm(hostId, storage, sequencer, spend, model, unavailableHistory)
+    const snapshot = try sequencer.read(0)
+    const second = try Objects.alarm(hostId, storage, sequencer, spend, model, unavailableHistory)
+    const third = try Objects.alarm(hostId, storage, sequencer, spend, model, unavailableHistory)
+    try Effect.try(() => {
+      expect(posted).toBeNull()
+      expect(outcome._tag).toBe("Settled")
+      expect(snapshot.entries.map((entry) => entry.text)).toEqual(["hello", ""])
+      expect(snapshot.entries[1]).toMatchObject({ author: "agent", done: true, error: REASONS.unconfigured })
+      expect(second._tag).toBe("Forgotten")
+      expect(kv.kv.has("smithers/intent")).toBe(false)
+      expect(third._tag).toBe("Idle")
+    })
+  }, 30_000)
+
+  it.live("fails the reply with the budget reason when the day is spent", () => effect {
+    const { storage, sequencer } = try world()
+    try Objects.post(hostId, storage, sequencer, "c1", "ada", "hello")
+    const spend: Spend.Shape = { admit: () => succeed(false), spend: () => Effect.void }
+    const model: ChatModel.Shape = { model: undefined, unusable: "unconfigured" }
+    const outcome = try Objects.alarm(hostId, storage, sequencer, spend, model, unavailableHistory)
+    const snapshot = try sequencer.read(0)
+    try Effect.try(() => {
+      expect(outcome._tag).toBe("Settled")
+      expect(snapshot.entries[1]).toMatchObject({ author: "agent", done: true, error: REASONS.budget })
+    })
+  }, 30_000)
+})
+
+describe("reply wording helpers", () => {
+  it.effect("names the day of a timestamp as the budget does", () => effect {
+    try Effect.try(() => {
+      expect(dayOf(0)).toBe("1970-01-01")
+      expect(dayOf(Date.parse("2026-11-08T23:59:59Z"))).toBe("2026-11-08")
+      expect(replyIdOf("m41")).toBe("r41")
+    })
+  })
+})
