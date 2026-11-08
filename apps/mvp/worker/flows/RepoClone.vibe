@@ -1,7 +1,7 @@
 import { CodeStorage } from "@smthrs/effect-code-storage"
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Clock, Config, Duration, Effect, Layer, Metric, Schema } from "effect"
+import { Config, Duration, Effect, Layer, Schema } from "effect"
 import type { SqlClient } from "effect/sql"
 import { CAPACITY_REASONS, FAILURES } from "../../src/features/repo/contract.ts"
 import { codeOf } from "../ErrorCode.vibe"
@@ -91,12 +91,12 @@ export const Inspection = Schema.Struct({
 export type Inspection = typeof Inspection.Type
 
 /** The default branch's head commit, once synced. */
-export const Head = Schema.Struct({
-  sha: Schema.String,
-  message: Schema.String,
-  author: Schema.String,
-  at: Schema.String,
-})
+export schema Head {
+  readonly sha: string
+  readonly message: string
+  readonly author: string
+  readonly at: string
+}
 
 /** How the sync went after admission: `ready` with the head, or why not; `skipped` when nothing was imported. */
 export const Synced = Schema.Struct({

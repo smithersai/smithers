@@ -1,4 +1,4 @@
-import { Cause, Effect, type Layer, Metric, Option } from "effect"
+import { type Layer } from "effect"
 import type { SqlClient } from "effect/sql"
 import { KEY_REFUSALS } from "../../src/features/personal-model/contract.ts"
 import { codeOf } from "../ErrorCode.vibe"

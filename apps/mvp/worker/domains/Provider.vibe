@@ -1,4 +1,4 @@
-import { Context, type Effect, Layer, Option, Schema } from "effect"
+import { type Effect } from "effect"
 import type { CertificateState, DnsRecord, VerificationState } from "../../src/features/domains/contract.ts"
 
 // The domain provider (decision 0039 §3): what registers a custom domain, says whether it is verified and has a

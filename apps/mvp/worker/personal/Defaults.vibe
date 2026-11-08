@@ -1,4 +1,3 @@
-import { Config, Effect } from "effect"
 import { DEFAULTS, type Defaults } from "../../src/features/personal-model/contract.ts"
 
 // What a connection kind fills in for the person (decision 0132). Choices are configuration (SDK-9), named for what they

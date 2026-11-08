@@ -30,11 +30,11 @@ schema Existing { readonly txid: null; readonly existing: true }
  * - `refused`: an answer other than 200 or 202, such as 409 for a retry that doesn't match the stored question;
  * - `invalid_response`: 200 or 202 with a body outside the contract, or one that broke off.
  */
-export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
-  readonly reason: "unreachable" | "refused" | "invalid_response"
-  readonly status?: number
-  readonly sessionCheck?: "same_person"
-}> {}
+export error QuestionNotTaken {
+  reason: "unreachable" | "refused" | "invalid_response"
+  status?: number
+  sessionCheck?: "same_person"
+}
 
 /**
  * Asks ChatApi to store a question and its empty answer. One deadline, `within`, covers the whole request: sending it,

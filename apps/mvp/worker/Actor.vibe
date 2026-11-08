@@ -103,9 +103,7 @@ export class SessionsUnavailable extends Schema.TaggedError<SessionsUnavailable>
 }
 
 /** Resolves the actor behind a request: `None` for a signed-out request. */
-export class Sessions extends Context.Service<
-  Sessions,
-  {
+export service Sessions: {
     readonly resolve: Option.Option<Actor>!SessionsUnavailable!HttpServerRequest.HttpServerRequest
     /**
      * The person behind the request's session cookie alone, never a run credential its `Authorization` carries, bound
@@ -113,14 +111,13 @@ export class Sessions extends Context.Service<
      * answer for the browser's own session, such as the issue page's first paint. Absent: such a read is unavailable.
      */
     readonly resolveCookie?: Option.Option<Actor>!SessionsUnavailable!HttpServerRequest.HttpServerRequest
-  }
->()("@smthrs/mvp/Sessions") {}
+  } { static readonly key = "@smthrs/mvp/Sessions" }
 
 /** Every request signed out: what a deployment without sign-in configured resolves, and the tests' default. */
-export const signedOut: Layer<Sessions> = Layer.succeed(Sessions, Sessions.of({ resolve: Effect.succeedNone }))
+export const signedOut: Layer.Layer<Sessions> = Layer.succeed(Sessions, Sessions.of({ resolve: Effect.succeedNone }))
 
 /** The actor a flow step runs as. The host that starts the run provides it; a payload never names it. */
-export class CurrentActor extends Context.Service<CurrentActor, Actor>()("@smthrs/mvp/CurrentActor") {}
+export service CurrentActor: Actor { static readonly key = "@smthrs/mvp/CurrentActor";}
 
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 

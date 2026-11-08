@@ -1,7 +1,7 @@
 import { digestSync, Uuid, WebCrypto } from "@smthrs/crypto"
 import { Action, Interpreter } from "@smthrs/flow"
 import { CiJob, type SandboxTools } from "@smthrs/sandbox"
-import { Effect, Layer, Metric } from "effect"
+import { Layer, Metric } from "effect"
 import { Machines } from "../branch/Machines.vibe"
 import type { SandboxBranch } from "../branch/Sandboxes.vibe"
 
@@ -24,7 +24,7 @@ export const CI_JOB_NAMESPACE = "6f3c0d1e-5b7a-4c8e-9a2d-1e4f6b8c0a35"
 export const machineOf = (target: CiJob.Target, job: CiJob.JobRef): SandboxBranch => {
   const [owner = "", name = ""] = target.repo.split("/")
   return {
-    branchId: `job-${digestSync(`job:${target.run}:${job.name}`).slice(0, 40)}`,
+    branchId: `job-${$invoke(digestSync,`job:${target.run}:${job.name}`).slice(0, 40)}`,
     owner,
     name,
     branch: target.sha,
@@ -32,7 +32,7 @@ export const machineOf = (target: CiJob.Target, job: CiJob.JobRef): SandboxBranc
     kind: "job",
     ...(job.machine === undefined ? {} : { machine: job.machine }),
     // Every job of the run shares its artifacts (worker/branch/Artifacts.ts); no other run's box can name them.
-    artifacts: digestSync(`run:${target.run}`).slice(0, 40),
+    artifacts: $invoke(digestSync,`run:${target.run}`).slice(0, 40),
   }
 }
 
@@ -85,14 +85,12 @@ export const layer = Layer.effect(
     return CiJob.Machine.of({
       // The machine's wake fetched exactly the commit; this reads it back, so a job never runs on another.
       checkout: (target, job) =>
-        tool(target, job, "checkout", {
+        (do { const catchProgram = (tool(target, job, "checkout", {
           tool: "run",
           command: `test "$(git rev-parse HEAD)" = ${target.sha}`,
           timeoutSeconds: 60,
         })
-        |> Effect.map(%, (ran) => (ran.result as typeof SandboxTools.RunResult.Type).exitCode === 0)
-        |> Effect.catch(%, (error) =>
-          unavailable(error) ? Effect.fail(new CiJob.MachineUnavailable()) : Effect.succeed(false))
+        |> Effect.map(%, (ran) => (ran.result as typeof SandboxTools.RunResult.Type).exitCode === 0)); effect { return catchProgram catch effect (error) => try (unavailable(error) ? Effect.fail(new CiJob.MachineUnavailable()) : Effect.succeed(false)) } })
         |> Effect.tap(%, (exact) =>
           counted("checkout", exact ? "exact" : "refused", target, job)),
       run: (target, job, index, step) =>
@@ -140,3 +138,8 @@ export const registration = <E, R>(machines: Layer.Layer<Machines, E, R>) =>
     Layer.provide(layer),
     Layer.provide(machines),
   )
+
+module $call$ts {
+export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
+}
+import { invoke as $invoke } from $call$ts

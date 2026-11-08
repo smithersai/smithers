@@ -1,5 +1,4 @@
 import { ShapeProxy } from "@smthrs/effect-electric"
-import { Effect, Metric } from "effect"
 import { LOCAL_ELECTRIC_URL } from "../src/features/chat/contract.ts"
 import { SPEND_ALERT_COLUMNS, SPEND_ALERTS_TABLE } from "../src/features/spend/contract.ts"
 import * as ShapeAccess from "./ShapeAccess.vibe"

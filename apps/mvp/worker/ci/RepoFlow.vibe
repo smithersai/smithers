@@ -4,7 +4,7 @@ import type { QuickJSVariant } from "@smthrs/harness"
 import { Core, GitHub } from "@smthrs/integrations"
 import { Node } from "@smthrs/plan"
 import { CiJob } from "@smthrs/sandbox"
-import { Effect, Layer, Metric, Option, type Redacted, Schema } from "effect"
+import { Effect, Layer, Metric, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import type { SqlClient } from "effect/sql"
 import { statusContextOf } from "../../src/features/pulls/contract.ts"
@@ -63,10 +63,10 @@ export type RunRequest = typeof RunRequest.Type
  * A flow that couldn't be read at the commit: no `flow.ts` there, GitHub refused the read or answered no text, or GitHub
  * or Postgres didn't answer for the plan's 30 minutes of retries.
  */
-export const Unread = Schema.Struct({
-  _tag: Schema.Literal("refused"),
-  reason: Schema.Literals(["not_found", "unreadable", "unavailable"]),
-})
+export schema Unread {
+  readonly _tag: "refused"
+  readonly reason: "not_found" | "unreadable" | "unavailable"
+}
 
 /** What `repo/Plan` settles: the realm's plan, or why there is none. */
 export const PlanResult = Schema.Union([Realm.Planned, Realm.Refused, Unread])
@@ -319,13 +319,12 @@ export const steps = <E, R>(services: Services<E, R>) => {
 
   /** `pending` as the jobs start, best effort: `repo/Report` sends the result durably. */
   const pending = ({ request }: typeof Pending.payloadSchema.Type) =>
-    (effect {
+    do { const catchProgram = ((effect {
       const token = try services.tokens.forInstallation(repositoryOfRequest(request), "status")
       try sendStatus(request, token, "pending", descriptionOf("pending", [], null))
       try statusRecorded(request, "pending", "sent")
     })
-    |> Effect.provide(%, services.database)
-    |> Effect.catch(%, (error) => statusRecorded(request, "pending", "dropped", error))
+    |> Effect.provide(%, services.database)); effect { return catchProgram catch effect (error) => try statusRecorded(request, "pending", "dropped", error) } }
 
   /**
    * The run's result as a commit status: success when every job passed, else failure. A refusal (no Commit statuses

@@ -1,7 +1,7 @@
 import { withUserAgent } from "./github/Http.ts"
 import { GitRemote } from "@smthrs/effect-code-storage"
 import { GitHub } from "@smthrs/integrations"
-import { Clock, Context, Effect, Layer, Option, Redacted, Schema } from "effect"
+import { Context, Effect, Layer, Schema } from "effect"
 import type { HttpClient } from "effect/http"
 import * as ReadToken from "./github/ReadToken.ts"
 import type { Size } from "./Repos.ts"

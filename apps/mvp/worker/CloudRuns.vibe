@@ -247,11 +247,11 @@ export const route = <E, R, EE, ER>(options: Parameters<typeof read<E, R, EE, ER
       fields.system = listed.counts.system
       return HttpServerResponse.jsonUnsafe({ runs: listed.runs }, { headers: noStore })
     }
-      |> Effect.catchCause(%, (cause) =>
-        Effect.sync(() => {
+      |> Effect.catchCause(%, effect (cause) =>
+        {
           fields.errorCode = codeOf(Cause.squash(cause))
           return refused(503, "unavailable")
-        })))
+        }))
     const outcome = String(fields.outcome)
     fields.status = response.status
     fields.durationMs = (try Clock.currentTimeMillis) - startedAt

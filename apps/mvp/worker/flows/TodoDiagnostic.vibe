@@ -1,7 +1,6 @@
 import { Budget } from "@smthrs/agent"
 import { HarnessError, Sandbox } from "@smthrs/harness"
 import { Evaluator, ModelError } from "@smthrs/model"
-import { Schema } from "effect"
 
 const isBudgetTag = Schema.is(Budget.BudgetExceeded.fields._tag)
 const isBudgetScope = Schema.is(Budget.BudgetExceeded.fields.scope)

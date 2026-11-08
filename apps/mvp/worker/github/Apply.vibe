@@ -1,6 +1,6 @@
 import { Action, Flow, Interpreter, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { Clock, Effect, Layer, Metric, Option, Schema } from "effect"
+import { Effect, Layer, Schema } from "effect"
 import { HttpClient } from "effect/http"
 import { SqlClient } from "effect/sql"
 import { codeOf } from "../ErrorCode.vibe"
@@ -161,13 +161,12 @@ export const read = <E, R>(services: Services<E, R>) => (request: typeof Read.pa
           if (!services.mayAct(parent.repository.id)) continue
           const known = try candidates(parent.repository.owner, services.allowedRepositories ?? [])
           if (!known.includes(parent.repository.id)) continue
-          try (services.startApply({
+          services.startApply({
             deliveryId: `${delivery}:${parent.id}`,
             repo: `${parent.repository.owner}/${parent.repository.name}`,
             number: parent.number,
             event: request.event,
-          })
-            |> Effect.mapError(%, () => new ApplyUnavailable({})))
+          }) catch effect () => { throw new ApplyUnavailable({}) }
         }
       }
       return try project(repository, request.number, fetched)

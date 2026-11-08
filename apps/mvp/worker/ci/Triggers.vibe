@@ -1,4 +1,3 @@
-import { Option, Schema } from "effect"
 import { FLOW_NAME } from "./RepoFlow.vibe"
 
 // When a repository's flows run (docs/features/ci.md#triggers): the trigger rows of the repository's plugin manifest,
@@ -55,13 +54,13 @@ const decodeTrigger = Schema.decodeUnknownOption(Trigger)
  * written by `S.Factory` isn't. A row this slice can't read (another event, a bad flow name) is skipped; the rest stand.
  */
 export const triggersOf = (text: string): ReadonlyArray<Trigger> =>
-  Option.match(decodeManifest(text), {
+  do { const $optionSubject = decodeManifest(text); const $optionHandlers: { onNone: () => never[]; onSome: (manifest: { apiVersion: 1; contributes?: { triggers?: readonly unknown[] | undefined; } | undefined; }) => { readonly on: "github.pull_request" | "github.push" | "manual"; readonly flow: string; readonly title?: string | undefined; readonly branches?: readonly string[] | undefined; readonly tags?: readonly string[] | undefined; readonly actions?: readonly string[] | undefined; }[]; } = {
     onNone: () => [],
     onSome: (manifest) =>
       (manifest.contributes?.triggers ?? []).slice(0, MAX_TRIGGERS).flatMap((row) =>
-        Option.match(decodeTrigger(row), { onNone: () => [], onSome: (trigger) => [trigger] })
+        do { const $optionSubject$1 = decodeTrigger(row); const $optionHandlers$1: { onNone: () => never[]; onSome: (trigger: { readonly on: "github.pull_request" | "github.push" | "manual"; readonly flow: string; readonly title?: string | undefined; readonly branches?: readonly string[] | undefined; readonly tags?: readonly string[] | undefined; readonly actions?: readonly string[] | undefined; }) => { readonly on: "github.pull_request" | "github.push" | "manual"; readonly flow: string; readonly title?: string | undefined; readonly branches?: readonly string[] | undefined; readonly tags?: readonly string[] | undefined; readonly actions?: readonly string[] | undefined; }[]; } = { onNone: () => [], onSome: (trigger) => [trigger] }; const { onNone: $optionNone$1, onSome: $optionSome$1 } = $optionHandlers$1; match ($optionSubject$1) { when Option.Some(let $optionValue$1): $optionSome$1($optionValue$1); default: $optionNone$1(); }; }
       ),
-  })
+  }; const { onNone: $optionNone, onSome: $optionSome } = $optionHandlers; match ($optionSubject) { when Option.Some(let $optionValue): $optionSome($optionValue); default: $optionNone(); }; }
 
 /** What a trigger is matched against: one GitHub event, as the webhook names it. */
 export interface Event {

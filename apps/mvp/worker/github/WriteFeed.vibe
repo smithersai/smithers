@@ -1,5 +1,3 @@
-import { Effect, Metric } from "effect"
-import { SqlClient } from "effect/sql"
 import { routed } from "../Notifications.ts"
 
 /** The writes whose receipts reach the person's feed (decision 0124): a branch's Publish and Update, and a new issue. */

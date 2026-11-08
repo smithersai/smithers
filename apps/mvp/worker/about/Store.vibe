@@ -1,4 +1,4 @@
-import { Data, Effect, type Layer, Option } from "effect"
+import { Effect, type Layer, Option } from "effect"
 import { SqlClient } from "effect/sql"
 
 // Where what GitHub says of a repository is kept for every data center (docs/features/repo.md#about): Postgres'

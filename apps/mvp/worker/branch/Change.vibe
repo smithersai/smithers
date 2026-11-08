@@ -1,5 +1,4 @@
 import { SandboxTools } from "@smthrs/sandbox"
-import { Effect, Schema } from "effect"
 import { Machines } from "./Machines.vibe"
 import type { SandboxBranch } from "./Sandboxes.vibe"
 
