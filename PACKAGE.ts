@@ -376,7 +376,7 @@ const driftJob = {
 
 // The source condition lets the CLI load the graph before generated types exist.
 // The declared preparation target then supplies types to ordinary source tools.
-type CiJob = Parameters<typeof Smithers.GithubCiGen>[0]["jobs"][number]
+type CiJob = NonNullable<Parameters<typeof Smithers.GithubCiGen>[0]["jobs"]>[number]
 const withSourceDeclarations = (job: CiJob): CiJob => job.toolchain.install
   ? { ...job, steps: [
     { name: "Generate source declarations", verb: Smithers.Verb.Build, pattern: "//packages/repo-targets:sidecars" },
