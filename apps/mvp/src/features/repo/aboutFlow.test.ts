@@ -1,4 +1,3 @@
-import { Crypto } from "@smthrs/crypto"
 import { NodeHost } from "@smthrs/platform-node"
 import { Engine } from "@smthrs/flows"
 import { Clock, Deferred, Effect, Exit, Fiber, Layer } from "effect"
@@ -41,7 +40,6 @@ test("About recovers after a 12-second refresh, honors Retry-After, and bounds r
         Layer.provide(FetchHttpClient.layer),
       )),
     )
-    // Effect 4.1 NodeCrypto.layer no longer provides the legacy Crypto service the flow needs.
     const result = await Effect.runPromise(Effect.gen(function* () {
       const fiber = yield* RepoAbout.execute({ repo: "octocat/Spoon-Knife" }, { executionId: crypto.randomUUID() }).pipe(Effect.exit, Effect.forkChild)
       yield* TestClock.adjust(10_000)
@@ -50,7 +48,7 @@ test("About recovers after a 12-second refresh, honors Retry-After, and bounds r
       if (failure === undefined) expect(times).toEqual([0])
       yield* TestClock.adjust(60_001)
       return yield* Fiber.join(fiber)
-    }).pipe(Effect.provide(runtime), Effect.provide(Crypto.layerFromDigest(NodeHost.NodeCrypto.layerDigest)), Effect.provide(TestClock.layer()), Effect.scoped))
+    }).pipe(Effect.provide(runtime), Effect.provide(NodeHost.NodeCrypto.layer), Effect.provide(TestClock.layer()), Effect.scoped))
     if (failure === undefined) {
       expect(result).toEqual(Exit.succeed(about))
       expect(times).toEqual([0, 12_000])

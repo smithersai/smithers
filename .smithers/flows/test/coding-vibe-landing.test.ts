@@ -980,7 +980,7 @@ test("advance green prefix: the durable flow hands the stack to the local lander
         Layer.provide(Layer.succeed(Landing, landing)),
         Layer.provideMerge(Action.layerImplementations),
         Layer.provideMerge(FlowEngine.layerMemory),
-        Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+        Layer.provideMerge(NodeCrypto.layer)
       )
     )
     t.after(() => host.dispose())

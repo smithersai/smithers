@@ -5,7 +5,6 @@
  * commit on the published branch.
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, FileSystem, Layer, ManagedRuntime } from "effect"
@@ -277,7 +276,7 @@ test("stack publication: coding/PublishStack journals the confirmed receipt", as
       Layer.provide(Layer.succeed(Landing, lander)),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
   )
   t.after(() => host.dispose())
@@ -302,7 +301,7 @@ test("stack publication: a backend host refuses", async () => {
       Layer.provide(Layer.succeed(Landing, backend)),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
   )
   const tip = "a".repeat(40)

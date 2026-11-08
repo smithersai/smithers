@@ -4,7 +4,6 @@
  * Only the checks are scripted; every rebase, restore and bookmark move is jj's.
  */
 import { NodeCrypto, NodeServices } from "@effect/platform-node"
-import { Crypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Action } from "@smthrs/flow"
 import { Effect, Layer, ManagedRuntime } from "effect"
@@ -144,7 +143,7 @@ const hostOf = (t: Cleanup, root: string, checks: ReturnType<typeof noChecks>) =
       Layer.provide(Layer.mergeAll(NodeServices.layer, nativeOf(root))),
       Layer.provideMerge(Action.layerImplementations),
       Layer.provideMerge(FlowEngine.layerMemory),
-      Layer.provideMerge(Crypto.layerFromDigest(NodeCrypto.layerDigest))
+      Layer.provideMerge(NodeCrypto.layer)
     )
   )
   t.after(() => host.dispose())

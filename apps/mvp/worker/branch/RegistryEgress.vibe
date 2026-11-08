@@ -79,6 +79,6 @@ export const forward = (
   request: HttpServerRequest.HttpServerRequest,
 ): HttpServerResponse.HttpServerResponse!never!HttpClient.HttpClient =>
   Egress.forward(request, POLICY)
-    (effect) => withUserAgent(effect, true),
+  |> withUserAgent(%, true)
   |> Effect.provide(%, services)
   |> withSpan(%, "sandbox.registry.egress")
