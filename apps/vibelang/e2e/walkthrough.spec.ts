@@ -9,8 +9,11 @@ test.beforeEach(async ({ page }) => {
     localStorage.setItem("vibelang:tour-sound", "off")
     const calls = { speak: 0, cancel: 0 }
     Object.assign(window, { tourAudio: calls })
-    speechSynthesis.speak = () => { calls.speak++ }
-    speechSynthesis.cancel = () => { calls.cancel++ }
+    // Observe calls while retaining the real browser speech implementation.
+    const speak = speechSynthesis.speak.bind(speechSynthesis)
+    const cancel = speechSynthesis.cancel.bind(speechSynthesis)
+    speechSynthesis.speak = utterance => { calls.speak++; speak(utterance) }
+    speechSynthesis.cancel = () => { calls.cancel++; cancel() }
   })
 })
 test("muted agent drives every real app surface, with pause, back, seek and exit", async ({ page }) => {

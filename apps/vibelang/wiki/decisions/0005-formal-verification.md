@@ -157,3 +157,6 @@ Dafny lemma. No original contract, emitted statement or generated condition is r
 
 Startup choices (0018) now share an import-free proved kernel. Browser startup, history role selection and mode
 navigation call it; native storage/URL operations and their failure fallbacks remain explicit host boundaries.
+
+Theatre presentation (0018) now calls a proved kernel for speech decisions, selectors and keyboard focus wrapping.
+Actual speech, DOM layout and persisted-state decoding remain host/library boundaries.

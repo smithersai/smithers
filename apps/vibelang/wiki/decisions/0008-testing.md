@@ -282,3 +282,12 @@ fields have executable contract-preserving mutations.
 **Startup policy extraction (0018).** Existing browser/runtime startup, saved tutorial, role and Mock-switch tests
 exercise the shared proved choices. Executable mutants cover query precedence, persistence actions, role membership,
 tutorial state, session fallback and opposite-mode navigation, with unchanged contracts.
+
+**Theatre policy extraction (0018).** Walkthrough tests retain real injected browser speech/storage and rendered
+controls while selectors, speech priority, duplicate prevention and focus wrapping move into a proved kernel.
+Guard and field mutations preserve all production contracts.
+
+**Saved audio regression (0018).** A faulty Window Effect service returns malformed audio JSON while retaining
+real native storage and host APIs. The first two and then three strengthened cases fail before shape validation;
+all sixteen pass after it. Browser speech counters wrap and delegate the native APIs rather than replacing them.
+The 30 affected browser cases retain pause, seek, mute, finish and Escape assertions.

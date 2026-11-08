@@ -1,3 +1,4 @@
+import { theatreSelector, speechAction, audioIdentity, theatreOutcome, theatreFocusIndex } from "./theatreDecision.vibe"
 // Browser presentation is an injected Effect service. No speech or storage host globals enter the flow or view.
 import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { WALKTHROUGH } from "../core/walkthroughSteps.vibe"
@@ -7,18 +8,16 @@ export service TourPresentation {
   focus(backward: boolean): void!!
   measure(target: string): Box!!
 }
-export function theatreSelector(target: string): string {
-  if (target === "splash") return ".vl-primary"
-  if (target === "palette") return ".sui-chat-messages"
-  if (target === "issues") return ".ix-surface"
-  if (target.startsWith("issue:") || target === "issues:vips") return ".sui-item-conv"
-  if (target.startsWith("wiki:")) return ".vl-wiki"
-  if (target === "history-nav") return 'a[href="/history"]'
-  if (target === "composer") return 'form.sui-chat-composer[data-docked="true"]'
-  if (target === "sandbox-pane") return ".vl-sandboxes"
-  return ".vl-chat"
+export { theatreSelector } from "./theatreDecision.vibe"
+
+const AudioStep = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0), Schema.isLessThanOrEqualTo(WALKTHROUGH.length))
+schema StoredAudio {
+  readonly step: AudioStep
+  readonly sound: boolean
+  readonly active: boolean
+  readonly paused: boolean
 }
-export const presentation = Layer.effect(TourPresentation, effect {
+export const presentationFromHost = Layer.effect(TourPresentation, effect {
   const window = try (try Experimental.Window.Window).current
   const document = try (try Experimental.Document.Document).current
   return {
@@ -33,29 +32,31 @@ export const presentation = Layer.effect(TourPresentation, effect {
         let previous = { step: 0, sound: false, active: false, paused: false }
         try {
           const raw = window.sessionStorage.getItem("vibelang:tour-audio")
-          if (raw) previous = JSON.parse(raw)
+          if (raw) {
+            const restored: unknown = JSON.parse(raw)
+            if (Schema.is(StoredAudio)(restored)) previous = restored
+          }
           // A seek cancels the old line; retain a different identity so the new drive speaks rather than resuming it.
-          window.sessionStorage.setItem("vibelang:tour-audio", JSON.stringify({ ...state, step: state.paused && (previous.step !== state.step || !previous.active || !previous.sound) ? 0 : state.step }))
+          window.sessionStorage.setItem("vibelang:tour-audio", JSON.stringify({ ...state, step: audioIdentity(state.step, state.paused, previous.step, previous.active, previous.sound) }))
         } catch { /* Unavailable storage never prevents sound-off control. */ }
-        if (!state.sound || (!state.active && !state.finish)) speech?.cancel()
-        else if (state.paused) {
-          if (previous.step !== state.step) speech?.cancel()
-          else speech?.pause()
-        } else if (previous.step === state.step && previous.sound && previous.active && previous.paused) speech?.resume()
-        else if (previous.step !== state.step || !previous.sound || !previous.active) {
+        const action = speechAction(state.step, state.sound, state.active, state.paused, state.finish === true, previous.step, previous.sound, previous.active, previous.paused)
+        if (action === "cancel") speech?.cancel()
+        else if (action === "pause") speech?.pause()
+        else if (action === "resume") speech?.resume()
+        else if (action === "speak") {
           speech?.cancel()
           const Constructor = (window as Window & { SpeechSynthesisUtterance: new (text: string) => SpeechSynthesisUtterance }).SpeechSynthesisUtterance
           if (Constructor && speech) speech.speak(new Constructor(WALKTHROUGH[state.step - 1]?.voice ?? ""))
         }
       })
-      const outcome = state.active ? state.paused ? "paused" : state.sound ? "sound" : "muted" : "ended"
+      const outcome = theatreOutcome(state.active, state.paused, state.sound)
       try Metric.update(Metric.withAttributes(Metric.counter("vibelang_theatre_presentations"), { outcome }), 1)
       try Effect.logInfo("vibelang.theatre.present").pipe(Effect.annotateLogs({ step: state.step, outcome }))
     }, "vibelang.theatre.present"),
     focus: backward => sync(() => {
       const controls = Array.from(document.querySelectorAll<HTMLButtonElement>(".vl-theatre-controls button:not(:disabled)"))
       const index = controls.findIndex(control => control === document.activeElement)
-      const next = index < 0 ? backward ? controls.length - 1 : 0 : (index + (backward ? -1 : 1) + controls.length) % controls.length
+      const next = theatreFocusIndex(controls.length, index, backward)
       controls[next]?.focus()
     }),
     measure: target => sync(() => {
@@ -68,4 +69,7 @@ export const presentation = Layer.effect(TourPresentation, effect {
       return { x: left, y: top, width: Math.max(1, right - left), height: Math.max(1, bottom - top) }
     }),
   }
-}).pipe(Layer.provide(Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)))
+})
+
+/** Native default; tests supply faulty browser services to the same implementation. */
+export const presentation = presentationFromHost.pipe(Layer.provide(Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)))

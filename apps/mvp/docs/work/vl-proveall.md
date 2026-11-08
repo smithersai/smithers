@@ -15,8 +15,12 @@ at that landing. The landed ninth batch adds exact sandbox admission/refusal/fra
 iterative runtime after 20,000-entry regressions reject an unlanded recursive candidate. Current checks: 810 rebased unit/integration passes, 52 workerd passes and 264 browser passes; thirteen-module
 positive gate and 652 matched actual mutation rejections. The tenth batch adds startup choices: fourteen modules,
 671 matched rejections, 810 unit/integration passes and fifteen focused browser passes. A receiver timeout is excluded and its revised omission
-control separately rejects. The inventory contains 2,462 executable items and names unproved logic explicitly.
+control separately rejects. The inventory contains 2,466 executable items and names unproved logic explicitly.
 Prospective root-path issue-link, live dispatcher, reply-usage and theatre kernels pass; none is a production proof until
 integrated and gated. Remaining work includes numeric applicability, pure renderer/seed/page logic, whole Model
 composition and newly arriving functionality. Codec/regex/Date and backend composition gaps have minimal reproductions.
 The host receipt is `~/vl/vl-proveall.REPORT.md`. No deployment is part of this lane.
+
+The eleventh batch adds theatre selectors, speech identity/control and focus wrapping: fifteen modules and 714
+matched actual rejections. Saved audio shape validation fixes a failing-first faulty-Window regression; native
+speech observers delegate real methods. Typecheck, 826 unit/integration tests and thirty affected browser cases pass.

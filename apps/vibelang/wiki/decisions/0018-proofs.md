@@ -16,6 +16,7 @@ strictly typecheck, and must fail a Dafny obligation in their named function. To
 | `src/core/sandboxDecision.vibe` | Role admission, running count, elapsed usage, nonnegative remaining allowance, ledger uniqueness, sequence and clock high-water preservation, and lease bounds (0024) | Host normalization, external containers and durable scheduling remain boundaries; exact guard and frame mutation receipts are recorded below |
 | `src/core/mockDecision.vibe` | Keyword membership, first matching script and fallback only if none matches | Input is already normalized; Unicode casing and script constants are outside the proof |
 | `src/core/protocolDecision.vibe` | Conversation/body length bounds; nonempty CLI/MCP identifiers and nonnegative cursors; exact method/subroute mapping; HTTP refusal/success; mock/live choice | Integer schema and URI/JSON/Schema decoding remain runtime boundaries; schema annotations are preserved |
+| `src/web/theatreDecision.vibe` | Target selectors, speech priority and redraw identity, bounded outcome labels and focus wrapping | Speech/DOM/storage execution, persisted JSON shape and layout geometry |
 | `src/web/startupDecision.vibe` | Explicit query/default precedence, preference writes, authoritative role-list selection, saved tutorial controls and opposite-mode selection | URL/storage effects, denial fallback and Foldkit execution |
 | `src/web/screenDecision.vibe` | Escape priority, palette focus choice, minimizing eligibility, docs toggle, scroll revision/pausing/following, tour stream cursor, completion announcements and keyboard decisions | Dafny models numbers as integers. Fractional DOM coordinates, IEEE-754 arithmetic, native DOM effects and actual focus restoration are tested, not proved |
 | `src/core/conversation.vibe` | Conversation sequence, entry identity and correlation, at most one answer per post, terminal replies/tours ignore later text, exact entry/state/role frames, admissible intent completeness, stable pending removal, unanswered order, replay bounds, reply/tour guards and pane ownership | Integer sequences below MAX_SAFE_INTEGER; dense readonly arrays; UTF-16 strings |
@@ -288,7 +289,31 @@ hashes and all 671 current source/manifest inputs match the positive/rejection r
 810 unit/integration cases and fifteen startup/Mock-switch browser cases pass (one/three respective opt-in skips).
 No runtime dependency or UI wording changes. Exact exits and receipt scope are in the host lane report.
 
+## Eleventh module batch: theatre presentation decisions
+
+The injected browser presentation service calls the exact proved target selector, speech action, saved audio identity,
+telemetry outcome and enabled-control focus index. The speech state machine cancels muted/ended playback, pauses or
+cancels a paused seek, resumes a retained utterance, speaks each new identity once and keeps an unchanged redraw
+silent. Native storage/JSON, speech API execution and layout geometry remain boundaries. No UI words change.
+
+The five production functions pass ten proof units and all 43 new mutants reject. All fifteen current marked
+source hashes and 714 current mutant copies match actual positive/rejection receipts. App/Worker typechecks,
+826 unit/integration cases and thirty affected browser cases pass (one unit opt-in skipped).
+
+The extraction audit found that saved audio JSON was used without a shape check: `null` broke sound control, and
+moving short-circuit choices into a helper also exposed eager reads for muted control. A faulty injected Window
+service reproduces both failures, then a stronger regression catches a wrong Boolean shape. The host now admits
+only a bounded integer step and Boolean sound/active/paused fields before calling the kernel. The existing fallback
+handles malformed JSON and unavailable storage. Sixteen storage cases plus the five existing walkthrough units
+pass after the fix. Browser speech observers now delegate to real native methods instead of no-op replacements;
+these are dispatch/control observations, not a claim of audible headless speech. Exact exits and receipts are in
+the host report.
+
 ## Product defects
+
+**Saved theatre audio shape.** An injected Window service returning JSON `null` breaks speech control; wrong-type
+Boolean fields can incorrectly suppress a new utterance. Validate StoredAudio before its fields reach the proved
+policy. Three strengthened regressions fail before validation, and all sixteen pass afterward.
 
 - **Two conversations shared one budget charge.** The daily ledger dedupes by reply id, and every conversation's
   first reply is `r1`; the API forwarded it bare, so a second conversation's first reply was never charged. Found
@@ -422,7 +447,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-2462 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+2466 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -2072,16 +2097,20 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/web/startupDecision.vibe:57` | `otherMode` | pure logic | Proved explicit query precedence, preference writes, authoritative role-list membership/default, saved tutorial controls and the opposite-mode switch; native URL/storage effects and storage-failure fallback remain host boundaries. |
 | `src/web/styles.vibe:9` | `stylesheet` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/styles.vibe:10` | `stylesheet/callback@10` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:10` | `theatreSelector` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:21` | `callback@21` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:25` | `callback@21/present` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/theatre.vibe:25` | `callback@21/present/callback@25` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:26` | `callback@21/present/callback@25/callback@26` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:55` | `callback@21/focus` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/theatre.vibe:55` | `callback@21/focus/callback@55` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:57` | `callback@21/focus/callback@55/callback@57` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/web/theatre.vibe:61` | `callback@21/measure` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/web/theatre.vibe:61` | `callback@21/measure/callback@61` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/web/theatre.vibe:20` | `callback@20` | effectful shell | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:24` | `callback@20/present` | wiring | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:24` | `callback@20/present/callback@24` | effectful shell | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:25` | `callback@20/present/callback@24/callback@25` | effectful shell | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:56` | `callback@20/focus` | wiring | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:56` | `callback@20/focus/callback@56` | effectful shell | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:58` | `callback@20/focus/callback@56/callback@58` | pure logic | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:62` | `callback@20/measure` | wiring | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatre.vibe:62` | `callback@20/measure/callback@62` | effectful shell | Calls the proved selector, speech action, audio identity, outcome and focus-index policies. DOM geometry and native number subtraction, speech APIs, persisted JSON decoding and host execution remain boundaries. |
+| `src/web/theatreDecision.vibe:4` | `theatreSelector` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
+| `src/web/theatreDecision.vibe:24` | `speechAction` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
+| `src/web/theatreDecision.vibe:35` | `audioIdentity` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
+| `src/web/theatreDecision.vibe:42` | `theatreOutcome` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
+| `src/web/theatreDecision.vibe:53` | `theatreFocusIndex` | pure logic | Proved exact target selectors, speech cancellation/pause/resume/replacement priority, no duplicate speech on redraw, audio identity invalidation, bounded outcome labels and keyboard focus wrapping; native speech, DOM and persistence remain host boundaries. |
 | `src/web/view.vibe:28` | `view` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/web/view.vibe:35` | `view/callback@35` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/web/view.vibe:54` | `logo` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |

@@ -47,8 +47,9 @@ test("an unavailable tour end restores Esc so the person can retry", async ({ pa
 test("an unavailable end restores a paused issue detail and sound resumes on Play", async ({ page }) => {
   await page.addInitScript(() => {
     Object.assign(window, { recoverySpoken: 0 })
-    speechSynthesis.speak = () => { (window as unknown as { recoverySpoken: number }).recoverySpoken++ }
-    speechSynthesis.cancel = () => {}
+    // Observe the native call; do not replace browser speech with a no-op.
+    const speak = speechSynthesis.speak.bind(speechSynthesis)
+    speechSynthesis.speak = utterance => { (window as unknown as { recoverySpoken: number }).recoverySpoken++; speak(utterance) }
   })
   await page.goto(`${local}/e2e/runtime/index.html?fault=end-tour-unavailable`)
   await page.getByRole("button", { name: "Learn more", exact: true }).click()
