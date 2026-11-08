@@ -1,3 +1,4 @@
+import vibelang from "vibelang-unplugin/esbuild"
 /**
  * `EdgeCache.layer` inside a Worker in local workerd, over the real `caches`
  * global: what one request stores, a later request reads, byte for byte;
@@ -17,6 +18,7 @@ let worker: Miniflare
 
 beforeAll(async () => {
   const bundled = await build({
+    plugins: [vibelang()],
     entryPoints: [entry],
     bundle: true,
     write: false,

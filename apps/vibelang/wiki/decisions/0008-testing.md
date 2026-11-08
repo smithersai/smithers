@@ -139,7 +139,7 @@ remain unchanged. The cold-load regression failed before this fixture correction
 
 ## Tool list: actions SDK foundation
 
-- `vibelang-unplugin@0.0.12`: engine browser-bundle proof for VibeLang source. Already used in the monorepo; added only as the SDK package's build/test tool. Awaiting Will's VL-5 approval. No new app dependency.
+- `vibelang-unplugin@0.0.12`: engine browser bundles and Cloudflare Worker fixtures for VibeLang source (including native Node crash-test loader setup). Already used in the monorepo; added only as the SDK package's build/test tool. Awaiting Will's VL-5 approval. No new app dependency.
 - `vibelang-runtime@0.0.12`: the registry and engine now publish VibeLang sources and declare the runtime already used by this app.
 
 **Coverage boundary tests (0016).** The ordinary suite adds real loopback HTTP over both client protocols,

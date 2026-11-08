@@ -1,3 +1,4 @@
+import vibelang from "vibelang-unplugin/esbuild"
 /**
  * `SandboxObject.wake`, `SandboxObject.run` and `ContainerTerminal` in local workerd with a real
  * container: Miniflare runs the Durable Object's container image through
@@ -208,7 +209,8 @@ describe.skipIf(!("socketPath" in docker))(`ContainerTerminal in workerd with a 
       }
     }
     const bundled = await build({
-      entryPoints: [entry],
+      plugins: [vibelang()],
+    entryPoints: [entry],
       bundle: true,
       write: false,
       format: "esm",
