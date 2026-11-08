@@ -150,3 +150,5 @@ built-in API. Strict 100% gates remain below target and are not installed on mai
 Node cases use the workspace's finite 30-second budget: MCP discovery starts the real stdio server and CLI, whose
 combined cold startup exceeded the implicit five seconds after engine observation landed. The MCP protocol's own
 10-second limit and browser assertions are unchanged; whole-history replay under coverage measured 23.5 seconds.
+
+**Concurrent post acceptance (0017).** The two-follower Factory test checks person order, reply identity and complete scripted answers, contiguous event numbers, and serialized reply starts/finishes. It permits the first reply to start before the second post is accepted; asynchronous module/engine scheduling can select either valid interleaving. The former global entry-name order failed on a real run.

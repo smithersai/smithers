@@ -56,8 +56,15 @@ describe("MockFactory", () => {
       try Effect.try(() => {
         expect(first).toEqual(second)
         const conversation = first.reduce(apply, empty)
-        expect(conversation.entries.map((entry) => entry.name)).toEqual(["Ada", "Grace", "VibeLang agent", "VibeLang agent"])
-        expect(conversation.entries[3]!.text).toBe(mockReply("How do errors work?"))
+        const people = conversation.entries.filter((entry) => entry.author === "person")
+        const replies = conversation.entries.filter((entry) => entry.author === "agent")
+        expect(people.map((entry) => [entry.name, entry.clientId])).toEqual([["Ada", "a"], ["Grace", "b"]])
+        expect(replies.map((entry) => [entry.inReplyTo, entry.text, entry.done, entry.error])).toEqual([
+          [people[0]!.id, mockReply("What is a service?"), true, ""],
+          [people[1]!.id, mockReply("How do errors work?"), true, ""],
+        ])
+        expect(first.filter((event) => event.type === "ReplyStarted" || event.type === "ReplyFinished").map((event) => event.type)).toEqual(["ReplyStarted", "ReplyFinished", "ReplyStarted", "ReplyFinished"])
+        expect(first.map((event) => event.seq)).toEqual(first.map((_, index) => index + 1))
       })
     }
   })
