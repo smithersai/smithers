@@ -265,3 +265,6 @@ __pycache__/
 .tsconfig.vibelang-sidecars-*.json
 
 *.vibe.*.d.ts
+
+# Local VibeLang release tarballs that package.json overrides name until npm has the release; never committed.
+.vibelang-toolchain/
