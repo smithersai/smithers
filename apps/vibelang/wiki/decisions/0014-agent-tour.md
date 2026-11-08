@@ -146,3 +146,8 @@ real-engine contention without reducing workloads or assertions. The inherited f
 replay under load. The natural-tour ordering integration retains all eight rooms and assertions, with its stream
 budget derived from the sum of all reading holds plus ten seconds, and twenty more seconds for the outer test.
 The other behavioral timeouts are unchanged.
+
+**Tour observation in tests (0017).** Sequential polling could miss an earlier rendered stop while geometry and
+screenshot checks ran on a busy host. The browser test records actual paired pane/narration DOM states from before
+Learn more and requires the complete five-path order, retaining active glow geometry, control placement and final
+completion assertions. This observation changes no event, request, reading hold or product timing.

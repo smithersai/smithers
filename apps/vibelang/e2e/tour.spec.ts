@@ -47,6 +47,19 @@ test.describe("the splash's actions", () => {
 test.describe("the agent's tour", () => {
   test("Learn more turns the page into the chat; the agent opens the docs, moves them and narrates, with the glow and Esc", async ({ page }, testInfo) => {
     test.setTimeout(120_000)
+    // Observe actual DOM states before the tour starts. A stop can advance while geometry checks or a screenshot
+    // run on the shared host; polling its URL only afterward cannot recover the state a person already saw.
+    await page.addInitScript(() => {
+      const observed: { path: string; text: string }[] = []
+      Object.defineProperty(window, "__tourStops", { value: observed })
+      new MutationObserver(() => {
+        const path = document.querySelector("iframe[title='VibeLang docs']")?.getAttribute("src") ?? ""
+        const text = document.querySelector(".sui-chat-message[data-role='assistant']")?.textContent ?? ""
+        if (path !== "" && text !== "" && (observed.at(-1)?.path !== path || observed.at(-1)?.text !== text)) observed.push({ path, text })
+      }).observe(document, { subtree: true, childList: true, attributes: true, characterData: true })
+    })
+    const saw = async (path: string, text: string) => page.evaluate(({ path, text }) =>
+      (window as typeof window & { __tourStops: { path: string; text: string }[] }).__tourStops.some(stop => stop.path === path && stop.text.includes(text)), { path, text })
     await learnMore(page)
     await expect(page.getByRole("log", { name: "Conversation", includeHidden: true })).toBeVisible()
     // The glow surrounds the whole screen, and never takes a click.
@@ -59,17 +72,15 @@ test.describe("the agent's tour", () => {
     await expect(glow).toHaveCSS("animation-name", "vl-glow")
     await expect(page.getByRole("button", { name: "Esc" })).toBeVisible()
 
-    await expect(frame(page)).toHaveAttribute("src", `${DOCS}/`)
+    await expect.poll(() => saw(`${DOCS}/`, "VibeLang is Effect as its own language")).toBe(true)
     await expect(page.getByRole("region", { name: "Docs" })).toBeVisible()
-    await expect(narration(page)).toContainText("VibeLang is Effect as its own language")
     // Esc never covers the top bar's links.
     const esc = (await page.getByRole("button", { name: "Esc" }).boundingBox())!
     const docs = (await page.getByRole("link", { name: "Docs" }).boundingBox())!
     expect(esc.x + esc.width <= docs.x || esc.y >= docs.y + docs.height).toBe(true)
     await settled(page)
     await page.screenshot({ path: testInfo.outputPath("tour.png") })
-    await expect(frame(page)).toHaveAttribute("src", `${DOCS}/getting-started/002-why-effect`, { timeout: 35_000 })
-    await expect(narration(page)).toContainText("Effect gives a program typed errors")
+    await expect.poll(() => saw(`${DOCS}/getting-started/002-why-effect`, "Effect gives a program typed errors"), { timeout: 35_000 }).toBe(true)
 
     // The tour ends on its own at the last stop: the agent hands control back, and the docs stay.
     await expect(frame(page)).toHaveAttribute("src", `${DOCS}/vips`, { timeout: 90_000 })
@@ -77,6 +88,13 @@ test.describe("the agent's tour", () => {
     await expect(glow).toBeHidden()
     await expect(page.getByRole("button", { name: "Esc" })).toBeHidden()
     await expect(narration(page)).toContainText("open-source coding factory")
+    const paths = await page.evaluate(() =>
+      (window as typeof window & { __tourStops: { path: string; text: string }[] }).__tourStops.map(stop => stop.path))
+    const ordered = paths.filter((path, index) => path.startsWith(`${DOCS}/`) && (index === 0 || path !== paths[index - 1]))
+    expect(ordered).toEqual([
+      `${DOCS}/`, `${DOCS}/getting-started/002-why-effect`, `${DOCS}/vibelang-features/115-cheat-sheet`,
+      `${DOCS}/setup`, `${DOCS}/vips`,
+    ])
   })
 
   for (const how of ["Escape", "the Esc button"] as const) {
