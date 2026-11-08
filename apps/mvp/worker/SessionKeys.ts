@@ -32,27 +32,9 @@ export const make = (secret: Redacted.Redacted<string>, options: {
   const cipher = yield* WebCryptoCipher.make({
     key: Redacted.make(hexToBase64(digest(`smithers-seal:${Redacted.value(options.sealSecret ?? secret)}`))),
   }).pipe(Effect.orDie)
-  const signature = (purpose: Purpose, value: string, keyId: string) =>
-    Core.Signature.computeHmacSha256Hex(`${purpose}:${value}`, Redacted.value(secrets[keyId]!))
+  const cookies = yield* Core.CookieKeys.make(secrets, LEGACY_KEY)
   return {
-    keyIds,
-    token: Core.Pkce.createCodeVerifier(32).pipe(Effect.orDie),
-    sign: (purpose, value, keyId = keyIds.includes(LEGACY_KEY) ? LEGACY_KEY : keyIds[0]!) => {
-      if (!Object.hasOwn(secrets, keyId)) return Effect.die(new Error("Session signing key is not configured"))
-      return Effect.map(signature(purpose, value, keyId), mac => `${value}.${mac}`)
-    },
-    verify: (purpose, signed) => Effect.gen(function* () {
-      const dot = signed?.lastIndexOf(".") ?? -1
-      if (signed === undefined || dot <= 0) return Option.none<Verified>()
-      const value = signed.slice(0, dot)
-      for (const keyId of keyIds) {
-        const ok = yield* Core.Signature.verifySignature({
-          payload: `${purpose}:${value}`, secret: Redacted.value(secrets[keyId]!), signature: signed.slice(dot + 1), prefix: "",
-        })
-        if (ok) return Option.some({ value, keyId })
-      }
-      return Option.none<Verified>()
-    }),
+    ...cookies,
     seal: (plaintext, context) => cipher.seal(plaintext, context).pipe(Effect.orDie),
     open: cipher.open,
   } satisfies SessionKeys

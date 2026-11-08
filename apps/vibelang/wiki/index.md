@@ -28,6 +28,8 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
 | [0014](decisions/0014-agent-tour.md) | Learn more is a tour the agent drives: its pane actions are numbered events of the one state machine (VL-28) |
 
+| [0019](decisions/0019-sign-in-and-roles.md) | GitHub identity; five project roles, first participation, explicit grants and demotions |
+
 ## Layout
 
 ```

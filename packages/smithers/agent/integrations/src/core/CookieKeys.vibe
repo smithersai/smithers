@@ -1,0 +1,34 @@
+import * as Pkce from "./Pkce.ts"
+import * as Signature from "./Signature.ts"
+
+/** An opaque value verified against one configured signing key. */
+export interface Verified { readonly value: string; readonly keyId: string }
+
+/** Purpose-bound, rotating HMAC cookies. Host sessions own expiry and one-time consumption. */
+export effect function make(secrets: Readonly<Record<string, Redacted.Redacted<string>>>, preferred = "legacy") {
+  const keyIds = Object.keys(secrets).sort()
+  const signature = (purpose: string, value: string, keyId: string) =>
+    Signature.computeHmacSha256Hex(`${purpose}:${value}`, Redacted.value(secrets[keyId]!))
+  return {
+    keyIds,
+    token: Effect.orDie(Pkce.createCodeVerifier(32)),
+    sign: (purpose: string, value: string, keyId = keyIds.includes(preferred) ? preferred : keyIds[0]!) => {
+      if (!/^[a-z][a-z0-9_]*$/.test(purpose)) return Effect.die(new Error("Cookie purpose is not valid"))
+      if (!Object.hasOwn(secrets, keyId)) return Effect.die(new Error("Session signing key is not configured"))
+      return Effect.map(signature(purpose, value, keyId), mac => `${value}.${mac}`)
+    },
+    verify: effect (purpose: string, signed: string | undefined) => {
+      if (!/^[a-z][a-z0-9_]*$/.test(purpose)) return Option.none<Verified>()
+      const dot = signed?.lastIndexOf(".") ?? -1
+      if (signed === undefined || dot <= 0) return Option.none<Verified>()
+      const value = signed.slice(0, dot)
+      for (const keyId of keyIds) {
+        const ok = try Signature.verifySignature({
+          payload: `${purpose}:${value}`, secret: Redacted.value(secrets[keyId]!), signature: signed.slice(dot + 1), prefix: "",
+        })
+        if (ok) return Option.some({ value, keyId })
+      }
+      return Option.none<Verified>()
+    },
+  }
+}

@@ -1,0 +1,78 @@
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient } from "effect/http"
+import { GitHub } from "../src/index.ts"
+import { rejectingTransport } from "./Http.ts"
+
+describe("shared GitHub user authentication", () => {
+  it.effect("builds the exact PKCE S256 authorization request without a network call", () => effect {
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("not-a-live-secret") }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, try Effect.try(() => rejectingTransport("must not call")))),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const url = new URL(auth.authorizeUrl({ state: "state", codeChallenge: "challenge", redirectUri: "https://factory.example/api/auth/github/callback" }))
+      try Effect.try(() => expect(Object.fromEntries(url.searchParams)).toEqual({
+        response_type: "code", client_id: "Iv1.example", redirect_uri: "https://factory.example/api/auth/github/callback",
+        state: "state", code_challenge: "challenge", code_challenge_method: "S256",
+      }))
+    }
+  })
+
+  it.effect("faulty transport fails every step with a safe typed refusal", () => effect {
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output") }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, try Effect.try(() => rejectingTransport("provider-private-text")))),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const token = Redacted.make("private-token")
+      const operations = [
+        ["exchange", auth.exchange({ code: token, codeVerifier: token, redirectUri: "https://factory.example/callback" })],
+        ["refresh", auth.refresh(token)], ["user", auth.user(token)],
+        ["permission", auth.permission(token, "acme/widgets")], ["revoke", auth.revoke(token)],
+      ] as const
+      for (const [step, operation] of operations) {
+        const failure = try Effect.flip(operation)
+        try Effect.try(() => {
+          expect(failure).toBeInstanceOf(GitHub.Auth.GitHubRefused)
+          expect(failure.step).toBe(step)
+          expect(failure.reason).toBe("unavailable")
+          expect(JSON.stringify(failure)).not.toMatch(/provider-private-text|private-token|secret-never-in-output/)
+        })
+      }
+    }
+  })
+})
+
+describe("shared signed cookies", () => {
+  it.effect("separates purposes, rejects tampering, and verifies a rotating old key", () => effect {
+    const { Core } = try promise(() => import("../src/index.ts"))
+    const old = try Core.CookieKeys.make({ legacy: Redacted.make("a".repeat(32)) })
+    const rotated = try Core.CookieKeys.make({ legacy: Redacted.make("a".repeat(32)), next: Redacted.make("b".repeat(32)) })
+    const signed = try old.sign("session", "opaque-session")
+    const valid = try rotated.verify("session", signed)
+    const wrongPurpose = try rotated.verify("sign_in", signed)
+    const changed = try rotated.verify("session", signed + "0")
+    const absent = try rotated.verify("session", undefined)
+    const next = try rotated.sign("session", "opaque-session", "next")
+    const nextVerified = try rotated.verify("session", next)
+    const retired = try Core.CookieKeys.make({ next: Redacted.make("b".repeat(32)) })
+    const retiredVerified = try retired.verify("session", signed)
+    try Effect.try(() => {
+      expect(valid).toEqual(Option.some({ value: "opaque-session", keyId: "legacy" }))
+      expect(nextVerified).toEqual(Option.some({ value: "opaque-session", keyId: "next" }))
+      expect([wrongPurpose, changed, absent, retiredVerified]).toEqual([Option.none(), Option.none(), Option.none(), Option.none()])
+    })
+  })
+})
+
+it.effect("rejects ambiguous purpose names while allowing punctuation in opaque values", () => effect {
+  const { Core } = try promise(() => import("../src/index.ts"))
+  const keys = try Core.CookieKeys.make({ legacy: Redacted.make("a".repeat(32)) })
+  const invalid = try Effect.exit(keys.sign("session:admin", "alice"))
+  const token = try keys.sign("session", "admin:alice")
+  const valid = try keys.verify("session", token)
+  const invalidPurpose = try keys.verify("session:admin", token)
+  try Effect.try(() => {
+    expect(Exit.isFailure(invalid)).toBe(true)
+    expect(valid).toEqual(Option.some({ value: "admin:alice", keyId: "legacy" }))
+    expect(invalidPurpose).toEqual(Option.none())
+  })
+})

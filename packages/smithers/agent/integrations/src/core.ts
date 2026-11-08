@@ -111,3 +111,6 @@ export * as SourceStore from "./core/SourceStore.ts"
  * @since 1.0.0
  */
 export * as Sync from "./core/Sync.ts"
+
+/** Purpose-bound rotating session signatures. @since 1.0.0 @category services */
+export * as CookieKeys from "./core/CookieKeys.vibe"

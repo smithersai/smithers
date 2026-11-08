@@ -458,7 +458,8 @@
     "LICENSE",
     "README.md",
     "CHANGELOG.md",
-    "docs/"
+    "docs/",
+    "src/**/*.vibe"
   ],
   "scripts": {
     "lint": "eslint src examples --max-warnings=0 && dprint check",
@@ -477,7 +478,8 @@
     "@smthrs/flow": "1.0.0-rc.16",
     "@smthrs/notifications": "1.0.0-rc.16",
     "@smthrs/canonical": "1.0.0-rc.16",
-    "@smthrs/plan": "1.0.0-rc.16"
+    "@smthrs/plan": "1.0.0-rc.16",
+    "vibelang-runtime": "0.0.12"
   },
   "peerDependencies": {
     "effect": "4.1.1"
@@ -505,7 +507,6 @@
     "typescript": "5.9.3",
     "typescript-eslint": "8.69.0",
     "vibelang": "0.0.12",
-    "vibelang-runtime": "0.0.12",
     "vibelang-unplugin": "0.0.12",
     "vibelang-vite": "0.0.12",
     "vitest": "5.0.0"
