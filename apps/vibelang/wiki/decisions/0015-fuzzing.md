@@ -1,11 +1,11 @@
 # 0015. Fuzzing
 
-**Status:** package in progress; app suite next. **Rulings:** VL-14, VL-15, VL-29.
+**Status:** package landed; app suite in progress. **Rulings:** VL-14, VL-15, VL-29.
 
 ## Package
 
 `@smthrs/fuzz` copies `smithersai/effect` at `fc84e193be6b202f34a7351cdfb693629c95a38c` into `packages/fuzz`.
-`Fuzz.ts`, `testing/FuzzSimulation.ts`, and `internal/fuzz/{engine,format,simulation,tape}.ts` remain TypeScript, file for file and unchanged except imports. This is the code we intend to contribute to Effect; keeping the copy identical makes contribution and later syncs simple. The original five test files likewise change only imports.
+`Fuzz.ts`, `testing/FuzzSimulation.ts`, and `internal/fuzz/{engine,format,simulation,tape}.ts` remain TypeScript, file for file: the base copy changes only imports, followed by the documented large-tape mutation fix below. This is the code we intend to contribute to Effect; keeping the copy identical makes contribution and later syncs simple. The original five test files likewise change only imports.
 
 The library catalog's existing `@smthrs/testing` owns Node test tooling: the fork's filesystem corpus store is `src/internal/fuzz.ts`, and `@smthrs/testing/Vitest` adds `it.effect.fuzz` and `it.fuzz` without mutating the peer runner. `FuzzCorpus` exposes corpus tooling from the root. No Node API enters `@smthrs/fuzz`.
 
@@ -26,8 +26,46 @@ A plain Vitest run replays saved failures and executes 100 fresh inputs. `EFFECT
 
 ## Executed package coverage
 
-The seven package suites pass: 90 tests, 675/675 lines, 457/457 branches, 155/155 functions and 780/780 statements. This includes the fork's race, replay, corpus, confirmation, exhausted-run and Fable regression tests, plus an empty-cause shrink regression for the copied helper, a browser-global realm and Bun boundary executions. The package has no coverage exclusions.
+The eight package suites pass: 92 tests, 677/677 lines, 457/457 branches, 156/156 functions and 783/783 statements. This includes the fork's race, replay, corpus, confirmation, exhausted-run and Fable regression tests, plus an empty-cause shrink regression for the copied helper, a browser-global realm and Bun boundary executions. The package has no coverage exclusions.
 
 ## App targets and campaign
 
 Pending after the package lands: conversation and delivery sequences, wire codecs, reply reasons and progress, sequencer, budget, tour, mock Factory, view and update, CLI/MCP arguments, and requests against the real API Worker in workerd. Concurrency uses `FuzzSimulation` with deterministic Effect services. App fuzz coverage will be measured independently using vl-coverage's V8 configuration, with any unreachable line named and justified here. The final record includes per-file lines and branches and the 30-minute campaign's findings.
+
+## Confirmed app findings
+
+The growing app suite retains every value under `fuzz/__fuzz__/` when its target lands. Unit regressions land with
+these fixes first. Malformed UTF-16 conversation ids and history ids/queries previously threw `URIError` while
+building URLs; public path helpers now refuse them and all nine live Factory operations, including the new sandbox operations, return typed `Unavailable` before HTTP.
+Unpaired surrogates in write bodies cannot survive the durable store's canonical JSON contract; the wire schemas
+refuse them with HTTP 400, and a direct conversation host call leaves storage unchanged. Valid paired emoji remain
+accepted. No public sequencer refusal code changes.
+
+An unknown `UpdatedForm.how` value previously corrupted the model's method enum; the update accepts only append,
+insert and amend. Empty history metadata produced unnamed links and options; rows, crumbs and options now retain
+names, and an absent main SHA produces no commit link. Reply failure tags now accept only string tags, including
+hostile getters without a defect. Mythical rank validation also gained an explicit nonfinite/negative/fractional
+regression against the `Seq` schema already maintained by the proof lane.
+
+The completed 31.69-minute campaign (seed 20261107, 65 seconds per target, 62,059,364 executions across 55 completed
+target receipts) found the surrogate storage defect and a fuzzer mutation crash. The latter's 200,000-word regression
+and fix landed separately in `@smthrs/fuzz`; this is one documented follow-up delta to the otherwise identical fork
+copy. The campaign's history file failed to load because of a test constant typo, and the native CLI's process
+profile refused workerd's listener. Those failures are retained as harness evidence; they are not successful history,
+workerd or browser campaign coverage. Current short runs use the same flow through the public durable Node host,
+real SQLite and production file boundaries, and have passed real workerd and Chromium. App fuzz-only coverage
+remains unfinished; no whole-app 100% claim follows from the configured threshold.
+
+
+### Coverage measurement boundary
+
+This suite uses the same patched Vitest/V8 5.0.0, ast-v8-to-istanbul 1.0.5, native Chromium ranges and source-checked
+maps as 0016. The app now declares the monorepo's shared optional runner peers (`happy-dom` 20.13.2 and `@types/node`
+26.4.1); differing direct peers had produced separate Vitest singletons and zero-test load failures. These are
+existing test tools at monorepo versions, awaiting the VL-5 approval listed in 0008.
+
+The retained 0016 reproduction at `~/vl/vibelang-bugs/coverage-source-ranges/` proves the bundled converter can credit
+an unexecuted source return. Browser line/statement results are diagnostic, and a configured 100% gate cannot
+establish the requested coverage until that defect is fixed. No compiler output or source maps were changed as a
+workaround. Workerd's inspector also refuses precise V8 profiling; real workerd request evidence is separate from
+Node coverage of the same shared Worker functions. Real-model happy paths still need an authorized model binding.

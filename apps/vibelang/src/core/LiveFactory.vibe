@@ -6,7 +6,7 @@ import { responseKind } from "./protocolDecision.vibe"
 import * as Sse from "effect/encoding/Sse"
 import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { EventSchema, Factory, ReadSnapshot, SandboxSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
-import { conversationPath, Health, HEALTH_PATH, Refusal, TOUR_PATH } from "./wire.vibe"
+import { CONVERSATIONS, conversationPath, Health, HEALTH_PATH, Refusal, TOUR_PATH } from "./wire.vibe"
 
 const decodeHealth = Schema.decodeUnknownEffect(Health)
 const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
@@ -17,6 +17,18 @@ const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema
 /** `Unavailable`, naming what failed; never a response body, which could carry anything. */
 function unavailable(what: string) {
   return () => new Unavailable({ reason: what })
+}
+
+/** Refuses an invalid identifier before any HTTP request or event subscription. */
+effect function pathOf(conversation: string) {
+  const path = conversationPath(conversation)
+  if (path === undefined) throw new Unavailable({ reason: "invalid conversation" })
+  return path
+}
+
+/** Sandbox operations use the same safe conversation identifier encoding. */
+effect function sandboxPathOf(conversation: string) {
+  return "/api/sandboxes/" + (try pathOf(conversation)).slice(CONVERSATIONS.length)
 }
 
 /** What `origin`'s `/api/health` says, or `Unavailable` when it can't be reached or doesn't speak the protocol. */
@@ -46,43 +58,43 @@ export function LiveFactory(origin: string) {
     return {
       mode,
       post: effect (conversation: string, clientId: string, name: string, text: string) => {
-        const request = HttpClientRequest.post(origin + conversationPath(conversation) + "/posts").pipe(
+        const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + "/posts").pipe(
           HttpClientRequest.bodyJsonUnsafe({ clientId, name, text }),
         )
         const response = try Effect.mapError(client.execute(request), unavailable("post unreachable"))
         try refusable(response, "post")
       },
       tour: effect (conversation: string) => {
-        const request = HttpClientRequest.post(origin + conversationPath(conversation) + TOUR_PATH)
+        const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + TOUR_PATH)
         const response = try Effect.mapError(client.execute(request), unavailable("tour unreachable"))
         try refusable(response, "tour")
       },
       endTour: effect (conversation: string) => {
-        const request = HttpClientRequest.delete(origin + conversationPath(conversation) + TOUR_PATH)
+        const request = HttpClientRequest.delete(origin + (try pathOf(conversation)) + TOUR_PATH)
         const response = try Effect.mapError(client.execute(request), unavailable("end tour unreachable"))
         try refusable(response, "end tour")
       },
       sandbox: effect (conversation: string) => {
-        const response = try Effect.mapError(client.get(origin + `/api/sandboxes/${encodeURIComponent(conversation)}`), unavailable("sandbox unreachable"))
+        const response = try Effect.mapError(client.get(origin + (try sandboxPathOf(conversation))), unavailable("sandbox unreachable"))
         if (response.status !== 200) throw new Unavailable({ reason: `sandbox answered ${response.status}` })
         return try Effect.mapError(decodeSandbox(try Effect.mapError(response.json, unavailable("sandbox is not JSON"))), unavailable("sandbox is not the protocol"))
       },
       startSandbox: effect (conversation: string, operationId: string) => {
-        const request = HttpClientRequest.post(origin + `/api/sandboxes/${encodeURIComponent(conversation)}/start`).pipe(HttpClientRequest.bodyJsonUnsafe({ operationId }))
+        const request = HttpClientRequest.post(origin + (try sandboxPathOf(conversation)) + "/start").pipe(HttpClientRequest.bodyJsonUnsafe({ operationId }))
         const response = try Effect.mapError(client.execute(request), unavailable("sandbox start unreachable"))
         try sandboxRefusal(response)
         if (response.status !== 200) throw new Unavailable({ reason: `sandbox start answered ${response.status}` })
         return try Effect.mapError(decodeSandbox(try Effect.mapError(response.json, unavailable("sandbox start is not JSON"))), unavailable("sandbox start is not the protocol"))
       },
       stopSandbox: effect (conversation: string, operationId: string, generation: number) => {
-        const request = HttpClientRequest.post(origin + `/api/sandboxes/${encodeURIComponent(conversation)}/stop`).pipe(HttpClientRequest.bodyJsonUnsafe({ operationId, generation }))
+        const request = HttpClientRequest.post(origin + (try sandboxPathOf(conversation)) + "/stop").pipe(HttpClientRequest.bodyJsonUnsafe({ operationId, generation }))
         const response = try Effect.mapError(client.execute(request), unavailable("sandbox stop unreachable"))
         try sandboxRefusal(response)
         if (response.status !== 200) throw new Unavailable({ reason: `sandbox stop answered ${response.status}` })
         return try Effect.mapError(decodeSandbox(try Effect.mapError(response.json, unavailable("sandbox stop is not JSON"))), unavailable("sandbox stop is not the protocol"))
       },
       sandboxCommand: effect (conversation: string, operationId: string, command: string, generation: number) => {
-        const request = HttpClientRequest.post(origin + `/api/sandboxes/${encodeURIComponent(conversation)}/command`).pipe(HttpClientRequest.bodyJsonUnsafe({ operationId, command, generation }))
+        const request = HttpClientRequest.post(origin + (try sandboxPathOf(conversation)) + "/command").pipe(HttpClientRequest.bodyJsonUnsafe({ operationId, command, generation }))
         const response = try Effect.mapError(client.execute(request), unavailable("terminal unreachable"))
         try sandboxRefusal(response)
         if (response.status !== 200) throw new Unavailable({ reason: `terminal answered ${response.status}` })
@@ -91,7 +103,7 @@ export function LiveFactory(origin: string) {
         return body.output
       },
       read: effect (conversation: string, after: number) => {
-        const url = origin + conversationPath(conversation) + `?after=${after}`
+        const url = origin + (try pathOf(conversation)) + `?after=${after}`
         const response = try Effect.mapError(client.get(url), unavailable("read unreachable"))
         if (response.status !== 200) throw new Unavailable({ reason: `read answered ${response.status}` })
         const body = try Effect.mapError(response.json, unavailable("read is not JSON"))
@@ -99,7 +111,7 @@ export function LiveFactory(origin: string) {
       },
       events: (conversation: string, after: number) =>
         Stream.unwrap(effect {
-          const url = origin + conversationPath(conversation) + `/events?after=${after}`
+          const url = origin + (try pathOf(conversation)) + `/events?after=${after}`
           const request = HttpClientRequest.get(url).pipe(HttpClientRequest.setHeader("accept", "text/event-stream"))
           const response = try Effect.mapError(client.execute(request), unavailable("events unreachable"))
           if (response.status !== 200) throw new Unavailable({ reason: `events answered ${response.status}` })

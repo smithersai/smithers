@@ -1,6 +1,6 @@
 import { ModelError } from "@smthrs/model"
 import { describe, expect, it } from "@effect/vitest"
-import { REASONS, reasonOf } from "../worker/Reply.vibe"
+import { REASONS, reasonOf, tagOf } from "../worker/Reply.vibe"
 
 function failure(code: ModelError.ModelError["code"]) {
   return new ModelError.ModelError({ code, message: "a provider's own words, which a person never reads" })
@@ -18,4 +18,9 @@ describe("the reason a person reads for a provider error", () => {
     expect(reasonOf(failure("content_policy"))).toBe(REASONS.refused)
     expect(reasonOf(failure("rate_limited"))).toBe(REASONS.unavailable)
   })
+})
+
+it("failure tags never coerce an arbitrary object", () => {
+  expect(tagOf({ _tag: { toString: 0 } })).toBe("defect")
+  expect(tagOf({ _tag: "ProviderError" })).toBe("ProviderError")
 })

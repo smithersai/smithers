@@ -8,6 +8,7 @@
 //   GET  /api/history/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <HistoryEvent JSON>`
 //   POST /api/history/<action>            a flow: plan, start, note, approve or fold
 //                                         → 200 Written | 409 Refusal (the sequencer's) | 403 Refusal (forbidden)
+import { DurableText } from "../core/wire.vibe"
 import { MAX_NOTE, MAX_TITLE } from "./mythical.vibe"
 import type { PageRequest } from "./pages.vibe"
 
@@ -40,12 +41,16 @@ export function pageRequestOf(rest: string, params: URLSearchParams): PageReques
 }
 
 /** The path and query that ask for `request`. */
-export function pathOf(request: PageRequest): string {
-  switch (request.what) {
+export function pathOf(request: PageRequest): string | undefined {
+  try {
+    switch (request.what) {
     case "outline": return HISTORY_PATH
     case "epic": return `${HISTORY_PATH}/epics/${encodeURIComponent(request.id)}?from=${request.from}`
     case "commit": return `${HISTORY_PATH}/commits/${encodeURIComponent(request.id)}`
     case "search": return `${HISTORY_PATH}/search?q=${encodeURIComponent(request.query)}`
+  }
+  } catch {
+    return undefined
   }
 }
 
@@ -61,15 +66,15 @@ export function historyRouteOf(method: string, pathname: string, params: URLSear
 
 export schema PlanBody {
   readonly how: "append" | "insert" | "amend"
-  readonly epic: string
-  readonly newEpic: string
-  readonly target: string
-  readonly title: string
-  readonly task: string
+  readonly epic: DurableText
+  readonly newEpic: DurableText
+  readonly target: DurableText
+  readonly title: DurableText
+  readonly task: DurableText
 }
-export schema StartBody { readonly id: string; readonly lane: string }
-export schema NoteBody { readonly id: string; readonly section: "tried" | "evidence" | "superseded"; readonly text: string }
-export schema ApproveBody { readonly id: string }
+export schema StartBody { readonly id: DurableText; readonly lane: DurableText }
+export schema NoteBody { readonly id: DurableText; readonly section: "tried" | "evidence" | "superseded"; readonly text: DurableText }
+export schema ApproveBody { readonly id: DurableText }
 export schema FoldBody {}
 
 /** What a recorded write answers: the commit it wrote (plan), or how many commits of main it folded (fold). */

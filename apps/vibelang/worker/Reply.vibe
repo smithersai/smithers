@@ -128,7 +128,13 @@ export const Respond = AgentAction.make("vibelang/reply/agent", {
 
 /** A failure's tag for the logs: never its message, which can carry a provider's words or a person's text. */
 export function tagOf(error: unknown): string {
-  return typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : "defect"
+  try {
+    if (typeof error !== "object" || error === null || !("_tag" in error)) return "defect"
+    const tag = error._tag
+    return typeof tag === "string" ? tag : "defect"
+  } catch {
+    return "defect"
+  }
 }
 
 /** What the agent showed and spent while it answered, folded from its events. */

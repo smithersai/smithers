@@ -12,7 +12,7 @@ import { MAX_TEXT } from "./conversation.vibe"
 import { Seq } from "./schemas.vibe"
 
 export const HEALTH_PATH = "/api/health"
-const CONVERSATIONS = "/api/conversations/"
+export const CONVERSATIONS = "/api/conversations/"
 
 /** A conversation's tour, below its path. */
 export const TOUR_PATH = "/tour"
@@ -24,11 +24,14 @@ export const MAX_NAME = 64
 /** What `/api/health` says: `live` when the API Worker is bound, `mock` when the site serves the mock agent. */
 export schema Health { readonly ok: boolean; readonly agent: "mock" | "live" }
 
+/** Text the durable store can retain exactly: no unpaired UTF-16 surrogate. */
+export const DurableText = Schema.String.check(Schema.isPattern(/^[^\uD800-\uDFFF]*$/u))
+
 /** A person's post. `text` may be longer than `MAX_TEXT`: the sequencer refuses it as `too-long`. */
 export schema PostBody {
-  readonly clientId: string
-  readonly name: string
-  readonly text: string
+  readonly clientId: DurableText
+  readonly name: DurableText
+  readonly text: DurableText
 }
 
 /** Why the sequencer refused a post, with HTTP 409. */
@@ -40,9 +43,14 @@ export const MAX_POST_BYTES = MAX_TEXT * 4 + 4096
 /** The cursor a `read` or `events` request asks for: `after=<seq>`, zero when absent. */
 export const After = Seq
 
-/** The path of a conversation, its id one URL-encoded segment. */
-export function conversationPath(conversation: string): string {
-  return CONVERSATIONS + encodeURIComponent(conversation)
+/** The path of a valid conversation id, or undefined for an empty, long or malformed UTF-16 id. */
+export function conversationPath(conversation: string): string | undefined {
+  if (conversation.length === 0 || conversation.length > MAX_CONVERSATION) return undefined
+  try {
+    return CONVERSATIONS + encodeURIComponent(conversation)
+  } catch {
+    return undefined
+  }
 }
 
 /** A route of the conversation API: the conversation and what is asked of it. */

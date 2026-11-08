@@ -9,3 +9,10 @@ it("uses the same entry codec for client state and snapshots", () => {
   }
   expect(Schema.is(Entry)(entry)).toBe(true)
 })
+
+import { Commit } from "../src/history/schemas.vibe"
+it("keeps mythical ranks finite nonnegative integers on the JSON wire", () => {
+  const commit = { id: "m1", epic: "e1", rank: 0, title: "Fuzz", state: "planned", task: "", lane: "", notes: [] }
+  expect(Schema.is(Commit)(commit)).toBe(true)
+  for (const rank of [-Infinity, Infinity, NaN, -1, 0.5]) expect(Schema.is(Commit)({ ...commit, rank })).toBe(false)
+})

@@ -15,6 +15,7 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SecureRandom } from "effect/crypto"
+import { PostBody } from "../src/core/wire.vibe"
 import { EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
@@ -174,6 +175,8 @@ effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Seq
  * recorded, else the sequencer's refusal.
  */
 export effect function post(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, clientId: string, name: string, text: string) {
+  // HTTP decodes PostBody first; malformed direct host calls leave storage untouched.
+  if (!Schema.is(PostBody)({ clientId, name, text })) return "invalid"
   const executionId = try postExecutionId()
   const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Post._tag }, postRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),

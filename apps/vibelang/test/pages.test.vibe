@@ -126,7 +126,9 @@ describe("the history's routes", () => {
       { what: "search", query: "fix(fuzz): a & b?" },
     ]
     for (const request of requests) {
-      const url = new URL(pathOf(request), "https://vibelang.invalid")
+      const path = pathOf(request)
+      expect(path).toBeDefined()
+      const url = new URL(path!, "https://vibelang.invalid")
       expect(historyRouteOf("GET", url.pathname, url.searchParams)).toEqual({ kind: `history-${request.what}`, page: request })
     }
   })

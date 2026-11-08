@@ -236,7 +236,10 @@ export function update(model: HistoryModel, message: HistoryMessage): Return {
       }
     },
     ClosedPlan: () => ({ model: { ...model, dialog: false, error: "" }, commands: [ClosePlan({})] }),
-    UpdatedForm: ({ field, value }) => ({ model: { ...model, form: { ...model.form, [field]: value } } }),
+    UpdatedForm: ({ field, value }) => {
+      if (field === "how" && value !== "append" && value !== "insert" && value !== "amend") return { model }
+      return { model: { ...model, form: { ...model.form, [field]: value } } }
+    },
     SubmittedPlan: () => {
       const { form } = model
       return write(model, PlanCommand({
