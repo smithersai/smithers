@@ -32,6 +32,7 @@ test("touch scrolling pauses a streamed answer, and Latest resumes following aft
       await expect(answers.last()).toHaveAttribute("data-done", "false")
       const before = await page.evaluate(() => window.scrollY)
       expect(before).toBeGreaterThan(0)
+      const observationStart = await page.evaluate(() => Reflect.get(window, "touchObservations").length as number)
       // A fast native swipe may keep scrolling after touchEnd; wait for Chromium's scrollend before tapping.
       await page.evaluate(() => {
         document.documentElement.dataset.gestureSettled = "false"
@@ -54,7 +55,12 @@ test("touch scrolling pauses a streamed answer, and Latest resumes following aft
       await expect(latest).toBeVisible()
       await expect(answers.last()).toHaveAttribute("data-done", "true")
       await expect(latest).toBeVisible()
-      expect(await page.evaluate(() => window.scrollY)).toBeLessThan(before)
+      // The answer may grow while CDP is delivering the gesture. Measure the actual first move, when pausing
+      // begins, rather than the earlier scroll position before the finger reached the page.
+      const firstMoveY = await page.evaluate((start) =>
+        (Reflect.get(window, "touchObservations") as { type: string; y: number }[]).slice(start).find(event => event.type === "touchmove")?.y, observationStart)
+      expect(firstMoveY).toBeDefined()
+      expect(await page.evaluate(() => window.scrollY)).toBeLessThan(firstMoveY!)
       await expect(page.locator("html")).toHaveAttribute("data-gesture-settled", "true")
       await latest.tap()
       await expect(latest).toBeHidden()
