@@ -1,3 +1,4 @@
+import * as Continuation from "./flowDecision.vibe"
 // The conversation's durable flows (rulings VL-11; wiki/decisions/0011-post-flow.md): every action the factory takes on
 // a conversation is a `@smthrs/flow` step. Both backends register these same declarations: the live one on the engine
 // in each conversation's Durable Object (worker/Objects.vibe), the mock one on the engine in memory (MockFactory.vibe).
@@ -14,7 +15,7 @@
 import { Action, DurableDeferred, DurableClock, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { holdRemaining, unansweredSelection, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
-import { dispatches, endsTourEvent, readingHold } from "./flowDecision.vibe"
+import { endsTourEvent, readingHold } from "./flowDecision.vibe"
 import { WALKTHROUGH } from "./walkthroughSteps.vibe"
 import { Walkthrough } from "./schemas.vibe"
 import { wikiPath } from "./wiki.vibe"
@@ -70,13 +71,18 @@ export const posts = Metric.counter("vibelang_posts", {
 /** A Post's body: record the post; once recorded, dispatch its reply. The answer is the record step's. */
 export effect function posted(payload: { readonly clientId: string; readonly name: string; readonly text: string; readonly owner?: string | undefined }) {
   const sequencer = try Posts
+  let run = Continuation.begin("post")
   const answer = try Action.make({
     name: "vibelang/post/record",
     success: PostAnswer,
     execute: sequencer.record(payload.clientId, payload.name, payload.text, payload.owner),
   })
-  if (dispatches(answer)) try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
-  const outcome = answer ?? "accepted"
+  run = Continuation.record(run, answer)
+  if (Continuation.canDispatch(run)) {
+    try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
+    run = Continuation.dispatch(run)
+  }
+  const outcome = run.answer ?? "accepted"
   try Metric.update(Metric.withAttributes(posts, { outcome }), 1)
   // The outcome only: never the post's text, its client id or its author's name.
   try Effect.logInfo("vibelang.post").pipe(Effect.annotateLogs({ outcome }))
@@ -174,9 +180,14 @@ effect function counted(step: string, outcome: string) {
 /** StartTour's body: record the tour; once recorded, dispatch it. The answer is the record step's. */
 export effect function startTour() {
   const tours = try Tours
+  let run = Continuation.begin("tour")
   const answer = try Action.make({ name: "vibelang/tour/record", success: PostAnswer, execute: tours.start() })
-  if (dispatches(answer)) try Action.make({ name: "vibelang/tour/dispatch", execute: tours.dispatch() })
-  try counted("start", answer ?? "accepted")
+  run = Continuation.record(run, answer)
+  if (Continuation.canDispatch(run)) {
+    try Action.make({ name: "vibelang/tour/dispatch", execute: tours.dispatch() })
+    run = Continuation.dispatch(run)
+  }
+  try counted("start", run.answer ?? "accepted")
   return answer
 }
 

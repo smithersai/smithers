@@ -57,3 +57,63 @@ export function firstUndispatched(posts: ReadonlyArray<string>, dispatched: Set<
   }
   return posts.length
 }
+
+// The actual two-step Post/StartTour continuation: journal a record, then dispatch at most once when accepted.
+export type Kind = "post" | "tour"
+export type Phase = "begun" | "recorded" | "refused" | "dispatched"
+export interface Run {
+  readonly kind: Kind
+  readonly phase: Phase
+  readonly records: number
+  readonly dispatches: number
+  readonly answer: string | null
+}
+
+//@ verify
+//@ ensures \result.kind == kind && \result.phase == "begun" && \result.records == 0 && \result.dispatches == 0 && \result.answer == null
+//@ ensures lawful(\result)
+export function begin(kind: Kind): Run {
+  return { kind, phase: "begun", records: 0, dispatches: 0, answer: null }
+}
+
+/** A refused record is final; replaying this transition never changes the first receipt. */
+//@ verify
+//@ ensures run.phase != "begun" ==> \result == run
+//@ ensures \result.kind == run.kind
+//@ ensures run.phase == "begun" ==> \result.records == 1 && \result.dispatches == 0 && \result.answer == answer
+//@ ensures run.phase == "begun" ==> (\result.phase == "recorded") == (answer == null)
+//@ ensures run.phase == "begun" && answer != null ==> \result.phase == "refused"
+//@ ensures lawful(run) ==> lawful(\result)
+export function record(run: Run, answer: string | null): Run {
+  if (run.phase !== "begun") return run
+  const phase: Phase = answer === null ? "recorded" : "refused"
+  return { kind: run.kind, phase, records: 1, dispatches: 0, answer }
+}
+
+//@ verify
+//@ ensures \result == (run.phase == "recorded" && run.answer == null && run.records == 1 && run.dispatches == 0)
+export function canDispatch(run: Run): boolean {
+  return run.phase === "recorded" && dispatches(run.answer) && run.records === 1 && run.dispatches === 0
+}
+
+/** The host calls this after the journaled dispatch succeeds. A second dispatch is never eligible. */
+//@ verify
+//@ ensures !canDispatch(run) ==> \result == run
+//@ ensures canDispatch(run) ==> \result.phase == "dispatched" && \result.dispatches == 1 && !canDispatch(\result)
+//@ ensures \result.kind == run.kind && \result.records == run.records && \result.answer == run.answer
+//@ ensures lawful(run) ==> lawful(\result)
+export function dispatch(run: Run): Run {
+  if (!canDispatch(run)) return run
+  return { ...run, phase: "dispatched", dispatches: 1 }
+}
+
+/** Every reachable run records once, dispatches at most once, and dispatches only an accepted receipt. */
+//@ verify
+//@ ensures \result == (0 <= run.records && run.records <= 1 && 0 <= run.dispatches && run.dispatches <= run.records && (run.phase == "begun" ? run.records == 0 && run.dispatches == 0 && run.answer == null : run.phase == "recorded" ? run.records == 1 && run.dispatches == 0 && run.answer == null : run.phase == "refused" ? run.records == 1 && run.dispatches == 0 && run.answer != null : run.records == 1 && run.dispatches == 1 && run.answer == null))
+//@ ensures \result && run.dispatches > 0 ==> run.records == 1 && run.answer == null
+export function lawful(run: Run): boolean {
+  if (run.phase === "begun") return run.records === 0 && run.dispatches === 0 && run.answer === null
+  if (run.phase === "recorded") return run.records === 1 && run.dispatches === 0 && run.answer === null
+  if (run.phase === "refused") return run.records === 1 && run.dispatches === 0 && run.answer !== null
+  return run.records === 1 && run.dispatches === 1 && run.answer === null
+}

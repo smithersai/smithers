@@ -164,3 +164,7 @@ Actual speech, DOM layout and persisted-state decoding remain host/library bound
 The live dispatcher (0018) threads a proved scan/attempt/done model through actual storage observations and engine
 attempts. It stops on the first unmarked post even when busy; engine execution and journal/lock correctness remain
 library/host assumptions.
+
+Post/StartTour (0018) thread a shared record-once/dispatch-once continuation model through their actual Actions.
+The proof preserves its accepted-receipt invariant and terminal guards; journal/replay behavior remains an SDK
+assumption, separately tested through real engines.

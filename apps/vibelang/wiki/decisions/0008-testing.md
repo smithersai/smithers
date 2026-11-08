@@ -295,3 +295,7 @@ The 30 affected browser cases retain pause, seek, mute, finish and Escape assert
 **Live dispatch extraction (0018).** Public workerd sequencing, duplicate/replay, retained execution and conversation
 isolation cases run the same host with the proved scan/attempt/done decisions. Guard and field mutants include
 skipping an unmarked post, attempting a marked/exhausted position, and continuing after a busy refusal.
+
+**Continuation order (0018).** Existing real-engine Post/StartTour refusal, replay, ordering and fault tests exercise
+the shared begun/recorded/refused/dispatched model. Mutants cover each admission/terminal guard and invariant
+field, with all older flow contracts retained.
