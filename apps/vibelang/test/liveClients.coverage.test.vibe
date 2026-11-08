@@ -1,0 +1,224 @@
+// @vitest-environment node
+// src/core/LiveAccounts.vibe, LiveIssues.vibe and LiveFactory.vibe against a canned HttpClient: every verb's
+// request and the refusal/unavailable mapping, plus the SSE event stream. No server, no network.
+import { describe, expect, it } from "@effect/vitest"
+import { HttpClient, HttpClientError, HttpClientRequest, HttpClientResponse, HttpServerResponse } from "effect/http"
+import * as LiveAccounts from "../src/core/LiveAccounts.vibe"
+import { liveIssues } from "../src/core/LiveIssues.vibe"
+import { health, LiveFactory } from "../src/core/LiveFactory.vibe"
+import { Factory, Refused, Unavailable } from "../src/core/Factory.vibe"
+import type { IssueRequest } from "../src/core/issueSchemas.vibe"
+
+interface Canned { readonly status: number; readonly body: string }
+
+/** A client answering `routes` (keyed `METHOD path?query`) and recording what was asked; anything else is offline. */
+function canned(routes: Record<string, Canned>) {
+  const seen: Array<string> = []
+  const client = HttpClient.make((request) => {
+    const url = new URL(request.url)
+    const key = `${request.method} ${url.pathname}${url.search}`
+    seen.push(key)
+    return routes[key] === undefined
+      ? fail(new HttpClientError.HttpClientError({ reason: new HttpClientError.TransportError({ request, cause: "offline" }) }))
+      : succeed(HttpClientResponse.fromWeb(request, HttpServerResponse.toWeb(HttpServerResponse.text(routes[key]!.body, { status: routes[key]!.status }))))
+  })
+  return { client, seen }
+}
+
+/** `tag:detail` of the Refused or Unavailable a call fails with, or `ok`. */
+effect function failed(work: unknown!(Refused | Unavailable)) {
+  return work.pipe(Effect.map(() => "ok")) catch (error) => error._tag + ":" + (error._tag === "Refused" ? error.refusal : error.reason)
+}
+
+const person = JSON.stringify({ id: "7", login: "ada", role: "contributor" })
+const granted = JSON.stringify({ type: "RoleGranted", seq: 3, id: "7", by: "1", role: "contributor", mode: "person" })
+
+describe("LiveAccounts", () => {
+  it.effect("reads the session and members, grants, signs out and streams grant events", () => effect {
+    const { seen, client } = canned({
+      "GET /api/auth/session": { status: 200, body: person },
+      "GET /api/roles": { status: 200, body: `[${person}]` },
+      "POST /api/roles": { status: 204, body: "" },
+      "POST /api/auth/sign-out": { status: 204, body: "" },
+      "GET /api/roles/events?after=2": { status: 200, body: `data: ${granted}\n\n` },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const accounts = try LiveAccounts.make("https://a.test")
+      const me = try accounts.current()
+      const people = try accounts.members()
+      try accounts.grant("7", "contributor")
+      try accounts.signOut()
+      try accounts.participated()
+      const events = try Stream.runCollect(accounts.events(2))
+      const asked = seen
+      try Effect.try(() => {
+        expect(me).toMatchObject({ id: "7", role: "contributor" })
+        expect(people).toHaveLength(1)
+        expect(events.map((event) => event.type)).toEqual(["RoleGranted"])
+        expect(asked).toEqual(["GET /api/auth/session", "GET /api/roles", "POST /api/roles", "POST /api/auth/sign-out", "GET /api/roles/events?after=2"])
+      })
+    }
+  })
+
+  it.effect("maps denials, unavailability and bad bodies, and never chooses", () => effect {
+    const { client } = canned({
+      "GET /api/auth/session": { status: 200, body: "not json" },
+      "GET /api/roles": { status: 403, body: "" },
+      "POST /api/roles": { status: 403, body: "" },
+      "POST /api/auth/sign-out": { status: 500, body: "" },
+      "GET /api/roles/events?after=0": { status: 503, body: "" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const accounts = try LiveAccounts.make("https://a.test")
+      const badBody = try Effect.flip(accounts.current())
+      const deniedMembers = try Effect.flip(accounts.members())
+      const deniedGrant = try Effect.flip(accounts.grant("7", "contributor"))
+      const outFailed = try Effect.flip(accounts.signOut())
+      const chose = try Effect.flip(accounts.choose("new"))
+      const eventsFailed = try Effect.exit(Stream.runCollect(accounts.events(0)))
+      try Effect.try(() => {
+        expect(badBody._tag).toBe("AccountUnavailable")
+        expect(deniedMembers).toMatchObject({ action: "people", least: "new" })
+        expect(deniedGrant).toMatchObject({ action: "roles", least: "maintainer" })
+        expect(outFailed._tag).toBe("AccountUnavailable")
+        expect(chose._tag).toBe("AccountUnavailable")
+        expect(eventsFailed._tag).toBe("Failure")
+      })
+    }
+  })
+})
+
+describe("liveIssues", () => {
+  const request: IssueRequest = { op: "new", number: 0, parent: 0, title: "a task", text: "do it", assignee: "", example: "", prior: "", key: "k1" }
+
+  it.effect("reads and acts, mapping each failure body to its IssueFailure", () => effect {
+    const { seen, client } = canned({
+      "GET /api/issues": { status: 200, body: JSON.stringify({ seq: 1, items: [] }) },
+      "POST /api/issues": { status: 200, body: JSON.stringify({ seq: 2, items: [], selected: 7 }) },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const issues = try liveIssues("https://a.test")
+      const read = try issues.read()
+      const acted = try issues.act(request)
+      const asked = seen
+      try Effect.try(() => {
+        expect(read.seq).toBe(1)
+        expect(acted.seq).toBe(2)
+        expect(asked).toEqual(["GET /api/issues", "POST /api/issues"])
+      })
+    }
+  })
+
+  it.effect("reads the failure's reason and unwritten flag, else unavailable or protocol", () => effect {
+    const { client } = canned({
+      "POST /api/issues": { status: 400, body: JSON.stringify({ reason: "title", unwritten: true }) },
+      "GET /api/issues": { status: 503, body: "not json" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const issues = try liveIssues("https://a.test")
+      const failedAct = try Effect.flip(issues.act(request))
+      const failedRead = try Effect.flip(issues.read())
+      try Effect.try(() => {
+        expect(failedAct).toMatchObject({ reason: "title", unwritten: true })
+        expect(failedRead.reason).toBe("unavailable")
+      })
+    }
+  })
+
+  it.effect("answers protocol when a success body is not the state, and unavailable when unreachable", () => effect {
+    const { client } = canned({
+      "POST /api/issues": { status: 200, body: JSON.stringify({ nope: true }) },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const issues = try liveIssues("https://a.test")
+      const wrongShape = try Effect.flip(issues.act(request))
+      const offline = try Effect.flip(issues.read())
+      try Effect.try(() => {
+        expect(wrongShape.reason).toBe("protocol")
+        expect(offline.reason).toBe("unavailable")
+      })
+    }
+  })
+})
+
+describe("LiveFactory", () => {
+  it.effect("answers the deployment's health or names why not", () => effect {
+    const { client } = canned({
+      "GET /api/health": { status: 200, body: JSON.stringify({ ok: true, agent: "live" }) },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const live = try health("https://a.test")
+      try Effect.try(() => expect(live).toEqual({ ok: true, agent: "live" }))
+    }
+  })
+
+  it.effect("maps health's bad status, body and shape, and its transport failure", () => effect {
+    const { client } = canned({
+      "GET /api/health": { status: 503, body: "" },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      const status = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(status.reason).toBe("health answered 503"))
+    }
+    const badJson = canned({ "GET /api/health": { status: 200, body: "not json" } })
+    provide Layer.succeed(HttpClient.HttpClient, badJson.client) {
+      const failedHealth = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(failedHealth.reason).toBe("health is not JSON"))
+    }
+    const wrongShape = canned({ "GET /api/health": { status: 200, body: "{}" } })
+    provide Layer.succeed(HttpClient.HttpClient, wrongShape.client) {
+      const failedShape = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(failedShape.reason).toBe("health is not the protocol"))
+    }
+    const offline = canned({})
+    provide Layer.succeed(HttpClient.HttpClient, offline.client) {
+      const unreachable = try Effect.flip(health("https://a.test"))
+      try Effect.try(() => expect(unreachable.reason).toBe("health unreachable"))
+    }
+  })
+
+  const snapshot = JSON.stringify({ id: "s1", generation: 1, sequence: 2, status: "running", role: "maintainer", allowance: 60, used: 1, remaining: 59, resetAt: 253402300799000, output: "" })
+
+  it.effect("carries posts, reads, tours, wiki and sandbox calls to the API, with their refusals", () => effect {
+    const { seen, client } = canned({
+      "POST /api/conversations/c-1/posts": { status: 200, body: "" },
+      "GET /api/conversations/c-1?after=4": { status: 200, body: JSON.stringify({ seq: 4, entries: [] }) },
+      "POST /api/conversations/c-1/tour": { status: 200, body: "" },
+      "DELETE /api/conversations/c-1/tour": { status: 409, body: JSON.stringify({ refusal: "not-replying" }) },
+      "POST /api/conversations/c-1/wiki": { status: 200, body: "" },
+      "GET /api/sandboxes/c-1": { status: 200, body: snapshot },
+      "POST /api/sandboxes/c-1/start": { status: 403, body: JSON.stringify({ refusal: "forbidden" }) },
+      "POST /api/sandboxes/c-1/stop": { status: 503, body: "" },
+      "POST /api/sandboxes/c-1/command": { status: 200, body: JSON.stringify({ output: "hello" }) },
+      "GET /api/conversations/c-1/events?after=1": { status: 200, body: `data: ${granted}\n\n` },
+    })
+    provide Layer.succeed(HttpClient.HttpClient, client) {
+      provide LiveFactory("https://a.test") {
+        const factory = try Factory
+        try factory.post("c-1", "client-1", "Ada", "hi")
+        const read = try factory.read("c-1", 4)
+        try factory.tour("c-1")
+        const ended = try failed(factory.endTour("c-1"))
+        try factory.openWiki("c-1", "guide")
+        const sandbox = try factory.sandbox("c-1")
+        const started = try failed(factory.startSandbox("c-1", "op-1"))
+        const stopped = try failed(factory.stopSandbox("c-1", "op-2", 1))
+        const output = try factory.sandboxCommand("c-1", "op-3", "echo hi", 1)
+        const events = try Stream.runCollect(factory.events("c-1", 1).pipe(Stream.take(1)))
+        const invalid = try failed(factory.post("", "client-1", "Ada", "hi"))
+        const asked = seen
+        try Effect.try(() => {
+          expect(read).toEqual({ seq: 4, entries: [] })
+          expect(ended).toBe("Refused:not-replying")
+          expect(sandbox).toMatchObject({ id: "s1", status: "running" })
+          expect(started).toBe("Refused:forbidden")
+          expect(stopped).toBe("Unavailable:sandbox stop answered 503")
+          expect(output).toBe("hello")
+          expect(events.map((event) => event.type)).toEqual(["RoleGranted"])
+          expect(invalid).toBe("Unavailable:invalid conversation")
+          expect(asked.length).toBe(10)
+        })
+      }
+    }
+  })
+})
