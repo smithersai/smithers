@@ -15,6 +15,8 @@ brick                                   state         proof
                                                       Live mode uses LiveFactory at VIBELANG_FACTORY_URL (0010).
 1d  formal proofs                      done (local)  `pnpm verify`: 28 contracts on conversation.vibe; `pnpm verify:broken`: 48/48
                                                       mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
+1f  Learn more: the agent's tour         done (local)  0014: the agent opens the docs in a pane and narrates, glow and Esc;
+                                                      mock and live run one tour flow; scene, flow, workerd and browser tests
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       later         VL-20

@@ -29,6 +29,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         try base.post(conversation, clientId, name, text)
       },
       read: base.read,
+      tour: base.tour,
+      endTour: base.endTour,
       events: (conversation, after) => Stream.unwrap(effect {
         try sync(() => { observation.subscriptions.push({ conversation, after }) })
         const ending = fault === "end" && !observation.faulted

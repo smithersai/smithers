@@ -16,7 +16,7 @@ export error Refused { refusal: string }
 
 /**
  * The factory. `post` asks the sequencer to record a person's message; the agent answers on its own, and every
- * client sees the answer through `events`. `events(conversation, after)` replays the conversation's events numbered
+ * client sees the answer through `events`. `tour` asks the agent to tour VibeLang's docs, and `endTour` stops it. `events(conversation, after)` replays the conversation's events numbered
  * above `after`, then follows new ones until the stream is closed.
  */
 export service Factory {
@@ -25,4 +25,8 @@ export service Factory {
   post(conversation: string, clientId: string, name: string, text: string): void!(Unavailable | Refused)
   read(conversation: string, after: number): ReadSnapshot!Unavailable
   events(conversation: string, after: number): Stream.Stream<Event, Unavailable>
+  /** Starts the agent's tour in `conversation` (Learn more); `busy` while the agent works there. */
+  tour(conversation: string): void!(Unavailable | Refused)
+  /** Ends the tour that runs in `conversation`; `not-replying` when none runs. */
+  endTour(conversation: string): void!(Unavailable | Refused)
 }

@@ -1,0 +1,152 @@
+// The agent's tour of VibeLang, live (wiki/decisions/0014-agent-tour.md): `vibelang/Tour`'s speaker is smithers.sh's
+// agent (`@smthrs/agent`'s `AgentAction`, as the reply's, 0012) with an instruction naming the stops and two tools,
+// each a flow: `vibelang/docs/open` moves the docs pane and `vibelang/tour/say` speaks in the conversation. Both reach
+// the conversation's one state machine through `Tours`, as the mock's scripted tour does (src/core/MockFactory.vibe).
+//
+//   vibelang/Tour  tour/t<seq>   race ─┬─ admit ─ vibelang/tour/agent (cells call the tools) ─ spend ─ settle
+//                                      └─ the person ends the tour (TourEnded): the agent is interrupted
+//
+// A tool call is a journaled step of the agent's run, its handler the flow's own body: the conversation's Durable
+// Object drives one execution, and its runtime refuses any other, so a tool can't be a child execution here.
+import { AgentAction, EventSink } from "@smthrs/agent"
+import { WebCrypto } from "@smthrs/crypto"
+import { Action, FlowRuntime } from "@smthrs/flow"
+import { type AgentEvent, FlowBinding } from "@smthrs/harness"
+import { ModelRequest } from "@smthrs/model"
+import type { HostModel } from "@smthrs/model-host"
+import { OpenDocs, openDocs, Say, say, STOPS, Tour, toured, Tours } from "../src/core/flows.vibe"
+import { AGENT_CONTEXT } from "./agentContext.vibe"
+import {
+  AGENT_SEAT, agentOf, ChatModel, dayOf, failureReason, fold, MAX_ANSWER_TOKENS, MAX_FRAMES, patient, type Progress,
+  REASONS, Spend, started, tagOf,
+} from "./Reply.vibe"
+import { Unreachable } from "./Unreachable.vibe"
+
+/** The most tool calls one cell may make: every stop opened and said, with room for a retry of each. */
+export const MAX_CALLS = STOPS.length * 4
+
+/** What the agent is asked to do, and the stops it walks. */
+export const TOUR_INSTRUCTION = [
+  "You are giving a person a tour of VibeLang and of this site, VibeLang's open-source coding factory, where people and agents work on the language together and everything the agent does runs as a durable flow.",
+  "The person is watching: a docs pane beside the conversation shows the page you open.",
+  "Walk these stops in order. At each, call vibelang/docs/open with its path, then call vibelang/tour/say with two or three plain sentences about it:",
+  ...STOPS.map((stop, index) => `${index + 1}. ${stop.path}: ${stop.topic}`),
+  "Say only what the page and VibeLang's reference support. Give no instructions to the person. When the last stop is said, finish with an empty answer.",
+].join("\n")
+
+/** `vibelang/tour/agent`: smithers.sh's agent gives the tour through its two tools. */
+export const Guide = AgentAction.make("vibelang/tour/agent", {
+  payload: {},
+  output: Schema.String,
+  seat: AGENT_SEAT,
+  system: [AGENT_CONTEXT, TOUR_INSTRUCTION],
+  profile: "conversation",
+  prompt: () => "Give the tour now.",
+  maxFrames: MAX_FRAMES,
+  modelParams: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
+})
+
+/** A flow declaration as the agent's catalog shows it: its own name, description and schemas. */
+function declared<I extends Schema.Top, O extends Schema.Top>(flow: { readonly _tag: string; readonly description?: string | undefined; readonly payloadSchema: I; readonly successSchema: O }) {
+  return {
+    name: flow._tag,
+    description: flow.description ?? flow._tag,
+    input: flow.payloadSchema,
+    output: flow.successSchema,
+    capabilities: [],
+    effects: undefined,
+    modelInvocable: true,
+  }
+}
+
+/**
+ * The tour's tools over `tours`: each runs its flow's body for `tour`, and counts what was said, so a tour whose agent
+ * only answered at the end still says it.
+ */
+export function toolsOf(tour: string, tours: Tours.Shape, said: Ref.Ref<number>): FlowBinding.Source {
+  return FlowBinding.source("vibelang", [
+    FlowBinding.make({
+      flow: declared(OpenDocs),
+      handler: (input: { readonly path: string }) => Effect.provideService(openDocs(tour, input.path), Tours, tours),
+    }),
+    FlowBinding.make({
+      flow: declared(Say),
+      handler: (input: { readonly text: string }) =>
+        Effect.tap(Effect.provideService(say(tour, input.text), Tours, tours), (spoken) => spoken ? Ref.update(said, (n) => n + 1) : Effect.void),
+    }),
+  ])
+}
+
+/** One run of `vibelang/tour/agent` over `model`, its tools `tools`. */
+effect function guide(model: HostModel["Service"], sink: EventSink.Service, tools: FlowBinding.Source) {
+  provide agentOf(Guide.layer, model, sink, [tools], MAX_CALLS), EventSink.EventSink = sink {
+    const implementation = try Guide.requirement
+    return try implementation.action({})
+  }
+}
+
+/**
+ * `run`, with what it spent recorded even when the person ends the tour mid-run: the interruption skips the journaled
+ * spend step, so the finalizer records it. The ledger adds a tour's tokens once, so a later spend step adds nothing.
+ */
+export function charged<A, E, R>(run: A!E!R, spend: Spend.Shape, day: string, tour: string, progress: Ref.Ref<Progress>) {
+  return Effect.onInterrupt(run, () =>
+    Effect.ignore(Effect.flatMap(Ref.get(progress), (current) => spend.spend(day, tour, current.tokens))))
+}
+
+/** Settles the tour: finished when `reason` is `""`, else failed with it, shown to the person. */
+effect function settle(tour: string, reason: string) {
+  const tours = try Tours
+  try Action.make({ name: "vibelang/tour/settle", execute: tours.finish(tour, reason) })
+}
+
+/** The live tour's speaker: the budget, then the agent with its tools, then the spend, then settling. */
+export effect function spoken(tour: string) {
+  const tours = try Tours
+  const spend = try Spend
+  const chat = try ChatModel
+  const admission = try Action.make({
+    name: "vibelang/tour/admit",
+    success: Schema.Struct({ day: Schema.String, admitted: Schema.Boolean }),
+    error: Unreachable,
+    retryPolicy: patient,
+    execute: effect {
+      const day = dayOf(try Clock.currentTimeMillis)
+      return { day, admitted: try spend.admit(day) }
+    },
+  })
+  if (!admission.admitted) return try settle(tour, REASONS.budget)
+  const model = chat.model
+  if (model === undefined) {
+    try Effect.logWarning("vibelang.tour.unconfigured").pipe(Effect.annotateLogs({ reason: chat.unusable }))
+    return try settle(tour, REASONS.unconfigured)
+  }
+  const progress = try Ref.make(started)
+  const said = try Ref.make(0)
+  // The sink runs inside the engine's write: it only folds, for the spend and the failure's reason.
+  const sink: EventSink.Service = { emit: (event: AgentEvent.AgentEvent) => Ref.update(progress, (current) => fold(current, event)) }
+  const answered = try exit(charged(guide(model, sink, toolsOf(tour, tours, said)), spend, admission.day, tour, progress))
+  const folded = try Ref.get(progress)
+  try Action.make({
+    name: "vibelang/tour/spend",
+    error: Unreachable,
+    retryPolicy: patient,
+    execute: spend.spend(admission.day, tour, folded.tokens),
+  })
+  if (Exit.isFailure(answered) && Cause.hasInterrupts(answered.cause)) return try Effect.failCause(answered.cause)
+  const tag = Exit.isFailure(answered) ? tagOf(Cause.squash(answered.cause)) : "answered"
+  try Effect.logInfo("vibelang.tour.agent").pipe(Effect.annotateLogs({ outcome: folded.failed ?? tag, tokens: folded.tokens }))
+  if (Exit.isFailure(answered)) return try settle(tour, failureReason(tag, folded))
+  const text = answered.value
+  if ((try Ref.get(said)) === 0) {
+    if (typeof text !== "string" || text.trim() === "") return try settle(tour, REASONS.empty)
+    try Action.make({ name: "vibelang/tour/say/answer", success: Schema.Boolean, execute: say(tour, text) })
+  }
+  try settle(tour, "")
+}
+
+/** Registers `Tour` with the engine: the agent speaks until it is done or the person ends the tour. */
+export const tourAgentRegistration = Layer.effectDiscard(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  try engine.register(Tour, (payload) => withSpan(Effect.orDie(toured(payload.tour, spoken(payload.tour))), "vibelang.tour"))
+}).pipe(Layer.provide(WebCrypto.layer))

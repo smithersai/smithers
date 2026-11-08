@@ -2,9 +2,10 @@
 // ones the workerd test runs (test/workerd/worker.vibe). Both hosts hand it the object's own storage and the budget's
 // caller, so they run the same code.
 //
-//   Conversation (one per conversation)   the sequencer; each post's flow, run in the request that posts it; and the
-//                                         reply flow of the post it answers now: its intent and alarm
-//                                         (`ExecutionObject`). Every journal lives in the object's SQLite.
+//   Conversation (one per conversation)   the sequencer; each post's flow, and each start or end of a tour, run in
+//                                         the request that asks; and the reply flow of the post it answers now, or
+//                                         its tour's flow: its intent and alarm (`ExecutionObject`). Every journal
+//                                         lives in the object's SQLite.
 //   Budget (one per UTC day)              the day's token ledger
 //
 // A conversation answers one post at a time, so one execution per object is enough, and the flow's steps reach the
@@ -14,11 +15,12 @@ import { WebCrypto } from "@smthrs/crypto"
 import { FlowRuntime } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SecureRandom } from "effect/crypto"
-import { Post, postRegistration, Posts, Reply } from "../src/core/flows.vibe"
+import { EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
 import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
 import * as Sequencer from "./Sequencer.vibe"
+import { tourAgentRegistration } from "./Tour.vibe"
 
 /** A conversation object's storage: key-value for the log and the execution's intent, SQLite for the engine. */
 export type Storage = KeyValue & ObjectDatabase.Storage
@@ -26,6 +28,11 @@ export type Storage = KeyValue & ObjectDatabase.Storage
 /** The reply flow's execution for `post`. Its object is the conversation's, so the post alone names it. */
 export function executionIdOf(post: string): string {
   return `reply/${post}`
+}
+
+/** The tour's flow execution for tour `tour`. */
+export function tourExecutionIdOf(tour: string): string {
+  return `tour/${tour}`
 }
 
 const dispatchedKey = (post: string) => `dispatched/${post}`
@@ -49,6 +56,17 @@ export function executionStorage(storage: KeyValue): ExecutionObject.Storage {
 function dispatcher(storage: KeyValue): Sequencer.Dispatch {
   const executions = executionStorage(storage)
   return {
+    tour: effect (tour: string) => {
+      const executionId = tourExecutionIdOf(tour)
+      if ((try promise(() => storage.get(dispatchedKey(executionId)))) !== undefined) return
+      const intent = try Effect.orDie(ExecutionObject.intent(Tour, { executionId, payload: { tour } }))
+      const started = try Effect.match(ExecutionObject.start(executions, intent, Effect.void), {
+        onFailure: () => false,
+        onSuccess: () => true,
+      })
+      try Effect.logInfo("vibelang.dispatch").pipe(Effect.annotateLogs({ outcome: started ? "started" : "waiting", tour }))
+      if (started) try promise(() => storage.put(dispatchedKey(executionId), true))
+    },
     start: effect (posts: ReadonlyArray<string>) => {
       for (const post of posts) {
         if ((try promise(() => storage.get(dispatchedKey(post)))) !== undefined) continue
@@ -80,11 +98,51 @@ export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
   return { record: sequencer.post, dispatch: sequencer.ensureDispatched }
 }
 
-/** A post flow's execution: one per request, so a repeated client id meets the sequencer's `duplicate` as before. */
-export effect function postExecutionId() {
-  provide WebCrypto.layer {
-    return `post/${try (try SecureRandom.SecureRandom).uuidV4()}`
+/** The sequencer as a tour's steps reach it: record, dispatch, end, open, say, settle and wait for the end. */
+export function toursOf(sequencer: Sequencer.Sequencer): Tours.Shape {
+  return {
+    start: sequencer.startTour,
+    dispatch: sequencer.ensureDispatched,
+    end: sequencer.endTour,
+    open: sequencer.open,
+    say: sequencer.say,
+    finish: sequencer.finishTour,
+    ended: sequencer.ended,
   }
+}
+
+/** A post or tour flow's execution: one per request, so a repeated client id meets the sequencer's `duplicate` as before. */
+export effect function postExecutionId(prefix = "post") {
+  provide WebCrypto.layer {
+    return `${prefix}/${try (try SecureRandom.SecureRandom).uuidV4()}`
+  }
+}
+
+/**
+ * Runs a person's Learn more as a `vibelang/StartTour` execution in the request, as a post is (0011): it answers once
+ * the tour is recorded and its flow dispatched. `null` once recorded, else the sequencer's refusal.
+ */
+export effect function tour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer) {
+  return try asked(hostId, storage, sequencer, StartTour, "start-tour")
+}
+
+/** Runs a person's Escape as a `vibelang/EndTour` execution in the request: `null` once ended, else the refusal. */
+export effect function endTour(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer) {
+  return try asked(hostId, storage, sequencer, EndTour, "end-tour")
+}
+
+effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Sequencer, flow: typeof StartTour | typeof EndTour, prefix: string) {
+  const executionId = try postExecutionId(prefix)
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag }, tourRegistration).pipe(
+    Layer.provide(ObjectDatabase.layer(storage)),
+    Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+  )
+  return try Effect.orDie(effect {
+    provide runtime {
+      const engine = try FlowRuntime.FlowRuntime
+      return try engine.execute(flow, { executionId, payload: {} })
+    }
+  })
 }
 
 /**
@@ -125,7 +183,7 @@ export function repliesOf(sequencer: Sequencer.Sequencer): Replies.Shape {
   }
 }
 
-/** A reply execution starts no child flow and hands off to no round, so routing anything is a defect. */
+/** A reply or tour execution starts no child flow and hands off to no round, so routing anything is a defect. */
 export const unrouted: ExecutionObject.Router = {
   start: (intent) => die(new Error(`vibelang/Reply routed a start of ${intent.executionId}`)),
   wake: (executionId) => die(new Error(`vibelang/Reply routed a wake of ${executionId}`)),
@@ -147,13 +205,14 @@ export effect function alarm(
 ) {
   const services = Layer.mergeAll(
     Layer.succeed(Replies, repliesOf(sequencer)),
+    Layer.succeed(Tours, toursOf(sequencer)),
     Layer.succeed(Spend, spend),
     Layer.succeed(ChatModel, model),
   )
   const outcome = try ExecutionObject.alarm(executionStorage(storage), {
-    flows: [Reply],
+    flows: [Reply, Tour],
     runtime: (intent) =>
-      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, registration).pipe(
+      CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, Layer.mergeAll(registration, tourAgentRegistration)).pipe(
         Layer.provide(ObjectDatabase.layer(storage)),
         Layer.provide(services),
       ),

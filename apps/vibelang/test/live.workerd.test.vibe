@@ -136,6 +136,31 @@ describe("the live Factory in local workerd, with no model key", () => {
     }
   })
 
+  it.live("runs Learn more's tour as durable flows that fail saying the agent has no model, then answers a post", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = try room("tour-unconfigured")
+      try factory.tour(conversation)
+      const toured = try untilSettled(conversation, 1)
+      try factory.post(conversation, "a", "Ada", "hi")
+      const events = try untilSettled(conversation, 2)
+      const none = factory.endTour(conversation) catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+      const runs = try runsOf(origin, conversation)
+      try Effect.try(() => {
+        expect(toured).toEqual([
+          { type: "TourStarted", seq: 1, id: "t1" },
+          { type: "ReplyFailed", seq: 2, id: "t1", reason: REASONS.unconfigured },
+        ])
+        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r3", reason: REASONS.unconfigured })
+        expect(none).toBe("not-replying")
+        expect(runs.filter((run) => run.run_id.startsWith("start-tour/")).map((run) => run.status)).toEqual(["completed"])
+        expect(runs.filter((run) => run.run_id.startsWith("end-tour/")).map((run) => run.status)).toEqual(["completed"])
+        expect(runs.map((run) => run.run_id)).toEqual(expect.arrayContaining(["tour/t1", "reply/m3"]))
+      })
+    }
+  })
+
   it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
     provide live(api!.origin) {
       const factory = try Factory
@@ -201,6 +226,33 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
       })
     }
   }, 300_000)
+
+  it.live("ending the tour while its agent waits on the model stops the agent's flow, and the next post is answered", () => effect {
+    const origin = api!.origin
+    provide live(origin) {
+      const factory = try Factory
+      const conversation = try room("tour-ended")
+      try factory.tour(conversation)
+      const started = try Stream.runCollect(factory.events(conversation, 0) |> Stream.take(%, 1))
+      try factory.endTour(conversation)
+      try factory.post(conversation, "a", "Ada", "hi")
+      // The ended tour's execution settles, so the post's reply flow can start in the same object.
+      const events = Array.from(try Stream.runCollect(
+        factory.events(conversation, 0) |> Stream.takeUntil(%, (event: Event) => event.type === "ReplyStarted"),
+      ))
+      const runs = try runsOf(origin, conversation)
+      try Effect.try(() => {
+        expect(Array.from(started)).toEqual([{ type: "TourStarted", seq: 1, id: "t1" }])
+        expect(events.slice(0, 3)).toEqual([
+          { type: "TourStarted", seq: 1, id: "t1" },
+          { type: "TourEnded", seq: 2, id: "t1" },
+          { type: "Posted", seq: 3, id: "m3", clientId: "a", name: "Ada", text: "hi" },
+        ])
+        expect(events.at(-1)).toEqual({ type: "ReplyStarted", seq: 4, id: "r3", inReplyTo: "m3" })
+        expect(runs.find((run) => run.run_id === "tour/t1")?.status).toBe("completed")
+      })
+    }
+  }, 300_000)
 })
 
 describe.skipIf(modelKey === undefined)("the live Factory with the real model (opt in: CEREBRAS_API_KEY)", () => {
@@ -222,4 +274,20 @@ describe.skipIf(modelKey === undefined)("the live Factory with the real model (o
       })
     }
   }, 180_000)
+
+  it.live("gives the tour: opens the stops' pages in the docs pane and says what they are", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("model-tour")
+      try factory.tour(conversation)
+      const events = try untilSettled(conversation, 1)
+      const tour = events.reduce(apply, empty)
+      try Effect.try(() => {
+        expect(events.at(-1)!.type).toBe("ReplyFinished")
+        expect(events.filter((event) => event.type === "PaneOpened").length).toBeGreaterThan(0)
+        expect(tour.pane.startsWith("https://vibelang.sh/")).toBe(true)
+        expect(tour.entries[0]!.text).toContain("VibeLang")
+      })
+    }
+  }, 300_000)
 })

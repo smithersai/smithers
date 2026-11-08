@@ -70,6 +70,8 @@ export class Conversation {
       return json({ refusal })
     }
     if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
+    if (url.pathname === "/tour") return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
+    if (url.pathname === "/end-tour") return json({ refusal: await Effect.runPromise(Objects.endTour(this.state.id.toString(), this.state.storage, sequencer)) })
     // The engine's runs in this object's SQLite, so the suite sees every post and reply ran as a flow (0011).
     if (url.pathname === "/runs") {
       return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
@@ -119,6 +121,10 @@ export default {
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),
       read: (conversation, after) =>
         reach("conversation", () => call(env.CONVERSATION, conversation, "read", { after }) as Promise<ReadSnapshot>),
+      tour: (conversation) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "tour", {})) as { refusal: string | null }).refusal),
+      endTour: (conversation) =>
+        reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "end-tour", {})) as { refusal: string | null }).refusal),
       events: (conversation) =>
         Effect.flatMap(HttpServerRequest.HttpServerRequest, (incoming) =>
           reach("conversation", async () => {

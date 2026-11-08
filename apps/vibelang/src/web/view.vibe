@@ -3,7 +3,7 @@
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
-import { hasConversation, type Message as AppMessage, Message, type Model, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
+import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { render } from "./markdown.vibe"
 
 type H = HtmlBuilder<AppMessage>
@@ -21,11 +21,12 @@ export function view(model: Model, h: H): Document {
   return {
     title: model.surface === "splash" ? "VibeLang" : "VibeLang · Chat",
     body: h.div(
-      [h.Class("vl-app"), h.DataAttribute("surface", model.surface), h.DataAttribute("mode", model.mode)],
+      [h.Class("vl-app"), h.DataAttribute("surface", model.surface), h.DataAttribute("mode", model.mode), h.DataAttribute("tour", model.tour ? "on" : "off")],
       [
         top(model, h),
         model.surface === "splash" ? splash(model, h) : chat(model, h),
         palette(model, h),
+        ...(model.tour ? control(h) : []),
         h.div([h.Id("vl-announcements")], [
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
             h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [`Answer ${model.announced}: ${model.answer}`]),
@@ -87,10 +88,12 @@ function splash(model: Model, h: H): Html {
         "VibeLang gives Effect a simple, readable syntax that compiles to JavaScript with TypeScript declarations.",
       ]),
       h.div([h.Class("vl-actions")], [
+        h.button([h.Class("vl-primary"), h.Type("button"), h.OnClick(Message.ClickedLearnMore())], ["Learn more"]),
         h.button([h.Class("vl-ask"), h.Type("button"), h.AriaLabel("Ask the agent"), h.AriaKeyshortcuts("Meta+K"), h.OnClick(Message.ClickedAsk())], [
           "Ask the agent",
           h.kbd([h.Class("vl-kbd"), h.AriaHidden(true)], ["⌘K"]),
         ]),
+        h.a([h.Class("vl-ask"), h.Href(CONTRIBUTE_URL)], ["Contribute"]),
       ]),
       h.pre([h.Class("vl-install")], [h.code([], [INSTALL])]),
     ]),
@@ -111,6 +114,35 @@ function splashPane(h: H): Html {
   )
 }
 
+// ── the agent in control ─────────────────────────────────────────────────────────────────────────────────────────
+
+/** While the agent drives: a glow around the whole screen, and Esc to take control back. */
+function control(h: H): ReadonlyArray<Html> {
+  return [
+    h.div([h.Class("vl-glow"), h.AriaHidden(true)], []),
+    h.button([h.Class("vl-esc"), h.Type("button"), h.AriaKeyshortcuts("Escape"), h.OnClick(Message.ClickedEndTour())], [h.kbd([], ["Esc"])]),
+  ]
+}
+
+/** The page the agent opened, in a pane of the conversation that maximizes over it. */
+function docsPane(model: Model, h: H): Html {
+  const page = model.client.conversation.pane
+  const maximized = model.docs === "max"
+  return h.section(
+    [h.Class("vl-docs"), h.AriaLabel("Docs"), h.DataAttribute("maximized", String(maximized))],
+    [
+      h.div([h.Class("vl-docs-bar")], [
+        h.span([h.Class("vl-docs-page")], [page.replace(/^https:\/\//, "")]),
+        h.button(
+          [h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel(maximized ? "Minimize the docs" : "Maximize the docs"), h.OnClick(Message.ClickedDocs())],
+          [paneIcon(h, maximized ? MINIMIZE : MAXIMIZE)],
+        ),
+      ]),
+      h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs")], []),
+    ],
+  )
+}
+
 // ── chat ─────────────────────────────────────────────────────────────────────────────────────────────────────────
 
 function chat(model: Model, h: H): Html {
@@ -118,6 +150,7 @@ function chat(model: Model, h: H): Html {
   return h.main([h.Class("vl-chat")], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
+      ...(conversation.pane === "" ? [] : [docsPane(model, h)]),
       ...conversation.entries.map((entry) => entryView(entry, model.session, h)),
       ...pending.map((post) => pendingView(post, h)),
       ...(model.stream === "failed"
@@ -212,6 +245,7 @@ function composer(model: Model, h: H): Html {
 function statusText(model: Model): string {
   const { conversation } = model.client
   if (model.stream === "failed") return "Disconnected"
+  if (model.tourError !== "") return postFailure(model.tourError)
   if (conversation.agent === "working") return "Answering"
   return ""
 }

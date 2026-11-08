@@ -107,6 +107,13 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   mode: "they should be light mode in light mode and dark mode in dark mode for all the pictures and stuff". Then:
   "Do the opposite for now and just make vibelang dark mode only and leave a note in wiki why". See decision 0013.
 
+- **VL-28. Learn more is the primary action and starts a tour the agent drives; Ask the agent and Contribute are
+  secondary; Escape ends the tour.** Will, 2026-11-07: "It should say ask the agent as a secondary button the primary
+  button should just be learn more and another secondary button should be contribute. Learn more should take us to
+  docs and start a tutorial where we have a glow around the entire screen to signify the agent is controlling escape
+  escapes it or clicking the thing that says escape escapes it and the agent talks about vibelang and what it is and
+  what this open source coding factory is". See decision 0014.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the

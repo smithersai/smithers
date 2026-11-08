@@ -26,7 +26,7 @@ effect function world() {
   const lines = try Ref.make<ReadonlyArray<string>>([])
   const sequencer = try Sequencer.make(
     { read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) },
-    { start: () => Ref.update(dispatches, (count) => count + 1) },
+    { start: () => Ref.update(dispatches, (count) => count + 1), tour: () => Effect.void },
   )
   const live = postsOf(sequencer)
   const posts: Posts.Shape = {

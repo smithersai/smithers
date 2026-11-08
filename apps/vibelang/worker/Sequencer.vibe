@@ -7,7 +7,7 @@ import {
   apply, decide, empty, isReplying,
   type Conversation, type Entry, type Event, type Intent, type Refusal,
 } from "../src/core/conversation.vibe"
-import { replyIdOf, unanswered } from "../src/core/flows.vibe"
+import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
@@ -16,9 +16,13 @@ export interface Log {
   write(event: Event): void!!
 }
 
-/** Starts the agent's reply flow for the first of `posts` that has none; a no-op while another reply flow runs. */
+/**
+ * Starts the agent's reply flow for the first of `posts` that has none, or the running tour's flow; a no-op while
+ * another of its flows runs.
+ */
 export interface Dispatch {
   start(posts: ReadonlyArray<string>): void!!
+  tour(tour: string): void!!
 }
 
 /** What a reply step got: done (or already done), `busy` while another reply streams, or a final refusal. */
@@ -71,10 +75,32 @@ export effect function make(log: Log, dispatch: Dispatch) {
     return Semaphore.withPermits(lock, 1)(body)
   }
 
-  /** Starts the next unanswered post's reply flow, if the agent isn't replying. */
+  /** Starts the running tour's flow, or else the next unanswered post's reply flow, if the agent isn't replying. */
   effect function ensureDispatched() {
-    const posts = unanswered((try locked(state())).conversation)
+    const conversation = (try locked(state())).conversation
+    const tour = touring(conversation)
+    if (tour !== "") return try dispatch.tour(tour)
+    const posts = unanswered(conversation)
     if (posts.length > 0) try dispatch.start(posts)
+  }
+
+  /** Records `intent` under the lock: whether the sequencer accepted it. */
+  function accepted(intent: Intent) {
+    return locked(Effect.map(record(intent), (decision) => decision.ok))
+  }
+
+  /** Every event after `after`, then each new one as it is numbered. Subscribing first loses none between. */
+  function follow(after: number) {
+    return Stream.unwrap(effect {
+      const live = try PubSub.subscribe(published)
+      const current = try locked(state())
+      const replay = current.log.filter((event) => event.seq > after)
+      const replayedTo = replay.length === 0 ? after : replay[replay.length - 1]!.seq
+      return Stream.concat(
+        Stream.fromIterable(replay),
+        Stream.fromSubscription(live).pipe(Stream.filter((event) => event.seq > replayedTo)),
+      )
+    })
   }
 
   /** Settles the streaming reply with `intent` (finish or fail), then dispatches the next post. */
@@ -119,18 +145,7 @@ export effect function make(log: Log, dispatch: Dispatch) {
       return snapshot
     },
 
-    /** Every event after `after`, then each new one as it is numbered. Subscribing first loses none between. */
-    follow: (after: number) =>
-      Stream.unwrap(effect {
-        const live = try PubSub.subscribe(published)
-        const current = try locked(state())
-        const replay = current.log.filter((event) => event.seq > after)
-        const replayedTo = replay.length === 0 ? after : replay[replay.length - 1]!.seq
-        return Stream.concat(
-          Stream.fromIterable(replay),
-          Stream.fromSubscription(live).pipe(Stream.filter((event) => event.seq > replayedTo)),
-        )
-      }),
+    follow,
 
     /** The turns the model reads to answer `post`: every post and finished answer up to it. */
     history: effect (post: string) => {
@@ -198,6 +213,40 @@ export effect function make(log: Log, dispatch: Dispatch) {
     fail: effect (reply: string, reason: string) => {
       return try settle(reply, { type: "FailReply", id: reply, reason }, (entry) => entry.error !== "")
     },
+
+    /** Starts a tour, `t<seq>`: `null` once its event is stored, else the refusal (`busy` while the agent works). */
+    startTour: effect () => {
+      const decision = try locked(effect {
+        const seq = (try state()).conversation.seq + 1
+        return try record({ type: "StartTour", id: `t${seq}` })
+      })
+      const answer: Refusal | null = decision.ok ? null : decision.refusal
+      return answer
+    },
+
+    /** Ends the running tour: `null` once its event is stored, else the refusal (`not-replying` when none runs). */
+    endTour: effect () => {
+      const decision = try locked(effect {
+        return try record({ type: "EndTour", id: touring((try state()).conversation) })
+      })
+      const answer: Refusal | null = decision.ok ? null : decision.refusal
+      return answer
+    },
+
+    /** Shows `url` in the docs pane while `tour` runs. */
+    open: (tour: string, url: string) => accepted({ type: "OpenPane", id: tour, url }),
+
+    /** Adds `text` to what `tour` said while it runs. */
+    say: (tour: string, text: string) => accepted({ type: "AppendReply", id: tour, text }),
+
+    /** Settles `tour` as finished, or failed with `reason`, then dispatches the next post. */
+    finishTour: effect (tour: string, reason: string) => {
+      const intent: Intent = reason === "" ? { type: "FinishReply", id: tour } : { type: "FailReply", id: tour, reason }
+      try settle(tour, intent, (entry) => entry.done)
+    },
+
+    /** Completes once `tour` no longer runs: it finished, failed, or the person ended it. */
+    ended: (tour: string) => Stream.runDrain(follow(0).pipe(Stream.takeUntil((event) => endsTour(event, tour)))),
   }
 }
 

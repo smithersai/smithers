@@ -8,7 +8,7 @@
 import { Agent, AgentAction, Budget, EventSink, QuotaPolicy, Seat, SeatResolver } from "@smthrs/agent"
 import { WebCrypto } from "@smthrs/crypto"
 import { Action, FlowRuntime, RetryPolicy } from "@smthrs/flow"
-import { type AgentEvent, DoneText } from "@smthrs/harness"
+import { type AgentEvent, DoneText, type FlowBinding } from "@smthrs/harness"
 import * as QuickJSWorkerd from "@smthrs/harness/QuickJSWorkerd"
 import { Evaluator, ModelRequest } from "@smthrs/model"
 import type { HostModel } from "@smthrs/model-host"
@@ -76,7 +76,7 @@ export const AGENT_SEAT = "agent"
 export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
 /** A step that waits on the budget's object, or on another reply: it retries until it can, at most a minute apart. */
-const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
+export const patient = RetryPolicy.make({ initialMs: 500, factor: 2, maxMs: 60_000, jitterRatio: 0.2 })
 
 /** The UTC day of `millis`, as the budget names it: `2026-11-07`. */
 export function dayOf(millis: number): string {
@@ -119,7 +119,7 @@ export function reasonOf(error: { readonly code: string }): string {
 }
 
 /** A failure's tag for the logs: never its message, which can carry a provider's words or a person's text. */
-function tagOf(error: unknown): string {
+export function tagOf(error: unknown): string {
   return typeof error === "object" && error !== null && "_tag" in error ? String(error._tag) : "defect"
 }
 
@@ -157,8 +157,17 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
   }
 }
 
-/** smithers.sh's agent over `model`: no registry, no tools, the cell sandbox on workerd, its events to `sink`. */
-export function agentOf(model: HostModel["Service"], sink: EventSink.Service) {
+/**
+ * smithers.sh's agent running `action` over `model`: no registry, the cell sandbox on workerd, its events to `sink`.
+ * A reply has no tools; the tour's agent calls `flows`, at most `calls` times a cell (0014).
+ */
+export function agentOf<ROut, E, RIn>(
+  action: Layer.Layer<ROut, E, RIn>,
+  model: HostModel["Service"],
+  sink: EventSink.Service,
+  flows: ReadonlyArray<FlowBinding.Source> = [],
+  calls = 0,
+) {
   const seat = Seat.make({
     id: AGENT_SEAT,
     modelId: model.modelId,
@@ -166,12 +175,12 @@ export function agentOf(model: HostModel["Service"], sink: EventSink.Service) {
     route: model.route,
     contextWindowTokens: CONTEXT_WINDOW_TOKENS,
   })
-  return Respond.layer.pipe(
+  return action.pipe(
     Layer.provide(Layer.mergeAll(
       AgentAction.layerHost({
         registry: Registry.makeNoop(),
-        flows: [],
-        limits: LIMITS,
+        flows,
+        limits: { ...LIMITS, calls },
         capabilityEnvelope: [],
         maxFrames: MAX_FRAMES,
       }),
@@ -235,7 +244,7 @@ effect function respond(reply: string, model: HostModel["Service"], turns: Reado
 
 /** One run of `vibelang/reply/agent`, as the journaled step its declaration makes. */
 effect function run(model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
-  provide agentOf(model, sink), EventSink.EventSink = sink {
+  provide agentOf(Respond.layer, model, sink), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }

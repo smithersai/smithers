@@ -3,6 +3,10 @@
 // screen needs on top of it (wiki/decisions/0003-one-state-machine.md).
 //
 //   splash (maximized) ──⌘K──▶ palette ──⏎──▶ chat (the splash shrinks into the first pane) ──pane──▶ splash
+//   splash ──Learn more──▶ chat with the agent in control (glow, Esc) ──Escape / Esc / tour ends──▶ chat
+//
+// Learn more starts the agent's tour in this tab's own conversation (wiki/decisions/0014-agent-tour.md): the agent
+// narrates and opens VibeLang's docs in a pane through the conversation's events, never through this file.
 import { Command, Dom, Render, Subscription, type Runtime, type Update } from "foldkit"
 import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
@@ -49,10 +53,24 @@ export schema Model {
   readonly answer: string
   readonly announced: number
   readonly connection: string
+  /** Whether the agent is in control: the tour runs, the screen glows and Escape ends it. */
+  readonly tour: boolean
+  /** Why the last Learn more didn't start a tour; `""` when it did. */
+  readonly tourError: string
+  /** The docs pane: in the conversation, or maximized over it. */
+  readonly docs: "pane" | "max"
 }
 
 /** The conversation every visitor of the home page joins until conversations have their own pages. */
 export const HOME_CONVERSATION = "home"
+
+/** This tab's own conversation for the agent's tour, so a tour never takes the shared home conversation's agent. */
+export function tourConversation(session: string): string {
+  return `tour-${session}`
+}
+
+/** Where Contribute goes until the factory's own contribution features exist (roadmap bricks 2 to 4). */
+export const CONTRIBUTE_URL = "https://github.com/smithersai/vibelang/blob/main/CONTRIBUTING.md"
 
 // MESSAGE
 
@@ -74,6 +92,12 @@ export const Message = defineMessageUnion({
   FocusedPrompt: {},
   ScrolledTranscript: { bottom: Schema.Boolean, intent: Schema.optionalKey(Schema.Number) },
   ClickedLatest: {},
+  ClickedLearnMore: {},
+  ClickedEndTour: {},
+  SucceededTour: {},
+  FailedTour: { reason: Schema.String },
+  FailedEndTour: {},
+  ClickedDocs: {},
 })
 export type Message = typeof Message.Type
 
@@ -100,6 +124,9 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       answer: "",
       announced: 0,
       connection: "",
+      tour: false,
+      tourError: "",
+      docs: "pane",
     },
   }
 }
@@ -111,7 +138,24 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ResolvedMode: ({ mode }) => ({ model: { ...model, mode } }),
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
-    PressedEscape: () => model.palette ? openPalette(model, false) : minimizeSplash(model),
+    // Escape first takes control back from the agent, then closes what is open, innermost first.
+    PressedEscape: () =>
+      model.tour || touringHere(model)
+        ? endTour(model)
+        : model.palette
+        ? openPalette(model, false)
+        : model.surface === "chat" && model.docs === "max"
+        ? { model: { ...model, docs: "pane" } }
+        : minimizeSplash(model),
+    ClickedLearnMore: () => learnMore(model),
+    ClickedEndTour: () => endTour(model),
+    // Ended before the tour was even recorded: end it now that it is.
+    SucceededTour: () => model.tour ? { model } : { model, commands: [EndTourCommand({ conversation: model.conversation })] },
+    // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
+    FailedTour: ({ reason }) => ({ model: { ...model, tour: reason === "busy" && touringHere(model), tourError: reason } }),
+    // The end never reached the agent: it still drives, so Esc comes back.
+    FailedEndTour: () => ({ model: { ...model, tour: touringHere(model) } }),
+    ClickedDocs: () => ({ model: { ...model, docs: model.docs === "max" ? "pane" : "max" } }),
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
@@ -131,7 +175,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       // A missed event: replay from the last one this copy applied.
       if (client.gap) return { model: { ...model, client: Machine.resume(client), epoch: model.epoch + 1, from: client.conversation.seq } }
       const advanced = client.conversation.seq > model.client.conversation.seq
-      const completed = advanced && (event.type === "ReplyFinished" || event.type === "ReplyFailed")
+      const completed = advanced && (event.type === "ReplyFinished" || event.type === "ReplyFailed" || event.type === "TourEnded")
+      // The tour finished, failed or was ended: the agent no longer has control.
+      const toured = completed && Machine.isTour(client.conversation.entries, event.id)
       const answer = completed ? client.conversation.entries.find((entry) => entry.id === event.id) : undefined
       return {
         model: {
@@ -140,6 +186,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           connection: model.stream === "open" ? "Connected" : model.connection,
           answer: answer ? answer.error === "" ? answer.text : "Answer failed" : model.answer,
           announced: completed ? model.announced + 1 : model.announced,
+          tour: toured ? false : model.tour,
         },
       }
     },
@@ -157,6 +204,46 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     },
     ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FocusComposer({})] }),
   })
+}
+
+/**
+ * Learn more: the page becomes this tab's tour conversation and the agent takes control. A second Learn more while the
+ * tour runs does nothing new.
+ */
+function learnMore(model: Model): Update.Return<Model, Message, Factory> {
+  if (model.tour) return { model }
+  const conversation = tourConversation(model.session)
+  const fresh = model.conversation !== conversation
+  // A closed or broken stream opens again from where this copy is, so the tour is seen.
+  const opening = fresh || model.stream !== "open"
+  return {
+    model: {
+      ...model,
+      surface: "chat",
+      palette: false,
+      tour: true,
+      tourError: "",
+      docs: "pane",
+      following: true,
+      conversation,
+      client: fresh ? Machine.newClient : model.client,
+      epoch: opening ? model.epoch + 1 : model.epoch,
+      from: fresh ? 0 : opening ? model.client.conversation.seq : model.from,
+      stream: opening ? "open" : model.stream,
+      connection: opening ? "Connecting" : model.connection,
+    },
+    commands: [StartTourCommand({ conversation })],
+  }
+}
+
+/** Whether the agent tours this tab's conversation now. */
+function touringHere(model: Model): boolean {
+  return Machine.isTouring(model.client.conversation, model.client.conversation.replying)
+}
+
+/** Escape or Esc: the agent stops at once; the person keeps the conversation and the docs pane. */
+function endTour(model: Model): Update.Return<Model, Message, Factory> {
+  return { model: { ...model, tour: false }, commands: [EndTourCommand({ conversation: model.conversation })] }
 }
 
 function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
@@ -253,6 +340,37 @@ export const PostMessage = Command.define("PostMessage", {
       return ""
     } catch (error) => error._tag === "Refused" ? error.refusal : error.reason
     return try message(() => posted === "" ? Message.SucceededPost({ clientId }) : Message.FailedPost({ clientId, reason: posted }))
+  },
+})
+
+/** Learn more: ask the agent for its tour. */
+export const StartTourCommand = Command.define("StartTour", {
+  args: { conversation: Schema.String },
+  messages: [Message.SucceededTour, Message.FailedTour],
+  execute: effect ({ conversation }) => {
+    const factory = try Factory
+    const started = effect {
+      try factory.tour(conversation)
+      return ""
+    } catch (error) => error._tag === "Refused" ? error.refusal : error.reason
+    return try message(() => started === "" ? Message.SucceededTour() : Message.FailedTour({ reason: started }))
+  },
+})
+
+/**
+ * Escape: end the tour. The page already took control back, so a refusal (it had ended) changes nothing; an end that
+ * never reached the agent gives Esc back.
+ */
+export const EndTourCommand = Command.define("EndTour", {
+  args: { conversation: Schema.String },
+  messages: [Message.FocusedPrompt, Message.FailedEndTour],
+  execute: effect ({ conversation }) => {
+    const factory = try Factory
+    const reached = effect {
+      try factory.endTour(conversation)
+      return true
+    } catch (error) => error._tag === "Refused"
+    return try message(() => reached ? Message.FocusedPrompt() : Message.FailedEndTour())
   },
 })
 

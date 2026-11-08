@@ -40,6 +40,14 @@ export function BrowserFactory(origin: string, forceMock: boolean) {
         const { factory } = try ready
         return factory.events(conversation, after)
       }),
+      tour: effect (conversation) => {
+        const { factory } = try ready
+        return try factory.tour(conversation)
+      },
+      endTour: effect (conversation) => {
+        const { factory } = try ready
+        return try factory.endTour(conversation)
+      },
     }
     return Context.make(Factory, factory).pipe(Context.add(AgentBackend, { ready: map(ready, (choice) => choice.mode) }))
   })

@@ -5,11 +5,16 @@
 //   POST /api/conversations/<id>/posts                 PostBody → 200 {} | 409 Refusal
 //   GET  /api/conversations/<id>?after=<seq>           ReadSnapshot
 //   GET  /api/conversations/<id>/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <EventSchema JSON>`
+//   POST   /api/conversations/<id>/tour                starts the agent's tour → 200 {} | 409 Refusal
+//   DELETE /api/conversations/<id>/tour                ends it → 200 {} | 409 Refusal
 import { MAX_TEXT } from "./conversation.vibe"
 import { Seq } from "./schemas.vibe"
 
 export const HEALTH_PATH = "/api/health"
 const CONVERSATIONS = "/api/conversations/"
+
+/** A conversation's tour, below its path. */
+export const TOUR_PATH = "/tour"
 
 /** The most characters a conversation id or a poster's name may hold. */
 export const MAX_CONVERSATION = 128
@@ -44,6 +49,8 @@ export type Route =
   | { readonly kind: "read"; readonly conversation: string }
   | { readonly kind: "post"; readonly conversation: string }
   | { readonly kind: "events"; readonly conversation: string }
+  | { readonly kind: "tour"; readonly conversation: string }
+  | { readonly kind: "end-tour"; readonly conversation: string }
 
 /** The route a path names, or `undefined`. A conversation id is 1 to `MAX_CONVERSATION` characters. */
 export function routeOf(method: string, pathname: string): Route | undefined {
@@ -56,6 +63,8 @@ export function routeOf(method: string, pathname: string): Route | undefined {
   if (rest === undefined && method === "GET") return { kind: "read", conversation: decoded }
   if (rest === "posts" && method === "POST") return { kind: "post", conversation: decoded }
   if (rest === "events" && method === "GET") return { kind: "events", conversation: decoded }
+  if (rest === "tour" && method === "POST") return { kind: "tour", conversation: decoded }
+  if (rest === "tour" && method === "DELETE") return { kind: "end-tour", conversation: decoded }
   return undefined
 }
 

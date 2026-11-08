@@ -63,6 +63,8 @@ for (const earlier of ["skipped", "later"] as const) {
       },
       read: () => succeed({ seq: state.seq, entries: state.entries }),
       events: () => Stream.fromIterable(log),
+      tour: () => die(new Error("Ask never tours")),
+      endTour: () => die(new Error("Ask never tours")),
     })
     const actual = try effect {
       provide layer {

@@ -1,5 +1,5 @@
-// The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads
-// and the event stream, each answered by the conversation's Durable Object. It logs, traces and counts every request
+// The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
+// the event stream and the tour (0014), each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
 import * as Sse from "effect/encoding/Sse"
 import { HttpServerRequest, HttpServerResponse } from "effect/http"
@@ -12,6 +12,10 @@ import type { Unreachable } from "./Unreachable.vibe"
 export interface Conversations {
   post(conversation: string, body: PostBody): (string | null)!Unreachable
   read(conversation: string, after: number): ReadSnapshot!Unreachable
+  /** Starts the agent's tour: `null` once recorded, else the refusal. */
+  tour(conversation: string): (string | null)!Unreachable
+  /** Ends the running tour: `null` once ended, else the refusal. */
+  endTour(conversation: string): (string | null)!Unreachable
   /** The object's event stream, answering the current request. */
   events(conversation: string): HttpServerResponse.HttpServerResponse!Unreachable!HttpServerRequest.HttpServerRequest
 }
@@ -60,6 +64,10 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
     const body = decodePost(text) catch () => undefined
     if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)
     const refusal = try conversations.post(route.conversation, body)
+    return refusal === null ? json({}) : json({ refusal }, 409)
+  }
+  if (route.kind === "tour" || route.kind === "end-tour") {
+    const refusal = try (route.kind === "tour" ? conversations.tour(route.conversation) : conversations.endTour(route.conversation))
     return refusal === null ? json({}) : json({ refusal }, 409)
   }
   const after = afterOf(url)

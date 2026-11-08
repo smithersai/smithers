@@ -2,9 +2,9 @@
 // through Effect's `HttpClient`, so the browser, the CLI and the MCP server share it. The sequencer is the
 // conversation's Durable Object; this layer only carries intents to it and its numbered events back.
 import * as Sse from "effect/encoding/Sse"
-import { HttpClient, HttpClientRequest } from "effect/http"
+import { HttpClient, HttpClientRequest, type HttpClientResponse } from "effect/http"
 import { EventSchema, Factory, ReadSnapshot, Refused, Unavailable, type Mode } from "./Factory.vibe"
-import { conversationPath, Health, HEALTH_PATH, Refusal } from "./wire.vibe"
+import { conversationPath, Health, HEALTH_PATH, Refusal, TOUR_PATH } from "./wire.vibe"
 
 const decodeHealth = Schema.decodeUnknownEffect(Health)
 const decodeSnapshot = Schema.decodeUnknownEffect(ReadSnapshot)
@@ -25,6 +25,16 @@ export effect function health(origin: string) {
   return try Effect.mapError(decodeHealth(body), unavailable("health is not the protocol"))
 }
 
+/** Answers a request that may be refused: 409 carries the sequencer's refusal, any other failure is `Unavailable`. */
+effect function refusable(response: HttpClientResponse.HttpClientResponse, what: string) {
+  if (response.status === 409) {
+    const body = try Effect.mapError(response.json, unavailable("refusal is not JSON"))
+    const refused = try Effect.mapError(decodeRefusal(body), unavailable("refusal is not the protocol"))
+    throw new Refused({ refusal: refused.refusal })
+  }
+  if (response.status < 200 || response.status > 299) throw new Unavailable({ reason: `${what} answered ${response.status}` })
+}
+
 /** The Factory at `origin`, such as `https://vibelang.smithers.sh`. Each call is one request; nothing is cached. */
 export function LiveFactory(origin: string) {
   return Layer.effect(Factory, effect {
@@ -37,12 +47,17 @@ export function LiveFactory(origin: string) {
           HttpClientRequest.bodyJsonUnsafe({ clientId, name, text }),
         )
         const response = try Effect.mapError(client.execute(request), unavailable("post unreachable"))
-        if (response.status === 409) {
-          const body = try Effect.mapError(response.json, unavailable("refusal is not JSON"))
-          const refused = try Effect.mapError(decodeRefusal(body), unavailable("refusal is not the protocol"))
-          throw new Refused({ refusal: refused.refusal })
-        }
-        if (response.status < 200 || response.status > 299) throw new Unavailable({ reason: `post answered ${response.status}` })
+        try refusable(response, "post")
+      },
+      tour: effect (conversation: string) => {
+        const request = HttpClientRequest.post(origin + conversationPath(conversation) + TOUR_PATH)
+        const response = try Effect.mapError(client.execute(request), unavailable("tour unreachable"))
+        try refusable(response, "tour")
+      },
+      endTour: effect (conversation: string) => {
+        const request = HttpClientRequest.delete(origin + conversationPath(conversation) + TOUR_PATH)
+        const response = try Effect.mapError(client.execute(request), unavailable("end tour unreachable"))
+        try refusable(response, "end tour")
       },
       read: effect (conversation: string, after: number) => {
         const url = origin + conversationPath(conversation) + `?after=${after}`

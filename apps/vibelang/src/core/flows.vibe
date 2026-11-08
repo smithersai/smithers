@@ -2,14 +2,18 @@
 // a conversation is a `@smthrs/flow` step. Both backends register these same declarations: the live one on the engine
 // in each conversation's Durable Object (worker/Objects.vibe), the mock one on the engine in memory (MockFactory.vibe).
 //
-//   vibelang/Post    record ──▶ dispatch        a person's post; its caller answers once the flow settles
-//   vibelang/Reply   the agent's answer to one post, started by a Post's dispatch step (worker/Reply.vibe)
+//   vibelang/Post        record ──▶ dispatch     a person's post; its caller answers once the flow settles
+//   vibelang/Reply       the agent's answer to one post, started by a Post's dispatch step (worker/Reply.vibe)
+//   vibelang/StartTour   record ──▶ dispatch     a person's Learn more (wiki/decisions/0014-agent-tour.md)
+//   vibelang/Tour        the agent's tour: it opens docs pages (vibelang/docs/open) and says what each is
+//                        (vibelang/tour/say), raced against the person ending it
+//   vibelang/EndTour     end                     a person's Escape: the tour stops at once
 //
-// The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` service; nothing here
-// decides anything.
+// The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` and `Tours` services;
+// nothing here decides anything.
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
-import { canReplyTo, type Conversation, type Refusal } from "./conversation.vibe"
+import { canReplyTo, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
 /** A post's answer: `null` once the sequencer recorded it, else why it refused. */
@@ -78,4 +82,163 @@ export effect function posted(payload: { readonly clientId: string; readonly nam
 export const postRegistration = Layer.effectDiscard(effect {
   const engine = try FlowRuntime.FlowRuntime
   try engine.register(Post, (payload) => withSpan(posted(payload), "vibelang.post"))
+})
+
+// ── the tour (wiki/decisions/0014-agent-tour.md) ─────────────────────────────────────────────────────────────────
+
+/** VibeLang's docs, the only site the tour's pane shows. */
+export const DOCS_ORIGIN = "https://vibelang.sh"
+
+/** The docs page at `path`, such as `/setup`, or `undefined` when `path` is not a page of the docs site. */
+export function docsPage(path: string): string | undefined {
+  return /^\/[a-z0-9\-\/]*$/.test(path) && !path.includes("//") ? DOCS_ORIGIN + path : undefined
+}
+
+/** One stop of the tour: the docs page the agent opens, and what it says about it there. */
+export interface Stop {
+  readonly path: string
+  readonly topic: string
+}
+
+/** The tour's stops, in order. The live agent's instruction names them; the mock speaks a script for each. */
+export const STOPS: ReadonlyArray<Stop> = [
+  { path: "/", topic: "what VibeLang is: Effect as its own language, in TypeScript syntax" },
+  { path: "/getting-started/002-why-effect", topic: "why Effect: typed errors, services and layers, structured concurrency" },
+  { path: "/vibelang-features/115-cheat-sheet", topic: "the syntax, each form beside the Effect TypeScript it compiles to" },
+  { path: "/setup", topic: "how to start a project" },
+  { path: "/vips", topic: "how the language changes, through VIPs, and this site: VibeLang's open-source coding factory" },
+]
+
+/** The conversation's sequencer, as the tour's steps reach it. */
+export service Tours {
+  /** Runs `decide` and `apply` on a new tour and stores its event: `null` once recorded, else the refusal. */
+  start(): (Refusal | null)!!
+  /** Starts the running tour's `vibelang/Tour` flow, unless it runs. */
+  dispatch(): void!!
+  /** Ends the running tour: `null` once recorded, else the refusal (`not-replying` when none runs). */
+  end(): (Refusal | null)!!
+  /** Shows `url` in the docs pane, while `tour` runs. */
+  open(tour: string, url: string): boolean!!
+  /** Adds `text` to what `tour` said, while it runs. */
+  say(tour: string, text: string): boolean!!
+  /** Settles `tour` as finished, or as failed with `reason` when it isn't `""`. */
+  finish(tour: string, reason: string): void!!
+  /** Completes once `tour` no longer runs: it finished, failed, or the person ended it. */
+  ended(tour: string): void!!
+}
+
+/** Whether `event` stops the tour `tour`: it finished, failed, or the person ended it. */
+export function endsTour(event: Event, tour: string): boolean {
+  return event.id === tour && (event.type === "TourEnded" || event.type === "ReplyFinished" || event.type === "ReplyFailed")
+}
+
+/** The running tour of `conversation`: its id, `""` when none runs. */
+export function touring(conversation: Conversation): string {
+  return conversation.agent === "working" && isTour(conversation.entries, conversation.replying) ? conversation.replying : ""
+}
+
+export const StartTour = Flow.make("vibelang/StartTour", {
+  description: "Starts the agent's tour of VibeLang in its conversation, then makes sure it runs.",
+  modelInvocable: false,
+  payload: {},
+  success: PostAnswer,
+  body: () => Node.succeed(null),
+})
+
+export const Tour = Flow.make("vibelang/Tour", {
+  description: "The VibeLang agent tours VibeLang's docs: it opens each page in the docs pane and says what it is.",
+  modelInvocable: false,
+  payload: { tour: Schema.String },
+  success: Schema.Null,
+  body: () => Node.succeed(null),
+})
+
+export const EndTour = Flow.make("vibelang/EndTour", {
+  description: "Ends the agent's tour at once; the person keeps the conversation and the docs pane.",
+  modelInvocable: false,
+  payload: {},
+  success: PostAnswer,
+  body: () => Node.succeed(null),
+})
+
+/** The agent's tool: open a docs page in the pane. */
+export const OpenDocs = Flow.make("vibelang/docs/open", {
+  description: "Opens a page of VibeLang's docs (vibelang.sh) in the docs pane beside the conversation. `path` is the page's path, such as `/setup`. Answers whether the pane shows it.",
+  modelInvocable: true,
+  payload: { path: Schema.String },
+  success: Schema.Boolean,
+  body: () => Node.succeed(false),
+})
+
+/** The agent's tool: say something in the conversation now, during the tour. */
+export const Say = Flow.make("vibelang/tour/say", {
+  description: "Says `text` in the conversation now, as the next part of the tour. Answers whether the tour still runs.",
+  modelInvocable: true,
+  payload: { text: Schema.String },
+  success: Schema.Boolean,
+  body: () => Node.succeed(false),
+})
+
+/** Tour steps, by step (`start`, `end`, `open`, `say`, `run`) and outcome. */
+export const tourSteps = Metric.counter("vibelang_tour_steps", {
+  description: "Tour steps, by step and outcome",
+  incremental: true,
+})
+
+/** Logs and counts one tour step by its outcome only: never what the agent said or a person's words. */
+effect function counted(step: string, outcome: string) {
+  try Metric.update(Metric.withAttributes(tourSteps, { step, outcome }), 1)
+  try Effect.logInfo(`vibelang.tour.${step}`).pipe(Effect.annotateLogs({ outcome }))
+}
+
+/** StartTour's body: record the tour; once recorded, dispatch it. The answer is the record step's. */
+export effect function startTour() {
+  const tours = try Tours
+  const answer = try Action.make({ name: "vibelang/tour/record", success: PostAnswer, execute: tours.start() })
+  if (answer === null) try Action.make({ name: "vibelang/tour/dispatch", execute: tours.dispatch() })
+  try counted("start", answer ?? "accepted")
+  return answer
+}
+
+/** EndTour's body: end the running tour. */
+export effect function endTour() {
+  const tours = try Tours
+  const answer = try Action.make({ name: "vibelang/tour/end", success: PostAnswer, execute: tours.end() })
+  try counted("end", answer ?? "accepted")
+  return answer
+}
+
+/** `vibelang/docs/open`'s body: shows the docs page at `path` in the pane while `tour` runs. */
+export effect function openDocs(tour: string, path: string) {
+  const tours = try Tours
+  const page = docsPage(path)
+  const opened = page === undefined ? false : try tours.open(tour, page)
+  try counted("open", page === undefined ? "outside-docs" : opened ? "opened" : "ended")
+  return opened
+}
+
+/** `vibelang/tour/say`'s body: adds `text` to what `tour` said while it runs. */
+export effect function say(tour: string, text: string) {
+  const tours = try Tours
+  const said = text === "" ? false : try tours.say(tour, text)
+  try counted("say", text === "" ? "empty" : said ? "said" : "ended")
+  return said
+}
+
+/**
+ * The tour's body: `speak`, the agent, narrates until it is done or the person ends the tour, whichever comes first.
+ * Ending it interrupts the agent where it is; what it said stays.
+ */
+export effect function toured<E, R>(tour: string, speak: void!E!R) {
+  const tours = try Tours
+  const outcome = try.race [Effect.as(speak, "finished"), Effect.as(tours.ended(tour), "ended")]
+  try counted("run", outcome)
+  return null
+}
+
+/** Registers StartTour and EndTour with the engine; their steps reach the sequencer through `Tours`. */
+export const tourRegistration = Layer.effectDiscard(effect {
+  const engine = try FlowRuntime.FlowRuntime
+  try engine.register(StartTour, () => withSpan(startTour(), "vibelang.tour.start"))
+  try engine.register(EndTour, () => withSpan(endTour(), "vibelang.tour.end"))
 })

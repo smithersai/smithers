@@ -1,0 +1,300 @@
+// The agent's tour (wiki/decisions/0014-agent-tour.md). The mock's scripted tour through the `Factory` service, as the
+// web app calls it; then the tour's flows on the engine in memory over the live sequencer (worker/Sequencer.vibe) with
+// an in-memory log, the live speaker's failures by injected services, and the logs, which carry no words.
+import { describe, expect, it } from "@effect/vitest"
+import { WebCrypto } from "@smthrs/crypto"
+import { FlowEngine } from "@smthrs/engine"
+import { FlowRuntime } from "@smthrs/flow"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import {
+  DOCS_ORIGIN, docsPage, EndTour, openDocs, say, StartTour, STOPS, Tour, toured, tourRegistration, Tours,
+} from "../src/core/flows.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { TOUR } from "../src/core/mockReplies.vibe"
+import { toursOf } from "../worker/Objects.vibe"
+import { ChatModel, REASONS, Spend } from "../worker/Reply.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { charged, spoken } from "../worker/Tour.vibe"
+import { started as progressed } from "../worker/Reply.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+
+/** Every event of `conversation` up to and including the first that `last` accepts. */
+effect function until(conversation: string, last: (event: Event) => boolean) {
+  const factory = try Factory
+  return Array.from(try Stream.runCollect(factory.events(conversation, 0) |> Stream.takeUntil(%, last)))
+}
+
+const refusalOf = (error: { readonly _tag: string; readonly refusal?: string; readonly reason?: string }) =>
+  error._tag === "Refused" ? error.refusal : error.reason
+
+describe("the mock's tour, through Factory", () => {
+  it("speaks a script for every stop, in the stops' order", () => {
+    expect(TOUR.map((stop) => stop.path)).toEqual(STOPS.map((stop) => stop.path))
+    for (const stop of STOPS) expect(docsPage(stop.path)).toBe(DOCS_ORIGIN + stop.path)
+  })
+
+  it.live("opens each stop's page, then says its words, and finishes with the pane on the last page", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.tour("c1")
+      const events = try until("c1", (event) => event.type === "ReplyFinished")
+      const conversation = events.reduce(apply, empty)
+      try Effect.try(() => {
+        expect(events.map((event) => event.seq)).toEqual(events.map((_, index) => index + 1))
+        expect(events[0]).toEqual({ type: "TourStarted", seq: 1, id: "t1" })
+        const opened = events.filter((event) => event.type === "PaneOpened")
+        expect(opened.map((event) => event.url)).toEqual(STOPS.map((stop) => DOCS_ORIGIN + stop.path))
+        // Each page opens before the agent talks about it.
+        expect(events[1]!.type).toBe("PaneOpened")
+        expect(conversation.entries).toHaveLength(1)
+        expect(conversation.entries[0]).toMatchObject({ author: "agent", inReplyTo: "", done: true, error: "" })
+        expect(conversation.entries[0]!.text).toBe(TOUR.map((stop) => stop.words).join("\n\n"))
+        expect(conversation.pane).toBe(DOCS_ORIGIN + STOPS.at(-1)!.path)
+        expect(conversation.agent).toBe("idle")
+      })
+    }
+  }, 30_000)
+
+  it.live("ending the tour stops the agent at once; what it said and the pane stay", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.tour("c2")
+      try until("c2", (event) => event.type === "ReplyDelta")
+      try factory.endTour("c2")
+      const events = try until("c2", (event) => event.type === "TourEnded")
+      // Long past the next step: an ended tour's flow has stopped, so nothing follows its end.
+      try sleep("2 seconds")
+      const snapshot = try factory.read("c2", 0)
+      const conversation = events.reduce(apply, empty)
+      try Effect.try(() => {
+        expect(snapshot.seq).toBe(events.at(-1)!.seq)
+        expect(conversation.agent).toBe("idle")
+        expect(conversation.pane).toBe(`${DOCS_ORIGIN}/`)
+        expect(conversation.entries[0]!.done).toBe(true)
+        expect(conversation.entries[0]!.text.length).toBeGreaterThan(0)
+        expect(TOUR[0]!.words.startsWith(conversation.entries[0]!.text)).toBe(true)
+      })
+    }
+  })
+
+  it.live("a second tour waits; a post asked meanwhile is answered once the tour ends; ending none is refused", () => effect {
+    provide MockFactory {
+      const factory = try Factory
+      try factory.tour("c3")
+      const again = factory.tour("c3") catch (error) => refusalOf(error)
+      try factory.post("c3", "a", "Ada", "How do I install it?")
+      try until("c3", (event) => event.type === "ReplyDelta")
+      try factory.endTour("c3")
+      const events = try until("c3", (event) => event.type === "ReplyFinished")
+      const none = factory.endTour("c3") catch (error) => refusalOf(error)
+      const conversation = events.reduce(apply, empty)
+      try Effect.try(() => {
+        expect(again).toBe("busy")
+        expect(none).toBe("not-replying")
+        const ended = events.findIndex((event) => event.type === "TourEnded")
+        const replied = events.findIndex((event) => event.type === "ReplyStarted")
+        expect(ended).toBeGreaterThan(0)
+        expect(replied).toBeGreaterThan(ended)
+        expect(conversation.entries.map((entry) => entry.author)).toEqual(["agent", "person", "agent"])
+        expect(conversation.entries[2]).toMatchObject({ inReplyTo: conversation.entries[1]!.id, done: true })
+      })
+    }
+  })
+})
+
+// ── the flows over the live sequencer ────────────────────────────────────────────────────────────────────────────
+
+interface World {
+  readonly engine: FlowRuntime.FlowRuntime["Service"]
+  readonly sequencer: Sequencer.Sequencer
+  readonly log: Ref.Ref<ReadonlyArray<Event>>
+  readonly dispatched: Ref.Ref<ReadonlyArray<string>>
+  readonly lines: Ref.Ref<ReadonlyArray<string>>
+}
+
+/** The live sequencer over an in-memory log, recording which tours it dispatched, and an engine running the tour's flows. */
+effect function world() {
+  const log = try Ref.make<ReadonlyArray<Event>>([])
+  const dispatched = try Ref.make<ReadonlyArray<string>>([])
+  const lines = try Ref.make<ReadonlyArray<string>>([])
+  const sequencer = try Sequencer.make(
+    { read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) },
+    { start: () => Effect.void, tour: (tour) => Ref.update(dispatched, (all) => [...all, tour]) },
+  )
+  const flows = tourRegistration.pipe(
+    Layer.provideMerge(FlowEngine.layerMemory),
+    Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+    Layer.provide(WebCrypto.layer),
+  )
+  const context = try Layer.build(flows)
+  const world: World = { engine: Context.get(context, FlowRuntime.FlowRuntime), sequencer, log, dispatched, lines }
+  return world
+}
+
+/** Every log line, message and annotations, as one string each. */
+function capture(lines: Ref.Ref<ReadonlyArray<string>>) {
+  return Logger.layer([Logger.make((options) => {
+    Effect.runSync(Ref.update(lines, (all) => [...all, JSON.stringify({ message: options.message, annotations: options.fiber.getRef(References.CurrentLogAnnotations) })]))
+  })])
+}
+
+/** `body` with the world's `Tours`, logging into its lines. */
+function inWorld<A, E>(w: World, body: A!E!Tours) {
+  return Effect.provide(Effect.provideService(body, Tours, toursOf(w.sequencer)), capture(w.lines))
+}
+
+describe("the tour's flows over the live sequencer", () => {
+  it.live("StartTour records the tour, then dispatches its flow; a second is refused and dispatches nothing", () => scoped(effect {
+    const w = try world()
+    const first = try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
+    const second = try w.engine.execute(StartTour, { executionId: "start-tour/2", payload: {} })
+    const log = try Ref.get(w.log)
+    const dispatched = try Ref.get(w.dispatched)
+    try Effect.try(() => {
+      expect([first, second]).toEqual([null, "busy"])
+      expect(log).toEqual([{ type: "TourStarted", seq: 1, id: "t1" }])
+      expect(dispatched).toEqual(["t1"])
+    })
+  }))
+
+  it.live("the tour's body races the speaker against the person ending it: ending interrupts the speaker", () => scoped(effect {
+    const w = try world()
+    try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
+    const interrupted = try Deferred.make<void>()
+    const speaker = effect {
+      try inWorld(w, openDocs("t1", "/setup"))
+      try inWorld(w, say("t1", "Setup."))
+      try never
+    }
+    const tour = fork inWorld(w, toured("t1", Effect.onInterrupt(speaker, () => Deferred.succeed(interrupted, undefined))))
+    try until2(w, (event) => event.type === "ReplyDelta")
+    const ended = try w.engine.execute(EndTour, { executionId: "end-tour/1", payload: {} })
+    const answer = join tour
+    try Deferred.await(interrupted)
+    const conversation = (try Ref.get(w.log)).reduce(apply, empty)
+    const after = try inWorld(w, say("t1", "too late"))
+    try Effect.try(() => {
+      expect(ended).toBe(null)
+      expect(answer).toBe(null)
+      expect(after).toBe(false)
+      expect(conversation).toMatchObject({ agent: "idle", replying: "", pane: `${DOCS_ORIGIN}/setup` })
+      expect(conversation.entries[0]).toMatchObject({ id: "t1", text: "Setup.", done: true })
+    })
+  }))
+
+  it.live("opens only pages of the docs site, and only while the tour runs", () => scoped(effect {
+    const w = try world()
+    const before = try inWorld(w, openDocs("t1", "/setup"))
+    try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
+    const outside = try inWorld(w, openDocs("t1", "//evil.example/x"))
+    const relative = try inWorld(w, openDocs("t1", "setup"))
+    const scheme = try inWorld(w, openDocs("t1", "/x?u=https://evil.example"))
+    const empty = try inWorld(w, say("t1", ""))
+    const opened = try inWorld(w, openDocs("t1", "/setup"))
+    const log = try Ref.get(w.log)
+    try Effect.try(() => {
+      expect([before, outside, relative, scheme, empty, opened]).toEqual([false, false, false, false, false, true])
+      expect(log.map((event) => event.type)).toEqual(["TourStarted", "PaneOpened"])
+    })
+  }))
+
+  it.live("logs and counts each step's outcome, never what the agent said", () => scoped(effect {
+    const w = try world()
+    try inWorld(w, w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} }))
+    try inWorld(w, openDocs("t1", "/"))
+    try inWorld(w, say("t1", "secret words"))
+    try inWorld(w, w.engine.execute(EndTour, { executionId: "end-tour/1", payload: {} }))
+    try inWorld(w, w.engine.execute(EndTour, { executionId: "end-tour/2", payload: {} }))
+    const lines = (try Ref.get(w.lines)).filter((line) => line.includes("vibelang.tour."))
+    try Effect.try(() => {
+      expect(lines.map((line) => [JSON.parse(line).message[0], JSON.parse(line).annotations.outcome])).toEqual([
+        ["vibelang.tour.start", "accepted"],
+        ["vibelang.tour.open", "opened"],
+        ["vibelang.tour.say", "said"],
+        ["vibelang.tour.end", "accepted"],
+        ["vibelang.tour.end", "not-replying"],
+      ])
+      for (const line of lines) expect(line).not.toContain("secret")
+    })
+  }))
+})
+
+/** The world's events until the first that `last` accepts. */
+effect function until2(w: World, last: (event: Event) => boolean) {
+  return try Stream.runDrain(w.sequencer.follow(0) |> Stream.takeUntil(%, last))
+}
+
+describe("the live tour's speaker, with its faults injected", () => {
+  const admitted: Spend.Shape = { admit: () => Effect.succeed(true), spend: () => Effect.void }
+
+  for (const [name, spend, model, reason] of [
+    ["the day's budget is spent", { admit: () => Effect.succeed(false), spend: () => Effect.void }, { model: undefined, unusable: "unset" }, REASONS.budget],
+    ["no model is configured", admitted, { model: undefined, unusable: "unset" }, REASONS.unconfigured],
+  ] as const) {
+    it.live(`fails the tour, saying why, when ${name}`, () => scoped(effect {
+      const w = try world()
+      try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
+      const flows = Layer.effectDiscard(effect {
+        const engine = try FlowRuntime.FlowRuntime
+        try engine.register(Tour, (payload) => Effect.orDie(toured(payload.tour, spoken(payload.tour))))
+      }).pipe(
+        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provide(Layer.mergeAll(
+          Layer.succeed(Tours, toursOf(w.sequencer)),
+          Layer.succeed(Spend, spend),
+          Layer.succeed(ChatModel, model),
+        )),
+        Layer.provide(WebCrypto.layer),
+      )
+      const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+      try engine.execute(Tour, { executionId: "tour/t1", payload: { tour: "t1" } })
+      const conversation = (try Ref.get(w.log)).reduce(apply, empty)
+      try Effect.try(() => {
+        expect(conversation.agent).toBe("failed")
+        expect(conversation.entries[0]).toMatchObject({ id: "t1", done: true, error: reason })
+      })
+    }))
+  }
+
+  it.live("an unreachable budget fails nothing yet: the admission step waits for it", () => scoped(effect {
+    const w = try world()
+    try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
+    const unreachable: Spend.Shape = { admit: () => Effect.fail(new Unreachable({ what: "budget" })), spend: () => Effect.void }
+    const flows = Layer.effectDiscard(effect {
+      const engine = try FlowRuntime.FlowRuntime
+      try engine.register(Tour, (payload) => Effect.orDie(toured(payload.tour, spoken(payload.tour))))
+    }).pipe(
+      Layer.provideMerge(FlowEngine.layerMemory),
+      Layer.provide(Layer.mergeAll(
+        Layer.succeed(Tours, toursOf(w.sequencer)),
+        Layer.succeed(Spend, unreachable),
+        Layer.succeed(ChatModel, { model: undefined, unusable: "unset" }),
+      )),
+      Layer.provide(WebCrypto.layer),
+    )
+    const engine = Context.get(try Layer.build(flows), FlowRuntime.FlowRuntime)
+    const running = fork engine.execute(Tour, { executionId: "tour/t1", payload: { tour: "t1" } })
+    try sleep("300 millis")
+    // The person ends the tour while it waits: the race ends the flow, and the tour's text and pane stay.
+    const ended = try w.engine.execute(EndTour, { executionId: "end-tour/1", payload: {} })
+    try (join running)
+    const conversation = (try Ref.get(w.log)).reduce(apply, empty)
+    try Effect.try(() => {
+      expect(ended).toBe(null)
+      expect(conversation.agent).toBe("idle")
+      expect(conversation.entries[0]).toMatchObject({ id: "t1", done: true, error: "" })
+    })
+  }))
+
+  it.live("records what an ended tour's agent spent, though the end interrupts it before its spend step", () => scoped(effect {
+    const spent = try Ref.make<ReadonlyArray<[string, string, number]>>([])
+    const spend: Spend.Shape = { admit: () => Effect.succeed(true), spend: (day, tour, tokens) => Ref.update(spent, (all): ReadonlyArray<[string, string, number]> => [...all, [day, tour, tokens]]) }
+    const progress = try Ref.make({ ...progressed, tokens: 1234 })
+    const running = fork charged(never, spend, "2026-11-07", "t1", progress)
+    try sleep("50 millis")
+    try Fiber.interrupt(running)
+    const recorded = try Ref.get(spent)
+    try Effect.try(() => expect(recorded).toEqual([["2026-11-07", "t1", 1234]]))
+  }))
+})

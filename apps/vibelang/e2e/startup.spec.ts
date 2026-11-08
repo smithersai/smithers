@@ -21,7 +21,8 @@ for (const input of ["Command K", "Tab"] as const) {
     if (input === "Command K") {
       await page.keyboard.press("ControlOrMeta+k")
     } else {
-      for (let i = 0; i < 4; i++) await page.keyboard.press("Tab")
+      // Home, Docs, GitHub, Learn more, then Ask the agent.
+      for (let i = 0; i < 5; i++) await page.keyboard.press("Tab")
       await expect(page.getByRole("button", { name: "Ask the agent" })).toBeFocused()
       await page.keyboard.press("Enter")
     }

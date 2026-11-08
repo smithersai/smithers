@@ -1,15 +1,19 @@
 // The factory with no backend and no model (wiki/decisions/0004-mock-mode.md). It runs the live factory's flows
 // (flows.vibe, 0011) on `@smthrs/engine`'s engine in memory, one engine per conversation as the live one has one per
 // conversation object: a post is a `vibelang/Post` execution whose steps record it and dispatch its reply, and each
-// reply is a `vibelang/Reply` execution, the scripted agent's (mockReplies.vibe), started oldest post first.
+// reply is a `vibelang/Reply` execution, the scripted agent's (mockReplies.vibe), started oldest post first. A tour is
+// a `vibelang/Tour` execution whose scripted agent opens the same stops and says the script's words (0014).
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
 import { Digest } from "effect/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
-import { apply, decide, empty, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
+import { apply, decide, empty, isTouring, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
-import { Post, postRegistration, Posts, Reply, replyIdOf, unanswered } from "./flows.vibe"
-import { chunks, mockReply } from "./mockReplies.vibe"
+import {
+  EndTour, endsTour, openDocs, Post, postRegistration, Posts, Reply, replyIdOf, say, StartTour, Tour, toured, touring, tourRegistration,
+  Tours, unanswered,
+} from "./flows.vibe"
+import { chunks, mockReply, TOUR } from "./mockReplies.vibe"
 
 /** One conversation's sequencer state and every event it numbered. */
 interface State {
@@ -31,6 +35,27 @@ interface Published {
 
 /** How long the scripted agent waits between the pieces of its reply. */
 export const MOCK_DELTA_DELAY = "25 millis"
+
+/** How long the scripted agent stays on a docs page after it said what the page is. */
+export const MOCK_STOP_DELAY = "1500 millis"
+
+/** The scripted agent's tour, `vibelang/Tour`'s mock speaker: each stop opens its page, then says its words. */
+effect function scriptedTour(tour: string) {
+  const tours = try Tours
+  for (let stop = 0; stop < TOUR.length; stop++) {
+    const { path, words } = TOUR[stop]!
+    const opened = try Action.make({ name: `vibelang/tour/open/${stop}`, success: Schema.Boolean, execute: openDocs(tour, path) })
+    if (!opened) return
+    const pieces = chunks(stop === 0 ? words : `\n\n${words}`)
+    for (let piece = 0; piece < pieces.length; piece++) {
+      try sleep(MOCK_DELTA_DELAY)
+      const said = try Action.make({ name: `vibelang/tour/say/${stop}/${piece}`, success: Schema.Boolean, execute: say(tour, pieces[piece]!) })
+      if (!said) return
+    }
+    try sleep(MOCK_STOP_DELAY)
+  }
+  try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
+}
 
 /** The scripted agent's reply to `post`, `vibelang/Reply`'s mock body: every record is a step. */
 effect function scripted(state: Ref.Ref<State>, record: (intent: Intent) => Decision!!, post: string) {
@@ -88,12 +113,21 @@ export const MockFactory = Layer.effect(Factory, effect {
     }))
   }
 
-  /** Answers every unanswered post, oldest first, each in its own `vibelang/Reply` execution, at most once. */
+  /**
+   * Runs the conversation's tour in its own `vibelang/Tour` execution, then answers every unanswered post, oldest
+   * first, each in its own `vibelang/Reply` execution; each at most once.
+   */
   effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>) {
     const dispatched = new Set<string>()
     while (true) {
       try Queue.take(wake)
       while (true) {
+        const tour = touring((try Ref.get(state)).conversation)
+        if (tour !== "" && !dispatched.has(`tour/${tour}`)) {
+          dispatched.add(`tour/${tour}`)
+          try Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } }))
+          continue
+        }
         const post = unanswered((try Ref.get(state)).conversation).find((id) => !dispatched.has(id))
         if (post === undefined) break
         dispatched.add(post)
@@ -120,13 +154,43 @@ export const MockFactory = Layer.effect(Factory, effect {
         },
         dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
       }
+      const accepted = (intent: Intent) => Effect.map(record(intent), (decision) => decision.ok)
+      const tours: Tours.Shape = {
+        start: effect () => {
+          const decision = try record({ type: "StartTour", id: try nextId("t") })
+          return decision.ok ? null : decision.refusal
+        },
+        dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
+        end: effect () => {
+          const decision = try record({ type: "EndTour", id: touring((try Ref.get(state)).conversation) })
+          return decision.ok ? null : decision.refusal
+        },
+        open: (tour: string, url: string) => accepted({ type: "OpenPane", id: tour, url }),
+        say: (tour: string, text: string) => accepted({ type: "AppendReply", id: tour, text }),
+        finish: (tour: string, reason: string) =>
+          Effect.asVoid(record(reason === "" ? { type: "FinishReply", id: tour } : { type: "FailReply", id: tour, reason })),
+        // Subscribe before reading the state, so the event that ends the tour can't fall between.
+        ended: (tour: string) => scoped(effect {
+          const live = try PubSub.subscribe(published)
+          if (!isTouring((try Ref.get(state)).conversation, tour)) return
+          try Stream.runDrain(Stream.fromSubscription(live).pipe(
+            Stream.takeUntil((item) => item.conversation === conversation && endsTour(item.event, tour)),
+          ))
+        }),
+      }
       const flows = Layer.mergeAll(
         postRegistration,
+        tourRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
           try engine.register(Reply, (payload) => scripted(state, record, payload.post))
+          try engine.register(Tour, (payload) => withSpan(toured(payload.tour, scriptedTour(payload.tour)), "vibelang.tour"))
         }),
-      ).pipe(Layer.provideMerge(FlowEngine.layerMemory), Layer.provide(Layer.succeed(Posts, posts)), Layer.provide(Layer.succeed(Digest.Digest, digest)))
+      ).pipe(
+        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provide(Layer.mergeAll(Layer.succeed(Posts, posts), Layer.succeed(Tours, tours))),
+        Layer.provide(Layer.succeed(Digest.Digest, digest)),
+      )
       const engine = Context.get(try Layer.buildWithScope(flows, scope), FlowRuntime.FlowRuntime)
       const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
@@ -144,6 +208,18 @@ export const MockFactory = Layer.effect(Factory, effect {
       const room = try openRoom(conversation)
       const executionId = `post/${try Ref.updateAndGet(executions, (value) => value + 1)}`
       const refusal = try Effect.orDie(room.engine.execute(Post, { executionId, payload: { clientId, name, text } }))
+      if (refusal !== null) throw new Refused({ refusal })
+    },
+    tour: effect (conversation: string) => {
+      const room = try openRoom(conversation)
+      const executionId = `start-tour/${try Ref.updateAndGet(executions, (value) => value + 1)}`
+      const refusal = try Effect.orDie(room.engine.execute(StartTour, { executionId, payload: {} }))
+      if (refusal !== null) throw new Refused({ refusal })
+    },
+    endTour: effect (conversation: string) => {
+      const room = try openRoom(conversation)
+      const executionId = `end-tour/${try Ref.updateAndGet(executions, (value) => value + 1)}`
+      const refusal = try Effect.orDie(room.engine.execute(EndTour, { executionId, payload: {} }))
       if (refusal !== null) throw new Refused({ refusal })
     },
     read: effect (conversation: string, after: number) => {

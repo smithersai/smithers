@@ -46,7 +46,11 @@ button { font: inherit; }
 .vl-gradient { background: var(--vl-gradient); -webkit-background-clip: text; background-clip: text; color: transparent; }
 .vl-tagline { max-width: 34ch; margin: 22px 0 0; color: var(--text-muted); font-size: 19px; line-height: 1.5; }
 .vl-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 32px; }
-.vl-ask { display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--brand-border, var(--brand)); border-radius: var(--r-2, 10px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 15px; font-weight: 650; cursor: pointer; transition: background .15s ease, box-shadow .15s ease; }
+.vl-primary { display: inline-flex; align-items: center; min-height: 44px; padding: 0 20px; border: 1px solid var(--brand); border-radius: var(--r-2, 10px); background: var(--brand); color: var(--inverse-text, #fff); font-size: 15px; font-weight: 650; cursor: pointer; transition: filter .15s ease, box-shadow .15s ease; }
+.vl-primary:hover { filter: brightness(1.12); }
+.vl-primary:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+/* The secondary actions: Ask the agent and Contribute. */
+.vl-ask { text-decoration: none; display: inline-flex; align-items: center; min-height: 44px; padding: 0 18px; border: 1px solid var(--brand-border, var(--brand)); border-radius: var(--r-2, 10px); background: var(--brand-soft, transparent); color: var(--brand); font-size: 15px; font-weight: 650; cursor: pointer; transition: background .15s ease, box-shadow .15s ease; }
 .vl-ask:hover { background: var(--brand-soft-strong, var(--hover)); }
 .vl-ask:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
 .vl-install { display: inline-block; margin: 24px 0 0; padding: 10px 14px; border: 1px solid var(--border); border-radius: var(--r-2, 10px); background: var(--code-bg, var(--surface-2)); color: var(--code-text, var(--text)); font-family: var(--font-mono, ui-monospace, monospace); font-size: 14px; }
@@ -106,3 +110,28 @@ html { overflow-anchor: none; }
 .vl-latest { position: fixed; bottom: 150px; z-index: 31; }
 
 .vl-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; border: 0; }
+
+/* ── the agent in control: a glow around the whole screen, and Esc (wiki/decisions/0014-agent-tour.md) ─────────── */
+.vl-glow { position: fixed; inset: 0; z-index: 55; pointer-events: none; box-shadow: inset 0 0 0 2px var(--vl-violet), inset 0 0 56px 8px color-mix(in srgb, var(--vl-violet) 50%, transparent), inset 0 0 120px 24px color-mix(in srgb, var(--vl-magenta) 22%, transparent); animation: vl-glow 2.2s ease-in-out infinite alternate; }
+@keyframes vl-glow { from { opacity: .55; } to { opacity: 1; } }
+.vl-esc { position: fixed; top: 14px; left: 50%; z-index: 60; transform: translateX(-50%); display: inline-flex; align-items: center; padding: 4px 12px; border: 1px solid var(--vl-violet); border-radius: var(--r-full, 999px); background: var(--surface); color: var(--text); font-family: var(--font-mono, ui-monospace, monospace); font-size: 12px; font-weight: 650; cursor: pointer; box-shadow: 0 0 18px color-mix(in srgb, var(--vl-violet) 45%, transparent); }
+.vl-esc:hover { background: var(--surface-2); }
+.vl-esc:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-esc kbd { font: inherit; }
+/* Narrow screens have no room between the logo and the nav: Esc sits just below the top bar. */
+@media (max-width: 600px) { .vl-esc { top: 64px; } }
+
+/* ── the docs pane: in the conversation, maximized over it ──────────────────────────────────────────────────── */
+.vl-docs { display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--border); border-radius: var(--r-bubble, 18px); background: var(--surface); }
+.vl-docs-bar { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 6px 8px 6px 16px; border-bottom: 1px solid var(--border); color: var(--text-muted); font-size: 13px; }
+.vl-docs-page { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.vl-docs-toggle { display: inline-grid; place-items: center; width: 30px; height: 30px; padding: 0; border: 1px solid var(--border); border-radius: var(--r-1, 6px); background: transparent; color: var(--text-muted); cursor: pointer; }
+.vl-docs-toggle:hover { color: var(--text); border-color: var(--border-strong, var(--brand)); }
+.vl-docs-toggle:focus-visible { outline: 0; box-shadow: 0 0 0 3px var(--ring, var(--brand)); }
+.vl-docs-frame { display: block; width: 100%; height: min(56vh, 540px); border: 0; background: var(--bg); }
+.vl-docs[data-maximized="true"] { position: fixed; inset: 60px 0 0; z-index: 45; border-radius: 0; border-width: 1px 0 0; }
+.vl-docs[data-maximized="true"] .vl-docs-frame { flex: 1; height: auto; }
+
+@media (prefers-reduced-motion: reduce) {
+  .vl-glow { animation: none !important; opacity: 1; }
+}
