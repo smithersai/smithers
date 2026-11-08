@@ -27,15 +27,16 @@ const home: Model = {
 }
 
 describe("the splash", () => {
-  it("is VibeLang's home page with one action and routes to the docs and the source", () => {
+  it("is VibeLang's home page with one action and routes to the docs and GitHub", () => {
     scene(
       { update, view },
       given(home),
       expect(role("heading", { name: "VibeLang" })).toExist(),
       expect(role("button", { name: "Ask the agent" })).toExist(),
       expect(role("link", { name: "Docs" })).toExist(),
-      expect(role("link", { name: "Source" })).toExist(),
+      expect(role("link", { name: "GitHub" })).toExist(),
       expect(text("Mock")).toExist(),
+      expect(role("button", { name: "Minimize the VibeLang home page" })).toBeAbsent(),
     )
   })
 
@@ -172,14 +173,41 @@ describe("the chat", () => {
     )
   })
 
-  it("the pane maximizes the splash again, and Chat returns to the conversation", () => {
+  it("the pane maximizes the splash again, and its minimize button returns to the conversation", () => {
     scene(
       { update, view },
       given({ ...chatting, client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
       click(role("button", { name: "Expand the VibeLang home page" })),
       expect(role("heading", { name: "VibeLang" })).toExist(),
-      click(role("button", { name: "Chat" })),
+      expect(role("button", { name: "Chat" })).toBeAbsent(),
+      click(role("button", { name: "Minimize the VibeLang home page" })),
+      Command.expectExact(FocusComposer({})),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
       expect(text("hi")).toExist(),
+    )
+  })
+
+  it("Escape minimizes the maximized splash, and does nothing more in the chat", () => {
+    scene(
+      { update, view },
+      given({ ...chatting, surface: "splash", client: { ...newClient, pending: [{ clientId: "s1-1", text: "hi", error: "" }] } }),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectExact(FocusComposer({})),
+      Command.resolve(FocusComposer, Message.FocusedPrompt()),
+      expect(text("hi")).toExist(),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectNone(),
+      expect(text("hi")).toExist(),
+    )
+  })
+
+  it("Escape keeps the splash when there is no conversation to return to", () => {
+    scene(
+      { update, view },
+      given(home),
+      Subscription.emit(Message.PressedEscape()),
+      Command.expectNone(),
+      expect(role("heading", { name: "VibeLang" })).toExist(),
     )
   })
 })

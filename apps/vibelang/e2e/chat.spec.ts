@@ -44,8 +44,16 @@ test.describe("splash and chat", () => {
 
     await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
     await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
-    await page.getByRole("button", { name: "Chat" }).click()
+    await page.getByRole("button", { name: "Minimize the VibeLang home page" }).click()
     await expect(answer).toContainText("npm create vibelang@latest my-app")
+    await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
+
+    // Escape minimizes the maximized home page too (Will, 2026-11-07: "there is no way to minimize the full screen view").
+    await page.getByRole("button", { name: "Expand the VibeLang home page" }).click()
+    await expect(page.getByRole("heading", { name: "VibeLang" })).toBeVisible()
+    await page.keyboard.press("Escape")
+    await expect(answer).toContainText("npm create vibelang@latest my-app")
+    await expect(page.getByRole("textbox", { name: "Message" })).toBeFocused()
   })
 
   test("the docked composer sends a follow-up, and Shift+Enter makes a new line", async ({ page }) => {

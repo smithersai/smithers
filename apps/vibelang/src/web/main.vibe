@@ -109,9 +109,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
   return Message.match<Update.Return<Model, Message, Factory>>(message, {
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
-    PressedEscape: () => model.palette ? openPalette(model, false) : { model },
+    PressedEscape: () => model.palette ? openPalette(model, false) : minimizeSplash(model),
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
-    ClickedChat: () => hasConversation(model) ? { model: { ...model, surface: "chat" } } : { model },
+    ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
     SubmittedDraft: () => submit(model),
     SucceededPost: () => ({ model }),
@@ -159,6 +159,12 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
 
 function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
   return { model: { ...model, palette: open }, commands: [open ? ShowPalette({}) : ClosePalette({ dock: false })] }
+}
+
+/** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
+function minimizeSplash(model: Model): Update.Return<Model, Message, Factory> {
+  if (model.surface !== "splash" || !hasConversation(model)) return { model }
+  return { model: { ...model, surface: "chat" }, commands: [FocusComposer({})] }
 }
 
 /** Whether there is a conversation to go back to. */
@@ -215,6 +221,8 @@ export const FocusComposer = Command.define("FocusComposer", {
   args: {},
   messages: [Message.FocusedPrompt],
   execute: effect () => {
+    // After the render: minimizing the splash creates the composer this focuses.
+    try Render.afterCommit
     Dom.focus(`#${PROMPT_ID}`, { preventScroll: true }) catch () => undefined
     return try message(() => Message.FocusedPrompt())
   },

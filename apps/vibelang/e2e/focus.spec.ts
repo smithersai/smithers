@@ -44,7 +44,7 @@ test("6: Escape returns to the actual keyboard opener on the splash", async ({ p
   await input(page).press("Escape")
   await expect(ask).toBeFocused()
   await page.keyboard.press("Shift+Tab")
-  const source = page.getByRole("link", { name: "Source" })
+  const source = page.getByRole("link", { name: "GitHub" })
   await expect(source).toBeFocused()
   await open(page)
   await input(page).press("Escape")
