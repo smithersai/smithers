@@ -1,0 +1,194 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { HttpServer, HttpServerRequest, HttpServerResponse, FetchHttpClient, HttpClient, HttpClientRequest } from "effect/http"
+import { Factory } from "../src/core/Factory.vibe"
+import { LiveFactory } from "../src/core/LiveFactory.vibe"
+import { LiveMythical } from "../src/history/LiveMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { seeded } from "../src/history/MockMythical.vibe"
+import { outlineOf, epicPageOf, commitPageOf, matchesOf } from "../src/history/pages.vibe"
+import { DOCS_ORIGIN, STOPS } from "../src/core/flows.vibe"
+import { apply, empty, type Event } from "../src/core/conversation.vibe"
+import { serveApi, room } from "../test/support/workerd.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+/** A real local deterministic model endpoint. It exercises the HTTP adapter, agent and QuickJS, without inference. */
+effect function modelService() {
+  const server = try HttpServer.HttpServer
+  try server.serve(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const body = try request.text
+    const tour = body.includes("Give the tour now.")
+    const fence = "`".repeat(3)
+    const cell = tour
+      ? `${fence}cell\nctx.done({stops:["Deterministic tour 1.","Deterministic tour 2.","Deterministic tour 3.","Deterministic tour 4.","Deterministic tour 5."]});\n${fence}`
+      : `${fence}cell\nctx.done("Deterministic answer.");\n${fence}`
+    return HttpServerResponse.text([
+      `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: { role: "assistant", content: cell }, finish_reason: null }] })}\n\n`,
+      `data: ${JSON.stringify({ id: "bench", object: "chat.completion.chunk", choices: [{ index: 0, delta: {}, finish_reason: "stop" }], usage: { prompt_tokens: 1, completion_tokens: 1, total_tokens: 2 } })}\n\n`,
+      "data: [DONE]\n\n",
+    ].join(""), { contentType: "text/event-stream" })
+  })
+  return HttpServer.formatAddress(server.address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+}
+
+effect function settled(factory: Factory.Shape, conversation: string) {
+  return Array.from(try Stream.runCollect(factory.events(conversation, 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished" || event.type === "ReplyFailed" || event.type === "TourEnded"))))
+}
+
+effect function historyRefusals(mythical: Mythical.Shape) {
+  const refusals = [
+    mythical.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "Measured", task: "" }) catch (error) => error._tag === "Refused" ? error.refusal : error._tag,
+    mythical.start("m1", "bench") catch (error) => error._tag === "Refused" ? error.refusal : error._tag,
+    mythical.note("m1", "evidence", "Measured") catch (error) => error._tag === "Refused" ? error.refusal : error._tag,
+    mythical.approve("m1") catch (error) => error._tag === "Refused" ? error.refusal : error._tag,
+    mythical.fold() catch (error) => error._tag === "Refused" ? error.refusal : error._tag,
+  ]
+  return { refusals, after: try mythical.outline() }
+}
+
+effect function historyProtocol(client: HttpClient.HttpClient, origin: string) {
+  const statuses = []
+  for (const [path, body] of [
+    ["/merge", "{}"], ["/plan", "{"],
+    ["/note", JSON.stringify({ id: "m1", section: "lies", text: "x" })],
+    ["/events?after=-1", ""], ["/plan", "x".repeat(40000)],
+  ] as const) {
+    const url = `${origin}/api/history${path}`
+    const request = body === "" ? HttpClientRequest.get(url) : HttpClientRequest.post(url).pipe(HttpClientRequest.bodyText(body, "application/json"))
+    statuses.push((try client.execute(request)).status)
+  }
+  return statuses
+}
+
+it("workerd sequencer, post, reply and tour flows", async ({ bench }) => {
+  await runPromise(scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const model = try modelService()
+      const api = try acquireRelease(serveApi({
+        CHAT_MODEL: JSON.stringify({ protocol: "openai-chat", baseUrl: model, modelId: "deterministic", credential: "BENCH" }),
+        SMITHERS_MODEL_KEY_BENCH: "benchmark-only", SMITHERS_MODEL_KEY_BENCH_ORIGIN: model,
+      }), (api) => promise(api.dispose))
+      provide LiveMythical(api.origin).pipe(Layer.provideMerge(FetchHttpClient.layer)) {
+        const mythical = try Mythical
+        const client = try HttpClient.HttpClient
+        const seed = try seeded()
+        const expected = outlineOf(seed)
+        const historyResults = []
+        const cold = try Effect.try(() => workload(bench, "history-first-outline", async () => {
+          expect(await runPromise(mythical.outline())).toEqual(expected)
+        }))
+        historyResults.push(try tryPromise(() => cold.run({ time: 0, warmup: false, iterations: 1 })))
+        const warm = try Effect.try(() => workload(bench, "history-warm-outline", async () => {
+          expect(await runPromise(mythical.outline())).toEqual(expected)
+        }))
+        historyResults.push(try tryPromise(() => warm.run(slow)))
+        const pages = try Effect.try(() => workload(bench, "history-detail-pages", async () => {
+          const epic = seed.epics[0]!.id, commit = seed.commits[0]!.id
+          expect(await runPromise(mythical.epic(epic, 0))).toEqual(epicPageOf(seed, epic, 0))
+          expect(await runPromise(mythical.epic(epic, 50))).toEqual(epicPageOf(seed, epic, 50))
+          expect(await runPromise(mythical.commit(commit))).toEqual(commitPageOf(seed, commit))
+          expect(await runPromise(mythical.search("compiler"))).toEqual(matchesOf(seed, "compiler"))
+        }))
+        historyResults.push(try tryPromise(() => pages.run(slow)))
+        const refusal = try Effect.try(() => workload(bench, "history-viewer-refusals", async () => {
+          const result = await runPromise(historyRefusals(mythical))
+          expect(result.refusals).toEqual(Array(5).fill("forbidden"))
+          expect(result.after).toEqual(expected)
+        }))
+        historyResults.push(try tryPromise(() => refusal.run(slow)))
+        const protocol = try Effect.try(() => workload(bench, "history-protocol-errors", async () => {
+          const statuses = await runPromise(historyProtocol(client, api.origin))
+          expect(statuses).toEqual([404, 400, 400, 400, 413])
+        }))
+        historyResults.push(try tryPromise(() => protocol.run(slow)))
+        let ordinal = 0
+        const replay = try Effect.try(() => workload(bench, "history-keyed-call-replay", async () => {
+          const title = `fix(compiler): ${await runPromise(room("bench-history-replay"))}`
+          const before = await runPromise(mythical.outline())
+          const current = ordinal
+          ordinal += 2
+          const request = (call: number) => HttpClientRequest.post(`${api.origin}/history-tool/bench-keyed`).pipe(HttpClientRequest.bodyJsonUnsafe({ tool: "bound", input: { how: "append", epic: "e1", newEpic: "", target: "", title, task: "Bench task" }, ordinal: call }))
+          const first = await runPromise(client.execute(request(current)))
+          expect(first.status).toBe(200)
+          const answerSchema = Schema.Struct({ outcome: Schema.Literals(["success"]), value: Schema.Struct({ id: Schema.String, refusal: Schema.Null }) })
+          const rawAnswer = await runPromise(first.json)
+          const answer = Schema.decodeUnknownSync(answerSchema)(rawAnswer)
+          expect(rawAnswer).toEqual(answer)
+          expect(answer).toMatchObject({ outcome: "success", value: { id: expect.stringMatching(/^m\d+$/), refusal: null } })
+          const repeated = await runPromise(client.execute(request(current)))
+          expect(repeated.status).toBe(200)
+          expect(await runPromise(repeated.json)).toEqual(answer)
+          const once = await runPromise(mythical.search(title))
+          expect(once.commits.map((commit) => commit.title)).toEqual([title])
+          expect(once.commits.map((commit) => commit.id)).toEqual([answer.value.id])
+          expect((await runPromise(mythical.outline())).seq).toBe(before.seq + 1)
+          const next = await runPromise(client.execute(request(current + 1)))
+          expect(next.status).toBe(200)
+          const rawNext = await runPromise(next.json)
+          const nextAnswer = Schema.decodeUnknownSync(answerSchema)(rawNext)
+          expect(rawNext).toEqual(nextAnswer)
+          expect(nextAnswer).toMatchObject({ outcome: "success", value: { id: expect.stringMatching(/^m\d+$/), refusal: null } })
+          expect(nextAnswer).not.toEqual(answer)
+          const twice = await runPromise(mythical.search(title))
+          expect(twice.commits.map((commit) => commit.title)).toEqual([title, title])
+          expect(new Set(twice.commits.map((commit) => commit.id))).toEqual(new Set([answer.value.id, nextAnswer.value.id]))
+          expect(nextAnswer.value.id).not.toBe(answer.value.id)
+          expect((await runPromise(mythical.outline())).seq).toBe(before.seq + 2)
+        }))
+        historyResults.push(try tryPromise(() => replay.run(slow)))
+        try artifact("history-workerd", "Vitest built-in bench; actual History Durable Object with full committed bootstrap, real SQLite durable flows and LiveMythical HTTP. First read measured once on a fresh object; warm outlines, first/second epic pages, commit detail, bounded search, five viewer refusals plus unchanged outline, and protocol errors measured three times. A keyed Plan binding runs twice with the same real cell identity and once with a new ordinal; exact cached response, one/two matching commits and cursor increments asserted across real SQLite flows. Server/bundler startup excluded; schema/assertions included.", ["Local workerd, no production network or model. First read is object bootstrap, not a forced cold isolate. Anonymous callers are viewers on this revision, so public writes remain forbidden; the separate keyed replay uses the test host’s trusted maintainer agent and actual production reader/binding/SQLite write path. No sign-in or GitHub write is claimed."], historyResults)
+      }
+      provide LiveFactory(api.origin).pipe(Layer.provide(FetchHttpClient.layer)) {
+        const factory = try Factory
+        const results = []
+        const sandboxBoundary = try Effect.try(() => workload(bench, "workerd-sandbox-viewer", async () => {
+          const before = await runPromise(factory.sandbox("bench-viewer"))
+          expect(before).toMatchObject({ id: "", generation: 0, sequence: 0, role: "viewer", status: "stopped", allowance: 0, used: 0, remaining: 0, output: "" })
+          expect(Number.isFinite(before.resetAt)).toBe(true)
+          for (const request of [
+            Effect.asVoid(factory.startSandbox("bench-viewer", "bench-start")),
+            Effect.asVoid(factory.stopSandbox("bench-viewer", "bench-stop", 1)),
+            Effect.asVoid(factory.sandboxCommand("bench-viewer", "bench-command", "pwd", 1)),
+          ]) {
+            const outcome = await runPromise(Effect.match(request, {
+              onSuccess: () => ({ tag: "accepted", reason: "" }),
+              onFailure: (error) => ({ tag: error._tag, reason: error._tag === "Refused" ? error.refusal : error.reason }),
+            }))
+            expect(outcome).toEqual({ tag: "Refused", reason: "forbidden" })
+          }
+          const after = await runPromise(factory.sandbox("bench-viewer"))
+          expect({ ...after, resetAt: before.resetAt }).toEqual(before)
+          expect(after.resetAt).toBeGreaterThanOrEqual(before.resetAt)
+        }))
+        const sandboxResult = try tryPromise(() => sandboxBoundary.run(slow))
+        try artifact("sandbox-public-workerd", "Vitest built-in bench; actual local workerd public sandbox router through LiveFactory: viewer snapshot, Start/Stop/Command forbidden, then unchanged empty state; exact typed refusals and all snapshot fields checked. Three serial five-request samples; bundling/server startup excluded.", ["Signed-out deployment boundary only, no trusted compute identity, Container or SQLite lifecycle. The separate sandbox SQLite benchmark is deferred by the nested-Effect compiler reproduction; this case does not substitute for it."], sandboxResult)
+        const runPost = async () => {
+          const conversation = await runPromise(room("bench-post"))
+          await runPromise(factory.post(conversation, "a", "Bench", "Reply briefly."))
+          const events = await runPromise(settled(factory, conversation))
+          const state = events.reduce(apply, empty)
+          expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
+          expect(state.entries[0]?.text).toBe("Reply briefly.")
+          expect(state.entries[1]).toMatchObject({ text: "Deterministic answer.", done: true, error: "", inReplyTo: "m1" })
+          expect(await runPromise(factory.read(conversation, 0))).toEqual({ seq: state.seq, entries: state.entries })
+        }
+        const postBench = try Effect.try(() => workload(bench, "workerd-post-reply-read", runPost))
+        results.push(try tryPromise(() => postBench.run(slow)))
+        const tourBench = try Effect.try(() => workload(bench, "workerd-tour", async () => {
+          const conversation = await runPromise(room("bench-tour"))
+          await runPromise(factory.tour(conversation))
+          const events = await runPromise(settled(factory, conversation))
+          const state = events.reduce(apply, empty)
+          expect(state.entries[0]).toMatchObject({ text: [1, 2, 3, 4, 5].map((stop) => `Deterministic tour ${stop}.`).join("\n\n"), done: true, error: "" })
+          expect(state.pane).toBe(DOCS_ORIGIN + STOPS.at(-1)!.path)
+          const paths = events.filter((event) => event.type === "PaneOpened").map((event) => event.url)
+          expect(paths.filter((path, index) => index === 0 || path !== paths[index - 1])).toEqual(STOPS.map((stop) => DOCS_ORIGIN + stop.path))
+        }))
+        results.push(try tryPromise(() => tourBench.run(slow)))
+        try artifact("workerd", "Vitest built-in bench; actual local workerd Durable Objects, SQLite engine, alarms, LiveFactory HTTP/SSE, agent and QuickJS; deterministic HTTP model service. Three new conversations each, unwarmed. Bundling/server startup excluded; post-through-settle/read included.", ["Flow/adapter overhead, no model inference, WAN or production contention. Tour includes five real durable reading holds. Test host delegates to production Objects/Http; Alchemy's deploy-only wiring is not run."], results)
+      }
+    }
+  }))
+})

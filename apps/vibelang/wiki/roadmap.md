@@ -71,3 +71,5 @@ brick                                   state         proof
   the chat. Open, with owners: Durable Object engine retention, idempotent history tool writes.
 
 - **Marketing media (vl-media, 0026):** all twelve assets placed by the shared Tour catalog or the splash/empty chat; designer source preserved in `designs/media/`; browser loading, reduced motion, native failure and phone checks. Lead deploys.
+
+- **Benchmarks (0017, vl-bench): not done.** Correctness-checked local/live observations and a deterministic 5% work gate are implemented; independent coverage remains below 100%. New issue flows, keyed history calls and media are being integrated. The sandbox SQLite benchmark is deferred by the retained nested-Effect compiler reproduction.

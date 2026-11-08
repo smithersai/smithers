@@ -1,0 +1,121 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { Cell, FlowBinding } from "@smthrs/harness"
+import { Factory } from "../src/core/Factory.vibe"
+import { mockFactoryFor } from "../src/core/MockFactory.vibe"
+import * as D from "../src/core/sandboxDecision.vibe"
+import { meter, millisecondOf, monthOf, nextMonth, snapshotOf } from "../src/core/sandboxMeter.vibe"
+import { sandboxTools } from "../worker/SandboxTools.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+it("sandbox policy, clock domains and exact month accounting", async ({ bench }) => {
+  const boundary = Date.UTC(2026, 11, 1)
+  const entries = [{ id: "a", conversation: "a", running: true }, { id: "b", conversation: "b", running: true }]
+  const ledger = { ...D.emptySandboxLedger("bench", "contributor", 36000, monthOf(boundary - 10), boundary - 10), usedMilliseconds: 9, sandboxes: entries }
+  const result = await workload(bench, "sandbox-meter-and-policy", async () => {
+    expect(Object.values(D.ALLOWANCES)).toEqual([0, 60, 240, 600, 2000])
+    for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) expect(D.mayStart(role)).toBe(role === "contributor" || role === "maintainer")
+    expect(D.runningCount(entries)).toBe(2)
+    expect(D.runningCountPrefix(entries, 0)).toBe(0)
+    expect(D.runningCountPrefix(entries, 1)).toBe(1)
+    expect(D.validSandboxes(entries)).toBe(true)
+    expect(D.validSandboxes([{ ...entries[0]!, id: "" }])).toBe(false)
+    expect(D.validSandboxes([entries[0]!, { ...entries[1]!, id: "a" }])).toBe(false)
+    expect(D.validSandboxes([entries[0]!, { ...entries[1]!, conversation: "a" }])).toBe(false)
+    expect([0, 1001, 21600001].map(D.leaseMilliseconds)).toEqual([1000, 1001, 21600000])
+    await runPromise(effect {
+      const next = try meter(ledger, {}, boundary + 20, 36000)
+      const rollback = try meter(next.ledger, next.months, boundary - 100, 36000)
+      const forward = try meter(rollback.ledger, rollback.months, boundary + 30, 36000)
+      for (const clock of [Number.NaN, Number.POSITIVE_INFINITY, -1, Number.MAX_SAFE_INTEGER, 8640000000000000]) {
+        const reason = millisecondOf(clock) catch (error) => error.reason
+        try Effect.try(() => expect(reason).toBe("invalid-clock"))
+      }
+      const original = { ...ledger, sandboxes: [entries[0]!], usedMilliseconds: Number.MAX_SAFE_INTEGER - 1 }
+      const exact = try meter(original, {}, original.lastMeteredAt + 1, 36000)
+      const overflow = meter(exact.ledger, exact.months, original.lastMeteredAt + 2, 36000) catch (error) => error.reason
+      try Effect.try(() => {
+        expect(next.months).toEqual({ [String(ledger.month)]: 29, [String(boundary)]: 40 })
+        expect(rollback.ledger).toEqual(next.ledger)
+        expect(forward.ledger.usedMilliseconds).toBe(60)
+        expect(Object.values(forward.months).reduce((sum, value) => sum + value, 0)).toBe(89)
+        expect(exact.ledger.usedMilliseconds).toBe(Number.MAX_SAFE_INTEGER)
+        expect(overflow).toBe("meter-overflow")
+        expect(original.usedMilliseconds).toBe(Number.MAX_SAFE_INTEGER - 1)
+        expect(snapshotOf(next.ledger, "a", 7, "bytes")).toMatchObject({ id: "a", generation: 7, status: "running", allowance: 0.6, used: 40 / 60000, remaining: 1, resetAt: nextMonth(boundary), output: "bytes" })
+      })
+    })
+  }).run(quick)
+  await runPromise(artifact("sandbox-meter", "Vitest built-in bench; five role allowances, distinct identity/lease bounds, exact two-running-box accounting across a UTC boundary, rollback/high-water recovery, snapshot rounding, invalid clock domains and safe-sum overflow. Independent numeric totals checked; assertions included.", ["In-process normalized-clock fixtures, not a fake global clock or Container performance. Real-clock host/flow paths are separate workloads."], result))
+})
+
+for (const cycles of [1, 100]) {
+  it(`sandbox Factory file/restart lifecycle, ${cycles} cycles`, async ({ bench }) => {
+    const result = await workload(bench, "sandbox-file-restart", async () => {
+      await runPromise(scoped(effect {
+        provide mockFactoryFor("contributor") {
+          const factory = try Factory
+          const before = try factory.sandbox("bench")
+          let current = try factory.startSandbox("bench", "initial")
+          for (let index = 0; index < cycles; index++) {
+            try factory.sandboxCommand("bench", `write-${index}`, `echo ${index} > keep`, current.generation)
+            const stopped = try factory.stopSandbox("bench", `stop-${index}`, current.generation)
+            current = try factory.startSandbox("bench", `start-${index}`)
+            const bytes = try factory.sandboxCommand("bench", `read-${index}`, "cat keep", current.generation)
+            try Effect.try(() => {
+              expect(stopped.status).toBe("stopped")
+              expect(current).toMatchObject({ status: "running", generation: index + 2, role: "contributor" })
+              expect(bytes).toBe(`${index}\n`)
+            })
+          }
+          const other = try factory.sandbox("other")
+          const replayed = try factory.stopSandbox("bench", "stop-0", 1)
+          const afterReplay = try factory.sandbox("bench")
+          const stale = factory.stopSandbox("bench", "unseen-old-stop", 1) catch (error) => error._tag
+          try Effect.try(() => {
+            expect(before).toMatchObject({ generation: 0, status: "stopped", used: 0, remaining: 600 })
+            expect(other).toMatchObject({ id: "", status: "stopped" })
+            expect(replayed.status).toBe("stopped")
+            expect(afterReplay).toMatchObject({ status: "running", generation: cycles + 1 })
+            expect(stale).toBe("Refused")
+            expect(afterReplay.used).toBeGreaterThanOrEqual(0)
+            expect(afterReplay.remaining).toBeLessThanOrEqual(600)
+          })
+        }
+      }))
+    }).run(slow)
+    await runPromise(artifact(`sandbox-factory-${cycles}`, `Vitest built-in bench; fresh contributor product MockFactory and durable engine; ${cycles} write/Stop/Start/read cycles, exact retained bytes and generation checked each time. A/B/A stop replay cannot stop a new generation; a fresh stale stop is refused; another conversation stays empty. Three samples; layer lifecycle, actual clock and correctness included.`, ["Product mock filesystem and supported shell, no backend/model/OS Container. One measured callback includes the whole cycle batch, not one command."], result))
+  })
+}
+
+effect function bound(binding: FlowBinding.Binding, input: typeof Schema.Json.Type, ordinal: number) {
+  return try binding.run(try Effect.try(() => Cell.callOf(binding.descriptor, { input, identity: new Cell.CallIdentity({ session: "benchmark", frame: 0, cell: "sandbox", ordinal, declaration: Cell.declarationDigest(binding.descriptor), layers: [] }) })))
+}
+
+it("sandbox agent bindings and generation-safe replay", async ({ bench }) => {
+  const result = await workload(bench, "sandbox-agent-bindings", async () => {
+    await runPromise(scoped(effect {
+      provide mockFactoryFor("contributor") {
+        const factory = try Factory
+        const bindings = try sandboxTools(factory, "agent").bindings()
+        const start = bindings[0]!, stop = bindings[1]!, command = bindings[2]!
+        const first = try bound(start, {}, 0)
+        try bound(command, { generation: 1, command: "echo saved > keep" }, 1)
+        const stopped = try bound(stop, { generation: 1 }, 2)
+        try bound(start, {}, 3)
+        const replayed = try bound(stop, { generation: 1 }, 2)
+        const bytes = try bound(command, { generation: 2, command: "cat keep" }, 4)
+        const current = try factory.sandbox("agent")
+        try Effect.try(() => {
+          expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["vibelang/sandbox/start", "vibelang/sandbox/stop", "vibelang/sandbox/command"])
+          expect(first).toMatchObject({ outcome: "success", value: { status: "running", generation: 1 } })
+          expect(stopped).toMatchObject({ outcome: "success", value: { status: "stopped", generation: 1 } })
+          expect(replayed).toEqual(stopped)
+          expect(bytes).toMatchObject({ outcome: "success", value: "saved\n" })
+          expect(current).toMatchObject({ status: "running", generation: 2 })
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("sandbox-agent", "Vitest built-in bench; actual harness bindings and stable cell identities over the real product mock flows. Invoke Start/Command/Stop/Start, replay old Stop, and read retained bytes through Command; verify bound conversation, catalog roster, generations and output. Three fresh engines.", ["Agent binding overhead without model selection or QuickJS; no Container. The public viewer boundary is measured separately; the SQLite lifecycle benchmark remains deferred by the compiler reproduction."], result))
+})

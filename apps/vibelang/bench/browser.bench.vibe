@@ -1,0 +1,14 @@
+// @vitest-environment node
+// The browser workload is a child process so its real Chromium V8 evidence joins the provider's subprocess corpus.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { run } from "../test/support/processes.vibe"
+import { workload } from "./artifact.vibe"
+
+it("real Chromium first render, Command-K and keystroke", async ({ bench }) => {
+  await workload(bench, "chromium", async () => {
+    const result = await runPromise(Effect.provide(run("pnpm", ["exec", "playwright", "test", "--config", "bench/playwright.config.ts"], { BENCH_LIVE: "0" }), NodeServices.layer))
+    expect(result.status, result.stdout + result.stderr).toBe(0)
+    expect(result.stdout).toContain("4 passed")
+  }).run({ iterations: 1, time: 0, warmup: false })
+})

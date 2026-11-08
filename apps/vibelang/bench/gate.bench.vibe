@@ -1,0 +1,48 @@
+// The regression gate counts actual indexed entry reads; wall time is observational on this shared server.
+import { it, expect } from "@effect/vitest"
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { apply, decide, newClient, receive } from "../src/core/conversation.vibe"
+import { transcript } from "./fixtures.vibe"
+import { artifact } from "./artifact.vibe"
+
+it("deterministic entry-read regression gate", async () => {
+  const measured: Record<string, number> = {}
+  for (const length of [10, 1000, 100000]) {
+    const original = transcript(length)
+    let reads = 0
+    const entries = new Proxy(original.entries, { get(target, property, receiver) {
+      if (typeof property === "string" && /^\d+$/.test(property)) reads++
+      return Reflect.get(target, property, receiver)
+    } })
+    const state = { ...original, entries }
+    const intent = { type: "Post" as const, id: "new", clientId: "new", name: "Ada", text: "next" }
+    const event = { type: "Posted" as const, seq: length + 1, id: "new", clientId: "new", name: "Ada", text: "next" }
+    const decision = decide(state, intent)
+    measured[`decide-${length}`] = reads
+    expect(decision).toEqual({ ok: true, event })
+    reads = 0
+    const applied = apply(state, event)
+    measured[`apply-${length}`] = reads
+    expect(applied.entries.length).toBe(length + 1)
+    expect(applied.entries.slice(0, length)).toEqual(original.entries)
+    expect(applied.entries.at(-1)).toMatchObject({ id: "new", text: "next", seq: length + 1 })
+    reads = 0
+    const received = receive({ ...newClient, conversation: state, pending: [{ clientId: "new", text: "next", error: "" }] }, event)
+    measured[`receive-${length}`] = reads
+    expect(received.pending).toEqual([])
+    expect(received.conversation).toEqual(applied)
+  }
+  const baseline = await runPromise(Effect.provide(effect {
+    const fs = try FileSystem.FileSystem
+    return try fs.readFileString("bench/baseline.json")
+  }, NodeServices.layer))
+  const parsed = JSON.parse(baseline) as { tolerance: number; entryReads: Record<string, number> }
+  expect(parsed.tolerance).toBe(0.05)
+  expect(Object.keys(measured).sort()).toEqual(Object.keys(parsed.entryReads).sort())
+  for (const [name, value] of Object.entries(measured)) {
+    const base = parsed.entryReads[name]!
+    expect(Number.isFinite(base) && base >= 0).toBe(true)
+    expect(value, name).toBeLessThanOrEqual(Math.ceil(base * (1 + parsed.tolerance)))
+  }
+  await runPromise(artifact("gate", "Indexed entry reads through a transparent Proxy on completed-post fixtures of 10/1000/100000 entries. Correctness checked after counter capture. Allowed increase: ceil(baseline * 1.05); zero stays zero; exact roster required.", ["Counts entry access, not instruction count, allocations, network or latency; additional uninstrumented work requires timing review."], { passed: true, entryReads: measured }))
+})

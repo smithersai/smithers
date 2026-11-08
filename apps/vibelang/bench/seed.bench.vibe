@@ -1,0 +1,51 @@
+import { it, expect } from "@effect/vitest"
+import { bucketsOf, intentsOf, replay, seedFrom, seedOf, titleOf, areaOf, scopeOf, sanitize, evidenceOf, wholeSentences, endsSentence, type RawCommit } from "../src/history/seed.vibe"
+import { newCommits } from "../worker/MainLog.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("bootstrap a real commit graph and merge-queue evidence", async ({ bench }) => {
+  const commits: ReadonlyArray<RawCommit> = [
+    { sha: "1".repeat(12), change: "", description: "feat(core): foundation", parents: [] },
+    { sha: "2".repeat(12), change: "", description: "feat(effect): side work", parents: ["1".repeat(12)] },
+    { sha: "3".repeat(12), change: "", description: "feat(effect): add layer\n\nTests: passed", parents: ["1".repeat(12), "2".repeat(12)] },
+  ]
+  const queue = [
+    { id: "a", lane: "bench", state: "rejected", reason: "test failed", gate: "test", titles: ["feat(effect): add layer"] },
+    { id: "b", lane: "bench", state: "landed", reason: "", gate: "test", titles: ["feat(effect): add layer"] },
+  ]
+  const result = await workload(bench, "history-bootstrap-graph", () => {
+    const fetched = [...commits].reverse().map((commit) => ({ sha: commit.sha, commit: { message: commit.description }, parents: commit.parents.map((sha) => ({ sha })) }))
+    const incremental = newCommits(fetched, commits[0]!.sha)
+    expect(incremental?.map((commit) => commit.sha)).toEqual([commits[1]!.sha, commits[2]!.sha])
+    expect(newCommits(fetched, "missing")).toBeUndefined()
+    expect(newCommits([], "")).toEqual([])
+    expect(newCommits([], "missing")).toBeUndefined()
+    const buckets = bucketsOf(commits)
+    expect(buckets.map((bucket) => [bucket.commit.sha, bucket.step])).toEqual([[commits[0]!.sha, commits[0]!.sha], [commits[1]!.sha, commits[2]!.sha], [commits[2]!.sha, commits[2]!.sha]])
+    const seed = seedOf("vibelang", commits, queue)
+    expect(seed.real.map((real) => real.sha)).toEqual(commits.map((commit) => commit.sha))
+    expect(seed.real[1]?.into).toBe(seed.real[2]?.into)
+    expect(seed.epics.flatMap((epic) => epic.commits).some((commit) => commit.notes.some((note) => note.section === "tried" && note.text.includes("Rejected")))).toBe(true)
+    const bootstrapped = replay(intentsOf(seed))
+    expect(bootstrapped.refused).toEqual([])
+    expect(bootstrapped.history.real.length).toBe(3)
+    expect(bootstrapped.history.main).toBe(commits[2]!.sha)
+    const recovered = replay(intentsOf(seedFrom("vibelang", bootstrapped.history)))
+    expect(recovered.history).toEqual(bootstrapped.history)
+    expect(titleOf("")).toBe("(no description)")
+    expect(bucketsOf([])).toEqual([])
+    expect(scopeOf("fix(compiler): parse")).toBe("compiler")
+    expect(scopeOf("docs: explain")).toBe("docs")
+    expect(areaOf("fix(compiler): parse")).toBe("The compiler")
+    expect(areaOf("Unscoped work")).toBe("Foundations")
+    expect(sanitize("path /tmp/example on nyc-01")).toBe("path <path> on <host>.")
+    expect(sanitize("x".repeat(30), 5)).toBe("x".repeat(30) + ".")
+    expect(wholeSentences("One. Two sentences. Three.", 8)).toBe("One.")
+    expect(wholeSentences("x".repeat(1001), 8)).toBe("")
+    expect(endsSentence("A sentence.")).toBe(true)
+    expect(endsSentence("A fragment…")).toBe(false)
+    expect(seed.epics.flatMap((epic) => epic.commits).every((commit) => commit.notes.every((note) => endsSentence(note.text)))).toBe(true)
+    expect(evidenceOf("Work\n\nTests: passed\nOther: ignored")).toEqual(["Tests: passed."])
+  }).run(quick)
+  await runPromise(artifact("history-bootstrap", "Vitest built-in bench; three-commit first-parent/merge graph with rejected and landed queue entries; exact first-parent incremental order/cursor handling, bucket order/mapping, evidence, complete bootstrap and lossless seed projection/replay checked.", ["Small deterministic real-commit fixture; actual large committed snapshot decode measured separately; no GitHub call or repository mutation."], result))
+})

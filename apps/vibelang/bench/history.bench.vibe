@@ -1,0 +1,92 @@
+import { it, expect } from "@effect/vitest"
+import * as H from "../src/history/mythical.vibe"
+import { MockMythical, seeded, landedSha } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { may, ROLES } from "../src/history/roles.vibe"
+import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+for (const length of [10, 1000, 100000]) {
+  it(`mythical history at ${length} planned commits`, async ({ bench }) => {
+    const history: H.History = {
+      ...H.empty, seq: length + 1, epics: [{ id: "e", title: "Performance" }],
+      commits: Array.from({ length }, (_, i): H.Commit => ({ id: `c${i}`, epic: "e", rank: i, title: `Commit ${i}`, state: "planned", task: "Task", lane: "", notes: [] })),
+    }
+    const intent: H.Intent = { type: "Plan", id: "new", epic: "e", before: "", title: "New work", task: "Task" }
+    const event: H.Event = { type: "Planned", seq: length + 2, id: "new", epic: "e", rank: length, title: "New work", task: "Task" }
+    const results = []
+    results.push(await workload(bench, "history-decide", () => expect(H.decide(history, intent)).toEqual({ ok: true, event })).run(quick))
+    results.push(await workload(bench, "history-apply", () => {
+      const applied = H.apply(history, event)
+      expect(applied.seq).toBe(length + 2)
+      expect(applied.commits.length).toBe(length + 1)
+      expect(applied.commits.at(-1)).toMatchObject({ id: "new", rank: length, state: "planned" })
+      expect(applied.commits[0]).toBe(history.commits[0])
+    }).run(quick))
+    const codec = Schema.fromJsonString(HistorySchema)
+    const encoded = Schema.encodeSync(codec)(history)
+    results.push(await workload(bench, "history-decode", () => {
+      const decoded = Schema.decodeUnknownSync(codec)(encoded)
+      expect(decoded.commits.length).toBe(length)
+      expect(decoded.commits.at(-1)?.id).toBe(`c${length - 1}`)
+      expect(decoded).toEqual(history)
+    }).run(quick))
+    await runPromise(artifact(`history-${length}`, `Vitest built-in bench; ${length} valid planned commits in one epic; decide/apply one append and Schema JSON decode, checking assigned rank, identity, count, tail and full decoded snapshot equality. Setup excluded; assertions included.`, ["In-process history/codec cost; no storage, network or model."], results))
+  })
+}
+
+it("mythical history durable planning lifecycle", async ({ bench }) => {
+  const result = await workload(bench, "history-plan-start-note-approve-fold", async () => {
+    await runPromise(scoped(effect {
+      provide MockMythical({ role: "maintainer", name: "Benchmark", agent: false }, () => succeed(H.empty)) {
+        const history = try Mythical
+        const id = try history.plan({ how: "append", epic: "", newEpic: "Performance", target: "", title: "Measure", task: "Bench task" })
+        try history.start(id, "bench")
+        try history.note(id, "evidence", "Verified")
+        try history.approve(id)
+        const folded = try history.fold()
+        const outline = try history.outline()
+        const detail = try history.commit(id)
+        const state = { ...H.empty, seq: outline.seq, main: outline.main, epics: outline.epics.map(({ id, title }) => ({ id, title })), commits: detail.commit ? [detail.commit] : [], real: detail.real }
+        const events = Array.from(try Stream.runCollect(history.events(0).pipe(Stream.take(state.seq))))
+        try Effect.try(() => {
+          expect(folded).toBe(1)
+          expect(state.commits).toHaveLength(1)
+          expect(state.commits[0]).toMatchObject({ id, state: "landed", task: "", lane: "", title: "Measure" })
+          expect(state.commits[0]?.notes).toEqual([{ section: "evidence", text: "Verified", by: "Benchmark" }, { section: "evidence", text: "approved", by: "Benchmark" }])
+          expect(state.real[0]?.mythical).toBe(id)
+          expect(state.main).toBe(landedSha(id))
+          expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
+          expect(events.reduce(H.apply, H.empty)).toEqual(state)
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("history-flows", "Vitest built-in bench; actual MockMythical, sequencer and in-memory durable engine; plan/create epic, start, note, human approval and merge-queue fold; outline/detail composition and complete event replay equality checked. Three fresh engines.", ["Explicit human maintainer in a local fixture; product agent permission is measured separately. No real repository write or provider call."], result))
+})
+
+it("real VibeLang history snapshot", async ({ bench }) => {
+  const result = await workload(bench, "history-seed-decode", async () => {
+    const state = await runPromise(seeded())
+    expect(state.epics.length).toBeGreaterThan(0)
+    expect(state.commits.length).toBeGreaterThan(100)
+    expect(state.real.length).toBeGreaterThan(100)
+    const ids = new Set(state.commits.map((commit) => commit.id))
+    expect(ids.size).toBe(state.commits.length)
+    expect(state.real.every((real) => ids.has(real.mythical))).toBe(true)
+    expect(state.main).toBe(state.real.at(-1)?.sha)
+  }).run(slow)
+  await runPromise(artifact("history-seed", "Vitest built-in bench; decode the actual committed VibeLang bootstrap projection; validate unique mythical identities, every real-commit mapping and the final main cursor. Three samples; module cached after its first import.", ["Snapshot parsing and validation, not a fresh network/GitHub import or bootstrap from an empty durable object."], result))
+})
+
+it("history role decisions", async ({ bench }) => {
+  const result = await workload(bench, "history-role-matrix", () => {
+    for (const role of ROLES) {
+      expect(may({ role, name: "Benchmark", agent: true }, "approve")).toBe(false)
+      expect(may({ role, name: "Benchmark", agent: true }, "fold")).toBe(false)
+      expect(may({ role, name: "Benchmark", agent: false }, "show")).toBe(true)
+      expect(may({ role, name: "Benchmark", agent: false }, "approve")).toBe(role === "maintainer")
+    }
+  }).run(quick)
+  await runPromise(artifact("history-roles", "Vitest built-in bench; all five roles, human and agent; every agent forbidden to approve/fold, every role allowed to read, only human maintainer allowed to approve.", ["Pure policy cost; signed-in identity is a separate integration boundary."], result))
+})

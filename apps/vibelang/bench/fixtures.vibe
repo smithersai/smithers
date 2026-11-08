@@ -1,0 +1,28 @@
+import { type Conversation, type Event, type Entry, empty } from "../src/core/conversation.vibe"
+
+/** Exact event count, one person post, one streaming reply, one-character deltas, then finish. */
+export function history(length: number): ReadonlyArray<Event> {
+  return [
+    { type: "Posted", seq: 1, id: "m1", clientId: "c1", name: "Ada", text: "hi" },
+    { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" },
+    ...Array.from({ length: length - 3 }, (_, index): Event => ({ type: "ReplyDelta", seq: index + 3, id: "r1", text: "x" })),
+    { type: "ReplyFinished", seq: length, id: "r1" },
+  ]
+}
+
+/** A valid transcript of completed person posts; setup is outside the timed region. */
+export function transcript(length: number): Conversation {
+  const entries: Array<Entry> = Array.from({ length }, (_, i) => ({
+    id: `m${i + 1}`, seq: i + 1, clientId: `c${i + 1}`, inReplyTo: "", author: "person", name: "Ada",
+    text: `post ${i + 1}`, done: true, error: "",
+  }))
+  return { ...empty, seq: length, entries }
+}
+
+/** A valid internal history snapshot with one epic and N planned commits, oldest first. */
+export function plannedHistory(length: number): import("../src/history/mythical.vibe").History {
+  return {
+    seq: length + 1, main: "", real: [], epics: [{ id: "e1", title: "Performance" }],
+    commits: Array.from({ length }, (_, i) => ({ id: `m${i + 1}`, epic: "e1", rank: i, title: `Commit ${i}`, state: "planned", task: "Task", lane: "", notes: [] })),
+  }
+}

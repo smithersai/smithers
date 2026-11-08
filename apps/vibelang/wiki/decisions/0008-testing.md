@@ -16,7 +16,7 @@
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
 | Fuzz package and corpus regression tooling | `@smthrs/fuzz`; `@smthrs/testing/Vitest` (0015) | package tests; whole-app `pnpm fuzz` follows the package landing |
-| Benchmarks | next | with roadmap 1b |
+| Benchmarks | `bench/`: built-in Vitest, Chromium, emitted CLI/MCP and real workerd (0017) | `pnpm bench`; opt-in `pnpm bench:live`; independent `pnpm bench:coverage` |
 
 **Rules.** No mocks besides the mock backend itself, which is a product mode (0004). Every test that waits on the UI
 waits on what a person sees (a role, a text, `data-done`), never a timer. Screenshots wait for view transitions to end.
@@ -210,3 +210,5 @@ Idle and post-stop counts remain unchanged, and the post-start count must increa
 The app and isolated coverage fixture also deduplicate `vitest` and transform `@effect/vitest` through Vite,
 retaining the app's Foldkit transform. This keeps the adapter in the running CLI's suite context when pnpm binds
 optional peers differently. This lane adds no dependency version, coverage threshold or file-exclusion change.
+
+**Benchmark independence (0017).** Reuses the patched monorepo V8 provider and matching Vitest 5.0.0, with no new benchmark library or runtime dependency. Existing test-tool declarations await Will’s VL-5 approval. Timing and benchmark-only coverage receipts remain separate; strict coverage is unfinished.

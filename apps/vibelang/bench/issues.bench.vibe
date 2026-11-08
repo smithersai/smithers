@@ -1,0 +1,183 @@
+import { issueExecutionId, issueRecoveryId } from "../src/core/issueFlows.vibe"
+import { it, expect } from "@effect/vitest"
+import { makeIssueFactory, fixtureIssues } from "../src/core/IssuesFactory.vibe"
+import { applyIssues, emptyIssues, issuePermission, canLinkIssues, reviewActions, type Role, type IssueOperation } from "../src/core/conversation.vibe"
+import { IssueRequest, IssuesState } from "../src/core/issueSchemas.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+const request: IssueRequest = { op: "read", number: 0, parent: 0, title: "", text: "", assignee: "", example: "", prior: "", key: "benchmark" }
+
+it("every issue flow through the real product fixture engine", async ({ bench }) => {
+  const result = await workload(bench, "issue-flow-journey", async () => {
+    await runPromise(scoped(effect {
+      const api = try makeIssueFactory("maintainer")
+      const before = try api.read()
+      const created = try api.act({ ...request, op: "new", title: "Benchmark issue", text: "Keep body", key: "new" })
+      const commented = try api.act({ ...request, op: "comment", number: 51, text: "Evidence", key: "comment" })
+      const split = try api.act({ ...request, op: "split", number: 51, title: "Smaller", text: "Smaller body", key: "split" })
+      const linked = try api.act({ ...request, op: "link", number: 52, parent: 38, key: "link" })
+      const committed = try api.act({ ...request, op: "commit", number: 51, assignee: "Will", key: "commit" })
+      const replay = try api.act({ ...request, op: "commit", number: 51, assignee: "Will", key: "commit" })
+      const uncommitted = try api.act({ ...request, op: "uncommit", number: 51, key: "uncommit" })
+      const drafted = try api.act({ ...request, op: "draft", title: "Tuple proposal", text: "Summary", key: "draft" })
+      const proposed = try api.act({ ...request, op: "propose", title: "Tuple proposal", text: "Summary", example: "const pair = [1, 2]", prior: "Effect", key: "propose" })
+      const accepted = try api.act({ ...request, op: "accept", number: 53, key: "accept" })
+      const declined = try api.act({ ...request, op: "decline", number: 45, key: "decline" })
+      const after = try api.read()
+      try Effect.try(() => {
+        expect(before.items.map((item) => item.number)).toEqual([48, 46, 45, 44, 47, 42, 40, 39, 38, 36, 49, 50, 43, 41, 37, 35, 34, 33, 31])
+        expect([created.seq, commented.seq, split.seq, linked.seq, committed.seq, replay.seq, uncommitted.seq, drafted.seq, proposed.seq, accepted.seq, declined.seq, after.seq]).toEqual([1, 2, 3, 4, 5, 5, 6, 6, 7, 8, 9, 9])
+        expect(created.selected).toBe(51)
+        expect(created.items[0]).toMatchObject({ number: 51, title: "Benchmark issue", body: "Keep body", parent: 0, task: "", author: "will" })
+        expect(commented.items.find((item) => item.number === 51)).toMatchObject({ comments: 1, notes: [{ author: "will", text: "Evidence", event: false }] })
+        expect(split.items[0]).toMatchObject({ number: 52, parent: 51, title: "Smaller", body: "Smaller body" })
+        expect(linked.items[0]).toEqual({ ...split.items[0]!, parent: 38, notes: [{ author: "will", text: "linked this under #38", event: true }] })
+        expect(committed.items.find((item) => item.number === 51)).toMatchObject({ number: 51, parent: 0, title: "Benchmark issue", body: "Keep body", task: "Queued", assignee: "Will" })
+        expect(replay).toEqual(committed)
+        expect(uncommitted.items.find((item) => item.number === 51)).toMatchObject({ task: "", assignee: "", notes: [{ author: "will", text: "Evidence", event: false }, { author: "will", text: "committed this as a task and assigned Will", event: true }, { author: "will", text: "uncommitted this task", event: true }] })
+        expect(drafted.items).toEqual(uncommitted.items)
+        expect(drafted.draft).toEqual({ title: "Tuple proposal", summary: "Summary", example: "const pair = [1, 2]", prior: "Rust tuple patterns\nTypeScript tuple types" })
+        expect(proposed.items[0]).toMatchObject({ number: 53, title: "Tuple proposal", vip: "In review", task: "", path: "docs/design/vips/53.md", review: "https://github.com/smithersai/vibelang/pull/53", body: "# Tuple proposal\n\n## Summary\n\nSummary\n\n## Example\n\n```vibe\nconst pair = [1, 2]\n```\n\n## Prior art\n\nEffect\n" })
+        expect(accepted.items[0]).toEqual({ ...proposed.items[0]!, vip: "Accepted", notes: [...proposed.items[0]!.notes, { author: "will", text: "accepted this VIP", event: true }] })
+        expect(declined.items.find((item) => item.number === 45)).toEqual({ ...before.items.find((item) => item.number === 45)!, vip: "Declined", state: "closed", notes: [...before.items.find((item) => item.number === 45)!.notes, { author: "will", text: "declined this VIP", event: true }] })
+        expect(after.items.map((item) => item.number)).toEqual([53, 52, 51, 48, 46, 45, 44, 47, 42, 40, 39, 38, 36, 49, 50, 43, 41, 37, 35, 34, 33, 31])
+        expect(after.items.filter((item) => item.number <= 50 && item.number !== 45)).toEqual(before.items.filter((item) => item.number !== 45))
+        expect(after.role).toBe("maintainer")
+        expect(after.reviewers).toEqual(["Will"])
+        expect(Schema.decodeUnknownSync(Schema.fromJsonString(IssuesState))(JSON.stringify(after))).toEqual(after)
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("issues-flows", "Vitest built-in bench; fresh real makeIssueFactory, memory flow engine and host per callback; all eleven operations, retained intermediate writes, exact sequence, idempotent replay, literal proposal document, unchanged unrelated issues and complete schema equality. Three unwarmed whole-journey samples; initialization/assertions included.", ["Product fixture mode: no GitHub write, sign-in, repository review, network or model. One callback contains the entire journey; its latency is not a per-command latency."], result))
+})
+
+it("issue policy, ordered observations, trees and review recovery", async ({ bench }) => {
+  const result = await workload(bench, "issue-policy-corpus", () => {
+    const operations: ReadonlyArray<IssueOperation> = ["read", "new", "comment", "link", "split", "commit", "uncommit", "propose", "accept", "decline", "draft"]
+    const allowed: Record<Role, ReadonlyArray<IssueOperation>> = {
+      viewer: ["read"], new: ["read", "new", "comment"], community: ["read", "new", "comment", "propose", "draft"],
+      contributor: ["read", "new", "comment", "link", "split", "propose", "draft"], maintainer: operations,
+    }
+    for (const role of ["viewer", "new", "community", "contributor", "maintainer"] as const) for (const op of operations) expect(issuePermission(role, op)).toBe(allowed[role].includes(op))
+    const event = { type: "IssuesObserved" as const, seq: 1, items: fixtureIssues }
+    const state = applyIssues(emptyIssues, event)
+    expect(state).toEqual({ seq: 1, items: fixtureIssues })
+    expect(applyIssues(state, event)).toBe(state)
+    expect(applyIssues(emptyIssues, { ...event, seq: 2 })).toBe(emptyIssues)
+    expect(canLinkIssues(fixtureIssues, 49, 38)).toBe(true)
+    for (const [child, parent] of [[38, 49], [38, 38], [38, 0], [38, 999], [999, 38]]) expect(canLinkIssues(fixtureIssues, child!, parent!)).toBe(false)
+    const malformed = fixtureIssues.map((item) => item.number === 38 ? { ...item, parent: 42 } : item)
+    expect(canLinkIssues(malformed, 36, 38)).toBe(false)
+    const reviews = [
+      ["", "open", true, false, false, false], ["", "closed", true, false, false, false],
+      ["", "open", false, false, false, false], ["", "closed", false, false, false, false],
+      ["In review", "open", true, true, true, false], ["In review", "closed", true, true, true, false],
+      ["In review", "open", false, true, true, true], ["In review", "closed", false, true, true, false],
+      ["Accepted", "open", true, true, false, false], ["Accepted", "closed", true, true, false, false],
+      ["Accepted", "open", false, false, false, false], ["Accepted", "closed", false, false, false, false],
+      ["Declined", "open", true, false, false, false], ["Declined", "closed", true, false, false, false],
+      ["Declined", "open", false, true, false, true], ["Declined", "closed", false, true, false, false],
+    ] as const
+    for (const [vip, state, accepted, allowed, label, close] of reviews) expect(reviewActions(vip, state, accepted)).toEqual({ allowed, label, close })
+    expect(Schema.decodeUnknownSync(IssueRequest)(request)).toEqual(request)
+  }).run(quick)
+  await runPromise(artifact("issues-policy", "Vitest built-in bench; literal five-role by eleven-operation permission table, next/duplicate/gap projection, valid tree and self/missing/cycle refusals, all review label/close recovery states and request schema equality. Assertions included.", ["Pure policy/codec overhead with the nineteen-issue committed fixture; no storage, browser, GitHub or model."], result))
+})
+
+it("each issue command's fresh-engine latency", async ({ bench }) => {
+  const issue42 = fixtureIssues.find((item) => item.number === 42)!
+  const issue45 = fixtureIssues.find((item) => item.number === 45)!
+  const issue48 = fixtureIssues.find((item) => item.number === 48)!
+  const issue49 = fixtureIssues.find((item) => item.number === 49)!
+  const created = { number: 51, githubId: 1051, title: "Measure", body: "Body", author: "will", age: "just now", state: "open", labels: [], parent: 0, task: "", assignee: "", vip: "", review: "", path: "", comments: 0, notes: [] }
+  const cases: ReadonlyArray<{ op: IssueOperation; data: Partial<IssueRequest>; number: number; expected: object }> = [
+    { op: "read", data: {}, number: 42, expected: issue42 },
+    { op: "new", data: { title: "Measure", text: "Body" }, number: 51, expected: created },
+    { op: "comment", data: { number: 42, text: "Measured" }, number: 42, expected: { ...issue42, comments: 7, notes: [...issue42.notes, { author: "will", text: "Measured", event: false }] } },
+    { op: "link", data: { number: 49, parent: 38 }, number: 49, expected: { ...issue49, parent: 38, notes: [...issue49.notes, { author: "will", text: "linked this under #38", event: true }] } },
+    { op: "split", data: { number: 42, title: "Measure", text: "Body" }, number: 51, expected: { ...created, parent: 42 } },
+    { op: "commit", data: { number: 42, assignee: "Will" }, number: 42, expected: { ...issue42, task: "Queued", assignee: "Will", notes: [...issue42.notes, { author: "will", text: "committed this as a task and assigned Will", event: true }] } },
+    { op: "uncommit", data: { number: 48 }, number: 48, expected: { ...issue48, task: "", assignee: "", notes: [...issue48.notes, { author: "will", text: "uncommitted this task", event: true }] } },
+    { op: "propose", data: { title: "Measure", text: "Summary", example: "const n = 1", prior: "Effect" }, number: 51, expected: { ...created, vip: "In review", path: "docs/design/vips/51.md", review: "https://github.com/smithersai/vibelang/pull/51", body: "# Measure\n\n## Summary\n\nSummary\n\n## Example\n\n```vibe\nconst n = 1\n```\n\n## Prior art\n\nEffect\n" } },
+    { op: "accept", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Accepted", notes: [...issue45.notes, { author: "will", text: "accepted this VIP", event: true }] } },
+    { op: "decline", data: { number: 45 }, number: 45, expected: { ...issue45, vip: "Declined", state: "closed", notes: [...issue45.notes, { author: "will", text: "declined this VIP", event: true }] } },
+    { op: "draft", data: { title: "Measure", text: "Summary" }, number: 42, expected: issue42 },
+  ]
+  const results = []
+  for (const scenario of cases) {
+    results.push(await workload(bench, `issues-${scenario.op}`, async () => {
+      const state = await runPromise(scoped(effect {
+        const api = try makeIssueFactory("maintainer")
+        return try api.act({ ...request, ...scenario.data, op: scenario.op, key: `command-${scenario.op}` })
+      }))
+      expect(state.seq).toBe(scenario.op === "read" || scenario.op === "draft" ? 0 : 1)
+      expect(state.items.find((item) => item.number === scenario.number)).toEqual(scenario.expected)
+      expect(state.items.filter((item) => item.number !== scenario.number)).toEqual(fixtureIssues.filter((item) => item.number !== scenario.number))
+      expect(state.items.map((item) => item.number).length).toBe(["new", "split", "propose"].includes(scenario.op) ? 20 : 19)
+      if (scenario.op === "draft") expect(state.draft).toEqual({ title: "Measure", summary: "Summary", example: "const pair = [1, 2]", prior: "Rust tuple patterns\nTypeScript tuple types" })
+    }).run(slow))
+  }
+  await runPromise(artifact("issues-commands", "Vitest built-in bench; each of eleven real product fixture issue commands from a fresh memory flow engine, nineteen committed fixture rows and maintainer identity. Three unwarmed samples each, with engine initialization, authorization, command, teardown and assertions included; exact affected row, cursor, unrelated rows and creation count checked.", ["Local product fixture host, no GitHub request, sign-in, network or model. Fresh-engine costs differ from a persistent UI session and successful writes do not claim production GitHub latency."], results))
+})
+
+it("issue durable identities match fixed SHA-256 vectors", async ({ bench }) => {
+  const result = await workload(bench, "issue-identities", async () => {
+    const root = "issues/person/read/root"
+    const expectedHashes = {"read": "d39d52eb59750f1e0b7ee7aef37629b83f4841cdd76efdce2387f5bb59df448b", "new": "6e877bdf8591c7e8a6536ce2e13bac06c74e82ad2730cdea635fbe06c1c395f7", "comment": "feeca75dfad6bf87c285581b89b1d7880be12750256c4c7733d4b48de051b311"}
+    for (const op of ["read", "new", "comment"] as const) {
+      const expected = expectedHashes[op]
+      expect(await runPromise(issueExecutionId("person", op, "request"))).toBe(`issues/person/${op}/${expected}`)
+    }
+    const expected = "492f886c89ba4e3523c3e7fdca462856abb86f40fe65a3579a369929d9952814"
+    expect(await runPromise(issueRecoveryId(root, "retry"))).toBe(`${root}/retry/${expected}`)
+  }).run(quick)
+  await runPromise(artifact("issues-identities", "Vitest built-in bench; actual Effect WebCrypto durable execution/recovery identity helpers checked against fixed SHA-256 vectors independently calculated with Python hashlib at authoring time of the canonical namespaced actor/operation/key tuples. Three operation identities and one recovery identity per callback.", ["Local digest and identity overhead, not a recovered remote execution or GitHub write."], result))
+})
+
+it("issue replay rechecks the current role and refusals preserve state", async ({ bench }) => {
+  const result = await workload(bench, "issue-refusals", async () => {
+    await runPromise(scoped(effect {
+      const role = try Ref.make<Role>("maintainer")
+      const participated = try Ref.make<ReadonlyArray<string>>([])
+      const api = try makeIssueFactory(() => Effect.map(Ref.get(role), (role) => ({ id: "benchmark-member", login: "Benchmark", role })), (id) => Ref.update(participated, (ids) => [...ids, id]))
+      const commit = { ...request, op: "commit" as const, number: 42, assignee: "Will", key: "replay" }
+      const committed = try api.act(commit)
+      try Ref.set(role, "viewer")
+      const denied = try Effect.result(api.act(commit))
+      const viewerRead = try api.read()
+      try Ref.set(role, "maintainer")
+      const failures: ReadonlyArray<{ data: Partial<IssueRequest>; reason: string }> = [
+        { data: { op: "new" }, reason: "title" },
+        { data: { op: "split", number: 999, title: "Missing" }, reason: "missing" },
+        { data: { op: "link", number: 38, parent: 49 }, reason: "tree" },
+        { data: { op: "commit", number: 47, assignee: "Will" }, reason: "assignee" },
+        { data: { op: "comment", number: 42 }, reason: "empty" },
+        { data: { op: "accept", number: 44 }, reason: "review" },
+        { data: { op: "propose", title: "Incomplete", example: "const n = 1", prior: "Effect" }, reason: "incomplete" },
+        { data: { op: "new", title: "No key", key: "" }, reason: "invalid" },
+      ]
+      for (const failure of failures) {
+        const outcome = try Effect.result(api.act({ ...request, key: `failure-${failure.reason}`, ...failure.data }))
+        try Effect.try(() => {
+          expect(outcome._tag).toBe("Failure")
+          if (outcome._tag === "Failure") expect(outcome.failure.reason).toBe(failure.reason)
+        })
+      }
+      const afterRefusals = try api.read()
+      const created = try api.act({ ...request, op: "new", title: "Authorized", key: "participate-new" })
+      const commented = try api.act({ ...request, op: "comment", number: 51, text: "Evidence", key: "participate-comment" })
+      const visits = try Ref.get(participated)
+      try Effect.try(() => {
+        expect(committed.seq).toBe(1)
+        expect(denied._tag).toBe("Failure")
+        if (denied._tag === "Failure") expect(denied.failure.reason).toBe("forbidden")
+        expect(viewerRead).toMatchObject({ seq: 1, role: "viewer", items: committed.items })
+        expect(afterRefusals).toEqual(committed)
+        expect([created.seq, commented.seq]).toEqual([2, 3])
+        expect(commented.items[0]).toMatchObject({ number: 51, title: "Authorized", comments: 1, notes: [{ author: "Benchmark", text: "Evidence", event: false }] })
+        expect(visits).toEqual(["benchmark-member", "benchmark-member"])
+      })
+    }))
+  }).run(slow)
+  await runPromise(artifact("issues-refusals", "Vitest built-in bench; actual product fixture engine with Effect-backed changing identity and participation service. Replay a cached commitment after downgrade to viewer, then assert eight exact domain refusals and unchanged state; successful new/comment call participation twice with exact identity. Three fresh engines; all assertions included.", ["Local authorization/domain boundary, no sign-in provider or GitHub request. Identity is a host-injected Effect service; no request interception."], result))
+})

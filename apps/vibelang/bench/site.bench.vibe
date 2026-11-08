@@ -1,0 +1,59 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import worker from "../worker/index.vibe"
+import { handle, type Conversations, type Histories } from "../worker/Http.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+type Incoming = Parameters<typeof worker.fetch>[0]
+type Bindings = Parameters<typeof worker.fetch>[1]
+
+it("site routing over real loopback HTTP and repository assets", async ({ bench }) => {
+  const result = await workload(bench, "site-routing", async () => {
+    await runPromise(scoped(effect {
+      provide NodeHttpServer.layerTest {
+        const fs = try FileSystem.FileSystem
+        const home = try fs.readFileString("index.html")
+        const logo = try fs.readFileString("public/media/logo-dark.svg")
+        const unavailable = () => fail(new Unreachable({ what: "conversation" }))
+        const conversations: Conversations = { read: unavailable, post: unavailable, events: unavailable, tour: unavailable, endTour: unavailable }
+        const histories: Histories = { page: unavailable, write: unavailable, events: unavailable }
+        const server = try HttpServer.HttpServer
+        try server.serve(effect {
+          const request = try HttpServerRequest.HttpServerRequest
+          const path = new URL(request.url, "http://local").pathname
+          if (path.startsWith("/api/")) return try handle(conversations, histories)
+          return try HttpServerResponse.file(path === "/media/logo-dark.svg" ? "public/media/logo-dark.svg" : "index.html")
+        })
+        const origin = HttpServer.formatAddress(server.address).replace("0.0.0.0", "127.0.0.1").replace("[::]", "127.0.0.1")
+        provide FetchHttpClient.layer {
+          const client = try HttpClient.HttpClient
+          const forwarding = { fetch: async (request: Request) => {
+            const response = await runPromise(client.get(origin + new URL(request.url).pathname))
+            return Option.getOrThrow(HttpClientResponse.toWeb(response))
+          } }
+          const bindings = { ASSETS: forwarding } as unknown as Bindings
+          for (const [path, status] of [["/", 200], ["/index.html", 200], ["/history", 200], ["/history/", 200], ["/media/logo-dark.svg", 200], ["/assets/missing.js", 404], ["/nope", 404], ["/e2e/", 404], ["/api/conversations/a", 404], ["/api/health", 200]] as const) {
+            const request = try HttpClientRequest.toWeb(HttpClientRequest.get(`http://site.invalid${path}`))
+            const response = try promise(() => worker.fetch(request as Incoming, bindings))
+            const text = try promise(() => response.text())
+            try Effect.try(() => {
+              expect(response.status, path).toBe(status)
+              if (path === "/" || path === "/index.html" || path.startsWith("/history")) expect(text).toBe(home)
+              if (path === "/media/logo-dark.svg") expect(text).toBe(logo)
+              if (path === "/api/health") expect(JSON.parse(text)).toEqual({ ok: true, agent: "mock" })
+              if (status === 404) expect(text).toBe("Not found")
+            })
+          }
+          const request = try HttpClientRequest.toWeb(HttpClientRequest.get("http://site.invalid/api/health"))
+          const response = try promise(() => worker.fetch(request as Incoming, { ASSETS: forwarding, API: forwarding } as unknown as Bindings))
+          const live = try promise(() => response.json())
+          try Effect.try(() => expect(live).toEqual({ ok: true, agent: "live" }))
+        }
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("site", "Vitest built-in bench; production site Worker router over a real loopback HTTP file server serving repository home/logo bytes with SPA fallback, and real API handler health. Exact bodies, mock/live health and every rejection status checked. Three fresh scoped servers; startup/teardown included.", ["Local service-binding adapter over HTTP, no Cloudflare PoP or deployed asset cache; API error dependency is a deliberately faulty Effect service. Actual compiled UI/layout measured separately in Chromium."], result))
+})

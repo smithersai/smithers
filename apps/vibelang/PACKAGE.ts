@@ -16,9 +16,11 @@ import { Smithers } from "@smthrs/targets"
 /** Everything the app's scripts read: sources, tests, proofs and their configuration. */
 const sources = [
   Smithers.glob("//apps/vibelang/src/**/*"),
+  Smithers.glob("//apps/vibelang/public/**/*"),
   Smithers.glob("//apps/vibelang/worker/**/*"),
   Smithers.glob("//apps/vibelang/infra/**/*"),
   Smithers.glob("//apps/vibelang/test/**/*"),
+  Smithers.glob("//apps/vibelang/bench/*.{vibe,ts,json,md}"),
   Smithers.glob("//apps/vibelang/e2e/**/*"),
   Smithers.glob("//apps/vibelang/skills/**/*"),
   Smithers.glob("//apps/vibelang/scripts/**/*"),
@@ -111,4 +113,33 @@ const verifyBroken = Smithers.Shell.Test({
   timeout: "120m",
 })
 
-export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken } })
+/** Validated local observations and the 5% deterministic entry-read gate. */
+const bench = Smithers.Shell.Test({
+  summary: "Benchmark the state machine, protocol, web, surfaces and workerd flows with correctness checks.",
+  shell: "cd apps/vibelang && E2E_4503=4503 pnpm bench",
+  data: sources,
+  timeout: "30m",
+  sandbox: { network: "loopback" }
+})
+
+/** Strict benchmark-only coverage qualification; an explicit request, separate from timing observations. */
+const benchCoverage = Smithers.Shell.Test({
+  summary: "Measure benchmark-only source coverage against strict 100% per-file thresholds.",
+  shell: "cd apps/vibelang && E2E_4503=4503 pnpm bench:coverage",
+  data: sources,
+  timeout: "30m",
+  sandbox: { network: "loopback" },
+  exclusive: true
+})
+
+/** Deliberate production measurement; spends real model tokens and is never selected by a wildcard. */
+const benchLive = Smithers.Shell.Test({
+  summary: "Measure production render, prompt, API and real agent latency; retain raw samples and limitations.",
+  shell: "cd apps/vibelang && pnpm bench:live",
+  data: sources,
+  timeout: "15m",
+  sandbox: { network: true },
+  exclusive: true
+})
+
+export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken, bench, benchCoverage, benchLive } })

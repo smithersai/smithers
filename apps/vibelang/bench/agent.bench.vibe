@@ -1,0 +1,58 @@
+import { it, expect } from "@effect/vitest"
+import type { AgentEvent } from "@smthrs/harness"
+import { chatModel, chatModelRecord, dailyTokens, DEFAULT_CHAT_MODEL, DEFAULT_DAILY_TOKENS } from "../worker/AgentModel.vibe"
+import { dayOf, failureReason, fold, promptOf, REASONS, reasonOf, started, tagOf } from "../worker/Reply.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("agent stream projection, bounded context and safe errors", async ({ bench }) => {
+  const result = await workload(bench, "agent-projection", () => {
+    const fence = "`".repeat(3)
+    const events = [
+      { _tag: "model-requested" }, { _tag: "model-delta", delta: { type: "text-delta", text: `${fence}cell\nctx.done("hel` } },
+      { _tag: "model-delta", delta: { type: "text-delta", text: `lo");\n${fence}` } },
+      { _tag: "model-settled", usage: { inputTokens: 3, outputTokens: 2 } },
+      { _tag: "model-retried" }, { _tag: "model-delta", delta: { type: "text-delta", text: `${fence}cell\nctx.done("again");\n${fence}` } },
+      { _tag: "model-delta", delta: { type: "other" } }, { _tag: "model-settled", usage: {} },
+      { _tag: "model-failed", code: "out_of_credit" }, { _tag: "finished" },
+    ] as unknown as ReadonlyArray<AgentEvent.AgentEvent>
+    const progress = events.reduce(fold, started)
+    expect(progress.text).toBe("again")
+    expect(progress.tokens).toBe(5)
+    expect(failureReason("other", progress)).toBe(REASONS.credit)
+    expect(failureReason("@smthrs/agent/Seat/SeatUnresolved", started)).toBe(REASONS.unconfigured)
+    expect(failureReason("/harness/StructuredOutputFailure", started)).toBe(REASONS.empty)
+    expect(failureReason("other", started)).toBe(REASONS.failed)
+    expect(reasonOf({ code: "content_policy" })).toBe(REASONS.refused)
+    expect(reasonOf({ code: "quota_exceeded" })).toBe(REASONS.credit)
+    expect(reasonOf({ code: "transport" })).toBe(REASONS.unavailable)
+    expect(tagOf({ _tag: "Safe" })).toBe("Safe")
+    expect(tagOf(null)).toBe("defect")
+    expect(dayOf(0)).toBe("1970-01-01")
+    expect(promptOf({ turns: [] })).toBe("")
+    expect(promptOf({ turns: [{ author: "person", text: "hi" }] })).toBe("hi")
+    const prompt = promptOf({ turns: Array.from({ length: 30 }, (_, i) => ({ author: i % 2 ? "person" as const : "agent" as const, text: `turn-${i}` })) })
+    expect(prompt).not.toContain("turn-5\n")
+    expect(prompt).toContain("VibeLang agent: turn-6")
+    expect(prompt.endsWith("asks: turn-29")).toBe(true)
+  }).run(quick)
+  await runPromise(artifact("agent-projection", "Vitest built-in bench; project partial cell answers, restart, sum token usage, bound input history and classify provider failures without disclosing messages.", ["Projection and policy only; actual agent and QuickJS cell execution measured in workerd."], result))
+})
+
+it("model configuration", async ({ bench }) => {
+  const result = await workload(bench, "model-config", async () => {
+    await runPromise(effect {
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({})) {
+        const model = try chatModel()
+        const record = try chatModelRecord
+        const budget = try dailyTokens
+        try Effect.try(() => { expect(model.model).toBeUndefined(); expect(record).toEqual(DEFAULT_CHAT_MODEL); expect(budget).toBe(DEFAULT_DAILY_TOKENS) })
+      }
+      provide ConfigProvider.layer(ConfigProvider.fromUnknown({ CEREBRAS_API_KEY: "benchmark-only", CHAT_DAILY_TOKENS: "0" })) {
+        const model = try chatModel()
+        const budget = try dailyTokens
+        try Effect.try(() => { expect(model.model?.modelId).toBe(DEFAULT_CHAT_MODEL.modelId); expect(model.unusable).toBe(""); expect(budget).toBe(0) })
+      }
+    })
+  }).run(quick)
+  await runPromise(artifact("model-config", "Vitest built-in bench; actual Config and HostModel planning; default/unconfigured and configured model records, zero/default daily budget; no provider calls.", ["Configuration and route construction cost only."], result))
+})

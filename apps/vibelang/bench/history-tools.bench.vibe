@@ -1,0 +1,123 @@
+import { Cell } from "@smthrs/harness"
+import { it, expect } from "@effect/vitest"
+import { MockMythical, seeded } from "../src/history/MockMythical.vibe"
+import { Mythical, Unavailable } from "../src/history/MythicalHistory.vibe"
+import { empty } from "../src/history/mythical.vibe"
+import { type HistoryReader, show, plan, start, note, requestOf } from "../src/history/tools.vibe"
+import { historyTools } from "../worker/HistoryTools.vibe"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { apply, empty as noConversation } from "../src/core/conversation.vibe"
+import { artifact, workload, quick, slow } from "./artifact.vibe"
+
+it("history tools and their durable write answers", async ({ bench }) => {
+  const result = await workload(bench, "history-tool-lifecycle", async () => {
+    await runPromise(scoped(effect {
+      provide MockMythical({ role: "contributor", name: "Bench", agent: true }, () => succeed(empty)) {
+        const history = try Mythical
+        const bindings = try historyTools(history).bindings()
+        const planned = try plan(history, { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Task" }, "bench-plan")
+        const started = try start(history, planned.id, "bench", "bench-start")
+        const noted = try note(history, planned.id, "tried", "Measured.", "bench-note")
+        const denied = try plan(history, { how: "insert", epic: "", newEpic: "", target: planned.id, title: "Earlier", task: "Task" }, "bench-denied")
+        const outline = try show(history, { what: "outline" })
+        const epic = try show(history, { what: "epic", id: "e1" })
+        const detail = try show(history, { what: "commit", id: planned.id })
+        const matches = try show(history, { what: "search", query: "MEASURED" })
+        try Effect.try(() => {
+          expect(bindings.map((binding) => binding.descriptor.name)).toEqual(["vibelang/history/show", "vibelang/history/Plan", "vibelang/history/Start", "vibelang/history/Note"])
+          expect(bindings.every((binding) => binding.descriptor.modelInvocable)).toBe(true)
+          expect([planned, started, noted]).toEqual(Array(3).fill({ id: "m1", refusal: null }))
+          expect(denied).toEqual({ id: "", refusal: "forbidden" })
+          expect(outline).toMatchObject({ seq: 4, main: "", epics: [{ id: "e1", title: "Bench", commits: 1, folds: 0 }], open: [{ id: "m1", state: "working" }] })
+          expect(epic).toMatchObject({ epic: "e1", from: 0, total: 1, commits: [{ id: "m1" }] })
+          expect(detail).toMatchObject({ commit: { id: "m1", state: "working", lane: "bench", notes: [{ section: "tried", text: "Measured.", by: "Bench (agent)" }] }, real: [] })
+          expect(matches).toMatchObject({ query: "MEASURED", commits: [{ id: "m1" }] })
+          expect(requestOf({ what: "epic" })).toEqual({ what: "epic", id: "", from: 0 })
+          expect(requestOf({ what: "commit" })).toEqual({ what: "commit", id: "" })
+          expect(requestOf({ what: "search" })).toEqual({ what: "search", query: "" })
+        })
+      }
+    }))
+  }).run(slow)
+  const faulty: HistoryReader = {
+    outline: () => fail(new Unavailable({ reason: "offline" })), epic: () => fail(new Unavailable({ reason: "offline" })),
+    commit: () => fail(new Unavailable({ reason: "offline" })), search: () => fail(new Unavailable({ reason: "offline" })),
+    plan: () => fail(new Unavailable({ reason: "offline" })), start: () => fail(new Unavailable({ reason: "offline" })), note: () => fail(new Unavailable({ reason: "offline" })),
+  }
+  const failure = await workload(bench, "history-tool-faults", async () => {
+    const answers = await runPromise(all([
+      plan(faulty, { how: "append", epic: "e1", newEpic: "", target: "", title: "Measured", task: "" }, "fault-plan"),
+      start(faulty, "m1", "bench", "fault-start"), note(faulty, "m1", "tried", "Measured.", "fault-note"),
+    ]))
+    expect(answers).toEqual(Array(3).fill({ id: "", refusal: "unavailable" }))
+    const read = await runPromise(effect { return show(faulty, { what: "outline" }) catch (error) => error._tag })
+    expect(read).toBe("Unavailable")
+  }).run(quick)
+  await runPromise(artifact("history-tools", "Vitest built-in bench; real tool catalog, product MockMythical and durable plan/start/note plus all four paged reads; contributor retell refusal, signed note, missing-input defaults and injected faulty Effect service. Three fresh lifecycle engines; fault handling short-run warmup.", ["Tool/flow overhead, no model inference or production storage. No approve/fold binding exists. Actual model choice and calls to these bindings inside QuickJS are not measured here."], [result, failure]))
+})
+
+it("mock agent reads actual committed history", async ({ bench }) => {
+  const seed = await runPromise(seeded())
+  const result = await workload(bench, "mock-agent-history", async () => {
+    await runPromise(scoped(effect {
+      provide MockFactory {
+        const factory = try Factory
+        try factory.post("history-bench", "a", "Bench", "What is in the mythical history?")
+        const events = Array.from(try Stream.runCollect(factory.events("history-bench", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished"))))
+        const state = events.reduce(apply, noConversation)
+        try Effect.try(() => {
+          expect(events.map((event) => event.seq)).toEqual(events.map((_, index) => index + 1))
+          expect(state.entries[1]).toMatchObject({ done: true, error: "", text: [
+            `VibeLang's mythical history, folded through \`${seed.main}\`.`,
+            seed.epics.map((epic) => `${epic.title} ${seed.commits.filter((commit) => commit.epic === epic.id).length}`).join(" · "),
+            "No open work.",
+          ].join("\n\n") })
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("mock-history-agent", "Vitest built-in bench; fresh real MockFactory per sample, committed history decoded, journaled show tool, naturally streamed answer; exact repository main and epic counts independently composed and checked.", ["Product mock mode; three samples include intentional reply delays and history decode. No provider/model or network."], result))
+})
+
+
+it("history catalog invokes each actual binding", async ({ bench }) => {
+  const result = await workload(bench, "history-catalog-calls", async () => {
+    await runPromise(scoped(effect {
+      provide MockMythical({ role: "contributor", name: "Bench", agent: true }, () => succeed(empty)) {
+        const history = try Mythical
+        const bindings = try historyTools(history).bindings()
+        const inputs = [
+          { what: "outline" },
+          { how: "append", epic: "", newEpic: "Bench", target: "", title: "Measured", task: "Task" },
+          { id: "m1", lane: "bench" },
+          { id: "m1", section: "evidence", text: "Measured." },
+        ]
+        const answers: Array<Cell.CallResult> = []
+        for (const [ordinal, binding] of bindings.entries()) {
+          const call = try Effect.try(() => Cell.callOf(binding.descriptor, { input: inputs[ordinal]! as typeof Schema.Json.Type, identity: new Cell.CallIdentity({
+            session: "benchmark", frame: 0, cell: "benchmark", ordinal, declaration: Cell.declarationDigest(binding.descriptor), layers: [],
+          }) }))
+          answers.push(try binding.run(call))
+        }
+        const reader = bindings[0]!
+        const readCall = try Effect.try(() => Cell.callOf(reader.descriptor, { input: { what: "outline" }, identity: new Cell.CallIdentity({
+          session: "benchmark", frame: 0, cell: "benchmark", ordinal: 4, declaration: Cell.declarationDigest(reader.descriptor), layers: [],
+        }) }))
+        const populated = try reader.run(readCall)
+        const detail = try history.commit("m1")
+        try Effect.try(() => {
+          expect(answers.map((answer) => answer.outcome)).toEqual(Array(4).fill("success"))
+          expect(answers[0]?.value).toEqual({ seq: 0, main: "", epics: [], open: [] })
+          expect(answers.slice(1).map((answer) => answer.value)).toEqual(Array(3).fill({ id: "m1", refusal: null }))
+          expect(detail.commit).toMatchObject({ id: "m1", title: "Measured", state: "working", lane: "bench", notes: [{ section: "evidence", text: "Measured.", by: "Bench (agent)" }] })
+          expect(populated.outcome).toBe("success")
+          expect(populated.value).toEqual({ seq: 4, main: "", epics: [{ id: "e1", title: "Bench", commits: 1, folds: 0 }], open: [
+            { id: "m1", epic: "e1", rank: 0, title: "Measured", state: "working", task: "Task", lane: "bench", notes: 1, folds: 0 },
+          ] })
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("history-catalog", "Vitest built-in bench; real harness call identities/declaration digests invoke all four actual FlowBinding handlers and a populated outline reread after writes, including schema validation and result encoding; fresh product history engine, exact outputs and resulting signed note checked. Three samples.", ["No model selection or QuickJS process; this measures the binding/handler boundary directly. Real durable history flows run behind the binding."], result))
+})

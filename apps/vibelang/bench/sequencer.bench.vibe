@@ -1,0 +1,98 @@
+import { it, expect } from "@effect/vitest"
+import { type Event } from "../src/core/conversation.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import * as Budget from "../worker/Budget.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("sequencer lifecycle, ordering, retry and replay", async ({ bench }) => {
+  const result = await workload(bench, "sequencer-lifecycle", async () => {
+    await runPromise(scoped(effect {
+      const log = try Ref.make<ReadonlyArray<Event>>([])
+      const dispatches = try Ref.make<ReadonlyArray<ReadonlyArray<string>>>([])
+      const stored: Sequencer.Log = { read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) }
+      const dispatch: Sequencer.Dispatch = { start: (posts) => Ref.update(dispatches, (all) => [...all, posts]), tour: () => Effect.void }
+      const sequencer = try Sequencer.make(stored, dispatch)
+      const refusal = try sequencer.post("empty", "Ada", " ")
+      const posted = try sequencer.post("a", "Ada", "first")
+      const duplicate = try sequencer.post("a", "Ada", "again")
+      try sequencer.ensureDispatched()
+      const begun = try sequencer.start("m1")
+      try sequencer.append("r1", 1, 0, "old")
+      try sequencer.append("r1", 1, 0, "old")
+      try sequencer.restart("r1", 2)
+      try sequencer.append("r1", 1, 0, "stale")
+      try sequencer.append("r1", 2, 0, "new")
+      const finished = try sequencer.finish("r1", "replacement")
+      const history = try sequencer.history("m1")
+      const startedTour = try sequencer.startTour()
+      try sequencer.ensureDispatched()
+      const snapshot = try sequencer.read(0)
+      const tour = snapshot.entries.at(-1)!.id
+      try sequencer.open(tour, "https://vibelang.sh/")
+      try sequencer.say(tour, "tour")
+      try sequencer.endTour()
+      try sequencer.ended(tour)
+      const final = try sequencer.read(0)
+      const events = try Ref.get(log)
+      const follower = Array.from(try Stream.runCollect(sequencer.follow(0).pipe(Stream.take(events.length))))
+      const reopened = try Sequencer.make(stored, dispatch)
+      const replayed = try reopened.read(0)
+      const tail = try reopened.read(final.seq)
+      const allTurns = try reopened.history("absent")
+      try reopened.append("absent", 1, 0, "ignored")
+      try reopened.restart("absent", 2)
+      try reopened.finish("absent", "ignored")
+      const absentFailure = try reopened.fail("absent", "failed")
+      try reopened.startTour()
+      const failingTour = (try reopened.read(0)).entries.at(-1)!.id
+      try reopened.finishTour(failingTour, "failed")
+      try reopened.finishTour(failingTour, "failed")
+      const failed = try reopened.read(0)
+      const liveReady = try Deferred.make<void>()
+      const followerLive = fork Stream.runCollect(reopened.follow(failed.seq - 1).pipe(
+        Stream.tap((event) => event.seq === failed.seq ? Effect.asVoid(Deferred.succeed(liveReady, undefined)) : Effect.void),
+        Stream.take(2),
+      ))
+      try Deferred.await(liveReady)
+      try reopened.post("live", "Ada", "after replay")
+      const followed = Array.from(join followerLive)
+      try Effect.try(() => {
+        expect([refusal, posted, duplicate, begun, finished, startedTour]).toEqual(["empty", null, "duplicate", "done", "done", null])
+        expect(history).toEqual([{ author: "person", text: "first" }])
+        expect(final.entries.map((entry) => [entry.text, entry.done, entry.error])).toEqual([["first", true, ""], ["replacement", true, ""], ["tour", true, ""]])
+        expect(follower).toEqual(events)
+        expect(events.map((event) => event.seq)).toEqual(events.map((_, index) => index + 1))
+        expect(replayed).toEqual(final)
+        expect(tail.entries).toEqual([])
+        expect(allTurns).toEqual([{ author: "person", text: "first" }, { author: "agent", text: "replacement" }])
+        expect(absentFailure).toBe("refused")
+        expect(failed.entries.at(-1)).toMatchObject({ done: true, error: "failed" })
+        expect(followed.map((event) => event.seq)).toEqual([failed.seq, failed.seq + 1])
+      })
+    }))
+  }).run(quick)
+  await runPromise(artifact("sequencer", "Vitest built-in bench; real sequencer on an in-memory append-only log. Post/refusal/duplicate, reply pieces, duplicate/stale pieces, restart, final replacement, tour, follower and fresh sequencer replay. Exact transcript and ordered events asserted; model history excludes tour narration while the transcript retains it.", ["In-process log, no storage I/O; SQLite/workerd measured separately."], result))
+})
+
+it("budget admission and idempotent spend", async ({ bench }) => {
+  const result = await workload(bench, "budget", async () => {
+    await runPromise(effect {
+      const entries = try Ref.make<Readonly<Record<string, number>>>({})
+      const budget = try Budget.make({ read: (key) => Effect.map(Ref.get(entries), (values) => values[key]), write: (values) => Ref.update(entries, (before) => ({ ...before, ...values })) }, 4)
+      const before = try budget.admit()
+      try budget.spend("a", 1.6)
+      try budget.spend("a", 9)
+      try budget.spend("b", -1)
+      try budget.spend("c", 2)
+      try budget.spend("nan", Number.NaN)
+      try budget.spend("infinite", Number.POSITIVE_INFINITY)
+      const after = try budget.admit()
+      const recorded = try Ref.get(entries)
+      try Effect.try(() => {
+        expect([before, after]).toEqual([true, false])
+        expect(recorded).toEqual({ spent: 4, "reply/a": 2, "reply/b": 0, "reply/c": 2, "reply/nan": 0, "reply/infinite": 0 })
+      })
+    })
+  }).run(quick)
+  await runPromise(artifact("budget", "Vitest built-in bench; real budget over in-memory ledger; rounding/clamping, duplicate spend, admission at limit and exact ledger asserted.", ["In-process ledger; remote Durable Object transport excluded."], result))
+})

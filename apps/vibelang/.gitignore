@@ -16,3 +16,7 @@ verify/__pycache__/
 dist-scripts/
 coverage/
 dist-script-tests/
+
+# Generated benchmark observations are retained with the lane report.
+bench/results/*
+!bench/results/.gitkeep

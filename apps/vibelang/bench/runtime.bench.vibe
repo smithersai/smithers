@@ -1,0 +1,38 @@
+import { it, expect } from "@effect/vitest"
+import { vi } from "vitest"
+import { FetchHttpClient } from "effect/http"
+import { Runtime } from "foldkit"
+import { main, page } from "../src/web/startup.vibe"
+import { activeId, commandK, container, remove, send } from "../test/support/browser.ts"
+import { artifact, workload, slow } from "./artifact.vibe"
+
+it("browser runtime startup, palette, post, streaming and follow", async ({ bench }) => {
+  const result = await workload(bench, "runtime-startup-post", async () => {
+    await runPromise(scoped(effect {
+      const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+      const root = try Effect.try(() => {
+        const root = node.ownerDocument.createElement("div")
+        root.id = "root"
+        node.append(root)
+        return root
+      })
+      provide page, FetchHttpClient.layer {
+        const window = try (try Experimental.Window.Window).current
+        try acquireRelease(Effect.try(() => { const before = window.localStorage.getItem("vibelang.agent"); window.localStorage.setItem("vibelang.agent", "mock"); return before }), (before) => sync(() => before === null ? window.localStorage.removeItem("vibelang.agent") : window.localStorage.setItem("vibelang.agent", before)))
+        const { application, flags } = try main()
+        try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
+        try promise(() => vi.waitFor(() => expect(node.querySelector(".vl-ask")).not.toBeNull()))
+        try sync(commandK)
+        try promise(() => vi.waitFor(() => expect(activeId()).toBe("vl-palette-prompt")))
+        try sync(() => send("install"))
+        try promise(() => vi.waitFor(() => expect(node.querySelector("[data-role='assistant'][data-done='true']")?.textContent).toContain("npm create"), { timeout: 15000 }))
+        try Effect.try(() => {
+          expect(node.querySelector("[data-role='user']")?.textContent).toContain("install")
+          expect(node.querySelector(".vl-pill")?.textContent).toBe("Mock")
+          expect(node.querySelector("[data-role='assistant']")?.textContent).toContain("npm create vibelang@latest my-app")
+        })
+      }
+    }))
+  }).run(slow)
+  await runPromise(artifact("runtime", "Vitest built-in bench, happy-dom with the actual startup program, stylesheet, Foldkit subscriptions/commands and MockFactory. Native Command-K and input/Enter; wait for the complete expected installed command. New scoped runtime each sample; 3 samples.", ["DOM runtime, no layout or paint; includes scripted reply delays and observer polling. Forced product mock mode, no network/model."], result))
+})

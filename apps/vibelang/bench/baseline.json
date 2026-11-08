@@ -1,0 +1,27 @@
+{
+  "schema": 1,
+  "tolerance": 0.05,
+  "method": "Indexed entry reads through a transparent Proxy on completed-post fixtures of 10/1000/100000 entries. Correctness checked after counter capture. Allowed increase: ceil(baseline * 1.05); zero stays zero; exact roster required.",
+  "entryReads": {
+    "decide-10": 20,
+    "apply-10": 30,
+    "receive-10": 30,
+    "decide-1000": 2000,
+    "apply-1000": 3000,
+    "receive-1000": 3000,
+    "decide-100000": 200000,
+    "apply-100000": 300000,
+    "receive-100000": 300000
+  },
+  "timestamp": "2026-11-08T05:54:13.741Z",
+  "machine": "Linux msb-lat-nyc-01 7.0.0-38-generic x86_64",
+  "versions": {
+    "vitest": "5.0.0",
+    "vite": "8.3.4",
+    "vibelang": "0.0.12",
+    "effect": "4.1.1",
+    "@playwright/test": "1.62.1",
+    "miniflare": "5.20261019.0-beta"
+  },
+  "revision": "6695b0eda39e7b89de233cb68fb0aba851323919"
+}

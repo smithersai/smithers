@@ -1,0 +1,85 @@
+import { it, expect } from "@effect/vitest"
+import * as P from "../src/history/pages.vibe"
+import type { History } from "../src/history/mythical.vibe"
+import { pathOf, historyRouteOf, statusOf } from "../src/history/wire.vibe"
+import { Outline, EpicPage } from "../src/history/schemas.vibe"
+import { plannedHistory } from "./fixtures.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+for (const length of [10, 1000, 100000]) {
+  it(`history pages at ${length} commits`, async ({ bench }) => {
+    const history = plannedHistory(length)
+    const offset = Math.max(0, length - 50)
+    const ids = (from: number, count: number) => Array.from({ length: count }, (_, i) => `m${from + i + 1}`)
+    const first = ids(0, Math.min(length, 50)), last = ids(offset, length - offset)
+    const results = []
+    results.push(await workload(bench, "history-outline", () => {
+      const outline = P.outlineOf(history)
+      expect(outline.seq).toBe(length + 1)
+      expect(outline.epics).toEqual([{ id: "e1", title: "Performance", commits: length, folds: 0 }])
+      expect(outline.open.length).toBe(length)
+      expect(outline.open.every((commit, index) => commit.id === `m${index + 1}` && commit.rank === index && commit.notes === 0 && commit.folds === 0)).toBe(true)
+    }).run(quick))
+    results.push(await workload(bench, "history-epic-pages", () => {
+      const page = P.epicPageOf(history, "e1", 0)
+      const tail = P.epicPageOf(history, "e1", offset)
+      expect(page.commits.map((commit) => commit.id)).toEqual(first)
+      expect(tail.commits.map((commit) => commit.id)).toEqual(last)
+      expect([page.from, page.total, tail.from, tail.total]).toEqual([0, length, offset, length])
+      expect(P.epicPageOf(history, "e1", length).commits).toEqual([])
+    }).run(quick))
+    results.push(await workload(bench, "history-commit-page", () => {
+      const page = P.commitPageOf(history, `m${length}`)
+      expect(page).toEqual({ seq: length + 1, commit: history.commits.at(-1), real: [] })
+      expect(P.commitPageOf(history, "missing").commit).toBeNull()
+    }).run(quick))
+    results.push(await workload(bench, "history-search", () => {
+      const page = P.matchesOf(history, `Commit ${length - 1}`)
+      expect(page.commits.map((commit) => commit.id)).toEqual([`m${length}`])
+      expect(P.matchesOf(history, "Commit").commits.map((commit) => commit.id)).toEqual(ids(0, Math.min(length, 100)))
+      expect(P.matchesOf(history, " ").commits).toEqual([])
+      expect(P.matchesOf(history, "x".repeat(201)).query.length).toBe(200)
+    }).run(quick))
+    const outline = P.outlineOf(history), page = P.epicPageOf(history, "e1", 0)
+    const outlineCodec = Schema.fromJsonString(Outline), pageCodec = Schema.fromJsonString(EpicPage)
+    const encodedOutline = Schema.encodeSync(outlineCodec)(outline), encodedPage = Schema.encodeSync(pageCodec)(page)
+    results.push(await workload(bench, "history-page-codecs", () => {
+      expect(Schema.decodeUnknownSync(outlineCodec)(encodedOutline)).toEqual(outline)
+      expect(Schema.decodeUnknownSync(pageCodec)(encodedPage)).toEqual(page)
+    }).run(quick))
+    await runPromise(artifact(`history-pages-${length}`, `Vitest built-in bench; ${length} planned commits in one epic. Outline checks every open identity/rank/count; first/tail/past-end epic pages check complete IDs and totals; detail, bounded search and complete JSON round trips checked. Setup/encoding excluded from decode; assertions included.`, ["In-process projections and codecs, no network/storage. Outline intentionally includes every open commit, so this all-planned worst case remains large; epic reads cap at 50 and search at 100. Actual committed-history browser and workerd paths are separate."], results))
+  })
+}
+
+it("paged history order, notes, folds and wire routing", async ({ bench }) => {
+  const first = { ...plannedHistory(1).commits[0]!, notes: [{ section: "evidence" as const, text: "Measured.", by: "Bench" }] }
+  const second = { ...first, id: "m2", rank: 1, state: "landed" as const, title: "Commit 1", task: "", notes: [] }
+  const third = { ...first, id: "m3", epic: "e2", rank: 0, state: "working" as const, title: "Commit 2", lane: "bench", notes: [] }
+  const real = ["one", "two"].map((sha) => ({ sha, mythical: "m1", change: "", title: "Real" }))
+  const history: History = { seq: 11, main: "three", epics: [{ id: "e1", title: "Performance" }, { id: "e2", title: "Other" }], commits: [third, second, first], real: [...real, { sha: "three", mythical: "m2", change: "", title: "Other real" }] }
+  const result = await workload(bench, "history-page-boundaries", () => {
+    const outline = P.outlineOf(history)
+    expect(outline.open.map((commit) => commit.id)).toEqual(["m1", "m3"])
+    expect(outline.epics).toEqual([{ id: "e1", title: "Performance", commits: 2, folds: 3 }, { id: "e2", title: "Other", commits: 1, folds: 0 }])
+    expect(P.epicPageOf(history, "e1", -1.5).commits.map((commit) => [commit.id, commit.notes, commit.folds])).toEqual([["m1", 1, 2], ["m2", 0, 1]])
+    expect(P.pageOf(history, { what: "commit", id: "m1" })).toEqual({ seq: 11, commit: first, real })
+    expect(P.pageOf(history, { what: "outline" })).toEqual(outline)
+    expect(P.pageOf(history, { what: "epic", id: "missing", from: 0 })).toEqual({ seq: 11, epic: "missing", from: 0, total: 0, commits: [] })
+    expect(P.pageOf(history, { what: "search", query: "COMMIT" })).toMatchObject({ query: "COMMIT", commits: [{ id: "m1" }, { id: "m2" }, { id: "m3" }] })
+    for (const request of [{ what: "outline" }, { what: "epic", id: "e1", from: 50 }, { what: "commit", id: "m1" }, { what: "search", query: "café λ &/#" }] as const) {
+      const path = pathOf(request)
+      expect(path).toBeDefined()
+      if (path !== undefined) {
+        const url = new URL(path, "http://local")
+        expect(historyRouteOf("GET", url.pathname, url.searchParams)).toEqual({ kind: `history-${request.what}`, page: request })
+      }
+    }
+    const malformed = String.fromCharCode(0xd800)
+    for (const request of [{ what: "epic", id: malformed, from: 0 }, { what: "commit", id: malformed }, { what: "search", query: malformed }] as const) expect(pathOf(request)).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/history/epics/e1", new URLSearchParams("from=-1"))).toBeUndefined()
+    expect(historyRouteOf("GET", "/api/history/commits/missing")).toBeUndefined()
+    expect(historyRouteOf("PATCH", "/api/history")).toBeUndefined()
+    expect([statusOf("forbidden"), statusOf("unavailable"), statusOf("unknown")]).toEqual([403, 503, 409])
+  }).run(quick)
+  await runPromise(artifact("history-page-boundaries", "Vitest built-in bench; reversed physical commit array across two epics, notes and three real folds; exact stack order/counts/details, missing/negative cursor behavior, all four valid route/URI round trips, malformed Unicode path refusals and status classes checked.", ["Small deterministic projection/protocol corpus; no network or history mutation."], result))
+})

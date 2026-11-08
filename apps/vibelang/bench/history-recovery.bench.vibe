@@ -1,0 +1,102 @@
+import { it, expect } from "@effect/vitest"
+import * as H from "../src/history/mythical.vibe"
+import { make, memoryStore } from "../src/history/Sequencer.vibe"
+import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+const seed: H.History = {
+  seq: 4, main: "aaaaaaaaaaaa", epics: [{ id: "e1", title: "Recovery" }],
+  commits: [
+    { id: "m1", epic: "e1", rank: 0, title: "Original", state: "landed", task: "", lane: "", notes: [{ section: "tried", text: "Earlier attempt", by: "Benchmark" }] },
+    { id: "m2", epic: "e1", rank: 1, title: "Pending", state: "planned", task: "Keep", lane: "", notes: [] },
+  ],
+  real: [{ sha: "aaaaaaaaaaaa", change: "", title: "Original", mythical: "m1" }],
+}
+
+it("history amendment, insertion, duplicate and store recovery", async ({ bench }) => {
+  const result = await workload(bench, "history-retelling-recovery", async () => {
+    await runPromise(scoped(effect {
+      const store = try memoryStore()
+      const history = try make(store)
+      const loaded = try history.bootstrap(seed)
+      const repeated = try history.bootstrap(H.empty)
+      const amended = try history.plan({ how: "amend", epic: "", newEpic: "", target: "m1", title: "", task: "Replacement" })
+      const amendedState = try history.read()
+      const inserted = try history.plan({ how: "insert", epic: "", newEpic: "", target: "m2", title: "Before pending", task: "Insert" })
+      const empty = try history.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: " ", task: "" })
+      const long = try history.plan({ how: "append", epic: "e1", newEpic: "", target: "", title: "x".repeat(H.MAX_TITLE + 1), task: "" })
+      const unknown = try history.plan({ how: "insert", epic: "", newEpic: "", target: "missing", title: "Absent", task: "" })
+      try history.record({ type: "Start", id: "m1", lane: "bench" })
+      const startedState = try history.read()
+      try history.record({ type: "AddNote", id: "m1", section: "evidence", text: "Retained", by: "Benchmark" })
+      try history.record({ type: "Approve", id: "m1", by: "Benchmark" })
+      const real = { sha: "bbbbbbbbbbbb", change: "change-b", title: "Amended original", message: "Amended original\n\nMythical: m1\n" }
+      const folded = try history.fold(real)
+      const beforeDuplicate = try history.read()
+      const duplicate = try history.fold(real)
+      const afterDuplicate = try history.read()
+      const recovered = try make(store)
+      const restored = try recovered.read()
+      const refusedBootstrap = try recovered.bootstrap(H.empty)
+      const events = try store.since(seed.seq)
+      const followed = Array.from(try Stream.runCollect(recovered.follow(seed.seq).pipe(Stream.take(events.length))))
+      try Effect.try(() => {
+        expect([loaded, repeated, refusedBootstrap]).toEqual([true, false, false])
+        expect([amended, inserted, empty, long, unknown, folded, duplicate]).toEqual([
+          { id: "m1", refusal: null }, { id: "m3", refusal: null }, { id: "", refusal: "empty" },
+          { id: "", refusal: "too-long" }, { id: "", refusal: "unknown" }, { id: "m1", refusal: null }, { id: "", refusal: "duplicate" },
+        ])
+        const expected: H.History = {
+          ...seed, seq: 10, main: real.sha,
+          commits: [
+            { ...seed.commits[0]!, notes: [...seed.commits[0]!.notes, { section: "evidence", text: "Retained", by: "Benchmark" }, { section: "evidence", text: "approved", by: "Benchmark" }] },
+            { ...seed.commits[1]!, rank: 2 },
+            { id: "m3", epic: "e1", rank: 1, title: "Before pending", state: "planned", task: "Insert", lane: "", notes: [] },
+          ],
+          real: [...seed.real, { sha: real.sha, change: real.change, title: real.title, mythical: "m1" }],
+        }
+        expect(amendedState.commits[0]).toEqual({ ...seed.commits[0]!, state: "planned", task: "Replacement" })
+        expect(startedState.commits[0]).toEqual({ ...seed.commits[0]!, state: "working", task: "Replacement", lane: "bench" })
+        expect(events).toEqual([
+          { type: "Amended", seq: 5, id: "m1", task: "Replacement" },
+          { type: "Planned", seq: 6, id: "m3", epic: "e1", rank: 1, title: "Before pending", task: "Insert" },
+          { type: "Started", seq: 7, id: "m1", lane: "bench" },
+          { type: "Noted", seq: 8, id: "m1", section: "evidence", text: "Retained", by: "Benchmark" },
+          { type: "Approved", seq: 9, id: "m1", by: "Benchmark" },
+          { type: "Folded", seq: 10, sha: real.sha, change: real.change, title: real.title, into: "m1" },
+        ])
+        expect(beforeDuplicate).toEqual(expected)
+        expect(afterDuplicate).toBe(beforeDuplicate)
+        expect(restored).toEqual(expected)
+        expect(followed).toEqual(events)
+        expect(events.map((event) => event.seq)).toEqual([5, 6, 7, 8, 9, 10])
+        expect(events.reduce(H.apply, seed)).toEqual(expected)
+        expect(Schema.decodeUnknownSync(Schema.fromJsonString(HistorySchema))(JSON.stringify(restored))).toEqual(expected)
+      })
+    }))
+  }).run(quick)
+  await runPromise(artifact("history-recovery", "Vitest built-in bench; bootstrap a landed commit and pending sibling, reopen/amend, insert before sibling, refuse invalid plans, start/note/approve and fold exact trailer. Recreate the real sequencer over the same memory store; compare full independent expected state, every event, replay, schema round trip and duplicate identity. Each callback owns a new store.", ["In-memory durable-store contract and sequencer; no SQLite restart, repository write, network or model. Assertions and fresh store construction included."], result))
+})
+
+it("history rejects malformed next events without losing sequence progress", async ({ bench }) => {
+  const result = await workload(bench, "history-malformed-replay", () => {
+    const invalid: ReadonlyArray<H.Event> = [
+      { type: "EpicOpened", seq: 5, id: "e1", title: "Duplicate" },
+      { type: "EpicOpened", seq: 5, id: "", title: "Missing" },
+      { type: "Planned", seq: 5, id: "m3", epic: "absent", rank: 0, title: "No epic", task: "" },
+      { type: "Planned", seq: 5, id: "m2", epic: "e1", rank: 2, title: "Duplicate", task: "" },
+      { type: "Amended", seq: 5, id: "m2", task: "Not landed" },
+      { type: "Started", seq: 5, id: "m1", lane: "Not planned" },
+      { type: "Approved", seq: 5, id: "m2", by: "Not working" },
+      { type: "Folded", seq: 5, sha: "aaaaaaaaaaaa", change: "", title: "Duplicate", into: "m1" },
+      { type: "Folded", seq: 5, sha: "cccccccccccc", change: "", title: "Missing", into: "absent" },
+      { type: "Noted", seq: 5, id: "absent", section: "tried", text: "No commit", by: "Benchmark" },
+    ]
+    for (const event of invalid) {
+      expect(H.apply(seed, event)).toEqual({ ...seed, seq: 5 })
+      expect(H.apply(seed, { ...event, seq: 4 })).toBe(seed)
+      expect(H.apply(seed, { ...event, seq: 6 })).toBe(seed)
+    }
+  }).run(quick)
+  await runPromise(artifact("history-malformed-replay", "Vitest built-in bench; ten invalid event shapes across all seven event kinds, each checked as next, duplicate and gap. Invalid next content advances only the cursor; duplicates/gaps retain the original object and full state.", ["Pure replay boundary, deliberately malformed events; not storage transport corruption or authenticated admission."], result))
+})

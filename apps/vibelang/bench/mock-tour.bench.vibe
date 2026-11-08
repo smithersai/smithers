@@ -1,0 +1,81 @@
+import { it, expect } from "@effect/vitest"
+import { Factory } from "../src/core/Factory.vibe"
+import { MockFactory } from "../src/core/MockFactory.vibe"
+import { apply, empty } from "../src/core/conversation.vibe"
+import { DOCS_ORIGIN, STOPS, readingMillis } from "../src/core/flows.vibe"
+import { chunks, mockReply, TOUR } from "../src/core/mockReplies.vibe"
+import { artifact, workload, slow, quick } from "./artifact.vibe"
+
+const tourDuration = TOUR.reduce((total, stop) => total + readingMillis(stop.words), 0)
+
+it("complete mock tour and cancellation", { timeout: tourDuration + 60000 }, async ({ bench }) => {
+  const results = []
+  results.push(await workload(bench, "mock-tour-complete", async () => {
+    await runPromise(scoped(effect {
+      provide MockFactory {
+        const factory = try Factory
+        try factory.tour("tour")
+        const busy = factory.tour("tour") catch (error) => error._tag === "Refused" ? error.refusal : "unavailable"
+        const events = Array.from(try Stream.runCollect(factory.events("tour", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyFinished"))))
+        const state = events.reduce(apply, empty)
+        const snapshot = try factory.read("tour", 0)
+        const none = factory.endTour("tour") catch (error) => error._tag === "Refused" ? error.refusal : "unavailable"
+        try Effect.try(() => {
+          expect(busy).toBe("busy")
+          expect(none).toBe("not-replying")
+          expect(events.map((event) => event.seq)).toEqual(events.map((_, i) => i + 1))
+          expect(events.filter((event) => event.type === "PaneOpened").map((event) => event.url)).toEqual(STOPS.map((stop) => DOCS_ORIGIN + stop.path))
+          expect(state.entries[0]).toMatchObject({ text: TOUR.map((stop) => stop.words).join("\n\n"), done: true, error: "" })
+          expect(snapshot).toEqual({ seq: state.seq, entries: state.entries })
+        })
+      }
+    }))
+  }).run({ time: 0, warmup: false, iterations: 1 }))
+  results.push(await workload(bench, "mock-tour-end", async () => {
+    await runPromise(scoped(effect {
+      provide MockFactory {
+        const factory = try Factory
+        try factory.tour("tour")
+        try Stream.runDrain(factory.events("tour", 0).pipe(Stream.takeUntil((event) => event.type === "ReplyDelta")))
+        try factory.endTour("tour")
+        const events = Array.from(try Stream.runCollect(factory.events("tour", 0).pipe(Stream.takeUntil((event) => event.type === "TourEnded"))))
+        const snapshot = try factory.read("tour", 0)
+        try Effect.try(() => {
+          expect(snapshot.seq).toBe(events.at(-1)?.seq)
+          expect(snapshot.entries[0]?.done).toBe(true)
+          expect(snapshot.entries[0]?.text.length).toBeGreaterThan(0)
+        })
+      }
+    }))
+  }).run(slow))
+  await runPromise(artifact("mock-tour", "Vitest built-in bench; real MockFactory durable tour; verify each stop, complete exact script, busy refusal, ended-tour refusal and cancellation after first delta. One complete natural-paced run; three cancellations.", ["Includes production reading holds, based on each paragraph; one completion establishes no percentile. Product mock mode, no model/backend."], results))
+})
+
+it("script selection and chunk preservation", async ({ bench }) => {
+  const result = await workload(bench, "mock-scripts", () => {
+    for (const prompt of ["install", "service", "effect", "error", "flow", "something entirely different"]) {
+      const reply = mockReply(prompt)
+      expect(reply.length).toBeGreaterThan(0)
+      expect(chunks(reply).join("")).toBe(reply)
+    }
+    expect(chunks("").join("")).toBe("")
+  }).run(quick)
+  await runPromise(artifact("mock-scripts", "Vitest built-in bench; script selection including fallback, reconstruct every selected reply from chunks.", ["Fixed synthetic prompts; syntax compilation remains in the separate unit suite."], result))
+})
+
+it("closed Factory refuses new work", async ({ bench }) => {
+  const result = await workload(bench, "mock-factory-close", async () => {
+    await runPromise(effect {
+      const scope = try Scope.make()
+      const context = try Layer.buildWithScope(MockFactory, scope)
+      const factory = Context.get(context, Factory)
+      try Scope.close(scope, Exit.void)
+      const failed = try exit(factory.post("closed", "a", "Ada", "hi"))
+      try Effect.try(() => {
+        expect(Exit.isFailure(failed)).toBe(true)
+        if (Exit.isFailure(failed)) expect(Cause.squash(failed.cause)).toMatchObject({ _tag: "Unavailable", reason: "Factory closed" })
+      })
+    })
+  }).run(quick)
+  await runPromise(artifact("mock-close", "Vitest built-in bench; build and close actual Factory scope, then verify a post is refused as unavailable.", ["Lifecycle cost, no model or network."], result))
+})

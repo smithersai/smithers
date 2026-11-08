@@ -1,0 +1,77 @@
+// Boundary and recovery workloads are measured independently of the unit/property suites.
+import { it, expect } from "@effect/vitest"
+import * as M from "../src/core/conversation.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("machine transitions, refusal boundaries and client recovery", async ({ bench }) => {
+  const result = await workload(bench, "machine-boundaries", () => {
+    let state = M.empty
+    const send = (intent: M.Intent) => {
+      const decision = M.decide(state, intent)
+      expect(decision.ok).toBe(true)
+      if (decision.ok) state = M.apply(state, decision.event)
+    }
+    const refused = (intent: M.Intent, reason: string) => expect(M.decide(state, intent)).toEqual({ ok: false, refusal: reason })
+    refused({ type: "Post", id: "m", clientId: "c", name: "Ada", text: " " }, "empty")
+    refused({ type: "Post", id: "m", clientId: "c", name: "Ada", text: "x".repeat(8001) }, "too-long")
+    refused({ type: "Post", id: "", clientId: "", name: "Ada", text: "x" }, "duplicate")
+    refused({ type: "StartReply", id: "", inReplyTo: "none" }, "not-replying")
+    refused({ type: "StartReply", id: "r", inReplyTo: "none" }, "not-replying")
+    send({ type: "Post", id: "m", clientId: "c", name: "Ada", text: " hi " })
+    refused({ type: "Post", id: "m", clientId: "other", name: "Ada", text: "hi" }, "duplicate")
+    refused({ type: "Post", id: "other", clientId: "c", name: "Ada", text: "hi" }, "duplicate")
+    refused({ type: "StartReply", id: "m", inReplyTo: "m" }, "duplicate")
+    send({ type: "StartReply", id: "r", inReplyTo: "m" })
+    refused({ type: "StartReply", id: "other", inReplyTo: "m" }, "busy")
+    refused({ type: "StartTour", id: "t" }, "busy")
+    for (const intent of [{ type: "AppendReply", id: "other", text: "x" }, { type: "RestartReply", id: "other" }, { type: "FinishReply", id: "other" }, { type: "FailReply", id: "other", reason: "" }, { type: "EndTour", id: "r" }, { type: "OpenPane", id: "other", url: "/" }] as const) refused(intent, "not-replying")
+    refused({ type: "OpenPane", id: "r", url: "" }, "empty")
+    send({ type: "AppendReply", id: "r", text: "discarded" })
+    send({ type: "RestartReply", id: "r" })
+    expect(state.entries[1]?.text).toBe("")
+    send({ type: "AppendReply", id: "r", text: "answer" })
+    send({ type: "FinishReply", id: "r" })
+    refused({ type: "StartReply", id: "again", inReplyTo: "m" }, "not-replying")
+    refused({ type: "StartTour", id: "" }, "not-replying")
+    refused({ type: "StartTour", id: "r" }, "duplicate")
+    send({ type: "StartTour", id: "t" })
+    send({ type: "OpenPane", id: "t", url: "https://vibelang.sh/" })
+    send({ type: "AppendReply", id: "t", text: "tour" })
+    send({ type: "EndTour", id: "t" })
+    expect(state.pane).toBe("https://vibelang.sh/")
+    send({ type: "StartTour", id: "failed" })
+    send({ type: "FailReply", id: "failed", reason: "" })
+    expect(state.agent).toBe("failed")
+    expect(state.entries.at(-1)?.error).toBe("failed")
+    const event: M.Event = { type: "Posted", seq: 1, id: "m1", clientId: "a", name: "Ada", text: "post" }
+    let client = M.post(M.newClient, "a", " post ")
+    expect(M.post(client, "a", "post")).toBe(client)
+    expect(M.post(client, "", "post")).toBe(client)
+    expect(M.post(client, "b", " ")).toBe(client)
+    client = M.post(client, "b", "another")
+    client = M.failPost(client, "a", "")
+    expect(client.pending[0]?.error).toBe("failed")
+    client = M.retryPost(client, "a")
+    expect(client.pending[0]?.error).toBe("")
+    const gap = M.receive(client, { ...event, seq: 3 })
+    expect(gap.gap).toBe(true)
+    expect(M.receive(gap, { ...event, seq: 3 })).toBe(gap)
+    client = M.receive(M.resume(gap), event)
+    expect(client.pending.map((post) => post.clientId)).toEqual(["b"])
+    expect(M.receive(client, event)).toBe(client)
+    expect(M.resume(client)).toBe(client)
+    expect(M.post(client, "a", "post")).toBe(client)
+    for (const malformed of [
+      { ...event, clientId: "" }, { ...event, id: "" },
+      { type: "ReplyStarted", seq: 1, id: "r", inReplyTo: "none" },
+      { type: "ReplyDelta", seq: 1, id: "r", text: "x" },
+      { type: "ReplyRestarted", seq: 1, id: "r" },
+      { type: "ReplyFinished", seq: 1, id: "r" },
+      { type: "ReplyFailed", seq: 1, id: "r", reason: "" },
+      { type: "PaneOpened", seq: 1, id: "r", url: "" },
+      { type: "TourEnded", seq: 1, id: "r" },
+    ] as const) expect(M.apply(M.empty, malformed)).toEqual({ ...M.empty, seq: 1 })
+    expect(M.apply(M.empty, { ...event, seq: 2 })).toBe(M.empty)
+  }).run(quick)
+  await runPromise(artifact("machine-boundaries", "Vitest built-in bench; complete reply/restart/tour lifecycles, admission boundaries, malformed replay, optimistic failure/retry/confirmation/gap/duplicate delivery; assertions included.", ["In-process state machine; not exhaustive input enumeration or proof."], result))
+})

@@ -1,0 +1,98 @@
+import { it, expect as assert } from "@effect/vitest"
+import { scene, given, expect, role, text } from "foldkit/scene"
+import { init, keyMessage, Message, type Model, update, viewTransition } from "../src/web/main.vibe"
+import { view, failureOf } from "../src/web/view.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("web actions, recovery and tour controls", async ({ bench }) => {
+  const result = await workload(bench, "web-actions", () => {
+    const home = init({ session: "s", mode: "mock", name: "Ada" }).model
+    let model = home
+    const send = (message: Message) => { model = update(model, message).model; return model }
+    assert(Option.isNone(keyMessage("a", false, false))).toBe(true)
+    assert(Option.isSome(keyMessage("K", true, false))).toBe(true)
+    assert(Option.isSome(keyMessage("Escape", false, false))).toBe(true)
+    send(Message.ResolvedMode({ mode: "live" }))
+    send(Message.ClickedChat())
+    send(Message.ClickedAsk())
+    assert(model.palette).toBe(true)
+    send(Message.PressedCommandK())
+    assert(model.palette).toBe(false)
+    send(Message.ClickedAsk())
+    send(Message.PressedEscape())
+    send(Message.SubmittedDraft())
+    assert(model.sent).toBe(0)
+    send(Message.UpdatedDraft({ value: "hi" }))
+    send(Message.SubmittedDraft())
+    assert(model.client.pending[0]?.clientId).toBe("s-1")
+    send(Message.SucceededPost({ clientId: "s-1" }))
+    send(Message.FailedPost({ clientId: "s-1", reason: "unavailable" }))
+    scene({ update, view }, given(model), expect(role("button", { name: "Retry" })).toExist())
+    send(Message.ClickedRetry({ clientId: "s-1" }))
+    assert(model.client.pending[0]?.error).toBe("")
+    send(Message.ClickedRetry({ clientId: "absent" }))
+    send(Message.FocusedPrompt())
+    send(Message.ReceivedEvent({ event: { type: "Posted", seq: 1, id: "m1", clientId: "s-1", name: "Ada", text: "hi" } }))
+    send(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 3, id: "r1", inReplyTo: "m1" } }))
+    assert(model.from).toBe(1)
+    send(Message.ReceivedEvent({ event: { type: "ReplyStarted", seq: 2, id: "r1", inReplyTo: "m1" } }))
+    send(Message.ReceivedEvent({ event: { type: "ReplyFailed", seq: 3, id: "r1", reason: "failure" } }))
+    assert(model.answer).toBe("Answer failed")
+    send(Message.FailedEvents({ reason: "unavailable" }))
+    send(Message.ClickedReconnect())
+    assert(model.connection).toBe("Reconnecting")
+    send(Message.ScrolledTranscript({ bottom: false }))
+    assert(model.following).toBe(false)
+    send(Message.ScrolledTranscript({ bottom: true, intent: -1 }))
+    assert(model.following).toBe(false)
+    send(Message.ClickedLatest())
+    assert(model.following).toBe(true)
+    send(Message.ClickedSplash())
+    send(Message.ScrolledTranscript({ bottom: false, intent: 1 }))
+    send(Message.PressedEscape())
+    assert(model.surface).toBe("chat")
+    send(Message.ClickedLearnMore())
+    send(Message.ClickedLearnMore())
+    assert(model.tour).toBe(true)
+    send(Message.SucceededTour())
+    send(Message.ReceivedEvent({ event: { type: "TourStarted", seq: 1, id: "t1" } }))
+    send(Message.ReceivedEvent({ event: { type: "PaneOpened", seq: 2, id: "t1", url: "https://vibelang.sh/" } }))
+    scene({ update, view }, given(model), expect(role("button", { name: "Esc" })).toExist())
+    send(Message.ClickedDocs())
+    send(Message.ClickedDocs())
+    send(Message.FailedTour({ reason: "busy" }))
+    assert(model.tour).toBe(true)
+    send(Message.ClickedEndTour())
+    send(Message.FailedEndTour())
+    assert(model.tour).toBe(true)
+    send(Message.PressedEscape())
+    send(Message.SucceededTour())
+    send(Message.ReceivedEvent({ event: { type: "TourEnded", seq: 3, id: "t1" } }))
+    assert(model.tour).toBe(false)
+    send(Message.ClickedDocs())
+    send(Message.PressedEscape())
+    assert(model.docs).toBe("pane")
+    send(Message.FailedTour({ reason: "failed" }))
+    assert(model.tourError).toBe("failed")
+    assert(viewTransition({ previousModel: home, model: home, message: Message.FocusedPrompt() })).toBe(false)
+  }).run(quick)
+  await runPromise(artifact("web-actions", "Vitest built-in bench; all person-facing reducer messages, optimistic post retry, replay gap, connection, scroll, palette, splash and tour controls; scene assertions for retry and Esc.", ["Reducer/scene cost, no browser layout; native input and modal focus are covered by Chromium separately."], result))
+})
+
+it("post and connection failure views", async ({ bench }) => {
+  const result = await workload(bench, "failure-views", () => {
+    const home = init({ session: "s", mode: "mock", name: "Ada" }).model
+    for (const [reason, label] of [["empty", "Empty message"], ["too-long", "Message too long"], ["duplicate", "Already sent"], ["busy", "Agent busy"], ["not-replying", "Answer unavailable"], ["unavailable", "Send failed"]]) {
+      const model = { ...home, surface: "chat" as const, client: { ...home.client, pending: [{ clientId: "s-1", text: "hi", error: reason! }] } }
+      scene({ update, view }, given(model), expect(role("button", { name: "Retry" })).toExist(), expect(text(label!)).toExist())
+    }
+    assert(failureOf("")).toBe("Answer failed")
+    assert(failureOf("failed")).toBe("Answer failed")
+    assert(failureOf("The model is unavailable.")).toBe("The model is unavailable.")
+    const failed = { ...home, surface: "chat" as const, stream: "failed" as const }
+    scene({ update, view }, given(failed), expect(role("button", { name: "Reconnect" })).toExist())
+    const busy = { ...home, surface: "chat" as const, tourError: "busy" }
+    scene({ update, view }, given(busy), expect(role("textbox", { name: "Message" })).toExist(), expect(text("Agent busy")).toExist())
+  }).run(quick)
+  await runPromise(artifact("failure-views", "Vitest built-in bench; render every declared post failure and connection/tour failure with accessible retry/reconnect controls.", ["Scenes from state-machine client fixtures; no transport interception."], result))
+})

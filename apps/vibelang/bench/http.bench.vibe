@@ -1,0 +1,72 @@
+// @vitest-environment node
+import { it, expect } from "@effect/vitest"
+import { HttpClientRequest, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { handle, afterOf, eventStream, type Conversations, type Histories } from "../worker/Http.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import * as Sequencer from "../worker/Sequencer.vibe"
+import { type Event } from "../src/core/conversation.vibe"
+import { routeOf } from "../src/core/wire.vibe"
+import { MAX_WRITE_BYTES } from "../src/history/wire.vibe"
+import { artifact, workload, quick } from "./artifact.vibe"
+
+it("HTTP admission, routing, cursor and transport faults", async ({ bench }) => {
+  const result = await workload(bench, "http-boundaries", async () => {
+    await runPromise(scoped(effect {
+      const log = try Ref.make<ReadonlyArray<Event>>([])
+      const sequencer = try Sequencer.make({ read: () => Ref.get(log), write: (event) => Ref.update(log, (events) => [...events, event]) }, { start: () => Effect.void, tour: () => Effect.void })
+      const conversations: Conversations = {
+        post: (_, body) => sequencer.post(body.clientId, body.name, body.text), read: (_, after) => sequencer.read(after),
+        tour: () => sequencer.startTour(), endTour: () => sequencer.endTour(), events: () => succeed(eventStream(sequencer.follow(0))),
+      }
+      // History availability is an independent dependency: inject a faulty Effect service and prove chat still works.
+      const histories: Histories = {
+        page: () => fail(new Unreachable({ what: "history" })),
+        write: () => fail(new Unreachable({ what: "history" })),
+        events: () => fail(new Unreachable({ what: "history" })),
+      }
+      const request = effect (path: string, method = "GET", body?: string, length?: string, service = conversations) => {
+        let request = HttpClientRequest.make(method as "GET" | "POST" | "DELETE")(`http://api.invalid${path}`)
+        if (body !== undefined) request = HttpClientRequest.bodyText(request, body, "application/json")
+        if (length !== undefined) request = HttpClientRequest.setHeader(request, "content-length", length)
+        const web = try HttpClientRequest.toWeb(request)
+        return try Effect.provideService(handle(service, histories), HttpServerRequest.HttpServerRequest, HttpServerRequest.fromWeb(web))
+      }
+      const json = effect (response: HttpServerResponse.HttpServerResponse) => try promise(() => HttpServerResponse.toWeb(response).json())
+      const historyFailure = try request("/api/history")
+      const chunkedHistory = try request("/api/history/plan", "POST", "é".repeat(Math.floor(MAX_WRITE_BYTES / 2) + 1))
+      const malformedHistory = try request("/api/history/plan", "POST", "{")
+      const health = try json(try request("/api/health"))
+      const absent = try request("/absent")
+      const large = try request("/api/conversations/bench/posts", "POST", "x", "99999999")
+      const empty = try request("/api/conversations/bench/posts", "POST", "", "0")
+      const invalid = try request("/api/conversations/bench/posts", "POST", "bad", "3")
+      const named = JSON.stringify({ clientId: "a", name: "x".repeat(65), text: "hi" })
+      const longName = try request("/api/conversations/bench/posts", "POST", named, String(named.length))
+      const body = JSON.stringify({ clientId: "a", name: "Ada", text: "hi" })
+      const posted = try request("/api/conversations/bench/posts", "POST", body, String(body.length))
+      const duplicate = try request("/api/conversations/bench/posts", "POST", body, String(body.length))
+      const read = try json(try request("/api/conversations/bench"))
+      const badAfter = try request("/api/conversations/bench?after=01")
+      const tour = try request("/api/conversations/bench/tour", "POST")
+      const ended = try request("/api/conversations/bench/tour", "DELETE")
+      const notTouring = try request("/api/conversations/bench/tour", "DELETE")
+      const faulty: Conversations = { ...conversations, read: () => fail(new Unreachable({ what: "conversation" })) }
+      const unreachable = try request("/api/conversations/bench", "GET", undefined, undefined, faulty)
+      const streamed = try request("/api/conversations/bench/events")
+      try Effect.try(() => {
+        expect(historyFailure.status).toBe(503)
+        expect([chunkedHistory.status, malformedHistory.status]).toEqual([413, 400])
+        expect(health).toEqual({ ok: true, agent: "live" })
+        expect([absent.status, large.status, empty.status, invalid.status, longName.status, posted.status, duplicate.status, badAfter.status, tour.status, ended.status, notTouring.status, unreachable.status]).toEqual([404, 413, 413, 400, 400, 200, 409, 400, 200, 200, 409, 503])
+        expect(read).toMatchObject({ seq: 1, entries: [{ id: "m1", text: "hi" }] })
+        expect(streamed.headers["content-type"]).toContain("text/event-stream")
+        for (const [value, expected] of [["0", 0], ["1", 1], ["01", undefined], ["-1", undefined], ["1.1", undefined], ["9007199254740992", undefined]] as const) expect(afterOf(new URL(`http://x/?after=${value}`))).toBe(expected)
+        for (const [method, suffix, kind] of [["GET", "", "read"], ["POST", "/posts", "post"], ["GET", "/events", "events"], ["POST", "/tour", "tour"], ["DELETE", "/tour", "end-tour"]] as const) expect(routeOf(method, `/api/conversations/a${suffix}`)?.kind).toBe(kind)
+        expect(routeOf("GET", "/api/conversations/a/b/c")).toBeUndefined()
+        expect(routeOf("GET", "/api/conversations/")).toBeUndefined()
+        expect(routeOf("PATCH", "/api/conversations/a")).toBeUndefined()
+      })
+    }))
+  }).run(quick)
+  await runPromise(artifact("http", "Vitest built-in bench; real handler and sequencer; valid post/read/tour/end/events routing, body size/schema/name checks including lengthless multi-byte history overflow, cursor bounds, duplicate, and injected faulty Effect service returning Unreachable. Exact status and accepted state asserted.", ["In-process HTTP objects, no TCP; SQLite/durable engine covered in workerd."], result))
+})
