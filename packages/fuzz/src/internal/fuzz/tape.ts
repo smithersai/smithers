@@ -136,3 +136,10 @@ export function decodeWords(text: string): Array<number> {
   for (let index = 0; index < out.length; index++) out[index] = view.getUint32(index * 4, true)
   return out
 }
+
+
+/** Replaces a mutation's tail, including a full corpus tape. @internal */
+export function spliceTail(tape: Array<number>, at: number, tail: ReadonlyArray<number>): void {
+  tape.splice(at, tape.length - at)
+  for (const word of tail) tape.push(word)
+}

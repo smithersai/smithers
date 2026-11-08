@@ -12,3 +12,9 @@ import { Arbitrary, Effect, Schema } from "effect"
 const result = Fuzz.run(Arbitrary.schema(Schema.Int), (n) => n + 0 === n, { executions: 1000, seed: 1 })
 Effect.runPromise(result)
 ```
+
+The base copy is unchanged except imports. One follow-up sync patch fixes a bug
+found by the app's long campaign: corpus-tail crossover appends words without
+spreading a whole tape into a function call. JavaScript's argument limit could
+otherwise crash a run on a large generated event. `test/tapeMutation.test.ts`
+retains a 200,000-word regression; port this small patch when syncing the fork.

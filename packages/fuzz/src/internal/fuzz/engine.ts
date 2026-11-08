@@ -756,7 +756,7 @@ export const runTarget = Effect.fnUntraced(function*<A, E, R>(
           tape.splice(at, 0, ...tape.slice(at, at + length))
           break
         case 9:
-          tape.splice(at, tape.length - at, ...(lane ? other.schedule : other.words).slice(at))
+          Tape.spliceTail(tape, at, (lane ? other.schedule : other.words).slice(at))
           break
         case 10:
           size = Math.min(
