@@ -18,3 +18,191 @@ it.effect("refuses a same-named unrelated repository instead of writing a propos
   }
   try Effect.try(() => { expect(fault.handled).toHaveLength(2); expect(fault.handled.every(request => request.method === "GET")).toBe(true) })
 })
+
+for (const scenario of ["incomplete", "changed-head"]) {
+  it.effect(`refuses ${scenario} native document evidence without issuing a write`, () => effect {
+    let reads = 0
+    const pull = (head: string) => ({ id: 1, node_id: "PR_fixture", number: 1, title: "Fixture review", body: "", state: "open", user: { id: 42, login: "person" }, head: { ref: "proposal", sha: head }, base: { ref: "main", sha: "base" }, changed_files: scenario === "incomplete" ? 2 : 1, created_at: "2026-11-08T00:00:00Z", updated_at: "2026-11-08T00:00:00Z", closed_at: null })
+    const fault = try Effect.try(() => faultingTransport(({ path }) => {
+      if (path.endsWith("/files")) return { status: 200, body: [{ filename: "docs/design/vips/proposal.md", status: "added" }] }
+      reads += 1
+      return { status: 200, body: pull(scenario === "changed-head" && reads > 1 ? "changed" : "observed") }
+    }))
+    provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+      const result = try Effect.result(GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com")))
+      try Effect.try(() => {
+        expect(result._tag).toBe("Failure")
+        if (result._tag === "Failure") expect(result.failure.details?.incomplete).toBe(true)
+      })
+    }
+    try Effect.try(() => expect(fault.handled.every(request => request.method === "GET")).toBe(true))
+  })
+}
+
+const forkBody = { name: "language", owner: { login: "person" }, default_branch: "main" }
+const pullBody = (head: string, user: unknown = { id: 42, login: "person" }, changedFiles = 1) => ({
+  id: 1, node_id: "PR_fixture", number: 1, title: "Fixture review", body: "", state: "open", user,
+  head: { ref: "proposal", sha: head }, base: { ref: "main", sha: "base" }, changed_files: changedFiles,
+  created_at: "2026-11-08T00:00:00Z", updated_at: "2026-11-08T00:00:00Z", closed_at: null,
+})
+const fileList = [{ filename: "docs/design/vips/proposal.md", status: "added" }]
+
+it.effect("bases a person's own repository on its own default branch without a fork lookup", () => effect {
+  const fault = try Effect.try(() => faultingTransport(({ path }) => path === "/repos/project/language"
+    ? { status: 200, body: { name: "language", owner: { login: "project" }, default_branch: "trunk" } }
+    : undefined))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const prepared = try GitHub.Proposals.ensureFork("project", "language", "project").pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+    try Effect.try(() => {
+      expect(prepared).toMatchObject({ name: "language", default_branch: "trunk", sourceDefaultBranch: "trunk" })
+      expect(fault.handled).toHaveLength(1)
+    })
+  }
+})
+
+it.effect("reuses the person's actual fork, however GitHub cased its parent", () => effect {
+  const fault = try Effect.try(() => faultingTransport(({ path }) => {
+    if (path === "/repos/project/language") return { status: 200, body: { name: "language", owner: { login: "project" }, default_branch: "main" } }
+    if (path === "/repos/person/language") return { status: 200, body: { ...forkBody, fork: true, parent: { full_name: "Project/Language" } } }
+    return undefined
+  }))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const prepared = try GitHub.Proposals.ensureFork("project", "language", "person").pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+    try Effect.try(() => {
+      expect(prepared).toMatchObject({ owner: { login: "person" }, sourceDefaultBranch: "main" })
+      expect(fault.handled.every((request) => request.method === "GET")).toBe(true)
+    })
+  }
+})
+
+it.effect("refuses an occupied same-named repository that is no fork, and creates the fork when the name is free", () => effect {
+  let occupied = true
+  const fault = try Effect.try(() => faultingTransport(({ method, path }) => {
+    if (path === "/repos/project/language" && method === "GET") return { status: 200, body: { name: "language", owner: { login: "project" }, default_branch: "main" } }
+    if (path === "/repos/person/language") return occupied ? { status: 200, body: { ...forkBody, fork: false } } : { status: 404, body: { message: "Not Found" } }
+    if (path === "/repos/project/language/forks" && method === "POST") return { status: 202, body: forkBody }
+    return undefined
+  }))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const refused = try Effect.result(GitHub.Proposals.ensureFork("project", "language", "person").pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com")))
+    occupied = false
+    const created = try GitHub.Proposals.ensureFork("project", "language", "person").pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+    try Effect.try(() => {
+      expect(refused._tag).toBe("Failure")
+      if (refused._tag === "Failure") expect(refused.failure.reason).toBe("invalid-config")
+      expect(created).toMatchObject({ owner: { login: "person" }, sourceDefaultBranch: "main" })
+      expect(fault.handled.filter((request) => request.method === "POST")).toHaveLength(1)
+    })
+  }
+})
+
+it.effect("rethrows a fork lookup failure that is not a missing repository", () => effect {
+  const fault = try Effect.try(() => faultingTransport(({ path }) => path === "/repos/project/language"
+    ? { status: 200, body: { name: "language", owner: { login: "project" }, default_branch: "main" } }
+    : { status: 500, body: { message: "boom" } }))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const result = try Effect.result(GitHub.Proposals.ensureFork("project", "language", "person").pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com")))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") expect(result.failure.details?.status).toBe(500)
+      expect(fault.handled.every((request) => request.method === "GET")).toBe(true)
+    })
+  }
+})
+
+it.effect("observes a complete unchanged review as its author, head and files", () => effect {
+  const fault = try Effect.try(() => faultingTransport(({ path }) => {
+    if (path.endsWith("/files")) return { status: 200, body: fileList }
+    return { status: 200, body: pullBody("observed") }
+  }))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const observed = try GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+    try Effect.try(() => {
+      expect(Option.isSome(observed)).toBe(true)
+      if (Option.isSome(observed)) expect(observed.value).toEqual({ author: 42, head: "observed", files: fileList })
+      expect(fault.handled.every((request) => request.method === "GET")).toBe(true)
+    })
+  }
+})
+
+it.effect("reads a missing review and a deleted author as absent, never as a failure", () => effect {
+  let scenario = "missing"
+  const fault = try Effect.try(() => faultingTransport(({ path }) => {
+    if (scenario === "missing") return { status: 404, body: { message: "Not Found" } }
+    if (path.endsWith("/files")) return { status: 200, body: fileList }
+    return { status: 200, body: pullBody("observed", null) }
+  }))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const missing = try GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+    scenario = "anonymous"
+    const anonymous = try GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+    try Effect.try(() => {
+      expect(Option.isNone(missing)).toBe(true)
+      expect(Option.isNone(anonymous)).toBe(true)
+    })
+  }
+})
+
+it.effect("refuses a review that gained a file, an author or a truncated listing while being read", () => effect {
+  let scenario = "grew"
+  let reads = 0
+  const fault = try Effect.try(() => faultingTransport(({ path }) => {
+    if (path.endsWith("/files")) {
+      return scenario === "truncated"
+        ? { status: 200, body: fileList, headers: { link: `<https://api.github.com/repos/project/language/pulls/1/files?page=2>; rel="next"` } }
+        : { status: 200, body: fileList }
+    }
+    reads += 1
+    if (scenario === "grew") return { status: 200, body: pullBody("observed", { id: 42, login: "person" }, reads > 1 ? 2 : 1) }
+    if (scenario === "author") return { status: 200, body: pullBody("observed", { id: reads > 1 ? 43 : 42, login: "person" }) }
+    return { status: 200, body: pullBody("observed", reads > 1 ? null : { id: 42, login: "person" }) }
+  }))
+  const read = () => GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com"))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    scenario = "grew"
+    reads = 0
+    const grew = try Effect.result(read())
+    scenario = "author"
+    reads = 0
+    const author = try Effect.result(read())
+    scenario = "anonymous"
+    reads = 0
+    const anonymous = try Effect.result(read())
+    scenario = "truncated"
+    reads = 0
+    const truncated = try Effect.result(read())
+    try Effect.try(() => {
+      expect([grew._tag, author._tag, anonymous._tag, truncated._tag]).toEqual(["Failure", "Failure", "Success", "Failure"])
+      if (grew._tag === "Failure") expect(grew.failure.details?.incomplete).toBe(true)
+      if (author._tag === "Failure") expect(author.failure.details?.incomplete).toBe(true)
+      if (truncated._tag === "Failure") expect(truncated.failure.details?.incomplete).toBe(true)
+      if (anonymous._tag === "Success") expect(Option.isNone(anonymous.success)).toBe(true)
+    })
+  }
+})
+
+it.effect("fails a review read GitHub itself failed", () => effect {
+  const fault = try Effect.try(() => faultingTransport(() => ({ status: 500, body: { message: "boom" } })))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const result = try Effect.result(GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com")))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") {
+        expect(result.failure.details?.incomplete).toBeUndefined()
+        expect(result.failure.details?.status).toBe(500)
+      }
+    })
+  }
+})
+
+it.effect("refuses a review whose file listing is not the protocol", () => effect {
+  const fault = try Effect.try(() => faultingTransport(({ path }) =>
+    path.endsWith("/files") ? { status: 200, body: [{ filename: 3 }] } : { status: 200, body: pullBody("observed") }))
+  provide Layer.succeed(HttpClient.HttpClient, fault.transport) {
+    const result = try Effect.result(GitHub.Proposals.documentReview("project", "language", 1).pipe(GitHub.Calls.withToken(Redacted.make("fixture-user-only"), "https://api.github.com")))
+    try Effect.try(() => {
+      expect(result._tag).toBe("Failure")
+      if (result._tag === "Failure") expect(result.failure.reason).toBe("decode-failed")
+    })
+  }
+})

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import { HttpClient, HttpClientError } from "effect/http"
+import { FetchHttpClient, HttpClient, HttpClientError } from "effect/http"
 import { GitHub } from "../src/index.ts"
+import { json, startFixture } from "./Fixture.ts"
 
 effect function fault() {
   const calls = try Ref.make(0)
@@ -55,4 +56,96 @@ it.effect("never presents a truncated native issue timeline as complete", () => 
       if (result._tag === "Failure") expect(result.failure.details?.incomplete).toBe(true)
     })
   }
+})
+
+it.effect("retains the native timestamp instead of inventing a relative timeline age", () => effect {
+  const wire = { event: "closed", actor: { id: 42, login: "person" }, created_at: "2026-11-08T10:00:00Z" }
+  const event = try Schema.decodeUnknownEffect(GitHub.IssueChanges.TimelineEvent)(wire)
+  try Effect.try(() => expect(event).toMatchObject({ created_at: wire.created_at }))
+})
+
+const wireIssue = {
+  id: 5, node_id: "I_5", number: 5, title: "Committed work", body: null, state: "closed", user: null,
+  comments: 0, created_at: "2026-11-08T00:00:00Z", updated_at: "2026-11-08T00:00:00Z", closed_at: null,
+}
+
+describe("issue changes over a real socket", () => {
+  it.effect("patches only the supplied fields and reads assignments with GitHub's defaults", () => effect {
+    const fixture = try promise(() => startFixture((request, response) => {
+      if (request.method === "PATCH" && request.url === "/repos/o/r/issues/5") {
+        return json(response, 200, { ...wireIssue, assignees: [{ id: 9, login: "octocat" }] })
+      }
+      if (request.method === "GET" && request.url === "/repos/o/r/issues/5") return json(response, 200, wireIssue)
+      json(response, 404, { message: "Not Found" })
+    }))
+    provide GitHub.GitHubClient.layer({ token: "person-only", apiBaseUrl: fixture.origin }, {}).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const updated = try GitHub.IssueChanges.update("o", "r", 5, { state: "closed" })
+      const read = try GitHub.IssueChanges.get("o", "r", 5)
+      try Effect.try(() => {
+        expect(updated.assignees).toEqual([{ id: 9, login: "octocat" }])
+        expect(read.assignees).toEqual([])
+        const patch = fixture.requests.find((request) => request.method === "PATCH")
+        expect(JSON.parse(patch!.body)).toEqual({ state: "closed" })
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("rejects a non-positive sub-issue id before any request", () => effect {
+    const faulty: GitHub.GitHubClient.GitHubClient = {
+      request: () => Effect.die("Unexpected request"), count: () => Effect.die("Unexpected count"),
+      paginate: () => Effect.die("Unexpected paginate"),
+    }
+    provide GitHub.GitHubClient.GitHubClient = faulty {
+      const result = try Effect.result(GitHub.IssueChanges.link("o", "r", 1, 0))
+      try Effect.try(() => expect(result._tag).toBe("Failure"))
+    }
+  })
+
+  it.effect("returns the complete assignable accounts, never an incomplete or unreadable listing", () => effect {
+    let answer: { readonly status: number; readonly body: unknown; readonly headers?: Record<string, string> } = {
+      status: 200, body: [{ id: 1, login: "octocat" }, { id: 2, login: "vibelang-agent" }],
+    }
+    const fixture = try promise(() => startFixture((request, response) => {
+      const page = Number(new URL(request.url, fixture.origin).searchParams.get("page") ?? 1)
+      const headers = answer.headers !== undefined ? answer.headers
+        : answer.status === 209 ? { link: `<${fixture.origin}/repos/o/r/assignees?per_page=100&page=${page + 1}>; rel="next"` }
+        : undefined
+      json(response, answer.status === 209 ? 200 : answer.status, answer.body, headers)
+    }))
+    provide GitHub.GitHubClient.layer({ token: "person-only", apiBaseUrl: fixture.origin }, {}).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const listed = try GitHub.IssueChanges.assignees("o", "r")
+      answer = { status: 209, body: [{ id: 1, login: "octocat" }] }
+      const truncated = try Effect.flip(GitHub.IssueChanges.assignees("o", "r"))
+      answer = { status: 200, body: [{ id: "oops", login: 1 }] }
+      const unreadable = try Effect.flip(GitHub.IssueChanges.assignees("o", "r"))
+      try Effect.try(() => {
+        expect(listed).toEqual([{ id: 1, login: "octocat" }, { id: 2, login: "vibelang-agent" }])
+        expect(truncated.details?.incomplete).toBe(true)
+        expect(unreadable.reason).toBe("decode-failed")
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("reads a native timeline, refusing one that is not the protocol", () => effect {
+    let body: unknown = [{ event: "closed", actor: { id: 42, login: "person" }, created_at: "2026-11-08T10:00:00Z" }]
+    const fixture = try promise(() => startFixture((_request, response) => json(response, 200, body)))
+    provide GitHub.GitHubClient.layer({ token: "person-only", apiBaseUrl: fixture.origin }, {}).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const events = try GitHub.IssueChanges.timeline("o", "r", 42)
+      body = [{ bogus: true }]
+      const unreadable = try Effect.flip(GitHub.IssueChanges.timeline("o", "r", 42))
+      try Effect.try(() => {
+        expect(events).toHaveLength(1)
+        expect(unreadable.reason).toBe("decode-failed")
+      })
+    }
+    try promise(() => fixture.close())
+  })
 })

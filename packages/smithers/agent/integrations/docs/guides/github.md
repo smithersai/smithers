@@ -322,3 +322,7 @@ Endpoint contracts: [sub-issues](https://docs.github.com/en/rest/issues/sub-issu
 `GitHub.IssueChanges.timeline` reads native issue events with their actual actors.
 It bounds pagination and refuses incomplete history. The caller chooses which event kinds to display;
 comments have their existing dedicated reader. [Timeline endpoint](https://docs.github.com/en/rest/issues/timeline).
+
+Native timeline records retain an optional `created_at` timestamp when GitHub supplies it. Consumers may show the actual calendar date; missing timestamps remain missing rather than becoming invented relative ages.
+
+`Proposals.documentReview` reads a PR’s numeric author and complete native changed-file set, with a head recheck. A 404 or deleted author yields None; truncation, GitHub’s file cap, concurrent head changes and provider failures remain errors. Callers validate their exact document path and compare immutable author IDs. This is read-only; span/log/counter outcomes contain no document path or content.

@@ -1,0 +1,23 @@
+// @vitest-environment node
+import { expect, it } from "@effect/vitest"
+import { FetchHttpClient } from "effect/http"
+import { GitHub } from "../src/index.ts"
+const enabled = runSync(Config.Boolean("GITHUB_PUBLIC_TESTS").pipe(Config.withDefault(false)))
+it.live.skipIf(!enabled)("reads native proposal evidence from a real closed VibeLang PR without a credential", () => effect {
+  provide FetchHttpClient.layer {
+    const observed = try (effect {
+      const page = try GitHub.Pulls.listPulls("smithersai", "vibelang", { state: "closed", maxPages: 1 })
+      const pull = page.items[0]
+      if (pull === undefined) throw new Error("No closed VibeLang PR available for the public read test")
+      return try GitHub.Proposals.documentReview("smithersai", "vibelang", pull.number)
+    }).pipe(GitHub.Calls.withToken(Redacted.make(""), "https://api.github.com"))
+    try Effect.try(() => {
+      expect(Option.isSome(observed)).toBe(true)
+      if (Option.isSome(observed)) {
+        expect(observed.value.author).toBeGreaterThan(0)
+        expect(observed.value.head).toMatch(/^[0-9a-f]{40}$/)
+        expect(observed.value.files.length).toBeGreaterThan(0)
+      }
+    })
+  }
+}, 30_000)

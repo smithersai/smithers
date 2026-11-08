@@ -1,6 +1,7 @@
 import { describe, expect, it } from "@effect/vitest"
-import { HttpClient } from "effect/http"
+import { FetchHttpClient, HttpClient } from "effect/http"
 import { GitHub } from "../src/index.ts"
+import { json, startFixture } from "./Fixture.ts"
 import { rejectingTransport } from "./Http.ts"
 
 describe("shared GitHub user authentication", () => {
@@ -74,5 +75,175 @@ it.effect("rejects ambiguous purpose names while allowing punctuation in opaque 
     expect(Exit.isFailure(invalid)).toBe(true)
     expect(valid).toEqual(Option.some({ value: "admin:alice", keyId: "legacy" }))
     expect(invalidPurpose).toEqual(Option.none())
+  })
+})
+
+describe("shared GitHub user authentication over a real token endpoint", () => {
+  it.effect("exchanges and refreshes real grants and reads who the person is", () => effect {
+    const fixture = try promise(() => startFixture((request, response) => {
+      if (request.url === "/login/oauth/access_token") {
+        const form = new URLSearchParams(request.body)
+        return json(response, 200, form.get("grant_type") === "refresh_token"
+          ? { access_token: "ghu_refreshed", token_type: "Bearer" }
+          : { access_token: "ghu_first", token_type: "Bearer", expires_in: 28800, refresh_token: "ghr_first" })
+      }
+      if (request.url === "/user") return json(response, 200, { id: 7, login: "person" })
+      json(response, 404, { message: "Not Found" })
+    }))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: fixture.origin, apiBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const granted = try auth.exchange({ code: Redacted.make("the-code"), codeVerifier: Redacted.make("the-verifier"), redirectUri: "https://factory.example/callback" })
+      const refreshed = try auth.refresh(Redacted.make("ghr_first"))
+      const who = try auth.user(granted.accessToken)
+      try Effect.try(() => {
+        expect(Redacted.value(granted.accessToken)).toBe("ghu_first")
+        expect(Redacted.value(granted.refreshToken!)).toBe("ghr_first")
+        expect(granted.expiresAt).toBe(28_800_000)
+        expect(Redacted.value(refreshed.accessToken)).toBe("ghu_refreshed")
+        expect(refreshed.expiresAt).toBeNull()
+        expect(refreshed.refreshToken).toBeNull()
+        expect(who).toEqual({ id: 7, login: "person" })
+        const [exchange, refresh, user] = fixture.requests
+        const form = new URLSearchParams(exchange!.body)
+        expect(form.get("grant_type")).toBe("authorization_code")
+        expect(form.get("code")).toBe("the-code")
+        expect(form.get("code_verifier")).toBe("the-verifier")
+        expect(form.get("redirect_uri")).toBe("https://factory.example/callback")
+        expect(form.get("client_id")).toBe("Iv1.example")
+        const renewal = new URLSearchParams(refresh!.body)
+        expect(renewal.get("grant_type")).toBe("refresh_token")
+        expect(renewal.get("refresh_token")).toBe("ghr_first")
+        expect(user!.headers.authorization).toBe("Bearer ghu_first")
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("maps a refused grant, a missing client id and a bad API URL to safe reasons", () => effect {
+    const refused = try promise(() => startFixture((_request, response) =>
+      json(response, 200, { error: "bad_verification_code", error_description: "The code passed is incorrect or expired." })))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), webBaseUrl: refused.origin, apiBaseUrl: refused.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const failure = try Effect.flip(auth.exchange({ code: Redacted.make("used-code"), codeVerifier: Redacted.make("v"), redirectUri: "https://factory.example/callback" }))
+      try Effect.try(() => {
+        expect(failure).toBeInstanceOf(GitHub.Auth.GitHubRefused)
+        expect([failure.step, failure.reason]).toEqual(["exchange", "rejected"])
+        expect(JSON.stringify(failure)).not.toContain("incorrect or expired")
+      })
+    }
+    try promise(() => refused.close())
+    provide GitHub.Auth.layer({ clientId: "", clientSecret: Redacted.make("secret-never-in-output") }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, try Effect.try(() => rejectingTransport("must not call")))),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const failure = try Effect.flip(auth.refresh(Redacted.make("ghr_any")))
+      try Effect.try(() => expect([failure.step, failure.reason]).toEqual(["refresh", "misconfigured"]))
+    }
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), apiBaseUrl: "not a url" }).pipe(
+      Layer.provide(Layer.succeed(HttpClient.HttpClient, try Effect.try(() => rejectingTransport("must not call")))),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const failure = try Effect.flip(auth.user(Redacted.make("ghu_any")))
+      try Effect.try(() => expect([failure.step, failure.reason]).toEqual(["user", "misconfigured"]))
+    }
+  })
+
+  it.effect("classifies a refused token and a rate limit on who the person is", () => effect {
+    let current: { readonly status: number; readonly body: unknown; readonly headers?: Record<string, string> } = { status: 401, body: { message: "Bad credentials" } }
+    const fixture = try promise(() => startFixture((_request, response) => json(response, current.status, current.body, current.headers)))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), apiBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const refused = try Effect.flip(auth.user(Redacted.make("ghu_revoked")))
+      current = { status: 403, body: { message: "API rate limit exceeded" }, headers: { "x-ratelimit-remaining": "0" } }
+      const limited = try Effect.flip(auth.user(Redacted.make("ghu_limited")))
+      try Effect.try(() => {
+        expect([refused.step, refused.reason]).toEqual(["user", "rejected"])
+        expect([limited.step, limited.reason]).toEqual(["user", "unavailable"])
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("maps GitHub's repository permissions to each named role, and none it cannot see", () => effect {
+    let current: { readonly status: number; readonly body: unknown } = { status: 200, body: {} }
+    const fixture = try promise(() => startFixture((_request, response) => json(response, current.status, current.body)))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), apiBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      const token = Redacted.make("ghu_permission")
+      const cases = [
+        [{ permissions: { admin: true, push: true, pull: true } }, "admin"],
+        [{ permissions: { admin: false, maintain: true, push: true, pull: true } }, "maintain"],
+        [{ permissions: { admin: false, push: true, pull: true } }, "write"],
+        [{ permissions: { admin: false, push: false, triage: true, pull: true } }, "triage"],
+        [{ permissions: { admin: false, push: false, triage: false, pull: true } }, "read"],
+        [{ permissions: { admin: false, push: false, triage: false, pull: false } }, "none"],
+        [{ full_name: "o/r" }, "none"],
+      ] as const
+      for (const [body, expected] of cases) {
+        current = { status: 200, body }
+        const role = try auth.permission(token, "o/r")
+        try Effect.try(() => expect(role).toBe(expected))
+      }
+      current = { status: 404, body: { message: "Not Found" } }
+      const invisible = try auth.permission(token, "o/r")
+      current = { status: 500, body: { message: "boom" } }
+      const failure = try Effect.flip(auth.permission(token, "o/r"))
+      try Effect.try(() => {
+        expect(invisible).toBe("none")
+        expect([failure.step, failure.reason]).toEqual(["permission", "unavailable"])
+      })
+    }
+    try promise(() => fixture.close())
+  })
+
+  it.effect("revokes as the App, treating a token GitHub no longer has as revoked", () => effect {
+    let status = 204
+    const fixture = try promise(() => startFixture((_request, response) => json(response, status, status === 204 ? undefined : { message: "answer" })))
+    provide GitHub.Auth.layer({ clientId: "Iv1.example", clientSecret: Redacted.make("secret-never-in-output"), apiBaseUrl: fixture.origin }).pipe(
+      Layer.provide(FetchHttpClient.layer),
+    ) {
+      const auth = try GitHub.Auth.GitHubAuth
+      for (const gone of [204, 404, 422]) {
+        status = gone
+        try auth.revoke(Redacted.make("ghu_gone"))
+      }
+      status = 401
+      const refused = try Effect.flip(auth.revoke(Redacted.make("ghu_any")))
+      status = 500
+      const down = try Effect.flip(auth.revoke(Redacted.make("ghu_any")))
+      try Effect.try(() => {
+        expect([refused.step, refused.reason]).toEqual(["revoke", "misconfigured"])
+        expect([down.step, down.reason]).toEqual(["revoke", "unavailable"])
+        expect(fixture.requests.map((request) => `${request.method} ${request.url}`)).toEqual([
+          "DELETE /applications/Iv1.example/token",
+          "DELETE /applications/Iv1.example/token",
+          "DELETE /applications/Iv1.example/token",
+          "DELETE /applications/Iv1.example/token",
+          "DELETE /applications/Iv1.example/token",
+        ])
+        expect(fixture.requests.every((request) => request.headers.authorization === `Basic ${btoa("Iv1.example:secret-never-in-output")}`)).toBe(true)
+      })
+    }
+    try promise(() => fixture.close())
+  })
+})
+
+it.effect("signs with the first configured key when the preferred one is absent, and refuses an unknown key", () => effect {
+  const { Core } = try promise(() => import("../src/index.ts"))
+  const keys = try Core.CookieKeys.make({ next: Redacted.make("b".repeat(32)) })
+  const signed = try keys.sign("session", "opaque-session")
+  const verified = try keys.verify("session", signed)
+  const ghost = try Effect.exit(keys.sign("session", "opaque-session", "ghost"))
+  try Effect.try(() => {
+    expect(verified).toEqual(Option.some({ value: "opaque-session", keyId: "next" }))
+    expect(Exit.isFailure(ghost)).toBe(true)
   })
 })

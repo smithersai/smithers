@@ -15,12 +15,18 @@ import { gitHubClient } from "./Http.ts"
 
 const token = process.env["GITHUB_TOKEN"] ?? process.env["SMITHERS_GITHUB_TOKEN"]
 
+// GitHub App installation tokens (ghs_ prefix) cannot call /user at all: the
+// API answers 403 "Resource not accessible by integration" by contract, not by
+// misconfiguration. Only the viewer case needs a user token; every other case
+// here exercises endpoints an installation token may call.
+const installationToken = token !== undefined && token.startsWith("ghs_")
+
 // Skipped without a credential: set GITHUB_TOKEN (or SMITHERS_GITHUB_TOKEN) to
 // a token with public read access to run it.
 describe.skipIf(token === undefined)("GitHub live contract (GITHUB_TOKEN)", () => {
   const client = gitHubClient({ token })
 
-  it("authenticates and returns the viewer", async () => {
+  it.skipIf(installationToken)("authenticates and returns the viewer", async () => {
     const viewer = await Effect.runPromise(
       client.request("GET", "/user", undefined, { schema: Schema.Struct({ login: Schema.String }) })
     )

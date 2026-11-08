@@ -1,6 +1,7 @@
 // Fork support for a person's review change, over the shared GitHub Effect client.
 import { GitHubClient } from "./GitHubClient.ts"
 import { IntegrationError } from "../core/IntegrationError.ts"
+import { getPull } from "./Pulls.ts"
 import { requireRepositoryPath } from "./Repository.ts"
 export const Fork = Schema.Struct({ name: Schema.String, owner: Schema.Struct({ login: Schema.String }), default_branch: Schema.String })
 /** Use the owner's repository or this person's actual fork. Base proposals on the upstream default branch. */
@@ -17,3 +18,37 @@ export effect function ensureFork(owner: string, repo: string, login: string) {
   const prepared = try client.request("POST", `/repos/${source}/forks`, { default_branch_only: true }, { schema: Fork })
   return { ...prepared, sourceDefaultBranch: upstream.default_branch }
 }
+
+
+export const ReviewFile = Schema.Struct({ filename: Schema.String, status: Schema.Literals(["added", "removed", "modified", "renamed", "copied", "changed", "unchanged"]) })
+export const DocumentReview = Schema.Struct({ author: Schema.Number, head: Schema.String, files: Schema.Array(ReviewFile) })
+
+/** Read a complete changed-file set at one observed PR head. Missing/deleted authors cannot prove ownership. */
+effect function readDocumentReview(owner: string, repo: string, number: number) {
+  const client = try GitHubClient
+  const repository = try requireRepositoryPath(owner, repo)
+  return effect {
+    const pull = try getPull(owner, repo, number)
+    if (pull.user === null) return Option.none<typeof DocumentReview.Type>()
+    const listed = try client.paginate(`/repos/${repository}/pulls/${number}/files`, { maxPages: 30 })
+    if (listed.truncated || listed.items.length !== pull.changed_files) throw new IntegrationError("poll-failed", "Proposal file listing is incomplete.", { incomplete: true, retryable: false })
+    const files = try Schema.decodeUnknownEffect(Schema.Array(ReviewFile))(listed.items).pipe(Effect.mapError(() => new IntegrationError("decode-failed", "Proposal files were not the protocol.", { retryable: false })))
+    const latest = try getPull(owner, repo, number)
+    if (latest.user === null) return Option.none<typeof DocumentReview.Type>()
+    if (latest.head.sha !== pull.head.sha || latest.changed_files !== files.length || latest.user.id !== pull.user.id) throw new IntegrationError("poll-failed", "Proposal changed while being read.", { incomplete: true, retryable: false })
+    return Option.some({ author: pull.user.id, head: pull.head.sha, files })
+  } catch effect (error) => {
+    if (error.details?.status === 404) return Option.none<typeof DocumentReview.Type>()
+    throw error
+  }
+}
+
+/** Native GitHub evidence for a document review. It does not trust an application's Markdown marker. */
+export const documentReview = (owner: string, repo: string, number: number) => withSpan(effect {
+  const result = try Effect.result(readDocumentReview(owner, repo, number))
+  const outcome = result._tag === "Failure" ? result.failure.details?.incomplete ? "partial" : "failed" : Option.isSome(result.success) ? "observed" : "missing"
+  try Metric.update(Metric.withAttributes(Metric.counter("github_proposal_document_reads", { incremental: true }), { outcome }), 1)
+  try Effect.logInfo("github.proposal.document").pipe(Effect.annotateLogs({ outcome }))
+  if (result._tag === "Failure") throw result.failure
+  return result.success
+}, "GitHub.Proposals.documentReview")

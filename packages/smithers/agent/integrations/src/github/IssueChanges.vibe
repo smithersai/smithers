@@ -44,7 +44,7 @@ export effect function assignees(owner: string, repo: string) {
 
 /** A native issue timeline event, including its actual actor. Unknown event kinds remain readable. */
 export const TimelineEvent = Schema.Struct({
-  event: Schema.String, actor: Schema.optionalKey(IssueUser),
+  event: Schema.String, actor: Schema.optionalKey(IssueUser), created_at: Schema.optionalKey(Schema.String),
   label: Schema.optionalKey(Schema.NullOr(Schema.Struct({ name: Schema.String }))),
   assignee: Schema.optionalKey(IssueUser),
 })
