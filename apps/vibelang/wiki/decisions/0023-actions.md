@@ -1,6 +1,6 @@
 # 0023. Registered actions and slash commands
 
-Status: SDK foundation implemented; app implementation held at an upstream schema integration gap, 2026-11-07.
+Status: SDK foundation and Effect annotation correction landed; app candidate held at service-spread inference, 2026-11-08.
 Rulings: VL-4, VL-7 to VL-14, VL-17, VL-18, VL-21, VL-23, VL-24, VL-29.
 Design: [actions](../designs/actions/index.html), including [lead notes](../designs/actions/LEAD-NOTES.md).
 The app feature is not claimed done or deployed. The lane report holds its preview and remaining work.
@@ -29,10 +29,11 @@ Starting returns a run id before work finishes. Cards, lists and the trace share
 ActionStep and ActionSettled go through conversation.vibe's existing numbered decide/apply machine. Terminal
 runs ignore late telemetry and competing settlements; step keys and attempts identify replayed steps.
 
-The pending implementation has memory-engine API tests, scene tests and a preview. Its candidate conversation
-machine passed 38 Dafny obligations and rejected five new executable mutations. These receipts describe that
-candidate, not a claim that the whole app feature is verified or shipped. Live routes, real account policy,
-agent tools, other lanes' flow registration and complete browser/workerd/flow coverage still have to land.
+The second-run candidate has real memory-engine and workerd hosts, scene/browser tests, durable run results,
+agent tools and shared CLI/MCP commands. Its conversation machine passed 45 Dafny obligations and rejected nine executable mutations in a frozen reconstruction. Fifteen action
+browser checks and two SQLite/alarm workerd checks passed before the latest sandbox rebase. These receipts
+describe that candidate, not a claim that the feature is verified or shipped. Current account policy integration,
+other lanes' flow execution, full regression/coverage/fuzz/benchmark checks and final browser integration remain.
 
 ## Design precedence and departures
 
@@ -57,11 +58,32 @@ The lead resolved `actions-schema-json-field` as an Effect 4.1.1 type annotation
 
 `patches/effect@4.1.1.patch`, registered through pnpm, changes the source and published declaration of `Schema.Json` from `Codec<Json>` to its concrete subtype `JsonValueSchema`. That interface extends `Codec<Json>`, specializes only the decoded/encoded required readonly key flags and `Rebuild`, and preserves every other public view. The existing JSON union type keeps its name. Effect already imports a JSON Schema module as `JsonSchema`, so `JsonValueSchema` also avoids that collision. Runtime code is unchanged. The same correction, a changeset and type/runtime regressions landed on our Effect fork main as `c30802502817062118a6b58904a362b6d2863ace` for upstreaming.
 
-The app compiler regression failed first with EK2109 on unpatched Effect. Positive cases cover required readonly JSON, aliases, annotation/check/rebuild, nested fields, schema errors, fixed tuples and records. Negative cases retain optionalKey/mutableKey and widened-key refusal, tuple/record strict checks, and required-input rejection. This preserves VIP-15 rather than weakening it. Every workspace package importing Schema is inventoried and typechecked; receipts, exits and source paths are in the lane report. Patch removal conditions are in `patches/README.md`: upgrade to a release carrying equivalent precise metadata and pass both regression classes without the patch.
+The app compiler regression failed first with EK2109 on unpatched Effect. Positive cases cover required readonly JSON, aliases, annotation/check/rebuild, nested fields, schema errors, fixed tuples and records. Negative cases retain optionalKey/mutableKey and widened-key refusal, tuple/record strict checks, and required-input rejection. This preserves VIP-15 rather than weakening it. Every production workspace package importing Schema is inventoried and typechecked in 67 successful package commands; the coding child is checked by its parent, while root design examples and maintainer historical fixtures are explicitly excluded. Receipts, exits and source paths are in the lane report. Patch removal conditions are in `patches/README.md`: upgrade to a release carrying equivalent precise metadata and pass both regression classes without the patch.
+
+## Service-spread hold (second run)
+
+The first-run archive was reconstructed against its recorded base and rebased with jj, retaining later tour,
+history, proof and sandbox work. The second-run archive is `~/vl/vl-actions.pending2/`: 48 changed files,
+a unified delta, exact base files and SHA-256 manifest. Its base is `2347bf8638e1354032cf27b4bbdae41c8884c384`.
+It is unfinished source; reconstruct and rebase the delta instead of overlaying files.
+
+After the sandbox lane extended Factory, the faulty-service wrappers exposed a separate VibeLang0.0.12 issue.
+Retrieving a two-method service in an effect and returning `{ ...base, first: replacement }` loses `second` from
+the inferred shape. VibeLang exits2; equivalent native Effect/TypeScript and an ordinary-interface spread exit0.
+Controls still reject a missing method and a wrongly typed result. The emitted JavaScript retains the spread.
+Reproduction, exact command and diagnostics: `~/vl/vibelang-bugs/actions-service-spread/README.md`.
+
+The candidate app's current typecheck exits2 in three fault-injection wrappers. No cast, compiler change or
+method-by-method bypass was introduced. Will's standing instruction requires approval before a change to
+existing compilation behavior; the earlier lead decision authorizes only the Effect Json annotation correction.
+The compiler correction therefore awaits Will before the lane resumes integration. The lane report records
+remaining replay, cancellation, policy, trace-selection and validation work without claiming completion.
 
 ## Dependencies and evidence
 
-No new app dependency. The two SDK packages include vibelang-runtime0.0.12, already used by the app, for their
+No new app dependency. The app's existing Node types and DOM test tool are aligned to the monorepo's 26.4.1
+and20.13.2 to share the Vitest runner with @effect/vitest; decision0008 records the registration regression.
+The two SDK packages include vibelang-runtime0.0.12, already used by the app, for their
 new VibeLang source. The engine's browser proof adds the monorepo's vibelang-unplugin0.0.12 as a build/test tool;
 0008 lists it as awaiting Will's VL-5 approval.
 

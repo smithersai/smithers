@@ -23,7 +23,7 @@ brick                                   state         proof
 2   sign-in and roles                   in progress         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       in progress   0022: GitHub-backed issue flows, commitments, sub-issues and repository VIP review changes
 4   actions and slash commands          held          0023: registry catalog and engine step telemetry landed; app held at
-                                                      actions-schema-json-field (Effect/VibeLang metadata); upstream approval pending
+                                                      actions-service-spread (VibeLang inference); compiler-policy approval pending
 5   mythical history                    done (local)  0020: the History machine proved (linearity, no loss, exactly one), the
                                                       bootstrap of 6,737 real commits, the flows, the live object and /history;
                                                       read by page (lane vl-mythical2); live writes wait for 0019's policy
@@ -55,7 +55,7 @@ brick                                   state         proof
 
 - **Tour production fixes (vl-tourfix, 0014):** docs and the current paragraph share the maximized pane; live and mock use durable word-count reading holds; Escape retains keyboard control, maximization isolates chat, status announces control, and later replies exclude tour history.
 
-- **vl-actions (0023):** SDK foundation is tested and landed. The unlanded mock preview and proof receipts are preserved in the lane report; live routes, agent tools and full browser/workerd coverage remain.
+- **vl-actions (0023):** SDK foundation and Effect Json patch are landed. The second-run app delta, real-engine/browser/workerd receipts and remaining policy/integration checks are preserved in the lane report; service-spread inference awaits compiler approval.
 
 - **Source coverage (0016, lane vl-coverage): in progress.** Boundary tests and Alchemy graph coverage; prepared
   100% gates remain below target. Two upstream reproductions await Will; precise coverage could not be enabled on
