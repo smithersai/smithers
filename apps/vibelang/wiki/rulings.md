@@ -114,6 +114,15 @@ All of the following are from Will's message of 2026-11-07, about 00:30 PST, unl
   escapes it or clicking the thing that says escape escapes it and the agent talks about vibelang and what it is and
   what this open source coding factory is". See decision 0014.
 
+- **VL-29. Finish everything asked for, held to 100% coverage by every suite, fuzzing from our Effect fork as a
+  package, formal proofs of all functionality, the mythical history, and a designer's design for every feature that
+  has no UI yet.** Will, 2026-11-07 about 21:15: "can you keep going getting everything I asked for first includin
+  g100% test coverage benchmark test coverage fuzz test coverage (you can copy the code we wrote in a fork of smithers
+  for this copy it into this repo as a package) and make sure all functionality is formally verified. Get everything
+  including the mythical history. Any features without UI have a high quality designer agent design it". The fork is
+  `github.com/smithersai/effect`, whose `effect/Fuzz`, `effect/testing/FuzzSimulation` and `it.effect.fuzz` are the
+  code to copy.
+
 ## Process
 
 - **VL-26. Go fast and in parallel; dogfood at once: the agent through the MCP server, skill or CLI, Will through the

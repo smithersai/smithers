@@ -17,6 +17,8 @@ brick                                   state         proof
                                                       mutations rejected. Running them in CI comes with the app's PACKAGE.ts.
 1f  Learn more: the agent's tour         done (local)  0014: the agent opens the docs in a pane and narrates, glow and Esc;
                                                       mock and live run one tour flow; scene, flow, workerd and browser tests
+1g  every suite covers the whole app    started       VL-29: unit, fuzz and benchmark coverage at 100% each; proofs of
+                                                      all logic; fuzzing from the Effect fork as @smthrs/fuzz
 1e  wiki in the app                     next          /wiki renders these pages as a maximizable pane (VL-17, VL-23)
 2   sign-in and roles                   later         GitHub sign-in; viewer, new, community, contributor, maintainer (VL-21)
 3   issues as a tree, tasks, VIPs       later         VL-20
