@@ -1,5 +1,5 @@
 // The SDK execution host owns admission, alarms, replay and cancellation for a registered history run.
-import { FlowRuntime } from "@smthrs/flow"
+import { FlowRuntime, type Flow } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { ActionDevice, deviceRegistration, historyRegistration, prepare, type Invocation } from "../src/actions/execution.vibe"
 import { SandboxStart, SandboxStop, SandboxCommand } from "../src/core/flows.vibe"
@@ -7,7 +7,7 @@ import type { RunRequest } from "../src/actions/wire.vibe"
 import { Note, Plan, Start } from "../src/history/flows.vibe"
 import { type HistoryReader, Show } from "../src/history/tools.vibe"
 import type { Storage } from "./Objects.vibe"
-import { executionStorage, unrouted } from "./Objects.vibe"
+import { executionStorage, existingReceipt, unrouted } from "./Objects.vibe"
 
 service HistoryAccess { readonly history: HistoryReader }
 const flows = [Show, Plan, Start, Note, SandboxStart, SandboxStop, SandboxCommand]
@@ -25,7 +25,7 @@ effect function intentOf(invocation: Invocation, id: string) {
     default: return undefined
   }
 }
-effect function poll(invocation: Invocation, id: string) {
+effect function poll(invocation: Invocation, id: string): Option.Option<Flow.Result<unknown, unknown>>!FlowRuntime.FlowExecutionNotFound!FlowRuntime.FlowRuntime {
   const engine = try FlowRuntime.FlowRuntime
   switch (invocation.kind) {
     case "show": return try engine.poll(Show, id)
@@ -57,7 +57,7 @@ export function make(hostId: string, storage: Storage, admit: () => boolean!! = 
     receipt: effect (request: RunRequest) => {
       const invocation = try prepare(request.flow, request.input, request.id)
       const engine = CloudflareRuntime.layer({ hostId, executionId: executionId(request), flow: request.flow }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
-      return try Effect.orDie(Effect.provide(poll(invocation, executionId(request)), engine))
+      return try Effect.orDie(Effect.provide(existingReceipt(storage, poll(invocation, executionId(request))), engine))
     },
   }
 }

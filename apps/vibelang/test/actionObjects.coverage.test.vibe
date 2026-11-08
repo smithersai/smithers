@@ -1,0 +1,200 @@
+// @vitest-environment node
+// The public action index and per-run hosts on real SQLite, with product accounts/history and durable alarms.
+import { describe, expect, it } from "@effect/vitest"
+import * as MockAccounts from "../src/core/MockAccounts.vibe"
+import { MockMythical } from "../src/history/MockMythical.vibe"
+import { Mythical } from "../src/history/MythicalHistory.vibe"
+import { empty as emptyHistory } from "../src/history/mythical.vibe"
+import type { RunRequest } from "../src/actions/wire.vibe"
+import { Unreachable } from "../worker/Unreachable.vibe"
+import { ExecutionObject } from "@smthrs/platform-cloudflare"
+import { Reply } from "../src/core/flows.vibe"
+import * as Directory from "../worker/ActionDirectory.vibe"
+import * as Runs from "../worker/ActionRuns.vibe"
+import * as Identity from "../worker/ActionIdentity.vibe"
+import * as Objects from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+/** A product world; only the platform's SQLite/KV/alarm adapter differs from workerd. */
+effect function world() {
+  const accounts = try MockAccounts.make()
+  const person = try accounts.choose("maintainer")
+  const authority = Identity.fromAccounts({
+    current: () => Effect.orDie(accounts.current()), role: accounts.role,
+    allowed: (actor, action) => accounts.policy.authorize(actor, action).pipe(Effect.as(true), Effect.catch(() => succeed(false))),
+  })
+  const objects = new Map<string, {
+    readonly storage: Objects.Storage
+    readonly sequencer: Effect.Success<ReturnType<typeof Objects.conversation>>
+    readonly host: ReturnType<typeof Runs.make>
+  }>()
+  effect function object(id: string) {
+    const root = id.endsWith("-reply") ? id.slice(0, -6) : id
+    const existing = objects.get(root)
+    if (existing !== undefined) return existing
+    const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+    const sequencer = try Objects.conversation(storage)
+    const found = { storage, sequencer, host: Runs.make(root, storage, sequencer, authority) }
+    objects.set(root, found)
+    return found
+  }
+  const storage = (try Effect.orDie(Effect.try(() => objectStorage()))) as unknown as Objects.Storage
+  const directory = Directory.directory("index", storage, {
+    request: effect (id) => { const obj = try object(id); return try promise(() => obj.storage.get<RunRequest>("action/request")) },
+    read: effect (id) => try Runs.read((try object(id)).sequencer),
+    start: effect (request, role) => try (try object(request.id)).host.start(request, role),
+    cancel: effect (id, role, owner) => try Effect.mapError((try object(id)).host.cancel(id, role, owner), () => new Unreachable({ what: "action" })),
+  }, authority)
+  const budget = try Objects.budget(storage, 1000)
+  const spend = { admit: (_day: string) => budget.admit(), spend: (_day: string, reply: string, tokens: number) => budget.spend(reply, tokens) }
+  const model = { model: undefined, unusable: "no-model" }
+  return { accounts, person, object, directory, spend, model }
+}
+function request(id: string, flow: string, input: Schema.Json, owner: string): RunRequest {
+  return { id, flow, input, door: "button", actor: "person", owner, name: "will" }
+}
+const history = MockMythical({ role: "maintainer", name: "will", agent: false }, () => succeed(emptyHistory))
+
+describe("durable action objects", () => {
+  it.live("keeps a missing journal as an error unless the host recorded cancellation before admission", () => scoped(effect {
+    const w = try world()
+    const obj = try w.object("amissing")
+    const intent = try Effect.orDie(ExecutionObject.intent(Reply, { executionId: "missing", payload: { post: "m1" } }))
+    const unexpected = try Effect.exit(Objects.executionResult("amissing", obj.storage, intent))
+    try promise(() => obj.storage.put(ExecutionObject.cancelledKey, Date.now()))
+    const cancelled = try Objects.executionResult("amissing", obj.storage, intent)
+    try Effect.try(() => {
+      expect(Exit.isFailure(unexpected)).toBe(true)
+      if (Exit.isFailure(unexpected)) expect(Cause.pretty(unexpected.cause)).toContain("FlowExecutionNotFound")
+      expect(Option.isNone(cancelled)).toBe(true)
+    })
+  }), 60_000)
+
+  it.live("refuses a history action demoted before admission without creating a commit or losing its failed run", () => scoped(effect {
+    const w = try world()
+    const body = request("ahistory", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Coverage", target: "", title: "Must not run", task: "Unadmitted" }, w.person.id)
+    try w.directory.start(body, "maintainer")
+    try w.accounts.grant(w.person.id, "new")
+    const obj = try w.object(body.id)
+    provide history {
+      const product = try Mythical
+      try obj.host.alarm(w.spend, w.model, product)
+      try obj.host.alarm(w.spend, w.model, product)
+      const outline = try product.outline()
+      const rows = try Runs.read(obj.sequencer)
+      try Effect.try(() => {
+        expect(outline.open).toEqual([])
+        expect(rows).toMatchObject([{ id: body.id, state: "failed", result: "Permission changed" }])
+      })
+    }
+  }), 60_000)
+
+  it.live("indexes an actual post once, checks request identity, and traces its no-model reply on alarm", () => scoped(effect {
+    const w = try world()
+    const body = request("apost", "vibelang/Post", { text: "hello" }, w.person.id)
+    const first = try w.directory.start(body, "maintainer")
+    const replay = try w.directory.start(body, "maintainer")
+    const conflict = try w.directory.start({ ...body, input: { text: "changed" } }, "maintainer")
+    const obj = try w.object(body.id)
+    const posted = try obj.sequencer.read(0)
+    provide history {
+      try obj.host.alarm(w.spend, w.model, try Mythical)
+    }
+    const runs = try w.directory.list("")
+    const filtered = try w.directory.list("vibelang/Reply")
+    const missing = try w.directory.list("absent")
+    const final = try obj.sequencer.read(0)
+    try Effect.try(() => {
+      expect([first, replay, conflict]).toEqual([null, null, "conflict"])
+      expect(posted.entries.filter(entry => entry.author === "person").map(entry => entry.text)).toEqual(["hello"])
+      expect(runs.find(run => run.id === "apost")).toMatchObject({ state: "passed", result: "null" })
+      expect(runs.find(run => run.id === "apost-reply")).toMatchObject({ state: "failed", actor: "agent" })
+      expect(runs.find(run => run.id === "apost-reply")!.steps.length).toBeGreaterThan(0)
+      expect(filtered.map(run => run.id)).toEqual(["apost-reply"])
+      expect(missing).toEqual([])
+      expect(final.entries.find(entry => entry.author === "agent")).toMatchObject({ done: true, error: "The agent has no model configured." })
+    })
+  }), 60_000)
+
+  it.live("cancels a parked tutorial, retains cancellation through alarms, and reruns it with a fresh id", () => scoped(effect {
+    const w = try world()
+    const body = request("atour", "vibelang/Tour", {}, w.person.id)
+    try w.directory.start(body, "maintainer")
+    const obj = try w.object(body.id)
+    provide history {
+      try obj.host.alarm(w.spend, w.model, try Mythical)
+    }
+    const cancelled = try w.directory.cancel(body.id, "maintainer", w.person.id)
+    const cancelledAgain = try w.directory.cancel(body.id, "maintainer", w.person.id)
+    provide history {
+      try obj.host.alarm(w.spend, w.model, try Mythical)
+    }
+    const replay = try w.directory.start(body, "maintainer")
+    const rerun = try w.directory.rerun(body.id, "arerun", "maintainer", w.person.id)
+    try w.directory.cancel("arerun", "maintainer", w.person.id)
+    const runs = try w.directory.list("vibelang/Tour")
+    const unknownCancel = try w.directory.cancel("amissing", "maintainer", w.person.id)
+    const unknownRerun = try w.directory.rerun("amissing", "anext", "maintainer", w.person.id)
+    try Effect.try(() => {
+      expect([cancelled, cancelledAgain, replay, rerun]).toEqual([null, null, null, null])
+      expect(runs.map(run => run.id).sort()).toEqual(["arerun", "atour"])
+      expect(runs.every(run => run.state === "cancelled")).toBe(true)
+      expect(runs.find(run => run.id === "atour")!.steps.length).toBeGreaterThan(0)
+      expect([unknownCancel, unknownRerun]).toEqual(["not-found", "not-found"])
+    })
+  }), 60_000)
+
+  it.live("uses current grants before cached requests and refuses a changed permission at alarm admission", () => scoped(effect {
+    const w = try world()
+    const body = request("ademoted", "vibelang/Post", { text: "retained" }, w.person.id)
+    try w.directory.start(body, "maintainer")
+    try w.accounts.grant(w.person.id, "new")
+    const replay = try w.directory.start(body, "maintainer")
+    const rerun = try w.directory.rerun(body.id, "anew", "maintainer", w.person.id)
+    const cancel = try w.directory.cancel(body.id, "maintainer", w.person.id)
+    const obj = try w.object(body.id)
+    provide history {
+      try obj.host.alarm(w.spend, w.model, try Mythical)
+    }
+    const final = try obj.sequencer.read(0)
+    const rows = try Runs.read(obj.sequencer)
+    try Effect.try(() => {
+      expect([replay, rerun, cancel]).toEqual(["forbidden", "forbidden", "forbidden"])
+      expect(final.entries.filter(entry => entry.author === "person")).toHaveLength(1)
+      expect(final.entries.filter(entry => entry.author === "agent")).toEqual([])
+      expect(rows.find(run => run.id === body.id)?.state).toBe("passed")
+    })
+  }), 60_000)
+
+  it.live("runs history plan/start/note/read actions through their owning flows and retained SQLite receipts", () => scoped(effect {
+    const w = try world()
+    provide history {
+      const product = try Mythical
+      const cases = [
+        request("aplan", "vibelang/history/Plan", { how: "append", epic: "", newEpic: "Coverage", target: "", title: "Boundary", task: "Run the real action" }, w.person.id),
+        request("astart", "vibelang/history/Start", { id: "m1", lane: "coverage" }, w.person.id),
+        request("anote", "vibelang/history/Note", { id: "m1", section: "tried", text: "Recorded once" }, w.person.id),
+        request("ashow", "vibelang/history/show", { what: "outline" }, w.person.id),
+      ]
+      for (const body of cases) {
+        const admitted = try w.directory.start(body, "maintainer")
+        const obj = try w.object(body.id)
+        try obj.host.alarm(w.spend, w.model, product)
+        try obj.host.alarm(w.spend, w.model, product)
+        const replay = try w.directory.start(body, "maintainer")
+        const rows = try Runs.read(obj.sequencer)
+        try Effect.try(() => {
+          expect([admitted, replay]).toEqual([null, null])
+          expect(rows.find(run => run.id === body.id)).toMatchObject({ state: "passed" })
+          expect(rows.find(run => run.id === body.id)!.steps.some(step => step.state === "passed")).toBe(true)
+        })
+      }
+      const page = try product.commit("m1")
+      try Effect.try(() => {
+        expect(page.commit?.title).toBe("Boundary")
+        expect(page.commit?.lane).toBe("coverage")
+        expect(page.commit?.notes.map(note => note.text)).toEqual(["Recorded once"])
+      })
+    }
+  }), 60_000)
+})

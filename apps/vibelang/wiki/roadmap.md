@@ -67,7 +67,8 @@ brick                                   state         proof
 
 - **Source coverage (0016, lane vl-coverage): in progress.** Per-file tables now record independent unit, Chromium
   and Node-client workerd snapshots. Startup has 57 boundary cases at all-four 100%; native/HTTP history recovery and
-  amendment focus are tested. Whole-app strict gates remain red. Bundled attribution has both VibeLang and plain-JS
+  amendment focus are tested. The Sol resume adds client-path, durable action admission/replay/cancellation, optional
+  Container graph and emitted wiki-command tests. Whole-app strict gates remain red. Bundled attribution has both VibeLang and plain-JS
   reproductions; the installed workerd inspector cannot enable precise collection. No runtime source is excluded.
 
 - Brick 6: [0024](decisions/0024-sandboxes.md), sandbox UI and shared lifecycle flows; real Container activation awaits trusted 0019 identity and deployment receipts.

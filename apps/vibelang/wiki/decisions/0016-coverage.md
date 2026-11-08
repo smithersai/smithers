@@ -446,3 +446,28 @@ Both real refusal and unavailable transport outcomes remain covered.
 A plain JavaScript minified control also reproduces false statement credit on the unvisited return: actual result 7,
 statement count 1 on the return-9 line, branches [1,0]. This isolates generic bundled attribution without loading
 VibeLang. The unbundled VibeLang map still agrees with real execution; no compiler or minifier behavior was changed.
+
+## Client path regressions (Sol resume, 2026-11-08)
+
+The new 54-case public-client matrix failed first in 14 cases (40 passed). `LiveFactory.openWiki` bypassed
+identifier admission and sent a path containing `undefined` for empty, oversized or malformed UTF-16 conversation
+IDs. It now uses the same admission as every other operation. `LiveActions` threw URIError for unpaired surrogates
+in run filters/IDs; each method and stream now fails with typed `ActionFailure(input)` before transport. A faulty
+Effect transport counts attempted calls; all invalid inputs require zero. Real loopback HTTP additionally preserves
+a 128-code-unit identifier and an emoji/slash/query/fragment identifier, including the numbered wiki event and room
+isolation. All 77 selected client/HTTP cases pass; no dependency, interception or compiler change is involved.
+
+The real SQLite action-index/per-run tests additionally cover idempotent posts, changed-input conflicts, no-model
+reply traces, tutorial park/cancel/rerun, current-grant checks, and Plan/Start/Note/Show through the actual history
+flows. A role downgrade before alarm admission exposed an app bug: the SDK correctly cancelled the unadmitted
+intent without an engine row, but the app then defected while polling that nonexistent row. The receipt adapter
+now handles only `FlowExecutionNotFound` accompanied by the SDK's durable cancellation tombstone; an unexpected
+missing row remains an error. Both reply and history hosts use it. The first runtime run failed one of four
+cases; six action cases now pass, including a negative control without the tombstone. The new receipt path logs,
+spans and counts only the bounded outcome `unadmitted-cancelled`.
+
+The Alchemy graph matrix now also compiles the optional offline Container declaration, its machine/account DO
+bindings and the linked Container resource, without provider initialization or deployment. The emitted wiki
+command runs on real fixture files: nested/absolute/external/hash links, decision metadata and ruling deduplication,
+ordering, non-Markdown omission, deterministic output and read failures preserving prior output. Its output lives
+only in the ignored compiler fixture tree. No runtime source is excluded and no dependency was added.

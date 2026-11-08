@@ -264,3 +264,12 @@ real-rounding fixture intentionally disagrees with native execution and remains 
 conversations' charges and passes once the proved key decision namespaces each charge by its conversation object.
 The test host gains a ledger window route; no dependency is added.
 
+
+**Client identifier regressions (0016).** The public Factory/Actions matrix checks empty/oversized conversation
+IDs and both unpaired surrogate classes before transport. Its 14 first-run failures are fixed; valid maximum-length
+and emoji/reserved-character conversation IDs are independently exercised over real loopback HTTP.
+
+**Durable action/storage and wiki command boundaries (0016).** Unit cases run the actual index and per-run hosts
+on SQLite with product role/history services, then drive their public alarms, replay, cancellation and permission
+changes. An unadmitted cancellation no longer crashes receipt polling. The optional Container resource graph is
+compiled without deployment. The emitted wiki generator is exercised against actual fixture files and failed reads.

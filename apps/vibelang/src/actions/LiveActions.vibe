@@ -10,6 +10,11 @@ import { ACTIONS_PATH, Failure, Started } from "./wire.vibe"
 const failed = () => new ActionFailure({ code: "unavailable" })
 const decodeEvent = Schema.decodeUnknownEffect(Schema.fromJsonString(EventSchema))
 
+/** URI encoding failures are typed input failures, before transport or random-id allocation. */
+effect function segmentOf(value: string) {
+  return try Effect.try({ try: () => encodeURIComponent(value), catch: () => new ActionFailure({ code: "input" }) })
+}
+
 export function LiveActions(origin: string) {
   return Layer.effect(Actions, effect {
     const client = try HttpClient.HttpClient
@@ -32,12 +37,13 @@ export function LiveActions(origin: string) {
     const service: Actions.Shape = {
       list: () => request(Schema.Array(Registered), "GET", ""),
       commands,
-      runs: (flow) => request(Schema.Array(Run), "GET", `/runs?flow=${encodeURIComponent(flow)}`),
-      read: (id) => request(Run, "GET", `/runs/${encodeURIComponent(id)}`),
+      runs: effect (flow) => try request(Schema.Array(Run), "GET", `/runs?flow=${try segmentOf(flow)}`),
+      read: effect (id) => try request(Run, "GET", `/runs/${try segmentOf(id)}`),
       start,
       rerun: effect (previous) => {
+        const previousId = try segmentOf(previous)
         const id = `a${try random.uuidV4()}`
-        return (try request(Started, "POST", `/runs/${encodeURIComponent(previous)}/rerun`, { id })).id
+        return (try request(Started, "POST", `/runs/${previousId}/rerun`, { id })).id
       },
       command: effect (text, door = "slash") => {
         const [command, ...words] = text.trim().split(/\s+/)
@@ -47,9 +53,9 @@ export function LiveActions(origin: string) {
         const input = entry.input === "json" ? (rest === "" ? {} : try Effect.mapError(Schema.decodeUnknownEffect(Schema.fromJsonString(Schema.Json))(rest), () => new ActionFailure({ code: "input" }))) : { text: rest }
         return try start(entry.name, input, door)
       },
-      cancel: effect (id) => { try request(Schema.Struct({}), "DELETE", `/runs/${encodeURIComponent(id)}`) },
+      cancel: effect (id) => { try request(Schema.Struct({}), "DELETE", `/runs/${try segmentOf(id)}`) },
       follow: (id) => Stream.unwrap(effect {
-        const response = try Effect.mapError(client.get(`${origin}${ACTIONS_PATH}/runs/${encodeURIComponent(id)}/events`), failed)
+        const response = try Effect.mapError(client.get(`${origin}${ACTIONS_PATH}/runs/${try segmentOf(id)}/events`), failed)
         if (response.status !== 200) throw new ActionFailure({ code: "unavailable" })
         return response.stream.pipe(
           Stream.decodeText(), Stream.pipeThroughChannel(Sse.decode()),

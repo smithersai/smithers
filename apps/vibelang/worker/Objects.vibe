@@ -12,7 +12,7 @@
 // sequencer in the same object. When a reply settles its execution is forgotten at the next alarm, which then starts
 // the next unanswered post's.
 import { WebCrypto } from "@smthrs/crypto"
-import { FlowRuntime } from "@smthrs/flow"
+import { FlowRuntime, type Flow } from "@smthrs/flow"
 import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { SecureRandom } from "effect/crypto"
 import { PostBody } from "../src/core/wire.vibe"
@@ -283,13 +283,26 @@ export function executionHost(hostId: string, storage: Storage, sequencer: Seque
   })
 }
 
+/** A cancelled intent may have been refused before the SDK admitted any execution row. */
+export effect function existingReceipt<A, E, R>(storage: Storage, poll: Option.Option<Flow.Result<A, E>>!FlowRuntime.FlowExecutionNotFound!R) {
+  return try withSpan(effect {
+    return poll catch effect (error) => {
+      const cancelled = try promise(() => storage.get<number>(ExecutionObject.cancelledKey))
+      if (cancelled === undefined) throw error
+      try Metric.update(Metric.withAttributes(Metric.counter("vibelang_action_receipts", { incremental: true }), { outcome: "unadmitted-cancelled" }), 1)
+      try Effect.logInfo("vibelang.action.receipt").pipe(Effect.annotateLogs({ outcome: "unadmitted-cancelled" }))
+      return Option.none()
+    }
+  }, "vibelang.action.receipt")
+}
+
 /** Read the existing SDK journal result; alarm settlement also includes failed and cancelled executions. */
 export effect function executionResult(hostId: string, storage: Storage, intent: ExecutionObject.Intent) {
   const runtime = CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: intent.flow }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
   return try Effect.orDie(Effect.provide(effect {
     const engine = try FlowRuntime.FlowRuntime
-    if (intent.flow === Reply._tag) return try engine.poll(Reply, intent.executionId)
-    return try engine.poll(Tour, intent.executionId)
+    if (intent.flow === Reply._tag) return try existingReceipt(storage, engine.poll(Reply, intent.executionId))
+    return try existingReceipt(storage, engine.poll(Tour, intent.executionId))
   }, runtime))
 }
 

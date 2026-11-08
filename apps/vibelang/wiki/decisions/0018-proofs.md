@@ -373,7 +373,7 @@ passes 101 obligations across eight modules; all three new mutations fail their 
 tokenization, rendering and durable execution retain the boundaries stated above.
 
 <!-- inventory:start -->
-2451 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
+2458 executable functions, callbacks and effect blocks, enumerated from the compiler's original-source AST.
 
 | File and line | Function | Class | Proof or reason |
 | --- | --- | --- | --- |
@@ -414,28 +414,31 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/actions/execution.vibe:70` | `callback@66/callback@70` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/actions/execution.vibe:70` | `callback@66/callback@70/callback@70` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/actions/LiveActions.vibe:10` | `failed` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:13` | `LiveActions` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:14` | `LiveActions/callback@14` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:17` | `LiveActions/callback@14/request` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:22` | `LiveActions/callback@14/request/callback@22` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:27` | `LiveActions/callback@14/commands` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:28` | `LiveActions/callback@14/start` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:33` | `LiveActions/callback@14/list` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:35` | `LiveActions/callback@14/runs` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:36` | `LiveActions/callback@14/read` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:38` | `LiveActions/callback@14/rerun` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:42` | `LiveActions/callback@14/command` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:44` | `LiveActions/callback@14/command/callback@44` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:47` | `LiveActions/callback@14/command/callback@47` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:50` | `LiveActions/callback@14/cancel` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:51` | `LiveActions/callback@14/follow` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:51` | `LiveActions/callback@14/follow/callback@51` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:56` | `LiveActions/callback@14/follow/callback@51/callback@56` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:57` | `LiveActions/callback@14/follow/callback@51/callback@57` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/actions/LiveActions.vibe:57` | `LiveActions/callback@14/follow/callback@51/callback@57` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:59` | `LiveActions/callback@14/follow/callback@51/callback@57/callback@59` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:62` | `LiveActions/callback@14/follow/callback@51/callback@62` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/actions/LiveActions.vibe:63` | `LiveActions/callback@14/follow/callback@51/callback@63` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:14` | `segmentOf` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:15` | `segmentOf/try` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:15` | `segmentOf/catch` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:18` | `LiveActions` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:19` | `LiveActions/callback@19` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:22` | `LiveActions/callback@19/request` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:27` | `LiveActions/callback@19/request/callback@27` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:32` | `LiveActions/callback@19/commands` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:33` | `LiveActions/callback@19/start` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:38` | `LiveActions/callback@19/list` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:40` | `LiveActions/callback@19/runs` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:41` | `LiveActions/callback@19/read` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:43` | `LiveActions/callback@19/rerun` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:48` | `LiveActions/callback@19/command` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:50` | `LiveActions/callback@19/command/callback@50` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:53` | `LiveActions/callback@19/command/callback@53` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:56` | `LiveActions/callback@19/cancel` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:57` | `LiveActions/callback@19/follow` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:57` | `LiveActions/callback@19/follow/callback@57` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:62` | `LiveActions/callback@19/follow/callback@57/callback@62` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:63` | `LiveActions/callback@19/follow/callback@57/callback@63` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/actions/LiveActions.vibe:63` | `LiveActions/callback@19/follow/callback@57/callback@63` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:65` | `LiveActions/callback@19/follow/callback@57/callback@63/callback@65` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:68` | `LiveActions/callback@19/follow/callback@57/callback@68` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/actions/LiveActions.vibe:69` | `LiveActions/callback@19/follow/callback@57/callback@69` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/actions/MockActions.vibe:19` | `MockActions` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/actions/MockActions.vibe:20` | `MockActions/callback@20` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/actions/MockActions.vibe:23` | `MockActions/callback@20/current` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -2567,10 +2570,14 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/Objects.vibe:280` | `executionHost/runtime` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Objects.vibe:280` | `executionHost/runtime/callback@280` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Objects.vibe:277` | `executionHost/callback@277` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Objects.vibe:287` | `executionResult` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Objects.vibe:289` | `executionResult/callback@289` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Objects.vibe:298` | `openWiki` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `worker/Objects.vibe:303` | `openWiki/callback@303` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:287` | `existingReceipt` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:288` | `existingReceipt/callback@288` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:289` | `existingReceipt/callback@288/callback@289` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:290` | `existingReceipt/callback@288/callback@289/callback@290` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `worker/Objects.vibe:300` | `executionResult` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:302` | `executionResult/callback@302` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:311` | `openWiki` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `worker/Objects.vibe:316` | `openWiki/callback@316` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/ObjectStorage.vibe:22` | `eventKey` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/ObjectStorage.vibe:27` | `logOver` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/ObjectStorage.vibe:29` | `logOver/read` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |

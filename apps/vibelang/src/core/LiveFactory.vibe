@@ -70,7 +70,7 @@ export function LiveFactory(origin: string) {
         try refusable(response, "post")
       },
       openWiki: effect (conversation: string, page: string) => {
-        const request = HttpClientRequest.post(origin + conversationPath(conversation) + "/wiki").pipe(HttpClientRequest.bodyJsonUnsafe({ page }))
+        const request = HttpClientRequest.post(origin + (try pathOf(conversation)) + "/wiki").pipe(HttpClientRequest.bodyJsonUnsafe({ page }))
         const response = try Effect.mapError(client.execute(request), unavailable("wiki unreachable"))
         try refusable(response, "wiki")
       },

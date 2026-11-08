@@ -1,0 +1,87 @@
+// @vitest-environment node
+// Run the emitted wiki command against real fixture files; generated pages never overwrite the app's wiki asset.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import { node, run } from "./support/processes.vibe"
+
+interface Page {
+  readonly id: string
+  readonly title: string
+  readonly label: string
+  readonly decision: boolean
+  readonly status: string
+  readonly date: string
+  readonly rulings: ReadonlyArray<string>
+  readonly html: string
+}
+interface Suite { readonly label: string; readonly state: string; readonly href: string }
+
+it.live("builds the wiki command's links, metadata and suite receipts deterministically, preserving output on read failure", () => scoped(effect {
+  provide NodeServices.layer, ExperimentalNodeServices.layer {
+    const fs = try FileSystem.FileSystem
+    const path = try Path.Path
+    const root = try path.fromFileUrl(new URL("../dist-script-tests/", import.meta.url))
+    const wiki = path.join(root, "wiki")
+    const target = path.join(root, "src/assets/wiki.generated.vibe")
+    try fs.remove(wiki, { recursive: true, force: true })
+    try fs.makeDirectory(path.join(wiki, "decisions"), { recursive: true })
+    try fs.makeDirectory(path.join(wiki, "designs"), { recursive: true })
+    try fs.makeDirectory(path.dirname(target), { recursive: true })
+    try Effect.addFinalizer(() => fs.remove(wiki, { recursive: true, force: true }).pipe(Effect.orDie))
+    try Effect.addFinalizer(() => fs.remove(target, { force: true }).pipe(Effect.orDie))
+    const input: Readonly<Record<string, string>> = {
+      "index.md": '# Factory\n\n[Roadmap](roadmap.md#next) [Designs](designs/) [Decisions](decisions/) [Outside](../AGENTS.md#rules) [Web](https://example.test/docs) [Anchor](#factory) [Absolute](/wiki/rulings)\n',
+      "rulings.md": "# Rulings\n",
+      "roadmap.md": "# Roadmap\n",
+      "designs/index.md": "# Design directory\n",
+      "designs/detail.md": "# Detail\n\n[Parent](../rulings.md)\n",
+      "decisions/0000-no-header.md": "Ruling: VL-2 VL-2 VL-7\nPlain document, with no heading, status or date.\n",
+      "decisions/0015-fuzzing.md": "# Fuzzing\n\n**Status:** package landed\n**Rulings:** VL-14, VL-29.\n2026-11-07\n",
+      "decisions/0016-coverage.md": "# Coverage\n\n**Status:** in progress\nRuling: VL-29\n[Design](../designs/)\n",
+      "decisions/0018-proofs.md": "# Proofs\n\nStatus: superseded\nRulings: VL-9\n",
+      "designs/ignored.html": "<h1>Not Markdown</h1>",
+    }
+    for (const [file, content] of Object.entries(input)) try fs.writeFileString(path.join(wiki, file), content)
+    const executable = try node()
+    const script = path.join(root, "scripts/wiki.js")
+    const built = try run(executable, [script])
+    const source = try fs.readFileString(target)
+    const pages = try Effect.try(() => JSON.parse(/^export const pages = (.+)$/m.exec(source)![1]!) as Array<Page>)
+    const suites = try Effect.try(() => JSON.parse(/^export const verificationSuites = (.+)$/m.exec(source)![1]!) as Array<Suite>)
+    const again = try run(executable, [script])
+    const repeated = try fs.readFileString(target)
+    try fs.remove(path.join(wiki, "decisions/0018-proofs.md"))
+    const missingReceipt = try run(executable, [script])
+    const preserved = try fs.readFileString(target)
+    try fs.remove(wiki, { recursive: true })
+    const missingDirectory = try run(executable, [script])
+    const stillPreserved = try fs.readFileString(target)
+    try Effect.try(() => {
+      expect(built.status, built.stderr).toBe(0)
+      expect(again.status, again.stderr).toBe(0)
+      expect(built.stdout).toContain("wiki: 10 pages")
+      expect(repeated).toBe(source)
+      expect(pages.map(page => page.id)).toEqual(Object.keys(input).filter(file => file.endsWith(".md")).concat("decisions.md").sort().map(file => file.slice(0, -3)))
+      const home = pages.find(page => page.id === "index")!
+      expect(home).toMatchObject({ title: "Factory", label: "Home", decision: false, date: "", rulings: [] })
+      for (const link of ["/wiki/roadmap#next", "/wiki/designs/index", "/wiki/decisions", "https://github.com/smithersai/smithers/blob/main/apps/vibelang/wiki/../AGENTS#rules", "https://example.test/docs", "#factory", "/wiki/rulings"]) expect(home.html).toContain(`href="${link}"`)
+      expect(pages.find(page => page.id === "designs/detail")!.html).toContain('href="/wiki/rulings"')
+      expect(pages.find(page => page.id === "designs/index")!.label).toBe("Designs")
+      expect(pages.find(page => page.id === "decisions/0000-no-header")).toMatchObject({ title: "decisions/0000-no-header", label: "0000 no-header", rulings: ["VL-2", "VL-7"], status: "Accepted", date: "" })
+      expect(pages.find(page => page.id === "decisions/0015-fuzzing")).toMatchObject({ rulings: ["VL-14", "VL-29"], date: "2026-11-07" })
+      expect(pages.find(page => page.id === "decisions/0018-proofs")!.status).toBe("Replaced")
+      const decisions = pages.find(page => page.id === "decisions")!
+      expect(decisions.html.indexOf("0018-proofs")).toBeLessThan(decisions.html.indexOf("0015-fuzzing"))
+      expect(suites).toEqual([
+        { label: "Fuzz", state: "package landed", href: "/wiki/decisions/0015-fuzzing" },
+        { label: "Coverage", state: "In progress", href: "/wiki/decisions/0016-coverage" },
+        { label: "Proofs", state: "", href: "/wiki/decisions/0018-proofs" },
+      ])
+      expect(missingReceipt.status).toBe(1)
+      expect(missingDirectory.status).toBe(1)
+      expect(preserved).toBe(source)
+      expect(stillPreserved).toBe(source)
+    })
+  }
+}), 60_000)

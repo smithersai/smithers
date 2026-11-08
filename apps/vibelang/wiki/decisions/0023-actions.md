@@ -126,3 +126,9 @@ and StepTrace.vibe explicitly. The initial suspicion of coverage omission was un
 text report hides fully covered files. Explicit source globs make the measured language scope clear.
 
 **VL-31 cancellation regression.** Ending a registered tutorial could wake its alarm and record Passed before the Cancel receipt. The tour cancellation path now records its terminal cancellation before canceling/waking the execution; the one machine prevents the alarm from overwriting it. The real workerd regression first observed Passed, then requires Cancelled and its retained steps. Normal Learn more still ends through EndTour without canceling its conversation object.
+
+**Admission receipt regression (coverage lane, 2026-11-08).** A current-role downgrade can cancel a delayed action
+before the engine creates its journal row. Reply and history action alarms now accept that absence only with the
+SDK's durable cancellation tombstone. The actual SQLite regression fails before this change; an unknown row with
+no tombstone still fails, cached requests remain forbidden after demotion, and history records no unauthorized
+commit. Existing settled and cancelled receipts keep their normal handling.
