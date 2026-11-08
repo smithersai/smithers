@@ -83,3 +83,15 @@ maps for subprocess collection. Context tests cover missing, current, changed an
 command reads a real two-commit jj main and JSONL queue, skips malformed entries, resolves both revset batches,
 groups a landed stack and rejection notes, repeats deterministically, and preserves the previous seed when jj or
 queue input fails. These are passing behavioral tests; installing the provider is not a 100% coverage claim.
+
+The provider's open-ended source ranges had a second, independent defect: real Node execution of every branch
+could still leave duplicate zero branch/function counters. A plain async JavaScript control reproduces it too.
+The monorepo's existing provider patch now normalizes only infinite **end** columns to the original source line's
+UTF-16 length before merging. It preserves finite positions and hit counts. Six real subprocess controls cover
+JS/VibeLang with all branches executed, an unvisited conditional return, and one unused same-line function.
+The compiler, its maps and product code generation are unchanged. The bundled conditional-return defect above is
+separate and remains unresolved.
+
+Native touch assertions use the actual first touchmove position. Under instrumentation the answer grew between
+the earlier CDP measurement (1425) and first move (1743); the valid swipe ended at 1508 with following paused.
+Comparing to the stale pre-gesture position was incorrect. Read-only native event evidence retains that failure.

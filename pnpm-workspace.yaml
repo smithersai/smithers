@@ -97,7 +97,8 @@ patchedDependencies:
   "@tanstack/db@0.15.1": patches/@tanstack__db@0.15.1.patch
   # Audited 1.1.3 dist/esm/types.d.ts and executor/TransactionExecutor.js: no keyed retry isolation hooks.
   "@tanstack/offline-transactions@1.1.3": patches/@tanstack__offline-transactions@1.1.3.patch
-  # Audited 5.0.0 dist/index.js:47: maps every filtered native-loader hit even without moduleExecutionInfo.
+  # Audited 5.0.0: native-loader filtering needs moduleExecutionInfo; subprocess/source merging duplicates open-ended columns.
+  # Remove when upstream preserves both contracts; apps/vibelang/test/coverageProvider.test.vibe checks JS/Vibe positives and gaps.
   "@vitest/coverage-v8@5.0.0": patches/@vitest__coverage-v8@5.0.0.patch
   # VibeLang 0.0.12 uses inline-source-map.mjs with a split sourceMappingURL directive; the 0.0.8 loader patch is upstream.
   # TanStack DB's SQLite persistence sends every statement on its own, about 35 to restore one collection, and each is

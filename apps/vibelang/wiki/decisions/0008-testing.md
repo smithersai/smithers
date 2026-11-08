@@ -184,3 +184,13 @@ posts before its person posts, and `read` returns the person's post. `e2e/live.s
 CLI and a browser on a live origin. `e2e/transitions.spec.ts` records which typed view transitions the page renders
 (`:active-view-transition-type`) in every project: `to-chat`, then `to-splash`, none for ⌘K. Removing the transition,
 or running one on every change, fails it.
+
+**Coverage range merge (0016).** The root's existing V8 provider patch preserves one counter per mapped source span
+when native subprocess and transformed coverage meet. Both JS and `.vibe` controls require full execution to give
+100% in all four metrics; missing branch/statement and same-line unused-function controls must still fail. The tool
+version remains 5.0.0; no dependency or compiler behavior changes. Native touch tests compare the gesture's first
+move with its final scroll position, preserving real pause and Latest behavior while the answer continues growing.
+
+The app also matches the monorepo test peers `@types/node` 26.4.1 and `happy-dom` 20.13.2. Distinct optional peers
+created two Vitest 5.0.0 instances; Effect's test helpers registered against the other instance, so suites could not
+load after a fresh install. These are version alignments of existing test tools, with no runtime dependency added.

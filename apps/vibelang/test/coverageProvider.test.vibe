@@ -1,0 +1,101 @@
+// @vitest-environment node
+// Real compiler, Node subprocess and coverage-provider boundaries. The JS control proves this is not a VibeLang
+// lowering workaround; the same-line unused function must remain uncovered after source ranges are merged.
+import * as NodeServices from "@effect/platform-node/NodeServices"
+import { ExperimentalNodeServices } from "vibelang-runtime/experimental/platform-node"
+import { expect, it } from "@effect/vitest"
+import { node, run } from "./support/processes.vibe"
+
+const effectSource = `export effect function answer(flag: boolean, value: number) {
+  const current = try sync(() => value)
+  if (flag) {
+    if (current !== 7) return current
+  } else {
+    return 7
+  }
+  return 9
+}
+`
+const javascriptSource = `export async function answer(flag, value) {
+  const current = await Promise.resolve(value)
+  if (flag) {
+    if (current !== 7) return current
+  } else {
+    return 7
+  }
+  return 9
+}
+`
+
+for (const format of ["vibe", "js"] as const) {
+  for (const omission of ["none", "function", "branch"] as const) {
+    const unused = omission === "function"
+    const missingBranch = omission === "branch"
+    it.live(`merges ${format} subprocess ranges${unused ? " without crediting an unused same-line function" : missingBranch ? " without crediting an unvisited branch" : " at 100% after every branch executes"}`, () => scoped(effect {
+      provide NodeServices.layer, ExperimentalNodeServices.layer {
+        const fs = try FileSystem.FileSystem
+        const path = try Path.Path
+        const directory = try fs.makeTempDirectoryScoped({ prefix: "vibelang-provider-" })
+        const root = try path.fromFileUrl(new URL("../", import.meta.url))
+        try fs.symlink(path.join(root, "node_modules"), path.join(directory, "node_modules"))
+        try fs.writeFileString(path.join(directory, "package.json"), '{"type":"module"}')
+        const extra = unused ? "export const called = () => 7, never = () => 11\n" : ""
+        try fs.writeFileString(path.join(directory, `fixture.${format}`), (format === "vibe" ? effectSource : javascriptSource) + extra)
+        const imports = `import { answer${unused ? ", called" : ""} } from "./fixture.${format}"\n`
+        const output = unused ? "[9,9,7,7]" : missingBranch ? "[9]" : "[9,9,7]"
+        const entry = format === "vibe" ? `${imports}await runPromise(effect {
+  const same = try answer(true, 7)
+  ${missingBranch ? "" : "const different = try answer(true, 9)\n  const no = try answer(false, 7)"}
+  try Console.log(try sync(() => JSON.stringify([same${missingBranch ? "" : ", different, no"}${unused ? ", called()" : ""}])))
+})\n` : `${imports}console.log(JSON.stringify([await answer(true, 7)${missingBranch ? "" : ", await answer(true, 9), await answer(false, 7)"}${unused ? ", called()" : ""}]))\n`
+        try fs.writeFileString(path.join(directory, `entry.${format}`), entry)
+        const config = {
+          compilerOptions: { target: "ES2022", module: "ESNext", moduleResolution: "Bundler", lib: ["ES2022", "DOM"],
+            allowJs: format === "js", strict: format === "vibe", skipLibCheck: true, rewriteRelativeImportExtensions: true,
+            sourceMap: true, inlineSources: true, outDir: "dist" },
+          include: [`fixture.${format}`, `entry.${format}`],
+        }
+        try fs.writeFileString(path.join(directory, "tsconfig.json"), try sync(() => JSON.stringify(config)))
+        const built = try run(path.join(root, "node_modules/.bin/vibelang"), ["-p", path.join(directory, "tsconfig.json")])
+        try Effect.try(() => expect(built.status, built.stdout + built.stderr).toBe(0))
+        // Generated JS is test data in a scoped directory; no emitted JS is committed.
+        try fs.writeFileString(path.join(directory, "check.test.js"), `import { expect, test } from "vitest"
+import { execFileSync } from "node:child_process"
+test("executes the requested parameter combinations", () => {
+  expect(execFileSync(process.execPath, [${try sync(() => JSON.stringify(path.join(directory, "dist/entry.js")))}], { encoding: "utf8" }).trim()).toBe(${try sync(() => JSON.stringify(output))})
+})\n`)
+        try fs.writeFileString(path.join(directory, "vite.config.mjs"), `import { defineConfig } from "vitest/config"
+import vibelang from "vibelang-vite"
+export default defineConfig({ root: ${try sync(() => JSON.stringify(directory))}, plugins: [vibelang()], test: {
+  include: ["check.test.js"], maxWorkers: 1,
+  coverage: { provider: "v8", autoAttachSubprocess: true, include: ["fixture.${format}", "dist/fixture.js"],
+    reporter: ["json", "json-summary"], reportsDirectory: "coverage",
+    thresholds: { perFile: true, lines: 100, branches: 100, functions: 100, statements: 100 } }
+} })\n`)
+        const result = try run(try node(), [path.join(root, "node_modules/vitest/vitest.mjs"), "run", "--config", path.join(directory, "vite.config.mjs"), "--coverage"])
+        const summaryText = try fs.readFileString(path.join(directory, "coverage/coverage-summary.json"))
+        const rawText = try fs.readFileString(path.join(directory, "coverage/coverage-final.json"))
+        const summary = try Effect.try(() => JSON.parse(summaryText))
+        const raw = try Effect.try(() => JSON.parse(rawText))
+        const file = path.join(directory, `fixture.${format}`)
+        try Effect.try(() => {
+          expect(result.stdout + result.stderr).toContain("1 passed")
+          expect(Object.keys(raw)).toEqual([file])
+          expect(result.status, result.stdout + result.stderr).toBe(unused || missingBranch ? 1 : 0)
+          if (unused) {
+            const functions = summary[file].functions
+            expect(functions.total).toBe(format === "vibe" ? 4 : 3)
+            expect(functions.covered).toBe(functions.total - 1)
+            expect(Object.entries(raw[file].fnMap).filter(([, fn]: [string, any]) => fn.loc.start.line === 10 && fn.loc.start.column > extra.indexOf("never")).map(([id]) => raw[file].f[id])).toEqual([0])
+          } else if (missingBranch) {
+            expect(summary[file].branches.pct).toBeLessThan(100)
+            expect(summary[file].lines.pct).toBeLessThan(100)
+            expect(Object.entries(raw[file].s).filter(([, hits]) => hits === 0).map(([id]) => raw[file].statementMap[id].start.line)).toContain(6)
+          } else {
+            for (const metric of ["lines", "branches", "functions", "statements"]) expect(summary[file][metric].pct).toBe(100)
+          }
+        })
+      }
+    }), 60_000)
+  }
+}

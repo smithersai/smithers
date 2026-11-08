@@ -47867,6 +47867,10 @@
       },
       {
         "kind": "file",
+        "path": "patches/@vitest__coverage-v8@5.0.0.patch"
+      },
+      {
+        "kind": "file",
         "path": "apps/vibelang/tsconfig.json"
       },
       {
@@ -47953,6 +47957,10 @@
       {
         "kind": "file",
         "path": "apps/vibelang/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "patches/@vitest__coverage-v8@5.0.0.patch"
       },
       {
         "kind": "file",
@@ -48134,6 +48142,10 @@
       {
         "kind": "file",
         "path": "apps/vibelang/package.json"
+      },
+      {
+        "kind": "file",
+        "path": "patches/@vitest__coverage-v8@5.0.0.patch"
       },
       {
         "kind": "file",

@@ -455,27 +455,27 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/sandboxMeter.vibe:51` | `snapshotOf/callback@51` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxMock.vibe:13` | `makeMockSandboxes` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxMock.vibe:15` | `makeMockSandboxes/execution` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:19` | `makeMockSandboxes/read` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:19` | `makeMockSandboxes/receipt` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/sandboxMock.vibe:19` | `makeMockSandboxes/write` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:19` | `makeMockSandboxes/write/callback@19` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:19` | `makeMockSandboxes/alarm` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/sandboxMock.vibe:29` | `makeMockSandboxes/callback@29` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:35` | `makeMockSandboxes/sandbox` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:36` | `makeMockSandboxes/sandbox/callback@36` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:39` | `makeMockSandboxes/startSandbox` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:39` | `makeMockSandboxes/startSandbox/callback@39` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:40` | `makeMockSandboxes/stopSandbox` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:40` | `makeMockSandboxes/stopSandbox/callback@40` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:41` | `makeMockSandboxes/sandboxCommand` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:41` | `makeMockSandboxes/sandboxCommand/callback@41` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:47` | `memoryMachines` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/sandboxMock.vibe:52` | `memoryMachines/start` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/sandboxMock.vibe:52` | `memoryMachines/start/callback@52` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:53` | `memoryMachines/lease` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:54` | `memoryMachines/stop` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `src/core/sandboxMock.vibe:54` | `memoryMachines/stop/callback@54` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/sandboxMock.vibe:55` | `memoryMachines/command` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:21` | `makeMockSandboxes/read` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:21` | `makeMockSandboxes/receipt` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/sandboxMock.vibe:21` | `makeMockSandboxes/write` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:21` | `makeMockSandboxes/write/callback@21` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:21` | `makeMockSandboxes/alarm` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:32` | `makeMockSandboxes/callback@32` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:40` | `makeMockSandboxes/sandbox` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:41` | `makeMockSandboxes/sandbox/callback@41` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:44` | `makeMockSandboxes/startSandbox` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:44` | `makeMockSandboxes/startSandbox/callback@44` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:45` | `makeMockSandboxes/stopSandbox` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:45` | `makeMockSandboxes/stopSandbox/callback@45` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:46` | `makeMockSandboxes/sandboxCommand` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:46` | `makeMockSandboxes/sandboxCommand/callback@46` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:52` | `memoryMachines` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/sandboxMock.vibe:57` | `memoryMachines/start` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/sandboxMock.vibe:57` | `memoryMachines/start/callback@57` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:58` | `memoryMachines/lease` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:59` | `memoryMachines/stop` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
+| `src/core/sandboxMock.vibe:59` | `memoryMachines/stop/callback@59` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/sandboxMock.vibe:60` | `memoryMachines/command` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/sandboxPolicy.vibe:9` | `current` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/sandboxPolicy.vibe:10` | `mockPolicy` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/sandboxPolicy.vibe:11` | `mockPolicy/current` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
