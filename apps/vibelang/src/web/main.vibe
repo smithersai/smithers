@@ -492,19 +492,28 @@ export function subscriptions(keys: EventTarget, page?: Document) {
         ),
       },
     ),
+    // Read every second only while a sandbox runs or its pane is open; otherwise once per finished post or reply, so an
+    // idle chat sends no request each second and a sandbox the agent starts is still seen.
     sandbox: entry(
-      { conversation: Schema.String, request: Schema.Number, active: Schema.Boolean },
+      { conversation: Schema.String, request: Schema.Number, active: Schema.Boolean, live: Schema.Boolean, finished: Schema.Number },
       {
-        modelToDependencies: (model: Model) => ({ conversation: model.conversation, request: model.sandboxRequest ?? 0, active: model.surface === "chat" && !model.sandboxBusy }),
-        dependenciesToStream: ({ conversation, request, active }) => Stream.when(
-          Stream.fromEffect(effect {
+        modelToDependencies: (model: Model) => ({
+          conversation: model.conversation,
+          request: model.sandboxRequest ?? 0,
+          active: model.surface === "chat" && !model.sandboxBusy,
+          live: model.sandbox?.status === "running" || (model.sandboxPane !== undefined && model.sandboxPane !== "closed"),
+          finished: model.client.conversation.entries.filter((entry) => entry.done).length,
+        }),
+        dependenciesToStream: ({ conversation, request, active, live }) => {
+          const read = Stream.fromEffect(effect {
             const factory = try Factory
             return effect {
               const snapshot = try factory.sandbox(conversation)
               return try message(() => Message.LoadedSandbox({ conversation, request, snapshot }))
             } catch effect (e) => { return try message(() => Message.FailedSandbox({ conversation, request, reason: e._tag === "Refused" ? e.refusal : e.reason })) }
-          }).pipe(Stream.repeat(Schedule.spaced("1 second"))), sync(() => active),
-        ),
+          })
+          return Stream.when(live ? read.pipe(Stream.repeat(Schedule.spaced("1 second"))) : read, sync(() => active))
+        },
       },
     ),
     events: entry(
