@@ -66,3 +66,6 @@ brick                                   state         proof
 - **Rulings audit (vl-audit):** [rulings status](rulings-status.md) holds each ruling's state, evidence and owner.
   Fixed: the page follows its conversation from the start (VL-12, VL-26); view transitions tested (VL-17). Open gap:
   VL-19, six marketing files unused.
+
+- **Review (vl-review2):** [review of 2026-11-08](review-2026-11-08.md). Fixed: idle sandbox metering and reads in
+  the chat. Open, with owners: Durable Object engine retention, idempotent history tool writes.

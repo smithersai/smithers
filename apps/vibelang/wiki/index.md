@@ -8,6 +8,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [Rulings](rulings.md) | Will's words, VL-1 to VL-29. The source of truth. |
 | [Roadmap](roadmap.md) | The bricks: done, in progress, next. |
 | [Rulings status](rulings-status.md) | Each ruling's state, evidence and owner (lane vl-audit). |
+| [Review of 2026-11-08](review-2026-11-08.md) | Findings in the night's changes: fixed, and open with owners (lane vl-review2). |
 | [Decisions](decisions/) | One record per consequential choice, numbered. |
 
 ## Decisions
