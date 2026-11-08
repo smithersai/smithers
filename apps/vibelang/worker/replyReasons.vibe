@@ -1,0 +1,28 @@
+// Pure failure decisions used by Reply and Tour. Text is selected from REASONS by this code.
+export type ReasonCode = "refused" | "credit" | "unavailable" | "unconfigured" | "empty" | "failed"
+
+/** The reason a person reads for a model call that failed with `code`. */
+//@ verify
+//@ ensures code == "content_policy" ==> \result == "refused"
+//@ ensures code == "out_of_credit" || code == "quota_exceeded" ==> \result == "credit"
+//@ ensures code != "content_policy" && code != "out_of_credit" && code != "quota_exceeded" ==> \result == "unavailable"
+export function reasonCode(code: string): ReasonCode {
+  if (code === "content_policy") return "refused"
+  // The provider's billing, not this deployment's daily budget (Budget.vibe): a person must not read one as the other.
+  if (code === "out_of_credit" || code === "quota_exceeded") return "credit"
+  return "unavailable"
+}
+
+/** The reason a person reads for the agent's failure `tag`, given what its events said. */
+//@ verify
+//@ ensures tag == "@smthrs/agent/Seat/SeatUnresolved" ==> \result == "unconfigured"
+//@ ensures tag != "@smthrs/agent/Seat/SeatUnresolved" && tag.endsWith("StructuredOutputFailure") ==> \result == "empty"
+//@ ensures tag != "@smthrs/agent/Seat/SeatUnresolved" && !tag.endsWith("StructuredOutputFailure") && failed != undefined ==> \result == reasonCode(failed)
+//@ ensures tag != "@smthrs/agent/Seat/SeatUnresolved" && !tag.endsWith("StructuredOutputFailure") && failed == undefined ==> \result == "failed"
+export function failureCode(tag: string, failed: string | undefined): ReasonCode {
+  if (tag === "@smthrs/agent/Seat/SeatUnresolved") return "unconfigured"
+  if (tag.endsWith("StructuredOutputFailure")) return "empty"
+  if (failed !== undefined) return reasonCode(failed)
+  return "failed"
+}
+

@@ -8,6 +8,7 @@ import {
   type Conversation, type Entry, type Event, type Intent, type Refusal,
 } from "../src/core/conversation.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
+import { appends, startAnswer } from "../src/core/flowDecision.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 
 /** Where the conversation's numbered events persist, in order. `write` returns once the event is durable. */
@@ -165,7 +166,7 @@ export effect function make(log: Log, dispatch: Dispatch) {
       return try locked(effect {
         const decision = try record({ type: "StartReply", id: reply, inReplyTo: post })
         const exists = entryOf((try state()).conversation, reply)?.inReplyTo === post
-        const answer: Answer = decision.ok || exists ? "done" : decision.refusal === "busy" ? "busy" : "refused"
+        const answer: Answer = startAnswer(decision.ok, exists, decision.ok ? "" : decision.refusal)
         return answer
       })
     },
@@ -176,7 +177,7 @@ export effect function make(log: Log, dispatch: Dispatch) {
         const current = try state()
         const entry = entryOf(current.conversation, reply)
         if (entry === undefined || !isReplying(current.conversation, reply)) return
-        if (attempt !== attemptOf(current.log, reply) || offset !== entry.text.length || text === "") return
+        if (!appends(attemptOf(current.log, reply), attempt, entry.text.length, offset, text)) return
         try record({ type: "AppendReply", id: reply, text })
       })
     },

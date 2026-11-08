@@ -7,8 +7,7 @@
  * Each runs the package script a person runs from `apps/vibelang`, so a
  * target and `pnpm <script>` cannot disagree. `verify` installs LemmaScript
  * and Dafny into the ignored `verify/.tools` on its first run;
- * `verifyBroken` checks every mutation it generates fails its proof, which takes
- * minutes, so it sits in the exclusive tier.
+ * `verifyBroken` checks every mutation it generates fails its proof, which runs in the normal CI tier.
  *
  * @since 1.0.0
  */
@@ -34,7 +33,10 @@ const sources = [
 /** The proof harness and the state machine it proves. */
 const proofs = [
   Smithers.glob("//apps/vibelang/verify/*.{sh,py,cjs,json}"),
-  Smithers.file("//apps/vibelang/src/core/conversation.vibe")
+  Smithers.glob("//apps/vibelang/src/**/*.vibe"),
+  Smithers.glob("//apps/vibelang/worker/**/*.vibe"),
+  Smithers.glob("//apps/vibelang/scripts/**/*.vibe"),
+  Smithers.file("//apps/vibelang/wiki/decisions/0018-proofs.md")
 ]
 
 /**
@@ -84,8 +86,8 @@ const workerd = Smithers.Shell.Test({
  * @category test
  */
 const verify = Smithers.Shell.Test({
-  summary: "Prove the conversation state machine's LemmaScript contracts with Dafny.",
-  shell: "cd apps/vibelang && pnpm verify",
+  summary: "Prove every annotated production decision with LemmaScript and Dafny.",
+  shell: "cd apps/vibelang && pnpm verify && node verify/inventory.cjs",
   data: proofs,
   timeout: "30m"
 })
@@ -101,7 +103,6 @@ const verifyBroken = Smithers.Shell.Test({
   shell: "cd apps/vibelang && pnpm verify:broken",
   data: proofs,
   timeout: "60m",
-  exclusive: true
 })
 
 export const Package = Smithers.Package({ targets: { typecheck, test, workerd, verify, verifyBroken } })

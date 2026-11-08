@@ -9,7 +9,7 @@ contract and assertion stays byte-identical, and each case must match exactly on
 """
 import json, pathlib, re, sys
 root=pathlib.Path(__file__).resolve().parent
-source=(root.parent/'src/core/conversation.vibe').read_text()
+from extended_mutations import cases as extended_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
 cases=[
 ('apply-advance','apply','seq: event.seq }','seq: event.seq + 1 }','seq changes by at most one; next event advances exactly once'),
@@ -78,15 +78,17 @@ cases=[
 ('decide-pane-guard','decide','if (!isReplying(conversation, intent.id)) return refused("not-replying")\n      if (intent.url','if (false) return refused("not-replying")\n      if (intent.url','only the agent that streams opens a page'),
 ('decide-pane-empty','decide','if (intent.url === "") return refused("empty")','if (false) return refused("empty")','an opened page has a url'),
 ]
+cases=[('src/core/conversation.vibe', *case) for case in cases] + extended_cases
 if len(sys.argv) < 2: raise SystemExit('Usage: mutations.py OUT [NAME ...]')
 out=pathlib.Path(sys.argv[1]).resolve()
 selected=set(sys.argv[2:])
-unknown=selected-{name for name,*_ in cases}
+unknown=selected-{name for module,name,*_ in cases}
 if unknown: raise SystemExit('Unknown mutations: '+', '.join(sorted(unknown)))
 contracts=lambda text:[line for line in text.splitlines() if line.lstrip().startswith('//@')]
 out.mkdir(parents=True,exist_ok=True)
 manifest={}
-for name,fn,old,new,claim in cases:
+for module,name,fn,old,new,claim in cases:
+    source=(root.parent/module).read_text()
     if selected and name not in selected: continue
     match=re.search(r'^(?:export )?function '+fn+r'\(',source,re.M)
     if not match: raise SystemExit(f'Missing function {fn}')
@@ -97,6 +99,6 @@ for name,fn,old,new,claim in cases:
     broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+body.replace(old,new)+source[end:]
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
     (out/f'{name}.ts').write_text(broken)
-    manifest[name]={'function':fn,'claim':claim,'before':old,'after':new}
+    manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}
 (out/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
 print(f'{len(manifest)} executable-only mutations written to {out}')

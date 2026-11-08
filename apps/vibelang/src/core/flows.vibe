@@ -14,6 +14,7 @@
 import { Action, Flow, FlowRuntime } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { canReplyTo, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
+import { dispatches, endsTourEvent } from "./flowDecision.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
 /** A post's answer: `null` once the sequencer recorded it, else why it refused. */
@@ -35,7 +36,7 @@ export const Reply = Flow.make("vibelang/Reply", {
   body: () => Node.succeed(null),
 })
 
-/** The reply that answers `post`: the sequencer chooses both ids, so each post has exactly one possible reply. */
+/** The reply that answers a post, unchanged across retries. Slice lowering is tracked in decision 0018. */
 export function replyIdOf(post: string): string {
   return `r${post.slice(1)}`
 }
@@ -70,7 +71,7 @@ export effect function posted(payload: { readonly clientId: string; readonly nam
     success: PostAnswer,
     execute: sequencer.record(payload.clientId, payload.name, payload.text),
   })
-  if (answer === null) try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
+  if (dispatches(answer)) try Action.make({ name: "vibelang/post/dispatch", execute: sequencer.dispatch() })
   const outcome = answer ?? "accepted"
   try Metric.update(Metric.withAttributes(posts, { outcome }), 1)
   // The outcome only: never the post's text, its client id or its author's name.
@@ -129,7 +130,7 @@ export service Tours {
 
 /** Whether `event` stops the tour `tour`: it finished, failed, or the person ended it. */
 export function endsTour(event: Event, tour: string): boolean {
-  return event.id === tour && (event.type === "TourEnded" || event.type === "ReplyFinished" || event.type === "ReplyFailed")
+  return endsTourEvent(event.type, event.id, tour)
 }
 
 /** The running tour of `conversation`: its id, `""` when none runs. */
@@ -195,7 +196,7 @@ effect function counted(step: string, outcome: string) {
 export effect function startTour() {
   const tours = try Tours
   const answer = try Action.make({ name: "vibelang/tour/record", success: PostAnswer, execute: tours.start() })
-  if (answer === null) try Action.make({ name: "vibelang/tour/dispatch", execute: tours.dispatch() })
+  if (dispatches(answer)) try Action.make({ name: "vibelang/tour/dispatch", execute: tours.dispatch() })
   try counted("start", answer ?? "accepted")
   return answer
 }

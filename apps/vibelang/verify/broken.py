@@ -7,8 +7,9 @@ The mutants are generated from src/core/conversation.vibe for this run, under th
 """
 import hashlib, json, os, pathlib, re, subprocess, sys, tempfile
 root=pathlib.Path(__file__).resolve().parent
-production=root.parent/'src/core/conversation.vibe'
-before=hashlib.sha256(production.read_bytes()).hexdigest()
+from sources import production_sources
+production=production_sources(root.parent)
+before={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in production}
 (root/'.checks').mkdir(exist_ok=True)
 mutants=pathlib.Path(tempfile.mkdtemp(prefix='broken-',dir=root/'.checks'))
 subprocess.run([sys.executable, str(root/'mutations.py'), str(mutants), *sys.argv[1:]], check=True)
@@ -28,6 +29,6 @@ for r in summary['results']:
         raise SystemExit(f"FAIL: {r['file']} failed outside {item['function']}")
     if re.search(r'(resolution/type errors|timed out|ERROR:|unresolved identifier)',r['output']):
         raise SystemExit(f"FAIL: {r['file']} has a tool error")
-if hashlib.sha256(production.read_bytes()).hexdigest() != before:
-    raise SystemExit('FAIL: src/core/conversation.vibe changed during the run')
+if any(hashlib.sha256(p.read_bytes()).hexdigest() != digest for p,digest in before.items()):
+    raise SystemExit('FAIL: production source changed during the run')
 print(f"BROKEN PASS: {summary['total']}/{summary['total']} executable mutations rejected by Dafny; {summary['seconds']}s")

@@ -17,6 +17,7 @@ import { Reply, replyIdOf } from "../src/core/flows.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
 import { Unreachable } from "./Unreachable.vibe"
+import { reasonCode, failureCode } from "./replyReasons.vibe"
 
 /** Another reply streams in this conversation; starting waits for it. */
 export schema error Busy {}
@@ -55,6 +56,16 @@ export const REASONS = {
   empty: "The model returned no answer.",
   failed: "The agent failed. Try again.",
 } as const
+
+/** The fixed product wording for the proved model failure code. */
+export function reasonOf(error: { readonly code: string }): string {
+  return REASONS[reasonCode(error.code)]
+}
+
+/** The fixed product wording for the proved agent failure code. */
+export function failureReason(tag: string, progress: Progress): string {
+  return REASONS[failureCode(tag, progress.failed)]
+}
 
 /** The most tokens one model call may write, and the most turns of the conversation the agent reads. */
 export const MAX_ANSWER_TOKENS = 2048
@@ -109,14 +120,6 @@ export const Respond = AgentAction.make("vibelang/reply/agent", {
   maxFrames: MAX_FRAMES,
   modelParams: ModelRequest.GenerationParams.make({ maxTokens: MAX_ANSWER_TOKENS }),
 })
-
-/** The reason a person reads for a model call that failed with `code`. */
-export function reasonOf(error: { readonly code: string }): string {
-  if (error.code === "content_policy") return REASONS.refused
-  // The provider's billing, not this deployment's daily budget (Budget.vibe): a person must not read one as the other.
-  if (error.code === "out_of_credit" || error.code === "quota_exceeded") return REASONS.credit
-  return REASONS.unavailable
-}
 
 /** A failure's tag for the logs: never its message, which can carry a provider's words or a person's text. */
 export function tagOf(error: unknown): string {
@@ -199,14 +202,6 @@ export function agentOf<ROut, E, RIn>(
 }
 
 data Outcome { Answered { text: string }; Failed { reason: string } }
-
-/** The reason a person reads for the agent's failure `tag`, given what its events said. */
-export function failureReason(tag: string, progress: Progress): string {
-  if (tag === "@smthrs/agent/Seat/SeatUnresolved") return REASONS.unconfigured
-  if (tag.endsWith("StructuredOutputFailure")) return REASONS.empty
-  if (progress.failed !== undefined) return reasonOf({ code: progress.failed })
-  return REASONS.failed
-}
 
 /**
  * Runs the agent on `turns`, streaming its visible answer into `reply`: each event goes on a queue (the sink runs

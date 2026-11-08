@@ -15,3 +15,14 @@ These minimal sources preserve the compiler error. Generated Dafny, exact diagno
 under ignored `verify/.checks/run-*`; the lane report records the reproduction commands. The source is not patched
 and no verification obligation is suppressed. The previously supplied probe documents other unsupported shapes
 (`ReadonlyMap`, annotation lambdas, indexed `.every`, optional reconstruction); this lane does not use those forms.
+
+## Expanded app proof boundaries (0018)
+
+`finite-round.ts`, `json-codec.ts`, `uri-codec.ts`, `regexp.ts` and `object-constant.ts` are minimal unsupported
+operations encountered while inventorying the app. Every source strictly typechecks; the failures occur in
+LemmaScript emission or Dafny resolution. They do not count as rejected executable mutations. Decision 0018 names
+which production behavior each leaves unproved and the retained host reproduction directory.
+
+`unicode-case.ts` demonstrates incorrect ASCII-only Unicode casing in the backend; `event-key.ts` retains the
+production fixed-width storage-key contract that number conversion/padding cannot currently lower. Both have
+strictly checked receipts under the host reproduction directories named in 0018.

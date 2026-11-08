@@ -29,6 +29,8 @@ brick                                   state         proof
 7   Electrobun desktop app              later         VL-6
 ```
 
+- **Proofs of all logic (0018, lane vl-proveall): in progress.** Inventory every executable function; prove extracted decisions, retain tool gaps, and run proofs plus mutations in normal CI.
+
 ## Open work outside this app
 
 - **Effect 4.1.1 upgrade landing (2026-11-07).** 57 commits in nyc-01 `~/vl/ws-effect41`; all typecheck/check gates

@@ -3,7 +3,7 @@ import { describe, expect, it } from "@effect/vitest"
 import { type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
-import { chunks, mockReply } from "../src/core/mockReplies.vibe"
+import { mockReply } from "../src/core/mockReplies.vibe"
 
 class PeriodicScheduler extends Scheduler.MixedScheduler {
   private n = 0
@@ -20,19 +20,8 @@ class TrackingScheduler extends Scheduler.MixedScheduler {
   }
 }
 
-// The mock runs its flows on the engine in memory, which journals each step across several scheduler turns. Under the
-// test clock, time moves one reply delay at a time, and the engine finishes what is due before it moves again.
-effect function drain() {
-  for (let turn = 0; turn < 200; turn++) try Effect.yieldNow
-}
-
-effect function advance(delays: number) {
-  for (let delay = 0; delay < delays; delay++) {
-    try TestClock.adjust("25 millis")
-    try drain()
-  }
-}
-
+// The real engine awaits Web Crypto promises. Observe events instead of assuming a fixed number of scheduler
+// turns completes those promises; advancing TestClock alone cannot establish that a reply has reached its sleep.
 effect function concurrentTranscript() {
   provide MockFactory {
     const factory = try Factory
@@ -72,18 +61,20 @@ describe("Factory concurrency", () => {
         })
       }, Scheduler.Scheduler, new PeriodicScheduler(period)), 20_000)
   }
-  it.effect("answers another conversation while this conversation still has queued prompts", () => effect {
+  it.live("answers another conversation while this conversation still has queued prompts", () => effect {
     provide MockFactory {
       const factory = try Factory
       const busy = try Ref.make<ReadonlyArray<Event>>([])
       const fast = try Ref.make<ReadonlyArray<Event>>([])
+      const answered = try Deferred.make<void>()
       fork Stream.runForEach(factory.events("busy", 0), (event) => Ref.update(busy, (events) => [...events, event]))
-      fork Stream.runForEach(factory.events("fast", 0), (event) => Ref.update(fast, (events) => [...events, event]))
-      try TestClock.adjust("0 millis")
+      fork Stream.runForEach(factory.events("fast", 0), effect (event) => {
+        try Ref.update(fast, (events) => [...events, event])
+        if (event.type === "ReplyFinished") try Deferred.succeed(answered, undefined)
+      })
       for (let index = 0; index < 3; index++) try factory.post("busy", `p${index}`, "Ada", "errors")
       try factory.post("fast", "a", "Grace", "install")
-      try drain()
-      try advance(chunks(mockReply("install")).length)
+      try Deferred.await(answered)
       const [busyEvents, fastEvents] = try.all [Ref.get(busy), Ref.get(fast)]
       try Effect.try(() => {
         expect(fastEvents.filter((event) => event.type === "ReplyFinished")).toHaveLength(1)
@@ -120,7 +111,7 @@ describe("Factory concurrency", () => {
 })
 
 describe("Factory disposal", () => {
-  it.effect("stops active and queued replies and shuts down live followers when its scope closes", () => effect {
+  it.live("stops active and queued replies and shuts down live followers when its scope closes", () => effect {
     const scheduler = new TrackingScheduler()
     provide Scheduler.Scheduler = scheduler {
       const current = try Effect.withFiber((fiber) => succeed(fiber.id))
@@ -129,19 +120,22 @@ describe("Factory disposal", () => {
       const factory = Context.get(context, Factory)
       const received = try Ref.make<ReadonlyArray<Event>>([])
       const stopped = try Ref.make(false)
+      const speaking = try Deferred.make<void>()
       const follower = fork ensuring(
-        Stream.runForEach(factory.events("disposed", 0), (event) => Ref.update(received, (events) => [...events, event])),
+        Stream.runForEach(factory.events("disposed", 0), effect (event) => {
+          try Ref.update(received, (events) => [...events, event])
+          if (event.type === "ReplyDelta") try Deferred.succeed(speaking, undefined)
+        }),
         Ref.set(stopped, true),
       )
-      try TestClock.adjust("0 millis")
       try factory.post("disposed", "a", "Ada", "install")
       try factory.post("disposed", "b", "Grace", "errors")
-      try advance(1)
+      try Deferred.await(speaking)
       const workers = Array.from(scheduler.fibers).filter((fiber) => fiber.id !== current && fiber.id !== follower.id && fiber.pollUnsafe() === undefined)
       try Scope.close(world, Exit.void)
       const activeAfterClose = workers.filter((fiber) => fiber.pollUnsafe() === undefined)
       const atClose = try Ref.get(received)
-      try TestClock.adjust("1 minute")
+      try Fiber.await(follower)
       const after = try Ref.get(received)
       const ended = try Ref.get(stopped)
       try Effect.try(() => {
@@ -151,7 +145,6 @@ describe("Factory disposal", () => {
         expect(after).toEqual(atClose)
         expect(ended).toBe(true)
       })
-      try Fiber.await(follower)
       const late = factory.post("disposed", "late", "Ada", "install") catch (error) => error._tag
       try Effect.try(() => expect(late).toBe("Unavailable"))
     }

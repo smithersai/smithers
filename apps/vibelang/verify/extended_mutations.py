@@ -1,0 +1,22 @@
+"""Production module, mutation name, function, executable edit, replacement, proof claim."""
+cases = [
+('src/core/flowDecision.vibe', 'dispatch-refused', 'dispatches', 'answer === null', 'answer !== null', 'refused posts and tours dispatch nothing'),
+('src/core/flowDecision.vibe', 'append-attempt', 'appends', 'attempt === currentAttempt && ', '', 'stale model attempts cannot append'),
+('src/core/flowDecision.vibe', 'append-offset', 'appends', 'offset === length && ', '', 'a repeated or skipped piece cannot append'),
+('src/core/flowDecision.vibe', 'append-empty', 'appends', 'text !== ""', 'true', 'empty pieces do not advance'),
+('src/core/flowDecision.vibe', 'tour-end-owner', 'endsTourEvent', 'id === tour && ', '', 'another tour cannot release this speaker'),
+('src/core/flowDecision.vibe', 'tour-end-terminal', 'endsTourEvent', 'kind === "ReplyFailed"', 'kind === "ReplyDelta"', 'only terminal events stop the speaker'),
+('src/core/flowDecision.vibe', 'start-replay', 'startAnswer', 'accepted || already', 'accepted', 'a replayed correlated start is done'),
+('src/core/flowDecision.vibe', 'start-busy', 'startAnswer', 'refusal === "busy"', 'refusal !== "busy"', 'only busy is retryable'),
+('worker/budgetDecision.vibe', 'budget-boundary', 'admits', 'spent < limit', 'spent <= limit', 'admission excludes a fully spent budget'),
+('worker/budgetDecision.vibe', 'budget-repeat', 'charge', 'if (recorded)', 'if (!recorded)', 'repeated charges add nothing'),
+('worker/budgetDecision.vibe', 'budget-total', 'charge', 'spent: spent + used', 'spent: spent - used', 'the new total is old total plus the charge'),
+('worker/budgetDecision.vibe', 'budget-added', 'charge', 'added: used', 'added: used + 1', 'the reported charge matches the ledger increase'),
+('worker/replyReasons.vibe', 'reason-policy', 'reasonCode', 'code === "content_policy"', 'code === "other"', 'content-policy maps to refusal'),
+('worker/replyReasons.vibe', 'reason-credit', 'reasonCode', 'code === "out_of_credit" || code === "quota_exceeded"', 'code === "out_of_credit"', 'both billing codes map to provider credit'),
+('worker/replyReasons.vibe', 'reason-default', 'reasonCode', 'return "unavailable"', 'return "failed"', 'other model failures map to unavailable'),
+('worker/replyReasons.vibe', 'failure-seat', 'failureCode', 'return "unconfigured"', 'return "failed"', 'unresolved seats take precedence over model codes'),
+('worker/replyReasons.vibe', 'failure-empty', 'failureCode', 'return "empty"', 'return "failed"', 'structured output failures map to empty'),
+('worker/replyReasons.vibe', 'failure-model', 'failureCode', 'return reasonCode(failed)', 'return "failed"', 'model codes retain their exact reason'),
+('worker/replyReasons.vibe', 'failure-default', 'failureCode', 'return "failed"', 'return "empty"', 'other agent failures map to failed'),
+]

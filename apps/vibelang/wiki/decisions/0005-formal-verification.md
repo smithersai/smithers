@@ -95,8 +95,7 @@ Tool defects and minimal reproductions live in `verify/bugs/`; they are not coun
 
 No proof yet covers eventual network delivery/replay convergence, liveness, the Durable Object/WebSocket/agent-flow
 protocol, rendering, Effect execution, authentication, or deployment. Protocol modeling belongs with roadmap 1b
-(TLA+/TLC). The existing `Arbitrary` suite checks replay convergence empirically. CI wiring for this local command is
-still pending. The proof trusts TypeScript erasure, LemmaScript's lowering and local library, Dafny/Z3 and the stated
+(TLA+/TLC). The existing `Arbitrary` suite checks replay convergence empirically. The app's `PACKAGE.ts` runs proof and mutation gates in normal CI (0018). The proof trusts TypeScript erasure, LemmaScript's lowering and local library, Dafny/Z3 and the stated
 JS number/UTF-16 model; it is not a proof of those toolchains. macOS installers have not been executed here.
 
 **Fable finding 3.** `canReplyTo` and the start correlation contracts pass a fresh Linux run: **25 verified, 0 errors**. Six additional executable mutations cover missing/non-person/already-answered targets, omitted admission guard, mismatched event target and projected target. Final mutation receipts are in the lane report.
@@ -115,3 +114,7 @@ errors** in 27.9 s; `pnpm verify:broken` rejected **50/50** mutations in 480.1 s
 lets Effect code (the live sequencer, 0010) call the machine directly; LemmaScript reads only `//@` lines, and the
 mutation copies were regenerated with byte-identical contracts. Receipts: `pnpm verify` **28 verified, 0 errors** in
 20.8 s; `pnpm verify:broken` rejected **50/50** in 375.2 s.
+
+**All app decisions (VL-29).** [0018](0018-proofs.md) extends the harness beyond this conversation module and records
+the function inventory, production extractions, executable mutations and every remaining proof boundary. The gate
+automatically discovers marked production modules; every module is freshly generated and strictly typechecked.

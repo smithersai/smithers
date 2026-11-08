@@ -11,7 +11,8 @@
 | Scenes: the real view and update, driven by role and text, no browser | `test/app.scene.test.vibe` | `pnpm test` |
 | Browser end to end: dark, light-preferring (still dark, 0013), phone | `e2e/chat.spec.ts` | `pnpm e2e`; `E2E_BASE_URL=https://vibelang.smithers.sh pnpm e2e` |
 | Agent surfaces | `test/{commands,cli,mcp}.test.*`: Factory commands, emitted CLI process, stdio McpClient, skill and schema parity | `pnpm test` |
-| Proofs | `src/core/conversation.vibe` contracts | `pnpm verify` (roadmap 1d) |
+| Proofs | All marked production VibeLang decisions; inventory in [0018](0018-proofs.md) | `pnpm verify` |
+| Proof sensitivity | Executable mutations with byte-identical contracts | `pnpm verify:broken` |
 | Live Factory in local workerd: the API Worker's objects, LiveFactory, the protocol, the CLI | `test/*.workerd.test.*` | `pnpm test:workerd` (0010) |
 | The live agent in a browser, opt in | `e2e/live.spec.ts` | `E2E_LIVE_URL=<origin> pnpm exec playwright test e2e/live.spec.ts` |
 | Benchmarks, fuzzing | next | with roadmap 1b |
@@ -104,3 +105,6 @@ answer failure is shown once on the message, with a concise accessible completio
 The splash video has native playback controls and disables autoplay when the browser requests reduced motion at
 initialization. That media preference also disables the thinking dots and palette fade in CSS. `e2e/motion.spec.ts`
 checks controls and paused state, then the reduced-motion poster, fade and real thinking indicator in every viewport.
+
+**Proof CI (0018).** Both proof targets run in the normal CI tier. Their inputs include all production VibeLang
+modules and the verification tools; the positive gate also checks function-inventory drift. No new dependency is added.

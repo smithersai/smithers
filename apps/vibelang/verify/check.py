@@ -1,24 +1,31 @@
 #!/usr/bin/env python3
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
+from sources import production_sources, VERIFY
 ROOT=pathlib.Path(__file__).resolve().parent
-source=pathlib.Path(sys.argv[1]).resolve()
-if not source.exists(): raise SystemExit(f'Not found: {source}')
 APP=ROOT.parent
-if not source.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
+if len(sys.argv)>1:
+ source=pathlib.Path(sys.argv[1]).resolve()
+ if not source.exists(): raise SystemExit(f'Not found: {source}')
+ if not source.is_relative_to(APP): raise SystemExit(f'Source must be inside {APP}')
+ selected=[source] if source.is_file() else sorted(p for p in source.rglob('*.ts') if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(source).parts))
+else:
+ source=APP
+ selected=production_sources(APP)
 started=time.monotonic()
 # A run owns its artifacts and cannot use a previously successful proof.
 (ROOT/'.checks').mkdir(exist_ok=True); run=pathlib.Path(tempfile.mkdtemp(prefix='run-',dir=ROOT/'.checks'))
 # LemmaScript reads TypeScript. A `.vibe` module written in its verifiable subset is TypeScript syntax, so the run
 # proves an exact `.ts` copy of its text, staged with this run's artifacts; reports name the `.vibe` file and line.
 shown={}
-if source.is_file() and source.suffix=='.vibe':
- staged=run/'source'/source.relative_to(APP).with_suffix('.ts')
- staged.parent.mkdir(parents=True); staged.write_bytes(source.read_bytes())
- shown[staged]=source; files=[staged]
-else:
- files=sorted(p for p in ([source] if source.is_file() else source.rglob('*.ts')) if not any(x in {'.tools','node_modules','.checks'} for x in p.relative_to(source).parts))
-if not files: raise SystemExit(f'No TypeScript files under {source}')
+files=[]
+for original in selected:
+ if original.suffix=='.vibe':
+  staged=run/'source'/original.relative_to(APP).with_suffix('.ts')
+  staged.parent.mkdir(parents=True,exist_ok=True); staged.write_bytes(original.read_bytes())
+  shown[staged]=original; files.append(staged)
+ else: files.append(original)
+if not files: raise SystemExit(f'No annotated production modules or TypeScript files under {source}')
 config=APP/('.verify-'+run.name+'.config.json')
 config.write_text(json.dumps({'string-semantics':'javascript-utf16','dafny-library':'local','proof-dir':str(run.relative_to(APP)),'run-log':False}))
 atexit.register(lambda: config.unlink(missing_ok=True))
@@ -38,7 +45,7 @@ def command(args, cwd):
 def verify(item):
  idx,ts=item; t=time.monotonic(); original=ts.read_bytes(); lines=original.decode().splitlines(); origin=shown.get(ts,ts)
  # Report function declarations and contract lines even for extraction failures.
- funcs=[(n+1,re.search(r'\bfunction\s+(\w+)',s).group(1)) for n,s in enumerate(lines) if re.search(r'\bfunction\s+(\w+)',s)]
+ funcs=[(n+1,re.search(r'^\s*(?:export )?function\s+(\w+)',s).group(1)) for n,s in enumerate(lines) if re.search(r'^\s*(?:export )?function\s+(\w+)',s)]
  loc=', '.join(f'{origin}:{n} function {name}' for n,name in funcs) or str(origin)
  work=run/ts.relative_to(APP).parent; work.mkdir(parents=True,exist_ok=True)
  dfy=work/ts.with_suffix('.dfy').name
@@ -52,9 +59,9 @@ def verify(item):
   marked=[]
   before=''
   for n,line in enumerate(lines):
-   m=re.search(r'\bfunction\s+(\w+)',line)
+   m=re.search(r'^\s*(?:export )?function\s+(\w+)',line)
    if m:
-    if '//@ verify' in before: marked.append(m.group(1))
+    if VERIFY.search(before): marked.append(m.group(1))
     before=''
    elif line.lstrip().startswith('//') or not line.strip(): before+='\n'+line
    else: before=''
@@ -99,7 +106,7 @@ def verify(item):
 
 initial_hashes={p:hashlib.sha256(p.read_bytes()).hexdigest() for p in files}
 
-tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),str(files[0] if shown else source)],ROOT)
+tc_code,tc_output=command(['node',str(ROOT/'typecheck.cjs'),*[str(p) for p in files]],ROOT)
 print(tc_output,end='')
 if tc_code:
  (run/'typecheck.log').write_text(tc_output)

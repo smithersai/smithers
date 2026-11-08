@@ -1,0 +1,42 @@
+import { describe, expect, it } from "@effect/vitest"
+import { make, SPENT, type Ledger } from "../worker/Budget.vibe"
+
+// A real in-memory ledger; the budget owns the semaphore and all accounting.
+effect function ledger() {
+  const values = try Ref.make<Readonly<Record<string, number>>>({})
+  const storage: Ledger = {
+    read: (key) => Ref.get(values).pipe(map((entries) => entries[key])),
+    write: (entries) => Ref.update(values, (current) => ({ ...current, ...entries })),
+  }
+  return { storage, values }
+}
+
+describe("the daily ledger's accounting", () => {
+  it.effect("invalid usage cannot poison admission or a later valid spend", () => effect {
+    const { storage, values } = try ledger()
+    const budget = try make(storage, 100)
+    try budget.spend("nan", Number.NaN)
+    try budget.spend("infinity", Number.POSITIVE_INFINITY)
+    try budget.spend("negative", -10)
+    try budget.spend("valid", 12.6)
+    const saved = try Ref.get(values)
+    const admitted = try budget.admit()
+    try Effect.try(() => {
+      expect(saved[SPENT]).toBe(13)
+      expect(saved["reply/valid"]).toBe(13)
+      expect(admitted).toBe(true)
+    })
+  })
+
+  it.effect("concurrent repeated spends count one charge per reply and admission stops at the limit", () => effect {
+    const { storage, values } = try ledger()
+    const budget = try make(storage, 12)
+    try all([budget.spend("a", 5), budget.spend("a", 5), budget.spend("b", 7)], { concurrency: "unbounded" })
+    const saved = try Ref.get(values)
+    const admitted = try budget.admit()
+    try Effect.try(() => {
+      expect(saved).toEqual({ spent: 12, "reply/a": 5, "reply/b": 7 })
+      expect(admitted).toBe(false)
+    })
+  })
+})

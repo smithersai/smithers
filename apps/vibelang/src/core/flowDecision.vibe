@@ -1,0 +1,31 @@
+// Decisions used by the durable Post, Reply and Tour steps. Execution and storage stay in their Effect shells.
+
+/** Only a recorded post or tour dispatches its continuation. */
+//@ verify
+//@ ensures \result == (answer == null)
+export function dispatches(answer: string | null): boolean {
+  return answer === null
+}
+
+/** Only the current attempt's next nonempty piece advances the reply. */
+//@ verify
+//@ ensures \result == (attempt == currentAttempt && offset == length && text != "")
+export function appends(currentAttempt: number, attempt: number, length: number, offset: number, text: string): boolean {
+  return attempt === currentAttempt && offset === length && text !== ""
+}
+
+/** Only the addressed tour's terminal event releases its running speaker. */
+//@ verify
+//@ ensures \result == (id == tour && (kind == "TourEnded" || kind == "ReplyFinished" || kind == "ReplyFailed"))
+export function endsTourEvent(kind: string, id: string, tour: string): boolean {
+  return id === tour && (kind === "TourEnded" || kind === "ReplyFinished" || kind === "ReplyFailed")
+}
+
+/** A durable start is done when newly accepted or already correlated to this post; busy remains retryable. */
+//@ verify
+//@ ensures (accepted || already) ==> \result == "done"
+//@ ensures !accepted && !already && refusal == "busy" ==> \result == "busy"
+//@ ensures !accepted && !already && refusal != "busy" ==> \result == "refused"
+export function startAnswer(accepted: boolean, already: boolean, refusal: string): "done" | "busy" | "refused" {
+  return accepted || already ? "done" : refusal === "busy" ? "busy" : "refused"
+}
