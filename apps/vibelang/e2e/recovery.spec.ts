@@ -7,11 +7,12 @@ declare global {
     recovery: {
       snapshot: () => { client: Client; subscriptions: Array<{ conversation: string; after: number }>; delivered: number[] }
       canonical: () => Promise<Conversation>
+      release: () => Promise<void>
     }
   }
 }
 
-test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_PORT ?? 4173}` })
+test.use({ baseURL: `http://127.0.0.1:${process.env.E2E_4502 ?? process.env.E2E_PORT ?? 4173}` })
 
 for (const fault of ["drop", "disconnect", "end"] as const) {
   test(`11: ${fault} recovers through the real subscriptions and stays live without duplicates`, async ({ page }) => {

@@ -1,6 +1,6 @@
 // Built only in e2e mode. It runs the real app with a faulty transport layer and exposes read-only observations.
 import { Runtime } from "foldkit"
-import { ExperimentalBrowserDocument, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
+import { ExperimentalBrowserDocument, ExperimentalBrowserMediaQuery, ExperimentalBrowserWindow } from "vibelang-runtime/experimental/platform-browser"
 import { faultyFactory, trace } from "../../test/support/FaultyFactory.vibe"
 import { application } from "../../test/support/application.vibe"
 import { init } from "../../src/web/main.vibe"
@@ -12,6 +12,7 @@ import { canonical } from "./probe.vibe"
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
 function faultOf(search: string) {
   const requested = new URLSearchParams(search).get("fault")
+  if (requested === "thinking") return requested
   return requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
 }
 
@@ -32,14 +33,18 @@ export effect function main() {
   window.recovery = {
     snapshot: () => ({ client: model.client, subscriptions: observation.subscriptions, delivered: observation.delivered.map((event) => event.seq) }),
     canonical: () => runPromise(canonical(observation)),
+    release: () => runPromise(observation.release!()),
   }
   return program
 }
 
-const page = Layer.merge(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer)
+const page = Layer.mergeAll(ExperimentalBrowserWindow.layer, ExperimentalBrowserDocument.layer, ExperimentalBrowserMediaQuery.layer)
 
 const window = await runPromise(effect {
   provide page { return try (try Experimental.Window.Window).current }
+})
+const reducedMotion = await runPromise(effect {
+  provide page { return try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)") }
 })
 if (new URLSearchParams(window.location.search).get("fault") === "health") {
   // Finish loading the fault host while the production startup program is waiting, so the browser can send keys.
@@ -51,6 +56,6 @@ if (new URLSearchParams(window.location.search).get("fault") === "health") {
   }, startupPage) |> Effect.orDie(%))
 } else {
   Runtime.run(await runPromise(Effect.provide(main(), page) |> Effect.orDie(%)), {
-    flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest" }),
+    flags: succeed({ session: "browser", mode: "mock" as const, name: "Guest", reducedMotion }),
   })
 }

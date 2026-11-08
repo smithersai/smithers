@@ -108,3 +108,12 @@ checks controls and paused state, then the reduced-motion poster, fade and real 
 
 **Proof CI (0018).** Both proof targets run in the normal CI tier. Their inputs include all production VibeLang
 modules and the verification tools; the positive gate also checks function-inventory drift. No new dependency is added.
+
+**Shared-host determinism (2026-11-07).** Vitest uses four workers per lane. The cross-conversation lifecycle
+case waits for the independent room's actual completed reply, then asserts the busy room has not completed one.
+A fixed count of scheduler yields did not guarantee that the durable engine had finished its due work under coverage.
+
+The reduced-motion case holds the real first reply delta in a faulty Effect transport until its CSS is checked,
+then releases it and requires the complete reply. It no longer polls for a state that can end in 25 ms.
+`E2E_4502=4502 pnpm e2e` selects this lane's port, including local fault pages.
+

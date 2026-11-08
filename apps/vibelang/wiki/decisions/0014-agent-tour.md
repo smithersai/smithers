@@ -82,4 +82,4 @@ host, so it was not run.
 
 **Coverage regression (2026-11-07).** Ending a tour now returns keyboard focus to the composer after the render.
 The removed Esc button previously left focus on the page body, including after an unavailable end was retried.
-Scene checks require the focus command; browser checks require the actual composer focus after Escape, Esc and recovery.
+Scene checks require the focus command; browser checks require the actual composer focus after Escape or Esc.

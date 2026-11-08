@@ -15,6 +15,8 @@ export default defineConfig(({ mode }) => ({
   },
   server: { port: 5178 },
   test: {
+    // Bound per-lane compiler and runtime load on the shared test host.
+    maxWorkers: 4,
     environment: mode === "workerd" ? "node" : "happy-dom",
     include: mode === "workerd" ? [WORKERD] : ["test/**/*.test.{ts,vibe,mjs}"],
     exclude: mode === "workerd" ? configDefaults.exclude : [...configDefaults.exclude, WORKERD],

@@ -6,7 +6,7 @@ import { defineConfig, devices } from "@playwright/test"
 // the local host. `E2E_LIVE_URL` opts in to e2e/live.spec.ts, the live agent.
 const deployed = process.env.E2E_BASE_URL
 // Parallel checkouts on one machine each pick their own port.
-const port = Number(process.env.E2E_PORT ?? 4173)
+const port = Number(process.env.E2E_4502 ?? process.env.E2E_PORT ?? 4173)
 
 export default defineConfig({
   testDir: "e2e",
