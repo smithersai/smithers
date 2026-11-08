@@ -8,6 +8,7 @@ src/core/conversation.vibe, which LemmaScript reads as TypeScript, changed in ex
 contract and assertion stays byte-identical, and each case must match exactly once inside its function.
 """
 import json, pathlib, re, sys
+from mutation_edit import executable_matches
 root=pathlib.Path(__file__).resolve().parent
 from extended_mutations import cases as extended_cases
 # The mutation cases: name, function, production text, mutated text, the claim the mutation breaks.
@@ -95,8 +96,11 @@ for module,name,fn,old,new,claim in cases:
     start=match.start(); following=re.search(r'^(?:export )?function \w+\(',source[match.end():],re.M)
     end=match.end()+following.start() if following else len(source)
     body=source[start:end]
-    if body.count(old)!=1: raise SystemExit(f'{name}: expected 1 executable match, found {body.count(old)}')
-    broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+body.replace(old,new)+source[end:]
+    matches=executable_matches(body,old)
+    if len(matches)!=1: raise SystemExit(f'{name}: expected 1 executable match, found {len(matches)}')
+    at=matches[0]
+    edited=body[:at]+new+body[at+len(old):]
+    broken='// Executable mutation: '+claim+'. Contracts are unchanged.\n'+source[:start]+edited+source[end:]
     if contracts(broken)!=contracts(source): raise SystemExit(f'{name}: mutation changed a contract')
     (out/f'{name}.ts').write_text(broken)
     manifest[name]={'source':module,'function':fn,'claim':claim,'before':old,'after':new}

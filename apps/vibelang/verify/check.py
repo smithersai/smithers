@@ -2,6 +2,7 @@
 """Fresh lsc generation + Dafny verification. Never trusts saved .dfy files."""
 import atexit, concurrent.futures, hashlib, json, os, pathlib, re, shutil, subprocess, sys, tempfile, time
 from sources import production_sources, VERIFY
+from mutation_targets import POSTCONDITIONS, postcondition_line
 ROOT=pathlib.Path(__file__).resolve().parent
 APP=ROOT.parent
 if len(sys.argv)>1:
@@ -80,7 +81,10 @@ def verify(item):
     if ts.parent != mutations.parent: raise SystemExit('Mutation symbol filter only applies to generated mutants')
     target=json.loads(mutations.read_text())[ts.stem]['function']
     flags.extend(['--filter-symbol',target])
-   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','1','--verification-time-limit','30','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work)
+    if ts.stem in POSTCONDITIONS:
+     line=postcondition_line(text,target,POSTCONDITIONS[ts.stem])
+     flags.extend(['--isolate-assertions','--filter-position',':'+str(line)])
+   c,o=command([str(ROOT/'.tools/bin/dafny'),'verify','--cores','1','--verification-time-limit','30' if mutations else '60','--error-limit','0','--log-format',f'csv;LogFileName={work / (ts.stem + chr(46) + chr(99) + chr(115) + chr(118))}',*flags,str(dfy)],work)
    code=c;out+=o
  if hashlib.sha256(original).hexdigest() != initial_hashes[ts]:
   code=2;out+='ERROR: source changed after strict typechecking started\n'

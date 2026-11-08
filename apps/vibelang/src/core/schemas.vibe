@@ -1,8 +1,10 @@
+import { nonnegativeCursor } from "./protocolDecision.vibe"
+
 // Schemas for the conversation machine's state (`conversation.vibe`), so a Foldkit Model, the wire and the tests can
 // decode and encode it. Each one matches the TypeScript type of the same name in `conversation.vibe`.
 
 /** A safe, nonnegative event cursor, shared by every wire/state/surface schema. */
-export const Seq = Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))
+export const Seq = Schema.Int.check(Schema.makeFilter(nonnegativeCursor, Schema.isGreaterThanOrEqualTo(0).annotations))
 
 /** Why the sequencer refused an intent (`Refusal` in conversation.vibe). */
 export const RefusalReason = Schema.Literals(["empty", "too-long", "duplicate", "busy", "not-replying"])

@@ -112,6 +112,7 @@ describe("grouping into mythical commits", () => {
 })
 
 describe("VibeLang's bootstrapped history", () => {
+  // This integration replays over 6,000 commits through the real machine; retain all content/count assertions.
   it.effect("is exactly what its seed's intents build through the real sequencer", () => effect {
     const history = try Schema.decodeUnknownEffect(Schema.fromJsonString(HistorySchema))(HISTORY_JSON)
     const { history: rebuilt, refused } = replay(intentsOf(seedFrom(REPOSITORY, history)))
@@ -121,5 +122,5 @@ describe("VibeLang's bootstrapped history", () => {
       expect(new Set(history.real.map((real) => real.sha)).size).toBe(history.real.length)
       expect(history.real.length).toBeGreaterThan(6000)
     })
-  })
+  }, 20_000)
 })

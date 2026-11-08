@@ -3,7 +3,7 @@ import type { Event } from "../../src/core/conversation.vibe"
 import { Factory, Unavailable } from "../../src/core/Factory.vibe"
 import { MockFactory } from "../../src/core/MockFactory.vibe"
 
-export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking"
+export type Fault = "drop" | "disconnect" | "end" | "refuse" | "thinking" | "streaming"
 export interface Trace {
   subscriptions: Array<{ conversation: string; after: number }>
   delivered: Event[]
@@ -20,7 +20,10 @@ export function faultyFactory(fault: Fault, observation: Trace) {
   return Layer.effect(Factory, effect {
     const base = try Factory
     const released = try Deferred.make<void>()
-    observation.release = () => Effect.asVoid(Deferred.succeed(released, undefined))
+    const completions = try Queue.unbounded<void>()
+    observation.release = () => fault === "streaming"
+      ? Effect.asVoid(Queue.offer(completions, undefined))
+      : Effect.asVoid(Deferred.succeed(released, undefined))
     try sync(() => { observation.base = base })
     return {
       mode: base.mode,
@@ -39,6 +42,8 @@ export function faultyFactory(fault: Fault, observation: Trace) {
         const ending = fault === "end" && !observation.faulted
         return base.events(conversation, after).pipe(
           Stream.mapEffect(effect (event) => {
+            // Hold each real terminal event until the browser has observed its streamed text and announcements.
+            if (fault === "streaming" && event.type === "ReplyFinished") try Queue.take(completions)
             if (fault === "thinking" && event.type === "ReplyDelta" && !observation.faulted) {
               observation.faulted = true
               try Deferred.await(released)

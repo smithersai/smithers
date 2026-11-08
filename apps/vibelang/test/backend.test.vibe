@@ -17,7 +17,7 @@ it.effect("one health choice gates post, read and events; cancelling a caller do
     try TestClock.adjust("0 millis")
     try Effect.try(() => {
       expect(factory.mode).toBe("pending")
-      expect(health.snapshot()).toEqual({ calls: 1, settled: false })
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: false })
       expect(posted.pollUnsafe()).toBeUndefined()
       expect(snapshot.pollUnsafe()).toBeUndefined()
       expect(event.pollUnsafe()).toBeUndefined()
@@ -35,7 +35,7 @@ it.effect("one health choice gates post, read and events; cancelling a caller do
       expect(read.seq).toBeGreaterThanOrEqual(0)
       expect(Array.from(events)[0]).toMatchObject({ type: "Posted", clientId: "first" })
       expect(recorded.entries.filter(entry => entry.author === "person").map(entry => entry.clientId)).toEqual(["first"])
-      expect(health.snapshot()).toEqual({ calls: 1, settled: true })
+      expect(health.snapshot()).toEqual({ calls: 1, settled: true, cancelled: false })
     })
   }
 })
@@ -56,7 +56,8 @@ it.effect("health timeout chooses the working mock and never switches after a la
       expect(mode).toBe("mock")
       expect(factory.mode).toBe("mock")
       expect(snapshot).toEqual({ seq: 0, entries: [] })
-      expect(health.snapshot()).toEqual({ calls: 1, settled: false })
+      expect(health.snapshot()).toMatchObject({ cancelled: true })
+      expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true })
     })
   }
 })
@@ -78,5 +79,5 @@ it.effect("forcing mock skips health and scope disposal interrupts an unresolved
   })
   try health.release("mock")
   try TestClock.adjust("5 seconds")
-  try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false }))
+  try Effect.try(() => expect(health.snapshot()).toEqual({ calls: 1, settled: false, cancelled: true }))
 })

@@ -22,7 +22,7 @@ SHA-256 before extraction. It supports Linux x86_64 and macOS arm64/x86_64; only
 Node >=18, npm, Python >=3.9, curl and unzip are prerequisites; there is no global tool installation.
 
 Every check strictly typechecks the selected source, creates a unique ignored `verify/.checks/run-*` directory,
-generates fresh Dafny, and invokes Dafny with one solver core and a 30-second limit per assertion batch. It never
+generates fresh Dafny, and invokes Dafny with one solver core and a 60-second limit per positive assertion batch (30 seconds for a negative case). It never
 accepts a saved `.dfy` proof. All eleven exported transitions/queries and both typed decision constructors opt in with
 `//@ verify`. Missing emitted marked functions and source edits during a check fail the harness. Dafny locations are
 mapped back to TypeScript function names and declaration lines; raw generated locations remain in the diagnostic.
@@ -118,3 +118,9 @@ mutation copies were regenerated with byte-identical contracts. Receipts: `pnpm 
 **All app decisions (VL-29).** [0018](0018-proofs.md) extends the harness beyond this conversation module and records
 the function inventory, production extractions, executable mutations and every remaining proof boundary. The gate
 automatically discovers marked production modules; every module is freshly generated and strictly typechecked.
+
+**Whole-app second batch (0018).** The conversation's contracts now include at most one answer per post, ignored
+text after a terminal reply/tour, exact delta/failure payloads, and admissible intent completeness. The shared gate
+also proves browser, mock and protocol policies. Five expensive negative cases select a named production
+postcondition with fail-closed matching; positive proofs still check every obligation. Parser errors and solver
+timeouts remain failures of the mutation gate, never successful rejections. Current receipts are in 0018.

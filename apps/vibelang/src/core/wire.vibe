@@ -7,6 +7,7 @@
 //   GET  /api/conversations/<id>/events?after=<seq>    text/event-stream: `id: <seq>`, `data: <EventSchema JSON>`
 //   POST   /api/conversations/<id>/tour                starts the agent's tour → 200 {} | 409 Refusal
 //   DELETE /api/conversations/<id>/tour                ends it → 200 {} | 409 Refusal
+import { routeKind, validConversationLength } from "./protocolDecision.vibe"
 import { MAX_TEXT } from "./conversation.vibe"
 import { Seq } from "./schemas.vibe"
 
@@ -58,14 +59,9 @@ export function routeOf(method: string, pathname: string): Route | undefined {
   const parts = pathname.slice(CONVERSATIONS.length).split("/")
   if (parts.length > 2) return undefined
   const decoded = decodeSegment(parts[0]!)
-  if (decoded === undefined || decoded.length === 0 || decoded.length > MAX_CONVERSATION) return undefined
-  const rest = parts[1]
-  if (rest === undefined && method === "GET") return { kind: "read", conversation: decoded }
-  if (rest === "posts" && method === "POST") return { kind: "post", conversation: decoded }
-  if (rest === "events" && method === "GET") return { kind: "events", conversation: decoded }
-  if (rest === "tour" && method === "POST") return { kind: "tour", conversation: decoded }
-  if (rest === "tour" && method === "DELETE") return { kind: "end-tour", conversation: decoded }
-  return undefined
+  if (decoded === undefined || !validConversationLength(decoded.length, MAX_CONVERSATION)) return undefined
+  const kind = routeKind(method, parts[1])
+  return kind === "" ? undefined : { kind, conversation: decoded }
 }
 
 function decodeSegment(segment: string): string | undefined {

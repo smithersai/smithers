@@ -40,6 +40,7 @@ export effect function main() {
   const window = try (try Experimental.Window.Window).current
   const document = try (try Experimental.Document.Document).current
   const client = try HttpClient.HttpClient
+  const clock = try Clock.Clock
   const origin = window.location.origin
   const css = try stylesheet()
   const root = try Effect.try(() => {
@@ -48,7 +49,7 @@ export effect function main() {
     document.head.append(style)
     return document.getElementById("root")!
   })
-  const resources = BrowserFactory(origin, askedForMock(window)).pipe(Layer.provide(Layer.succeed(HttpClient.HttpClient, client)))
+  const resources = BrowserFactory(origin, askedForMock(window)).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
   const session = (try (try SecureRandom.SecureRandom).uuidV4()).slice(0, 8)
   const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion }

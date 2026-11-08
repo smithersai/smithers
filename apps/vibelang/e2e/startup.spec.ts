@@ -4,7 +4,7 @@ import { expect, test } from "@playwright/test"
 declare global {
   interface Window {
     startup: {
-      snapshot: () => { calls: number; settled: boolean }
+      snapshot: () => { calls: number; settled: boolean; cancelled: boolean }
       release: () => Promise<boolean>
     }
   }
@@ -18,6 +18,8 @@ for (const input of ["Command K", "Tab"] as const) {
     await expect.poll(() => page.evaluate(() => window.startup?.snapshot().calls)).toBe(1)
     await expect(page.getByRole("heading", { name: "VibeLang", exact: true })).toBeVisible({ timeout: 500 })
     await expect(page.locator(".vl-pill")).toHaveCount(0)
+    // Deliberately outlive the production deadline: the injected Clock must hold it, while input stays live.
+    await page.waitForTimeout(3100)
     if (input === "Command K") {
       await page.keyboard.press("ControlOrMeta+k")
     } else {
@@ -31,12 +33,12 @@ for (const input of ["Command K", "Tab"] as const) {
     await prompt.fill("What is a service?")
     await prompt.press("Enter")
     await expect(page.locator("[data-pending='true']")).toContainText("What is a service?")
-    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 1, settled: false })
+    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 1, settled: false, cancelled: false })
     await page.evaluate(() => window.startup.release())
     await expect(page.locator(".vl-pill")).toHaveText("Mock")
     await expect(page.locator("[data-role='assistant'][data-done='true']")).toHaveCount(1)
     await expect(page.locator("[data-pending='true']")).toHaveCount(0)
-    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 1, settled: true })
+    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 1, settled: true, cancelled: false })
   })
 }
 
@@ -53,6 +55,6 @@ for (const preference of ["query", "storage"] as const) {
     await prompt.press("Enter")
     await expect(page.locator(".vl-pill")).toHaveText("Mock")
     await expect(page.locator("[data-role='assistant'][data-done='true']")).toHaveCount(1)
-    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 0, settled: false })
+    expect(await page.evaluate(() => window.startup.snapshot())).toEqual({ calls: 0, settled: false, cancelled: false })
   })
 }

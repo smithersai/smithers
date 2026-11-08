@@ -1,0 +1,35 @@
+// The scripted agent's priority decision; the script content is data supplied by mockReplies.vibe.
+export interface ScriptWords { readonly words: ReadonlyArray<string> }
+
+/** Whether at least one script word occurs in the normalized prompt. */
+//@ verify
+//@ ensures \result == exists(i, 0 <= i && i < words.length && prompt.includes(words[i]))
+export function matches(prompt: string, words: ReadonlyArray<string>): boolean {
+  let i = 0
+  while (i < words.length) {
+    //@ invariant 0 <= i && i <= words.length
+    //@ invariant forall(j, 0 <= j && j < i ==> !prompt.includes(words[j]))
+    //@ decreases words.length - i
+    if (prompt.includes(words[i]!)) return true
+    i++
+  }
+  return false
+}
+
+/** The first matching script, or -1 only when none matches. */
+//@ verify
+//@ ensures -1 <= \result && \result < scripts.length
+//@ ensures \result == -1 ==> forall(i, 0 <= i && i < scripts.length ==> forall(j, 0 <= j && j < scripts[i].words.length ==> !prompt.includes(scripts[i].words[j])))
+//@ ensures \result >= 0 ==> exists(j, 0 <= j && j < scripts[\result].words.length && prompt.includes(scripts[\result].words[j]))
+//@ ensures \result >= 0 ==> forall(i, 0 <= i && i < \result ==> forall(j, 0 <= j && j < scripts[i].words.length ==> !prompt.includes(scripts[i].words[j])))
+export function scriptIndex(prompt: string, scripts: ReadonlyArray<ScriptWords>): number {
+  let i = 0
+  while (i < scripts.length) {
+    //@ invariant 0 <= i && i <= scripts.length
+    //@ invariant forall(j, 0 <= j && j < i ==> forall(k, 0 <= k && k < scripts[j].words.length ==> !prompt.includes(scripts[j].words[k])))
+    //@ decreases scripts.length - i
+    if (matches(prompt, scripts[i]!.words)) return i
+    i++
+  }
+  return -1
+}

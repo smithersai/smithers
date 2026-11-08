@@ -28,3 +28,7 @@ which production behavior each leaves unproved and the retained host reproductio
 `unicode-case.ts` demonstrates incorrect ASCII-only Unicode casing in the backend; `event-key.ts` retains the
 production fixed-width storage-key contract that number conversion/padding cannot currently lower. Both have
 strictly checked receipts under the host reproduction directories named in 0018.
+
+`filter-method.ts` retains a single-expression filter callback calling a loop-backed verified predicate; the backend
+rejects the resulting method call inside its lambda. `empty-string-union.ts` retains an empty string alternative;
+the backend emits an invalid empty constructor. Both strictly typecheck; neither failure is a rejected mutation.

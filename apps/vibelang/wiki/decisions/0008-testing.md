@@ -117,3 +117,16 @@ The reduced-motion case holds the real first reply delta in a faulty Effect tran
 then releases it and requires the complete reply. It no longer polls for a state that can end in 25 ms.
 `E2E_4502=4502 pnpm e2e` selects this lane's port, including local fault pages.
 
+
+**Startup deadline control (0018).** The fault browser host supplies an Effect Clock that holds only the health
+selection deadline; it forwards real time reads and other sleeps, including mock streaming. Startup forwards its
+current Clock to the resource layer. The browser deliberately outlives the normal deadline, then tests keyboard,
+focus and posting while health is still uncancelled. It releases health and requires one complete answer. This
+elapsed-time probe does not replace any UI-state wait. Independent TestClock cases assert selection at exactly
+three seconds and no late switch. No request interception or new dependency is used.
+
+**Announcement observation (0018).** A faulty Effect transport holds each real ReplyFinished until the browser
+observes the preceding nonempty text with `done=false` and the previous announcement. The test releases completion
+and still checks every rendered announcement, duplicate suppression and the accessibility tree. No events are
+fabricated and no rendering timeout is widened; this removes the assumption that host scheduling exposes a
+transient intermediate state before completion.

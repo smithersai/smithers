@@ -1,3 +1,5 @@
+import { responseKind } from "./protocolDecision.vibe"
+
 // The live factory: `Factory` over the API Worker's HTTP protocol (wire.vibe, wiki/decisions/0010-live-agent.md),
 // through Effect's `HttpClient`, so the browser, the CLI and the MCP server share it. The sequencer is the
 // conversation's Durable Object; this layer only carries intents to it and its numbered events back.
@@ -27,12 +29,12 @@ export effect function health(origin: string) {
 
 /** Answers a request that may be refused: 409 carries the sequencer's refusal, any other failure is `Unavailable`. */
 effect function refusable(response: HttpClientResponse.HttpClientResponse, what: string) {
-  if (response.status === 409) {
+  if (responseKind(response.status) === "refused") {
     const body = try Effect.mapError(response.json, unavailable("refusal is not JSON"))
     const refused = try Effect.mapError(decodeRefusal(body), unavailable("refusal is not the protocol"))
     throw new Refused({ refusal: refused.refusal })
   }
-  if (response.status < 200 || response.status > 299) throw new Unavailable({ reason: `${what} answered ${response.status}` })
+  if (responseKind(response.status) === "unavailable") throw new Unavailable({ reason: `${what} answered ${response.status}` })
 }
 
 /** The Factory at `origin`, such as `https://vibelang.smithers.sh`. Each call is one request; nothing is cached. */

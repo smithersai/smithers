@@ -1,3 +1,5 @@
+import { validBodyLength } from "../src/core/protocolDecision.vibe"
+
 // The API Worker's HTTP surface (src/core/wire.vibe; wiki/decisions/0010-live-agent.md): health, posts, finite reads,
 // the event stream and the tour (0014), each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
@@ -74,7 +76,7 @@ effect function answer(route: Route, url: URL, conversations: Conversations) {
   const request = try HttpServerRequest.HttpServerRequest
   if (route.kind === "post") {
     const length = Number(request.headers["content-length"] ?? "0")
-    if (!(length > 0 && length <= MAX_POST_BYTES)) return json({ error: "body size" }, 413)
+    if (!validBodyLength(length, MAX_POST_BYTES)) return json({ error: "body size" }, 413)
     const text = request.text catch () => ""
     const body = decodePost(text) catch () => undefined
     if (body === undefined || body.name.length > MAX_NAME) return json({ error: "body" }, 400)

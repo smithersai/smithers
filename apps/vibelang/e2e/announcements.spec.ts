@@ -18,7 +18,8 @@ async function send(page: Page) {
 }
 
 test("9: the named log stays quiet during streaming and announces each completed answer politely", async ({ page }) => {
-  await page.goto("/")
+  const port = process.env.E2E_4502 ?? process.env.E2E_PORT ?? 4173
+  await page.goto(`http://127.0.0.1:${port}/e2e/runtime/index.html?fault=streaming`)
   const announcement = page.getByRole("status", { name: "Answer" })
   await expect(announcement).toHaveText("")
   // Observe from before sending, so the assertion covers every rendered piece regardless of protocol/test speed.
@@ -40,6 +41,10 @@ test("9: the named log stays quiet during streaming and announces each completed
   const log = page.getByRole("log", { name: "Conversation" })
   await expect(log).toBeVisible()
   await expect(log).toHaveAttribute("aria-live", "off")
+  await expect(answers(page).last()).toHaveAttribute("data-done", "false")
+  await expect(answers(page).last()).toContainText("service")
+  await expect(announcement).toHaveText("")
+  await page.evaluate(() => window.recovery.release())
   await expect(answers(page).last()).toHaveAttribute("data-done", "true", { timeout: 15_000 })
   await expect(announcement).toContainText("service")
   const completed = (await announcement.textContent())!
@@ -54,7 +59,11 @@ test("9: the named log stays quiet during streaming and announces each completed
   await input(page).focus()
   await send(page)
   await expect(answers(page)).toHaveCount(2)
+  await expect(answers(page).last()).toHaveAttribute("data-done", "false")
+  await expect(answers(page).last()).toContainText("service")
+  await expect(announcement).toHaveText(completed)
   await open(page)
+  await page.evaluate(() => window.recovery.release())
   await expect(answers(page).last()).toHaveAttribute("data-done", "true", { timeout: 15_000 })
   const second = completed.replace("Answer 1:", "Answer 2:")
   await expect(announcement).toHaveText(second)

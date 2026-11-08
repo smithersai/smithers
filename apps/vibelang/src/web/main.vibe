@@ -12,6 +12,7 @@ import { defineMessageUnion } from "foldkit/message"
 import * as Machine from "../core/conversation.vibe"
 import { EventSchema, Factory } from "../core/Factory.vibe"
 import { Client } from "../core/schemas.vibe"
+import { escapeAction, canMinimize, hasContent, toggleDocs, scrollFollow, follows, failedTourKeepsControl, paletteChange, tourStream, completedEvent, answerAnnouncement, screenKey } from "./screenDecision.vibe"
 import { transcriptViewport } from "./viewport.vibe"
 
 // FLAGS
@@ -139,23 +140,23 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     PressedCommandK: () => openPalette(model, !model.palette),
     ClickedAsk: () => openPalette(model, true),
     // Escape first takes control back from the agent, then closes what is open, innermost first.
-    PressedEscape: () =>
-      model.tour || touringHere(model)
-        ? endTour(model)
-        : model.palette
-        ? openPalette(model, false)
-        : model.surface === "chat" && model.docs === "max"
-        ? { model: { ...model, docs: "pane" } }
-        : minimizeSplash(model),
+    PressedEscape: () => {
+      switch (escapeAction(model.tour, touringHere(model), model.palette, model.surface, model.docs)) {
+        case "tour": return endTour(model)
+        case "palette": return openPalette(model, false)
+        case "docs": return { model: { ...model, docs: "pane" } }
+        case "splash": return minimizeSplash(model)
+      }
+    },
     ClickedLearnMore: () => learnMore(model),
     ClickedEndTour: () => endTour(model),
     // Ended before the tour was even recorded: end it now that it is.
     SucceededTour: () => model.tour ? { model } : { model, commands: [EndTourCommand({ conversation: model.conversation })] },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
-    FailedTour: ({ reason }) => ({ model: { ...model, tour: reason === "busy" && touringHere(model), tourError: reason } }),
+    FailedTour: ({ reason }) => ({ model: { ...model, tour: failedTourKeepsControl(reason, touringHere(model)), tourError: reason } }),
     // The end never reached the agent: it still drives, so Esc comes back.
     FailedEndTour: () => ({ model: { ...model, tour: touringHere(model) } }),
-    ClickedDocs: () => ({ model: { ...model, docs: model.docs === "max" ? "pane" : "max" } }),
+    ClickedDocs: () => ({ model: { ...model, docs: toggleDocs(model.docs) } }),
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
     ClickedChat: () => minimizeSplash(model),
     UpdatedDraft: ({ value }) => ({ model: { ...model, draft: value } }),
@@ -174,8 +175,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
       const client = Machine.receive(model.client, event)
       // A missed event: replay from the last one this copy applied.
       if (client.gap) return { model: { ...model, client: Machine.resume(client), epoch: model.epoch + 1, from: client.conversation.seq } }
-      const advanced = client.conversation.seq > model.client.conversation.seq
-      const completed = advanced && (event.type === "ReplyFinished" || event.type === "ReplyFailed" || event.type === "TourEnded")
+      const completed = completedEvent(model.client.conversation.seq, client.conversation.seq, event.type)
       // The tour finished, failed or was ended: the agent no longer has control.
       const toured = completed && Machine.isTour(client.conversation.entries, event.id)
       const answer = completed ? client.conversation.entries.find((entry) => entry.id === event.id) : undefined
@@ -184,7 +184,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           ...model,
           client,
           connection: model.stream === "open" ? "Connected" : model.connection,
-          answer: answer ? answer.error === "" ? answer.text : "Answer failed" : model.answer,
+          answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
           announced: completed ? model.announced + 1 : model.announced,
           tour: toured ? false : model.tour,
         },
@@ -194,13 +194,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     ClickedReconnect: () => ({ model: { ...model, stream: "open", connection: "Reconnecting", epoch: model.epoch + 1, from: model.client.conversation.seq }, commands: [FocusComposer({})] }),
     FocusedPrompt: () => ({ model }),
     ScrolledTranscript: ({ bottom, intent = model.followIntent }) => {
-      if (intent < model.followIntent) return { model }
-      // The native handler can see the old chat DOM while a surface transition awaits its render. Acknowledge
-      // its revision even when that surface ignores the position, or future follows would keep an obsolete token.
-      if (model.surface !== "chat" || model.palette) return { model: { ...model, followIntent: intent } }
-      return {
-        model: { ...model, following: bottom, followIntent: intent },
-      }
+      const next = scrollFollow(model.surface, model.palette, model.following, model.followIntent, bottom, intent)
+      if (next.stale) return { model }
+      return { model: { ...model, following: next.following, followIntent: next.followIntent } }
     },
     ClickedLatest: () => ({ model: { ...model, following: true }, commands: [FocusComposer({})] }),
   })
@@ -215,7 +211,8 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory> {
   const conversation = tourConversation(model.session)
   const fresh = model.conversation !== conversation
   // A closed or broken stream opens again from where this copy is, so the tour is seen.
-  const opening = fresh || model.stream !== "open"
+  const stream = tourStream(fresh, model.stream, model.epoch, model.client.conversation.seq, model.from)
+  const opening = stream.opening
   return {
     model: {
       ...model,
@@ -227,8 +224,8 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory> {
       following: true,
       conversation,
       client: fresh ? Machine.newClient : model.client,
-      epoch: opening ? model.epoch + 1 : model.epoch,
-      from: fresh ? 0 : opening ? model.client.conversation.seq : model.from,
+      epoch: stream.epoch,
+      from: stream.from,
       stream: opening ? "open" : model.stream,
       connection: opening ? "Connecting" : model.connection,
     },
@@ -247,18 +244,19 @@ function endTour(model: Model): Update.Return<Model, Message, Factory> {
 }
 
 function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
-  return { model: { ...model, palette: open }, commands: [open ? ShowPalette({}) : ClosePalette({ dock: false })] }
+  const next = paletteChange(open)
+  return { model: { ...model, palette: next.palette }, commands: [next.focus === "palette" ? ShowPalette({}) : ClosePalette({ dock: false })] }
 }
 
 /** Shrink the maximized splash back into the chat's first pane and focus the composer; otherwise nothing changes. */
 function minimizeSplash(model: Model): Update.Return<Model, Message, Factory> {
-  if (model.surface !== "splash" || !hasConversation(model)) return { model }
+  if (!canMinimize(model.surface, model.client.conversation.entries.length, model.client.pending.length)) return { model }
   return { model: { ...model, surface: "chat" }, commands: [FocusComposer({})] }
 }
 
 /** Whether there is a conversation to go back to. */
 export function hasConversation(model: Model): boolean {
-  return model.client.conversation.entries.length > 0 || model.client.pending.length > 0
+  return hasContent(model.client.conversation.entries.length, model.client.pending.length)
 }
 
 function submit(model: Model): Update.Return<Model, Message, Factory> {
@@ -378,8 +376,9 @@ export const EndTourCommand = Command.define("EndTour", {
 
 /** The key a keydown means to the app, if any: ⌘K or Ctrl+K toggles the prompt, Escape closes it. */
 export function keyMessage(key: string, meta: boolean, control: boolean): Option.Option<Message> {
-  if ((meta || control) && key.toLowerCase() === "k") return Option.some(Message.PressedCommandK())
-  if (key === "Escape") return Option.some(Message.PressedEscape())
+  const action = screenKey(key.toLowerCase(), key === "Escape", meta, control)
+  if (action === "palette") return Option.some(Message.PressedCommandK())
+  if (action === "escape") return Option.some(Message.PressedEscape())
   return Option.none()
 }
 
@@ -444,7 +443,7 @@ export function subscriptions(keys: EventTarget, page?: Document) {
       { active: Schema.Boolean, intent: Schema.Number, seq: Schema.Number, sent: Schema.Number, stream: Schema.String },
       {
         modelToDependencies: (model: Model) => ({
-          active: model.surface === "chat" && model.following && !model.palette,
+          active: follows(model.surface, model.following, model.palette),
           intent: model.followIntent,
           seq: model.client.conversation.seq,
           sent: model.sent,

@@ -1,3 +1,5 @@
+import { scriptIndex } from "./mockDecision.vibe"
+
 // The mock agent's answers (wiki/decisions/0004-mock-mode.md): a script chosen by the prompt's words, so the app runs
 // with no backend and no model. Every code sample is current VibeLang 0.0.12 syntax, from the language's skill and the
 // launch kit's verified snippets.
@@ -147,11 +149,8 @@ export const TOUR: ReadonlyArray<{ readonly path: string; readonly words: string
 
 /** The mock agent's whole answer to `prompt`. */
 export function mockReply(prompt: string): string {
-  const words = prompt.toLowerCase()
-  for (const script of SCRIPTS) {
-    for (const word of script.words) if (words.includes(word)) return script.reply
-  }
-  return DEFAULT
+  const index = scriptIndex(prompt.toLowerCase(), SCRIPTS)
+  return index < 0 ? DEFAULT : SCRIPTS[index]!.reply
 }
 
 /** `text` in the pieces the mock agent streams, a few words at a time; joined, they are `text`. */

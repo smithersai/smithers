@@ -12,7 +12,7 @@ import { canonical } from "./probe.vibe"
 /** The fault this page's `?fault=` names; a missing or unknown one drops an event. */
 function faultOf(search: string) {
   const requested = new URLSearchParams(search).get("fault")
-  if (requested === "thinking") return requested
+  if (requested === "thinking" || requested === "streaming") return requested
   return requested === "refuse" ? "refuse" : requested === "end" ? "end" : requested === "disconnect" ? "disconnect" : "drop"
 }
 
@@ -51,7 +51,7 @@ if (new URLSearchParams(window.location.search).get("fault") === "health") {
   runFork(Effect.provide(effect {
     const health = try heldHealth()
     window.startup = { snapshot: health.snapshot, release: () => runPromise(health.release("mock")) }
-    const { application, flags } = try Effect.provide(startup(), health.layer)
+    const { application, flags } = try Effect.provide(startup(), Layer.merge(health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)))
     try Effect.try(() => Runtime.run(application, { flags: succeed(flags) }))
   }, startupPage) |> Effect.orDie(%))
 } else {

@@ -1,3 +1,5 @@
+import { liveHealth } from "../core/protocolDecision.vibe"
+
 // The browser's Factory is available immediately. Only backend operations wait for the one scoped selection.
 import { HttpClient } from "effect/http"
 import { Factory, type Mode } from "../core/Factory.vibe"
@@ -15,7 +17,7 @@ export function BrowserFactory(origin: string, forceMock: boolean) {
     let current: Mode | "pending" = "pending"
     const selected = try forkIn(Effect.interruptible(effect {
       const answer = forceMock ? undefined : ((health(origin) |> timeout(%, "3 seconds")) catch () => undefined)
-      const mode: Mode = answer?.agent === "live" ? "live" : "mock"
+      const mode: Mode = liveHealth(answer?.agent ?? "") ? "live" : "mock"
       // The mock carries the flow engine (0011). Live pages never load that module.
       const layer = mode === "live"
         ? LiveFactory(origin)
