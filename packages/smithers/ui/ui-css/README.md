@@ -18,6 +18,9 @@ Inject `css` once in your host's style element or stylesheet. It is byte-for-byt
 what `<SmithersUiStyles />` from `@smthrs/ui` renders by default. Use the same
 `sui-*` classes and component markup to get the same styling in another framework.
 The package supplies styles, not interactive behavior or accessibility semantics.
+Chat message columns shrink to the transcript width while preserving user and
+assistant alignment. A long code block can scroll within its bubble without
+widening the page; its host supplies the code block's overflow behavior.
 Set the style element's `data-smithers-ui` attribute (named by
 `SMITHERS_UI_STYLE_ATTR`) when sharing a page with React so its fallback
 recognizes the sheet.

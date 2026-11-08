@@ -192,7 +192,7 @@ export const chatCss = `
 .sui-chat-transcript { flex:1 1 auto; min-width:0; min-height:0; display:flex; flex-direction:column; overflow:hidden; }
 .sui-chat-messages { display:flex; flex-direction:column; gap:18px; width:min(100%, 720px); min-height:100%; margin:0 auto; padding:36px 24px 156px; }
 .sui-chat-empty { display:grid; place-items:center; flex:1; min-height:240px; color:${t.mutedForeground}; text-align:center; }
-.sui-chat-message { display:grid; max-width:100%; animation:sui-chat-message-in 140ms ease-out both; }
+.sui-chat-message { display:grid; grid-template-columns:minmax(0, 1fr); max-width:100%; animation:sui-chat-message-in 140ms ease-out both; }
 .sui-chat-message[data-role='user'] { justify-items:end; }
 .sui-chat-message[data-role='assistant'] { justify-items:start; }
 .sui-chat-message[data-role='system'] { justify-items:center; }
