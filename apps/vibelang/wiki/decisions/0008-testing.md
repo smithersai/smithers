@@ -131,3 +131,8 @@ observes the preceding nonempty text with `done=false` and the previous announce
 and still checks every rendered announcement, duplicate suppression and the accessibility tree. No events are
 fabricated and no rendering timeout is widened; this removes the assumption that host scheduling exposes a
 transient intermediate state before completion.
+
+The happy-dom startup runtime check uses that same held-health Clock and statically loads the real mock before
+its responsiveness assertions begin. This excludes cold source-compiler work from a compiled-page latency check;
+browser cases retain cold asset loading. Its 500 ms input, four-second completion and five-second overall limits
+remain unchanged. The cold-load regression failed before this fixture correction (0014 production follow-up).

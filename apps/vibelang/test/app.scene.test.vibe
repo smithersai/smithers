@@ -336,15 +336,17 @@ describe("Learn more: the agent's tour", () => {
     )
   })
 
-  it("the glow goes when the tour finishes on its own", () => {
+  it("the glow goes when the tour finishes on its own, and the docs remain maximized until minimized", () => {
     scene(
       { update, view },
-      given({ ...home, surface: "chat", conversation: TOUR, stream: "open", tour: true }),
+      given(update(home, Message.ClickedLearnMore()).model),
       ...started,
       Subscription.emit(Message.ReceivedEvent({ event: { type: "ReplyFinished", seq: 4, id: "t1" } })),
       Command.expectNone(),
       expect(role("button", { name: "Esc" })).toBeAbsent(),
-      expect(role("region", { name: "Docs" })).toExist(),
+      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "true"),
+      click(role("button", { name: "Minimize the docs" })),
+      expect(role("region", { name: "Docs" })).toHaveAttr("data-maximized", "false"),
     )
   })
 

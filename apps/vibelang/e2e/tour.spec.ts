@@ -46,8 +46,9 @@ test.describe("the splash's actions", () => {
 
 test.describe("the agent's tour", () => {
   test("Learn more turns the page into the chat; the agent opens the docs, moves them and narrates, with the glow and Esc", async ({ page }, testInfo) => {
+    test.setTimeout(120_000)
     await learnMore(page)
-    await expect(page.getByRole("log", { name: "Conversation" })).toBeVisible()
+    await expect(page.getByRole("log", { name: "Conversation", includeHidden: true })).toBeVisible()
     // The glow surrounds the whole screen, and never takes a click.
     const glow = page.locator(".vl-glow")
     await expect(glow).toBeVisible()
@@ -67,12 +68,12 @@ test.describe("the agent's tour", () => {
     expect(esc.x + esc.width <= docs.x || esc.y >= docs.y + docs.height).toBe(true)
     await settled(page)
     await page.screenshot({ path: testInfo.outputPath("tour.png") })
-    await expect(frame(page)).toHaveAttribute("src", `${DOCS}/getting-started/002-why-effect`, { timeout: 10_000 })
+    await expect(frame(page)).toHaveAttribute("src", `${DOCS}/getting-started/002-why-effect`, { timeout: 35_000 })
     await expect(narration(page)).toContainText("Effect gives a program typed errors")
 
     // The tour ends on its own at the last stop: the agent hands control back, and the docs stay.
-    await expect(frame(page)).toHaveAttribute("src", `${DOCS}/vips`, { timeout: 20_000 })
-    await expect(narration(page)).toHaveAttribute("data-done", "true", { timeout: 10_000 })
+    await expect(frame(page)).toHaveAttribute("src", `${DOCS}/vips`, { timeout: 90_000 })
+    await expect(narration(page)).toHaveAttribute("data-done", "true", { timeout: 35_000 })
     await expect(glow).toBeHidden()
     await expect(page.getByRole("button", { name: "Esc" })).toBeHidden()
     await expect(narration(page)).toContainText("open-source coding factory")

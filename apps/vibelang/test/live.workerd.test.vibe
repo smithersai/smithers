@@ -150,16 +150,46 @@ describe("the live Factory in local workerd, with no model key", () => {
       try Effect.try(() => {
         expect(toured).toEqual([
           { type: "TourStarted", seq: 1, id: "t1" },
-          { type: "ReplyFailed", seq: 2, id: "t1", reason: REASONS.unconfigured },
+          { type: "PaneOpened", seq: 2, id: "t1", url: "https://vibelang.sh/" },
+          { type: "ReplyFailed", seq: 3, id: "t1", reason: REASONS.unconfigured },
         ])
-        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r3", reason: REASONS.unconfigured })
+        expect(events.at(-1)).toMatchObject({ type: "ReplyFailed", id: "r4", reason: REASONS.unconfigured })
         expect(none).toBe("not-replying")
         expect(runs.filter((run) => run.run_id.startsWith("start-tour/")).map((run) => run.status)).toEqual(["completed"])
         expect(runs.filter((run) => run.run_id.startsWith("end-tour/")).map((run) => run.status)).toEqual(["completed"])
-        expect(runs.map((run) => run.run_id)).toEqual(expect.arrayContaining(["tour/t1", "reply/m3"]))
+        expect(runs.map((run) => run.run_id)).toEqual(expect.arrayContaining(["tour/t1", "reply/m4"]))
       })
     }
   })
+
+  it.live("Escape during a reading timer's suspension transition wakes the parked tour immediately", () => effect {
+    const origin = api!.origin
+    const conversation = try room("tour-park-boundary")
+    provide live(origin), FetchHttpClient.layer {
+      const call = effect (path: string) => {
+        const response = try HttpClient.get(`${origin}/${path}/${encodeURIComponent(conversation)}`)
+        return try HttpClientResponse.schemaBodyJson(Schema.Unknown)(response)
+      }
+      try call("reading-tour")
+      try Effect.repeat(call("parked"), { until: (value) => value === true, schedule: Schedule.spaced("10 millis") })
+      const factory = try Factory
+      // The flow body has requested suspension, but its held finalizer keeps the run row Running.
+      const before = try runsOf(origin, conversation)
+      try Effect.try(() => expect(before.find((run) => run.run_id === "tour/t1")?.status).toBe("running"))
+      try factory.endTour(conversation)
+      try call("release-park")
+      const completed = runsOf(origin, conversation).pipe(
+        Effect.repeat({ until: (runs) => runs.find((run) => run.run_id === "tour/t1")?.status === "completed", schedule: Schedule.spaced("10 millis") }),
+        timeout("2 seconds"),
+      )
+      try completed
+      const snapshot = try factory.read(conversation, 0)
+      try Effect.try(() => {
+        expect(snapshot.entries[0]).toMatchObject({ done: true })
+        expect(snapshot.entries[0]!.text.split(/\s+/)).toHaveLength(40)
+      })
+    }
+  }, 30_000)
 
   it.live("refuses blank, repeated and oversized posts with the sequencer's reasons", () => effect {
     provide live(api!.origin) {
@@ -243,12 +273,14 @@ describe("the live Factory in local workerd, with a model nobody answers", () =>
       const runs = try runsOf(origin, conversation)
       try Effect.try(() => {
         expect(Array.from(started)).toEqual([{ type: "TourStarted", seq: 1, id: "t1" }])
-        expect(events.slice(0, 3)).toEqual([
-          { type: "TourStarted", seq: 1, id: "t1" },
-          { type: "TourEnded", seq: 2, id: "t1" },
-          { type: "Posted", seq: 3, id: "m3", clientId: "a", name: "Ada", text: "hi" },
-        ])
-        expect(events.at(-1)).toEqual({ type: "ReplyStarted", seq: 4, id: "r3", inReplyTo: "m3" })
+        const end = events.find((event) => event.type === "TourEnded")!
+        const post = events.find((event) => event.type === "Posted")!
+        expect(end.id).toBe("t1")
+        expect(post).toMatchObject({ clientId: "a", name: "Ada", text: "hi" })
+        expect(post.seq).toBeGreaterThan(end.seq)
+        expect(events.at(-1)).toMatchObject({ type: "ReplyStarted", inReplyTo: post.id })
+        expect(events.at(-1)!.seq).toBeGreaterThan(post.seq)
+        expect(events.filter((event) => event.type === "PaneOpened" && event.seq > end.seq)).toEqual([])
         expect(runs.find((run) => run.run_id === "tour/t1")?.status).toBe("completed")
       })
     }

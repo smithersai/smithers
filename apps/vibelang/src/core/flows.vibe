@@ -11,10 +11,10 @@
 //
 // The steps reach the conversation's one state machine (conversation.vibe) through the `Posts` and `Tours` services;
 // nothing here decides anything.
-import { Action, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
+import { Action, DurableClock, Flow, FlowRuntime, RetryPolicy } from "@smthrs/flow"
 import { Node } from "@smthrs/plan"
 import { canReplyTo, type Conversation, type Event, isTour, type Refusal } from "./conversation.vibe"
-import { dispatches, endsTourEvent } from "./flowDecision.vibe"
+import { dispatches, endsTourEvent, readingHold } from "./flowDecision.vibe"
 import { RefusalReason } from "./schemas.vibe"
 
 /** A contended reply or remote object waits through the engine's journaled retry policy. */
@@ -121,6 +121,10 @@ export service Tours {
   dispatch(): void!!
   /** Ends the running tour: `null` once recorded, else the refusal (`not-replying` when none runs). */
   end(): (Refusal | null)!!
+  /** Wakes a parked tour after its end was recorded. */
+  wake(): void!!
+  /** Whether this tour still owns the conversation. */
+  running(tour: string): boolean!!
   /** Shows `url` in the docs pane, while `tour` runs. */
   open(tour: string, url: string): boolean!!
   /** Adds `text` to what `tour` said, while it runs. */
@@ -165,25 +169,7 @@ export const EndTour = Flow.make("vibelang/EndTour", {
   body: () => Node.succeed(null),
 })
 
-/** The agent's tool: open a docs page in the pane. */
-export const OpenDocs = Flow.make("vibelang/docs/open", {
-  description: "Opens a page of VibeLang's docs (vibelang.sh) in the docs pane beside the conversation. `path` is the page's path, such as `/setup`. Answers whether the pane shows it.",
-  modelInvocable: true,
-  payload: { path: Schema.String },
-  success: Schema.Boolean,
-  body: () => Node.succeed(false),
-})
-
-/** The agent's tool: say something in the conversation now, during the tour. */
-export const Say = Flow.make("vibelang/tour/say", {
-  description: "Says `text` in the conversation now, as the next part of the tour. Answers whether the tour still runs.",
-  modelInvocable: true,
-  payload: { text: Schema.String },
-  success: Schema.Boolean,
-  body: () => Node.succeed(false),
-})
-
-/** Tour steps, by step (`start`, `end`, `open`, `say`, `run`) and outcome. */
+/** Tour steps, by step (`start`, `end`, `wake`, `open`, `say`, `hold`, `run`) and outcome. */
 export const tourSteps = Metric.counter("vibelang_tour_steps", {
   description: "Tour steps, by step and outcome",
   incremental: true,
@@ -208,6 +194,7 @@ export effect function startTour() {
 export effect function endTour() {
   const tours = try Tours
   const answer = try Action.make({ name: "vibelang/tour/end", success: PostAnswer, execute: tours.end() })
+  if (answer === null) try Action.make({ name: "vibelang/tour/wake", execute: withSpan(effect { try tours.wake(); try counted("wake", "requested") }, "vibelang.tour.wake") })
   try counted("end", answer ?? "accepted")
   return answer
 }
@@ -224,9 +211,38 @@ export effect function openDocs(tour: string, path: string) {
 /** `vibelang/tour/say`'s body: adds `text` to what `tour` said while it runs. */
 export effect function say(tour: string, text: string) {
   const tours = try Tours
-  const said = text === "" ? false : try tours.say(tour, text)
-  try counted("say", text === "" ? "empty" : said ? "said" : "ended")
+  const words = text.trim().replace(/\s+/g, " ")
+  const said = words === "" ? false : try tours.say(tour, words)
+  try counted("say", words === "" ? "empty" : said ? "said" : "ended")
   return said
+}
+
+/** Whole-stop narration, shared by the mock and live speakers. */
+export function readingMillis(text: string): number {
+  const words = text.trim() === "" ? 0 : text.trim().split(/\s+/).length
+  return readingHold(words)
+}
+
+/** A stop is a journaled paragraph followed by a durable reading hold, including the final stop. */
+export effect function narrate(tour: string, text: string, stop = 0) {
+  const said = try Action.make({ name: `vibelang/tour/say/${stop}`, success: Schema.Boolean, execute: say(tour, text) })
+  if (!said) return false
+  try withSpan(effect {
+    try counted("hold", "started")
+    try DurableClock.sleep({ name: `vibelang/tour/read/${stop}`, duration: readingMillis(text), inMemoryThreshold: 0 })
+    try counted("hold", "finished")
+  }, "vibelang.tour.hold")
+  return true
+}
+
+/** The shared tour controller: only it advances pages, after each paragraph's reading hold. */
+export effect function walk(tour: string, words: ReadonlyArray<string>) {
+  const tours = try Tours
+  for (let stop = 0; stop < STOPS.length; stop++) {
+    const opened = try Action.make({ name: `vibelang/tour/open/${stop}`, success: Schema.Boolean, execute: openDocs(tour, STOPS[stop]!.path) })
+    if (!opened || !(try narrate(tour, words[stop]!, stop))) return
+  }
+  try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
 }
 
 /**
@@ -235,6 +251,7 @@ export effect function say(tour: string, text: string) {
  */
 export effect function toured<E, R>(tour: string, speak: void!E!R) {
   const tours = try Tours
+  if (!(try tours.running(tour))) return null
   const outcome = try.race [Effect.as(speak, "finished"), Effect.as(tours.ended(tour), "ended")]
   try counted("run", outcome)
   return null

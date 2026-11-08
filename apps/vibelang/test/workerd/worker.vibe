@@ -4,6 +4,9 @@
 // here (its entry is Node deploy code), so this file is the host: it reaches objects by `fetch` where Alchemy uses RPC,
 // and runs each Effect at this boundary. Configuration is the Worker's env, as Alchemy's WorkerConfigProvider reads it.
 // Its own answers are Effect's HTTP responses, converted to the platform's here.
+import { FlowRuntime } from "@smthrs/flow"
+import { CloudflareRuntime, ExecutionObject, ObjectDatabase } from "@smthrs/platform-cloudflare"
+import { Tour, toured, Tours, walk } from "../../src/core/flows.vibe"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Sequencer as HistorySequencer } from "../../src/history/Sequencer.vibe"
 import type { Write } from "../../src/history/wire.vibe"
@@ -55,6 +58,7 @@ const reach = <A>(what: string, promise: () => Promise<A>) =>
 
 export class Conversation {
   readonly sequencer: Promise<Sequencer>
+  readonly releasePark = Deferred.makeUnsafe<void>()
 
   constructor(readonly state: State, readonly env: Env) {
     this.sequencer = Effect.runPromise(Objects.conversation(state.storage))
@@ -68,6 +72,15 @@ export class Conversation {
       return HttpServerResponse.toWeb(eventStream(sequencer.follow(afterOf(url) ?? 0)))
     }
     const args = await request.json() as { readonly clientId: string; readonly name: string; readonly text: string; readonly after: number }
+    if (url.pathname === "/reading-tour") {
+      await this.state.storage.put("test/reading-tour", true)
+      return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
+    }
+    if (url.pathname === "/parked") return json((await this.state.storage.get("test/parked")) === true)
+    if (url.pathname === "/release-park") {
+      await Effect.runPromise(Deferred.succeed(this.releasePark, undefined))
+      return json(null)
+    }
     if (url.pathname === "/post") {
       const refusal = await Effect.runPromise(
         Objects.post(this.state.id.toString(), this.state.storage, sequencer, args.clientId, args.name, args.text),
@@ -86,6 +99,10 @@ export class Conversation {
 
   async alarm(): Promise<void> {
     const sequencer = await this.sequencer
+    if (await this.state.storage.get("test/reading-tour")) {
+      await Effect.runPromise(readingAlarm(this.state.id.toString(), this.state.storage, sequencer, this.releasePark))
+      return
+    }
     const env = this.env
     const spend: Spend.Shape = {
       admit: (day) => reach("budget", () => call(env.BUDGET, day, "admit", {}) as Promise<boolean>),
@@ -94,6 +111,30 @@ export class Conversation {
     const model = await Effect.runPromise(Effect.orDie(configured(env, chatModel())))
     await Effect.runPromise(Objects.alarm(this.state.id.toString(), this.state.storage, sequencer, spend, model))
   }
+}
+
+/** The product's shared controller in the real SQLite engine, with a faulty wait service holding its park boundary. */
+effect function readingAlarm(hostId: string, storage: Objects.Storage, sequencer: Sequencer, release: Deferred.Deferred<void>) {
+  const tours: Tours.Shape = Objects.toursOf(sequencer)
+  const ended = tours.ended
+  tours.ended = (tour) => ensuring(ended(tour), effect {
+    if ((try promise(() => storage.get("test/parked"))) !== undefined) return
+    try promise(() => storage.put("test/parked", true))
+    try Deferred.await(release)
+  })
+  const registration = Layer.effectDiscard(effect {
+    const engine = try FlowRuntime.FlowRuntime
+    const words = Array.from({ length: 40 }, () => "word").join(" ")
+    try engine.register(Tour, ({ tour }) => toured(tour, walk(tour, [words, words, words, words, words])))
+  })
+  try ExecutionObject.alarm(Objects.executionStorage(storage), {
+    flows: [Tour],
+    runtime: (intent) => CloudflareRuntime.layer({ hostId, executionId: intent.executionId, flow: Tour._tag }, registration).pipe(
+      Layer.provide(ObjectDatabase.layer(storage)), Layer.provide(Layer.succeed(Tours, tours)),
+    ),
+    router: Objects.unrouted,
+    settledRetentionMs: 10000,
+  })
 }
 
 export class Budget {
@@ -148,6 +189,8 @@ export class History {
 export default {
   async fetch(request: Request, env: Env): Promise<Response> {
     // The suite's window into a conversation object's engine: /runs/<conversation>.
+    const boundary = new URL(request.url).pathname.match(/^\/(reading-tour|parked|release-park)\/(.+)$/)
+    if (boundary !== null) return json(await call(env.CONVERSATION, decodeURIComponent(boundary[2]!), boundary[1]!, {}))
     const runs = new URL(request.url).pathname.match(/^\/runs\/(.+)$/)
     if (runs !== null) {
       // /runs/history is the History object's (it is named by its repository); any other name is a conversation's.

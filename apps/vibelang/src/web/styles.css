@@ -137,3 +137,14 @@ html { overflow-anchor: none; }
 @media (prefers-reduced-motion: reduce) {
   .vl-glow { animation: none !important; opacity: 1; }
 }
+
+/* The maximizable pane keeps docs and this stop's words in view, independent of chat following. */
+.vl-docs[data-driving="true"] { display: grid; grid-template-columns: minmax(0, 2fr) minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr); }
+.vl-docs[data-driving="true"] .vl-docs-bar { grid-column: 1 / -1; }
+.vl-docs[data-driving="true"] .vl-docs-frame { height: 100%; min-height: 0; pointer-events: none; }
+.vl-tour-narration { align-self: center; min-width: 0; margin: 0; padding: 24px; font-size: 16px; line-height: 1.65; overflow-wrap: anywhere; }
+@media (max-width: 600px) {
+  .vl-docs[data-driving="true"] { inset-block-start: 60px; grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto; }
+  .vl-docs[data-driving="true"] .vl-docs-bar { padding-top: 38px; }
+  .vl-tour-narration { padding: 16px; font-size: 14px; line-height: 1.5; border-top: 1px solid var(--border); }
+}

@@ -99,11 +99,13 @@ export function postsOf(sequencer: Sequencer.Sequencer): Posts.Shape {
 }
 
 /** The sequencer as a tour's steps reach it: record, dispatch, end, open, say, settle and wait for the end. */
-export function toursOf(sequencer: Sequencer.Sequencer): Tours.Shape {
+export function toursOf(sequencer: Sequencer.Sequencer, wake: () => void!! = () => Effect.void): Tours.Shape {
   return {
     start: sequencer.startTour,
     dispatch: sequencer.ensureDispatched,
     end: sequencer.endTour,
+    wake,
+    running: sequencer.running,
     open: sequencer.open,
     say: sequencer.say,
     finish: sequencer.finishTour,
@@ -116,6 +118,25 @@ export effect function postExecutionId(prefix = "post") {
   provide WebCrypto.layer {
     return `${prefix}/${try (try SecureRandom.SecureRandom).uuidV4()}`
   }
+}
+
+/** Resume a parked reading hold after Escape, then let the object's normal alarm settle the tour. */
+effect function wakeTour(hostId: string, storage: Storage) {
+  // Wake the execution the object holds, even if another tour was accepted after the ended event.
+  const raw = try promise(() => storage.get<string>(ExecutionObject.intentKey))
+  if (raw === undefined) return
+  const intent = try Schema.decodeUnknownEffect(Schema.fromJsonString(ExecutionObject.Intent))(raw)
+  if (intent.flow !== Tour._tag) return
+  const executionId = intent.executionId
+  const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: Tour._tag }, Layer.empty).pipe(Layer.provide(ObjectDatabase.layer(storage)))
+  provide runtime {
+    const engine = try FlowRuntime.FlowRuntime
+    const state = engine.poll(Tour, executionId) catch () => undefined
+    // Running includes the interval after the body's interrupt but before its Suspended receipt. Persist the wake
+    // there too, so the parking alarm cannot overwrite Escape's wake with the future reading deadline.
+    if (state !== undefined && (Option.isNone(state) || state.value._tag === "Suspended")) try engine.resume(Tour, executionId)
+  }
+  try ExecutionObject.wake(executionStorage(storage))
 }
 
 /**
@@ -135,7 +156,7 @@ effect function asked(hostId: string, storage: Storage, sequencer: Sequencer.Seq
   const executionId = try postExecutionId(prefix)
   const runtime = CloudflareRuntime.layer({ hostId, executionId, flow: flow._tag }, tourRegistration).pipe(
     Layer.provide(ObjectDatabase.layer(storage)),
-    Layer.provide(Layer.succeed(Tours, toursOf(sequencer))),
+    Layer.provide(Layer.succeed(Tours, toursOf(sequencer, () => Effect.orDie(wakeTour(hostId, storage))))),
   )
   return try Effect.orDie(effect {
     provide runtime {

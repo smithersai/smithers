@@ -20,7 +20,7 @@ const shellBoundaries = {
   'worker/Http.vibe': 'Body-length admission uses protocolDecision; URI/JSON/Schema decoding, SSE framing and HTTP execution remain runtime boundaries.',
   'worker/Budget.vibe': 'Calls proved admission/charge decisions; semaphore, ledger I/O and finite-round normalization are runtime boundaries (finite-round.ts).',
   'worker/Reply.vibe': 'Reason classification is proved in replyReasons.vibe; agent/event decoding, streaming, interruption and step execution remain unproved.',
-  'src/core/flows.vibe': 'Dispatch and terminal-event decisions are proved in flowDecision.vibe; conversation guards in conversation.vibe. Flow execution, docs regexp and reply-id slice remain unproved.',
+  'src/core/flows.vibe': 'Dispatch and terminal-event decisions are proved in flowDecision.vibe; conversation guards in conversation.vibe. The reading-time policy is proved too; flow execution, word tokenization, docs regexp and reply-id slice remain unproved.',
   'worker/Sequencer.vibe': 'Calls the proved conversation and append/start decisions. Locking, log order, replay reads, history selection and restart iteration remain unproved.',
 };
 const boundaries = {
@@ -31,7 +31,7 @@ const boundaries = {
   'src/core/conversation.vibe': 'Production state machine; contracts and executable mutations.',
   'worker/replyReasons.vibe': 'Failure precedence and model reason codes; proved.',
   'worker/budgetDecision.vibe': 'Strict admission, nonnegative integer charge and exact total; proved under safe-sum precondition.',
-  'src/core/flowDecision.vibe': 'Dispatch admission, append ordering and tour terminal events; proved.',
+  'src/core/flowDecision.vibe': 'Dispatch admission, append ordering, tour terminal events and reading-time policy; proved.',
 };
 const functions = new Set(['FunctionDeclaration', 'FunctionExpression', 'ArrowFunctionExpression']);
 const logicNodes = new Set(['IfStatement', 'SwitchStatement', 'WhileStatement', 'DoWhileStatement',

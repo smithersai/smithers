@@ -27,6 +27,7 @@ next. Every decision lands here in the same change as the code it shapes.
 | [0012](decisions/0012-smithers-agent.md) | The reply is smithers.sh's agent: `@smthrs/agent`'s `AgentAction` on a workerd QuickJS sandbox, VibeLang's skill as context |
 | [0013](decisions/0013-dark-only.md) | Dark only, for now: the marketing media are dark and have no light versions (VL-27) |
 | [0014](decisions/0014-agent-tour.md) | Learn more is a tour the agent drives: its pane actions are numbered events of the one state machine (VL-28) |
+| [0014 production fixes](decisions/0014-agent-tour.md#other-choices) | Tour docs and current narration stay in view; durable reading holds, paragraphs, keyboard control, inert background and control announcements |
 | [0018](decisions/0018-proofs.md) | Inventory and Dafny proofs of production decisions, executable mutations and explicit tool boundaries |
 | [0020](decisions/0020-mythical-history.md) | The mythical history: one linear stack of epics and mythical commits in a History object, bootstrapped from VibeLang's real history; plan, start, note, approve and fold are flows people and the agent share (VL-22) |
 

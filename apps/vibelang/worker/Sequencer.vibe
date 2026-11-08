@@ -4,7 +4,7 @@
 // published to every follower. The Durable Object that hosts it (Objects.vibe) supplies the log and the dispatch; nothing here names
 // Cloudflare.
 import {
-  apply, decide, empty, isReplying,
+  apply, decide, empty, isReplying, isTouring,
   type Conversation, type Entry, type Event, type Intent, type Refusal,
 } from "../src/core/conversation.vibe"
 import { endsTour, replyIdOf, touring, unanswered } from "../src/core/flows.vibe"
@@ -154,7 +154,7 @@ export effect function make(log: Log, dispatch: Dispatch) {
       const turns: Array<Turn> = []
       for (const entry of current.conversation.entries) {
         if (entry.author === "person") turns.push({ author: "person", text: entry.text })
-        else if (entry.done && entry.error === "") turns.push({ author: "agent", text: entry.text })
+        else if (entry.done && entry.error === "" && entry.inReplyTo !== "") turns.push({ author: "agent", text: entry.text })
         if (entry.id === post) break
       }
       return turns
@@ -234,11 +234,17 @@ export effect function make(log: Log, dispatch: Dispatch) {
       return answer
     },
 
+    running: (tour: string) => locked(Effect.map(state(), (current) => isTouring(current.conversation, tour))),
+
     /** Shows `url` in the docs pane while `tour` runs. */
     open: (tour: string, url: string) => accepted({ type: "OpenPane", id: tour, url }),
 
     /** Adds `text` to what `tour` said while it runs. */
-    say: (tour: string, text: string) => accepted({ type: "AppendReply", id: tour, text }),
+    say: (tour: string, text: string) => locked(effect {
+      const entry = entryOf((try state()).conversation, tour)
+      const decision = try record({ type: "AppendReply", id: tour, text: entry?.text ? `\n\n${text}` : text })
+      return decision.ok
+    }),
 
     /** Settles `tour` as finished, or failed with `reason`, then dispatches the next post. */
     finishTour: effect (tour: string, reason: string) => {

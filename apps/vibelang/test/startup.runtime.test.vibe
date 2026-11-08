@@ -1,3 +1,5 @@
+// Compile the real mock before runtime responsiveness assertions; browser tests cover cold asset loading.
+import "../src/core/MockFactory.vibe"
 import { expect, it } from "@effect/vitest"
 import { vi } from "vitest"
 import { Runtime } from "foldkit"
@@ -17,7 +19,7 @@ it.live("renders and handles Command K and a post while health is still unresolv
     const { application, flags } = try main()
     try acquireRelease(sync(() => Runtime.embed(application, { flags: succeed(flags) })), (handle) => sync(() => handle.dispose()))
     try Effect.never
-  }, Layer.merge(page, health.layer))
+  }, Layer.mergeAll(page, health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)))
   try promise(() => vi.waitFor(() => expect(health.snapshot().calls).toBe(1)))
   // Health cannot answer during either assertion. The old startup blocks here until its three-second timeout.
   try promise(() => vi.waitFor(() => expect(hasAsk()).toBe(true), { timeout: 500 }))

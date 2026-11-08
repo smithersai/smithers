@@ -1,5 +1,9 @@
 """Executable mutations of production decisions; contracts are never edited."""
-cases = [('src/core/flowDecision.vibe',
+cases = [
+ ('src/core/flowDecision.vibe', 'tour-read-floor', 'readingHold', 'millis < 4000 ? 4000 : millis', 'millis < 4000 ? 0 : millis', 'short paragraphs retain a four-second floor'),
+ ('src/core/flowDecision.vibe', 'tour-read-rate', 'readingHold', 'wordCount * 300 + 1000', 'wordCount * 299 + 1000', 'reading time allows 200 words per minute'),
+ ('src/core/flowDecision.vibe', 'tour-read-orient', 'readingHold', 'wordCount * 300 + 1000', 'wordCount * 300', 'each stop includes one second to orient'),
+('src/core/flowDecision.vibe',
   'dispatch-refused',
   'dispatches',
   'answer === null',

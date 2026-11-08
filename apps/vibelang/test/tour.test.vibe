@@ -2,19 +2,21 @@
 // web app calls it; then the tour's flows on the engine in memory over the live sequencer (worker/Sequencer.vibe) with
 // an in-memory log, the live speaker's failures by injected services, and the logs, which carry no words.
 import { describe, expect, it } from "@effect/vitest"
+import { TestClock } from "effect/testing"
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { FlowRuntime } from "@smthrs/flow"
+import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, empty, type Event } from "../src/core/conversation.vibe"
 import { Factory } from "../src/core/Factory.vibe"
 import {
-  DOCS_ORIGIN, docsPage, EndTour, openDocs, say, StartTour, STOPS, Tour, toured, tourRegistration, Tours,
+  DOCS_ORIGIN, docsPage, EndTour, openDocs, narrate, readingMillis, Reply, say, StartTour, STOPS, Tour, toured, tourRegistration, Tours,
 } from "../src/core/flows.vibe"
 import { MockFactory } from "../src/core/MockFactory.vibe"
 import { TOUR } from "../src/core/mockReplies.vibe"
 import { toursOf } from "../worker/Objects.vibe"
 import { ChatModel, REASONS, Spend } from "../worker/Reply.vibe"
 import * as Sequencer from "../worker/Sequencer.vibe"
+import { Turn } from "../worker/Sequencer.vibe"
 import { charged, spoken } from "../worker/Tour.vibe"
 import { started as progressed } from "../worker/Reply.vibe"
 import { Unreachable } from "../worker/Unreachable.vibe"
@@ -29,15 +31,23 @@ const refusalOf = (error: { readonly _tag: string; readonly refusal?: string; re
   error._tag === "Refused" ? error.refusal : error.reason
 
 describe("the mock's tour, through Factory", () => {
+  it("counts words across whitespace, with exact floor and reading-rate boundaries", () => {
+    expect(["", "word", Array.from({ length: 10 }, () => "word").join(" "), Array.from({ length: 11 }, () => "word").join(" \n\t"), Array.from({ length: 40 }, () => "word").join(" ")].map(readingMillis)).toEqual([4000, 4000, 4000, 4300, 13000])
+  })
+
   it("speaks a script for every stop, in the stops' order", () => {
     expect(TOUR.map((stop) => stop.path)).toEqual(STOPS.map((stop) => stop.path))
     for (const stop of STOPS) expect(docsPage(stop.path)).toBe(DOCS_ORIGIN + stop.path)
   })
 
-  it.live("opens each stop's page, then says its words, and finishes with the pane on the last page", () => effect {
+  it.effect("opens each stop's page, then says its words, and finishes with the pane on the last page", () => effect {
     provide MockFactory {
       const factory = try Factory
       try factory.tour("c1")
+      for (const stop of TOUR) {
+        try until("c1", (event) => event.type === "ReplyDelta" && event.text.endsWith(stop.words))
+        try TestClock.adjust(readingMillis(stop.words))
+      }
       const events = try until("c1", (event) => event.type === "ReplyFinished")
       const conversation = events.reduce(apply, empty)
       try Effect.try(() => {
@@ -140,11 +150,63 @@ function capture(lines: Ref.Ref<ReadonlyArray<string>>) {
 }
 
 /** `body` with the world's `Tours`, logging into its lines. */
-function inWorld<A, E>(w: World, body: A!E!Tours) {
+function inWorld<A, E, R>(w: World, body: A!E!(Tours | R)) {
   return Effect.provide(Effect.provideService(body, Tours, toursOf(w.sequencer)), capture(w.lines))
 }
 
 describe("the tour's flows over the live sequencer", () => {
+  it.effect("6: a finished tour never becomes a person-requested agent history turn", () => scoped(effect {
+    const w = try world()
+    try w.engine.execute(StartTour, { executionId: "start/history", payload: {} })
+    try w.sequencer.say("t1", "A tour the person never asked in chat.")
+    try w.sequencer.finishTour("t1", "")
+    try w.sequencer.post("after-tour", "Ada", "What are layers?")
+    const snapshot = try w.sequencer.read(0)
+    const post = snapshot.entries.find((entry) => entry.author === "person")!
+    const observed = try Ref.make<ReadonlyArray<Turn>>([])
+    // Exercise the reply history action as a journaled step of its real flow on the engine.
+    try w.engine.register(Reply, ({ post }) => effect {
+      provide WebCrypto.layer {
+        const turns = try Action.make({ name: "vibelang/reply/history", success: Schema.Array(Turn), execute: w.sequencer.history(post) })
+        try Ref.set(observed, turns)
+        return null
+      }
+    })
+    try w.engine.execute(Reply, { executionId: "reply/history", payload: { post: post.id } })
+    const turns = try Ref.get(observed)
+    try Effect.try(() => expect(turns).toEqual([{ author: "person", text: "What are layers?" }]))
+  }))
+
+  it.effect("3: Tour holds a stop for its word-count reading time before moving the pane", () => scoped(effect {
+    const w = try world()
+    try w.sequencer.startTour()
+    const words = Array.from({ length: 40 }, () => "word").join(" ")
+    const began = try Deferred.make<void>()
+    const speaker = effect {
+      try openDocs("t1", "/")
+      try narrate("t1", words)
+      try Deferred.succeed(began, undefined)
+      try openDocs("t1", "/setup")
+    }
+    try w.engine.register(Tour, () => Effect.provide(inWorld(w, toured("t1", speaker)), WebCrypto.layer))
+    const running = fork w.engine.execute(Tour, { executionId: "tour/pacing", payload: { tour: "t1" } })
+    try until2(w, (event) => event.type === "ReplyDelta")
+    // 40 words at 200 wpm + 1 second to orient = 13 seconds.
+    try TestClock.adjust("6 seconds")
+    try w.engine.resume(Tour, "tour/pacing")
+    try TestClock.adjust("6999 millis")
+    const before = (try Ref.get(w.log)).reduce(apply, empty)
+    try Effect.try(() => expect(before.pane).toBe(DOCS_ORIGIN + "/"))
+    try TestClock.adjust("1 millis")
+    try Deferred.await(began)
+    try (join running)
+    const after = (try Ref.get(w.log)).reduce(apply, empty)
+    try Effect.try(() => {
+      expect(after.pane).toBe(DOCS_ORIGIN + "/setup")
+      expect(after.entries[0]!.text).toBe(words)
+    })
+  }))
+
   it.live("StartTour records the tour, then dispatches its flow; a second is refused and dispatches nothing", () => scoped(effect {
     const w = try world()
     const first = try w.engine.execute(StartTour, { executionId: "start-tour/1", payload: {} })
@@ -212,6 +274,7 @@ describe("the tour's flows over the live sequencer", () => {
         ["vibelang.tour.start", "accepted"],
         ["vibelang.tour.open", "opened"],
         ["vibelang.tour.say", "said"],
+        ["vibelang.tour.wake", "requested"],
         ["vibelang.tour.end", "accepted"],
         ["vibelang.tour.end", "not-replying"],
       ])

@@ -29,3 +29,14 @@ export function endsTourEvent(kind: string, id: string, tour: string): boolean {
 export function startAnswer(accepted: boolean, already: boolean, refusal: string): "done" | "busy" | "refused" {
   return accepted || already ? "done" : refusal === "busy" ? "busy" : "refused"
 }
+
+/** Reading time at 200 words/minute, plus one second to orient, with a four-second floor. */
+//@ verify
+//@ requires wordCount >= 0 && wordCount <= 4294967295
+//@ ensures \result >= 4000 && \result <= 1288490189500
+//@ ensures wordCount <= 10 ==> \result == 4000
+//@ ensures wordCount > 10 ==> \result == wordCount * 300 + 1000
+export function readingHold(wordCount: number): number {
+  const millis = wordCount * 300 + 1000
+  return millis < 4000 ? 4000 : millis
+}

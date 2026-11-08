@@ -5,13 +5,13 @@
 // a `vibelang/Tour` execution whose scripted agent opens the same stops and says the script's words (0014).
 import { WebCrypto } from "@smthrs/crypto"
 import { FlowEngine } from "@smthrs/engine"
-import { Digest } from "effect/crypto"
+import { Digest, SecureRandom } from "effect/crypto"
 import { Action, FlowRuntime } from "@smthrs/flow"
 import { apply, decide, empty, isTouring, type Conversation, type Decision, type Event, type Intent } from "./conversation.vibe"
 import { Factory, type Mode, Refused, Unavailable } from "./Factory.vibe"
 import {
-  EndTour, endsTour, openDocs, patient, Post, postRegistration, Posts, Reply, replyIdOf, say, StartTour, Tour, toured, touring, tourRegistration,
-  Tours, unanswered,
+  EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
+  Tours, unanswered, walk,
 } from "./flows.vibe"
 import { chunks, mockReply, TOUR } from "./mockReplies.vibe"
 
@@ -36,29 +36,8 @@ interface Published {
 /** How long the scripted agent waits between the pieces of its reply. */
 export const MOCK_DELTA_DELAY = "25 millis"
 
-/** How long the scripted agent stays on a docs page after it said what the page is. */
-export const MOCK_STOP_DELAY = "1500 millis"
-
 /** Reply starts that yield to a concurrently accepted tour; no conversation or text labels. */
 const replyStarts = Metric.counter("vibelang_mock_reply_starts", { incremental: true })
-
-/** The scripted agent's tour, `vibelang/Tour`'s mock speaker: each stop opens its page, then says its words. */
-effect function scriptedTour(tour: string) {
-  const tours = try Tours
-  for (let stop = 0; stop < TOUR.length; stop++) {
-    const { path, words } = TOUR[stop]!
-    const opened = try Action.make({ name: `vibelang/tour/open/${stop}`, success: Schema.Boolean, execute: openDocs(tour, path) })
-    if (!opened) return
-    const pieces = chunks(stop === 0 ? words : `\n\n${words}`)
-    for (let piece = 0; piece < pieces.length; piece++) {
-      try sleep(MOCK_DELTA_DELAY)
-      const said = try Action.make({ name: `vibelang/tour/say/${stop}/${piece}`, success: Schema.Boolean, execute: say(tour, pieces[piece]!) })
-      if (!said) return
-    }
-    try sleep(MOCK_STOP_DELAY)
-  }
-  try Action.make({ name: "vibelang/tour/finish", execute: tours.finish(tour, "") })
-}
 
 /** A tour won the acceptance race; the same durable reply waits for it. */
 schema error ReplyBusy {}
@@ -96,9 +75,9 @@ effect function scripted(engine: FlowRuntime.FlowRuntime["Service"], state: Ref.
   return null
 }
 
-effect function digestOf() {
+effect function cryptoOf() {
   provide WebCrypto.layer {
-    return try Digest.Digest
+    return { digest: try Digest.Digest, random: try SecureRandom.SecureRandom }
   }
 }
 
@@ -110,7 +89,7 @@ export const MockFactory = Layer.effect(Factory, effect {
   const ids = try Ref.make(0)
   const executions = try Ref.make(0)
   // The engine digests what it journals, with the platform's Web Crypto.
-  const digest = try digestOf()
+  const crypto = try cryptoOf()
   // This lock only creates rooms. Acceptance and replies use each room's own lock and engine.
   const registry = try Semaphore.make(1)
   try Scope.addFinalizer(scope, Semaphore.withPermits(registry, 1)(Effect.void))
@@ -137,7 +116,7 @@ export const MockFactory = Layer.effect(Factory, effect {
    * Runs the conversation's tour in its own `vibelang/Tour` execution, then answers every unanswered post, oldest
    * first, each in its own `vibelang/Reply` execution; each at most once.
    */
-  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>) {
+  effect function answer(state: Ref.Ref<State>, engine: FlowRuntime.FlowRuntime["Service"], wake: Queue.Queue<void>, activeTour: Ref.Ref<string>) {
     const dispatched = new Set<string>()
     while (true) {
       try Queue.take(wake)
@@ -145,7 +124,8 @@ export const MockFactory = Layer.effect(Factory, effect {
         const tour = touring((try Ref.get(state)).conversation)
         if (tour !== "" && !dispatched.has(`tour/${tour}`)) {
           dispatched.add(`tour/${tour}`)
-          try Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } }))
+          try Ref.set(activeTour, tour)
+          try ensuring(Effect.orDie(engine.execute(Tour, { executionId: `tour/${tour}`, payload: { tour } })), Ref.set(activeTour, ""))
           continue
         }
         const post = unanswered((try Ref.get(state)).conversation).find((id) => !dispatched.has(id))
@@ -174,6 +154,9 @@ export const MockFactory = Layer.effect(Factory, effect {
         },
         dispatch: () => Effect.asVoid(Queue.offer(wake, undefined)),
       }
+      const cryptoLayer = Layer.mergeAll(Layer.succeed(Digest.Digest, crypto.digest), Layer.succeed(SecureRandom.SecureRandom, crypto.random))
+      const engine = Context.get(try Layer.buildWithScope(FlowEngine.layerMemory.pipe(Layer.provide(cryptoLayer)), scope), FlowRuntime.FlowRuntime)
+      const activeTour = try Ref.make("")
       const accepted = (intent: Intent) => Effect.map(record(intent), (decision) => decision.ok)
       const tours: Tours.Shape = {
         start: effect () => {
@@ -185,8 +168,16 @@ export const MockFactory = Layer.effect(Factory, effect {
           const decision = try record({ type: "EndTour", id: touring((try Ref.get(state)).conversation) })
           return decision.ok ? null : decision.refusal
         },
+        wake: effect () => {
+          const tour = try Ref.get(activeTour)
+          if (tour !== "") try engine.resume(Tour, `tour/${tour}`)
+        },
+        running: (tour: string) => Effect.map(Ref.get(state), (current) => isTouring(current.conversation, tour)),
         open: (tour: string, url: string) => accepted({ type: "OpenPane", id: tour, url }),
-        say: (tour: string, text: string) => accepted({ type: "AppendReply", id: tour, text }),
+        say: effect (tour: string, text: string) => {
+          const entry = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === tour)
+          return try accepted({ type: "AppendReply", id: tour, text: entry?.text ? `\n\n${text}` : text })
+        },
         finish: (tour: string, reason: string) =>
           Effect.asVoid(record(reason === "" ? { type: "FinishReply", id: tour } : { type: "FailReply", id: tour, reason })),
         // Subscribe before reading the state, so the event that ends the tour can't fall between.
@@ -204,17 +195,17 @@ export const MockFactory = Layer.effect(Factory, effect {
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
           try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post), "vibelang.reply")))
-          try engine.register(Tour, (payload) => withSpan(toured(payload.tour, scriptedTour(payload.tour)), "vibelang.tour"))
+          try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
         }),
       ).pipe(
-        Layer.provideMerge(FlowEngine.layerMemory),
+        Layer.provide(Layer.succeed(FlowRuntime.FlowRuntime, engine)),
         Layer.provide(Layer.mergeAll(Layer.succeed(Posts, posts), Layer.succeed(Tours, tours))),
-        Layer.provide(Layer.succeed(Digest.Digest, digest)),
+        Layer.provide(Layer.mergeAll(Layer.succeed(Digest.Digest, crypto.digest), Layer.succeed(SecureRandom.SecureRandom, crypto.random))),
       )
-      const engine = Context.get(try Layer.buildWithScope(flows, scope), FlowRuntime.FlowRuntime)
+      try Layer.buildWithScope(flows, scope)
       const room: Room = { state, engine }
       try Ref.set(rooms, new Map(all).set(conversation, room))
-      try Effect.forkIn(answer(state, engine, wake), scope)
+      try Effect.forkIn(answer(state, engine, wake, activeTour), scope)
       // Wait for any already-accepted commit/publish before disposal completes. New calls see Closed.
       try Scope.addFinalizer(scope, Semaphore.withPermits(gate, 1)(Effect.void))
       return room

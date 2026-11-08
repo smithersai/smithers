@@ -3,7 +3,7 @@
 import { Option } from "effect"
 import type { Document, Html, HtmlBuilder } from "foldkit/html"
 import type { Entry, Pending } from "../core/conversation.vibe"
-import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
+import { CONTRIBUTE_URL, hasConversation, type Message as AppMessage, Message, type Model, tourConversation, PALETTE_ID, PALETTE_PROMPT_ID, PROMPT_ID } from "./main.vibe"
 import { render } from "./markdown.vibe"
 
 type H = HtmlBuilder<AppMessage>
@@ -25,12 +25,14 @@ export function view(model: Model, h: H): Document {
       [
         top(model, h),
         model.surface === "splash" ? splash(model, h) : chat(model, h),
+        ...(model.surface === "chat" && model.client.conversation.pane !== "" && (model.tour || model.docs === "max") ? [docsPane(model, h)] : []),
         palette(model, h),
         ...(model.tour ? control(h) : []),
         h.div([h.Id("vl-announcements")], [
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Answer"), h.AriaLive("polite"), h.AriaAtomic(true)], [
             h.span([h.Key(String(model.announced))], model.answer === "" ? [] : [`Answer ${model.announced}: ${model.answer}`]),
           ]),
+          h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Tour"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.tour ? "Agent controlling. Escape to stop." : model.conversation === tourConversation(model.session) ? "Tour ended. You have control." : ""]),
           h.div([h.Class("vl-sr-only"), h.Role("status"), h.AriaLabel("Connection"), h.AriaLive("polite"), h.AriaAtomic(true)], [model.connection]),
         ]),
       ],
@@ -128,18 +130,21 @@ function control(h: H): ReadonlyArray<Html> {
 /** The page the agent opened, in a pane of the conversation that maximizes over it. */
 function docsPane(model: Model, h: H): Html {
   const page = model.client.conversation.pane
-  const maximized = model.docs === "max"
+  const maximized = model.tour || model.docs === "max"
+  const tour = [...model.client.conversation.entries].reverse().find((entry) => entry.author === "agent" && entry.inReplyTo === "")
+  const current = tour?.text.trim().split(/\n\s*\n/).at(-1) ?? ""
   return h.section(
-    [h.Class("vl-docs"), h.AriaLabel("Docs"), h.DataAttribute("maximized", String(maximized))],
+    [h.Class("vl-docs"), h.AriaLabel("Docs"), h.DataAttribute("maximized", String(maximized)), h.DataAttribute("driving", String(model.tour))],
     [
       h.div([h.Class("vl-docs-bar")], [
         h.span([h.Class("vl-docs-page")], [page.replace(/^https:\/\//, "")]),
-        h.button(
+        ...(model.tour ? [] : [h.button(
           [h.Class("vl-docs-toggle"), h.Type("button"), h.AriaLabel(maximized ? "Minimize the docs" : "Maximize the docs"), h.OnClick(Message.ClickedDocs())],
           [paneIcon(h, maximized ? MINIMIZE : MAXIMIZE)],
-        ),
+        )]),
       ]),
-      h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs")], []),
+      h.iframe([h.Class("vl-docs-frame"), h.Src(page), h.Title("VibeLang docs"), h.Inert(model.tour), h.Tabindex(model.tour ? -1 : 0)], []),
+      ...(model.tour ? [h.section([h.Class("vl-tour-narration sui-chat-bubble"), h.AriaLabel("Current stop")], render(h, current))] : []),
     ],
   )
 }
@@ -148,10 +153,10 @@ function docsPane(model: Model, h: H): Html {
 
 function chat(model: Model, h: H): Html {
   const { conversation, pending } = model.client
-  return h.main([h.Class("vl-chat")], [
+  return h.main([h.Class("vl-chat"), h.Inert(model.tour || model.docs === "max")], [
     h.div([h.Class("sui-chat-messages"), h.DataAttribute("following", String(model.following)), h.Role("log"), h.AriaLabel("Conversation"), h.AriaLive("off")], [
       splashPane(h),
-      ...(conversation.pane === "" ? [] : [docsPane(model, h)]),
+      ...(conversation.pane === "" || model.tour || model.docs === "max" ? [] : [docsPane(model, h)]),
       ...conversation.entries.map((entry) => entryView(entry, model.session, h)),
       ...pending.map((post) => pendingView(post, h)),
       ...(model.stream === "failed"

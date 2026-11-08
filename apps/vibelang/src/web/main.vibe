@@ -153,9 +153,9 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
     // Ended before the tour was even recorded: end it now that it is.
     SucceededTour: () => model.tour ? { model } : { model, commands: [EndTourCommand({ conversation: model.conversation })] },
     // Busy while this tab's own tour runs (a Learn more racing an Escape): that tour keeps control.
-    FailedTour: ({ reason }) => ({ model: { ...model, tour: failedTourKeepsControl(reason, touringHere(model)), tourError: reason } }),
+    FailedTour: ({ reason }) => ({ model: { ...model, tour: failedTourKeepsControl(reason, touringHere(model)), docs: failedTourKeepsControl(reason, touringHere(model)) ? "max" : "pane", tourError: reason } }),
     // The end never reached the agent: it still drives, so Esc comes back.
-    FailedEndTour: () => ({ model: { ...model, tour: touringHere(model) } }),
+    FailedEndTour: () => ({ model: { ...model, tour: touringHere(model), docs: touringHere(model) ? "max" : model.docs } }),
     ClickedDocs: () => ({ model: { ...model, docs: toggleDocs(model.docs) } }),
     ClickedSplash: () => ({ model: { ...model, surface: "splash", palette: false } }),
     ClickedChat: () => minimizeSplash(model),
@@ -187,6 +187,7 @@ export function update(model: Model, message: Message): Update.Return<Model, Mes
           answer: answerAnnouncement(answer !== undefined, answer?.error ?? "", answer?.text ?? "", model.answer),
           announced: completed ? model.announced + 1 : model.announced,
           tour: toured ? false : model.tour,
+          docs: toured && event.type !== "ReplyFinished" ? "pane" : model.docs,
         },
       }
     },
@@ -220,7 +221,7 @@ function learnMore(model: Model): Update.Return<Model, Message, Factory> {
       palette: false,
       tour: true,
       tourError: "",
-      docs: "pane",
+      docs: "max",
       following: true,
       conversation,
       client: fresh ? Machine.newClient : model.client,
@@ -240,7 +241,7 @@ function touringHere(model: Model): boolean {
 
 /** Escape or Esc: the agent stops at once; the person keeps the conversation and the docs pane. */
 function endTour(model: Model): Update.Return<Model, Message, Factory> {
-  return { model: { ...model, tour: false }, commands: [EndTourCommand({ conversation: model.conversation }), FocusComposer({})] }
+  return { model: { ...model, tour: false, docs: "pane" }, commands: [EndTourCommand({ conversation: model.conversation }), FocusComposer({})] }
 }
 
 function openPalette(model: Model, open: boolean): Update.Return<Model, Message, Factory> {
