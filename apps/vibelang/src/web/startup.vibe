@@ -54,7 +54,8 @@ export effect function main() {
   const role = ROLES.find((each) => each === selectedRole) ?? "viewer"
   const resources = BrowserFactory(origin, askedForMock(window), role).pipe(Layer.provide(Layer.merge(Layer.succeed(HttpClient.HttpClient, client), Layer.succeed(Clock.Clock, clock))))
   const reducedMotion = try (try Experimental.MediaQuery.MediaQuery).matches("(prefers-reduced-motion: reduce)")
-  const session = (try (try SecureRandom.SecureRandom).uuidV4()).slice(0, 8)
+  // The full UUID: sandbox operation ids `${session}/sandbox/${n}` and their receipts are kept for good (0024).
+  const session = try (try SecureRandom.SecureRandom).uuidV4()
   const flags: Flags = { session, mode: "pending", name: "Guest", reducedMotion }
   const application = try Effect.try(() => Runtime.makeApplication({
     Model,

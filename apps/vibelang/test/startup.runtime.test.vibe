@@ -35,3 +35,23 @@ it.live("renders and handles Command K and a post while health is still unresolv
   })
   try Fiber.interrupt(boot)
 }))
+
+it.live("names each page load with a full random UUID, so sandbox operation ids do not collide", () => scoped(effect {
+  const node = try acquireRelease(sync(container), (node) => sync(() => remove(node)))
+  try Effect.try(() => {
+    const root = node.ownerDocument.createElement("div")
+    root.id = "root"
+    node.append(root)
+  })
+  const health = try heldHealth()
+  const sessions = try Effect.provide(effect {
+    const first = (try main()).flags.session
+    const second = (try main()).flags.session
+    return [first, second]
+  }, Layer.mergeAll(page, health.layer, Layer.succeed(Clock.Clock, health.deadlineClock)))
+  try Effect.try(() => {
+    // 122 random bits: an operation id `${session}/sandbox/${n}` repeats across page loads only by chance that small.
+    for (const session of sessions) expect(session).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/)
+    expect(sessions[0]).not.toBe(sessions[1])
+  })
+}))
