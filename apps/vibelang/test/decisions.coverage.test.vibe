@@ -1,0 +1,279 @@
+// Every pure decision's unreached choices, at the exported function the shells call.
+import { describe, expect, it } from "@effect/vitest"
+import * as Flow from "../src/core/flowDecision.vibe"
+import * as Theatre from "../src/web/theatreDecision.vibe"
+import * as Screen from "../src/web/screenDecision.vibe"
+import * as View from "../src/web/viewDecision.vibe"
+import * as Startup from "../src/web/startupDecision.vibe"
+import * as Command from "../src/surfaces/commandDecision.vibe"
+import * as Protocol from "../src/core/protocolDecision.vibe"
+import { chargeKeyOf } from "../worker/budgetDecision.vibe"
+import { finishDispatch, initialDispatch, probeDispatch } from "../worker/liveDispatchDecision.vibe"
+
+const state: Screen.ScreenState = { surface: "splash", palette: true, tour: false, tourError: "old", docs: "pane", following: false }
+
+describe("post run", () => {
+  it("records once, dispatches once and stays lawful along every path", () => {
+    const accepted = Flow.record(Flow.begin("post"), null)
+    const refused = Flow.record(Flow.begin("tour"), "busy")
+    const sent = Flow.dispatch(accepted)
+    for (const run of [Flow.begin("end"), accepted, refused, sent]) expect(Flow.lawful(run)).toBe(true)
+    expect(Flow.record(accepted, "later")).toBe(accepted)
+    expect(Flow.dispatch(refused)).toBe(refused)
+    expect(Flow.dispatch(sent)).toBe(sent)
+    expect(sent).toMatchObject({ phase: "dispatched", records: 1, dispatches: 1, answer: null })
+  })
+
+  it.each([
+    [{ phase: "begun", records: 1, dispatches: 0, answer: null }],
+    [{ phase: "begun", records: 0, dispatches: 1, answer: null }],
+    [{ phase: "begun", records: 0, dispatches: 0, answer: "x" }],
+    [{ phase: "recorded", records: 0, dispatches: 0, answer: null }],
+    [{ phase: "recorded", records: 1, dispatches: 1, answer: null }],
+    [{ phase: "recorded", records: 1, dispatches: 0, answer: "x" }],
+    [{ phase: "refused", records: 0, dispatches: 0, answer: "x" }],
+    [{ phase: "refused", records: 1, dispatches: 1, answer: "x" }],
+    [{ phase: "refused", records: 1, dispatches: 0, answer: null }],
+    [{ phase: "dispatched", records: 0, dispatches: 1, answer: null }],
+    [{ phase: "dispatched", records: 1, dispatches: 0, answer: null }],
+    [{ phase: "dispatched", records: 1, dispatches: 1, answer: "x" }],
+  ] as const)("rejects the inconsistent counters %j", (run) => {
+    expect(Flow.lawful({ kind: "post", ...run })).toBe(false)
+  })
+
+  it("finds the first post with no dispatch, or the end", () => {
+    expect(Flow.firstUndispatched(["a", "b", "c"], new Set(["a"]))).toBe(1)
+    expect(Flow.firstUndispatched(["a"], new Set(["a"]))).toBe(1)
+    expect(Flow.firstUndispatched([], new Set())).toBe(0)
+  })
+})
+
+describe("reply run", () => {
+  const started = Flow.recordReplyStart(Flow.beginReply(), "done")
+  const composing = Flow.beginReplyComposition(started)
+  const ready = Flow.finishReplyComposition(composing)
+  const settled = Flow.recordReplySettlement(ready)
+  const refused = Flow.recordReplyStart(Flow.beginReply(), "busy")
+
+  it("moves through its one path and ignores every out-of-order step", () => {
+    for (const run of [Flow.beginReply(), started, composing, ready, settled, refused]) expect(Flow.replyLawful(run)).toBe(true)
+    expect(settled).toMatchObject({ phase: "settled", starts: 1, compositions: 1, settlements: 1 })
+    expect(Flow.recordReplyStart(started, "busy")).toBe(started)
+    expect(Flow.beginReplyComposition(refused)).toBe(refused)
+    expect(Flow.finishReplyComposition(started)).toBe(started)
+    expect(Flow.recordReplySettlement(composing)).toBe(composing)
+  })
+
+  const zero = { starts: 0, compositions: 0, settlements: 0, answer: "" }
+  const one = { starts: 1, compositions: 0, settlements: 0, answer: "done" }
+  it.each([
+    ...[{ starts: 1 }, { compositions: 1 }, { settlements: 1 }, { answer: "done" }].map((bad) => ({ phase: "begun", ...zero, ...bad })),
+    ...[{ starts: 0 }, { compositions: 1 }, { settlements: 1 }, { answer: "done" }].map((bad) => ({ phase: "refused", ...one, answer: "busy", ...bad })),
+    ...[{ starts: 0 }, { compositions: 1 }, { settlements: 1 }, { answer: "busy" }].map((bad) => ({ phase: "started", ...one, ...bad })),
+    ...["composing", "ready"].flatMap((phase) => [{ starts: 0 }, { compositions: 0 }, { settlements: 1 }, { answer: "busy" }].map((bad) => ({ phase, ...one, compositions: 1, ...bad }))),
+    ...[{ starts: 0 }, { compositions: 0 }, { settlements: 0 }, { answer: "busy" }].map((bad) => ({ phase: "settled", starts: 1, compositions: 1, settlements: 1, answer: "done", ...bad })),
+  ] as ReadonlyArray<Flow.ReplyRun>)("rejects inconsistent counters %j", (run) => {
+    expect(Flow.replyLawful(run)).toBe(false)
+  })
+})
+
+describe("tour body", () => {
+  const ready = Flow.observeTourActivity(Flow.beginTourBody(), true)
+  const inactive = Flow.observeTourActivity(Flow.beginTourBody(), false)
+  const speaking = Flow.startTourSpeech(ready)
+
+  it("speaks once and finishes either way", () => {
+    const finished = Flow.finishTourSpeech(speaking, false)
+    const ended = Flow.finishTourSpeech(speaking, true)
+    expect(finished).toEqual({ phase: "finished", speakers: 1, outcome: "finished" })
+    expect(ended).toEqual({ phase: "ended", speakers: 1, outcome: "ended" })
+    for (const run of [Flow.beginTourBody(), ready, inactive, speaking, finished, ended]) expect(Flow.tourLawful(run)).toBe(true)
+  })
+
+  it("ignores steps out of order", () => {
+    expect(Flow.observeTourActivity(ready, false)).toBe(ready)
+    expect(Flow.startTourSpeech(inactive)).toBe(inactive)
+    expect(Flow.finishTourSpeech(ready, true)).toBe(ready)
+  })
+
+  it.each([
+    ...["begun", "ready", "inactive"].flatMap((phase) => [{ phase, speakers: 1, outcome: "" }, { phase, speakers: 0, outcome: "x" }]),
+    { phase: "speaking", speakers: 0, outcome: "" }, { phase: "speaking", speakers: 1, outcome: "x" },
+    { phase: "finished", speakers: 0, outcome: "finished" }, { phase: "finished", speakers: 1, outcome: "ended" },
+    { phase: "ended", speakers: 0, outcome: "ended" }, { phase: "ended", speakers: 1, outcome: "finished" },
+  ] as ReadonlyArray<Flow.TourRun>)("rejects inconsistent counters %j", (run) => {
+    expect(Flow.tourLawful(run)).toBe(false)
+  })
+})
+
+describe("theatre", () => {
+  it.each([
+    ["splash", ".vl-primary"], ["palette", ".sui-chat-messages"], ["issues", ".ix-surface"], ["issue:7", ".sui-item-conv"], ["issues:vips", ".sui-item-conv"],
+    ["wiki:home", ".vl-wiki"], ["history-nav", 'a[href="/history"]'], ["composer", 'form.sui-chat-composer[data-docked="true"]'], ["sandbox-pane", ".vl-sandboxes"], ["anything", ".vl-chat"],
+  ])("points %s at %s", (target, selector) => {
+    expect(Theatre.theatreSelector(target)).toBe(selector)
+  })
+
+  it.each([
+    [[3, false, true, false, false, 3, true, true, false], "cancel"],
+    [[3, true, false, false, false, 3, true, true, false], "cancel"],
+    [[3, true, true, true, false, 2, true, true, false], "cancel"],
+    [[3, true, true, true, false, 3, true, true, false], "pause"],
+    [[3, true, true, false, false, 3, true, true, true], "resume"],
+    [[3, true, true, false, false, 2, true, true, false], "speak"],
+    [[3, true, true, false, false, 3, false, true, false], "speak"],
+    [[3, true, true, false, false, 3, true, false, false], "speak"],
+    [[3, true, true, false, false, 3, false, true, true], "speak"],
+    [[3, true, true, false, false, 3, true, false, true], "speak"],
+    [[3, true, false, false, true, 2, true, true, false], "speak"],
+    [[3, true, true, false, false, 3, true, true, false], "keep"],
+  ] as ReadonlyArray<[Parameters<typeof Theatre.speechAction>, Theatre.SpeechAction]>)("speech %j is %s", (args, action) => {
+    expect(Theatre.speechAction(...args)).toBe(action)
+  })
+
+  it("clears the voice identity only on a paused seek", () => {
+    expect(Theatre.audioIdentity(4, true, 3, true, true)).toBe(0)
+    expect(Theatre.audioIdentity(4, true, 4, false, true)).toBe(0)
+    expect(Theatre.audioIdentity(4, true, 4, true, false)).toBe(0)
+    expect(Theatre.audioIdentity(4, true, 4, true, true)).toBe(4)
+    expect(Theatre.audioIdentity(4, false, 3, false, false)).toBe(4)
+  })
+
+  it("labels each bounded outcome", () => {
+    expect([Theatre.theatreOutcome(false, false, false), Theatre.theatreOutcome(true, true, true), Theatre.theatreOutcome(true, false, true), Theatre.theatreOutcome(true, false, false)]).toEqual(["ended", "paused", "sound", "muted"])
+  })
+
+  it("wraps tab focus in both directions", () => {
+    expect(Theatre.theatreFocusIndex(3, -1, false)).toBe(0)
+    expect(Theatre.theatreFocusIndex(3, -1, true)).toBe(2)
+    expect(Theatre.theatreFocusIndex(3, 2, false)).toBe(0)
+    expect(Theatre.theatreFocusIndex(3, 0, true)).toBe(2)
+    expect(Theatre.theatreFocusIndex(3, 1, false)).toBe(2)
+  })
+})
+
+describe("screen", () => {
+  it("toggles docs, ignores stale scrolls and pauses a reader once", () => {
+    expect([Screen.toggleDocs("max"), Screen.toggleDocs("pane")]).toEqual(["pane", "max"])
+    expect(Screen.scrollFollow("chat", false, true, 5, false, 4)).toEqual({ following: true, followIntent: 5, stale: true })
+    expect(Screen.nativeScroll(false, false, 9, 10, 2)).toEqual({ bottom: false, paused: true, intent: 3 })
+    expect(Screen.nativeScroll(false, true, 9, 10, 2)).toEqual({ bottom: false, paused: true, intent: 2 })
+    expect(Screen.nativeScroll(true, true, 11, 10, 2)).toEqual({ bottom: true, paused: false, intent: 2 })
+    expect(Screen.nativeScroll(true, true, 9, 10, 2)).toEqual({ bottom: false, paused: true, intent: 2 })
+  })
+
+  it("keeps tour control only for a busy, still-running tour", () => {
+    expect([Screen.failedTourKeepsControl("busy", true), Screen.failedTourKeepsControl("busy", false), Screen.failedTourKeepsControl("full", true)]).toEqual([true, false, false])
+    expect(Screen.failScreenTour(state, "busy", true)).toEqual({ ...state, tour: true, tourError: "busy", docs: "max" })
+    expect(Screen.failScreenTour({ ...state, tour: true, docs: "max" }, "full", false)).toEqual({ ...state, tour: false, tourError: "full", docs: "pane" })
+  })
+
+  it("opens a stream from the right cursor", () => {
+    expect(Screen.tourStream(true, "open", 2, 9, 4)).toEqual({ opening: true, epoch: 3, from: 0 })
+    expect(Screen.tourStream(false, "closed", 2, 9, 4)).toEqual({ opening: true, epoch: 3, from: 9 })
+    expect(Screen.tourStream(false, "open", 2, 9, 4)).toEqual({ opening: false, epoch: 2, from: 4 })
+  })
+
+  it("gives the palette shortcut precedence over escape", () => {
+    expect(Screen.screenKey("k", true, true, false)).toBe("palette")
+    expect(Screen.screenKey("k", false, false, true)).toBe("palette")
+    expect(Screen.screenKey("escape", true, false, false)).toBe("escape")
+    expect(Screen.screenKey("k", false, false, false)).toBe("")
+    expect(Screen.screenKey("j", false, true, false)).toBe("")
+  })
+
+  it("begins and ends a tour without touching the other projection", () => {
+    const toured = Screen.beginScreenTour(state)
+    expect(toured).toEqual({ surface: "chat", palette: false, tour: true, tourError: "", docs: "max", following: true })
+    expect(Screen.beginScreenTour(toured)).toBe(toured)
+    expect(Screen.endScreenTour(toured)).toEqual({ ...toured, tour: false, docs: "pane" })
+    expect(Screen.minimizeScreen(toured, 1, 0, "")).toBe(toured)
+    expect(Screen.minimizeScreen(state, 0, 0, "")).toBe(state)
+    expect(Screen.minimizeScreen(state, 1, 0, "").surface).toBe("chat")
+  })
+
+  it("settles a failed end and a completed tour", () => {
+    expect(Screen.failedScreenEnd(state, true)).toEqual({ ...state, tour: true, docs: "max" })
+    expect(Screen.failedScreenEnd(state, false)).toEqual({ ...state, tour: false })
+    const live = { ...state, tour: true, docs: "max" as const }
+    expect(Screen.completeScreenTour(live, true, "TourEnded")).toEqual({ ...live, tour: false, docs: "pane" })
+    expect(Screen.completeScreenTour(live, true, "ReplyFinished")).toEqual({ ...live, tour: false })
+    expect(Screen.completeScreenTour(live, false, "TourEnded")).toEqual(live)
+  })
+})
+
+describe("view", () => {
+  it("names the status in precedence order", () => {
+    expect(View.statusLabel("failed", "busy", "working")).toBe("Disconnected")
+    expect(View.statusLabel("open", "busy", "working")).toBe("Agent busy")
+    expect(View.statusLabel("open", "", "working")).toBe("Answering")
+    expect(View.statusLabel("open", "", "idle")).toBe("")
+  })
+
+  it("names surface changes and sandbox panes", () => {
+    expect([View.surfaceTransition("chat", "chat"), View.surfaceTransition("splash", "chat"), View.surfaceTransition("chat", "splash")]).toEqual(["none", "to-chat", "to-splash"])
+    expect([View.toggleSandbox("closed"), View.toggleSandbox("pane"), View.toggleSandbox("max")]).toEqual(["pane", "closed", "closed"])
+    expect([View.maximizeSandbox("max"), View.maximizeSandbox("pane")]).toEqual(["pane", "max"])
+  })
+
+  it("allows stop while busy, and a command only with text", () => {
+    expect(View.canSandboxAction(true, "stop", "")).toBe(true)
+    expect(View.canSandboxAction(true, "start", "")).toBe(false)
+    expect(View.canSandboxAction(false, "start", "")).toBe(true)
+    expect(View.canSandboxAction(false, "command", "  ")).toBe(false)
+    expect(View.canSandboxAction(false, "command", "ls")).toBe(true)
+  })
+
+  it("chooses media by poster, motion and controls", () => {
+    expect(View.mediaDecision(false, false, false)).toEqual({ video: false, poster: false, autoplay: true, kind: "image" })
+    expect(View.mediaDecision(true, false, false)).toEqual({ video: true, poster: false, autoplay: true, kind: "video" })
+    expect(View.mediaDecision(true, true, false)).toEqual({ video: false, poster: true, autoplay: false, kind: "video" })
+    expect(View.mediaDecision(true, true, true)).toEqual({ video: true, poster: false, autoplay: false, kind: "video" })
+  })
+})
+
+describe("startup, commands and routes", () => {
+  it("writes the backend preference for each query", () => {
+    expect([Startup.preferenceWrite("mock"), Startup.preferenceWrite("live"), Startup.preferenceWrite(null), Startup.preferenceWrite("x")]).toEqual(["set", "clear", "keep", "keep"])
+  })
+
+  it("auto-tours only the root of a first visit", () => {
+    expect(Startup.tutorialStartup(null, "new", "on", "yes", null, "/")).toEqual({ tutorialSession: "new", tourSound: true, resumeTour: true, autoTour: true })
+    expect(Startup.tutorialStartup("", "new", null, null, "", "/").autoTour).toBe(true)
+    expect(Startup.tutorialStartup("", "new", null, null, "", "/").tutorialSession).toBe("")
+    expect(Startup.tutorialStartup("s", "new", "off", "no", "yes", "/").autoTour).toBe(false)
+    expect(Startup.tutorialStartup("s", "new", "off", "no", null, "/wiki").autoTour).toBe(false)
+  })
+
+  const ask: Command.AskProgress = { post: "p", reply: "r", numbers: [], text: "ab", failed: false, failure: "", finished: false, listening: true }
+  it("folds an own reply's restart, failure and finish", () => {
+    expect(Command.collectAnswer(ask, "ReplyRestarted", "r", 1, "", "", "", "", "")).toMatchObject({ text: "", numbers: [1], listening: true })
+    expect(Command.collectAnswer(ask, "ReplyDelta", "r", 2, "", "", "", "c", "")).toMatchObject({ text: "abc", failure: "" })
+    expect(Command.collectAnswer(ask, "ReplyFailed", "r", 3, "", "", "", "", "boom")).toMatchObject({ failed: true, failure: "boom", listening: false })
+    expect(Command.collectAnswer(ask, "ReplyFinished", "r", 4, "", "", "", "", "")).toMatchObject({ finished: true, failure: "", listening: false })
+  })
+
+  it("names each answer outcome and command error", () => {
+    expect([Command.answerOutcome(true, true), Command.answerOutcome(false, false), Command.answerOutcome(false, true)]).toEqual(["failed", "ended", "done"])
+    expect([Command.commandError("Unavailable", "down", "Refused", "x", "m"), Command.commandError("Refused", "", "Refused", "busy", "m"), Command.commandError("Other", "", "", "", "m")]).toEqual(["down", "Refused: busy", "m"])
+  })
+
+  it("routes tour control by method and account paths by prefix", () => {
+    expect(Protocol.routeKind("POST", "tour-control")).toBe("tour-control")
+    expect(Protocol.routeKind("GET", "tour-control")).toBe("")
+    expect(["/api/issues", "/api/auth/start", "/api/roles", "/api/roles/x", "/api/other", "/api/issues/1"].map(Protocol.accountRoute)).toEqual([true, true, true, true, false, false])
+  })
+
+  it("keys a charge by its host and reply", () => {
+    expect(chargeKeyOf("room", "reply")).toBe("room:reply")
+  })
+
+  it("never advances a dispatch scan out of phase", () => {
+    const attempt = probeDispatch(initialDispatch(), ["a"], false)
+    expect(attempt).toEqual({ index: 0, phase: "attempt", post: "a", started: false })
+    expect(probeDispatch(attempt, ["a"], true)).toBe(attempt)
+    const scanning = initialDispatch()
+    expect(finishDispatch(scanning, true)).toBe(scanning)
+    expect(finishDispatch(attempt, true)).toEqual({ ...attempt, phase: "done", started: true })
+  })
+})

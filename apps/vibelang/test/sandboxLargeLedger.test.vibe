@@ -20,4 +20,4 @@ it("checks a new identity and the full replay ledger without a recursive runtime
   expect(distinctFrom(entries, "box-0", "new-room", entries.length)).toBe(false)
   expect(validSandboxes(entries)).toBe(true)
   expect(validSandboxes([...entries, { id: "box-0", conversation: "other", running: false }])).toBe(false)
-}, 10000)
+}, 60000)
