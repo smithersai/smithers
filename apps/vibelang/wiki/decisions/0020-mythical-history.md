@@ -138,7 +138,18 @@ no bootstrap budget form (the bootstrap is a deterministic replay, not a model r
 The command registry (0009) gains `history`, `plan`, `start` and `note`, so the CLI, the MCP server and `--llms` reach
 the same flows through `Mythical` (FLOW-3, VL-26); the skill shows them. In mock mode their caller is the agent for a
 maintainer (`SURFACE_PRINCIPAL`): it may append, insert, amend, start and note, and is refused approving and folding
-like any agent. Live, the server decides who asks. The in-chat agent gains these flows as tools with brick 4.
+like any agent. Live, the server decides who asks.
+
+**The agent in the chat** has the same four as tools (`worker/HistoryTools.vibe`, `src/history/tools.vibe`), bound into
+smithers.sh's agent as flows, as the tour's pane tools were: `vibelang/history/show` reads one page (`outline`,
+`epic`, `commit`, `search`), and `vibelang/history/Plan`, `Start` and `Note` run in the History object's engine, which
+checks who asks. There is no tool to approve or fold. A tool call is a journaled step of the reply; a write reaches the
+History object through its internal `act`, as `CHAT_AGENT`: the agent for the person who posted, a viewer until 0019
+lands, so its writes are refused `forbidden` as that person's would be. No request reaches `act`. At most eight calls a
+cell (`REPLY_CALLS`); `vibelang_history_tool_calls{tool, outcome}` and `vibelang.history.tool.<tool>` logs count them,
+with no text. The mock's scripted agent answers a question about the history (`mythical`, `history`, `epic`) by
+running `vibelang/history/show` as a step over the mock history, built only when first asked. When lane `vl-actions`
+lands its slash commands, the chat reaches these flows through them too (FLOW-3).
 
 ```sh
 vibelang-factory --json history --commit m4

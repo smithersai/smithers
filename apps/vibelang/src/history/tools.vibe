@@ -1,0 +1,101 @@
+// The mythical history as the agent's tools in the chat (wiki/decisions/0020-mythical-history.md; FLOW-3): what the CLI
+// and the MCP server already do (`history`, `plan`, `start`, `note`), as flows the agent calls. Reading is
+// `vibelang/history/show`, one page at a time (pages.vibe); writing is the history's own `vibelang/history/Plan`,
+// `Start` and `Note`, which run in the history's engine and check who asks. The agent has no tool to approve or fold.
+//
+// Each handler here takes the history as a `HistoryReader`: the History object's for the live agent
+// (worker/HistoryObject.vibe), the mock's `Mythical` for the scripted one (src/core/MockFactory.vibe).
+import { Flow } from "@smthrs/flow"
+import { Node } from "@smthrs/plan"
+import type { Section } from "./mythical.vibe"
+import type { Mythical, Refused, Unavailable } from "./MythicalHistory.vibe"
+import type { CommitPage, EpicPage, Matches, Outline, PageRequest } from "./pages.vibe"
+import { CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, Matches as MatchesSchema, Outline as OutlineSchema } from "./schemas.vibe"
+import type { PlanRequest } from "./Sequencer.vibe"
+
+/** What the agent's tools need of the history: its pages and the writes the agent may ask for. */
+export type HistoryReader = Pick<Mythical.Shape, "outline" | "epic" | "commit" | "search" | "plan" | "start" | "note">
+
+/** The page a read answers. */
+export const ShowPage = Schema.Union([OutlineSchema, EpicPageSchema, CommitPageSchema, MatchesSchema])
+
+/** The agent's tool: read one page of the history. */
+export const Show = Flow.make("vibelang/history/show", {
+  description: "Reads VibeLang's mythical history, one page at a time. `what`: `outline` (epics with their counts, work not landed, the last folded commit of main), `epic` (50 commits of epic `id` in stack order, from the `from`-th), `commit` (commit `id` in full: its notes and the real commits it folds), `search` (commits whose title has `query`).",
+  modelInvocable: true,
+  payload: {
+    what: Schema.Literals(["outline", "epic", "commit", "search"]),
+    id: Schema.optionalKey(Schema.String),
+    from: Schema.optionalKey(Schema.Int.check(Schema.isGreaterThanOrEqualTo(0))),
+    query: Schema.optionalKey(Schema.String),
+  },
+  success: ShowPage,
+  body: () => Node.succeed<Outline>({ seq: 0, main: "", epics: [], open: [] }),
+})
+
+/** What the agent asked `vibelang/history/show` for. */
+export interface ShowInput {
+  readonly what: "outline" | "epic" | "commit" | "search"
+  readonly id?: string
+  readonly from?: number
+  readonly query?: string
+}
+
+/** The page `input` names. */
+export function requestOf(input: ShowInput): PageRequest {
+  switch (input.what) {
+    case "outline": return { what: "outline" }
+    case "epic": return { what: "epic", id: input.id ?? "", from: input.from ?? 0 }
+    case "commit": return { what: "commit", id: input.id ?? "" }
+    case "search": return { what: "search", query: input.query ?? "" }
+  }
+}
+
+/** Tool calls, by tool and outcome. */
+export const historyToolCalls = Metric.counter("vibelang_history_tool_calls", {
+  description: "The agent's calls to the mythical history's tools, by tool and outcome",
+  incremental: true,
+})
+
+/** Logs and counts one tool call by its outcome only: never what was asked, a title, a note or a name. */
+effect function counted(tool: string, outcome: string) {
+  try Metric.update(Metric.withAttributes(historyToolCalls, { tool, outcome }), 1)
+  try Effect.logInfo(`vibelang.history.tool.${tool}`).pipe(Effect.annotateLogs({ outcome }))
+}
+
+/** `vibelang/history/show`'s body: the page asked for; `unavailable` fails the call. */
+export effect function show(history: HistoryReader, input: ShowInput) {
+  const request = requestOf(input)
+  const page: Outline | EpicPage | CommitPage | Matches = match (request) {
+    when { what: "outline" }: try history.outline();
+    when { what: "epic", let id, let from }: try history.epic(id, from);
+    when { what: "commit", let id }: try history.commit(id);
+    when { what: "search", let query }: try history.search(query);
+  }
+  try counted("show", request.what)
+  return page
+}
+
+/** A write's answer as its flow gives it: the commit, or the refusal (`forbidden`, the sequencer's, `unavailable`). */
+effect function answered(tool: string, write: string!(Refused | Unavailable)) {
+  const answer: { readonly id: string; readonly refusal: string | null } = effect {
+    return { id: try write, refusal: null }
+  } catch (error) => ({ id: "", refusal: error._tag === "Refused" ? error.refusal : "unavailable" })
+  try counted(tool, answer.refusal ?? "accepted")
+  return answer
+}
+
+/** `vibelang/history/Plan` as the agent's tool. */
+export function plan(history: HistoryReader, request: PlanRequest) {
+  return answered("plan", history.plan(request))
+}
+
+/** `vibelang/history/Start` as the agent's tool. */
+export function start(history: HistoryReader, id: string, lane: string) {
+  return answered("start", Effect.as(history.start(id, lane), id))
+}
+
+/** `vibelang/history/Note` as the agent's tool. */
+export function note(history: HistoryReader, id: string, section: Section, text: string) {
+  return answered("note", Effect.as(history.note(id, section, text), id))
+}

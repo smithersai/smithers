@@ -10,12 +10,19 @@ import { CloudflareRuntime, ObjectDatabase } from "@smthrs/platform-cloudflare"
 import { Approve, Bootstrap, Fold, historyRegistration, MainLog, Note, Plan, Stack, Start } from "../src/history/flows.vibe"
 import type { Event, History } from "../src/history/mythical.vibe"
 import { Caller, type Principal, VIEWER } from "../src/history/roles.vibe"
-import { History as HistorySchema } from "../src/history/schemas.vibe"
+import { Refused, Unavailable } from "../src/history/MythicalHistory.vibe"
+import type { PageRequest } from "../src/history/pages.vibe"
+import {
+  CommitPage as CommitPageSchema, EpicPage as EpicPageSchema, History as HistorySchema, Matches as MatchesSchema,
+  Outline as OutlineSchema,
+} from "../src/history/schemas.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
 import { HISTORY_JSON } from "../src/history/seed/vibelang.vibe"
 import { make, type Sequencer, stackOf, type Store } from "../src/history/Sequencer.vibe"
 import type { Write } from "../src/history/wire.vibe"
 import { postExecutionId, type Storage } from "./Objects.vibe"
 import { eventKey, type KeyValue } from "./ObjectStorage.vibe"
+import type { Unreachable } from "./Unreachable.vibe"
 
 const BASE = "base"
 const CHUNK = 64 * 1024
@@ -68,6 +75,41 @@ export function storeOver(storage: KeyValue): Store {
 /** Who asks, from the request: a viewer until sign-in (decision 0019) lands; its policy replaces this one function. */
 export function principalOf(_request: unknown): Principal {
   return VIEWER
+}
+
+/**
+ * Who the agent in the chat acts for: the person who posted, a viewer until sign-in (decision 0019) lands, so its
+ * writes are refused `forbidden` as that person's would be. Like `principalOf`, the one place 0019's policy replaces.
+ */
+export const CHAT_AGENT: Principal = { ...VIEWER, agent: true }
+
+/**
+ * The history as the chat agent's tools reach it (src/history/tools.vibe), over the History object's `page` and an
+ * internal `act` that runs a write's flow as `CHAT_AGENT`. No request reaches `act`: only the API Worker's own objects
+ * call it, so no client names a principal.
+ */
+export function readerOver(
+  page: (request: PageRequest) => unknown!Unreachable,
+  act: (name: Write, body: unknown, principal: Principal) => Answered!Unreachable,
+): HistoryReader {
+  effect function read<S extends Schema.Top>(request: PageRequest, schema: S) {
+    const value = try Effect.mapError(page(request), () => new Unavailable({ reason: "history unreachable" }))
+    return try Effect.mapError(Schema.decodeUnknownEffect(schema)(value), () => new Unavailable({ reason: "history is not the protocol" }))
+  }
+  effect function written(name: Write, body: unknown) {
+    const answer = try Effect.mapError(act(name, body, CHAT_AGENT), () => new Unavailable({ reason: "history unreachable" }))
+    if (answer.refusal !== null) throw new Refused({ refusal: answer.refusal })
+    return answer.id
+  }
+  return {
+    outline: () => read({ what: "outline" }, OutlineSchema),
+    epic: (id, from) => read({ what: "epic", id, from }, EpicPageSchema),
+    commit: (id) => read({ what: "commit", id }, CommitPageSchema),
+    search: (query) => read({ what: "search", query }, MatchesSchema),
+    plan: (request) => written("plan", request),
+    start: (id, lane) => Effect.asVoid(written("start", { id, lane })),
+    note: (id, section, text) => Effect.asVoid(written("note", { id, section, text })),
+  }
 }
 
 /** The person that runs the bootstrap: the host, on first start. */

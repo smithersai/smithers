@@ -13,7 +13,14 @@ import {
   EndTour, endsTour, patient, Post, postRegistration, Posts, Reply, replyIdOf, StartTour, Tour, toured, touring, tourRegistration,
   Tours, unanswered, walk,
 } from "./flows.vibe"
-import { chunks, mockReply, TOUR } from "./mockReplies.vibe"
+import { Mythical } from "../history/MythicalHistory.vibe"
+import type { Principal } from "../history/roles.vibe"
+import { type HistoryReader, show } from "../history/tools.vibe"
+import { matches } from "./mockDecision.vibe"
+import { chunks, HISTORY_WORDS, historyReply, mockReply, TOUR } from "./mockReplies.vibe"
+
+/** Who the scripted agent reads the mythical history as: the agent for a person who has not signed in. */
+const MOCK_AGENT: Principal = { role: "viewer", name: "Guest", agent: true }
 
 /** One conversation's sequencer state and every event it numbered. */
 interface State {
@@ -43,7 +50,13 @@ const replyStarts = Metric.counter("vibelang_mock_reply_starts", { incremental: 
 schema error ReplyBusy {}
 
 /** The scripted agent's reply to `post`, `vibelang/Reply`'s mock body: every record is a step. */
-effect function scripted(engine: FlowRuntime.FlowRuntime["Service"], state: Ref.Ref<State>, record: (intent: Intent) => Decision!!, post: string) {
+effect function scripted(
+  engine: FlowRuntime.FlowRuntime["Service"],
+  state: Ref.Ref<State>,
+  record: (intent: Intent) => Decision!!,
+  post: string,
+  history: HistoryReader!!,
+) {
   const id = replyIdOf(post)
   const started = try Action.make({
     name: "vibelang/reply/start",
@@ -66,7 +79,18 @@ effect function scripted(engine: FlowRuntime.FlowRuntime["Service"], state: Ref.
   })
   if (!started) return null
   const prompt = (try Ref.get(state)).conversation.entries.find((entry) => entry.id === post)?.text ?? ""
-  const pieces = chunks(mockReply(prompt))
+  // Asked about the mythical history, the scripted agent reads it through the live agent's tool, as a step.
+  const text = matches(prompt.toLowerCase(), HISTORY_WORDS)
+    ? try Action.make({
+      name: "vibelang/history/show",
+      success: Schema.String,
+      execute: effect {
+        const page = show(try history, { what: "outline" }) catch () => undefined
+        return page !== undefined && "epics" in page ? historyReply(page) : "The history can't be reached."
+      },
+    })
+    : mockReply(prompt)
+  const pieces = chunks(text)
   for (let index = 0; index < pieces.length; index++) {
     try sleep(MOCK_DELTA_DELAY)
     try Action.make({ name: `vibelang/reply/append/${index}`, execute: Effect.asVoid(record({ type: "AppendReply", id, text: pieces[index]! })) })
@@ -90,6 +114,12 @@ export const MockFactory = Layer.effect(Factory, effect {
   const executions = try Ref.make(0)
   // The engine digests what it journals, with the platform's Web Crypto.
   const crypto = try cryptoOf()
+  // The mythical history the scripted agent reads, built (and its snapshot downloaded) only when first asked about.
+  const history = try Effect.cached(effect {
+    const { MockMythical } = try promise(() => import("../history/MockMythical.vibe"))
+    const reader: HistoryReader = Context.get(try Layer.buildWithScope(MockMythical(MOCK_AGENT), scope), Mythical)
+    return reader
+  })
   // This lock only creates rooms. Acceptance and replies use each room's own lock and engine.
   const registry = try Semaphore.make(1)
   try Scope.addFinalizer(scope, Semaphore.withPermits(registry, 1)(Effect.void))
@@ -194,7 +224,7 @@ export const MockFactory = Layer.effect(Factory, effect {
         tourRegistration,
         Layer.effectDiscard(effect {
           const engine = try FlowRuntime.FlowRuntime
-          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post), "vibelang.reply")))
+          try engine.register(Reply, (payload) => Effect.orDie(withSpan(scripted(engine, state, record, payload.post, history), "vibelang.reply")))
           try engine.register(Tour, (payload) => withSpan(toured(payload.tour, walk(payload.tour, TOUR.map((stop) => stop.words))), "vibelang.tour"))
         }),
       ).pipe(

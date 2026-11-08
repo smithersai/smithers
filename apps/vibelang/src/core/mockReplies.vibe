@@ -1,3 +1,4 @@
+import type { Outline } from "../history/pages.vibe"
 import { scriptIndex } from "./mockDecision.vibe"
 
 // The mock agent's answers (wiki/decisions/0004-mock-mode.md): a script chosen by the prompt's words, so the app runs
@@ -146,6 +147,22 @@ export const TOUR: ReadonlyArray<{ readonly path: string; readonly words: string
     words: "A change to the language starts as a VIP: one feature, its examples, the Effect it compiles to and the alternatives rejected. This site is VibeLang's open-source coding factory, where people and agents work on the language together. Everything I do here, this tour included, runs as a durable flow.",
   },
 ]
+
+/** Words that ask about the mythical history: the mock agent reads its outline to answer (0020). */
+export const HISTORY_WORDS: ReadonlyArray<string> = ["mythical", "history", "epic"]
+
+/** How much open work the mock agent lists. */
+const OPEN_SHOWN = 5
+
+/** The mock agent's answer about the mythical history, from the outline `vibelang/history/show` read. */
+export function historyReply(outline: Outline): string {
+  const open = outline.open.slice(0, OPEN_SHOWN).map((head) => `\`${head.id}\` ${head.title} (${head.state})`)
+  return [
+    `VibeLang's mythical history, folded through \`${outline.main}\`.`,
+    outline.epics.map((epic) => `${epic.title} ${epic.commits}`).join(" · "),
+    open.length === 0 ? "No open work." : `Open work: ${open.join(" · ")}`,
+  ].join("\n\n")
+}
 
 /** The mock agent's whole answer to `prompt`. */
 export function mockReply(prompt: string): string {

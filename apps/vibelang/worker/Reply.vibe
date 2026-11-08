@@ -15,6 +15,7 @@ import type { HostModel } from "@smthrs/model-host"
 import { Registry } from "@smthrs/registry"
 import { patient, Reply, replyIdOf } from "../src/core/flows.vibe"
 import { AGENT_CONTEXT } from "./agentContext.vibe"
+import { HISTORY_INSTRUCTION, historyTools, HistoryTools, REPLY_CALLS } from "./HistoryTools.vibe"
 import { Turn, type Answer } from "./Sequencer.vibe"
 import { Unreachable } from "./Unreachable.vibe"
 import { reasonCode, failureCode } from "./replyReasons.vibe"
@@ -81,8 +82,8 @@ export const CONTEXT_WINDOW_TOKENS = 32_768
 export const AGENT_SEAT = "agent"
 
 /**
- * One cell's limits: no tool calls (the agent has none in a Worker yet, 0012), a QuickJS heap well inside the
- * isolate's 128 MiB, and five seconds of evaluation.
+ * One cell's limits: no tool calls unless the agent is given tools (`agentOf`'s `calls`), a QuickJS heap well inside
+ * the isolate's 128 MiB, and five seconds of evaluation.
  */
 export const LIMITS = { calls: 0, memoryBytes: 32 * 1024 * 1024, timeMs: 5_000 }
 
@@ -108,12 +109,15 @@ export function promptOf(payload: { readonly turns: ReadonlyArray<Turn> }): stri
   ].join("\n")
 }
 
-/** `vibelang/reply/agent`: smithers.sh's agent answers the post, VibeLang's own reference its system context. */
+/**
+ * `vibelang/reply/agent`: smithers.sh's agent answers the post, VibeLang's own reference its system context, the
+ * mythical history its tools (HistoryTools.vibe).
+ */
 export const Respond = AgentAction.make("vibelang/reply/agent", {
   payload: { turns: Schema.Array(Turn) },
   output: Schema.String,
   seat: AGENT_SEAT,
-  system: [AGENT_CONTEXT],
+  system: [AGENT_CONTEXT, HISTORY_INSTRUCTION],
   profile: "conversation",
   prompt: promptOf,
   maxFrames: MAX_FRAMES,
@@ -161,7 +165,7 @@ export function fold(progress: Progress, event: AgentEvent.AgentEvent): Progress
 
 /**
  * smithers.sh's agent running `action` over `model`: no registry, the cell sandbox on workerd, its events to `sink`.
- * A reply has no tools; the tour's agent calls `flows`, at most `calls` times a cell (0014).
+ * Its agent calls `flows`, at most `calls` times a cell: the reply's are the mythical history's (0020).
  */
 export function agentOf<ROut, E, RIn>(
   action: Layer.Layer<ROut, E, RIn>,
@@ -236,9 +240,10 @@ effect function respond(reply: string, model: HostModel["Service"], turns: Reado
   return { answered, progress: try Ref.get(progress) }
 }
 
-/** One run of `vibelang/reply/agent`, as the journaled step its declaration makes. */
+/** One run of `vibelang/reply/agent`, as the journaled step its declaration makes, its tools the history's. */
 effect function run(model: HostModel["Service"], sink: EventSink.Service, turns: ReadonlyArray<Turn>) {
-  provide agentOf(Respond.layer, model, sink), EventSink.EventSink = sink {
+  const { history } = try HistoryTools
+  provide agentOf(Respond.layer, model, sink, [historyTools(history)], REPLY_CALLS), EventSink.EventSink = sink {
     const implementation = try Respond.requirement
     return try implementation.action({ turns })
   }

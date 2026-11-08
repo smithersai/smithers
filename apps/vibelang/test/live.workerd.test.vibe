@@ -307,6 +307,21 @@ describe.skipIf(modelKey === undefined)("the live Factory with the real model (o
     }
   }, 180_000)
 
+  it.live("answers about the mythical history from its tool, vibelang/history/show", () => effect {
+    provide live(api!.origin) {
+      const factory = try Factory
+      const conversation = try room("model-history")
+      try factory.post(conversation, "a", "Ada", "Which epics does VibeLang's mythical history have? Read it with your tool.")
+      const events = try untilSettled(conversation, 1)
+      const reply = events.reduce(apply, empty).entries[1]!
+      try Effect.try(() => {
+        expect(events.at(-1)!.type).toBe("ReplyFinished")
+        // Only the history's outline names its epics; VibeLang's reference doesn't.
+        expect(reply.text).toContain("The compiler")
+      })
+    }
+  }, 180_000)
+
   it.live("gives the tour: opens the stops' pages in the docs pane and says what they are", () => effect {
     provide live(api!.origin) {
       const factory = try Factory

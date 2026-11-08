@@ -118,6 +118,28 @@ describe("the History object in local workerd", () => {
     }
   })
 
+  it.live("lets a conversation's agent read the history by page and run its flows there, refused while its person is a viewer", () => effect {
+    provide platform {
+      const origin = api!.origin
+      const outline = try (try at(origin, "/api/history")).json
+      const shown = try (try at(origin, "/history-tool/agent-tools", JSON.stringify({ tool: "show", show: { what: "outline" } }))).json
+      const commit = try Schema.decodeUnknownEffect(CommitPage)(
+        try (try at(origin, "/history-tool/agent-tools", JSON.stringify({ tool: "show", show: { what: "commit", id: "m1" } }))).json,
+      )
+      const noted = try (try at(origin, "/history-tool/agent-tools", JSON.stringify({ tool: "note", id: "m1", text: "x." }))).json
+      const runs = (try (try at(origin, "/runs/history")).json) as ReadonlyArray<{ readonly run_id: string; readonly status: string }>
+      const after = try (try at(origin, "/api/history")).json
+      try Effect.try(() => {
+        expect(shown).toEqual(outline)
+        expect(commit.commit!.id).toBe("m1")
+        expect(noted).toEqual({ id: "", refusal: "forbidden" })
+        // The note ran as the history's own flow, in the History object's engine, and changed nothing.
+        expect(runs.filter((run) => run.run_id.startsWith("history-note")).length).toBeGreaterThan(0)
+        expect(after).toEqual(outline)
+      })
+    }
+  })
+
   it.live("serves LiveMythical: the same history, and a refusal typed as Refused", () => effect {
     provide platform {
       const result = try effect {

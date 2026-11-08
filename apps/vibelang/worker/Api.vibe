@@ -10,6 +10,7 @@ import { chatModel, dailyTokens } from "./AgentModel.vibe"
 import { FetchHttpClient, HttpClient } from "effect/http"
 import { type PageRequest, pageOf } from "../src/history/pages.vibe"
 import type { Write } from "../src/history/wire.vibe"
+import type { Principal } from "../src/history/roles.vibe"
 import * as HistoryObject from "./HistoryObject.vibe"
 import { afterOf, eventStream, handle, type Conversations, type Histories } from "./Http.vibe"
 import { githubMain } from "./MainLog.vibe"
@@ -33,6 +34,8 @@ export interface BudgetShape {
 export interface HistoryShape {
   readonly page: (request: PageRequest) => unknown!!RuntimeContext
   readonly write: (name: Write, body: unknown) => HistoryObject.Answered!!RuntimeContext
+  /** A write as `principal`: only the API Worker's own objects call it (`HistoryObject.readerOver`). */
+  readonly act: (name: Write, body: unknown, principal: Principal) => HistoryObject.Answered!!RuntimeContext
 }
 
 /** One conversation's sequencer and current reply, named by the conversation's id. */
@@ -81,6 +84,8 @@ const HistoryLive = History.make(effect {
       page: (request: PageRequest) => Effect.map(sequencer.read(), (history) => pageOf(history, request) as unknown),
       write: (name: Write, body: unknown) =>
         HistoryObject.write(hostId, state.raw.storage, sequencer, main, HistoryObject.principalOf(undefined), name, body),
+      act: (name: Write, body: unknown, principal: Principal) =>
+        HistoryObject.write(hostId, state.raw.storage, sequencer, main, principal, name, body),
       fetch: effect {
         const request = try HttpServerRequest.HttpServerRequest
         return eventStream(sequencer.follow(afterOf(new URL(request.url, "http://history.invalid")) ?? 0))
@@ -92,6 +97,7 @@ const HistoryLive = History.make(effect {
 const ConversationLive = Conversation.make(effect {
   const state = try Cloudflare.DurableObjectState
   const budgets = (try Budget) as Namespace<BudgetShape>
+  const histories = (try History) as Namespace<HistoryShape>
   // Read when the Worker deploys and when an object starts, so the deployment's model and key are bound.
   const model = try Effect.orDie(chatModel())
   return effect {
@@ -122,7 +128,18 @@ const ConversationLive = Conversation.make(effect {
             try reached(runtime, "budget", object.spend(reply, tokens))
           },
         }
-        try Objects.alarm(hostId, state.raw.storage, sequencer, spend, model)
+        // The agent's history tools reach VibeLang's History object, as the API's routes do.
+        const history = HistoryObject.readerOver(
+          (request) => effect {
+            const object = try objectOf(histories, REPOSITORY, "history")
+            return try reached(runtime, "history", object.page(request))
+          },
+          (name, body, principal) => effect {
+            const object = try objectOf(histories, REPOSITORY, "history")
+            return try reached(runtime, "history", object.act(name, body, principal))
+          },
+        )
+        try Objects.alarm(hostId, state.raw.storage, sequencer, spend, model, history)
       },
     }
   }

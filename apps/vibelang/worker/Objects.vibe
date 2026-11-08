@@ -18,6 +18,8 @@ import { SecureRandom } from "effect/crypto"
 import { EndTour, Post, postRegistration, Posts, Reply, StartTour, Tour, tourRegistration, Tours } from "../src/core/flows.vibe"
 import * as Budget from "./Budget.vibe"
 import { ledgerOver, logOver, type KeyValue } from "./ObjectStorage.vibe"
+import type { HistoryReader } from "../src/history/tools.vibe"
+import { HistoryTools } from "./HistoryTools.vibe"
 import { ChatModel, registration, Replies, Spend } from "./Reply.vibe"
 import * as Sequencer from "./Sequencer.vibe"
 import { tourAgentRegistration } from "./Tour.vibe"
@@ -223,8 +225,10 @@ export effect function alarm(
   sequencer: Sequencer.Sequencer,
   spend: Spend.Shape,
   model: ChatModel.Shape,
+  history: HistoryReader,
 ) {
   const services = Layer.mergeAll(
+    Layer.succeed(HistoryTools, { history }),
     Layer.succeed(Replies, repliesOf(sequencer)),
     Layer.succeed(Tours, toursOf(sequencer)),
     Layer.succeed(Spend, spend),

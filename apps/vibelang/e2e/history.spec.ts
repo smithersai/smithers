@@ -42,6 +42,21 @@ test.describe("the history page", () => {
   })
 
 
+  test("the agent in the chat reads the history through its tool", async ({ page }, testInfo) => {
+    await page.goto("/?agent=mock")
+    await page.keyboard.press("ControlOrMeta+k")
+    await page.getByRole("textbox", { name: "Message" }).pressSequentially("What is in the mythical history?")
+    await page.keyboard.press("Enter")
+    const answer = page.locator(".sui-chat-message[data-role='assistant']")
+    await expect(answer).toHaveAttribute("data-done", "true", { timeout: 20_000 })
+    await expect(answer).toContainText(/VibeLang's mythical history, folded through [0-9a-f]{12}\./)
+    await expect(answer).toContainText(/The compiler \d+ · /)
+    await shot(page, "chat-history", testInfo.project.name)
+    await page.getByRole("link", { name: "History" }).click()
+    await expect(page).toHaveURL(/\/history$/)
+    await expect(page.getByRole("button", { name: /The compiler/ })).toBeVisible({ timeout: 20_000 })
+  })
+
   test("lists VibeLang's epics, opens one and a commit with its notes and real commits", async ({ page }, testInfo) => {
     await open(page)
     await expect(page.getByText("Mock", { exact: true })).toBeVisible()

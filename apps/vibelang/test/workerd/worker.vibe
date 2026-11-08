@@ -10,6 +10,8 @@ import { Tour, toured, Tours, walk } from "../../src/core/flows.vibe"
 import { FetchHttpClient, HttpClient, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Sequencer as HistorySequencer } from "../../src/history/Sequencer.vibe"
 import { type PageRequest, pageOf } from "../../src/history/pages.vibe"
+import type { Principal } from "../../src/history/roles.vibe"
+import { note, show, type ShowInput } from "../../src/history/tools.vibe"
 import type { Write } from "../../src/history/wire.vibe"
 import * as HistoryObject from "../../worker/HistoryObject.vibe"
 import { githubMain } from "../../worker/MainLog.vibe"
@@ -89,6 +91,13 @@ export class Conversation {
       return json({ refusal })
     }
     if (url.pathname === "/read") return json(await Effect.runPromise(sequencer.read(args.after)))
+    // The agent's history tools as a reply's cell calls them, from this conversation's object.
+    if (url.pathname === "/history-tool") {
+      const input = args as unknown as { readonly tool: string; readonly show: ShowInput; readonly id: string; readonly text: string }
+      const history = historyOf(this.env)
+      if (input.tool === "show") return json(await Effect.runPromise(show(history, input.show)))
+      return json(await Effect.runPromise(note(history, input.id, "tried", input.text)))
+    }
     if (url.pathname === "/tour") return json({ refusal: await Effect.runPromise(Objects.tour(this.state.id.toString(), this.state.storage, sequencer)) })
     if (url.pathname === "/end-tour") return json({ refusal: await Effect.runPromise(Objects.endTour(this.state.id.toString(), this.state.storage, sequencer)) })
     // The engine's runs in this object's SQLite, so the suite sees every post and reply ran as a flow (0011).
@@ -110,8 +119,16 @@ export class Conversation {
       spend: (day, reply, tokens) => reach("budget", () => call(env.BUDGET, day, "spend", { reply, tokens }).then(() => undefined)),
     }
     const model = await Effect.runPromise(Effect.orDie(configured(env, chatModel())))
-    await Effect.runPromise(Objects.alarm(this.state.id.toString(), this.state.storage, sequencer, spend, model))
+    await Effect.runPromise(Objects.alarm(this.state.id.toString(), this.state.storage, sequencer, spend, model, historyOf(env)))
   }
+}
+
+/** VibeLang's History object as a conversation's agent reaches it, as worker/Api.vibe's objects do. */
+function historyOf(env: Env) {
+  return HistoryObject.readerOver(
+    (request) => reach("history", () => call(env.HISTORY, "vibelang", "page", request)),
+    (name, body, principal) => reach("history", () => call(env.HISTORY, "vibelang", "act", { name, body, principal }) as Promise<HistoryObject.Answered>),
+  )
 }
 
 /** The product's shared controller in the real SQLite engine, with a faulty wait service holding its park boundary. */
@@ -183,9 +200,11 @@ export class History {
     if (url.pathname === "/runs") {
       return json(this.state.storage.sql.exec("SELECT run_id, status FROM flows_runs ORDER BY created_at_ms, run_id").toArray())
     }
-    const args = await request.json() as { readonly name: Write; readonly body: unknown }
+    const args = await request.json() as { readonly name: Write; readonly body: unknown; readonly principal?: Principal }
+    // `act` is the objects' own write as a principal; `write` is the API's, whoever asks a viewer until sign-in.
+    const principal = url.pathname === "/act" ? args.principal! : HistoryObject.principalOf(request)
     return json(await Effect.runPromise(HistoryObject.write(
-      this.state.id.toString(), this.state.storage, sequencer, this.main, HistoryObject.principalOf(request), args.name, args.body,
+      this.state.id.toString(), this.state.storage, sequencer, this.main, principal, args.name, args.body,
     )))
   }
 }
@@ -201,6 +220,9 @@ export default {
       if (runs[1] === "history") return json(await call(env.HISTORY, "vibelang", "runs", {}))
       return json(await call(env.CONVERSATION, decodeURIComponent(runs[1]!), "runs", {}))
     }
+    // The suite's way to call the agent's history tools from a conversation's object: /history-tool/<conversation>.
+    const tool = new URL(request.url).pathname.match(/^\/history-tool\/(.+)$/)
+    if (tool !== null) return json(await call(env.CONVERSATION, decodeURIComponent(tool[1]!), "history-tool", await request.json()))
     const conversations: Conversations = {
       post: (conversation, body) =>
         reach("conversation", async () => ((await call(env.CONVERSATION, conversation, "post", body)) as { refusal: string | null }).refusal),
