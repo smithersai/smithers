@@ -376,6 +376,22 @@ After: lines 43.15% (1778/4120), branches 46.41% (2293/4940), functions 56.38% (
 | `worker/index.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 | `worker/replyReasons.vibe` | 0% → 0% | 0% → 0% | 0% → 0% | 0% → 0% |
 
+
+The Accounts Durable Object is driven in Node over a real loopback server and an in-memory object storage
+(`test/support/objectStorage.ts`: key-value, alarm, and a real `node:sqlite` database behind the Durable Object
+storage contract, with savepoint-nested transactions). Its tests run the real OAuth dance against an injected
+GitHub auth service, every grant policy outcome, body size and read-deadline bounds, cross-origin and
+absolute-URL refusals (a host presents an absolute URL through the workerd host's own `.modify({ url })`
+construction), sign-out of a live session, expired/corrupt/tampered sessions, participation idempotence, and the
+unconfigured host. Accounts.vibe measures 221/224 statements, 140/140 branches, 38/41 functions there. Three
+interface-required filler functions stay uncovered: the account flow's pure plan body (the engine re-drives a
+body only on resume, and these one-action mutations always complete) and the two no-op dispatch arrows the
+accounts ledger can never reach (it records no posts or tours).
+
+Dead code removed: `Option.getOrElse(initial, () => "")` after the option was already checked (now `initial.value`),
+and the `grantText ?? ""` fallback moved to the one call site that can pass undefined (non-write paths), so both
+outcomes are real.
+
 <!-- measurements:end -->
 
 Browser boundary cases additionally cover the default answer, rejected/unavailable tour starts, retry after an

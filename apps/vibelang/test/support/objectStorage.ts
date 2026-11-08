@@ -1,0 +1,112 @@
+// Stays .ts: node:sqlite is a Node host API. This in-memory Durable Object storage is the unit tests' host
+// adapter (the role ctx.storage plays in workerd), not product code.
+import { DatabaseSync } from "node:sqlite"
+
+/** One executed statement's rows, as the Durable Object SQL cursor exposes them. */
+export class SqlCursor {
+  constructor(
+    readonly columnNames: ReadonlyArray<string>,
+    private readonly rows: ReadonlyArray<ReadonlyArray<unknown>>,
+  ) {}
+  *raw(): IterableIterator<ReadonlyArray<unknown>> {
+    yield* this.rows
+  }
+  toArray(): Array<Record<string, unknown>> {
+    return this.rows.map((row) => Object.fromEntries(this.columnNames.map((name, index) => [name, row[index]])))
+  }
+  get rowsRead(): number {
+    return this.rows.length
+  }
+}
+
+const binding = (value: unknown): null | number | bigint | string | Uint8Array =>
+  value === undefined || value === null ? null
+  : typeof value === "boolean" ? (value ? 1 : 0)
+  : typeof value === "number" || typeof value === "bigint" || typeof value === "string" ? value
+  : value instanceof Uint8Array ? value
+  : value instanceof ArrayBuffer ? new Uint8Array(value)
+  : JSON.stringify(value)
+
+export interface ObjectStorage {
+  readonly kv: Map<string, unknown>
+  alarmAt: number | undefined
+  get(key: string): Promise<unknown>
+  put(key: string, value: unknown): Promise<void>
+  put(entries: Record<string, unknown>): Promise<void>
+  delete(key: string): Promise<boolean>
+  list(options: { readonly prefix: string; readonly start?: string }): Promise<Map<string, unknown>>
+  setAlarm(scheduledTime: number): Promise<void>
+  deleteAlarm(): Promise<void>
+  readonly sql: { exec(query: string, ...bindings: ReadonlyArray<unknown>): SqlCursor }
+  transaction<T>(
+    closure: (txn: { readonly sql: ObjectStorage["sql"]; rollback(): void }) => Promise<T> | T
+  ): Promise<T>
+}
+
+/** ctx.storage for one object, in memory: key-value, alarm, and a real SQLite database. */
+export function objectStorage(): ObjectStorage {
+  const db = new DatabaseSync(":memory:")
+  const kv = new Map<string, unknown>()
+  let depth = 0
+  const storage: ObjectStorage = {
+    kv,
+    alarmAt: undefined,
+    get: async (key) => kv.get(key),
+    put: async (keyOrEntries: string | Record<string, unknown>, value?: unknown) => {
+      if (typeof keyOrEntries === "string") kv.set(keyOrEntries, value)
+      else for (const [key, entry] of Object.entries(keyOrEntries)) kv.set(key, entry)
+    },
+    delete: async (key) => kv.delete(key),
+    list: async ({ prefix, start }) => {
+      const rows = new Map<string, unknown>()
+      for (const key of [...kv.keys()].sort()) {
+        if (key.startsWith(prefix) && (start === undefined || key >= start)) rows.set(key, kv.get(key))
+      }
+      return rows
+    },
+    setAlarm: async (scheduledTime) => {
+      storage.alarmAt = scheduledTime
+    },
+    deleteAlarm: async () => {
+      storage.alarmAt = undefined
+    },
+    sql: {
+      exec(query, ...bindings) {
+        const statement = db.prepare(query)
+        const columnNames = statement.columns().map((column) => column.name ?? "")
+        const rows = (statement.all(...bindings.map(binding)) as Array<Record<string, unknown>>)
+          .map((row) => columnNames.map((name) => row[name]))
+        return new SqlCursor(columnNames, rows)
+      },
+    },
+    async transaction(closure) {
+      const level = ++depth
+      const savepoint = `vibelang_sp_${level}`
+      db.exec(level === 1 ? "BEGIN" : `SAVEPOINT ${savepoint}`)
+      let aborted = false
+      try {
+        const result = await closure({ sql: storage.sql, rollback: () => { aborted = true } })
+        if (aborted) {
+          db.exec(level === 1 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}`)
+          if (level !== 1) db.exec(`RELEASE ${savepoint}`)
+          throw new Error("transaction rolled back")
+        }
+        db.exec(level === 1 ? "COMMIT" : `RELEASE ${savepoint}`)
+        return result
+      } catch (error) {
+        if (!aborted) {
+          try {
+            db.exec(level === 1 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}`)
+            if (level !== 1) db.exec(`RELEASE ${savepoint}`)
+          } catch {
+            // The database already rejected the transaction.
+          }
+        }
+        throw error
+      } finally {
+        depth--
+      }
+    },
+  }
+  return storage
+}

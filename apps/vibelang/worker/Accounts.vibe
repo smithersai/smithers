@@ -50,7 +50,7 @@ effect function readSetup() {
   if (validated === undefined) return undefined
   const github = try Layer.build(GitHub.Auth.layer({ clientId: id.value, clientSecret: secret.value }))
   const setup: Setup = {
-    origin: origin.value, initialMaintainer: Option.getOrElse(initial, () => ""),
+    origin: origin.value, initialMaintainer: initial.value,
     signingSecret: signing.value, encryptionKey: encryption.value,
     github: Context.get(github, GitHub.Auth.GitHubAuth),
   }
@@ -137,7 +137,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     return result as A
   }
 
-  effect function handle(grantText: string | undefined) {
+  effect function handle(grantText: string) {
     const request = try HttpServerRequest.HttpServerRequest
     const url = new URL(request.url, setup.origin)
     if (url.origin !== setup.origin) return json({ error: "origin" }, 403)
@@ -184,7 +184,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
     }
     if (path === "/api/roles" && request.method === "POST") return try mutation("grant", effect {
       const actor = try current(request.cookies[SESSION])
-      const body = decodeGrant(grantText ?? "") catch () => undefined
+      const body = decodeGrant(grantText) catch () => undefined
       if (body === undefined) return json({ error: "body" }, 400)
       if (actor.id !== body.id) {
         const permitted = policy.authorize(actor.id, "roles").pipe(Effect.as(true)) catch () => false
@@ -230,7 +230,7 @@ export effect function make(hostId: string, storage: Storage, setup: Setup) {
         if (Option.isNone(read)) return json({ error: "body timeout" }, 408)
         body = read.value
       }
-      return try Semaphore.withPermits(lock, 1)(handle(body)).pipe(Effect.catchCause(() => effect {
+      return try Semaphore.withPermits(lock, 1)(handle(body ?? "")).pipe(Effect.catchCause(() => effect {
         try Metric.update(Metric.withAttributes(Metric.counter("vibelang_account_steps", { incremental: true }), { step: "request", outcome: "failed" }), 1)
         try Effect.logWarning("vibelang.account").pipe(Effect.annotateLogs({ outcome: "failed" }))
         return url.pathname === CALLBACK || url.pathname === "/api/auth/sign-in"

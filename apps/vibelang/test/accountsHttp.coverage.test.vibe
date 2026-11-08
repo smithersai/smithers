@@ -1,0 +1,494 @@
+// @vitest-environment node
+// The Accounts Durable Object over a real loopback server and in-memory object storage: sign-in, callback,
+// sessions, grants, events and recovery, with an injected GitHub auth service. No request is intercepted.
+import { describe, expect, it } from "@effect/vitest"
+import * as NodeHttpServer from "@effect/platform-node/NodeHttpServer"
+import { FetchHttpClient, HttpClient, HttpClientRequest, HttpClientResponse, HttpServer, HttpServerRequest, HttpServerResponse } from "effect/http"
+import { GitHub } from "@smthrs/integrations"
+import * as Accounts from "../worker/Accounts.vibe"
+import type { Storage } from "../worker/Objects.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+const ORIGIN = "https://factory.example"
+
+interface Person { readonly id: number; readonly login: string }
+
+/** A GitHub auth service with canned people; each step named in `failures` refuses. */
+function github(people: ReadonlyArray<Person>, failures: ReadonlyArray<string> = []): GitHub.Auth.GitHubAuth["Service"] {
+  return {
+    authorizeUrl: ({ state, codeChallenge, redirectUri }) =>
+      `https://github.test/login?state=${state}&code_challenge=${codeChallenge}&redirect_uri=${encodeURIComponent(redirectUri)}`,
+    exchange: ({ code }) => failures.includes("exchange")
+      ? fail(new GitHub.Auth.GitHubRefused({ step: "exchange", reason: "unavailable" }))
+      : succeed({ accessToken: Redacted.make(`token-${Redacted.value(code)}`), expiresAt: null, refreshToken: null }),
+    refresh: () => fail(new GitHub.Auth.GitHubRefused({ step: "refresh", reason: "rejected" })),
+    user: (accessToken) => {
+      if (failures.includes("user")) return fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "unavailable" }))
+      const id = Number(Redacted.value(accessToken).slice("token-".length))
+      const person = people.find((known) => known.id === id)
+      return person === undefined
+        ? fail(new GitHub.Auth.GitHubRefused({ step: "user", reason: "rejected" }))
+        : succeed({ id: person.id, login: person.login })
+    },
+    permission: () => succeed("read"),
+    revoke: () => Effect.void,
+  }
+}
+
+function setupWith(githubService: GitHub.Auth.GitHubAuth["Service"], initialMaintainer = "1"): Accounts.Setup {
+  return {
+    origin: ORIGIN,
+    initialMaintainer,
+    signingSecret: Redacted.make("fixture-only-signing-secret-32-chars"),
+    encryptionKey: Redacted.make("AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA="),
+    github: githubService,
+  }
+}
+
+function originOf(server: HttpServer.HttpServer["Service"]): string {
+  const address = server.address
+  return address._tag === "UnixPathAddress" ? "http://localhost" : `http://127.0.0.1:${address.port}`
+}
+
+/** The object served on a real loopback socket, with the test's principal route beside the product handler. */
+effect function serve(setup: Accounts.Setup) {
+  const storage = try Effect.try(() => objectStorage())
+  const accounts = try Accounts.make("accounts-test", storage as unknown as Storage, setup)
+  const server = try HttpServer.HttpServer
+  try HttpServer.serveEffect(effect {
+    const request = try HttpServerRequest.HttpServerRequest
+    const path = new URL(request.url, ORIGIN).pathname
+    if (path === "/__principal") {
+      const principal = try Accounts.sandboxPrincipal(accounts.current, accounts.allowed)
+      return HttpServerResponse.jsonUnsafe(principal)
+    }
+    return try accounts.fetch
+  })
+  return { accounts, origin: originOf(server), storage }
+}
+
+function get(origin: string, path: string, cookie = "") {
+  return HttpClientRequest.get(origin + path).pipe(
+    HttpClientRequest.setHeader("origin", ORIGIN),
+    HttpClientRequest.setHeader("cookie", cookie),
+  )
+}
+
+function post(origin: string, path: string, body: unknown, cookie = "") {
+  return HttpClientRequest.post(origin + path).pipe(
+    HttpClientRequest.setHeader("origin", ORIGIN),
+    HttpClientRequest.setHeader("cookie", cookie),
+    HttpClientRequest.bodyJsonUnsafe(body),
+  )
+}
+
+function cookieOf(response: HttpClientResponse.HttpClientResponse, name: string): string {
+  const cookie = response.cookies.cookies[name]
+  return cookie === undefined ? "" : `${name}=${cookie.value}`
+}
+
+/** The real redirect dance: sign-in, then the callback with the state and code GitHub would carry. */
+effect function signIn(http: HttpClient.HttpClient, origin: string, code: string) {
+  const start = try http.execute(get(origin, "/api/auth/sign-in"))
+  const location = start.headers["location"] ?? ""
+  const state = new URL(location).searchParams.get("state") ?? ""
+  const callback = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=${code}`, cookieOf(start, "__Host-vibelang-sign-in")))
+  return { cookie: cookieOf(callback, Accounts.SESSION), start, callback, state }
+}
+
+effect function untilSse(seen: Ref.Ref<string>) {
+  let attempts = 0
+  while (attempts < 400) {
+    const text = try Ref.get(seen)
+    if (text.includes("\n\n")) return text
+    attempts++
+    try Effect.sleep("25 millis")
+  }
+  return try Ref.get(seen)
+}
+
+describe("sign-in over the object's real HTTP boundary", () => {
+  it.live("signs a person in through the real callback, serves their session, and signs them out durably", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, storage } = try serve(setupWith(github([{ id: 7, login: "ada" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const anonymous = try (try http.execute(get(origin, "/api/auth/session"))).json
+        const { cookie, start, callback, state } = try signIn(http, origin, "7")
+        const location = start.headers["location"] ?? ""
+        const challenge = new URL(location).searchParams.get("code_challenge") ?? ""
+        const signedIn = try (try http.execute(get(origin, "/api/auth/session", cookie))).json
+        const tampered = try (try http.execute(get(origin, "/api/auth/session", cookie + "0"))).json
+        try Effect.try(() => {
+          expect(anonymous).toMatchObject({ id: "", login: "", role: "viewer", available: true })
+          expect(start.status).toBe(302)
+          expect(location.startsWith("https://github.test/login?")).toBe(true)
+          expect(state.length > 0).toBe(true)
+          expect(challenge.length > 0).toBe(true)
+          expect(start.headers["cache-control"]).toBe("no-store")
+          expect(cookieOf(start, "__Host-vibelang-sign-in").length > 0).toBe(true)
+          expect(callback.status).toBe(302)
+          expect(callback.headers["location"]).toBe(ORIGIN + "/")
+          expect(cookie.length > 0).toBe(true)
+          expect(signedIn).toMatchObject({ id: "7", login: "ada", role: "new", available: true })
+          expect(tampered).toMatchObject({ id: "", role: "viewer" })
+        })
+        const stored = [...storage.kv.keys()].find((key) => key.startsWith("session/"))!
+        try promise(() => storage.put(stored, { id: "7", login: "ada", expires: 1 }))
+        const expired = try (try http.execute(get(origin, "/api/auth/session", cookie))).json
+        try promise(() => storage.delete(stored))
+        const missing = try (try http.execute(get(origin, "/api/auth/session", cookie))).json
+        const expires = (try Clock.currentTimeMillis) + 2592000000
+        try promise(() => storage.put(stored, { id: "7", login: "ada", expires }))
+        const ended = try http.execute(post(origin, "/api/auth/sign-out", {}, cookie))
+        const after = try (try http.execute(get(origin, "/api/auth/session", cookie))).json
+        const repeated = try http.execute(post(origin, "/api/auth/sign-out", {}, cookie))
+        try Effect.try(() => {
+          expect(expired).toMatchObject({ id: "", role: "viewer" })
+          expect(missing).toMatchObject({ id: "", role: "viewer" })
+          expect(ended.status).toBe(204)
+          expect(repeated.status).toBe(204)
+          expect(after).toMatchObject({ id: "", role: "viewer" })
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("rejects callbacks with a wrong or stale state, a long code, and an unknown person", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, storage } = try serve(setupWith(github([{ id: 7, login: "ada" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const start = try http.execute(get(origin, "/api/auth/sign-in"))
+        const location = start.headers["location"] ?? ""
+        const state = new URL(location).searchParams.get("state") ?? ""
+        const stateCookie = cookieOf(start, "__Host-vibelang-sign-in")
+        const wrongState = try http.execute(get(origin, `${Accounts.CALLBACK}?state=wrong&code=7`, stateCookie))
+        const noCookie = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=7`))
+        const noCode = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}`, stateCookie))
+        const tooLong = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=${"x".repeat(4097)}`, stateCookie))
+        const pending = try Effect.try(() => storage.kv.get(`sign-in/${state}`))
+        try promise(() => storage.put(`sign-in/${state}`, { ...(pending as Record<string, unknown>), expires: 1 }))
+        const stale = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=7`, stateCookie))
+        try promise(() => storage.put(`sign-in/${state}`, "corrupt"))
+        const corrupt = try http.execute(get(origin, `${Accounts.CALLBACK}?state=${state}&code=7`, stateCookie))
+        const unknown = try signIn(http, origin, "999")
+        try Effect.try(() => {
+          expect([wrongState.status, noCookie.status, noCode.status, tooLong.status, stale.status, corrupt.status]).toEqual([400, 400, 400, 400, 400, 400])
+          expect(unknown.callback.status).toBe(302)
+          expect(unknown.callback.headers["location"]).toBe(`${ORIGIN}/?sign-in=failed`)
+          expect(unknown.cookie).toBe("")
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("turns a GitHub exchange refusal into the sign-in redirect", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      try serve(setupWith(github([{ id: 0, login: "zero" }], ["exchange"])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const failed = try signIn(http, originOf(try HttpServer.HttpServer), "7")
+        try Effect.try(() => {
+          expect(failed.callback.status).toBe(302)
+          expect(failed.callback.headers["location"]).toBe(`${ORIGIN}/?sign-in=failed`)
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("turns a GitHub user refusal into the sign-in redirect", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      try serve(setupWith(github([{ id: 7, login: "ada" }], ["user"])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const failed = try signIn(http, originOf(try HttpServer.HttpServer), "7")
+        try Effect.try(() => {
+          expect(failed.callback.status).toBe(302)
+          expect(failed.callback.headers["location"]).toBe(`${ORIGIN}/?sign-in=failed`)
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("refuses a callback whose person has no positive integer id", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      try serve(setupWith(github([{ id: 0, login: "zero" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const zero = try signIn(http, originOf(try HttpServer.HttpServer), "0")
+        try Effect.try(() => {
+          expect(zero.callback.status).toBe(400)
+          expect(zero.cookie).toBe("")
+        })
+      }
+    }
+  }), 30_000)
+})
+
+describe("grants over the object's real HTTP boundary", () => {
+  it.live("checks every grant against current roles, lists members, and streams grant events", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, accounts } = try serve(setupWith(github([{ id: 1, login: "will" }, { id: 4, login: "rira" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const maintainer = (try signIn(http, origin, "1")).cookie
+        const person = (try signIn(http, origin, "4")).cookie
+        const anonymous = try http.execute(post(origin, "/api/roles", { id: "4", role: "contributor" }))
+        const selfDenied = try http.execute(post(origin, "/api/roles", { id: "4", role: "maintainer" }, person))
+        const selfCurrent = try http.execute(post(origin, "/api/roles", { id: "4", role: "new" }, person))
+        const promoted = try http.execute(post(origin, "/api/roles", { id: "4", role: "contributor" }, maintainer))
+        const duplicate = try http.execute(post(origin, "/api/roles", { id: "4", role: "contributor" }, maintainer))
+        const peerDenied = try http.execute(post(origin, "/api/roles", { id: "5", role: "contributor" }, person))
+        const demoted = try http.execute(post(origin, "/api/roles", { id: "4", role: "community" }, maintainer))
+        const lastMaintainer = try http.execute(post(origin, "/api/roles", { id: "1", role: "new" }, maintainer))
+        const badJson = try http.execute(HttpClientRequest.post(origin + "/api/roles").pipe(
+          HttpClientRequest.setHeader("origin", ORIGIN), HttpClientRequest.setHeader("cookie", maintainer), HttpClientRequest.bodyText("{"),
+        ))
+        const badId = try http.execute(post(origin, "/api/roles", { id: "0", role: "new" }, maintainer))
+        const badRole = try http.execute(post(origin, "/api/roles", { id: "4", role: "viewer" }, maintainer))
+        const crossOrigin = try http.execute(HttpClientRequest.post(origin + "/api/roles").pipe(
+          HttpClientRequest.setHeader("origin", "https://other.example"), HttpClientRequest.setHeader("cookie", maintainer),
+          HttpClientRequest.bodyJsonUnsafe({ id: "4", role: "new" }),
+        ))
+        const crossOriginSignOut = try http.execute(HttpClientRequest.post(origin + "/api/auth/sign-out").pipe(
+          HttpClientRequest.setHeader("origin", "https://other.example"),
+          HttpClientRequest.setHeader("cookie", person),
+        ))
+        const notFound = try http.execute(get(origin, "/api/nope", maintainer))
+        const wrongMethod = try http.execute(post(origin, "/api/auth/session", {}, maintainer))
+        try Effect.try(() => {
+          expect(anonymous.status).toBe(403)
+          expect([selfDenied.status, peerDenied.status, lastMaintainer.status]).toEqual([403, 403, 403])
+          expect([selfCurrent.status, promoted.status, duplicate.status, demoted.status]).toEqual([200, 200, 200, 200])
+          expect([badJson.status, badId.status, badRole.status]).toEqual([400, 400, 400])
+          expect(crossOrigin.status).toBe(403)
+          expect(crossOriginSignOut.status).toBe(403)
+          expect([notFound.status, wrongMethod.status]).toEqual([404, 404])
+        })
+        const membersAnonymous = try http.execute(get(origin, "/api/roles"))
+        const membersNewcomer = try (try http.execute(get(origin, "/api/roles", person))).json
+        const members = try (try http.execute(get(origin, "/api/roles", maintainer))).json
+        const badAfter = try http.execute(get(origin, "/api/roles/events?after=abc", maintainer))
+        const eventsAnonymous = try http.execute(get(origin, "/api/roles/events?after=0"))
+        try Effect.try(() => {
+          expect(membersAnonymous.status).toBe(403)
+          expect(membersNewcomer).toContainEqual({ id: "1", login: "will", role: "maintainer" })
+          expect(members).toContainEqual({ id: "1", login: "will", role: "maintainer" })
+          expect(members).toContainEqual({ id: "4", login: "rira", role: "community" })
+          expect(badAfter.status).toBe(400)
+          expect(eventsAnonymous.status).toBe(403)
+        })
+        const events = try http.execute(get(origin, "/api/roles/events?after=0", maintainer))
+        const seen = try Ref.make("")
+        const reader = fork events.stream.pipe(Stream.decodeText(), Stream.runForEach((chunk) => Ref.update(seen, (text) => text + chunk)))
+        const text = try untilSse(seen)
+        try Fiber.interrupt(reader)
+        const session = try (try http.execute(get(origin, "/api/auth/session", person))).json
+        const directRole = try accounts.role("1")
+        try Effect.try(() => {
+          expect(events.status).toBe(200)
+          expect(events.headers["content-type"]).toContain("text/event-stream")
+          expect(text).toContain("\"RoleGranted\"")
+          expect(text).toContain("\"id\":\"1\"")
+          expect(session).toMatchObject({ id: "4", role: "community" })
+          expect(directRole).toBe("maintainer")
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("bounds grant bodies by declared length and by streamed bytes", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, accounts } = try serve(setupWith(github([{ id: 1, login: "will" }, { id: 4, login: "rira" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const maintainer = (try signIn(http, origin, "1")).cookie
+        const tooLong = try http.execute(HttpClientRequest.post(origin + "/api/roles").pipe(
+          HttpClientRequest.setHeader("origin", ORIGIN), HttpClientRequest.setHeader("cookie", maintainer),
+          HttpClientRequest.bodyText("x".repeat(3000)),
+        ))
+        const chunk = new TextEncoder().encode(JSON.stringify({ id: "8", role: "community" }))
+        const chunked = try http.execute(HttpClientRequest.post(origin + "/api/roles").pipe(
+          HttpClientRequest.setHeader("origin", ORIGIN), HttpClientRequest.setHeader("cookie", maintainer),
+          HttpClientRequest.bodyStream(Stream.succeed(chunk), { contentType: "application/json" }),
+        ))
+        const largeChunked = try http.execute(HttpClientRequest.post(origin + "/api/roles").pipe(
+          HttpClientRequest.setHeader("origin", ORIGIN), HttpClientRequest.setHeader("cookie", maintainer),
+          HttpClientRequest.bodyStream(Stream.succeed(new TextEncoder().encode("x".repeat(3000))), { contentType: "application/json" }),
+        ))
+        const granted = try accounts.role("8")
+        try Effect.try(() => {
+          expect(tooLong.status).toBe(413)
+          expect(chunked.status).toBe(200)
+          expect(largeChunked.status).toBe(413)
+          expect(granted).toBe("community")
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("answers unavailable when an injected storage failure reaches the handler", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, storage } = try serve(setupWith(github([{ id: 1, login: "will" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const maintainer = (try signIn(http, origin, "1")).cookie
+        const members = try http.execute(get(origin, "/api/roles", maintainer))
+        try Effect.try(() => expect(members.status).toBe(200))
+        try Effect.try(() => { storage.list = () => Promise.reject(new Error("injected storage failure")) })
+        const failed = try http.execute(get(origin, "/api/roles", maintainer))
+        const body = try failed.text
+        try Effect.try(() => {
+          expect(failed.status).toBe(503)
+          expect(body).toContain("account unavailable")
+        })
+      }
+    }
+  }), 30_000)
+})
+
+  it.live("answers a slow body at its read deadline", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, accounts } = try serve(setupWith(github([{ id: 1, login: "will" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const maintainer = (try signIn(http, origin, "1")).cookie
+        const pending = HttpServerRequest.fromClientRequest(HttpClientRequest.post(`${ORIGIN}/api/roles`).pipe(
+          HttpClientRequest.setHeader("origin", ORIGIN),
+          HttpClientRequest.setHeader("cookie", maintainer),
+          HttpClientRequest.bodyStream(Stream.concat(Stream.succeed(new TextEncoder().encode("{\"id\"")), Stream.never), { contentType: "application/json" }),
+        ))
+        const response = try accounts.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, pending))
+        try Effect.try(() => expect(response.status).toBe(408))
+      }
+    }
+  }), 30_000)
+
+  it.effect("refuses a request whose absolute URL names another origin, whatever its method", () => effect {
+    const accounts = try Accounts.make("absolute", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([])))
+    const foreignRead = HttpServerRequest.fromWeb(
+      try HttpClientRequest.toWeb(HttpClientRequest.get("http://other.example/api/auth/session")),
+    ).modify({ url: "http://other.example/api/auth/session" })
+    const foreignWrite = HttpServerRequest.fromWeb(
+      try HttpClientRequest.toWeb(HttpClientRequest.post(`${ORIGIN}/api/roles`).pipe(
+        HttpClientRequest.setHeader("origin", ORIGIN),
+        HttpClientRequest.bodyText("{}"),
+      )),
+    ).modify({ url: "http://other.example/api/roles" })
+    const read = try accounts.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, foreignRead))
+    const write = try accounts.fetch.pipe(Effect.provideService(HttpServerRequest.HttpServerRequest, foreignWrite))
+    try Effect.try(() => {
+      expect(read.status).toBe(403)
+      expect(write.status).toBe(403)
+    })
+  })
+
+describe("the principal seam and the disabled host", () => {
+  it.live("binds sandbox compute to signed owners and same-origin writes", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin } = try serve(setupWith(github([{ id: 1, login: "will" }, { id: 4, login: "rira" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const person = (try signIn(http, origin, "4")).cookie
+        const maintainer = (try signIn(http, origin, "1")).cookie
+        const anonymous = try (try http.execute(get(origin, "/__principal"))).json
+        const newcomer = try (try http.execute(get(origin, "/__principal", person))).json
+        const cross = try (try http.execute(HttpClientRequest.post(origin + "/__principal").pipe(
+          HttpClientRequest.setHeader("origin", "https://other.example"), HttpClientRequest.setHeader("cookie", person),
+          HttpClientRequest.bodyJsonUnsafe({}),
+        ))).json
+        try http.execute(post(origin, "/api/roles", { id: "4", role: "contributor" }, maintainer))
+        const sameOrigin = try (try http.execute(HttpClientRequest.post(origin + "/__principal").pipe(
+          HttpClientRequest.setHeader("origin", origin), HttpClientRequest.setHeader("cookie", person),
+          HttpClientRequest.bodyJsonUnsafe({}),
+        ))).json
+        const promoted = try (try http.execute(get(origin, "/__principal", person))).json
+        try Effect.try(() => {
+          expect(anonymous).toEqual({ owner: "", role: "viewer" })
+          expect(newcomer).toEqual({ owner: "4", role: "viewer" })
+          expect(cross).toEqual({ owner: "", role: "viewer" })
+          expect(sameOrigin).toEqual({ owner: "4", role: "contributor" })
+          expect(promoted).toEqual({ owner: "4", role: "contributor" })
+        })
+      }
+    }
+  }), 30_000)
+
+  it.live("answers unavailable on every auth path when sign-in is not configured", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      try HttpServer.serveEffect(Accounts.disabled())
+      const origin = originOf(try HttpServer.HttpServer)
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const session = try (try http.execute(get(origin, "/api/auth/session"))).json
+        const signInUnavailable = try http.execute(get(origin, "/api/auth/sign-in"))
+        const grant = try http.execute(post(origin, "/api/roles", { id: "4", role: "new" }))
+        try Effect.try(() => {
+          expect(session).toEqual({ id: "", login: "", role: "viewer", available: false })
+          expect(signInUnavailable.status).toBe(503)
+          expect(grant.status).toBe(503)
+        })
+      }
+    }
+  }), 30_000)
+})
+
+describe("direct identity and permission answers", () => {
+  it.effect("resolves the bootstrap maintainer, every action's least role, and records participation once", () => effect {
+    const accounts = try Accounts.make("direct", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([])))
+    const anonymous = try accounts.current(undefined)
+    const bootstrap = try accounts.role("1")
+    const newcomer = try accounts.role("9")
+    const checks = try Effect.forEach(
+      ["read", "ask", "tour", "people", "issue", "comment", "vip", "action", "sandbox", "triage", "merge", "settings", "roles"] as const,
+      (action) => Effect.zip(accounts.allowed("1", action), accounts.allowed("", action)).pipe(Effect.map((pair) => [action, ...pair] as const)),
+    )
+    try accounts.participation(undefined)
+    try Effect.try(() => {
+      expect(anonymous).toMatchObject({ id: "", login: "", role: "viewer" })
+      expect(bootstrap).toBe("maintainer")
+      expect(newcomer).toBe("new")
+      expect(checks).toEqual([
+        ["read", true, true], ["ask", true, true], ["tour", true, true],
+        ["people", true, false], ["issue", true, false], ["comment", true, false],
+        ["vip", true, false], ["action", true, false], ["sandbox", true, false],
+        ["triage", true, false], ["merge", true, false], ["settings", true, false], ["roles", true, false],
+      ])
+    })
+  })
+
+  it.effect("skips the bootstrap grant when the configured maintainer is not a numeric id", () => effect {
+    const accounts = try Accounts.make("no-bootstrap", (try Effect.try(() => objectStorage())) as unknown as Storage, setupWith(github([]), "0"))
+    const role = try accounts.role("1")
+    const allowed = try accounts.allowed("1", "roles")
+    try Effect.try(() => {
+      expect(role).toBe("new")
+      expect(allowed).toBe(false)
+    })
+  })
+
+  it.live("promotes a signed-in person to community once through participation", () => scoped(effect {
+    provide NodeHttpServer.layerTest {
+      const { origin, accounts } = try serve(setupWith(github([{ id: 7, login: "ada" }])))
+      provide FetchHttpClient.layer.pipe(Layer.provide(Layer.succeed(FetchHttpClient.RequestInit, { redirect: "manual" }))) {
+        const http = try HttpClient.HttpClient
+        const { cookie } = try signIn(http, origin, "7")
+        const value = cookie.slice(Accounts.SESSION.length + 1)
+        const before = try accounts.current(value)
+        try accounts.participation(value)
+        const promoted = try accounts.current(value)
+        try accounts.participation(value)
+        const again = try accounts.current(value)
+        try accounts.participation(value + "0")
+        const untouched = try accounts.current(value)
+        try Effect.try(() => {
+          expect(before.role).toBe("new")
+          expect(promoted.role).toBe("community")
+          expect(again.role).toBe("community")
+          expect(untouched.role).toBe("community")
+        })
+      }
+    }
+  }), 30_000)
+})

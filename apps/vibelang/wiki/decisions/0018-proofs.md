@@ -460,7 +460,7 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/issueFlows.vibe:45` | `authorizeIssue/callback@45` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/issueFlows.vibe:54` | `issueExecutionId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/issueFlows.vibe:60` | `issueRecoveryId` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/issueSchemas.vibe:25` | `vipDocument` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/issueSchemas.vibe:26` | `vipDocument` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:9` | `item` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:35` | `personOf` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:41` | `fixtureHost` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -473,8 +473,9 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `src/core/IssuesFactory.vibe:93` | `makeIssueFactory` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:98` | `makeIssueFactory/act` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/IssuesFactory.vibe:100` | `makeIssueFactory/act/callback@100` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:105` | `makeIssueFactory/act/callback@105` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
-| `src/core/IssuesFactory.vibe:112` | `makeIssueFactory/read` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:108` | `makeIssueFactory/act/callback@108` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:112` | `makeIssueFactory/act/callback@112` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
+| `src/core/IssuesFactory.vibe:120` | `makeIssueFactory/read` | pure logic | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/LiveAccounts.vibe:6` | `make` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `src/core/LiveAccounts.vibe:11` | `make/failed` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `src/core/LiveAccounts.vibe:12` | `make/get` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
@@ -1501,7 +1502,6 @@ tokenization, rendering and durable execution retain the boundaries stated above
 | `worker/Accounts.vibe:37` | `readSetup` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Accounts.vibe:47` | `readSetup/callback@47` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Accounts.vibe:49` | `readSetup/callback@49` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
-| `worker/Accounts.vibe:53` | `readSetup/callback@53` | wiring | Forwards values, constructs a schema/view/layer, or calls the owning API; no admission or state decision. |
 | `worker/Accounts.vibe:60` | `configured` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Accounts.vibe:61` | `configured/callback@61` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
 | `worker/Accounts.vibe:65` | `disabled` | effectful shell | Not yet proved: production logic must be extracted or its tool boundary reproduced; behavioral tests are not a proof. |
