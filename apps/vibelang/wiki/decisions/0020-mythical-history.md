@@ -147,6 +147,13 @@ vibelang-factory note m5704 --section tried "A cache; it went stale."
 4. **Exactly one:** real shas are unique and every `real[i].mythical` names an existing commit, whose id is unique.
 5. Non-vacuity (Sol): an admitted fold appends exactly one real commit and moves `main` to it.
 
+**Receipts (nyc-01, 2026-11-07).** `pnpm verify`: `src/history/mythical.vibe` **19 verified, 0 errors** (25.6 s;
+the whole app 5/5 files). `pnpm verify:broken myth-…`: **11/11** executable mutations of it rejected by Dafny in
+147 s, each failing a contract in its intended function (`verify/extended_mutations.py`: rank shift, id and epic
+guards, the real-commit prefix, duplicate and missing fold targets, `decide`'s numbering, its fold and approve guards,
+`hasSha`, `endOf`). `test/mythical.test.vibe`'s properties (400 runs of 32 to 82 intents) fail on five further
+mutations, each checked by hand. Two LemmaScript lowering defects found on the way are reproduced in `verify/bugs/`.
+
 The proof found two bugs before any test did: `apply` accepted a plan into the epic `""` and a fold into the commit
 `""`, because the "taken" lookups count `""` as taken. Both are fixed.
 

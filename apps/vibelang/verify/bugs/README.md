@@ -10,6 +10,8 @@ tests; no Dafny/Z3 defect was observed.
 | `module-constants.ts` | Module constant referenced only inside a discriminated switch is omitted (`unresolved identifier: LIMIT`) | Real semantic contracts reference `AGENT_NAME` and `MAX_TEXT`; both constants are retained and their values are verified |
 | `assert-call.ts` | An assertion forces a method after caller purity classification; generated pure caller illegally invokes it | Production `apply` already calls the indexed lookup method; negative fixtures retain that call when deliberately ignoring its boolean result |
 | `array-literal-map.ts` | `.map()` on a spread-array literal loses the receiver type (`Unsupported Dafny method call: .map() on unknown`) | Maps operate on typed record fields; append mutations spread the mapped result |
+| `empty-literal-union.ts` | A named string-literal union that includes `""` emits `return Found.;` for `return ""` (`invalid Suffix`) | `src/history/mythical.vibe` asks `isIn(commits, id, state)`, a boolean, instead of returning a state or `""` |
+| `inline-literal-union.ts` | An inline union with `""` as a return type emits `type State | ""` (`this symbol not expected in Dafny`) | The same boolean query |
 
 These minimal sources preserve the compiler error. Generated Dafny, exact diagnostics, exits and timings are kept
 under ignored `verify/.checks/run-*`; the lane report records the reproduction commands. The source is not patched
