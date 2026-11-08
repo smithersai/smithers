@@ -50,6 +50,9 @@ verifyDepsBeforeRun: false
 
 # Keep transitive prerelease adapters on the same tested Effect family.
 overrides:
+  # One Vitest 5.0.0 peer runtime: optional happy-dom must not create two copies
+  # between @effect/vitest and a package's CLI (which loses the current suite).
+  "vitest@5.0.0>happy-dom": "20.13.2"
   "@types/bun": "1.4.4"
   "effect": "4.1.1"
   "vibelang": "0.0.12"

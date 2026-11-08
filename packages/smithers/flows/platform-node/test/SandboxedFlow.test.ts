@@ -56,6 +56,7 @@ import * as SandboxedFlow from "../src/SandboxedFlow.ts"
 import { changed, patchedPaths, repository } from "./fixtures/repository.ts"
 import * as childEntry from "./fixtures/sandboxed-child.ts"
 import * as pureEntry from "./fixtures/sandboxed-pure.ts"
+import * as vibeEntry from "./fixtures/vibe-entry/flow.vibe"
 
 vi.mock("effect/Stream", { spy: true })
 
@@ -269,6 +270,16 @@ describe("SandboxedFlow.execute on a scratch machine", () => {
       }))
       expect(failure.code).toBe("capture_failed")
       expect(failure.message).toMatch(/^not_a_repository: the work could not be captured: /)
+    }), 60_000)
+
+  it.live("bundles an idiomatic VibeLang entry and runs its action in a real guest", () =>
+    Effect.gen(function*() {
+      const result = yield* SandboxedFlow.execute(vibeEntry.Answer, { value: "guest" }, {
+        provider: yield* provider,
+        session: "vibe-entry",
+        entry: new URL("./fixtures/vibe-entry/flow.vibe", import.meta.url)
+      })
+      expect(result.output).toBe("Vibe: guest")
     }), 60_000)
 
   it.live("runs an entry that exports no layer", () =>

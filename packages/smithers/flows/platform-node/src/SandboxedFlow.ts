@@ -430,10 +430,16 @@ interface Bundler {
     readonly target: string
     readonly write: false
     readonly logLevel: "silent"
+    readonly plugins: ReadonlyArray<unknown>
   }) => Promise<{ readonly outputFiles: ReadonlyArray<{ readonly contents: Uint8Array }> }>
 }
 
 const bundlerSpecifier = "esbuild"
+const vibeBundlerSpecifier = "vibelang-unplugin/esbuild"
+
+// Resolve project helpers through VibeLang's public compiler adapter, including
+// a TypeScript entry whose installed SDK source imports an idiomatic .vibe file.
+const loadVibeBundler = (): Promise<{ readonly default: () => unknown }> => import(vibeBundlerSpecifier)
 
 const loadBundler = (): Promise<Bundler> => import(bundlerSpecifier) as Promise<Bundler>
 
@@ -461,6 +467,7 @@ const bundle = (entry: URL | string): Effect.Effect<Uint8Array, SandboxedFlowErr
     try: async () => {
       const entryPath = typeof entry === "string" ? entry : fileURLToPath(entry)
       const bundler = await loadBundler()
+      const vibelang = await loadVibeBundler()
       const built = await bundler.build({
         stdin: {
           contents: main(entryPath),
@@ -473,7 +480,8 @@ const bundle = (entry: URL | string): Effect.Effect<Uint8Array, SandboxedFlowErr
         format: "esm",
         target: "es2022",
         write: false,
-        logLevel: "silent"
+        logLevel: "silent",
+        plugins: [vibelang.default()]
       })
       return built.outputFiles[0]!.contents
     },

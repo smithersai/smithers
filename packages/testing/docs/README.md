@@ -128,3 +128,11 @@ tree: [`@smthrs/cli`](/api/cli) is the `smithers` command line, and
 - [Script a model](./guides/script-a-model.md): the turns a recording cannot
   make, such as a question on cue, a build broken once, or a held turn.
 - [API reference](./api.md): every module and every export.
+
+## Workspace runner identity
+
+Vitest and `@effect/vitest` must resolve the same physical runner. The workspace
+pins Vitest 5.0.0's optional `happy-dom` to the monorepo's 20.13.2: two optional
+peer contexts otherwise create separate runner copies even at Vitest 5.0.0,
+and Effect suites fail to register with “failed to find the current suite”.
+Apps on another runner version keep their own peer context.

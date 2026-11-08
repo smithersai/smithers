@@ -1,0 +1,46 @@
+import { expect, it } from "@effect/vitest"
+import { TestNodeRuntime } from "../src/index.ts"
+
+it.live("persists structured values, sorted prefixes, SQL, alarms and deletions", () => effect {
+  const store = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  try promise(() => store.put("event/2", { value: new Map([["a", 1]]), bytes: new Uint8Array([1, 2]) }))
+  try promise(() => store.put({ "event/1": [undefined, 1n], other: true }))
+  const missing = try promise(() => store.get("missing"))
+  const rows = try promise(() => store.list({ prefix: "event/" }))
+  try promise(() => store.setAlarm(123))
+  const alarm = try promise(() => store.alarm())
+  try promise(() => store.deleteAlarm())
+  const cleared = try promise(() => store.alarm())
+  const deleted = try promise(() => store.delete("other"))
+  const again = try promise(() => store.delete("other"))
+  const sql = try Effect.try(() => {
+    store.sql.exec("CREATE TABLE sample (n INTEGER)")
+    store.sql.exec("INSERT INTO sample VALUES (?)", 7)
+    return store.sql.exec("SELECT n FROM sample")
+  })
+  try Effect.try(() => {
+    expect(missing).toBeUndefined()
+    expect([...rows.keys()]).toEqual(["event/1", "event/2"])
+    expect(rows.get("event/1")).toEqual([undefined, 1n])
+    expect(rows.get("event/2")).toEqual({ value: new Map([["a", 1]]), bytes: new Uint8Array([1, 2]) })
+    expect([alarm, cleared, deleted, again]).toEqual([123, undefined, true, false])
+    expect([...sql.raw()]).toEqual([[7]])
+    expect(sql.toArray()).toEqual([{ n: 7 }])
+    expect(() => store.sql.exec("BEGIN")).toThrow("storage.transaction")
+  })
+})
+
+it.live("commits, rolls back, and nests transactions in the actual SQLite database", () => effect {
+  const store = try acquireRelease(Effect.try(() => TestNodeRuntime.sqliteObjectStorage()), (store) => Effect.sync(() => store.close()))
+  try promise(() => store.transaction(async () => {
+    await store.put("committed", 1)
+    await store.transaction(async (txn) => { await store.put("nested-rollback", 1); txn.rollback() })
+    await store.transaction(async () => { await store.put("nested-commit", 1) })
+    const failed = store.transaction(async () => { await store.put("nested-failure", 1); return Promise.reject(new Error("fault")) })
+    await failed.catch(() => undefined)
+  }))
+  try promise(() => store.transaction(async (txn) => { await store.put("rollback", 1); txn.rollback() }))
+  try promise(() => store.transaction(async () => { await store.put("failure", 1); return Promise.reject(new Error("fault")) }).catch(() => undefined))
+  const values = try promise(() => store.list({ prefix: "" }))
+  try Effect.try(() => expect([...values.entries()]).toEqual([["committed", 1], ["nested-commit", 1]]))
+})

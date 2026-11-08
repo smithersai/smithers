@@ -112,7 +112,8 @@ describe("declared directory listing (#4219)", () => {
         const wrapped = ProcessSandbox.wrap(plan, [process.execPath, "-e", script], {}, facts)
         const child = spawnSync(wrapped.argv[0]!, wrapped.argv.slice(1), {
           cwd: root,
-          env: { ...process.env, ...wrapped.env },
+          // This guest runs plain JavaScript; its declared reads exclude the host source loader.
+          env: { ...process.env, NODE_OPTIONS: "", ...wrapped.env },
           encoding: "utf8"
         })
         expect(child.error).toBeUndefined()

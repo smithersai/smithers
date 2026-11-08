@@ -136,3 +136,5 @@ enforceable.
 The host exports `implementationIds` for its five service slots. Its rooted
 factories reject invalid roots before constructing a layer, using the host's
 own error with code `invalid_repository_root`.
+
+`TestNodeRuntime.sqliteObjectStorage()` supplies real SQLite SQL, structured key/value storage, nested transactions and persisted alarm deadlines when testing shared object functions on Node. Close it from the test's Effect scope. A workerd suite separately exercises the native object host; this adapter does not own an alarm scheduler.
