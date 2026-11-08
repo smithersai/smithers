@@ -19,7 +19,7 @@ const home: Model = {
   conversation: HOME_CONVERSATION,
   client: newClient,
   mode: "mock",
-  stream: "closed",
+  stream: "open",
   epoch: 0,
   from: 0,
   following: true,

@@ -41,8 +41,11 @@ export schema Model {
   readonly conversation: string
   readonly client: Client
   readonly mode: "mock" | "live" | "pending"
-  /** The event stream: `closed` before the first post, `open` while it follows, `failed` after it broke. */
-  readonly stream: "closed" | "open" | "failed"
+  /**
+   * The event stream: `open` while it follows, `failed` after it broke. The page follows its conversation from the
+   * start, so a person sees everyone's posts, the agent's through the CLI or MCP server included, before posting (0007).
+   */
+  readonly stream: "open" | "failed"
   /** Bumped to start the event stream again from `from`. */
   readonly epoch: number
   readonly from: number
@@ -134,7 +137,7 @@ export function init(flags: Flags): Update.Return<Model, Message, Factory> {
       conversation: HOME_CONVERSATION,
       client: Machine.newClient,
       mode: flags.mode,
-      stream: "closed",
+      stream: "open",
       epoch: 0,
       from: 0,
       following: true,
@@ -306,8 +309,6 @@ function submit(model: Model): Update.Return<Model, Message, Factory> {
       client: Machine.post(model.client, clientId, text),
       // Sending shows the new post and its answer, wherever the reader had scrolled.
       following: true,
-      stream: model.stream === "closed" ? "open" : model.stream,
-      connection: model.stream === "closed" ? "Connecting" : model.connection,
     },
     commands: [PostMessage({ conversation: model.conversation, clientId, name: model.name, text }), ClosePalette({ dock: true })],
   }

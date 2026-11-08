@@ -10,6 +10,17 @@ export function send(text: string): void {
 export function clickAsk(): void {
   document.querySelector<HTMLButtonElement>(".vl-ask")!.click()
 }
+export function clickMinimize(): void {
+  document.querySelector<HTMLButtonElement>(".vl-minimize")!.click()
+}
+/** Each rendered message's label, then a post's text or whether a reply is done, in order. */
+export function transcript(): Array<[string, string]> {
+  return Array.from(document.querySelectorAll<HTMLElement>(".sui-chat-message[data-role='user'], .sui-chat-message[data-role='assistant']"))
+    .map(message => [
+      message.querySelector(".sui-chat-message-label")?.textContent ?? "",
+      message.dataset.role === "user" ? message.querySelector(".sui-chat-bubble")?.textContent ?? "" : `done=${message.dataset.done}`,
+    ])
+}
 export function reconnect(): void {
   const buttons = Array.from(document.querySelectorAll<HTMLButtonElement>("button"))
   buttons.find(button => button.textContent === "Reconnect")!.click()

@@ -16,7 +16,7 @@ import { view as chatView } from "../src/web/view.vibe"
 
 const chatHome: ChatModel = {
   surface: "splash", palette: false, draft: "", session: "s1", name: "Ada", reducedMotion: false, sent: 0,
-  conversation: HOME_CONVERSATION, client: newClient, mode: "mock", stream: "closed", epoch: 0, from: 0, following: true,
+  conversation: HOME_CONVERSATION, client: newClient, mode: "mock", stream: "open", epoch: 0, from: 0, following: true,
   followIntent: 0, answer: "", announced: 0, connection: "", tour: false, tourError: "", docs: "pane",
 }
 
