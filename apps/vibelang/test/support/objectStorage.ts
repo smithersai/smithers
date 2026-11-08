@@ -58,6 +58,8 @@ export interface ObjectStorage {
   transaction<T>(
     closure: (txn: { readonly sql: ObjectStorage["sql"]; rollback(): void }) => Promise<T> | T
   ): Promise<T>
+  /** worker/Sandboxes.vibe's synchronous ledger write. */
+  transactionSync<A>(body: () => A): A
 }
 
 /** ctx.storage for one object, in memory: key-value, alarm, and a real SQLite database. */
@@ -104,6 +106,19 @@ export function objectStorage(): ObjectStorage {
           throw translated === undefined ? error : new Error(translated)
         }
       },
+    },
+    transactionSync(body) {
+      const level = depth++
+      const savepoint = `vibelang_sync_${level}`
+      db.exec(level === 0 ? "BEGIN" : `SAVEPOINT ${savepoint}`)
+      try {
+        const result = body()
+        db.exec(level === 0 ? "COMMIT" : `RELEASE ${savepoint}`)
+        return result
+      } catch (error) {
+        db.exec(level === 0 ? "ROLLBACK" : `ROLLBACK TO ${savepoint}; RELEASE ${savepoint}`)
+        throw error
+      }
     },
     async transaction(closure) {
       const level = depth++

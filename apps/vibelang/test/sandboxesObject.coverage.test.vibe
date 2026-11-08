@@ -1,0 +1,123 @@
+// @vitest-environment node
+// worker/Sandboxes.vibe: the per-person allowance object's SQLite store and durable execute over the real engine,
+// with a scripted Machines host — start/command/meter/stop, receipt replay by operation id, and the refusal paths.
+import { describe, expect, it } from "@effect/vitest"
+import * as Sandboxes from "../worker/Sandboxes.vibe"
+import { mockPolicy } from "../src/core/sandboxPolicy.vibe"
+import { Refused, Unavailable, type SandboxSnapshot } from "../src/core/Factory.vibe"
+import type { Machines } from "../src/core/sandboxHost.vibe"
+import { objectStorage } from "./support/objectStorage.ts"
+
+/** A Machines host that records its calls and fails the named kinds. */
+function fakeMachines(failures: ReadonlyArray<"start" | "stop" | "command" | "lease"> = []) {
+  const calls: Array<string> = []
+  const machines: Machines = {
+    start: (id, generation) => {
+      calls.push(`start:${id}:${generation}`)
+      return failures.includes("start") ? fail(new Unavailable({ reason: "no image" })) : Effect.void
+    },
+    stop: (id, generation) => {
+      calls.push(`stop:${id}:${generation}`)
+      return failures.includes("stop") ? fail(new Unavailable({ reason: "wedged" })) : Effect.void
+    },
+    lease: (id, generation, milliseconds) => {
+      calls.push(`lease:${id}:${generation}:${milliseconds > 0}`)
+      return failures.includes("lease") ? fail(new Unavailable({ reason: "lease refused" })) : succeed(true)
+    },
+    command: (id, generation, operationId, command) => {
+      calls.push(`command:${id}:${generation}:${operationId}`)
+      return failures.includes("command") ? fail(new Unavailable({ reason: "lost" })) : succeed(`ran ${command}`)
+    },
+  }
+  return { calls, machines }
+}
+
+/** Opens the object host over fresh storage, as `role`'s person. */
+effect function openAs(role: "viewer" | "maintainer", machines: Machines) {
+  const storage = (try Effect.try(() => objectStorage())) as unknown as Sandboxes.SandboxStorage
+  const host = try Effect.provide(Sandboxes.open(storage, machines), mockPolicy(role))
+  return { storage, host }
+}
+
+/** `tag:detail` of the Refused or Unavailable an execute fails with, or `ok`. */
+effect function failed(work: Effect<unknown, unknown>) {
+  return work.pipe(Effect.map(() => "ok")) catch (error) => {
+    const tagged = error as { readonly _tag: string; readonly refusal?: string; readonly reason?: string }
+    return tagged._tag + ":" + (tagged._tag === "Refused" ? tagged.refusal : tagged.reason)
+  }
+}
+
+describe("the sandbox object", () => {
+  it.live("starts, commands, meters and stops, replaying each receipt by its operation id", () => effect {
+    const { calls, machines } = fakeMachines()
+    const { storage, host } = try openAs("maintainer", machines)
+    const started = (try Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+    const replayed = (try Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+    const output = (try Sandboxes.execute("h", storage, host, "command", "c-1", "op-2", 1, "echo hi")) as string
+    const replayedOutput = (try Sandboxes.execute("h", storage, host, "command", "c-1", "op-2", 1, "echo hi")) as string
+    try Sandboxes.execute("h", storage, host, "meter", "", "", 0, "")
+    const stopped = (try Sandboxes.execute("h", storage, host, "stop", "c-1", "op-3", 1, "")) as SandboxSnapshot
+    const after = try host.snapshot("c-1")
+    try Effect.try(() => {
+      expect(started.status).toBe("running")
+      expect(replayed).toEqual(started)
+      expect(output).toBe("ran echo hi")
+      expect(replayedOutput).toBe("ran echo hi")
+      expect(stopped.status).toBe("stopped")
+      expect(after.status).toBe("stopped")
+      expect(calls.filter((call) => call.startsWith("start:"))).toEqual(["start:mock-person/c-1:1"])
+      expect(calls.filter((call) => call.startsWith("command:"))).toEqual(["command:mock-person/c-1:1:op-2"])
+      expect(calls.filter((call) => call.startsWith("stop:"))).toEqual(["stop:mock-person/c-1:1"])
+      expect(calls.filter((call) => call.startsWith("lease:")).length).toBeGreaterThan(0)
+    })
+  }, 60_000)
+
+  it.live("refuses the invalid, the unsigned, the stopped and the stale before any machine call", () => effect {
+    const { calls, machines } = fakeMachines()
+    const { storage, host } = try openAs("maintainer", machines)
+    const invalid = try failed(Sandboxes.execute("h", storage, host, "start", "c-1", "bad id", 0, ""))
+    const stopped = try failed(Sandboxes.execute("h", storage, host, "command", "c-1", "op-9", 0, "ls"))
+    const started = (try Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, "")) as SandboxSnapshot
+    const stale = try failed(Sandboxes.execute("h", storage, host, "stop", "c-1", "op-10", 9, ""))
+    const again = (try Sandboxes.execute("h", storage, host, "start", "c-1", "op-11", 0, "")) as SandboxSnapshot
+    const viewer = try openAs("viewer", machines)
+    const forbidden = try failed(Sandboxes.execute("h", viewer.storage, viewer.host, "start", "c-1", "op-12", 0, ""))
+    try Effect.try(() => {
+      expect(invalid).toBe("Refused:invalid")
+      expect(stopped).toBe("Refused:stopped")
+      expect(started.status).toBe("running")
+      expect(stale).toBe("Refused:stale-generation")
+      expect(again.status).toBe("running")
+      expect(forbidden).toBe("Refused:forbidden")
+      expect(calls.filter((call) => call.startsWith("start:"))).toEqual(["start:mock-person/c-1:1"])
+      expect(calls.some((call) => call.startsWith("command:") || call.startsWith("stop:"))).toBe(false)
+    })
+  }, 60_000)
+
+  it.live("cancels a failed start and replays its refusal without another machine call", () => effect {
+    const { calls, machines } = fakeMachines(["start"])
+    const { storage, host } = try openAs("maintainer", machines)
+    const failedStart = try failed(Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, ""))
+    const replayed = try failed(Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, ""))
+    const snapshot = try host.snapshot("c-1")
+    try Effect.try(() => {
+      expect(failedStart).toBe("Unavailable:start-failed")
+      expect(replayed).toBe("Unavailable:start-failed")
+      expect(snapshot.status).toBe("stopped")
+      expect(calls).toEqual(["start:mock-person/c-1:1", "stop:mock-person/c-1:1"])
+    })
+  }, 60_000)
+
+  it.live("a command failure is uncertain and never retried by its operation id", () => effect {
+    const { calls, machines } = fakeMachines(["command"])
+    const { storage, host } = try openAs("maintainer", machines)
+    try Sandboxes.execute("h", storage, host, "start", "c-1", "op-1", 0, "")
+    const failedCommand = try failed(Sandboxes.execute("h", storage, host, "command", "c-1", "op-2", 1, "rm -rf /"))
+    const replayed = try failed(Sandboxes.execute("h", storage, host, "command", "c-1", "op-2", 1, "rm -rf /"))
+    try Effect.try(() => {
+      expect(failedCommand).toBe("Unavailable:command-uncertain")
+      expect(replayed).toBe("Unavailable:command-uncertain")
+      expect(calls.filter((call) => call.startsWith("command:"))).toHaveLength(1)
+    })
+  }, 60_000)
+})
