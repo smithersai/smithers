@@ -1,5 +1,5 @@
 import { describe, expect, it } from "@effect/vitest"
-import { approveVip, specificationAccepted, reviseSpecification, recordSpecificationReview } from "../src/core/conversation.vibe"
+import { approveVip, specificationAccepted, specificationAcceptedUnder, reviseSpecification, reviseSpecificationUnder, recordSpecificationReview, SPEC_REVISION_POLICY } from "../src/core/conversation.vibe"
 import { fixtureIssues } from "../src/core/IssuesFactory.vibe"
 const review = { verdict: "LGTM" as const, grade: "A", revision: 2, link: "/review/1" }
 const spec = { revision: 2, text: "Specification", astra: review, sol: review, fable: review, opus: review }
@@ -22,6 +22,16 @@ describe("factory acceptance gates", () => {
       expect(specificationAccepted({ ...spec, [reviewer]: { ...review, revision: 1 } })).toBe(false)
       expect(specificationAccepted({ ...spec, [reviewer]: { ...review, link: "" } })).toBe(false)
     }
+  })
+  it("keeps the reset behind one named policy, which reads reset until Will rules (VL-32)", () => {
+    expect(SPEC_REVISION_POLICY).toBe("reset")
+    const kept = reviseSpecificationUnder(spec, "Revised specification", "keep")
+    expect(kept.revision).toBe(3)
+    for (const who of ["astra", "sol", "fable", "opus"] as const) expect(kept[who]).toEqual(spec[who])
+    expect(specificationAcceptedUnder(kept, "keep")).toBe(true)
+    expect(specificationAcceptedUnder(kept, "reset")).toBe(false)
+    expect(specificationAcceptedUnder({ ...kept, opus: { ...kept.opus, revision: 1 } }, "keep")).toBe(false)
+    expect(reviseSpecificationUnder(spec, "Revised specification", "reset")).toEqual(reviseSpecification(spec, "Revised specification"))
   })
   it("resets all answers on a new revision and rejects old results and person impersonation", () => {
     expect(reviseSpecification(spec, spec.text)).toBe(spec)

@@ -76,3 +76,13 @@ Catalog entries reused: `@smthrs/flow`, `@smthrs/engine`, `@smthrs/agent`, `@smt
 The phone table has a geometry regression test: all four review actions must remain inside the viewport. A failing
 phone run caught the original clipped action column; compact cell spacing, a short visible Review label and Rev
 heading retain the complete four-seat table without horizontal clipping. The accessible action remains Request review.
+
+## Revisions after acceptance (2026-11-08)
+
+Whether a new revision of an accepted specification needs all four reviews again is not Will's rule yet: VL-32 quotes
+him that the specification is accepted once and then "needs to be self consistent and optimistically built fuzz
+tested". The question is open for him at lang.smithers.sh/factory/open (question 3). Until he answers, one constant,
+`SPEC_REVISION_POLICY` in `src/core/conversation.vibe`, holds the behavior: `"reset"` (today) clears the four answers on
+each new revision; `"keep"` keeps the acceptance the four gave one revision. Both are proved
+(`reviseSpecificationUnder`, `specificationAcceptedUnder`). The live reviewer models stay unbound: Mock shows the gate,
+and real specification reviews run in the new factory (smithersai/lang).

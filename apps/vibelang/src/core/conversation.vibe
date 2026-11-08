@@ -1098,28 +1098,55 @@ export interface Specification {
 export function specificationReviewPasses(review: SpecificationReview, revision: number): boolean {
   return revision > 0 && review.verdict === "LGTM" && review.grade === "A" && review.revision === revision && review.link !== ""
 }
-/** Gate 2 has no writable accepted bit. Acceptance is exactly the conjunction of the four named seats. */
+/**
+ * Whether a new revision of an accepted specification needs all four reviews again. Will has not ruled on it (VL-32
+ * quotes him: accepted once, then it "needs to be self consistent and optimistically built fuzz tested"); the question
+ * is open at lang.smithers.sh/factory/open (question 3). This constant is the one place it flips: "reset" clears the
+ * four answers on each new revision; "keep" keeps the acceptance the four gave one revision.
+ */
+export type SpecRevisionPolicy = "reset" | "keep"
+export const SPEC_REVISION_POLICY: SpecRevisionPolicy = "reset"
+/** All four named seats answered LGTM with an A on this one revision. */
 //@ verify
-//@ ensures \result == (specificationReviewPasses(spec.astra, spec.revision) && specificationReviewPasses(spec.sol, spec.revision) && specificationReviewPasses(spec.fable, spec.revision) && specificationReviewPasses(spec.opus, spec.revision))
+//@ ensures \result == (specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision))
+export function specificationAcceptedOn(spec: Specification, revision: number): boolean {
+  return specificationReviewPasses(spec.astra, revision) && specificationReviewPasses(spec.sol, revision) && specificationReviewPasses(spec.fable, revision) && specificationReviewPasses(spec.opus, revision)
+}
+/** Gate 2 has no writable accepted bit: "reset" needs the four on the current revision, "keep" on any one revision so far. */
+//@ verify
+//@ ensures policy == "reset" ==> \result == specificationAcceptedOn(spec, spec.revision)
+//@ ensures policy != "reset" ==> \result == (spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision))
+export function specificationAcceptedUnder(spec: Specification, policy: SpecRevisionPolicy): boolean {
+  if (policy === "reset") return specificationAcceptedOn(spec, spec.revision)
+  return spec.astra.revision > 0 && spec.astra.revision <= spec.revision && specificationAcceptedOn(spec, spec.astra.revision)
+}
+/** Gate 2 under the project's policy. */
 export function specificationAccepted(spec: Specification): boolean {
-  return specificationReviewPasses(spec.astra, spec.revision) && specificationReviewPasses(spec.sol, spec.revision) && specificationReviewPasses(spec.fable, spec.revision) && specificationReviewPasses(spec.opus, spec.revision)
+  return specificationAcceptedUnder(spec, SPEC_REVISION_POLICY)
 }
 //@ verify
 //@ ensures \result.verdict == "" && \result.grade == "" && \result.revision == 0 && \result.link == ""
 export function unansweredSpecificationReview(): SpecificationReview {
   return { verdict: "", grade: "", revision: 0, link: "" }
 }
-/** Content equality is a no-op; a new immutable revision clears every answer. */
+/** Content equality is a no-op; a new immutable revision clears every answer under "reset" and keeps them under "keep". */
 //@ verify
 //@ requires 0 <= spec.revision && spec.revision < 9007199254740991
 //@ ensures text == spec.text ==> \result == spec
 //@ ensures text != spec.text ==> \result.revision == spec.revision + 1 && \result.text == text
-//@ ensures text != spec.text ==> \result.astra.verdict == "" && \result.sol.verdict == "" && \result.fable.verdict == "" && \result.opus.verdict == ""
-//@ ensures text != spec.text ==> !specificationAccepted(\result)
-//@ ensures text != spec.text ==> \result.astra == unansweredSpecificationReview() && \result.sol == unansweredSpecificationReview() && \result.fable == unansweredSpecificationReview() && \result.opus == unansweredSpecificationReview()
-export function reviseSpecification(spec: Specification, text: string): Specification {
+//@ ensures text != spec.text && policy == "reset" ==> \result.astra.verdict == "" && \result.sol.verdict == "" && \result.fable.verdict == "" && \result.opus.verdict == ""
+//@ ensures text != spec.text && policy == "reset" ==> !specificationAcceptedUnder(\result, policy)
+//@ ensures text != spec.text && policy == "reset" ==> \result.astra == unansweredSpecificationReview() && \result.sol == unansweredSpecificationReview() && \result.fable == unansweredSpecificationReview() && \result.opus == unansweredSpecificationReview()
+//@ ensures text != spec.text && policy != "reset" ==> \result.astra == spec.astra && \result.sol == spec.sol && \result.fable == spec.fable && \result.opus == spec.opus
+//@ ensures text != spec.text && policy != "reset" && specificationAcceptedUnder(spec, policy) ==> specificationAcceptedUnder(\result, policy)
+export function reviseSpecificationUnder(spec: Specification, text: string, policy: SpecRevisionPolicy): Specification {
   if (text === spec.text) return spec
+  if (policy !== "reset") return { revision: spec.revision + 1, text, astra: spec.astra, sol: spec.sol, fable: spec.fable, opus: spec.opus }
   return { revision: spec.revision + 1, text, astra: unansweredSpecificationReview(), sol: unansweredSpecificationReview(), fable: unansweredSpecificationReview(), opus: unansweredSpecificationReview() }
+}
+/** A new revision under the project's policy. */
+export function reviseSpecification(spec: Specification, text: string): Specification {
+  return reviseSpecificationUnder(spec, text, SPEC_REVISION_POLICY)
 }
 /** A flow's bound reviewer identity may record only its own current-revision answer. */
 //@ verify
