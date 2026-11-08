@@ -1,5 +1,5 @@
-import { Context, type Duration, Effect, Layer } from "effect"
-import { HttpClient } from "effect/http"
+import { Context, Data, type Duration, Effect, Layer, Schema } from "effect"
+import { HttpClient, HttpClientRequest, HttpClientResponse } from "effect/http"
 import { CONFIRM_401_HEADER, sessionCheckOf } from "../auth/contract"
 
 /** A question for `POST /api/questions` (docs/features/chat.md#post-apiquestions). */
@@ -21,8 +21,8 @@ export type Taken = { readonly _tag: "inserted" } | { readonly _tag: "existing" 
 
 // Both success bodies are checked before the device starts the answer. The device waits for the question itself,
 // which reaches every tab, so it reads no transaction id (src/features/chat/store.ts `delivered`).
-schema Inserted { readonly txid: number }
-schema Existing { readonly txid: null; readonly existing: true }
+const Inserted = Schema.Struct({ txid: Schema.Number })
+const Existing = Schema.Struct({ txid: Schema.Null, existing: Schema.Literal(true) })
 
 /**
  * ChatApi didn't take the question:
@@ -30,52 +30,48 @@ schema Existing { readonly txid: null; readonly existing: true }
  * - `refused`: an answer other than 200 or 202, such as 409 for a retry that doesn't match the stored question;
  * - `invalid_response`: 200 or 202 with a body outside the contract, or one that broke off.
  */
-export error QuestionNotTaken {
-  reason: "unreachable" | "refused" | "invalid_response"
-  status?: number
-  sessionCheck?: "same_person"
-}
+export class QuestionNotTaken extends Data.TaggedError("QuestionNotTaken")<{
+  readonly reason: "unreachable" | "refused" | "invalid_response"
+  readonly status?: number
+  readonly sessionCheck?: "same_person"
+}> {}
 
 /**
  * Asks ChatApi to store a question and its empty answer. One deadline, `within`, covers the whole request: sending it,
  * the status and reading the body. Past it, the request is aborted and the question counts as `unreachable`.
  */
-export const postQuestion = effect (
+export const postQuestion = Effect.fn("chat.question.post")(function* (
   url: string,
   question: Question,
   within: Duration.Input,
-) =>
-  try withSpan(
-    effect {
-      const client = try HttpClient.HttpClient
-      return try (effect {
-        const response = try (client
-          .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question), HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1")))
-          |> Effect.mapError(%, () => new QuestionNotTaken({ reason: "unreachable" })))
-        try Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
-        if (response.status === 200) {
-          HttpClientResponse.schemaBodyJson(Existing)(response) catch effect () => {
-            throw new QuestionNotTaken({ reason: "invalid_response", status: 200 })
-          }
-          return { _tag: "existing" } satisfies Taken
-        }
-        if (response.status !== 202) {
-          const sessionCheck = try Effect.sync(() => sessionCheckOf(response.headers))
-          throw new QuestionNotTaken({ reason: "refused", status: response.status, ...sessionCheck })
-        }
-        HttpClientResponse.schemaBodyJson(Inserted)(response) catch effect () => {
-          throw new QuestionNotTaken({ reason: "invalid_response", status: 202 })
-        }
-        return { _tag: "inserted" } satisfies Taken
-      }
-        // Interrupting the request, at any step, aborts its fetch (Effect HttpClient), so a stalled body stops too.
-        |> Effect.timeoutOrElse(%, {
-          duration: within,
-          orElse: () => Effect.fail(new QuestionNotTaken({ reason: "unreachable" })),
-        }))
-    },
-    "chat.question.post",
+) {
+  const client = yield* HttpClient.HttpClient
+  return yield* Effect.gen(function* () {
+    const response = yield* client
+      .execute(HttpClientRequest.post(url).pipe(HttpClientRequest.bodyJsonUnsafe(question), HttpClientRequest.setHeader(CONFIRM_401_HEADER, "1")))
+      .pipe(Effect.mapError(() => new QuestionNotTaken({ reason: "unreachable" })))
+    yield* Effect.annotateCurrentSpan({ "http.response.status_code": response.status })
+    if (response.status === 200) {
+      yield* HttpClientResponse.schemaBodyJson(Existing)(response).pipe(
+        Effect.mapError(() => new QuestionNotTaken({ reason: "invalid_response", status: 200 })),
+      )
+      return { _tag: "existing" } satisfies Taken
+    }
+    if (response.status !== 202) {
+      return yield* new QuestionNotTaken({ reason: "refused", status: response.status, ...sessionCheckOf(response.headers) })
+    }
+    yield* HttpClientResponse.schemaBodyJson(Inserted)(response).pipe(
+      Effect.mapError(() => new QuestionNotTaken({ reason: "invalid_response", status: 202 })),
+    )
+    return { _tag: "inserted" } satisfies Taken
+  }).pipe(
+    // Interrupting the request, at any step, aborts its fetch (Effect HttpClient), so a stalled body stops too.
+    Effect.timeoutOrElse({
+      duration: within,
+      orElse: () => Effect.fail(new QuestionNotTaken({ reason: "unreachable" })),
+    }),
   )
+})
 
 /**
  * ChatApi's client, as a service: the one way the browser asks a question. The real one posts `POST /api/questions`
@@ -84,7 +80,7 @@ export const postQuestion = effect (
  */
 export class ChatClient extends Context.Service<
   ChatClient,
-  { readonly ask: (question: Question) => Taken!QuestionNotTaken }
+  { readonly ask: (question: Question) => Effect.Effect<Taken, QuestionNotTaken> }
 >()("@smthrs/mvp/chat/ChatClient") {
   /** The real client: ChatApi at `url`, with `within` for each whole request. */
   static readonly layer = (options: { readonly url: string; readonly within: Duration.Input }) =>
@@ -93,8 +89,10 @@ export class ChatClient extends Context.Service<
       Effect.map(HttpClient.HttpClient, (client) =>
         ChatClient.of({
           ask: (question) =>
-            postQuestion(options.url, question, options.within)
-            |> Effect.provideService(%, HttpClient.HttpClient, client),
-        })),
+            postQuestion(options.url, question, options.within).pipe(
+              Effect.provideService(HttpClient.HttpClient, client),
+            ),
+        }),
+      ),
     )
 }

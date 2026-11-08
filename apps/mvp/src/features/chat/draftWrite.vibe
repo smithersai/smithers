@@ -1,7 +1,7 @@
 import type { Collection } from "@smthrs/effect-tanstack-db"
 import { Effect } from "effect"
 import { codeOf } from "../../errorCode"
-import { draftWrites } from "./metrics.vibe"
+import { draftWrites } from "./metrics.ts"
 import { HOME_DRAFT } from "./schema"
 
 // A draft whose save is still pending must be distinguishable from a failed device write. The transaction id joins

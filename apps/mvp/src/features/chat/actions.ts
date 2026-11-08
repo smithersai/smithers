@@ -5,7 +5,7 @@ import { codeOf } from "../../errorCode"
 import { FlowDispatch } from "../../flows/dispatch"
 import { MAX_QUESTION_LENGTH } from "./contract"
 import { persistDraft } from "#vibelang/emitted/src/features/chat/draftWrite"
-import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "#vibelang/emitted/src/features/chat/metrics"
+import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics"
 import {
   type Asking,
   COMPOSER,

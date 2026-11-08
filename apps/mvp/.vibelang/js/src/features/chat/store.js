@@ -12,7 +12,7 @@ import { ChatWrites } from "./writes";
 import { ViewsStore } from "../views/store";
 import { ConversationOwners } from "../conversations/owners";
 import { PAGE_SIZE, SHAPE_ROUTE } from "./contract";
-import { connectionDrops, firstAnswerText } from "./metrics.js";
+import { connectionDrops, firstAnswerText } from "./metrics";
 import { composerQuery, connectionQuery, conversationQuery, historyQuery, latestQuery, placeQuery, queuedQuery, shownQuery, everythingQuery, timelineNoticeQuery, } from "./queries";
 import { COMPOSER, Composer, CONNECTION, Connection, HISTORY, History, Message, PLACE, Place, } from "./schema";
 /** The home conversation's shape among the pill's shapes; a branch conversation's is its id, a UUID. */

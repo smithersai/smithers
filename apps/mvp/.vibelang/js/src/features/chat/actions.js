@@ -5,7 +5,7 @@ import { codeOf } from "../../errorCode";
 import { FlowDispatch } from "../../flows/dispatch";
 import { MAX_QUESTION_LENGTH } from "./contract";
 import { persistDraft } from "./draftWrite.js";
-import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics.js";
+import { askFailures, composerOpens, historyLoads, questionsAsked, syncRetries, unsentActions } from "./metrics";
 import { COMPOSER, CONNECTION, HISTORY, HOME_DRAFT, PLACE, } from "./schema";
 import { SharedPrompt } from "./sharedPrompt.js";
 import { ChatStore, keepUnsent, timeFirstText } from "./store";

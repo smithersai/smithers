@@ -1,5 +1,5 @@
 import { type Collection, Outbox } from "@smthrs/effect-tanstack-db"
-import { Context, Effect } from "effect"
+import { Context, Effect, Option } from "effect"
 
 // The device has one durable outbox (decision 0002 §3), which ChatWrites builds and leads
 // (src/features/chat/writes.ts). A feature that writes through it hands its writes over here, from a layer built below
@@ -29,7 +29,7 @@ export class OutboxWrites extends Context.Service<
      * What shows a parked write of each mutation, one an older build stored that this build can't send as it meant
      * (decision 0021 §4): the feature's own Not sent row. `true` when it took the write.
      */
-    readonly parked?: Readonly<Record<string, (write: Outbox.Parked) => boolean!!>>
+    readonly parked?: Readonly<Record<string, (write: Outbox.Parked) => Effect.Effect<boolean>>>
   }
 >()("@smthrs/mvp/OutboxWrites") {
   /**

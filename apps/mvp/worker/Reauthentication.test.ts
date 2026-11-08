@@ -11,7 +11,7 @@ import { DEVICE_PERSON_HEADER, type SessionState } from "../src/features/auth/co
 import { TextsClient } from "../src/features/coedit/api.ts"
 import { sends } from "../src/features/coedit/metrics.ts"
 import { TEXT_UPDATE, TextWrites } from "../src/features/coedit/writes.ts"
-import { OutboxWrites } from "#vibelang/emitted/src/outbox"
+import { OutboxWrites } from "../src/outbox.ts"
 import { Sessions } from "#vibelang/emitted/worker/Actor"
 import { BranchRoles } from "./branch/Access.ts"
 import * as Flows from "#vibelang/emitted/worker/Flows"

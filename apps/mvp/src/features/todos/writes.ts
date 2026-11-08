@@ -1,6 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
-import { held, OutboxWrites } from "#vibelang/emitted/src/outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { type ChangeRequest, StackClient } from "./api"
 import { type NotSentReason, notSentOf } from "./contract"
 import { sends } from "#vibelang/emitted/src/features/todos/metrics"

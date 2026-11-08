@@ -3,7 +3,7 @@ import { Collection, Outbox } from "@smthrs/effect-tanstack-db";
 import { Clock, Context, Effect, Layer, Metric, Option, Schema } from "effect";
 import { codeOf } from "../../errorCode";
 import { renewalOf } from "../../flows/bearer";
-import { held, OutboxWrites } from "../../outbox.js";
+import { held, OutboxWrites } from "../../outbox";
 import { IssuesClient, WriteNotTaken } from "./api";
 import { refusalOf } from "./contract";
 import { sends } from "./metrics.js";

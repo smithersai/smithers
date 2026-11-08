@@ -28,7 +28,7 @@ import { ViewsStore } from "../views/store"
 import { ConversationOwners } from "../conversations/owners"
 import type { Gated } from "../repo/gate"
 import { PAGE_SIZE, SHAPE_ROUTE } from "./contract"
-import { connectionDrops, firstAnswerText } from "#vibelang/emitted/src/features/chat/metrics"
+import { connectionDrops, firstAnswerText } from "./metrics"
 import {
   composerQuery,
   connectionQuery,

@@ -1,6 +1,6 @@
 import { Collection, Outbox } from "@smthrs/effect-tanstack-db"
 import { Clock, Context, Effect, Layer, Metric, Option } from "effect"
-import { held, OutboxWrites } from "#vibelang/emitted/src/outbox"
+import { held, OutboxWrites } from "../../outbox"
 import { RemoteRunsClient } from "./api"
 import { STEER_FINAL, STEER_REFUSALS, type SteerRefusal } from "./contract"
 import { steerSends } from "./metrics"
