@@ -6,6 +6,8 @@
  * @since 1.0.0
  */
 
+import { Schema } from "effect"
+
 /**
  * Which supervision rule failed. `startup_timeout` is a start that missed its
  * bound, usually a busy machine, and is reported with the `TimedOut` tag so a

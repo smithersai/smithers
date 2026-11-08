@@ -6,6 +6,8 @@
  * @since 1.0.0
  */
 
+import { Schema } from "effect"
+
 /**
  * Why the atomic helper could not be configured or resolved.
  * @category models

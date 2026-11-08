@@ -19,7 +19,7 @@ import {
   type HelperResult,
   type HostRequest
 } from "./AtomicFileSystemProtocol.ts"
-import { AtomicHelperError } from "./AtomicHelperError.vibe"
+import { AtomicHelperError } from "./AtomicHelperError.ts"
 import { atomicHelperFault } from "./AtomicHelperFault.ts"
 
 let startedHelpers = 0

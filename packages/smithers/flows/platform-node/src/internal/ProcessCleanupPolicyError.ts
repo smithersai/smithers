@@ -6,6 +6,8 @@
  * @since 1.0.0
  */
 
+import { Schema } from "effect"
+
 /**
  * Which part of the policy was refused.
  *
