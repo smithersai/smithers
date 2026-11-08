@@ -187,6 +187,7 @@
   "files": [
     "bin/smthrs-model-server.mjs",
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -196,10 +197,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/TestingError.vibe",
-    "src/FlowEngineLike.vibe",
-    "src/MemoryEngine.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

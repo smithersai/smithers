@@ -178,6 +178,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -187,13 +188,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/internal/planning.vibe",
-    "src/ApprovalAuthority.vibe",
-    "src/Control.vibe",
-    "src/ControlError.vibe",
-    "src/ControlExecutor.vibe",
-    "src/ScopedToken.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

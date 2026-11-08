@@ -46,6 +46,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",

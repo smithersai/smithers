@@ -373,6 +373,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -382,18 +383,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    "src/Changesets.vibe",
-    "src/FlowCatalog.vibe",
-    "src/Home.vibe",
-    "src/LocalRepository.vibe",
-    "src/ModelEngine.vibe",
-    "src/Mount.vibe",
-    "src/Outward.vibe",
-    "src/Verb.vibe",
-    "src/internal/Process.vibe",
-    "src/internal/PublicationFileSystem.vibe",
-    ".vibelang/js",
-    "src/GithubWorkflow.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

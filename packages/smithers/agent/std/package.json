@@ -195,6 +195,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -204,12 +205,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/Glob.vibe",
-    "src/Grep.vibe",
-    "src/Lsp.vibe",
-    "src/Write.vibe",
-    "src/internal/Preserve.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

@@ -84,6 +84,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -93,9 +94,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/measureBytes.vibe",
-    "src/RemoteArtifacts.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

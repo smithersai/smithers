@@ -177,6 +177,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -186,10 +187,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/Saga.vibe",
-    "src/ScanFixVerify.vibe",
-    "src/Sidecar.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

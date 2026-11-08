@@ -126,6 +126,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -135,11 +136,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/JournalGeneration.vibe",
-    "src/Migrations.vibe",
-    "src/RedactedLogger.vibe",
-    "src/Redaction.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

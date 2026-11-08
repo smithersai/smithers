@@ -48,13 +48,13 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*",
     "LICENSE",
     "README.md",
     "docs/",
     "examples/",
-    ".vibelang/js",
-    "src/Canonical.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

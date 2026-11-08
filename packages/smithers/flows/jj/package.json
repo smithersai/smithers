@@ -79,6 +79,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "wasm/*.wasm",
     "dist/**/*.js",
     "dist/**/*.js.map",
@@ -90,12 +91,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    "src/internal/JjInternalFault.vibe",
-    ".vibelang/js",
-    "src/Jj.vibe",
-    "src/browser/BrowserJj.vibe",
-    "src/browser/WasiPreview1.vibe",
-    "src/bun/BunJj.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

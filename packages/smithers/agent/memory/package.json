@@ -145,6 +145,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -154,16 +155,7 @@
     "README.md",
     "CHANGELOG.md",
     "docs/",
-    ".vibelang/js",
-    "src/Embedding.vibe",
-    "src/Flows.vibe",
-    "src/Migrations.vibe",
-    "src/Recall.vibe",
-    "src/RecallKeyword.vibe",
-    "src/WithMemory.vibe",
-    "src/internal/Fts.vibe",
-    "src/internal/MemoryFtsFold.vibe",
-    "src/internal/Instrument.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",

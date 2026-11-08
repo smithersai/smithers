@@ -122,6 +122,7 @@
   },
   "files": [
     "src/**/*.ts",
+    "src/**/*.vibe",
     "dist/**/*.js",
     "dist/**/*.js.map",
     "dist/**/*.d.ts",
@@ -132,11 +133,7 @@
     "CHANGELOG.md",
     "dist/vendor/**",
     "docs/",
-    ".vibelang/js",
-    "src/Diagnosis.vibe",
-    "src/GatewayError.vibe",
-    "src/GatewaySchema.vibe",
-    "src/node/NodeGateway.vibe"
+    ".vibelang/js"
   ],
   "publishConfig": {
     "access": "public",
