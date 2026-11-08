@@ -35,6 +35,9 @@ function github(people: ReadonlyArray<Person>, failures: ReadonlyArray<string> =
     },
     permission: () => succeed("read"),
     revoke: () => Effect.void,
+    // The web sign-in never uses the device flow (the CLI and MCP server do); refuse it like an unavailable GitHub.
+    deviceCode: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
+    deviceToken: () => fail(new GitHub.Auth.GitHubRefused({ step: "device", reason: "unavailable" })),
   }
 }
 
