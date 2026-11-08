@@ -5,8 +5,8 @@
 
 import { Journal, JournalEvent } from "@smthrs/journal"
 import { Effect, Schema } from "effect"
-import type * as ControlRuntime from "./ControlRuntime.ts"
-import * as ControlSchema from "./ControlSchema.ts"
+import type * as ControlRuntime from "./ControlRuntime.vibe"
+import * as ControlSchema from "./ControlSchema.vibe"
 
 /** This is the control producer contract, independent of the harness journal format.
  * @category facts

@@ -25,7 +25,7 @@ const reviewed: ReadonlyArray<readonly [file: string, line: string, why: string]
     "an AbortSignal reason; cancellation is reported by its exit status"
   ],
   [
-    "src/cli/Entry.ts",
+    "src/cli/Entry.vibe",
     "controller.abort(new Error(`smthrs interrupted by ${signal}`))",
     "an AbortSignal reason; the interrupt is reported by exit status 130/143"
   ],

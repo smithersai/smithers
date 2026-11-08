@@ -5,7 +5,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises"
 import { join } from "node:path"
-import * as CliError from "../../CliError.ts"
+import * as CliError from "../../CliError.vibe"
 import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
 import { auth } from "./Auth.ts"

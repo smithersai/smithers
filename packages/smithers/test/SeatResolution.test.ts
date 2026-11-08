@@ -19,7 +19,7 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it } from "vitest"
-import { ModuleLoader } from "../src/internal/ProviderModules.ts"
+import { ModuleLoader } from "../src/internal/ProviderModules.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 import * as Providers from "../src/Providers.ts"
 

@@ -7,7 +7,7 @@
 import { Cli } from "incur"
 import type { Runtime } from "../../cli/ControlBridge.ts"
 import * as Presentation from "../../cli/Presentation.ts"
-import { Refused } from "../../CliError.ts"
+import { Refused } from "../../CliError.vibe"
 import catalog from "./catalog.mvp.json" with { type: "json" }
 import { run } from "./Process.ts"
 import { Session } from "./Session.ts"

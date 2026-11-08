@@ -5,7 +5,7 @@
  * @since 1.0.0
  */
 
-import { Refused } from "./CliError.ts"
+import { Refused } from "./CliError.vibe"
 
 /**
  * The quoted GitHub issue a TODO is drafted from: number, title, body, URL and

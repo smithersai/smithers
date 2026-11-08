@@ -30,7 +30,7 @@
 import { Effect, Exit, Option } from "effect"
 import { statSync } from "node:fs"
 import { homedir } from "node:os"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import type * as Environment from "./Environment.ts"
 import * as Failure from "./internal/Failure.ts"
 import { readText } from "./internal/HostFiles.ts"

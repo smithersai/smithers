@@ -6,7 +6,7 @@
 import { WebSocket as NodeWebSocket } from "@effect/platform-node/NodeWS"
 import { randomUUID } from "node:crypto"
 import { setTimeout as delay } from "node:timers/promises"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import * as Environment from "../../Environment.ts"
 import * as Failure from "../Failure.ts"
 import { type Client, esc, list, object, pick, positive, query, str, type Values, withCause } from "./Client.ts"

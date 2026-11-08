@@ -28,7 +28,7 @@ import type {
   RunId,
   RunSummary,
   SignalPayload
-} from "../ControlSchema.ts"
+} from "../ControlSchema.vibe"
 
 /**
  * The drift between the code a run recorded and the code that would resume

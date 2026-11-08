@@ -12,11 +12,11 @@
 import * as MigrateCommand from "@smthrs/migrate/flow/Command"
 import * as Report from "@smthrs/migrate/Report"
 import { Effect, Layer, Schema } from "effect"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Legacy from "../Legacy.ts"
 import * as NodeControl from "../NodeControl.ts"
 import * as Project from "../Project.ts"
-import * as Globals from "./Globals.ts"
+import * as Globals from "./Globals.vibe"
 
 /**
  * The typed options both parsers produce. `target` is the 0.x project, never

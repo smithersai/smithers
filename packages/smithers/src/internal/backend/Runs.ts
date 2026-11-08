@@ -3,7 +3,7 @@
  * @since 0.1.0
  */
 
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { list, object, positive, str } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 /**

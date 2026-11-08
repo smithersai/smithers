@@ -36,7 +36,7 @@ export * as ControlError from "./ControlError.vibe"
  * @category models
  * @since 0.1.0
  */
-export * as ControlSchema from "./ControlSchema.ts"
+export * as ControlSchema from "./ControlSchema.vibe"
 
 /**
  * @category projections
@@ -66,7 +66,7 @@ export * as Steering from "./Steering.ts"
  * @category services
  * @since 0.1.0
  */
-export * as ControlRuntime from "./ControlRuntime.ts"
+export * as ControlRuntime from "./ControlRuntime.vibe"
 
 /**
  * @category services

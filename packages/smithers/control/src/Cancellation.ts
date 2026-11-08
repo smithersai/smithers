@@ -25,7 +25,7 @@
  * @since 0.1.0
  */
 
-import type { Cancellation, Principal } from "./ControlSchema.ts"
+import type { Cancellation, Principal } from "./ControlSchema.vibe"
 
 /**
  * The journal event type the control plane records an attributed cancel under.

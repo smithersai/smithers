@@ -16,7 +16,7 @@ import { existsSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import * as DoctorCmd from "../src/commands/Doctor.ts"
+import * as DoctorCmd from "../src/commands/Doctor.vibe"
 import type * as Doctor from "../src/Doctor.ts"
 import * as Project from "../src/Project.ts"
 

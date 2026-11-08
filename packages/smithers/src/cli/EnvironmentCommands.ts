@@ -4,7 +4,7 @@
  */
 
 import { Cli, z } from "incur"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Environment from "../ExecutionEnvironment.ts"
 import type { Runtime } from "./ControlBridge.ts"
 import * as Presentation from "./Presentation.ts"

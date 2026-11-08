@@ -9,7 +9,7 @@ import { mkdtempSync, rmSync } from "node:fs"
 import { hostname, tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as RunEventStream from "../src/cli/RunEventStream.ts"
+import * as RunEventStream from "../src/cli/RunEventStream.vibe"
 import * as ControlDatabase from "../src/internal/ControlDatabase.ts"
 
 const stack = (executor: ControlExecutor.Service) => {

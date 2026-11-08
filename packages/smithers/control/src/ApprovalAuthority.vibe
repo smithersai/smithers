@@ -6,7 +6,7 @@
  */
 
 import { InvalidInput, type PersistenceError, Unauthorized } from "./ControlError.vibe"
-import { type ApprovalTarget, GrantScope, type Principal } from "./ControlSchema.ts"
+import { type ApprovalTarget, GrantScope, type Principal } from "./ControlSchema.vibe"
 
 /**
  * An approval decision whose caller has already been authenticated by its host.

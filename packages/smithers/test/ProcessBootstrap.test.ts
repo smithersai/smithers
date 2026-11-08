@@ -1,6 +1,6 @@
 import { PassThrough } from "node:stream"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
-import type { Host } from "../src/cli/Entry.ts"
+import type { Host } from "../src/cli/Entry.vibe"
 
 const { audience, install, main } = vi.hoisted(() => ({
   audience: vi.fn(),
@@ -9,7 +9,7 @@ const { audience, install, main } = vi.hoisted(() => ({
 }))
 vi.mock("@smthrs/build-cli/Audience", () => ({ fromArguments: audience }))
 vi.mock("@smthrs/build-cli/effect-resolution", () => ({ installEffectResolution: install }))
-vi.mock("../src/cli/Entry.ts", () => ({ main }))
+vi.mock("../src/cli/Entry.vibe", () => ({ main }))
 
 const originalArgv = [...process.argv]
 const originalExitCode = process.exitCode

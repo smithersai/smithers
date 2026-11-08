@@ -16,7 +16,7 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import { Effect, Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 
 const stack = Layer.provideMerge(

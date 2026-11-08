@@ -25,14 +25,14 @@ import { Cause, Context, Effect, Exit, Layer, type Schema } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import { existsSync, mkdirSync } from "node:fs"
 import { join } from "node:path"
-import * as CliError from "../CliError.ts"
-import * as ControlDatabaseMigrations from "../internal/ControlDatabaseMigrations.ts"
+import * as CliError from "../CliError.vibe"
+import * as ControlDatabaseMigrations from "../internal/ControlDatabaseMigrations.vibe"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
 import type * as NativeControl from "../internal/NativeControl.ts"
 import * as NodeControl from "../NodeControl.ts"
 import * as Project from "../Project.ts"
 import * as Projection from "./Projection.ts"
-import * as Workspace from "./Workspace.ts"
+import * as Workspace from "./Workspace.vibe"
 
 /**
  * Local history address and resource limits.

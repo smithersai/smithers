@@ -6,7 +6,7 @@
 
 import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs"
 import { dirname, isAbsolute, join } from "node:path"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import * as Environment from "./Environment.ts"
 import * as Project from "./Project.ts"
 import { starterSeats } from "./Providers.ts"

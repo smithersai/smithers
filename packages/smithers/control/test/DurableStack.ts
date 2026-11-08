@@ -25,7 +25,7 @@ import type * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
 import type { Control } from "../src/Control.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import type { ControlRuntime } from "../src/ControlRuntime.ts"
+import type { ControlRuntime } from "../src/ControlRuntime.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 
 /**

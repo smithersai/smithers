@@ -32,7 +32,7 @@ interface Entrypoint {
   readonly onSigint: () => void
   readonly onSigterm: () => void
   /** The failure classes of the same module instance the entrypoint matches on. */
-  readonly cliError: typeof import("../src/CliError.ts")
+  readonly cliError: typeof import("../src/CliError.vibe")
   /** The database refusal class of that same module instance, for the same reason. */
   readonly database: typeof import("@smthrs/database/node/NodeDatabase")
 }
@@ -45,7 +45,7 @@ const load = async (): Promise<Entrypoint> => {
   vi.resetModules()
   // The entrypoint matches its own failures with `instanceof`, so the classes
   // it is checked against must come from the same fresh module graph.
-  const cliError = await import("../src/CliError.ts")
+  const cliError = await import("../src/CliError.vibe")
   const database = await import("@smthrs/database/node/NodeDatabase")
   // Each fresh offline host explicitly chooses its completion judge.
   const [ScriptedJudge, { platform }] = await Promise.all([

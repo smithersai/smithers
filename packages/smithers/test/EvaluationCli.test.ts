@@ -10,7 +10,7 @@ import { afterEach, describe, expect, it } from "vitest"
 import * as Binding from "../agent/scorers/src/Binding.ts"
 import * as Scorer from "../agent/scorers/src/Scorer.ts"
 
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import { createEvalCli } from "../src/evaluation/EvalCli.ts"
 import * as Evaluation from "../src/evaluation/Evaluation.ts"
 

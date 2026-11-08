@@ -11,7 +11,7 @@ import type * as Executable from "@smthrs/registry/Executable"
 import { discoveryError } from "@smthrs/registry/RegistryError"
 import { Cause, Effect, Exit, Layer, Logger } from "effect"
 import { describe, expect, it } from "vitest"
-import * as AuthoredRebuild from "../src/internal/AuthoredRebuild.ts"
+import * as AuthoredRebuild from "../src/internal/AuthoredRebuild.vibe"
 
 const refreshing = (
   flow: () => Effect.Effect<never, never, never> | ReturnType<Executable.Refresh["flow"]>

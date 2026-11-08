@@ -6,7 +6,7 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import * as Fault from "@smthrs/flow/Fault"
 import type * as Evaluator from "@smthrs/model/Evaluator"
 import { Cause, Effect, Schema } from "effect"
-import type { ControlEvent, RunSummary } from "./ControlSchema.ts"
+import type { ControlEvent, RunSummary } from "./ControlSchema.vibe"
 import { makeJevSessionChecker } from "./JevSessionChecker.vibe"
 
 /** Authoritative subject lifecycle.
@@ -184,7 +184,7 @@ export const statusObservedEventType = "control.status.observed"
  * @since 1.0.0
  */
 export const runIncarnation = (run: RunSummary): string =>
-  $invoke(Sha256,() => (JSON.stringify([
+  $invoke(Sha256, () => (JSON.stringify([
     run.runId,
     run.createdAt,
     run.updatedAt,
@@ -590,11 +590,18 @@ export const rollup = (input: RollupInput): StatusRollup => {
 }
 
 module $call$ts {
-export function invoke<T extends {"digestSync":Function}>(target:T,arg0:()=>Parameters<Extract<T["digestSync"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digestSync"],(...args:any[])=>any>> { return target["digestSync"](arg0()) }
+  export function invoke<T extends { "digestSync": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["digestSync"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["digestSync"], (...args: any[]) => any>> {
+    return target["digestSync"](arg0())
+  }
 }
 import { invoke as $invoke } from $call$ts
 
 module $throw$ts {
-export function raise(value: unknown): never { throw value }
+  export function raise(value: unknown): never {
+    throw value
+  }
 }
 import { raise as $raise } from $throw$ts

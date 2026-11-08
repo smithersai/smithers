@@ -7,7 +7,7 @@ import { resolve } from "node:path"
 import { fileURLToPath } from "node:url"
 import { promisify } from "node:util"
 import { expect, it } from "vitest"
-import * as WorkspaceRouting from "../src/internal/WorkspaceRouting.ts"
+import * as WorkspaceRouting from "../src/internal/WorkspaceRouting.vibe"
 
 const execute = promisify(execFile)
 const fixture = fileURLToPath(new URL("./fixtures/workspace-routing-portable.ts", import.meta.url))

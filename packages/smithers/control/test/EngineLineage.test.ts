@@ -29,7 +29,7 @@ import * as TimeTravel from "@smthrs/time-travel/TimeTravel"
 import { Effect, Layer, Schema, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
-import type { ControlEvent, ListResponse, RunSummary } from "../src/ControlSchema.ts"
+import type { ControlEvent, ListResponse, RunSummary } from "../src/ControlSchema.vibe"
 import * as Lineage from "../src/Lineage.vibe"
 import { controlPlane, type DurableStack } from "./DurableStack.ts"
 

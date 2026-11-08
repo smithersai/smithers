@@ -32,7 +32,7 @@ import {
 } from "node:fs"
 import { homedir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import { errorCode } from "./internal/ErrorCode.ts"
 import * as Failure from "./internal/Failure.ts"
 

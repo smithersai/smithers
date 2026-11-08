@@ -24,8 +24,8 @@ import {
   RunNotFound
 } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { Envelope, ListResponse, PlanCard, Principal, Receipt } from "../src/ControlSchema.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { Envelope, ListResponse, PlanCard, Principal, Receipt } from "../src/ControlSchema.vibe"
 import { park } from "./Park.ts"
 
 /** Every service a contract test may reach for. */
@@ -674,7 +674,7 @@ export const contract = (name: string, harness: Harness): void => {
 
     it("admits the winning signal before delivery and never delivers conflicting payloads", async () => {
       const delivered: Array<ControlExecutor.Signal> = []
-      let runtime: import("../src/ControlRuntime.ts").Service | undefined
+      let runtime: import("../src/ControlRuntime.vibe").Service | undefined
       const executor = ControlExecutor.makeNoop({
         deliverSignal: (input) =>
           Effect.gen(function*() {

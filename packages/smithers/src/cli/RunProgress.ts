@@ -15,7 +15,7 @@ import { Cause, Context, Effect, Exit, HashMap, HashSet, Stream } from "effect"
 import type { Writable } from "node:stream"
 import { stripVTControlCharacters } from "node:util"
 import { causeLine } from "../internal/Failure.ts"
-import { flowNameOf } from "./RunActivity.ts"
+import { flowNameOf } from "./RunActivity.vibe"
 
 /**
  * Invocation-scoped display settings, independent of document encoding.

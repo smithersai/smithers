@@ -14,8 +14,8 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import type * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
 import { Control } from "../src/Control.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { PlanCard } from "../src/ControlSchema.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { PlanCard } from "../src/ControlSchema.vibe"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-control-fallback-principal-"))

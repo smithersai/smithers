@@ -14,7 +14,7 @@ import type { RunId } from "@smthrs/control/ControlSchema"
 import { Cause, Effect, Exit } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import { durable } from "./DurableStack.ts"
 import * as TestStack from "./TestStack.ts"
 

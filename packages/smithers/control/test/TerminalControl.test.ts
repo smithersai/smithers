@@ -42,7 +42,7 @@ import { Control } from "../src/Control.vibe"
 import { ClaimLost, PersistenceError } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { park } from "./Park.ts"
 

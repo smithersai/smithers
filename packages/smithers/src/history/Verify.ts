@@ -30,15 +30,15 @@ import { randomBytes } from "node:crypto"
 import { mkdirSync, mkdtempSync, rmSync } from "node:fs"
 import { tmpdir } from "node:os"
 import { dirname, join, resolve } from "node:path"
-import type * as Application from "../Application.ts"
-import * as CliError from "../CliError.ts"
+import type * as Application from "../Application.vibe"
+import * as CliError from "../CliError.vibe"
 import { databasePath } from "../internal/ControlDatabasePath.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
 import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
 import type * as NativeControl from "../internal/NativeControl.ts"
 import * as NodeControl from "../NodeControl.ts"
 import * as Project from "../Project.ts"
-import * as StoreCopy from "./StoreCopy.ts"
+import * as StoreCopy from "./StoreCopy.vibe"
 
 /**
  * One step of the run, by the key its attempts are recorded under.

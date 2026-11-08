@@ -12,8 +12,8 @@ import * as Sha256 from "@smthrs/crypto/Sha256"
 import { type Schema } from "effect"
 import { Control } from "./Control.vibe"
 import { type ControlError, InvalidInput, type Unauthorized, Unavailable } from "./ControlError.vibe"
-import { ControlRuntime } from "./ControlRuntime.ts"
-import type { FlowId, IdempotencyKey, Receipt, RunId, RunSummary, SignalPayload } from "./ControlSchema.ts"
+import { ControlRuntime } from "./ControlRuntime.vibe"
+import type { FlowId, IdempotencyKey, Receipt, RunId, RunSummary, SignalPayload } from "./ControlSchema.vibe"
 import { alreadyApplied } from "./internal/planning.vibe"
 
 /**
@@ -289,10 +289,10 @@ const fingerprint = (
   names: ReadonlyArray<string>
 ): string => {
   const document = JSON.stringify([
-    $invoke(Sha256,() => (body)),
+    $invoke(Sha256, () => body),
     names.map((name) => [name, headers[name] ?? null])
   ])
-  return `channel-ingress:v2:${$invoke(Sha256,() => (new TextEncoder().encode(document)))}`
+  return `channel-ingress:v2:${$invoke(Sha256, () => (new TextEncoder().encode(document)))}`
 }
 
 const externalReceipt = (receipt: Receipt, key: IdempotencyKey): Receipt => {
@@ -510,11 +510,18 @@ export const layer = Layer.effect(Channels, make)
 export const layerMemory: Layer.Layer<Channels, never, Control> = Layer.effect(Channels, makeMemory)
 
 module $throw$ts {
-export function raise(value: unknown): never { throw value }
+  export function raise(value: unknown): never {
+    throw value
+  }
 }
 import { raise as $raise } from $throw$ts
 
 module $call$ts {
-export function invoke<T extends {"digestSync":Function}>(target:T,arg0:()=>Parameters<Extract<T["digestSync"],(...args:any[])=>any>>[0]):ReturnType<Extract<T["digestSync"],(...args:any[])=>any>> { return target["digestSync"](arg0()) }
+  export function invoke<T extends { "digestSync": Function }>(
+    target: T,
+    arg0: () => Parameters<Extract<T["digestSync"], (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T["digestSync"], (...args: any[]) => any>> {
+    return target["digestSync"](arg0())
+  }
 }
 import { invoke as $invoke } from $call$ts

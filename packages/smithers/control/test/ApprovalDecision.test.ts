@@ -15,7 +15,7 @@ import {
   ApprovalPending,
   ControlRuntime,
   requireApproved
-} from "../src/ControlRuntime.ts"
+} from "../src/ControlRuntime.vibe"
 import { initial } from "../src/migrations/0001_control_tables.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { delegateApproval } from "./ApprovalFixtures.ts"

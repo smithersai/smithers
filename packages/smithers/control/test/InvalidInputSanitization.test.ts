@@ -5,7 +5,7 @@
 import { Effect } from "effect"
 import { describe, expect, it } from "vitest"
 import { InvalidInput } from "../src/ControlError.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import { durable } from "./DurableStack.ts"
 import { memoryRuntime } from "./TestStack.ts"
 

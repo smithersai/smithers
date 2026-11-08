@@ -16,8 +16,8 @@ import { Control } from "../src/Control.vibe"
 import { PersistenceError } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { PlanCard } from "../src/ControlSchema.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { PlanCard } from "../src/ControlSchema.vibe"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-control-stranded-"))

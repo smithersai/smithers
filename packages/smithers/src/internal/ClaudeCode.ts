@@ -47,7 +47,7 @@ import { tmpdir } from "node:os"
 import { codexEnvironment } from "../Agents.ts"
 import { errorCode } from "./ErrorCode.ts"
 import * as Failure from "./Failure.ts"
-import { ModuleLoader } from "./ProviderModules.ts"
+import { ModuleLoader } from "./ProviderModules.vibe"
 import * as Telemetry from "./Telemetry.ts"
 
 /**

@@ -20,7 +20,7 @@ import { join } from "node:path"
 import { describe, expect, it } from "vitest"
 
 import { settledKind } from "../src/internal/EngineJournalSupervisor.ts"
-import { ModuleOwner } from "../src/internal/ModuleOwner.ts"
+import { ModuleOwner } from "../src/internal/ModuleOwner.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const definition = {

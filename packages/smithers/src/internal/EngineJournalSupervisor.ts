@@ -14,7 +14,7 @@ import * as JournalEvent from "@smthrs/journal/JournalEvent"
 import * as RunStore from "@smthrs/run-store/RunStore"
 import { Cause, Deferred, Duration, Effect, Fiber, Option, Schema, Scope, Semaphore, Stream } from "effect"
 import * as AuthoredSources from "./AuthoredSources.ts"
-import * as Projection from "./EngineJournalProjection.ts"
+import * as Projection from "./EngineJournalProjection.vibe"
 
 /**
  * Existing host services retained by the observer.

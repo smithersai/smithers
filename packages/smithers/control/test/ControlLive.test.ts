@@ -10,8 +10,8 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { ClaimLost, InvalidInput, PersistenceError } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { WatchFilter } from "../src/ControlSchema.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { WatchFilter } from "../src/ControlSchema.vibe"
 import * as TestControl from "../src/test/TestControl.ts"
 import { contract, type Stack } from "./ControlContract.ts"
 import { live, memoryRuntime } from "./TestStack.ts"
@@ -377,7 +377,7 @@ describe("ControlLive", () => {
   it("owned modules contain no Node or platform-node imports", () => {
     const files = [
       "src/Control.vibe",
-      "src/ControlRuntime.ts",
+      "src/ControlRuntime.vibe",
       "src/ControlLive.ts",
       "src/SqlControlRuntime.ts",
       "src/internal/planning.vibe",

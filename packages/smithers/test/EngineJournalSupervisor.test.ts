@@ -11,7 +11,7 @@ import * as RunStore from "@smthrs/run-store/RunStore"
 import { Context, Deferred, Effect, Exit, Layer, Option, Schedule, Scope } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import * as Projection from "../src/internal/EngineJournalProjection.ts"
+import * as Projection from "../src/internal/EngineJournalProjection.vibe"
 import * as Supervisor from "../src/internal/EngineJournalSupervisor.ts"
 
 const summary = (id = "root", status: RunSummary["status"] = "running"): RunSummary => ({

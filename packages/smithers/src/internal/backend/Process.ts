@@ -20,7 +20,7 @@ import { ChildProcessSpawner } from "effect/process/ChildProcessSpawner"
 import * as Stream from "effect/Stream"
 import { hostname } from "node:os"
 import { PassThrough } from "node:stream"
-import { Refused } from "../../CliError.ts"
+import { Refused } from "../../CliError.vibe"
 
 type Environment = Readonly<Record<string, string | undefined>>
 

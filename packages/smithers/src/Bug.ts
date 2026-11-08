@@ -12,7 +12,7 @@
 
 import * as Redaction from "@smthrs/journal/Redaction"
 import { isArrayBuffer, isDataView, isProxy } from "node:util/types"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 
 /**
  * Where reports are posted when the environment names no other endpoint.

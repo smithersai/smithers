@@ -16,7 +16,7 @@
 import { SpanFailure } from "@smthrs/flow"
 import { Cause, Effect, Exit, Metric, Stream } from "effect"
 import { clean } from "../../cli/Presentation.ts"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { APIError, type Client, esc, list, object, str, type Values } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 

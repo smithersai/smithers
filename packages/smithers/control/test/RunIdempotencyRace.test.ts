@@ -5,7 +5,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
-import type { Receipt } from "../src/ControlSchema.ts"
+import type { Receipt } from "../src/ControlSchema.vibe"
 import { durable, type DurableStack, fileBundle } from "./DurableStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "flows-control-race-"))

@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { afterAll, describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { ClaimLost } from "../src/ControlError.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import { durable, fileBundle } from "./DurableStack.ts"
 
 const directory = mkdtempSync(join(tmpdir(), "control-engine-resume-scope-"))

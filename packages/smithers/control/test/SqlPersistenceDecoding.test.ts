@@ -9,7 +9,7 @@ import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import * as Cancellation from "../src/Cancellation.ts"
 import { ClaimLost, PersistenceError } from "../src/ControlError.vibe"
-import { ControlRuntime, type Service } from "../src/ControlRuntime.ts"
+import { ControlRuntime, type Service } from "../src/ControlRuntime.vibe"
 import { delegateApproval } from "./ApprovalFixtures.ts"
 import { durable, type DurableStack } from "./DurableStack.ts"
 

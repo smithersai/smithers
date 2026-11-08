@@ -17,7 +17,7 @@ import { DatabaseSync } from "node:sqlite"
 import { afterEach, expect, it } from "vitest"
 
 import * as History from "../src/history/History.ts"
-import * as Workspace from "../src/history/Workspace.ts"
+import * as Workspace from "../src/history/Workspace.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const moduleSource = `import { Action, Flow, HumanTask } from "@smthrs/flow"

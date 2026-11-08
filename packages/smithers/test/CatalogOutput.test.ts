@@ -4,7 +4,7 @@ import { createServer } from "node:http"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import { main } from "../src/cli/Entry.ts"
+import { main } from "../src/cli/Entry.vibe"
 
 // Remote text can contain terminal commands, including C1 and bidirectional controls.
 const hostile = "\u001b]0;owned\u0007Fix\u001b[31m login\u009b2J\u202e"

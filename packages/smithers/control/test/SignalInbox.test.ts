@@ -2,7 +2,7 @@ import { Deferred, Effect, Fiber, type Layer } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
 import { InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import { durable } from "./DurableStack.ts"
 import { memoryRuntime } from "./TestStack.ts"
 

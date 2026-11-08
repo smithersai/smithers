@@ -20,7 +20,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "nod
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
-import * as Application from "../src/Application.ts"
+import * as Application from "../src/Application.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 import { liveModel } from "./support/liveModel.ts"
 

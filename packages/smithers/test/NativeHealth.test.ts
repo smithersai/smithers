@@ -5,7 +5,7 @@ import { mkdtemp, rm } from "node:fs/promises"
 import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { expect, it } from "vitest"
-import * as Application from "../src/Application.ts"
+import * as Application from "../src/Application.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 it("Application.Config.health reaches the real scoped native control host and closes its probes", async () => {

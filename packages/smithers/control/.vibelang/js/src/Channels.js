@@ -151,7 +151,7 @@ const normalizedFingerprintHeaders = (channel) => Array.from(new Set((channel.fi
 /** Digests the body plus only the adapter-declared, non-secret semantic headers. */
 const fingerprint = (body, headers, names) => {
     const document = JSON.stringify([
-        $invoke(Sha256, () => (body)),
+        $invoke(Sha256, () => body),
         names.map((name) => [name, headers[name] ?? null])
     ]);
     return `channel-ingress:v2:${$invoke(Sha256, () => (new TextEncoder().encode(document)))}`;

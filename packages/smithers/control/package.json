@@ -84,13 +84,13 @@
       "default": "./.vibelang/js/src/ControlRpcs.js"
     },
     "./ControlRuntime": {
-      "types": "./src/ControlRuntime.ts",
-      "vibelang-source": "./src/ControlRuntime.ts",
+      "types": "./.vibe/declarations/src/ControlRuntime.d.vibe.ts",
+      "vibelang-source": "./src/ControlRuntime.vibe",
       "default": "./.vibelang/js/src/ControlRuntime.js"
     },
     "./ControlSchema": {
-      "types": "./src/ControlSchema.ts",
-      "vibelang-source": "./src/ControlSchema.ts",
+      "types": "./.vibe/declarations/src/ControlSchema.d.vibe.ts",
+      "vibelang-source": "./src/ControlSchema.vibe",
       "default": "./.vibelang/js/src/ControlSchema.js"
     },
     "./ControlServer": {

@@ -19,7 +19,7 @@
  * @since 0.1.0
  */
 
-import type { ControlEvent } from "./ControlSchema.ts"
+import type { ControlEvent } from "./ControlSchema.vibe"
 
 /**
  * How a run came to exist.

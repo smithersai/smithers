@@ -19,7 +19,7 @@ import { fileURLToPath } from "node:url"
 import { describe, expect, it } from "vitest"
 import { makeCli } from "../src/Cli.ts"
 import { cli as compatibility } from "../src/Command.ts"
-import { commands, didYouMean } from "../src/DidYouMean.ts"
+import { commands, didYouMean } from "../src/DidYouMean.vibe"
 import * as Unsupported from "../src/Unsupported.ts"
 import * as Verb from "../src/Verb.ts"
 

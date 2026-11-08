@@ -7,7 +7,7 @@
 import * as Fault from "@smthrs/flow/Fault"
 import { NotificationError } from "@smthrs/notifications/NotificationQueue"
 import { Schema } from "effect"
-import { FlowId, RunHost, RunId } from "./ControlSchema.ts"
+import { FlowId, RunHost, RunId } from "./ControlSchema.vibe"
 
 const constantCode = <const Code extends string>(code: Code) =>
   Schema.Literal(code).pipe(Schema.withConstructorDefault(Effect.succeed(code)))

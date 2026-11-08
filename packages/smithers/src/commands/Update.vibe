@@ -1,0 +1,35 @@
+/**
+ * `smthrs update`: the registry check, after the shared guard.
+ *
+ * @since 1.0.0
+ */
+
+import * as Platform from "./Update.platform.ts"
+import * as CliError from "../CliError.vibe"
+import * as Update from "../Update.ts"
+import { packageVersion } from "../Version.ts"
+import * as Globals from "./Globals.vibe"
+
+const registryUnavailable = () =>
+  new CliError.Refused({
+    fault: "dependency",
+    code: "registry_unreachable",
+    message: "Could not reach the npm registry. Check your network and retry."
+  })
+
+/**
+ * Compares the installed version with the registry's dist-tags.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const check = effect (
+  globals: Globals.Options
+): Update.Status!(CliError.UnsupportedError | CliError.Refused)! => {
+  try Globals.guard(globals)
+  const document = try Effect.tryPromise({ try: Platform.tags, catch: registryUnavailable })
+  if (typeof document !== "object" || document === null || Array.isArray(document)) {
+    throw registryUnavailable()
+  }
+  const tags = document as Record<string, string>
+  return try Effect.orDie(Effect.try({ try: () => Update.compare(packageVersion, tags), catch: (e) => e }))
+}

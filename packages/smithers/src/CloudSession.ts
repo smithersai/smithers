@@ -9,7 +9,7 @@
  */
 
 import { Context, Effect, Layer, Schema } from "effect"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import { processHost, resolveRepo } from "./commands/Open.ts"
 import { auth } from "./internal/backend/Auth.ts"
 import { Client } from "./internal/backend/Client.ts"

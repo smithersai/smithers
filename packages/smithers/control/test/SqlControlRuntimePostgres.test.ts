@@ -2,7 +2,7 @@
 import { Effect } from "effect"
 import * as SqlClient from "effect/sql/SqlClient"
 import { describe, expect, it } from "vitest"
-import { ControlRuntime, type RunQuery } from "../src/ControlRuntime.ts"
+import { ControlRuntime, type RunQuery } from "../src/ControlRuntime.vibe"
 import { durable } from "./DurableStack.ts"
 
 const url = process.env.SMITHERS_TEST_PG_URL

@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
-import { Refused } from "../src/CliError.ts"
+import { Refused } from "../src/CliError.vibe"
 import * as Host from "../src/internal/backend/HostService.ts"
 
 afterEach(() => vi.restoreAllMocks())

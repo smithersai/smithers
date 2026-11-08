@@ -7,7 +7,7 @@ import { join } from "node:path"
 import { pathToFileURL } from "node:url"
 import * as tar from "tar"
 import { afterAll, beforeAll, describe, expect, it } from "vitest"
-import * as LoadSuite from "../src/evaluation/LoadSuite.ts"
+import * as LoadSuite from "../src/evaluation/LoadSuite.vibe"
 
 let directory: string
 let installed: string

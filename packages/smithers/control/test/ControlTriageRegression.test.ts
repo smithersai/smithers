@@ -4,7 +4,7 @@ import { Effect, Layer } from "effect"
 import { expect, it } from "vitest"
 import * as ApprovalAuthority from "../src/ApprovalAuthority.vibe"
 import { PersistenceError, PlanDenied, Unauthorized } from "../src/ControlError.vibe"
-import * as Runtime from "../src/ControlRuntime.ts"
+import * as Runtime from "../src/ControlRuntime.vibe"
 import * as SqlControlRuntime from "../src/SqlControlRuntime.ts"
 import { durable, journalBundle } from "./DurableStack.ts"
 

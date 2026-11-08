@@ -31,7 +31,7 @@ import { createRequire } from "node:module"
 import { constants } from "node:os"
 import { dirname, join } from "node:path"
 import { fileURLToPath } from "node:url"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Environment from "../ExecutionEnvironment.ts"
 
 /**

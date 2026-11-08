@@ -12,7 +12,7 @@ import { tmpdir } from "node:os"
 import { dirname, join } from "node:path"
 import { pathToFileURL } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import * as Tui from "../src/commands/Tui.ts"
 
 const staged: Array<string> = []

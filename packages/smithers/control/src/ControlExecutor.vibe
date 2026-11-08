@@ -11,7 +11,7 @@ import * as DurableDeferred from "@smthrs/flow/DurableDeferred"
 import type { ExecutionFact } from "@smthrs/journal"
 import { Context, Effect, Layer } from "effect"
 import type { LaunchFailed, PersistenceError } from "./ControlError.vibe"
-import type { StoredPlan } from "./ControlRuntime.ts"
+import type { StoredPlan } from "./ControlRuntime.vibe"
 import type {
   ApprovalTarget,
   ExecutionBatch,
@@ -21,7 +21,7 @@ import type {
   RunId,
   RunSummary,
   SignalPayload
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 
 /**
  * One stored plan and the run summary it is being started as.
@@ -260,7 +260,7 @@ export const pendingWaitOf = (row: {
     runId: row.runId,
     reason: row.reason,
     token: row.token,
-    tokenDigest: $invoke(Sha256.digestSync,row.token),
+    tokenDigest: $invoke(Sha256.digestSync, row.token),
     createdAt: row.createdAt,
     ...(row.flowId === undefined ? {} : { flowId: row.flowId }),
     ...point,
@@ -494,6 +494,11 @@ export const layerNoop = (overrides: Partial<Service> = {}): Layer.Layer<Control
   Layer.succeed(ControlExecutor)(makeNoop(overrides))
 
 module $call$ts {
-export function invoke<T extends Function>(target:T,arg0:Parameters<Extract<T,(...args:any[])=>any>>[0]):ReturnType<Extract<T,(...args:any[])=>any>> { return target(arg0) }
+  export function invoke<T extends Function>(
+    target: T,
+    arg0: Parameters<Extract<T, (...args: any[]) => any>>[0]
+  ): ReturnType<Extract<T, (...args: any[]) => any>> {
+    return target(arg0)
+  }
 }
 import { invoke as $invoke } from $call$ts

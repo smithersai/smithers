@@ -16,8 +16,8 @@ import { Effect, Schema } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { InvalidInput } from "../src/ControlError.vibe"
-import type { MemoryFlow } from "../src/ControlRuntime.ts"
-import { PlanCard, PlanGraph, type PlanNodeStatus } from "../src/ControlSchema.ts"
+import type { MemoryFlow } from "../src/ControlRuntime.vibe"
+import { PlanCard, PlanGraph, type PlanNodeStatus } from "../src/ControlSchema.vibe"
 import * as TestControl from "../src/test/TestControl.ts"
 
 const step = (tag: string, writes: ReadonlyArray<string>) =>

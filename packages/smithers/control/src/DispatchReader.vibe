@@ -17,7 +17,7 @@
 
 import type { ControlError } from "./ControlError.vibe"
 import { InvalidInput } from "./ControlError.vibe"
-import type { FireSummary, ListRequest, TriggerSummary } from "./ControlSchema.ts"
+import type { FireSummary, ListRequest, TriggerSummary } from "./ControlSchema.vibe"
 
 /**
  * The `triggers` listing request as the port receives it.
@@ -59,7 +59,9 @@ export interface Service {
  * @category services
  * @since 1.0.0
  */
-export service DispatchReader: Service { static readonly key = "/control/DispatchReader";}
+export service DispatchReader: Service {
+  static readonly key = "/control/DispatchReader"
+}
 
 /**
  * The refusal a host without a trigger store answers both variants with.

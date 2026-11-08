@@ -1,0 +1,40 @@
+/**
+ * Process lifetime, cancellation, and cache-secret isolation for the unified CLI.
+ * @since 1.0.0
+ */
+
+import type { Host as BuildHost } from "@smthrs/build-cli/Entry"
+import { Effect } from "effect"
+import { runMain as runMain$platform } from "./Entry.platform.ts"
+
+/**
+ * Process hosts keep MCP alive until stdin closes or the operator interrupts.
+ * @category models
+ * @since 1.0.0
+ */
+export interface Host extends BuildHost {
+  readonly waitForDisconnect?: ((signal: AbortSignal) => Promise<void>) | undefined
+}
+const runMain = runMain$platform
+/**
+ * Runs an embedded invocation with its host's Effect services available to
+ * shared command and suggestion runtimes, including module-loading services.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const mainEffect = effect (host: Host): void!! => {
+  const context = try Effect.context<never>()
+  try Effect.callback<void>((resume, signal) => {
+    const running = runMain(host, context, signal)
+    void running.then(() => resume(Effect.void), (error) => resume(Effect.die(error)))
+    // Cancellation aborts runMain's controller and waits for command cleanup
+    // before the embedding host can close the services it supplied.
+    return Effect.promise(() => running.catch(() => {}))
+  })
+}
+/**
+ * The process boundary for one invocation. Embedded Effect hosts use mainEffect.
+ * @category constructors
+ * @since 1.0.0
+ */
+export const main = (host: Host): Promise<void> => Effect.runPromise(mainEffect(host))

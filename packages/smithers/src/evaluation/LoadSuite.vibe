@@ -1,0 +1,18 @@
+/**
+ * Evaluation modules share the CLI host's public authoring libraries.
+ * @since 1.0.0
+ */
+
+import * as $platform from "./LoadSuite.platform.ts"
+
+/**
+ * Imports an admitted suite without requiring dependencies in its project.
+ *
+ * Keep native ESM URLs unchanged: embeddings may already hold that module's
+ * cancellation controls, and resume must reach the same executor instance.
+ * The shared loader owns TypeScript, authored ESM admission, and relative
+ * helper resolution for ambiguous .ts/.js entries.
+ * @category loading
+ * @since 1.0.0
+ */
+export const load = (file: string): unknown!unknown => Effect.tryPromise(() => $platform.load(file))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest"
-import { executionRunId } from "../src/history/ExecutionTarget.ts"
+import { executionRunId } from "../src/history/ExecutionTarget.vibe"
 
 describe("execution target routing", () => {
   it.each(["resume", "cancel", "signal", "steer"])(

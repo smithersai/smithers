@@ -3,7 +3,7 @@ import { Cli, z } from "incur"
 import { EventEmitter } from "node:events"
 import { delimiter, join, resolve } from "node:path"
 import { beforeEach, describe, expect, it, vi } from "vitest"
-import { type Host, main } from "../src/cli/Entry.ts"
+import { type Host, main } from "../src/cli/Entry.vibe"
 
 const { makeCli, serve } = vi.hoisted(() => ({ makeCli: vi.fn(), serve: vi.fn() }))
 vi.mock("../src/Cli.ts", () => ({ makeCli }))

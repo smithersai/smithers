@@ -40,7 +40,7 @@ const start = async (): Promise<void> => {
     process.argv.splice(2, process.argv.length - 2, ...legacy)
     await import("./cli/LegacyBin.ts")
   } else {
-    const { main } = await import("./cli/Entry.ts")
+    const { main } = await import("./cli/Entry.vibe")
     // Environment CRUD can bootstrap natively. Durable and protocol commands
     // retain tsx before importing SDK callbacks, whose source shapes persist.
     installEffectResolution()

@@ -5,7 +5,7 @@ import { Clock, Deferred, Effect, Fiber, Layer, Metric, PubSub, Stream } from "e
 import { TestClock } from "effect/testing"
 import { expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import * as ObservedClock from "./ObservedClock.ts"
 import { live } from "./TestStack.ts"
 

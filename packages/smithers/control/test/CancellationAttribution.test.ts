@@ -14,7 +14,7 @@
  */
 import { describe, expect, it } from "vitest"
 import * as Cancellation from "../src/Cancellation.ts"
-import type { Cancellation as CancellationSummary, Principal } from "../src/ControlSchema.ts"
+import type { Cancellation as CancellationSummary, Principal } from "../src/ControlSchema.vibe"
 
 /** Deterministic PRNG. A fixed seed keeps a failure reproducible. */
 const mulberry32 = (seed: number) => () => {

@@ -6,7 +6,7 @@
 import { mkdir, readFile, stat, writeFile } from "node:fs/promises"
 import { join, resolve } from "node:path"
 import { setTimeout as delay } from "node:timers/promises"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import * as Environment from "../../Environment.ts"
 import { APIError, list, object, pick, query, str, type Values, withCause } from "./Client.ts"
 import { lines } from "./Local.ts"

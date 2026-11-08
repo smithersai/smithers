@@ -8,7 +8,7 @@
 
 import { readFile } from "node:fs/promises"
 import { join } from "node:path"
-import { UsageError } from "../../CliError.ts"
+import { UsageError } from "../../CliError.vibe"
 import { type Client, esc, object, str, type Values } from "./Client.ts"
 import type { Handler } from "./Resources.ts"
 

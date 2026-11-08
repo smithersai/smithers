@@ -12,7 +12,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { fileURLToPath } from "node:url"
-import * as RunActivity from "../../src/cli/RunActivity.ts"
+import * as RunActivity from "../../src/cli/RunActivity.vibe"
 import { host } from "./native-control-external-peer.ts"
 
 const fixture = fileURLToPath(new URL("./native-control-external-peer.ts", import.meta.url))

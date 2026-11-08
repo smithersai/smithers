@@ -6,7 +6,7 @@
 import { randomUUID } from "node:crypto"
 import { mkdir, rename, rm, writeFile } from "node:fs/promises"
 import { basename, dirname, resolve } from "node:path"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { chunksOf, type Client, esc, list, object, pick, positive, query, str, type Values } from "./Client.ts"
 import * as ProductApi from "./ProductApi.ts"
 

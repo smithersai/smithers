@@ -7,7 +7,7 @@ import { join, resolve } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterAll, beforeEach, describe, expect, it, vi } from "vitest"
 import { makeCli } from "../src/Cli.ts"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import * as Project from "../src/Project.ts"
 import * as Suggest from "../src/Suggest.ts"
 
@@ -35,19 +35,19 @@ vi.mock("../src/cli/ControlBridge.ts", async (load) => ({
   query: ports.query,
   host: ports.host
 }))
-vi.mock("../src/commands/Doctor.ts", () => ({
+vi.mock("../src/commands/Doctor.vibe", () => ({
   fromRegistry: ports.doctorFromRegistry,
   fromControl: ports.doctorFromControl
 }))
-vi.mock("../src/commands/Gc.ts", () => ({ sweep: ports.sweep }))
+vi.mock("../src/commands/Gc.vibe", () => ({ sweep: ports.sweep }))
 vi.mock("../src/commands/Migrate.ts", async (load) => ({
   ...await load<typeof import("../src/commands/Migrate.ts")>(),
   run: ports.migrate,
   // The report encoding is the migrate package's; this suite pins the routing.
   document: (report: unknown) => report
 }))
-vi.mock("../src/commands/Update.ts", () => ({ check: ports.update }))
-vi.mock("../src/commands/Bug.ts", () => ({ submit: ports.bug }))
+vi.mock("../src/commands/Update.vibe", () => ({ check: ports.update }))
+vi.mock("../src/commands/Bug.vibe", () => ({ submit: ports.bug }))
 vi.mock("../src/cli/Generate.ts", async (load) => ({
   ...await load<typeof import("../src/cli/Generate.ts")>(),
   initialize: ports.initialize

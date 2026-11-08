@@ -29,7 +29,7 @@
 
 import * as ScopedProcess from "@smthrs/platform-node/ScopedProcess"
 import { Effect, Option, Stream } from "effect"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 
 /**
  * Runs one read-only command in `cwd` and answers its stdout, or nothing.

@@ -15,7 +15,7 @@ import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { afterEach, describe, expect, it } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
-import { databaseLayer } from "../src/operator/Store.ts"
+import { databaseLayer } from "../src/operator/Store.vibe"
 import * as TriggerPlans from "../src/operator/TriggerPlans.ts"
 
 const roots: Array<string> = []

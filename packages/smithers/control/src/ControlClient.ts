@@ -21,7 +21,7 @@ import {
   SignalInputSchema,
   SteerInputSchema,
   WatchFilter
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 
 /**
  * Whether a value is one of the control plane's declared failures, as opposed

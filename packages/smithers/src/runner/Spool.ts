@@ -26,7 +26,7 @@ import { Clock, Effect, Option, Queue, Schema, type Scope } from "effect"
 import { createHash } from "node:crypto"
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, rmSync, writeSync } from "node:fs"
 import { join } from "node:path"
-import * as Host from "./Host.ts"
+import * as Host from "./Host.vibe"
 
 /**
  * The host couldn't be reached to take the job's events; the engine retries.

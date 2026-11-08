@@ -58,22 +58,46 @@
     "./*/index": null,
     "./McpServer": null,
     "./Agents": "./src/Agents.ts",
-    "./Application": "./src/Application.ts",
+    "./Application": {
+      "types": "./.vibe/declarations/src/Application.d.vibe.ts",
+      "vibelang-source": "./src/Application.vibe",
+      "default": "./.vibelang/js/src/Application.js"
+    },
     "./Audience": "./src/Audience.ts",
     "./Bug": "./src/Bug.ts",
-    "./BunControl": "./src/BunControl.ts",
+    "./BunControl": {
+      "types": "./.vibe/declarations/src/BunControl.d.vibe.ts",
+      "vibelang-source": "./src/BunControl.vibe",
+      "default": "./.vibelang/js/src/BunControl.js"
+    },
     "./ClaudeMirror": "./src/ClaudeMirror.ts",
     "./Cli": "./src/Cli.ts",
-    "./CliError": "./src/CliError.ts",
+    "./CliError": {
+      "types": "./.vibe/declarations/src/CliError.d.vibe.ts",
+      "vibelang-source": "./src/CliError.vibe",
+      "default": "./.vibelang/js/src/CliError.js"
+    },
     "./CodexAuth": null,
     "./Command": "./src/Command.ts",
     "./Detached": "./src/Detached.ts",
     "./Doctor": "./src/Doctor.ts",
     "./Environment": "./src/Environment.ts",
     "./ExecutionEnvironment": "./src/ExecutionEnvironment.ts",
-    "./ExecutorOwnership": "./src/ExecutorOwnership.ts",
-    "./Forensics": "./src/Forensics.ts",
-    "./Gc": "./src/Gc.ts",
+    "./ExecutorOwnership": {
+      "types": "./.vibe/declarations/src/ExecutorOwnership.d.vibe.ts",
+      "vibelang-source": "./src/ExecutorOwnership.vibe",
+      "default": "./.vibelang/js/src/ExecutorOwnership.js"
+    },
+    "./Forensics": {
+      "types": "./.vibe/declarations/src/Forensics.d.vibe.ts",
+      "vibelang-source": "./src/Forensics.vibe",
+      "default": "./.vibelang/js/src/Forensics.js"
+    },
+    "./Gc": {
+      "types": "./.vibe/declarations/src/Gc.d.vibe.ts",
+      "vibelang-source": "./src/Gc.vibe",
+      "default": "./.vibelang/js/src/Gc.js"
+    },
     "./Init": "./src/Init.ts",
     "./Legacy": "./src/Legacy.ts",
     "./NodeControl": "./src/NodeControl.ts",
@@ -82,7 +106,11 @@
     "./Project": "./src/Project.ts",
     "./Providers": "./src/Providers.ts",
     "./CloudSession": "./src/CloudSession.ts",
-    "./Serve": "./src/Serve.ts",
+    "./Serve": {
+      "types": "./.vibe/declarations/src/Serve.d.vibe.ts",
+      "vibelang-source": "./src/Serve.vibe",
+      "default": "./.vibelang/js/src/Serve.js"
+    },
     "./Suggest": "./src/Suggest.ts",
     "./Ui": "./src/Ui.ts",
     "./Unsupported": "./src/Unsupported.ts",
@@ -94,7 +122,11 @@
     "./cli/Compatibility": "./src/cli/Compatibility.ts",
     "./cli/ControlBridge": "./src/cli/ControlBridge.ts",
     "./cli/ControlCommands": "./src/cli/ControlCommands.ts",
-    "./cli/Entry": "./src/cli/Entry.ts",
+    "./cli/Entry": {
+      "types": "./.vibe/declarations/src/cli/Entry.d.vibe.ts",
+      "vibelang-source": "./src/cli/Entry.vibe",
+      "default": "./.vibelang/js/src/cli/Entry.js"
+    },
     "./cli/EnvironmentCommands": "./src/cli/EnvironmentCommands.ts",
     "./cli/Generate": "./src/cli/Generate.ts",
     "./cli/HistoryCommands": "./src/cli/HistoryCommands.ts",
@@ -105,13 +137,25 @@
     "./evaluation/EvalCli": "./src/evaluation/EvalCli.ts",
     "./evaluation/Evaluation": "./src/evaluation/Evaluation.ts",
     "./history/History": "./src/history/History.ts",
-    "./history/ExecutionTarget": "./src/history/ExecutionTarget.ts",
-    "./history/Workspace": "./src/history/Workspace.ts",
+    "./history/ExecutionTarget": {
+      "types": "./.vibe/declarations/src/history/ExecutionTarget.d.vibe.ts",
+      "vibelang-source": "./src/history/ExecutionTarget.vibe",
+      "default": "./.vibelang/js/src/history/ExecutionTarget.js"
+    },
+    "./history/Workspace": {
+      "types": "./.vibe/declarations/src/history/Workspace.d.vibe.ts",
+      "vibelang-source": "./src/history/Workspace.vibe",
+      "default": "./.vibelang/js/src/history/Workspace.js"
+    },
     "./index": "./src/index.ts",
     "./operator/Credentials": "./src/operator/Credentials.ts",
     "./operator/Integrations": "./src/operator/Integrations.ts",
     "./operator/Memory": "./src/operator/Memory.ts",
-    "./operator/Store": "./src/operator/Store.ts",
+    "./operator/Store": {
+      "types": "./.vibe/declarations/src/operator/Store.d.vibe.ts",
+      "vibelang-source": "./src/operator/Store.vibe",
+      "default": "./.vibelang/js/src/operator/Store.js"
+    },
     "./operator/TriggerPlans": "./src/operator/TriggerPlans.ts",
     "./operator/Triggers": "./src/operator/Triggers.ts",
     "./suggest/Brief": "./src/suggest/Brief.ts",

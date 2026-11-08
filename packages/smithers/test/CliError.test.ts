@@ -6,7 +6,7 @@ import * as Effect from "effect/Effect"
 import * as Schema from "effect/Schema"
 import { describe, expect, it } from "vitest"
 import { PLUE_FAULTS } from "../../rpc/src/PlueFailureCodes.ts"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 
 describe("CliError.Refused", () => {
   it("decodes old refusals and round-trips only bounded integer HTTP statuses", () => {

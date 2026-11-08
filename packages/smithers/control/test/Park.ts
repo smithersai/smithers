@@ -11,8 +11,8 @@
  * with `pause`, in one place.
  */
 import { Effect } from "effect"
-import type { Service } from "../src/ControlRuntime.ts"
-import type { RunId, RunSummary } from "../src/ControlSchema.ts"
+import type { Service } from "../src/ControlRuntime.vibe"
+import type { RunId, RunSummary } from "../src/ControlSchema.vibe"
 
 /**
  * Parks a run this process owns, releasing the fence it held.

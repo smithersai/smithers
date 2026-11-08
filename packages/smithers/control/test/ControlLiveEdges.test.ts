@@ -18,8 +18,8 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { ClaimLost, InvalidInput, PersistenceError, RunNotFound } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
-import { ControlRuntime, type MemoryFlow, type Service as ControlRuntimeService } from "../src/ControlRuntime.ts"
-import type { Envelope, Receipt, RunSummary } from "../src/ControlSchema.ts"
+import { ControlRuntime, type MemoryFlow, type Service as ControlRuntimeService } from "../src/ControlRuntime.vibe"
+import type { Envelope, Receipt, RunSummary } from "../src/ControlSchema.vibe"
 import { live, memoryRuntime, type Stack } from "./TestStack.ts"
 
 const envelope: Envelope = { capabilities: [], flows: [], budget: {} }

@@ -33,7 +33,7 @@ import { tmpdir } from "node:os"
 import { join } from "node:path"
 import { describe, expect, it, onTestFailed } from "vitest"
 
-import * as Application from "../src/Application.ts"
+import * as Application from "../src/Application.vibe"
 import * as NodeControl from "../src/NodeControl.ts"
 
 const allowanceMillis = 12_000

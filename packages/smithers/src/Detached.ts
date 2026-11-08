@@ -28,7 +28,7 @@ import { spawn } from "node:child_process"
 import type { ChildProcess } from "node:child_process"
 import { closeSync, existsSync, fstatSync, mkdirSync, openSync, readSync, renameSync, unlinkSync } from "node:fs"
 import { join } from "node:path"
-import * as CliError from "./CliError.ts"
+import * as CliError from "./CliError.vibe"
 import * as Failure from "./internal/Failure.ts"
 import * as Project from "./Project.ts"
 

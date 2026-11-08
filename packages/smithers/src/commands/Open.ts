@@ -20,7 +20,7 @@ import { spawn, spawnSync } from "node:child_process"
 import { existsSync } from "node:fs"
 import { homedir } from "node:os"
 import { join, resolve } from "node:path"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 
 /**
  * The Smithers Cloud web origin.

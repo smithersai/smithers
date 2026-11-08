@@ -42,7 +42,7 @@ import type {
   SignalInputSchema,
   SteerInputSchema,
   WatchFilter
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 
 /**
  * Raw input submitted to planning. Decoding is owned by `ControlRuntime`.
@@ -79,7 +79,7 @@ export type RunInput = typeof RunInputSchema.Type & {
  * @category models
  * @since 0.1.0
  */
-export type { ApprovalTarget } from "./ControlSchema.ts"
+export type { ApprovalTarget } from "./ControlSchema.vibe"
 
 /**
  * A listing request, restricted to one reader's runs when `reader` is set.

@@ -88,8 +88,8 @@ import type {
   SignalQuery,
   SignalReceipt,
   StoredPlan
-} from "./ControlRuntime.ts"
-import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.ts"
+} from "./ControlRuntime.vibe"
+import { ApprovalDecision, ControlRuntime, idPageLimit, make, signalReceiptId } from "./ControlRuntime.vibe"
 import {
   ApprovalTarget,
   type Cancellation,
@@ -105,7 +105,7 @@ import {
   type RunStatus,
   RunSummary,
   SignalPayload
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 import * as ActiveFibers from "./internal/activeFibers.vibe"
 import { canonicalIssue, cappedIssue, schemaIssuePath } from "./internal/issues.ts"
 import {

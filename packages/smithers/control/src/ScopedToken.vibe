@@ -22,7 +22,7 @@
 
 import { Unauthorized } from "./ControlError.vibe"
 import { type Authenticator, bearerCredential, type Call } from "./ControlRpcs.vibe"
-import type { Principal } from "./ControlSchema.ts"
+import type { Principal } from "./ControlSchema.vibe"
 
 module platform {
   import { Effect, Schema } from "effect"

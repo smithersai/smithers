@@ -6,7 +6,7 @@ import { join } from "node:path"
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest"
 import * as NodeControl from "../src/NodeControl.ts"
 import { createCredentialsCli } from "../src/operator/Credentials.ts"
-import * as Store from "../src/operator/Store.ts"
+import * as Store from "../src/operator/Store.vibe"
 import * as Project from "../src/Project.ts"
 
 const roots: Array<string> = []

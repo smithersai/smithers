@@ -4,7 +4,7 @@
  * @since 1.0.0
  */
 
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { type IssueDraftSource, issueTodoDraftRequest, readIssueTodoDraft } from "../../IssueTodoDraft.ts"
 import { type Client, object } from "./Client.ts"
 

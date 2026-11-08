@@ -8,7 +8,7 @@ import { type Redacted } from "effect"
 import * as HttpServerRequest from "effect/http/HttpServerRequest"
 import { type Channel, Channels, type InboundResult, type RawInbound } from "./Channels.vibe"
 import { InvalidInput, type Unauthorized } from "./ControlError.vibe"
-import type { IdempotencyKey } from "./ControlSchema.ts"
+import type { IdempotencyKey } from "./ControlSchema.vibe"
 import type { CredentialRef } from "./Credential.vibe"
 
 /**

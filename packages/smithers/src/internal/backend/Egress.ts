@@ -7,7 +7,7 @@
  * @since 1.0.0
  */
 
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { type Client, str, type Values } from "./Client.ts"
 import * as ProductApi from "./ProductApi.ts"
 import type { Handler } from "./Resources.ts"

@@ -8,7 +8,7 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { PersistenceError } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
 import { durable, fileBundle } from "./DurableStack.ts"
 
 const start = Effect.gen(function*() {

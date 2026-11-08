@@ -41,12 +41,12 @@ const importRules = ImportRules({
     },
     {
       kind: "forbidHostModules",
-      files: ["src/ControlSchema.ts", "src/ControlServer.vibe"],
+      files: ["src/ControlSchema.vibe", "src/ControlServer.vibe"],
       because: "sdk.platform-neutral: control boundary validation uses injected HTTP services."
     },
     {
       kind: "forbidCalls",
-      files: ["src/ControlSchema.ts", "src/ControlServer.vibe"],
+      files: ["src/ControlSchema.vibe", "src/ControlServer.vibe"],
       callees: ["*.runPromise", "*.runSync", "*.runFork"],
       because: "effect.boundary-only: the control boundary returns Effects to its host."
     },
@@ -100,7 +100,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ControlRpcs.vibe",
         "src/ControlLive.ts",
         "src/SqlControlRuntime.ts",
-        "src/ControlRuntime.ts",
+        "src/ControlRuntime.vibe",
         "src/Channels.vibe"
       ]
     },
@@ -118,7 +118,7 @@ const securityReview = Smithers.SecurityReview({
       paths: [
         "src/ApprovalAuthority.vibe",
         "src/ControlLive.ts",
-        "src/ControlRuntime.ts",
+        "src/ControlRuntime.vibe",
         "src/SqlControlRuntime.ts",
         "src/ControlExecutor.vibe"
       ]
@@ -134,7 +134,7 @@ const securityReview = Smithers.SecurityReview({
         "A reserved system flow with plannable false reaching plan or run, or a system/* id accepted from a client without the SystemFlows catalog lookup.",
         "Resume or steer waking a run outside launched scope, so a client restarts an engine-owned run the plane never admitted."
       ],
-      paths: ["src/ControlLive.ts", "src/SqlControlRuntime.ts", "src/ControlRuntime.ts", "src/SystemFlows.ts"]
+      paths: ["src/ControlLive.ts", "src/SqlControlRuntime.ts", "src/ControlRuntime.vibe", "src/SystemFlows.ts"]
     },
     {
       id: "signal-approval-bypass",
@@ -226,7 +226,7 @@ const securityReview = Smithers.SecurityReview({
         "src/ControlLive.ts",
         "src/SqlControlRuntime.ts",
         "src/ControlExecutor.vibe",
-        "src/ControlSchema.ts"
+        "src/ControlSchema.vibe"
       ]
     },
     {

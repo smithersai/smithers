@@ -18,7 +18,7 @@ import * as EffectDigest from "effect/crypto/Digest"
 import type { Control } from "../src/Control.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
 import * as ControlLive from "../src/ControlLive.ts"
-import * as ControlRuntime from "../src/ControlRuntime.ts"
+import * as ControlRuntime from "../src/ControlRuntime.vibe"
 import * as DispatchReader from "../src/DispatchReader.vibe"
 
 /** The same host-free crypto `TestControl` uses, without a Node import. */

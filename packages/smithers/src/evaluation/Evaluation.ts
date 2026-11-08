@@ -26,15 +26,15 @@ import { randomUUID } from "node:crypto"
 import { link, mkdir, open, readdir, readFile, realpath, rename, unlink } from "node:fs/promises"
 import { dirname, isAbsolute, join, resolve, sep } from "node:path"
 import * as Presentation from "../cli/Presentation.ts"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import type * as Environment from "../Environment.ts"
 import * as DatabaseLocation from "../internal/DatabaseLocation.ts"
 import { executionDatabasePath } from "../internal/ExecutionDatabasePath.ts"
 import * as Project from "../Project.ts"
-import * as EvaluationHost from "./EvaluationHost.ts"
-import * as LoadSuite from "./LoadSuite.ts"
+import * as EvaluationHost from "./EvaluationHost.vibe"
+import * as LoadSuite from "./LoadSuite.vibe"
 
-export { Host } from "./EvaluationHost.ts"
+export { Host } from "./EvaluationHost.vibe"
 
 /**
  * Executable suite modules export this value as default, or export its two fields.

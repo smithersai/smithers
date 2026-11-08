@@ -5,7 +5,7 @@ import { Effect, Layer } from "effect"
 import * as FetchHttpClient from "effect/http/FetchHttpClient"
 import { createServer, type ServerResponse } from "node:http"
 import { afterEach, expect, test } from "vitest"
-import * as Host from "../src/runner/Host.ts"
+import * as Host from "../src/runner/Host.vibe"
 
 const servers: Array<{ close: () => void }> = []
 afterEach(() => {

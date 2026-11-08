@@ -41,7 +41,7 @@ import {
   SignalInputSchema,
   SteerInputSchema,
   WatchFilter
-} from "./ControlSchema.ts"
+} from "./ControlSchema.vibe"
 
 /**
  * Authenticated principal made available to control RPC handlers.
@@ -49,7 +49,9 @@ import {
  * @category services
  * @since 0.1.0
  */
-export service ControlPrincipal: typeof Principal.Type { static readonly key = "/control/ControlPrincipal";}
+export service ControlPrincipal: typeof Principal.Type {
+  static readonly key = "/control/ControlPrincipal"
+}
 
 /**
  * Middleware boundary that authenticates control RPC requests.

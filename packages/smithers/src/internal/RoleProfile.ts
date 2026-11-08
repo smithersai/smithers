@@ -32,7 +32,7 @@ import { Effect, FileSystem, Option } from "effect"
 import { createHash } from "node:crypto"
 import { existsSync, readFileSync, realpathSync } from "node:fs"
 import { dirname, isAbsolute, join, relative, resolve } from "node:path"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as Failure from "./Failure.ts"
 
 /**

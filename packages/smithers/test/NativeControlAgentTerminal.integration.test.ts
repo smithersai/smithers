@@ -11,7 +11,7 @@ import { mkdirSync, mkdtempSync, realpathSync, rmSync } from "node:fs"
 import { join } from "node:path"
 import { DatabaseSync } from "node:sqlite"
 import { expect, it } from "vitest"
-import * as Application from "../src/Application.ts"
+import * as Application from "../src/Application.vibe"
 import * as NativeControl from "../src/internal/NativeControl.ts"
 import { platform } from "../src/internal/NodeControlHost.ts"
 

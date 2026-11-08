@@ -14,8 +14,8 @@ import { Deferred, Effect, Fiber, Layer, PubSub, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { InvalidInput, PersistenceError, Unavailable } from "../src/ControlError.vibe"
-import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.ts"
-import type { ControlEvent, Envelope } from "../src/ControlSchema.ts"
+import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.vibe"
+import type { ControlEvent, Envelope } from "../src/ControlSchema.vibe"
 import { live, memoryRuntime, type Stack } from "./TestStack.ts"
 
 const envelope: Envelope = { capabilities: [], flows: [], budget: {} }

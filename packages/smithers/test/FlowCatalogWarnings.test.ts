@@ -1,7 +1,7 @@
 /** A discovery warning must survive the CLI renderer's plain-data boundary. */
 import { Descriptor } from "@smthrs/registry"
 import { expect, it } from "vitest"
-import * as FlowCatalog from "../src/commands/FlowCatalog.ts"
+import * as FlowCatalog from "../src/commands/FlowCatalog.vibe"
 
 it.each([undefined, "refined"])("renders a discovery warning as plain data (name: %s)", (name) => {
   const warning = new Descriptor.DiscoveryWarning({

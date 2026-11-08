@@ -3,7 +3,7 @@ import * as ScriptedJudge from "@smthrs/agent/ScriptedJudge"
 import { Control, ControlExecutor } from "@smthrs/control"
 import { Cause, Effect, Exit, Layer } from "effect"
 import { strict as assert } from "node:assert"
-import * as Application from "../../src/Application.ts"
+import * as Application from "../../src/Application.vibe"
 import * as NodeControl from "../../src/NodeControl.ts"
 
 /** Only native cleanup is interrupted; requests, consensus and journals remain real. */

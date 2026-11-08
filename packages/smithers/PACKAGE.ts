@@ -61,7 +61,7 @@ const importRules = ImportRules({
     },
     {
       kind: "rootImportsOnly",
-      files: ["src/commands/{Open,Bug,Claude,FlowCatalog}.ts"],
+      files: ["src/commands/{Open,Bug,Claude,FlowCatalog}.{ts,vibe}"],
       packages: ["@smthrs/*"],
       because: "sdk.root-imports-only: commands consume public package roots. See apps/mvp/docs/rules.md."
     },
@@ -198,7 +198,7 @@ const test = Smithers.Shell.Test({
   ].join(" "),
   data: [
     lib,
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.glob("test/**/*.test.ts", { exclude: ["test/faults/**"] }),
     Smithers.file("vitest.config.ts"),
     Smithers.file("test/support/configuration-race.mjs"),
@@ -271,7 +271,7 @@ const nativeSources = Smithers.Filegroup({
  */
 const docsSources = Smithers.Filegroup({
   srcs: [
-    Smithers.glob("src/**/*.ts"),
+    Smithers.glob("src/**/*.{ts,vibe}"),
     Smithers.file("README.md"),
     Smithers.file("package.json"),
     Smithers.glob("docs/*.md")
@@ -420,7 +420,7 @@ const securityReview = Smithers.SecurityReview({
         "The serve composition handing the gateway an empty or undefined bearer for a non-loopback bind, or dropping the loopback Host and Origin policy a DNS-rebound browser page would hit.",
         "The gateway approval authority in NativeControl.ts granting Plan or Node approval to a principal other than local or the configured bearer."
       ],
-      paths: ["src/Serve.ts", "src/internal/NativeControl.ts", "src/NodeControl.ts"]
+      paths: ["src/Serve.vibe", "src/internal/NativeControl.ts", "src/NodeControl.ts"]
     },
     {
       id: "approved-envelope-enforcement",
@@ -432,7 +432,7 @@ const securityReview = Smithers.SecurityReview({
         "A handler registration path in ModuleAuthority.ts or NativeControl.ts that skips CapabilitySet.attenuate with the envelope's capabilities.",
         "A delegate executable admitted when card.envelope.flows does not name it."
       ],
-      paths: ["src/internal/ModuleAuthority.ts", "src/internal/ModuleAdmission.ts", "src/internal/NativeControl.ts"]
+      paths: ["src/internal/ModuleAuthority.ts", "src/internal/ModuleAdmission.vibe", "src/internal/NativeControl.ts"]
     },
     {
       id: "open-runs-untrusted-checkout",
@@ -454,7 +454,7 @@ const securityReview = Smithers.SecurityReview({
         "A report field in Bug.ts or commands/Bug.ts added after Redaction.redact runs, or read from env or journal without redaction.",
         "The endpoint taken from the environment over plain http or without showing it to the operator before posting."
       ],
-      paths: ["src/Bug.ts", "src/commands/Bug.ts"]
+      paths: ["src/Bug.ts", "src/commands/Bug.vibe"]
     },
     {
       id: "local-credential-store",
@@ -465,7 +465,7 @@ const securityReview = Smithers.SecurityReview({
         "A write path in operator/Credentials.ts that uses CredentialCipher.makeNoop instead of the SMITHERS_CREDENTIAL_KEY cipher.",
         "--secret-file resolved relative to an untrusted root or following a symlink into another user's file, or the secret echoed in output."
       ],
-      paths: ["src/operator/Credentials.ts", "src/operator/Store.ts"]
+      paths: ["src/operator/Credentials.ts", "src/operator/Store.vibe"]
     }
   ]
 })

@@ -16,8 +16,8 @@ import { Clock, Effect, type Layer, Stream } from "effect"
 import { describe, expect, it } from "vitest"
 import * as Cancellation from "../src/Cancellation.ts"
 import { Control } from "../src/Control.vibe"
-import { ControlRuntime } from "../src/ControlRuntime.ts"
-import type { Cancellation as Attribution, ListResponse, RunSummary } from "../src/ControlSchema.ts"
+import { ControlRuntime } from "../src/ControlRuntime.vibe"
+import type { Cancellation as Attribution, ListResponse, RunSummary } from "../src/ControlSchema.vibe"
 import { durable, type DurableStack } from "./DurableStack.ts"
 
 const run = <A, E>(

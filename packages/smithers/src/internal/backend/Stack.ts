@@ -4,7 +4,7 @@
  */
 
 import * as GitHub from "@smthrs/integrations/github"
-import { Refused, UsageError } from "../../CliError.ts"
+import { Refused, UsageError } from "../../CliError.vibe"
 import { APIError, type Client, esc, list, object, query, str, type Values } from "./Client.ts"
 import { stackChanges } from "./Local.ts"
 import type { Handler } from "./Resources.ts"

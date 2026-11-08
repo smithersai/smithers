@@ -6,9 +6,9 @@ import { describe, expect, it, vi } from "vitest"
 import * as Channels from "../src/Channels.vibe"
 import * as Control from "../src/Control.vibe"
 import { InvalidInput, PersistenceError, Unauthorized } from "../src/ControlError.vibe"
-import * as ControlRuntime from "../src/ControlRuntime.ts"
-import { RunSummary } from "../src/ControlSchema.ts"
-import type { RunStatus } from "../src/ControlSchema.ts"
+import * as ControlRuntime from "../src/ControlRuntime.vibe"
+import { RunSummary } from "../src/ControlSchema.vibe"
+import type { RunStatus } from "../src/ControlSchema.vibe"
 import * as WebhookChannel from "../src/WebhookChannel.vibe"
 
 const accepted = { _tag: "Accepted" as const, receiptId: "receipt" }

@@ -57,7 +57,7 @@ import * as CacheStore from "@smthrs/step-cache/CacheStore"
 import { Context, Effect, Layer, Schema, type Scope } from "effect"
 import { RpcTest } from "effect/rpc"
 import { describe, expect, it } from "vitest"
-import * as EngineJournalProjection from "../src/internal/EngineJournalProjection.ts"
+import * as EngineJournalProjection from "../src/internal/EngineJournalProjection.vibe"
 
 const prompt = "Which service owns the retry budget?"
 const flowId = "coding/Request"

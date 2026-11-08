@@ -3,7 +3,7 @@
  * @since 1.0.0
  */
 
-import * as CliError from "../../CliError.ts"
+import * as CliError from "../../CliError.vibe"
 import { Client } from "./Client.ts"
 import { sshArgs } from "./SSH.ts"
 import { workspaceSSH } from "./Workspaces.ts"

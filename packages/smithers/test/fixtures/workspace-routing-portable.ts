@@ -1,7 +1,7 @@
 import { Context, Effect, Layer, Path } from "effect"
 import { SqlClient } from "effect/sql/SqlClient"
 import assert from "node:assert/strict"
-import * as WorkspaceRouting from "../../src/internal/WorkspaceRouting.ts"
+import * as WorkspaceRouting from "../../src/internal/WorkspaceRouting.vibe"
 
 const runtime = process.argv[2]
 const database = runtime === "bun"

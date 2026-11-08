@@ -4,7 +4,7 @@ import { join } from "node:path"
 import { afterEach, describe, expect, it, vi } from "vitest"
 import * as Evaluation from "../src/evaluation/Evaluation.ts"
 import * as History from "../src/history/History.ts"
-import * as Store from "../src/operator/Store.ts"
+import * as Store from "../src/operator/Store.vibe"
 
 const roots: Array<string> = []
 afterEach(() => {

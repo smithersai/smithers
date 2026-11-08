@@ -12,9 +12,9 @@ import { describe, expect, it } from "vitest"
 import { Control } from "../src/Control.vibe"
 import { InvalidInput, LaunchFailed, PersistenceError, PlanDenied } from "../src/ControlError.vibe"
 import * as ControlExecutor from "../src/ControlExecutor.vibe"
-import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.ts"
-import { PlanCard } from "../src/ControlSchema.ts"
-import type { Envelope, FireSummary, ListResponse, Principal, Receipt, TriggerSummary } from "../src/ControlSchema.ts"
+import { ControlRuntime, type MemoryFlow } from "../src/ControlRuntime.vibe"
+import { PlanCard } from "../src/ControlSchema.vibe"
+import type { Envelope, FireSummary, ListResponse, Principal, Receipt, TriggerSummary } from "../src/ControlSchema.vibe"
 import * as DispatchReader from "../src/DispatchReader.vibe"
 import { mutationKey } from "../src/internal/planning.vibe"
 import { park } from "./Park.ts"
@@ -1217,7 +1217,7 @@ describe("ControlLive executor acceptance", () => {
   })
 
   it.each(["completed", "parked"] as const)("preserves an executor's immediate %s outcome", async (status) => {
-    let runtime!: import("../src/ControlRuntime.ts").Service
+    let runtime!: import("../src/ControlRuntime.vibe").Service
     const observed = await run(
       Effect.gen(function*() {
         runtime = yield* ControlRuntime

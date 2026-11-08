@@ -18,10 +18,10 @@ import { join } from "node:path"
 import { fileURLToPath } from "node:url"
 import { afterEach, describe, expect, it } from "vitest"
 import * as Bridge from "../src/cli/ControlBridge.ts"
-import * as CliError from "../src/CliError.ts"
+import * as CliError from "../src/CliError.vibe"
 import * as Failure from "../src/internal/Failure.ts"
 import * as NodeControl from "../src/NodeControl.ts"
-import * as Serve from "../src/Serve.ts"
+import * as Serve from "../src/Serve.vibe"
 import { invokeCanonical } from "./fixtures/invokeCanonical.ts"
 
 const staged: Array<string> = []

@@ -3,7 +3,7 @@ import { Effect } from "effect"
 import { appendFileSync } from "node:fs"
 import { Control } from "../../src/Control.vibe"
 import * as ControlExecutor from "../../src/ControlExecutor.vibe"
-import type { PlanCard } from "../../src/ControlSchema.ts"
+import type { PlanCard } from "../../src/ControlSchema.vibe"
 import { durable, fileBundle } from "../DurableStack.ts"
 
 const filename = process.argv[2]!

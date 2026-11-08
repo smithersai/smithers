@@ -12,9 +12,9 @@ import { Cli, z } from "incur"
 import { readFileSync } from "node:fs"
 import { resolve } from "node:path"
 import * as Presentation from "../cli/Presentation.ts"
-import * as CliError from "../CliError.ts"
+import * as CliError from "../CliError.vibe"
 import * as NodeControl from "../NodeControl.ts"
-import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.ts"
+import { databaseLayer, localFields, type LocalOptions, localRoot } from "./Store.vibe"
 import * as TriggerPlans from "./TriggerPlans.ts"
 
 /** An operator request this command refuses; the operator fixes the input or the host setup. */

@@ -3,8 +3,8 @@
 import type * as AgentRunner from "@smthrs/agent/AgentRunner"
 import { Cause, Effect, Exit, Option } from "effect"
 import { expect, test } from "vitest"
-import * as Credential from "../src/runner/Credential.ts"
-import * as Host from "../src/runner/Host.ts"
+import * as Credential from "../src/runner/Credential.vibe"
+import * as Host from "../src/runner/Host.vibe"
 import * as Session from "../src/runner/Session.ts"
 
 type Answer = typeof AgentRunner.GitCredentialResponse.Type | Host.HostError
