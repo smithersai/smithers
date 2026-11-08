@@ -1,0 +1,31 @@
+import { describe, expect, it } from "@effect/vitest"
+import * as SqlError from "effect/sql/SqlError"
+import { fromSqlError } from "../src/DurableWriter.ts"
+
+// workerd's SQLite errors carry the SQLite diagnostic in message, without an extended numeric or string code.
+describe("workerd SQLite constraint provenance", () => {
+  for (const message of [
+    "UNIQUE constraint failed: flows_runs.run_id: SQLITE_CONSTRAINT",
+    "NOT NULL constraint failed: records.name: SQLITE_CONSTRAINT",
+    "CHECK constraint failed: valid_count: SQLITE_CONSTRAINT",
+    "FOREIGN KEY constraint failed: SQLITE_CONSTRAINT",
+  ]) {
+    it.effect(`classifies ${message.split(":")[0]} as terminal`, () => effect {
+      const error = new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause: new Error(message) }) })
+      const classified = try Effect.try(() => fromSqlError(error))
+      try Effect.try(() => expect(classified.code).toBe("constraint"))
+    })
+  }
+  it.effect("does not promote a mention in an unrelated error into a constraint", () => effect {
+    const error = new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause: new Error("proxy said UNIQUE constraint failed: records.name") }) })
+    try Effect.try(() => expect(fromSqlError(error).code).toBe("unknown"))
+  })
+})
+
+for (const [code, expected] of [["40001", "busy"], ["SQLITE_IOERR", "io"], ["OTHER", "unknown"], ["SQLITE_CONSTRAINT_PRIMARYKEY", "constraint"]] as const) {
+  it.effect(`preserves ${code} over a conflicting diagnostic`, () => effect {
+    const error = new SqlError.SqlError({ reason: new SqlError.UnknownError({ cause: { code, message: "UNIQUE constraint failed: records.id" } }) })
+    const classified = try Effect.try(() => fromSqlError(error))
+    try Effect.try(() => expect(classified.code).toBe(expected))
+  })
+}

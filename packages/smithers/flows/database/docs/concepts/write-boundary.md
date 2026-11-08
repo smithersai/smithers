@@ -170,3 +170,8 @@ into a reported no-op.
 
 For the failure-handling recipes, see
 [Handle a failed write](../guides/handle-a-failed-write.md).
+
+Cloudflare SQLite constraint errors may carry no extended error code. Their canonical
+`UNIQUE`, `NOT NULL`, `CHECK` and `FOREIGN KEY constraint failed` diagnostic prefixes
+normalize to `constraint` only without an explicit code, so a durable execution can adopt its persisted run after restart.
+An unrelated message merely mentioning a constraint stays `unknown`; an explicit conflicting code retains its classification. Diagnostics are never logged.

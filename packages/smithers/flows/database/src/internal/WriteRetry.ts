@@ -171,6 +171,12 @@ export const isSchemaCause = (cause: unknown): boolean =>
       message.includes("no such table") || message.includes("no such column")
   )
 
+// Cloudflare's SQLite storage supplies canonical diagnostics without an extended code.
+// Match the diagnostic prefix, never an arbitrary mention of a constraint in user/driver text.
+const isConstraintCause = (cause: unknown): boolean => hasCause(cause, (code, message) =>
+  code?.startsWith("SQLITE_CONSTRAINT") === true ||
+  (code === undefined && /^(?:unique|not null|check|foreign key) constraint failed(?::|$)/.test(message)))
+
 /**
  * The stable category a structured SQL failure normalizes to.
  *
@@ -201,7 +207,7 @@ export type SqlFailureCode = Exclude<DurableWriter.DatabaseErrorCode, "unsupport
 export const classifySqlError = (error: SqlError.SqlError): SqlFailureCode =>
   error.reason._tag === "LockTimeoutError"
     ? "busy"
-    : error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation"
+    : error.reason._tag === "ConstraintError" || error.reason._tag === "UniqueViolation" || isConstraintCause(error.reason.cause)
     ? "constraint"
     : isIoCause(error.reason.cause)
     ? "io"
