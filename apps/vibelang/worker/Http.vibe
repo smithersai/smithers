@@ -5,7 +5,7 @@ import { validBodyLength } from "../src/core/protocolDecision.vibe"
 // the event stream and the tour (0014), each answered by the conversation's Durable Object. It logs, traces and counts every request
 // by route and status, never a body: posts are people's words.
 import * as Sse from "effect/encoding/Sse"
-import { HttpServerRequest, HttpServerResponse } from "effect/http"
+import { HttpIncomingMessage, HttpServerRequest, HttpServerResponse } from "effect/http"
 import type { Event } from "../src/core/conversation.vibe"
 import type { ReadSnapshot } from "../src/core/schemas.vibe"
 import { HEALTH_PATH, MAX_NAME, MAX_POST_BYTES, PostBody, routeOf, type Route } from "../src/core/wire.vibe"
@@ -116,7 +116,10 @@ effect function answerHistory(route: HistoryRoute, url: URL, histories: Historie
   if (route.kind !== "history-write") return json(try histories.page(route.page))
   const length = Number(request.headers["content-length"] ?? "0")
   if (!(length >= 0 && length <= MAX_WRITE_BYTES)) return json({ error: "body size" }, 413)
-  const text = request.text catch () => ""
+  // A chunked body has no Content-Length: Effect counts its bytes and stops reading at the limit.
+  const text = Effect.provideService(request.text, HttpIncomingMessage.MaxBodySize, ByteSize.bytes(MAX_WRITE_BYTES)) catch (error) =>
+    error.reason._tag === "RequestParseError" && error.reason.reason === "BodyTooLarge" ? undefined : ""
+  if (text === undefined) return json({ error: "body size" }, 413)
   const body = decodeWrite(route.write, text === "" ? "{}" : text) catch () => undefined
   if (body === undefined) return json({ error: "body" }, 400)
   const written = try histories.write(route.write, body)

@@ -131,6 +131,29 @@ it.live("refuses viewer writes without changing history, and validates each writ
   }
 }), 30_000)
 
+/** A body sent in pieces, with no Content-Length: Transfer-Encoding chunked. */
+function chunked(text: string, pieces: number) {
+  const bytes = new TextEncoder().encode(text)
+  return HttpClientRequest.bodyStream(Stream.fromIterable(Array.from({ length: pieces }, () => bytes)), { contentType: "application/json" })
+}
+
+it.live("bounds a chunked history write: over the limit is refused unread, under it is decoded", () => scoped(effect {
+  provide NodeHttpServer.layerTest, MockMythical(maintainer, () => succeed(empty)) {
+    try serve()
+    const http = try HttpClient.HttpClient
+    const before = try (try Mythical).outline()
+    // 64 KiB pieces, 4 MiB in all: far past MAX_WRITE_BYTES, and no Content-Length to refuse it by.
+    const large = try http.execute(HttpClientRequest.post("/api/history/note").pipe(chunked("x".repeat(65536), 64)))
+    const unchanged = try (try Mythical).outline()
+    const small = try http.execute(HttpClientRequest.post("/api/history/plan").pipe(chunked(JSON.stringify(plan), 1)))
+    try Effect.try(() => {
+      expect(large.status).toBe(413)
+      expect(unchanged).toEqual(before)
+      expect(small.status).toBe(200)
+    })
+  }
+}), 30_000)
+
 function operation(client: Mythical.Shape, name: string) {
   switch (name) {
     case "outline": return Effect.asVoid(client.outline())
