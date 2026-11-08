@@ -1,3 +1,5 @@
+// Compile the real backend before the clocked behavior cases; cold compiler transformation is outside these API assertions.
+import "../src/core/MockFactory.vibe"
 import { expect, it } from "@effect/vitest"
 import { Factory } from "../src/core/Factory.vibe"
 import { AgentBackend, BrowserFactory } from "../src/web/backend.vibe"
